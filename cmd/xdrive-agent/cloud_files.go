@@ -1291,18 +1291,6 @@ func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID 
 	}, nil
 }
 
-func (c *agentController) CloudMediaVideo(
-	ctx context.Context,
-	nodeID uint64,
-	rangeHeader string,
-) (client.MediaVideoStream, error) {
-	cli, _, err := c.cloudClient()
-	if err != nil {
-		return client.MediaVideoStream{}, err
-	}
-	return cli.MediaPlayback(ctx, nodeID, rangeHeader)
-}
-
 func (c *agentController) CloudSourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

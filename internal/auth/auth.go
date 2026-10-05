@@ -73,62 +73,6 @@ func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err e
 	return claims.UserID, claims.SessionVersion, nil
 }
 
-type MediaStreamClaims struct {
-	UserID         uint64 `json:"uid"`
-	NodeID         uint64 `json:"nid"`
-	NodeRevision   uint64 `json:"rev"`
-	SessionVersion uint64 `json:"ver,omitempty"`
-	TokenType      string `json:"typ"`
-	jwt.RegisteredClaims
-}
-
-func (m Manager) IssueMediaStream(
-	userID, sessionVersion, nodeID, nodeRevision uint64,
-	ttl time.Duration,
-) (string, time.Time, error) {
-	if userID == 0 || nodeID == 0 || nodeRevision == 0 || ttl <= 0 || ttl > 2*time.Hour {
-		return "", time.Time{}, errors.New("invalid media stream claims")
-	}
-	now := time.Now()
-	expiresAt := now.Add(ttl)
-	claims := MediaStreamClaims{
-		UserID:         userID,
-		NodeID:         nodeID,
-		NodeRevision:   nodeRevision,
-		SessionVersion: sessionVersion,
-		TokenType:      "media_stream",
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			Subject:   fmt.Sprintf("%d", userID),
-			Audience:  jwt.ClaimStrings{"xdrive-media-stream"},
-		},
-	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
-	return token, expiresAt, err
-}
-
-func (m Manager) ParseMediaStream(tokenString string) (MediaStreamClaims, error) {
-	claims := &MediaStreamClaims{}
-	token, err := jwt.ParseWithClaims(
-		tokenString,
-		claims,
-		func(token *jwt.Token) (any, error) {
-			if token.Method != jwt.SigningMethodHS256 {
-				return nil, fmt.Errorf("unexpected signing method %v", token.Header["alg"])
-			}
-			return m.secret, nil
-		},
-		jwt.WithAudience("xdrive-media-stream"),
-	)
-	if err != nil || !token.Valid ||
-		claims.TokenType != "media_stream" ||
-		claims.UserID == 0 || claims.NodeID == 0 || claims.NodeRevision == 0 {
-		return MediaStreamClaims{}, errors.New("invalid media stream token")
-	}
-	return *claims, nil
-}
-
 type PreviewStreamClaims struct {
 	UserID         uint64 `json:"uid"`
 	NodeID         uint64 `json:"nid"`

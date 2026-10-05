@@ -673,7 +673,6 @@ type AgentDiscovery = {
   version: number
   base_url: string
   token: string
-  media_token?: string
   pid: number
 }
 
@@ -970,21 +969,6 @@ export class AgentIPCClient {
       undefined,
       45_000,
     )
-  }
-
-  async mediaVideoURL(nodeID: number) {
-    const discovery = await this.loadDiscovery()
-    if (!discovery.media_token || !/^[0-9a-f]{64}$/i.test(discovery.media_token)) {
-      throw new AgentIPCError(
-        'media_video_stream_unavailable',
-        0,
-        'xdrive-agent does not expose the scoped Gallery video stream capability.',
-      )
-    }
-    const url = new URL('/v1/media/video', discovery.base_url)
-    url.searchParams.set('node_id', String(nodeID))
-    url.searchParams.set('access_token', discovery.media_token)
-    return url.toString()
   }
 
   sources() {
@@ -1534,7 +1518,6 @@ function validateDiscovery(value: unknown): AgentDiscovery {
   }
   if (
     !/^[0-9a-f]{64}$/i.test(discovery.token) ||
-    (discovery.media_token !== undefined && !/^[0-9a-f]{64}$/i.test(discovery.media_token)) ||
     !Number.isInteger(discovery.pid) ||
     discovery.pid <= 0
   ) {
