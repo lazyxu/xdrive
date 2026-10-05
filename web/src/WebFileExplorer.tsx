@@ -186,7 +186,7 @@ export default function WebFileExplorer({
   ) => {
     if (
       item.kind !== 'file' ||
-      (kind !== 'pdf' && kind !== 'video' && kind !== 'audio')
+      !['pdf', 'video', 'audio', 'image'].includes(kind)
     ) return null
     try {
       return await api.filePreviewURL(Number(item.id))

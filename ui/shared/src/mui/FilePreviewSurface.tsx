@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, CircularProgress, Stack, Typography } from '@mui/material'
 import {
@@ -56,14 +56,32 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [previewURL, setPreviewURL] = useState('')
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [usingImageFallback, setUsingImageFallback] = useState(false)
+  const previewURLRef = useRef('')
+  const previewGenerationRef = useRef(0)
+
+  const assignPreviewURL = useCallback((value: string) => {
+    const previous = previewURLRef.current
+    if (previous && previous !== value) revokePreviewURL(previous)
+    previewURLRef.current = value
+    setPreviewURL(value)
+  }, [])
+
+  useEffect(() => () => {
+    const current = previewURLRef.current
+    previewURLRef.current = ''
+    if (current) revokePreviewURL(current)
+  }, [])
 
   useEffect(() => {
     let active = true
-    let resolvedURL = ''
+    const generation = previewGenerationRef.current + 1
+    previewGenerationRef.current = generation
     setTextPreview(null)
-    setPreviewURL('')
+    assignPreviewURL('')
     setLoading(false)
     setFailed(false)
+    setUsingImageFallback(false)
 
     if (!target || previewKind === 'none') return () => undefined
 
@@ -87,41 +105,92 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       }
     }
 
-    const loader = previewKind === 'image' && loadImagePreview
-      ? (candidate: T) => loadImagePreview(candidate)
-      : loadPreviewURL
-        ? (candidate: T) => loadPreviewURL(candidate, previewKind)
-        : undefined
-    if (!loader) return () => undefined
+    const canLoadOriginal = Boolean(loadPreviewURL)
+    const canLoadImageFallback = previewKind === 'image' && Boolean(loadImagePreview)
+    if (!canLoadOriginal && !canLoadImageFallback) return () => undefined
 
     setLoading(true)
-    void loader(target)
-      .then((value) => {
+    void (async () => {
+      let value = loadPreviewURL
+        ? await loadPreviewURL(target, previewKind)
+        : null
+      let fallback = false
+      if (!value && previewKind === 'image' && loadImagePreview) {
+        value = await loadImagePreview(target)
+        fallback = Boolean(value)
+      }
+      return { value, fallback }
+    })()
+      .then(({ value, fallback }) => {
         if (!value) {
           if (active) setFailed(true)
           return
         }
-        resolvedURL = value
-        if (active) setPreviewURL(value)
-        else revokePreviewURL(value)
+        if (!active || previewGenerationRef.current !== generation) {
+          revokePreviewURL(value)
+          return
+        }
+        setUsingImageFallback(fallback)
+        assignPreviewURL(value)
       })
       .catch(() => {
-        if (active) setFailed(true)
+        if (active && previewGenerationRef.current === generation) setFailed(true)
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active && previewGenerationRef.current === generation) setLoading(false)
       })
 
     return () => {
       active = false
-      if (resolvedURL) revokePreviewURL(resolvedURL)
+      if (previewGenerationRef.current === generation) previewGenerationRef.current += 1
     }
   }, [
+    assignPreviewURL,
     loadImagePreview,
     loadPreviewURL,
     loadTextPreview,
     previewKind,
     target,
+  ])
+
+  const loadImageFallback = useCallback(() => {
+    if (
+      previewKind !== 'image' ||
+      !target ||
+      !loadImagePreview ||
+      usingImageFallback
+    ) {
+      setFailed(true)
+      return
+    }
+    const generation = previewGenerationRef.current
+    setLoading(true)
+    void loadImagePreview(target)
+      .then((value) => {
+        if (!value) {
+          if (previewGenerationRef.current === generation) setFailed(true)
+          return
+        }
+        if (previewGenerationRef.current !== generation) {
+          revokePreviewURL(value)
+          return
+        }
+        setUsingImageFallback(true)
+        setFailed(false)
+        assignPreviewURL(value)
+      })
+      .catch(() => {
+        if (previewGenerationRef.current === generation) setFailed(true)
+      })
+      .finally(() => {
+        if (previewGenerationRef.current === generation) setLoading(false)
+      })
+  }, [
+    assignPreviewURL,
+    loadImagePreview,
+    previewKind,
+    target,
+    usingImageFallback,
   ])
 
   const body = (() => {
@@ -168,6 +237,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           src={previewURL}
           alt={target?.name || ''}
           draggable={false}
+          onError={loadImageFallback}
           sx={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
         />
       )

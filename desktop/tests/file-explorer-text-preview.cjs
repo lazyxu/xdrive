@@ -105,7 +105,7 @@ test('Web and Desktop load preview through authenticated platform adapters', () 
   }
 })
 
-test('generic preview transport is allowlisted, ticketed, range-capable, with PDF, Video, and Audio renderers enabled', () => {
+test('generic preview transport is allowlisted, ticketed, range-capable, with PDF, Video, Audio, and Image renderers enabled', () => {
   for (const token of [
     'filePreviewDescriptors',
     '".pdf":  {Kind: "pdf", MIMEType: "application/pdf"}',
@@ -124,10 +124,10 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   }
 
   assert.ok(webApi.includes('filePreviewURL(nodeID: number)'), 'Web preview ticket adapter is missing')
-  assert.ok(webExplorer.includes("kind !== 'pdf' && kind !== 'video' && kind !== 'audio'"), 'Web should enable PDF, Video, and Audio through the generic preview URL')
+  assert.ok(webExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Web should enable PDF, Video, Audio, and Image through the generic preview URL')
   assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
 
-  assert.ok(desktopExplorer.includes("kind !== 'pdf' && kind !== 'video' && kind !== 'audio'"), 'Desktop should enable PDF, Video, and Audio through the generic preview URL')
+  assert.ok(desktopExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Desktop should enable PDF, Video, Audio, and Image through the generic preview URL')
   assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id))'), 'Desktop Explorer preview URL adapter is missing')
   assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
@@ -148,4 +148,8 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
     assert.ok(previewProxy.includes(token), 'Desktop local preview proxy missing: ' + token)
   }
   assert.ok(desktopIndexHTML.includes("frame-src http://127.0.0.1:*"), 'Desktop CSP must allow only the loopback PDF preview frame')
+  assert.ok(desktopIndexHTML.includes("img-src 'self' data: http://127.0.0.1:*"), 'Desktop CSP must allow loopback original-image preview without arbitrary remote images')
+  assert.ok(previewSurface.includes('onError={loadImageFallback}'), 'Image renderer must fall back to the thumbnail loader on decode failure')
+  assert.ok(previewSurface.includes('setUsingImageFallback(true)'), 'Image renderer must track the thumbnail fallback state')
+
 })
