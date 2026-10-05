@@ -3,6 +3,7 @@ export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull'
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
+export type ExternalSourceSyncMode = 'backup' | 'mirror'
 export type ExternalSourceStatus = 'active' | 'paused'
 export type ExternalSourceScheduleType = 'interval' | 'cron' | 'manual'
 export type ExternalSourceRunStatus = 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
@@ -18,7 +19,7 @@ export interface ExternalSource {
   name: string
   kind: string
   direction: ExternalSourceDirection
-  sync_mode: 'backup' | 'mirror'
+  sync_mode: ExternalSourceSyncMode
   run_mode: ExternalSourceRunMode
   status: ExternalSourceStatus
   schedule_type?: ExternalSourceScheduleType
@@ -42,7 +43,7 @@ export interface ExternalSourceRun {
   source_id: number
   run_number: number
   source_revision: number
-  sync_mode?: 'backup' | 'mirror'
+  sync_mode?: ExternalSourceSyncMode
   target_node_id?: number
   mode: ExternalSourceRunMode
   trigger: string
@@ -202,7 +203,7 @@ export interface CreateExternalSourceInput {
   name: string
   kind: string
   direction: ExternalSourceDirection
-  sync_mode: 'backup' | 'mirror'
+  sync_mode: ExternalSourceSyncMode
   run_mode: ExternalSourceRunMode
   schedule_type?: ExternalSourceScheduleType
   schedule_expression?: string
@@ -213,7 +214,7 @@ export interface CreateExternalSourceInput {
 
 export interface UpdateExternalSourceInput {
   name?: string
-  sync_mode?: 'backup' | 'mirror'
+  sync_mode?: ExternalSourceSyncMode
   run_mode?: ExternalSourceRunMode
   status?: ExternalSourceStatus
   schedule_type?: ExternalSourceScheduleType
@@ -469,8 +470,18 @@ export function formatExternalSourceTime(value?: string, now = new Date()) {
   })
 }
 
-export function externalSourceModeLabel(source: Pick<ExternalSource, 'direction' | 'run_mode'>) {
-  return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'}`
+export function externalSourceSyncModeLabel(mode: ExternalSourceSyncMode) {
+  return mode === 'mirror' ? '镜像' : '备份'
+}
+
+export const externalSourceMirrorSafetyNotice =
+  '镜像只影响 xDrive 本地，不会删除远端内容。只有同一项目连续至少 2 次完整成功扫描缺失，且首次确认缺失已满 24 小时后，同步运行才会把未被本地修改的内容移入 xDrive 回收站；部分完成、失败或取消的运行不会推进删除确认。'
+
+export const externalSourceMirrorScanNotice =
+  '当前为仅扫描：会累计可靠的缺失确认，但不会执行回收。之后切换为“同步”时，已经满足 2 次完整扫描且满 24 小时的确认可能在下一次完整成功同步中生效。'
+
+export function externalSourceModeLabel(source: Pick<ExternalSource, 'direction' | 'run_mode' | 'sync_mode'>) {
+  return `${source.direction === 'push' ? 'Push' : 'Pull'} · ${source.run_mode === 'scan' ? '仅扫描' : '同步'} · ${externalSourceSyncModeLabel(source.sync_mode)}`
 }
 
 export function externalSourceScheduleLabel(source: Pick<ExternalSource, 'schedule_type' | 'schedule_expression' | 'schedule_timezone'>) {

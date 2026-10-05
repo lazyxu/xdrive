@@ -309,7 +309,7 @@ test('shared source card view derives display data once for both UIs', () => {
     },
   }
   const view = shared.externalSourceCardView(row)
-  assert.equal(view.modeLabel, 'Push · 仅扫描')
+  assert.equal(view.modeLabel, 'Push · 仅扫描 · 备份')
   assert.equal(view.lastActivityLabel, '上次扫描')
   assert.equal(view.lastActivityAt, '2026-09-26T18:32:00Z')
   assert.equal(view.scannedItems, 128493)
@@ -317,6 +317,21 @@ test('shared source card view derives display data once for both UIs', () => {
   assert.equal(view.failedItems, 2)
   assert.equal(view.connector.manualTriggerExecutor, 'source_agent')
   assert.equal(view.trigger.ready, true)
+})
+
+test('shared Mirror policy labels and safety copy stay explicit', () => {
+  assert.equal(shared.externalSourceSyncModeLabel('backup'), '备份')
+  assert.equal(shared.externalSourceSyncModeLabel('mirror'), '镜像')
+  assert.equal(shared.externalSourceModeLabel(source({
+    direction: 'pull',
+    run_mode: 'sync',
+    sync_mode: 'mirror',
+  })), 'Pull · 同步 · 镜像')
+  assert.match(shared.externalSourceMirrorSafetyNotice, /2 次完整成功扫描/)
+  assert.match(shared.externalSourceMirrorSafetyNotice, /24 小时/)
+  assert.match(shared.externalSourceMirrorSafetyNotice, /不会删除远端内容/)
+  assert.match(shared.externalSourceMirrorScanNotice, /仅扫描/)
+  assert.match(shared.externalSourceMirrorScanNotice, /切换为“同步”/)
 })
 
 test('shared source detail suppresses stale errors while a run is pending or active', () => {
@@ -360,7 +375,7 @@ test('shared source detail view keeps connector and credential semantics aligned
 
   const detail = shared.externalSourceDetailView(row)
   assert.equal(detail.kindLabel, '一刻相册')
-  assert.equal(detail.modeLabel, 'Pull · 同步')
+  assert.equal(detail.modeLabel, 'Pull · 同步 · 备份')
   assert.equal(detail.targetNodeID, 42)
   assert.equal(detail.lastRunAt, '2026-09-26T17:10:00Z')
   assert.equal(detail.lastSuccessAt, '2026-09-26T16:00:00Z')
@@ -515,7 +530,7 @@ test('shared external-source defaults preserve connector-specific setup rules', 
     scheduleExpression: '6h',
     scheduleTimezone,
   })
-  assert.equal(shared.externalSourceModeLabel(source()), 'Push · 仅扫描')
+  assert.equal(shared.externalSourceModeLabel(source()), 'Push · 仅扫描 · 备份')
   assert.equal(shared.externalSourceKindLabel('yike_photos'), '一刻相册')
   assert.equal(shared.externalSourceRunStatusLabel('partial'), '部分完成')
 })

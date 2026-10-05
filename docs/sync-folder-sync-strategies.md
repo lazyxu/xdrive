@@ -363,7 +363,9 @@ AND Node/path/revision 仍与最后同步状态一致
 - 用户恢复/修改一个 Source 目录后，该目录 revision 变化会同时保护其仍然 missing 的后代，避免恢复后下一轮被拆散再次回收；
 - Mirror 只设置 xDrive `deleted_at / trash_root_id`，CAS/文件版本不永久删除；用户仍可从回收站恢复；
 - 每个实际自动 trash root 记录一条 `source.mirror.trash` system audit，并关联 source/run/remote path；
-- provider 仍保持只读，Mirror 不调用远端 delete。
+- provider 仍保持只读，Mirror 不调用远端 delete；
+- Web/Desktop 共用同一同步策略选择器，默认值始终为 Backup；Mirror 必须由用户显式选择，并在创建、设置和详情中显示 2 次完整扫描 + 24 小时 + 仅回收站的安全说明；
+- Mirror + 仅扫描会明确提示：扫描可以累计可靠缺失证据但不会执行回收，之后切换到同步时已经成熟的证据可能在下一次完整成功同步中生效。
 
 未来若实现真正 `ScanChanges(checkpoint)`，只有 provider 明确返回可靠 delete tombstone 时，delta run 才能参与删除证据；“这一轮没出现”永远不能替代 tombstone。
 

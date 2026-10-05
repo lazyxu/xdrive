@@ -38,6 +38,7 @@ import {
   XDriveSourcePresetField,
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
+  XDriveSourceSyncModeField,
 } from './SourceBasicFields'
 import {
   XDriveSourceCookieField,
@@ -65,6 +66,8 @@ import {
   externalSourceCredentialTestSuccessLabel,
   externalSourceDefaults,
   externalSourceDetailView,
+  externalSourceMirrorSafetyNotice,
+  externalSourceMirrorScanNotice,
   externalSourceRunDetailView,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
@@ -93,6 +96,7 @@ import type {
   ExternalSourceRun,
   ExternalSourceRunFailure,
   ExternalSourceScheduleType,
+  ExternalSourceSyncMode,
   SynologyPhotoSpace,
   SupportedExternalSourceKind,
   UpdateExternalSourceInput,
@@ -150,6 +154,7 @@ function sourceErrorDetail(error: unknown) {
 
 type SourceSettingsValues = {
   name: string
+  sync_mode: ExternalSourceSyncMode
   run_mode: 'scan' | 'sync'
   status: 'active' | 'paused'
   schedule_type: ExternalSourceScheduleType
@@ -202,6 +207,7 @@ type SourceCollectionItemPage = {
 type CreateSourceValues = {
   preset: ExternalSourceCreatePreset
   name: string
+  sync_mode: ExternalSourceSyncMode
   run_mode: 'scan' | 'sync'
   schedule_type: ExternalSourceScheduleType
   schedule_expression: string
@@ -238,6 +244,7 @@ function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synolog
   return {
     preset,
     name: defaults.name,
+    sync_mode: 'backup',
     run_mode: defaults.runMode,
     schedule_type: defaults.scheduleType,
     schedule_expression: defaults.scheduleExpression,
@@ -255,6 +262,7 @@ function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synolog
 function emptySourceSettingsValues(): SourceSettingsValues {
   return {
     name: '',
+    sync_mode: 'backup',
     run_mode: 'sync',
     status: 'active',
     schedule_type: 'interval',
@@ -556,6 +564,7 @@ export function XDriveSourceManager({
       ...current,
       preset,
       name: defaults.name,
+      sync_mode: 'backup',
       run_mode: defaults.runMode,
       schedule_type: defaults.scheduleType,
       schedule_expression: defaults.scheduleExpression,
@@ -670,7 +679,7 @@ export function XDriveSourceManager({
         name: normalizedName,
         kind: option.kind,
         direction: option.direction,
-        sync_mode: 'backup',
+        sync_mode: values.sync_mode,
         run_mode: values.run_mode,
         schedule_type: values.schedule_type,
         schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
@@ -773,6 +782,7 @@ export function XDriveSourceManager({
     setSettingsConnectorConfig(null)
     setSettingsValues({
       name: row.source.name,
+      sync_mode: row.source.sync_mode,
       run_mode: row.source.run_mode,
       status: row.source.status,
       schedule_type: row.source.schedule_type ?? 'interval',
@@ -945,6 +955,7 @@ export function XDriveSourceManager({
       )
       let updatedSource = await adapter.updateSource(setting.source.id, setting.source.revision, {
         name: normalizedName,
+        sync_mode: values.sync_mode,
         run_mode: values.run_mode,
         status: stageFileActivation
           ? 'paused'
@@ -1262,6 +1273,15 @@ export function XDriveSourceManager({
               <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>
                 <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>最近一次运行异常</MuiTypography>
                 <MuiTypography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectedDetail.error}</MuiTypography>
+              </XDriveStatusAlert>
+            )}
+            {selected.source.sync_mode === 'mirror' && (
+              <XDriveStatusAlert tone="warning" sx={{ mb: 2 }}>
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>当前使用镜像到回收站</MuiTypography>
+                <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>
+                {selected.source.run_mode === 'scan' && (
+                  <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
+                )}
               </XDriveStatusAlert>
             )}
             <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
@@ -1648,6 +1668,19 @@ export function XDriveSourceManager({
               scanLabel="仅扫描（推荐先使用）"
               onChange={(value) => setCreateValues((current) => ({ ...current, run_mode: value }))}
             />
+            <XDriveSourceSyncModeField
+              value={createValues.sync_mode}
+              onChange={(value) => setCreateValues((current) => ({ ...current, sync_mode: value }))}
+            />
+            {createValues.sync_mode === 'mirror' && (
+              <XDriveStatusAlert tone="warning">
+                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>镜像到回收站</MuiTypography>
+                <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>
+                {createValues.run_mode === 'scan' && (
+                  <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
+                )}
+              </XDriveStatusAlert>
+            )}
             <XDriveSourceScheduleFields
               wideAt="md"
               scheduleType={createScheduleType}
@@ -1837,6 +1870,19 @@ export function XDriveSourceManager({
                 value={settingsValues.run_mode}
                 onChange={(value) => setSettingsValues((current) => ({ ...current, run_mode: value }))}
               />
+              <XDriveSourceSyncModeField
+                value={settingsValues.sync_mode}
+                onChange={(value) => setSettingsValues((current) => ({ ...current, sync_mode: value }))}
+              />
+              {settingsValues.sync_mode === 'mirror' && (
+                <XDriveStatusAlert tone="warning">
+                  <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>镜像到回收站</MuiTypography>
+                  <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>
+                  {settingsValues.run_mode === 'scan' && (
+                    <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
+                  )}
+                </XDriveStatusAlert>
+              )}
               <XDriveSourceStatusField
                 label="同步状态"
                 value={settingsValues.status}
