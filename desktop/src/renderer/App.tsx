@@ -78,6 +78,7 @@ import type {
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+  xDriveLatestUndoableFileOperation,
   xDriveLoginCredentialsReady,
   xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
@@ -374,6 +375,8 @@ export default function App({
 
   const fileOperationConflictResolveSupported =
     agent.hello?.capabilities.includes('file-operation-conflict-resolution') ?? false
+  const fileOperationUndoSupported =
+    agent.hello?.capabilities.includes('file-operation-undo') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -386,6 +389,13 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    undoOperation: fileOperationUndoSupported
+      ? async (id) => {
+          const result = await window.xdriveDesktop.agent.cloudUndoFileOperation(id)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
     resolveConflict: fileOperationConflictResolveSupported
       ? async (id, policy) => {
           const result = await window.xdriveDesktop.agent.cloudResolveFileOperationConflict(id, policy)
@@ -411,6 +421,8 @@ export default function App({
     ),
     onFeedback: setNotice,
   })
+
+  const latestUndoableCloudFileOperation = xDriveLatestUndoableFileOperation(cloudFileOperations)
 
   const {
     busy: deleteToTrashBusy,
@@ -1747,6 +1759,10 @@ export default function App({
               onDelete: removeCloudNode,
               onDeleteMany: removeCloudNodes,
               onOperationQueued: rememberCloudFileOperation,
+              canUndo: fileOperationUndoSupported && Boolean(latestUndoableCloudFileOperation) && !fileOperationActions.busy,
+              onUndo: () => {
+                if (latestUndoableCloudFileOperation) void fileOperationActions.undoOperation(latestUndoableCloudFileOperation.id)
+              },
               onQuotaChanged: refreshCloudQuota,
               uploadConflictSupported: Boolean(
                 agent.hello?.capabilities.includes('upload-conflict-preflight') &&

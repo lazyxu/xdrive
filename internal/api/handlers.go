@@ -445,6 +445,7 @@ func copyDestinationNameTx(
 type copyNodeTxHooks struct {
 	BeforeNode func(source meta.Node, relativePath string) error
 	AfterFile  func(source meta.Node, relativePath string) error
+	AfterNode  func(source meta.Node, copied meta.Node, relativePath string) error
 }
 
 func (s *Server) copyNodeTx(
@@ -513,6 +514,11 @@ func (s *Server) copyNodeTxWithHooks(
 				return meta.Node{}, err
 			}
 		}
+		if hooks != nil && hooks.AfterNode != nil {
+			if err := hooks.AfterNode(source, copied, relativePath); err != nil {
+				return meta.Node{}, err
+			}
+		}
 		return copied, nil
 	}
 
@@ -529,6 +535,11 @@ func (s *Server) copyNodeTxWithHooks(
 			childPath = relativePath + "/" + child.Name
 		}
 		if _, err := s.copyNodeTxWithHooks(tx, uid, child, copied.ID, child.Name, childPath, hooks); err != nil {
+			return meta.Node{}, err
+		}
+	}
+	if hooks != nil && hooks.AfterNode != nil {
+		if err := hooks.AfterNode(source, copied, relativePath); err != nil {
 			return meta.Node{}, err
 		}
 	}

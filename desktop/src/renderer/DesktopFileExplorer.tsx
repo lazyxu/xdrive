@@ -49,6 +49,8 @@ export default function DesktopFileExplorer({
   onDelete,
   onDeleteMany,
   onOperationQueued,
+  canUndo = false,
+  onUndo,
   onQuotaChanged,
   uploadConflictSupported = false,
   archiveDownloadSupported = false,
@@ -70,6 +72,8 @@ export default function DesktopFileExplorer({
   onDelete: (node: AgentCloudNode) => void
   onDeleteMany: (nodes: AgentCloudNode[]) => void
   onOperationQueued: (operation: AgentCloudFileOperation) => void
+  canUndo?: boolean
+  onUndo?: () => void
   onQuotaChanged: () => Promise<unknown>
   uploadConflictSupported?: boolean
   archiveDownloadSupported?: boolean
@@ -645,6 +649,8 @@ export default function DesktopFileExplorer({
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
         canPaste={fileOperationCanPaste}
+        canUndo={canUndo}
+        onUndo={onUndo}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
         folderDownloadSupported={archiveDownloadSupported}
         onDeleteItems={(selected) => {

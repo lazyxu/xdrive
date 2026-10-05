@@ -174,7 +174,7 @@ test('Desktop exposes persistent file-operation lifecycle through every bridge l
   }
 
   for (const token of [
-    "cloudCreateFileOperation(type: AgentCloudFileOperation['type'], items: AgentCloudBatchNodeRef[], parentID?: number)",
+    "cloudCreateFileOperation(type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number)",
     'cloudFileOperations(limit = 100)',
     'cloudFileOperation(id: string)',
     'cloudCancelFileOperation(id: string)',

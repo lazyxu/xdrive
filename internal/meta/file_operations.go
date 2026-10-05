@@ -6,6 +6,7 @@ const (
 	FileOperationTypeCopy   = "copy"
 	FileOperationTypeMove   = "move"
 	FileOperationTypeDelete = "delete"
+	FileOperationTypeUndo   = "undo"
 
 	FileOperationStatusQueued          = "queued"
 	FileOperationStatusRunning         = "running"
@@ -26,8 +27,11 @@ type FileOperation struct {
 	Status            string     `gorm:"size:24;not null;default:queued;index"`
 	ParentID          *uint64    `gorm:"index"`
 	RetryOfID         *string    `gorm:"size:36;index"`
+	UndoOfID          *string    `gorm:"size:36;index"`
+	UndoneByID        *string    `gorm:"size:36;index"`
 	ConflictPolicy    string     `gorm:"size:16;not null;default:''"`
 	ItemsJSON         string     `gorm:"type:text;not null"`
+	UndoPlanJSON      string     `gorm:"type:text;not null;default:''"`
 	TotalItems        int64      `gorm:"not null;default:0"`
 	ProcessedItems    int64      `gorm:"not null;default:0"`
 	TotalBytes        int64      `gorm:"not null;default:0"`
@@ -49,7 +53,7 @@ func (FileOperation) TableName() string { return "xd_file_operations" }
 
 func ValidFileOperationType(value string) bool {
 	switch value {
-	case FileOperationTypeCopy, FileOperationTypeMove, FileOperationTypeDelete:
+	case FileOperationTypeCopy, FileOperationTypeMove, FileOperationTypeDelete, FileOperationTypeUndo:
 		return true
 	default:
 		return false
@@ -91,7 +95,7 @@ func NormalizeFileOperationConflictPolicy(operationType, value string) (string, 
 	if !ValidFileOperationConflictPolicy(value) {
 		return "", false
 	}
-	if operationType == FileOperationTypeDelete && value != FileOperationConflictPolicyFail {
+	if (operationType == FileOperationTypeDelete || operationType == FileOperationTypeUndo) && value != FileOperationConflictPolicyFail {
 		return "", false
 	}
 	return value, true

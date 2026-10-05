@@ -28,6 +28,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
+import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewColumnRoundedIcon from '@mui/icons-material/ViewColumnRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
@@ -531,6 +532,8 @@ export function XDriveFileExplorer({
   onCutItems,
   onPaste,
   canPaste = false,
+  onUndo,
+  canUndo = false,
   onDownloadItems,
   folderDownloadSupported = false,
   onDeleteItems,
@@ -597,6 +600,8 @@ export function XDriveFileExplorer({
   onCutItems?: (items: XDriveFileExplorerItem[]) => void
   onPaste?: () => void
   canPaste?: boolean
+  onUndo?: () => void
+  canUndo?: boolean
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
   folderDownloadSupported?: boolean
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
@@ -1877,6 +1882,11 @@ export function XDriveFileExplorer({
     }
 
     if (isEditableTarget(event.target)) return
+    if (modifier && key === 'z' && canUndo && onUndo) {
+      event.preventDefault()
+      onUndo()
+      return
+    }
     if (typeSelectFromKeyboard(event)) return
 
     const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
@@ -2316,6 +2326,16 @@ export function XDriveFileExplorer({
             {commandBarStart}
           </>
         )}
+
+        {onUndo ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<UndoRoundedIcon />}
+            disabled={!canUndo}
+            onClick={onUndo}
+          >
+            撤销
+          </XDriveFileExplorerCommandButton>
+        ) : null}
 
         <Box sx={{ flex: 1 }} />
 

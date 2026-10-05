@@ -51,23 +51,27 @@ function OperationItem({
   operation,
   cancelling,
   retrying,
+  undoing,
   resolving,
   resolvingPolicy,
   continued,
   disabled,
   onCancel,
   onRetry,
+  onUndo,
   onResolveConflict,
 }: {
   operation: XDriveFileOperation
   cancelling: boolean
   retrying: boolean
+  undoing: boolean
   resolving: boolean
   resolvingPolicy: XDriveFileOperationConflictResolution | ''
   continued: boolean
   disabled: boolean
   onCancel?: (id: string) => void
   onRetry?: (id: string) => void
+  onUndo?: (id: string) => void
   onResolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
   const active = xDriveFileOperationActive(operation.status)
@@ -135,6 +139,17 @@ function OperationItem({
               onClick={() => onRetry(operation.id)}
             >
               重试
+            </XDriveActionButton>
+          ) : null}
+          {operation.undoable && onUndo ? (
+            <XDriveActionButton
+              compact
+              disabled={disabled}
+              loading={undoing}
+              loadingLabel="正在撤销…"
+              onClick={() => onUndo(operation.id)}
+            >
+              撤销
             </XDriveActionButton>
           ) : null}
           {canResolveConflict ? (
@@ -220,22 +235,26 @@ export function XDriveFileOperationCenter({
   loading = false,
   cancellingID = '',
   retryingID = '',
+  undoingID = '',
   resolvingID = '',
   resolvingPolicy = '',
   disabled = false,
   onCancel,
   onRetry,
+  onUndo,
   onResolveConflict,
 }: {
   operations: XDriveFileOperation[]
   loading?: boolean
   cancellingID?: string
   retryingID?: string
+  undoingID?: string
   resolvingID?: string
   resolvingPolicy?: XDriveFileOperationConflictResolution | ''
   disabled?: boolean
   onCancel?: (id: string) => void
   onRetry?: (id: string) => void
+  onUndo?: (id: string) => void
   onResolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
   const active = operations.filter((item) => xDriveFileOperationActive(item.status))
@@ -274,12 +293,14 @@ export function XDriveFileOperationCenter({
                   operation={operation}
                   cancelling={cancellingID === operation.id}
                   retrying={retryingID === operation.id}
+                  undoing={undoingID === operation.id}
                   resolving={resolvingID === operation.id}
                   resolvingPolicy={resolvingID === operation.id ? resolvingPolicy : ''}
                   continued={continuationParentIDs.has(operation.id)}
                   disabled={disabled}
                   onCancel={onCancel}
                   onRetry={onRetry}
+                  onUndo={onUndo}
                   onResolveConflict={onResolveConflict}
                 />
               ))}

@@ -1063,6 +1063,13 @@ export class XDriveApi {
     })
   }
 
+  undoFileOperation(id: string) {
+    return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}/undo`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  }
+
   rename(nodeID: number, revision: number, name: string) {
     return this.request<Node>(`/api/v1/nodes/${nodeID}`, {
       method: 'PATCH',
