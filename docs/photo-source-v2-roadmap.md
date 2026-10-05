@@ -6,6 +6,8 @@ This document is the implementation roadmap for Yike Photos Pull, Synology Photo
 
 Detailed per-connector inventory, revision, identity, zero-byte move, digest/CAS, deletion, and incremental-transfer behavior is defined in [`sync-folder-sync-strategies.md`](./sync-folder-sync-strategies.md).
 
+> **Current scope status:** Photo Source v2 itself is complete. P8 real incremental change scanning remains intentionally conditional on a proven provider cursor + tombstone contract and is not a completion blocker. Automatic face/person clustering and human-readable place analysis have moved to the separate connector-neutral [`xDrive Photo Intelligence`](./photo-intelligence.md) subsystem.
+
 ## Hard architecture boundary
 
 ### Source / synchronization-folder layer
@@ -448,7 +450,7 @@ The ordering keeps file synchronization independent from media enrichment:
 | P7 | Complete for the current durable state model: Source binding/alias/collection/item-metadata/run verify, invalid binding detach, stale SyncRun finalization, media relationship/thumbnail/derived-resource verify, thumbnail metadata reset, deterministic MediaGroup/PhotoAsset rebuild, LIVP derived-resource rebuild/orphan projection cleanup, and explicit orphan thumbnail-file GC are current. There is no durable migration journal today, so no fake “stale migration repair” is added; a future journal must define its own deterministic recovery contract | Complete |
 | P8 | Incremental transfer current on full inventories; shared `ScanFull` / `ScanChanges` capability/decision foundation complete. Keep current Pull connectors full-scan until a proven provider change+tombstone contract exists, then add real delta execution plus periodic full reconciliation | Medium-high |
 | P9 | Complete: Mirror-to-trash implements 2 completed full-inventory missing confirmations + >=24h grace, Source/run snapshot checks, local revision/path protection, mixed-directory and restored-parent protection, reappearance reset, system audit, trash-only execution, and one shared Web/Desktop opt-in UI with Backup as the default | Medium |
-| P10 | In progress: logical PhotoAsset kinds/resources, authenticated Range video playback, viewport-lazy video posters, GIF/WebP animation playback, server-side Gallery search/filters, local favorites, user-managed local tags/people labels/descriptions, manual albums, saved-query smart albums, shared grid/timeline month presentation, and offline local-GPS place facets are current; next add optional connector-neutral automatic face/person and place-name analysis facets | Medium |
+| P10 | Gallery/product follow-on split out: the Source v2 scope is complete. Existing Gallery search/filters, favorites, local tags/people labels/descriptions, manual/smart albums, shared presentation, and local-GPS place facets remain current; optional automatic face/person and place-name analysis is now tracked by `docs/photo-intelligence.md` and must not be implemented in connectors | Split out |
 | P11 | Maintain sanitized connector fixtures, live smoke tests, migration tests, and cross-connector media-parser equivalence tests | Continuous |
 
 Provider semantic metadata import is deliberately removed from the roadmap. If xDrive later implements people/tag/place recognition, it belongs to a separate connector-neutral media-analysis subsystem operating on local originals, not to Yike/Synology/FileStation connectors.
