@@ -79,6 +79,7 @@ import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
   xDriveLoginCredentialsReady,
+  xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
@@ -1901,7 +1902,11 @@ export default function App({
             onBackupFileDataChange: serverUpdate.setBackupFileData,
             onStart: () => setConfirmDialog({
               title: '确认更新服务端？',
-              message: `来源：${serverUpdate.source === 'gitlab' ? 'GitLab' : 'GitHub'} · 通道：${serverUpdate.channel} · 文件数据备份：${serverUpdate.backupFileData ? '开启' : '关闭'}。数据库与一致性备份始终执行；更新期间服务可能短暂不可用。`,
+              message: xDriveServerUpdateConfirmationDescription({
+                source: serverUpdate.source,
+                channel: serverUpdate.channel,
+                backupFileData: serverUpdate.backupFileData,
+              }),
               confirmLabel: '开始更新',
               tone: 'warning',
               onConfirm: serverUpdate.start,

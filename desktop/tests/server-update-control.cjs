@@ -47,6 +47,23 @@ test('shared server update UI exposes source, channel, status and progress', () 
   }
 })
 
+test('shared server update model owns the confirmation summary', () => {
+  for (const token of [
+    'xDriveServerUpdateConfirmationDescription',
+    "unavailableLabel = '服务'",
+    "source === 'gitlab' ? 'GitLab' : 'GitHub'",
+    '文件数据备份',
+    '数据库与一致性备份始终执行',
+  ]) {
+    assert.ok(sharedModel.includes(token), `shared server update confirmation missing: ${token}`)
+  }
+  assert.ok(web.includes('xDriveServerUpdateConfirmationDescription({'), 'Web must use the shared update confirmation formatter')
+  assert.ok(web.includes("unavailableLabel: 'Web/API'"), 'Web should keep only its availability subject platform-local')
+  assert.ok(desktop.includes('xDriveServerUpdateConfirmationDescription({'), 'Desktop must use the shared update confirmation formatter')
+  assert.equal(web.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Web must not duplicate update confirmation formatting')
+  assert.equal(desktop.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Desktop must not duplicate update confirmation formatting')
+})
+
 test('Web and Desktop use the same server update card', () => {
   assert.equal((web.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
   assert.equal((desktop.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
