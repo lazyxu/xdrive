@@ -7,6 +7,7 @@ func TestFileOperationTypesAndTerminalStates(t *testing.T) {
 		FileOperationTypeCopy,
 		FileOperationTypeMove,
 		FileOperationTypeDelete,
+		FileOperationTypeUndo,
 	} {
 		if !ValidFileOperationType(value) {
 			t.Fatalf("expected valid file operation type %q", value)

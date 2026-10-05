@@ -73,6 +73,9 @@ type fileOperationDTO struct {
 	Status            string     `json:"status"`
 	ParentID          *uint64    `json:"parent_id,omitempty"`
 	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	UndoOfID          *string    `json:"undo_of_id,omitempty"`
+	UndoneByID        *string    `json:"undone_by_id,omitempty"`
+	Undoable          bool       `json:"undoable"`
 	ConflictPolicy    string     `json:"conflict_policy,omitempty"`
 	TotalItems        int64      `json:"total_items"`
 	ProcessedItems    int64      `json:"processed_items"`
@@ -124,6 +127,9 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 		Status:            operation.Status,
 		ParentID:          operation.ParentID,
 		RetryOfID:         operation.RetryOfID,
+		UndoOfID:          operation.UndoOfID,
+		UndoneByID:        operation.UndoneByID,
+		Undoable:          fileOperationUndoable(operation),
 		ConflictPolicy:    operation.ConflictPolicy,
 		TotalItems:        operation.TotalItems,
 		ProcessedItems:    operation.ProcessedItems,
@@ -144,6 +150,9 @@ func toFileOperationDTO(operation meta.FileOperation) fileOperationDTO {
 }
 
 func fileOperationRetryable(operation meta.FileOperation) bool {
+	if operation.Type == meta.FileOperationTypeUndo {
+		return false
+	}
 	if operation.Status == meta.FileOperationStatusCancelled {
 		return true
 	}
@@ -282,6 +291,9 @@ func (s *Server) requestFileOperationCancel(ctx context.Context, uid uint64, id 
 				"finished_at":         &now,
 				"updated_at":          now,
 			}).Error; err != nil {
+				return err
+			}
+			if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
 				return err
 			}
 			return pruneFileOperationHistoryTx(tx, uid)
@@ -424,9 +436,14 @@ func writeFileOperationError(c *gin.Context, operationType string, err error) {
 		fail(c, http.StatusConflict, err.Error())
 		return
 	}
-	if err != nil && (err.Error() == "invalid file operation type" || err.Error() == "invalid file operation conflict policy") {
-		fail(c, http.StatusBadRequest, err.Error())
-		return
+	if err != nil {
+		switch err.Error() {
+		case "invalid file operation type",
+			"invalid file operation conflict policy",
+			"undo operations must be created from a completed file operation":
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	fail(c, http.StatusInternalServerError, "file operation failed")
 }
@@ -466,6 +483,9 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 ) (meta.FileOperation, error) {
 	if !meta.ValidFileOperationType(operationType) {
 		return meta.FileOperation{}, errors.New("invalid file operation type")
+	}
+	if operationType == meta.FileOperationTypeUndo {
+		return meta.FileOperation{}, errors.New("undo operations must be created from a completed file operation")
 	}
 	resolvedConflictPolicy, ok := meta.NormalizeFileOperationConflictPolicy(operationType, conflictPolicy)
 	if !ok {
@@ -631,6 +651,16 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 			Pluck("owner_id", &cancellingOwners).Error; err != nil {
 			return err
 		}
+		var cancellingUndoOperations []meta.FileOperation
+		if err := tx.Select("id", "owner_id", "type", "undo_of_id").
+			Where(
+				"status = ? AND type = ?",
+				meta.FileOperationStatusCancelRequested,
+				meta.FileOperationTypeUndo,
+			).
+			Find(&cancellingUndoOperations).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&meta.FileOperation{}).
 			Where("status = ?", meta.FileOperationStatusCancelRequested).
 			Updates(map[string]any{
@@ -645,6 +675,11 @@ func (s *Server) recoverFileOperations(ctx context.Context) error {
 				"updated_at":      now,
 			}).Error; err != nil {
 			return err
+		}
+		for _, operation := range cancellingUndoOperations {
+			if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
+				return err
+			}
 		}
 		for _, ownerID := range cancellingOwners {
 			if err := pruneFileOperationHistoryTx(tx, ownerID); err != nil {
@@ -668,12 +703,15 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 		cancelOperation(nil)
 	}()
 
-	refs, err := decodeFileOperationRefs(operation.ItemsJSON)
-	if err != nil {
-		if errors.Is(context.Cause(operationCtx), errFileOperationCancelled) {
-			return true, s.cancelRunningFileOperation(context.Background(), operation.OwnerID, operation.ID)
+	var refs []batchNodeRef
+	if operation.Type != meta.FileOperationTypeUndo {
+		refs, err = decodeFileOperationRefs(operation.ItemsJSON)
+		if err != nil {
+			if errors.Is(context.Cause(operationCtx), errFileOperationCancelled) {
+				return true, s.cancelRunningFileOperation(context.Background(), operation.OwnerID, operation.ID)
+			}
+			return true, s.failFileOperation(operationCtx, operation.OwnerID, operation.ID, err)
 		}
-		return true, s.failFileOperation(operationCtx, operation.OwnerID, operation.ID, err)
 	}
 
 	switch operation.Type {
@@ -683,6 +721,8 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 		err = s.executeQueuedBatchMove(operationCtx, operation, refs)
 	case meta.FileOperationTypeDelete:
 		err = s.executeQueuedBatchDelete(operationCtx, operation, refs)
+	case meta.FileOperationTypeUndo:
+		err = s.executeQueuedUndo(operationCtx, operation)
 	default:
 		err = errors.New("unsupported file operation type")
 	}
@@ -864,7 +904,13 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if nested {
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "copy selection cannot contain both a directory and its descendant"}
 		}
+		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
 		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
+		var copiedNodes []fileOperationUndoNodeRef
+		hooks.AfterNode = func(_ meta.Node, copied meta.Node, _ string) error {
+			copiedNodes = append(copiedNodes, fileOperationUndoNodeRef{ID: copied.ID, Revision: copied.Revision})
+			return nil
+		}
 		for index, ref := range refs {
 			source, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
@@ -911,12 +957,22 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "name already exists in target directory"}
 				}
 			}
-			if _, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, hooks); err != nil {
+			copiedNodes = copiedNodes[:0]
+			copiedRoot, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, hooks)
+			if err != nil {
 				return err
 			}
+			plan.CopyRoots = append(plan.CopyRoots, fileOperationUndoCopyRoot{
+				Root:  fileOperationUndoNodeRef{ID: copiedRoot.ID, Revision: copiedRoot.Revision},
+				Name:  copiedRoot.Name,
+				Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
+			})
 			if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
 				return err
 			}
+		}
+		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
+			return err
 		}
 		return s.completeFileOperationTx(tx, operation)
 	})
@@ -939,6 +995,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		if nested {
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "move selection cannot contain both a directory and its descendant"}
 		}
+		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
 		for index, ref := range refs {
 			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
@@ -967,6 +1024,11 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be moved"}
 			}
 			if node.ParentID == nil || *node.ParentID != parentID {
+				originalParentID := uint64(0)
+				if node.ParentID != nil {
+					originalParentID = *node.ParentID
+				}
+				originalName := node.Name
 				policy := operation.ConflictPolicy
 				if policy == "" {
 					policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
@@ -1020,6 +1082,12 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 					}
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusNotFound, Code: "node_not_found", Message: "node not found"}
 				}
+				plan.Moves = append(plan.Moves, fileOperationUndoMove{
+					ID:       node.ID,
+					Revision: ref.Revision + 1,
+					ParentID: originalParentID,
+					Name:     originalName,
+				})
 			}
 			size, err := fileOperationNodeBytesTx(tx, uid, node)
 			if err != nil {
@@ -1029,6 +1097,9 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				return err
 			}
 		}
+		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
+			return err
+		}
 		return s.completeFileOperationTx(tx, operation)
 	})
 }
@@ -1036,6 +1107,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
 	uid := operation.OwnerID
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindDelete}
 		for index, ref := range refs {
 			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
@@ -1079,9 +1151,17 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			if result.RowsAffected == 0 {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "revision_conflict", Message: "node revision changed"}
 			}
+			plan.Deletes = append(plan.Deletes, fileOperationUndoDelete{
+				ID:       node.ID,
+				Revision: ref.Revision + 1,
+				Name:     node.Name,
+			})
 			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
 				return err
 			}
+		}
+		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
+			return err
 		}
 		return s.completeFileOperationTx(tx, operation)
 	})
@@ -1090,6 +1170,12 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 func (s *Server) cancelRunningFileOperation(ctx context.Context, ownerID uint64, operationID string) error {
 	now := time.Now()
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var operation meta.FileOperation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", operationID, ownerID).
+			First(&operation).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&meta.FileOperation{}).
 			Where("id = ? AND owner_id = ? AND status IN ?", operationID, ownerID, []string{
 				meta.FileOperationStatusRunning,
@@ -1106,6 +1192,9 @@ func (s *Server) cancelRunningFileOperation(ctx context.Context, ownerID uint64,
 				"finished_at":     &now,
 				"updated_at":      now,
 			}).Error; err != nil {
+			return err
+		}
+		if err := releaseFileOperationUndoReservationTx(tx, operation); err != nil {
 			return err
 		}
 		return pruneFileOperationHistoryTx(tx, ownerID)
@@ -1128,7 +1217,7 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current meta.FileOperation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("status").
+			Select("status", "type", "undo_of_id").
 			Where("id = ? AND owner_id = ?", operationID, ownerID).
 			First(&current).Error; err != nil {
 			return err
@@ -1149,6 +1238,11 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 				}).Error; err != nil {
 				return err
 			}
+			current.ID = operationID
+			current.OwnerID = ownerID
+			if err := releaseFileOperationUndoReservationTx(tx, current); err != nil {
+				return err
+			}
 			return pruneFileOperationHistoryTx(tx, ownerID)
 		}
 		if err := tx.Model(&meta.FileOperation{}).
@@ -1163,6 +1257,11 @@ func (s *Server) failFileOperation(ctx context.Context, ownerID uint64, operatio
 				"finished_at":     &now,
 				"updated_at":      now,
 			}).Error; err != nil {
+			return err
+		}
+		current.ID = operationID
+		current.OwnerID = ownerID
+		if err := releaseFileOperationUndoReservationTx(tx, current); err != nil {
 			return err
 		}
 		return pruneFileOperationHistoryTx(tx, ownerID)

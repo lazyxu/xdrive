@@ -1156,7 +1156,7 @@ function normalizeCloudBatchItems(value: unknown): AgentCloudBatchNodeRef[] {
   })
 }
 
-function normalizeCloudFileOperationType(value: unknown): AgentCloudFileOperation['type'] {
+function normalizeCloudFileOperationType(value: unknown): 'copy' | 'move' | 'delete' {
   if (value === 'copy' || value === 'move' || value === 'delete') return value
   throw new AgentIPCError('invalid_input', 0, 'File operation type must be copy, move, or delete.')
 }
@@ -2271,6 +2271,11 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudRetryFileOperation(normalizeCloudFileOperationID(id))
+  }, false))
+  ipcMain.handle('agent:cloud-file-operation-undo', (_event, id: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    return requireAgentClient().cloudUndoFileOperation(normalizeCloudFileOperationID(id))
   }, false))
   ipcMain.handle('agent:cloud-file-operation-resolve', (_event, id: unknown, policy: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

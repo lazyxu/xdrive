@@ -26,12 +26,14 @@ export interface XDriveTaskCenterPageProps {
   transferRetryDisabled?: boolean
   operationCancellingID?: string
   operationRetryingID?: string
+  operationUndoingID?: string
   operationResolvingID?: string
   operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
   operationDisabled?: boolean
   onRetryTransfer?: (id: string) => void
   onCancelOperation?: (id: string) => void
   onRetryOperation?: (id: string) => void
+  onUndoOperation?: (id: string) => void
   onResolveOperationConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }
 
@@ -45,12 +47,14 @@ export function XDriveTaskCenterPage({
   transferRetryDisabled = false,
   operationCancellingID = '',
   operationRetryingID = '',
+  operationUndoingID = '',
   operationResolvingID = '',
   operationResolvingPolicy = '',
   operationDisabled = false,
   onRetryTransfer,
   onCancelOperation,
   onRetryOperation,
+  onUndoOperation,
   onResolveOperationConflict,
 }: XDriveTaskCenterPageProps) {
   const actions = pageActions ?? (clearHistory ? (
@@ -78,11 +82,13 @@ export function XDriveTaskCenterPage({
             operations={operations}
             cancellingID={operationCancellingID}
             retryingID={operationRetryingID}
+            undoingID={operationUndoingID}
             resolvingID={operationResolvingID}
             resolvingPolicy={operationResolvingPolicy}
             disabled={operationDisabled}
             onCancel={onCancelOperation}
             onRetry={onRetryOperation}
+            onUndo={onUndoOperation}
             onResolveConflict={onResolveOperationConflict}
           />
         </Box>

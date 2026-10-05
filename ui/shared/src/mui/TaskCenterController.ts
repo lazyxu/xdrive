@@ -17,11 +17,13 @@ export type XDriveTaskCenterOperationActions = {
   busy: boolean
   cancellingID: string
   retryingID: string
+  undoingID: string
   resolvingID: string
   resolvingPolicy: XDriveFileOperationConflictResolution | ''
   clearHistoryLoading: boolean
   cancelOperation: (id: string) => Promise<boolean>
   retryOperation: (id: string) => Promise<boolean>
+  undoOperation: (id: string) => Promise<boolean>
   resolveConflict: (
     id: string,
     policy: XDriveFileOperationConflictResolution,
@@ -70,6 +72,7 @@ export function useXDriveTaskCenterController({
     transferRetryDisabled,
     operationCancellingID: operationActions.cancellingID,
     operationRetryingID: operationActions.retryingID,
+    operationUndoingID: operationActions.undoingID,
     operationResolvingID: operationActions.resolvingID,
     operationResolvingPolicy: operationActions.resolvingPolicy,
     operationDisabled: operationActions.busy,
@@ -83,6 +86,9 @@ export function useXDriveTaskCenterController({
     },
     onRetryOperation: (id) => {
       void operationActions.retryOperation(id)
+    },
+    onUndoOperation: (id) => {
+      void operationActions.undoOperation(id)
     },
     onResolveOperationConflict: conflictResolutionEnabled
       ? (id, policy) => {

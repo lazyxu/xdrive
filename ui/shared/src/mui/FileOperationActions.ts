@@ -8,6 +8,7 @@ type XDriveFileOperationAction =
   | 'clear-history'
   | `cancel:${string}`
   | `retry:${string}`
+  | `undo:${string}`
   | `resolve:${XDriveFileOperationConflictResolution}:${string}`
 
 export function useXDriveFileOperationActions<
@@ -16,6 +17,7 @@ export function useXDriveFileOperationActions<
 >({
   cancelOperation,
   retryOperation,
+  undoOperation,
   resolveConflict,
   clearOperationHistory,
   clearTransferHistory,
@@ -27,6 +29,7 @@ export function useXDriveFileOperationActions<
 }: {
   cancelOperation: (id: string) => Promise<TOperation>
   retryOperation: (id: string) => Promise<TOperation>
+  undoOperation?: (id: string) => Promise<TOperation>
   resolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => Promise<TOperation>
   clearOperationHistory: () => Promise<void>
   clearTransferHistory: () => Promise<TTransferHistory>
@@ -80,6 +83,22 @@ export function useXDriveFileOperationActions<
       finishAction()
     }
   }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, retryOperation])
+
+  const undo = useCallback(async (id: string) => {
+    if (!undoOperation || !beginAction(`undo:${id}`)) return false
+    try {
+      const operation = await undoOperation(id)
+      rememberOperation(operation)
+      onFeedback?.('撤销操作已加入队列。')
+      await refreshOperations()
+      return true
+    } catch (error) {
+      onError(error)
+      return false
+    } finally {
+      finishAction()
+    }
+  }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, undoOperation])
 
   const resolve = useCallback(async (
     id: string,
@@ -152,11 +171,13 @@ export function useXDriveFileOperationActions<
     busy: Boolean(action),
     cancellingID: action.startsWith('cancel:') ? action.slice('cancel:'.length) : '',
     retryingID: action.startsWith('retry:') ? action.slice('retry:'.length) : '',
+    undoingID: action.startsWith('undo:') ? action.slice('undo:'.length) : '',
     resolvingID,
     resolvingPolicy,
     clearHistoryLoading: action === 'clear-history',
     cancelOperation: cancel,
     retryOperation: retry,
+    undoOperation: undo,
     resolveConflict: resolve,
     clearHistory,
   }

@@ -357,6 +357,11 @@ func (f *fakeDesktopIPCController) CloudRetryFileOperation(context.Context, stri
 	return client.FileOperation{ID: "file-op-retry", Type: "copy", Status: "queued", RetryOfID: &retryOf, TotalItems: 2}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudUndoFileOperation(_ context.Context, id string) (client.FileOperation, error) {
+	undoOf := id
+	return client.FileOperation{ID: "file-op-undo", Type: "undo", Status: "queued", UndoOfID: &undoOf, TotalItems: 1}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudResolveFileOperationConflict(_ context.Context, id, policy string) (client.FileOperation, error) {
 	f.cloudResolveID = id
 	f.cloudResolvePolicy = policy

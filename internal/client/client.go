@@ -108,6 +108,9 @@ type FileOperation struct {
 	Status            string     `json:"status"`
 	ParentID          *uint64    `json:"parent_id,omitempty"`
 	RetryOfID         *string    `json:"retry_of_id,omitempty"`
+	UndoOfID          *string    `json:"undo_of_id,omitempty"`
+	UndoneByID        *string    `json:"undone_by_id,omitempty"`
+	Undoable          bool       `json:"undoable"`
 	ConflictPolicy    string     `json:"conflict_policy,omitempty"`
 	TotalItems        int64      `json:"total_items"`
 	ProcessedItems    int64      `json:"processed_items"`
@@ -458,6 +461,12 @@ func (c *Client) CancelFileOperation(ctx context.Context, id string) (FileOperat
 func (c *Client) RetryFileOperation(ctx context.Context, id string) (FileOperation, error) {
 	var out FileOperation
 	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations/"+url.PathEscape(id)+"/retry", map[string]any{}, &out)
+	return out, err
+}
+
+func (c *Client) UndoFileOperation(ctx context.Context, id string) (FileOperation, error) {
+	var out FileOperation
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-operations/"+url.PathEscape(id)+"/undo", map[string]any{}, &out)
 	return out, err
 }
 

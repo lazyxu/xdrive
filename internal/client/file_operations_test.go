@@ -14,4 +14,5 @@ func TestFileOperationClientSurface(t *testing.T) {
 	var _ func(*Client, context.Context, string) (FileOperation, error) = (*Client).GetFileOperation
 	var _ func(*Client, context.Context, string) (FileOperation, error) = (*Client).CancelFileOperation
 	var _ func(*Client, context.Context, string) (FileOperation, error) = (*Client).RetryFileOperation
+	var _ func(*Client, context.Context, string) (FileOperation, error) = (*Client).UndoFileOperation
 }

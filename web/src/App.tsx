@@ -72,7 +72,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -555,6 +555,7 @@ function FileManager({
   const fileOperationActions = useXDriveFileOperationActions<XDriveFileOperation>({
     cancelOperation: (id) => api.cancelFileOperation(id),
     retryOperation: (id) => api.retryFileOperation(id),
+    undoOperation: (id) => api.undoFileOperation(id),
     resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
     clearOperationHistory: () => api.clearFileOperationHistory(),
     clearTransferHistory: async () => { api.clearTransferHistory() },
@@ -563,6 +564,8 @@ function FileManager({
     onError: handleError,
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
   })
+
+  const latestUndoableFileOperation = xDriveLatestUndoableFileOperation(fileOperations)
 
   const {
     remove,
@@ -891,6 +894,10 @@ function FileManager({
                 onRemove={remove}
                 onRemoveMany={removeMany}
                 onOperationQueued={rememberFileOperation}
+                canUndo={Boolean(latestUndoableFileOperation) && !fileOperationActions.busy}
+                onUndo={() => {
+                  if (latestUndoableFileOperation) void fileOperationActions.undoOperation(latestUndoableFileOperation.id)
+                }}
                 onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}
                 onHistory={openHistory}
