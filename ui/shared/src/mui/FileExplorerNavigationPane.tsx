@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import { Box, CircularProgress, Collapse, IconButton, ListItemButton, Typography } from '@mui/material'
+import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
+import {
+  Box,
+  CircularProgress,
+  Collapse,
+  Divider,
+  IconButton,
+  ListItemButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -25,6 +38,14 @@ export function XDriveFileExplorerNavigationPane({
   currentCrumbs,
   loadDirectories,
   onNavigate,
+  quickAccessEnabled = false,
+  quickAccessItems = [],
+  quickAccessLoading = false,
+  quickAccessBusyID = null,
+  currentQuickAccessPinned = false,
+  onNavigateQuickAccess,
+  onToggleCurrentQuickAccess,
+  onUnpinQuickAccess,
   onError,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
@@ -32,6 +53,14 @@ export function XDriveFileExplorerNavigationPane({
     parentID: number,
   ) => Promise<readonly XDriveFileExplorerNavigationTreeDirectory[]>
   onNavigate: (crumbs: XDriveFileExplorerNavigationTreeCrumb[]) => void | Promise<void>
+  quickAccessEnabled?: boolean
+  quickAccessItems?: readonly XDriveFileExplorerQuickAccessEntry[]
+  quickAccessLoading?: boolean
+  quickAccessBusyID?: number | null
+  currentQuickAccessPinned?: boolean
+  onNavigateQuickAccess?: (nodeID: number) => void | Promise<void>
+  onToggleCurrentQuickAccess?: () => void | Promise<void>
+  onUnpinQuickAccess?: (nodeID: number) => void | Promise<void>
   onError?: (error: unknown) => void
 }) {
   const [childrenByParent, setChildrenByParent] = useState<Record<string, XDriveFileExplorerNavigationTreeNode[]>>({})
@@ -204,11 +233,12 @@ export function XDriveFileExplorerNavigationPane({
     )
   }
 
+  const canPinCurrent = quickAccessEnabled && currentCrumbs.length > 1 && Boolean(onToggleCurrentQuickAccess)
+
   return (
     <Box
       data-xdrive-file-explorer-navigation-tree
       aria-label="文件夹导航"
-      role="tree"
       sx={{
         width: 232,
         height: '100%',
@@ -218,7 +248,90 @@ export function XDriveFileExplorerNavigationPane({
         bgcolor: 'background.paper',
       }}
     >
-      {rootNode ? renderNode(rootNode, 0) : null}
+      {quickAccessEnabled ? (
+        <Box component="nav" aria-label="快速访问" sx={{ px: 0.75, pb: 0.75 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30, pl: 0.75 }}>
+            <Typography variant="caption" fontWeight={700} color="text.secondary">
+              快速访问
+            </Typography>
+            {canPinCurrent ? (
+              <Tooltip title={currentQuickAccessPinned ? '取消固定当前文件夹' : '固定当前文件夹'}>
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label={currentQuickAccessPinned ? '取消固定当前文件夹' : '固定当前文件夹'}
+                    disabled={quickAccessBusyID !== null}
+                    onClick={() => { void onToggleCurrentQuickAccess?.() }}
+                    sx={{ width: 26, height: 26, borderRadius: 1 }}
+                  >
+                    <PushPinRoundedIcon
+                      sx={{
+                        fontSize: 16,
+                        transform: currentQuickAccessPinned ? 'none' : 'rotate(45deg)',
+                        opacity: currentQuickAccessPinned ? 1 : 0.65,
+                      }}
+                    />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            ) : null}
+          </Stack>
+
+          {quickAccessLoading && quickAccessItems.length === 0 ? (
+            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={14} />
+            </Box>
+          ) : quickAccessItems.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+              暂无固定文件夹
+            </Typography>
+          ) : (
+            <Stack spacing={0.25}>
+              {quickAccessItems.map((item) => (
+                <Box
+                  key={item.id}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) 28px',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ListItemButton
+                    selected={currentID === item.id}
+                    title={item.path || item.name}
+                    onClick={() => { void onNavigateQuickAccess?.(item.id) }}
+                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                  >
+                    <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />
+                    <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                      {item.name}
+                    </Typography>
+                  </ListItemButton>
+                  <Tooltip title="取消固定">
+                    <span>
+                      <IconButton
+                        size="small"
+                        aria-label={`取消固定 ${item.name}`}
+                        disabled={quickAccessBusyID !== null}
+                        onClick={() => { void onUnpinQuickAccess?.(item.id) }}
+                        sx={{ width: 26, height: 26, borderRadius: 1 }}
+                      >
+                        <CloseRoundedIcon sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+
+      {quickAccessEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
+
+      <Box role="tree" aria-label="文件夹树">
+        {rootNode ? renderNode(rootNode, 0) : null}
+      </Box>
     </Box>
   )
 }

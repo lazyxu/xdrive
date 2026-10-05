@@ -43,6 +43,7 @@ import type {
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveFileOperationType,
+  XDriveFileQuickAccessItem,
   XDriveUploadConflictPolicy,
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
@@ -804,6 +805,22 @@ export class XDriveApi {
     })
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
     return this.request<XDriveCloudFilesPage<Node>>(`/api/v1/nodes/${parentID}/children?${query.toString()}`)
+  }
+
+  fileQuickAccess() {
+    return this.request<XDriveFileQuickAccessItem<Node>[]>('/api/v1/file-quick-access')
+  }
+
+  pinFileQuickAccess(nodeID: number) {
+    return this.request<XDriveFileQuickAccessItem<Node>>(`/api/v1/file-quick-access/${nodeID}`, {
+      method: 'PUT',
+    })
+  }
+
+  unpinFileQuickAccess(nodeID: number) {
+    return this.request<void>(`/api/v1/file-quick-access/${nodeID}`, {
+      method: 'DELETE',
+    })
   }
 
   search(query: string, limit = 200, cursor = '') {

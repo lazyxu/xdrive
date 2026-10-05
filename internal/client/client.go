@@ -69,6 +69,13 @@ type SearchPage struct {
 	NextCursor string         `json:"next_cursor,omitempty"`
 }
 
+type FileQuickAccessItem struct {
+	Node     Node               `json:"node"`
+	Path     string             `json:"path"`
+	Crumbs   []SearchBreadcrumb `json:"crumbs"`
+	PinnedAt time.Time          `json:"pinned_at"`
+}
+
 type SearchOptions struct {
 	Query  string
 	Type   string
@@ -349,6 +356,34 @@ func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage,
 	var out SearchPage
 	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)
 	return out, err
+}
+
+func (c *Client) FileQuickAccess(ctx context.Context) ([]FileQuickAccessItem, error) {
+	var out []FileQuickAccessItem
+	err := c.json(ctx, http.MethodGet, "/api/v1/file-quick-access", nil, &out)
+	return out, err
+}
+
+func (c *Client) PinFileQuickAccess(ctx context.Context, nodeID uint64) (FileQuickAccessItem, error) {
+	var out FileQuickAccessItem
+	err := c.json(ctx, http.MethodPut, fmt.Sprintf("/api/v1/file-quick-access/%d", nodeID), nil, &out)
+	return out, err
+}
+
+func (c *Client) UnpinFileQuickAccess(ctx context.Context, nodeID uint64) error {
+	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-quick-access/%d", nodeID), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
 }
 
 func (c *Client) CreateDir(ctx context.Context, parentID uint64, name string) (Node, error) {

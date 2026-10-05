@@ -20,6 +20,7 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
+  useXDriveFileExplorerQuickAccess,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
@@ -58,6 +59,7 @@ export default function DesktopFileExplorer({
   archiveDownloadSupported = false,
   textPreviewSupported = false,
   previewStreamSupported = false,
+  quickAccessSupported = false,
   onError,
   onFeedback,
 }: {
@@ -83,6 +85,7 @@ export default function DesktopFileExplorer({
   archiveDownloadSupported?: boolean
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
+  quickAccessSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -173,6 +176,26 @@ export default function DesktopFileExplorer({
     }),
     [],
   )
+
+  const quickAccess = useXDriveFileExplorerQuickAccess<AgentCloudNode>({
+    enabled: quickAccessSupported,
+    loadItems: async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileQuickAccess()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    pinItem: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.cloudPinFileQuickAccess(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    unpinItem: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.cloudUnpinFileQuickAccess(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  })
 
   const {
     busy: uploadBusy,
@@ -698,6 +721,18 @@ export default function DesktopFileExplorer({
             currentCrumbs={crumbs}
             loadDirectories={loadTreeDirectories}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            quickAccessEnabled={quickAccessSupported}
+            quickAccessItems={quickAccess.items}
+            quickAccessLoading={quickAccess.loading}
+            quickAccessBusyID={quickAccess.busyID}
+            currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
+            onNavigateQuickAccess={(nodeID) => {
+              void quickAccess.navigate(nodeID, (nextCrumbs) => navigateTo(nextCrumbs))
+            }}
+            onToggleCurrentQuickAccess={() => {
+              if (current) void quickAccess.toggle(current.id)
+            }}
+            onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
             onError={(error) => onError(error instanceof Error ? error.message : String(error))}
           />
         )}

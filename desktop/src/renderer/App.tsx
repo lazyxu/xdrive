@@ -380,6 +380,8 @@ export default function App({
     agent.hello?.capabilities.includes('file-operation-undo') ?? false
   const fileOperationRedoSupported =
     agent.hello?.capabilities.includes('file-operation-redo') ?? false
+  const fileQuickAccessSupported =
+    agent.hello?.capabilities.includes('file-quick-access') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -1786,6 +1788,7 @@ export default function App({
               archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
+              quickAccessSupported: fileQuickAccessSupported,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

@@ -76,6 +76,7 @@ var desktopIPCCapabilities = []string{
 	"file-operation-conflict-resolution",
 	"file-operation-undo",
 	"file-operation-redo",
+	"file-quick-access",
 	"upload-conflict-preflight",
 	"upload-conflict-policy",
 	"server-update",
@@ -157,6 +158,9 @@ type desktopIPCController interface {
 	CloudRoot(context.Context) (client.Node, error)
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudListPage(context.Context, uint64, client.ChildrenOptions) (client.ChildrenPage, error)
+	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
+	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
+	CloudUnpinFileQuickAccess(context.Context, uint64) error
 	CloudCreateDir(context.Context, uint64, string) (client.Node, error)
 	CloudRename(context.Context, uint64, uint64, string) (client.Node, error)
 	CloudCopy(context.Context, uint64, uint64) (client.Node, error)
@@ -420,6 +424,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
+	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
+	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
+	mux.HandleFunc("POST /v1/cloud/quick-access/unpin", h.cloudUnpinFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/directories", h.cloudCreateDir)
 	mux.HandleFunc("PATCH /v1/cloud/nodes", h.cloudRename)
 	mux.HandleFunc("POST /v1/cloud/copy", h.cloudCopy)
@@ -870,6 +877,52 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
+func (h *desktopIPCHandler) cloudFileQuickAccess(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudFileQuickAccess(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudPinFileQuickAccess(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_quick_access", "id is required")
+		return
+	}
+	item, err := h.ctrl.CloudPinFileQuickAccess(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudUnpinFileQuickAccess(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_quick_access", "id is required")
+		return
+	}
+	if err := h.ctrl.CloudUnpinFileQuickAccess(r.Context(), input.ID); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *desktopIPCHandler) cloudCreateDir(w http.ResponseWriter, r *http.Request) {

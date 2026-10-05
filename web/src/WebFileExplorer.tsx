@@ -8,6 +8,7 @@ import {
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
+  useXDriveFileExplorerQuickAccess,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
 } from '@xdrive/ui/mui'
@@ -165,6 +166,13 @@ export default function WebFileExplorer({
     }),
     [api],
   )
+
+  const quickAccess = useXDriveFileExplorerQuickAccess<Node>({
+    loadItems: () => api.fileQuickAccess(),
+    pinItem: (nodeID) => api.pinFileQuickAccess(nodeID),
+    unpinItem: (nodeID) => api.unpinFileQuickAccess(nodeID),
+    onError,
+  })
 
   const {
     busy: fileOperationBusy,
@@ -413,6 +421,18 @@ export default function WebFileExplorer({
             currentCrumbs={crumbs}
             loadDirectories={loadTreeDirectories}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            quickAccessEnabled
+            quickAccessItems={quickAccess.items}
+            quickAccessLoading={quickAccess.loading}
+            quickAccessBusyID={quickAccess.busyID}
+            currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
+            onNavigateQuickAccess={(nodeID) => {
+              void quickAccess.navigate(nodeID, (nextCrumbs) => navigateTo(nextCrumbs))
+            }}
+            onToggleCurrentQuickAccess={() => {
+              if (current) void quickAccess.toggle(current.id)
+            }}
+            onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
             onError={onError}
           />
         )}

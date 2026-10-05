@@ -71,6 +71,7 @@ import {
   type AgentCloudUploadConflictPreflight,
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
+  type AgentCloudQuickAccessItem,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
   type AgentCloudVersion,
@@ -2153,6 +2154,27 @@ function registerIPCHandlers() {
       sort: sort as 'name' | 'updated' | 'size' | 'type',
       order: order as 'asc' | 'desc',
     })
+  }, false))
+  ipcMain.handle('agent:cloud-quick-access', () => runAgentAction<AgentCloudQuickAccessItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-quick-access')
+    return requireAgentClient().cloudFileQuickAccess()
+  }, false))
+  ipcMain.handle('agent:cloud-quick-access-pin', (_event, nodeID: unknown) => runAgentAction<AgentCloudQuickAccessItem>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-quick-access')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudPinFileQuickAccess(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-quick-access-unpin', (_event, nodeID: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-quick-access')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudUnpinFileQuickAccess(nodeID)
   }, false))
   ipcMain.handle('agent:cloud-create-directory', (_event, parentID: unknown, name: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

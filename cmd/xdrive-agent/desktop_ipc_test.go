@@ -288,6 +288,26 @@ func (f *fakeDesktopIPCController) CloudListPage(_ context.Context, _ uint64, op
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error) {
+	return []client.FileQuickAccessItem{{
+		Node:   client.Node{ID: 12, Name: "Pinned", Type: "dir", Revision: 1},
+		Path:   "Pinned",
+		Crumbs: []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: 12, Name: "Pinned"}},
+	}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudPinFileQuickAccess(_ context.Context, nodeID uint64) (client.FileQuickAccessItem, error) {
+	return client.FileQuickAccessItem{
+		Node:   client.Node{ID: nodeID, Name: "Pinned", Type: "dir", Revision: 1},
+		Path:   "Pinned",
+		Crumbs: []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: nodeID, Name: "Pinned"}},
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUnpinFileQuickAccess(context.Context, uint64) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudCreateDir(_ context.Context, parentID uint64, name string) (client.Node, error) {
 	f.cloudCreateParent, f.cloudCreateName = parentID, name
 	return f.cloudCreatedDir, f.err
@@ -886,6 +906,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-operation-redo") {
 		t.Fatalf("hello missing file-operation redo capability: %+v", hello.Capabilities)
+	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "file-quick-access") {
+		t.Fatalf("hello missing file quick access capability: %+v", hello.Capabilities)
 	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
 		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)

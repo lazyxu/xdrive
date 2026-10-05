@@ -146,6 +146,36 @@ func (c *agentController) CloudListPage(ctx context.Context, parentID uint64, op
 	return cli.ListPage(ctx, parentID, options)
 }
 
+func (c *agentController) CloudFileQuickAccess(ctx context.Context) ([]client.FileQuickAccessItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileQuickAccess(ctx)
+}
+
+func (c *agentController) CloudPinFileQuickAccess(ctx context.Context, nodeID uint64) (client.FileQuickAccessItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileQuickAccessItem{}, err
+	}
+	if nodeID == 0 {
+		return client.FileQuickAccessItem{}, fmt.Errorf("node id is required")
+	}
+	return cli.PinFileQuickAccess(ctx, nodeID)
+}
+
+func (c *agentController) CloudUnpinFileQuickAccess(ctx context.Context, nodeID uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	if nodeID == 0 {
+		return fmt.Errorf("node id is required")
+	}
+	return cli.UnpinFileQuickAccess(ctx, nodeID)
+}
+
 func (c *agentController) CloudCreateDir(ctx context.Context, parentID uint64, name string) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

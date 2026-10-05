@@ -634,6 +634,13 @@ export type AgentCloudSearchPage = {
   next_cursor?: string
 }
 
+export type AgentCloudQuickAccessItem = {
+  node: AgentCloudNode
+  path: string
+  crumbs: AgentCloudCrumb[]
+  pinned_at: string
+}
+
 export type AgentDiagnosticCheck = {
   name: string
   status: 'PASS' | 'WARN' | 'FAIL'
@@ -1131,6 +1138,18 @@ export class AgentIPCClient {
     })
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
     return this.request<AgentCloudChildrenPage>('GET', `/v1/cloud/children?${query.toString()}`)
+  }
+
+  cloudFileQuickAccess() {
+    return this.request<AgentCloudQuickAccessItem[]>('GET', '/v1/cloud/quick-access')
+  }
+
+  cloudPinFileQuickAccess(nodeID: number) {
+    return this.request<AgentCloudQuickAccessItem>('POST', '/v1/cloud/quick-access/pin', { id: nodeID })
+  }
+
+  cloudUnpinFileQuickAccess(nodeID: number) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/quick-access/unpin', { id: nodeID })
   }
 
   cloudCreateDirectory(parentID: number, name: string) {
