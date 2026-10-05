@@ -149,10 +149,15 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /derived_resources\?: MediaDerivedResource\[\]/)
   assert.match(sharedModels, /place\?: string/)
   assert.match(sharedModels, /export interface MediaPlaceFacet/)
+  assert.match(sharedModels, /export interface MediaSuggestedPerson/)
+  assert.match(sharedModels, /face_count: number/)
   assert.match(sharedModels, /attribution\?: string/)
   assert.match(sharedModels, /attribution_url\?: string/)
   assert.match(sharedGallery, /按本地 GPS 坐标近似聚合，不使用在线地理服务/)
   assert.match(sharedGallery, /地点名称来自本地 GeoNames 数据/)
+  assert.match(sharedGallery, /人物建议/)
+  assert.match(sharedGallery, /自动聚类建议/)
+  assert.match(sharedGallery, /尚未写入手工人物标签/)
   assert.match(sharedGallery, /place\.attribution/)
   assert.match(sharedGallery, /地点/)
   assert.match(sharedGallery, /RAW 组合/)
@@ -188,7 +193,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -196,6 +201,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.mediaItems(',
     'api.mediaAlbums()',
     'api.mediaPlaces(',
+    'api.mediaSuggestedPeople(',
+    'api.mediaSuggestedPersonItems(',
     'api.mediaAlbumItems(',
     'api.createMediaAlbum(',
     'api.createSmartMediaAlbum(',
@@ -220,6 +227,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaItems:',
     'getMediaAlbums:',
     'getMediaPlaces:',
+    'getMediaSuggestedPeople:',
+    'getMediaSuggestedPersonItems:',
     'getMediaAlbumItems:',
     'createMediaAlbum:',
     'renameMediaAlbum:',
@@ -244,6 +253,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaItems(',
     'mediaAlbums()',
     'mediaPlaces(',
+    'mediaSuggestedPeople(',
+    'mediaSuggestedPersonItems(',
     'mediaAlbumItems(',
     'createMediaAlbum(name:',
     'renameMediaAlbum(albumID:',
@@ -268,6 +279,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/places'))
+  assert.ok(desktopIPC.includes('GET /v1/media/people/suggestions'))
+  assert.ok(desktopIPC.includes('GET /v1/media/people/suggestion-items'))
   assert.ok(desktopIPC.includes('POST /v1/media/albums'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/album'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album'))
@@ -286,6 +299,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.match(desktopAdapter, /cloudFilePreviewURL/)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
+  assert.match(desktopAdapter, /getMediaSuggestedPeople/)
+  assert.match(desktopAdapter, /getMediaSuggestedPersonItems/)
   assert.match(desktopAdapter, /getMediaAlbumItems\([\s\S]*query\)/)
   assert.match(desktopAdapter, /setPeople/)
   assert.match(desktopAdapter, /setDescription/)

@@ -369,3 +369,11 @@ export interface MediaPlaceFacet {
   attribution?: string
   attribution_url?: string
 }
+
+export interface MediaSuggestedPerson {
+  id: string
+  face_count: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}

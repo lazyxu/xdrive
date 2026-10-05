@@ -205,6 +205,8 @@ type desktopIPCController interface {
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
+	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
+	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudCreateMediaAlbum(context.Context, string) (client.MediaAlbum, error)
 	CloudRenameMediaAlbum(context.Context, string, uint64, string) (client.MediaAlbum, error)
 	CloudDeleteMediaAlbum(context.Context, string, uint64) error
@@ -474,6 +476,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
+	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
+	mux.HandleFunc("GET /v1/media/people/suggestion-items", h.mediaSuggestedPersonItems)
 	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
 	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
@@ -1733,6 +1737,79 @@ func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) 
 		limit = value
 	}
 	items, err := h.ctrl.CloudMediaPlaces(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaSuggestedPeople(w http.ResponseWriter, r *http.Request) {
+	limit := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_media_suggested_people_limit",
+				"limit must be between 1 and 100",
+			)
+			return
+		}
+		limit = value
+	}
+	items, err := h.ctrl.CloudMediaSuggestedPeople(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func desktopIPCValidSuggestedPersonID(value string) bool {
+	value = strings.TrimSpace(value)
+	const prefix = "auto:v1:"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	raw := strings.TrimPrefix(value, prefix)
+	if len(raw) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(raw)
+	return err == nil
+}
+
+func (h *desktopIPCHandler) mediaSuggestedPersonItems(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	personID := strings.TrimSpace(r.URL.Query().Get("person_id"))
+	if !desktopIPCValidSuggestedPersonID(personID) {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_suggested_person",
+			"valid person_id is required",
+		)
+		return
+	}
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudMediaSuggestedPersonItems(
+		r.Context(),
+		personID,
+		query,
+		limit,
+		offset,
+	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

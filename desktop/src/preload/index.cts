@@ -24,6 +24,30 @@ const agent = Object.freeze({
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
+  getMediaSuggestedPeople: (limit = 24) =>
+    ipcRenderer.invoke('agent:get-media-suggested-people', limit),
+  getMediaSuggestedPersonItems: (
+    personID: string,
+    limit = 100,
+    offset = 0,
+    query: {
+      search?: string
+      asset_kind?: string
+      captured_from?: string
+      captured_to?: string
+      has_location?: boolean
+      favorite?: boolean
+      tag?: string
+      person?: string
+      place?: string
+    } = {},
+  ) => ipcRenderer.invoke(
+    'agent:get-media-suggested-person-items',
+    personID,
+    limit,
+    offset,
+    query,
+  ),
   createMediaAlbum: (name: string) => ipcRenderer.invoke('agent:create-media-album', name),
   renameMediaAlbum: (albumID: string, revision: number, name: string) => ipcRenderer.invoke('agent:rename-media-album', albumID, revision, name),
   deleteMediaAlbum: (albumID: string, revision: number) => ipcRenderer.invoke('agent:delete-media-album', albumID, revision),

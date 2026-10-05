@@ -1162,6 +1162,36 @@ func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]cl
 	return cli.MediaPlaces(ctx, limit)
 }
 
+func (c *agentController) CloudMediaSuggestedPeople(
+	ctx context.Context,
+	limit int,
+) ([]client.MediaSuggestedPerson, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaSuggestedPeople(ctx, limit)
+}
+
+func (c *agentController) CloudMediaSuggestedPersonItems(
+	ctx context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaSuggestedPersonItemsQuery(
+		ctx,
+		personID,
+		query,
+		limit,
+		offset,
+	)
+}
+
 func (c *agentController) CloudCreateMediaAlbum(
 	ctx context.Context,
 	name string,

@@ -112,6 +112,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)
+	authed.GET("/media/people/suggestions", s.listMediaSuggestedPeople)
+	authed.GET("/media/people/suggestions/:clusterID/items", s.listMediaSuggestedPersonItems)
 	authed.POST("/media/albums", s.createMediaAlbum)
 	authed.PATCH("/media/albums/:albumID", s.renameMediaAlbum)
 	authed.DELETE("/media/albums/:albumID", s.deleteMediaAlbum)
