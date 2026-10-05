@@ -16,6 +16,25 @@ export interface XDriveTaskCenterClearHistory {
   onClear: () => void
 }
 
+export interface XDriveTaskCenterPageProps {
+  transfers: XDriveTransferTask[]
+  operations: XDriveFileOperation[]
+  subtitle?: ReactNode
+  pageActions?: ReactNode
+  clearHistory?: XDriveTaskCenterClearHistory
+  transferRetryingID?: string
+  transferRetryDisabled?: boolean
+  operationCancellingID?: string
+  operationRetryingID?: string
+  operationResolvingID?: string
+  operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
+  operationDisabled?: boolean
+  onRetryTransfer?: (id: string) => void
+  onCancelOperation?: (id: string) => void
+  onRetryOperation?: (id: string) => void
+  onResolveOperationConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
+}
+
 export function XDriveTaskCenterPage({
   transfers,
   operations,
@@ -33,24 +52,7 @@ export function XDriveTaskCenterPage({
   onCancelOperation,
   onRetryOperation,
   onResolveOperationConflict,
-}: {
-  transfers: XDriveTransferTask[]
-  operations: XDriveFileOperation[]
-  subtitle?: ReactNode
-  pageActions?: ReactNode
-  clearHistory?: XDriveTaskCenterClearHistory
-  transferRetryingID?: string
-  transferRetryDisabled?: boolean
-  operationCancellingID?: string
-  operationRetryingID?: string
-  operationResolvingID?: string
-  operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
-  operationDisabled?: boolean
-  onRetryTransfer?: (id: string) => void
-  onCancelOperation?: (id: string) => void
-  onRetryOperation?: (id: string) => void
-  onResolveOperationConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
-}) {
+}: XDriveTaskCenterPageProps) {
   const actions = pageActions ?? (clearHistory ? (
     <XDriveActionButton
       disabled={clearHistory.disabled || clearHistory.loading}

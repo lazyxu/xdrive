@@ -61,6 +61,7 @@ import {
   XDriveSourceManager,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
+  useXDriveTaskCenterController,
 } from '@xdrive/ui/mui'
 import type {
   MediaGalleryDataSource,
@@ -76,7 +77,6 @@ import {
   xDriveFileExplorerDeleteOperationPlan,
   xDriveFileExplorerDirectoryPageTransition,
   xDriveFileExplorerPageRequestOptions,
-  xDriveFileOperationActive,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
@@ -417,18 +417,7 @@ export default function App({
   const fileOperationConflictResolveSupported =
     agent.hello?.capabilities.includes('file-operation-conflict-resolution') ?? false
 
-  const {
-    busy: fileOperationActionBusy,
-    cancellingID: fileOperationCancellingID,
-    retryingID: fileOperationRetryingID,
-    resolvingID: fileOperationResolvingID,
-    resolvingPolicy: fileOperationResolvingPolicy,
-    clearHistoryLoading: fileOperationClearHistoryLoading,
-    cancelOperation: cancelCloudFileOperation,
-    retryOperation: retryCloudFileOperation,
-    resolveConflict: resolveCloudFileOperationConflict,
-    clearHistory: clearTaskHistory,
-  } = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
+  const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
       const result = await window.xdriveDesktop.agent.cloudCancelFileOperation(id)
       if (!result.ok) throw new Error(result.error.message)
@@ -465,11 +454,14 @@ export default function App({
     onFeedback: setNotice,
   })
 
-  const activeTransfers = transfers.transfers.filter((item) => item.state === 'running' || item.state === 'retrying')
-  const activeFileOperations = cloudFileOperations.filter((item) => xDriveFileOperationActive(item.status))
-  const hasTaskHistory =
-    transfers.transfers.some((item) => item.state === 'completed' || item.state === 'failed') ||
-    cloudFileOperations.some((item) => !xDriveFileOperationActive(item.status))
+  const taskCenter = useXDriveTaskCenterController({
+    transfers: transfers.transfers,
+    operations: cloudFileOperations,
+    operationActions: fileOperationActions,
+    externalBusy: Boolean(busy),
+    conflictResolutionEnabled: fileOperationConflictResolveSupported,
+  })
+
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
@@ -537,10 +529,10 @@ export default function App({
     if (status?.last_error) return { label: '同步异常', tone: 'bad' }
     if (status?.has_conflict) return { label: `${status.conflict_count || 0} 个冲突`, tone: 'warning' }
     if (status?.paused) return { label: '同步已暂停', tone: 'warning' }
-    if (activeTransfers.length > 0) return { label: `正在同步 · ${activeTransfers.length}`, tone: 'busy' }
+    if (taskCenter.activeTransferCount > 0) return { label: `正在同步 · ${taskCenter.activeTransferCount}`, tone: 'busy' }
     return { label: status?.sync_status || '同步正常', tone: 'good' }
   }, [
-    activeTransfers.length,
+    taskCenter.activeTransferCount,
     status?.conflict_count,
     status?.has_conflict,
     status?.last_error,
@@ -1941,7 +1933,7 @@ export default function App({
         navAriaLabel="桌面版功能区"
         className="sidebar"
         selected={view}
-        transferBadge={(activeTransfers.length + activeFileOperations.length) || undefined}
+        transferBadge={taskCenter.badge}
         showLocalStorage
         sections={desktopSidebarSections}
         storageSummary={cloudQuota ? {
@@ -2093,27 +2085,11 @@ export default function App({
 
         {view === 'transfers' && (
           <XDriveTaskCenterPage
-            transfers={transfers.transfers}
-            operations={cloudFileOperations}
+            {...taskCenter.pageProps}
             subtitle="统一查看文件操作、上传、下载、本地可用性与历史状态。"
-            clearHistory={{
-              disabled: !hasTaskHistory || Boolean(busy) || fileOperationActionBusy,
-              loading: fileOperationClearHistoryLoading,
-              onClear: () => { void clearTaskHistory() },
-            }}
             transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            transferRetryDisabled={Boolean(busy) || fileOperationClearHistoryLoading}
-            operationCancellingID={fileOperationCancellingID}
-            operationRetryingID={fileOperationRetryingID}
-            operationResolvingID={fileOperationResolvingID}
-            operationResolvingPolicy={fileOperationResolvingPolicy}
-            operationDisabled={fileOperationActionBusy}
+            transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
             onRetryTransfer={(id) => { void retryTransfer(id) }}
-            onCancelOperation={(id) => { void cancelCloudFileOperation(id) }}
-            onRetryOperation={(id) => { void retryCloudFileOperation(id) }}
-            onResolveOperationConflict={fileOperationConflictResolveSupported
-              ? (id, policy) => { void resolveCloudFileOperationConflict(id, policy) }
-              : undefined}
           />
         )}
 

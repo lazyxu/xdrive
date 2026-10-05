@@ -41,6 +41,7 @@ import {
   useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
+  useXDriveTaskCenterController,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
@@ -71,7 +72,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveFileOperationActive } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -646,18 +647,7 @@ function FileManager({
     },
   })
 
-  const {
-    busy: fileOperationActionBusy,
-    cancellingID: fileOperationCancellingID,
-    retryingID: fileOperationRetryingID,
-    resolvingID: fileOperationResolvingID,
-    resolvingPolicy: fileOperationResolvingPolicy,
-    clearHistoryLoading: fileOperationClearHistoryLoading,
-    cancelOperation: cancelFileOperation,
-    retryOperation: retryFileOperation,
-    resolveConflict: resolveFileOperationConflict,
-    clearHistory: clearTaskHistory,
-  } = useXDriveFileOperationActions<XDriveFileOperation>({
+  const fileOperationActions = useXDriveFileOperationActions<XDriveFileOperation>({
     cancelOperation: (id) => api.cancelFileOperation(id),
     retryOperation: (id) => api.retryFileOperation(id),
     resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
@@ -667,6 +657,12 @@ function FileManager({
     refreshOperations: refreshFileOperations,
     onError: handleError,
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
+  })
+
+  const taskCenter = useXDriveTaskCenterController({
+    transfers,
+    operations: fileOperations,
+    operationActions: fileOperationActions,
   })
 
   useEffect(() => {
@@ -973,7 +969,7 @@ function FileManager({
           navAriaLabel="网页端功能区导航"
           responsive
           selected={appView}
-          transferBadge={(transfers.filter((item) => item.state === 'running' || item.state === 'retrying').length + fileOperations.filter((item) => xDriveFileOperationActive(item.status)).length) || undefined}
+          transferBadge={taskCenter.badge}
           sections={webSidebarSections}
           storageSummary={quota ? {
             usedBytes: quota.physical_used_bytes,
@@ -1035,26 +1031,7 @@ function FileManager({
             onError={handleError}
           />
         ) : appView === 'transfers' ? (
-          <XDriveTaskCenterPage
-            transfers={transfers}
-            operations={fileOperations}
-            clearHistory={{
-              disabled: (
-                !transfers.some((item) => item.state === 'completed' || item.state === 'failed') &&
-                !fileOperations.some((item) => !xDriveFileOperationActive(item.status))
-              ) || fileOperationActionBusy,
-              loading: fileOperationClearHistoryLoading,
-              onClear: () => { void clearTaskHistory() },
-            }}
-            operationCancellingID={fileOperationCancellingID}
-            operationRetryingID={fileOperationRetryingID}
-            operationResolvingID={fileOperationResolvingID}
-            operationResolvingPolicy={fileOperationResolvingPolicy}
-            operationDisabled={fileOperationActionBusy}
-            onCancelOperation={(id) => { void cancelFileOperation(id) }}
-            onRetryOperation={(id) => { void retryFileOperation(id) }}
-            onResolveOperationConflict={(id, policy) => { void resolveFileOperationConflict(id, policy) }}
-          />
+          <XDriveTaskCenterPage {...taskCenter.pageProps} />
         ) : appView === 'cloud-storage' ? (
           <XDriveCloudStoragePage source={cloudStorageSource} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (
