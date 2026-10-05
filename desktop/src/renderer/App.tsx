@@ -63,6 +63,7 @@ import {
   XDriveStatusBadge,
   XDriveSourceManager,
   useXDriveCloudFilesController,
+  useXDriveFileExplorerDeleteController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
@@ -77,7 +78,6 @@ import type {
 import {
   formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
-  xDriveFileExplorerDeleteOperationPlan,
   xDriveLoginCredentialsReady,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
@@ -412,11 +412,35 @@ export default function App({
     onFeedback: setNotice,
   })
 
+  const {
+    busy: deleteToTrashBusy,
+    remove: removeCloudNode,
+    removeMany: removeCloudNodes,
+  } = useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>({
+    submitOperation: (operation, items) => {
+      setError('')
+      return window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)
+    },
+    onQueued: rememberCloudFileOperation,
+    confirmationIntent: 'warning',
+    requestConfirmation: (confirmation) => requestConfirmation(
+      confirmation.title,
+      confirmation.description,
+      confirmation.confirmLabel,
+      confirmation.run,
+      confirmation.intent === 'danger' ? 'error' : 'warning',
+    ),
+    onFeedback: setNotice,
+    onError: (deleteError) => setError(
+      deleteError instanceof Error ? deleteError.message : String(deleteError),
+    ),
+  })
+
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
     operations: cloudFileOperations,
     operationActions: fileOperationActions,
-    externalBusy: Boolean(busy),
+    externalBusy: Boolean(busy) || deleteToTrashBusy,
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
   })
 
@@ -954,66 +978,6 @@ export default function App({
   }
 
   const openCloudTrash = () => setCloudTrashOpen(true)
-
-  const removeCloudNode = (node: AgentCloudNode) => {
-    const plan = xDriveFileExplorerDeleteOperationPlan([node])
-    if (plan.count === 0) return
-    requestConfirmation(
-      `将“${node.name}”移到回收站？`,
-      node.type === 'dir'
-        ? '该文件夹及其中的内容会从云端文件列表中移除，之后仍可从回收站恢复。'
-        : '该文件会从云端文件列表中移除，之后仍可从回收站恢复。',
-      '移到回收站',
-      async () => {
-        setBusy(`cloud-delete-${node.id}`)
-        setError('')
-        try {
-          const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-            plan.operation,
-            plan.items,
-          )
-          if (!result.ok) {
-            setError(result.error.message)
-            return
-          }
-          rememberCloudFileOperation(result.data)
-          setNotice(plan.message)
-        } finally {
-          setBusy('')
-        }
-      },
-      'warning',
-    )
-  }
-
-  const removeCloudNodes = (nodes: AgentCloudNode[]) => {
-    const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
-    if (plan.count === 0) return
-    requestConfirmation(
-      `将所选 ${plan.count} 个项目移到回收站？`,
-      '所选文件和文件夹会从云端文件列表中移除，之后仍可从回收站恢复。',
-      '移到回收站',
-      async () => {
-        setBusy('cloud-delete-many')
-        setError('')
-        try {
-          const result = await window.xdriveDesktop.agent.cloudCreateFileOperation(
-            plan.operation,
-            plan.items,
-          )
-          if (!result.ok) {
-            setError(result.error.message)
-            return
-          }
-          rememberCloudFileOperation(result.data)
-          setNotice(plan.message)
-        } finally {
-          setBusy('')
-        }
-      },
-      'warning',
-    )
-  }
 
   const openCloud历史版本 = (node: AgentCloudNode, crumbs = cloudCrumbs) => {
     setCloudHistoryNode(node)

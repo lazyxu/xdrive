@@ -35,6 +35,7 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
+  useXDriveFileExplorerDeleteController,
   useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
@@ -68,7 +69,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -550,6 +551,17 @@ function FileManager({
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
   })
 
+  const {
+    remove,
+    removeMany,
+  } = useXDriveFileExplorerDeleteController<Node, XDriveFileOperation>({
+    submitOperation: (operation, items) => api.createFileOperation(operation, items),
+    onQueued: rememberFileOperation,
+    requestConfirmation: (confirmation) => setConfirmAction(confirmation),
+    onFeedback: (message) => setFeedback({ tone: 'good', message }),
+    onError: handleError,
+  })
+
   const taskCenter = useXDriveTaskCenterController({
     transfers,
     operations: fileOperations,
@@ -741,40 +753,6 @@ function FileManager({
     if (!current) return
     await api.createDirectory(current.id, name)
     await loadDirectory(current.id)
-  }
-
-  const remove = (node: Node) => {
-    const plan = xDriveFileExplorerDeleteOperationPlan([node])
-    if (plan.count === 0) return
-    setConfirmAction({
-      title: `将 ${node.name} 移到回收站？`,
-      description: node.type === 'dir'
-        ? '该文件夹及其中的全部内容会从同步文件夹中移除，但之后仍可恢复。'
-        : '该文件会从同步文件夹中移除，但之后仍可恢复。',
-      confirmLabel: '移到回收站',
-      intent: 'danger',
-      run: async () => {
-        const operation = await api.createFileOperation(plan.operation, plan.items)
-        rememberFileOperation(operation)
-        setFeedback({ tone: 'good', message: plan.message })
-      },
-    })
-  }
-
-  const removeMany = (nodes: Node[]) => {
-    const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
-    if (plan.count === 0) return
-    setConfirmAction({
-      title: `将所选 ${plan.count} 个项目移到回收站？`,
-      description: '所选文件和文件夹会从同步文件夹中移除，但之后仍可从回收站恢复。',
-      confirmLabel: '移到回收站',
-      intent: 'danger',
-      run: async () => {
-        const operation = await api.createFileOperation(plan.operation, plan.items)
-        rememberFileOperation(operation)
-        setFeedback({ tone: 'good', message: plan.message })
-      },
-    })
   }
 
   const openTrash = () => setTrashOpen(true)

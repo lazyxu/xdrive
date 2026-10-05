@@ -17,6 +17,7 @@ const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 
 const styles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const operationController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts'), 'utf8')
+const deleteController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerDeleteController.ts'), 'utf8')
 const uploadController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerUploadController.ts'), 'utf8')
 
 test('Desktop files workspace consumes the shared FileExplorer', () => {
@@ -40,8 +41,9 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer operation: ${token}`)
   }
-  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Desktop single delete must use the shared delete plan')
-  assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop delete action must enqueue a persistent operation')
+  assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete flow must use the shared delete-to-trash controller')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete controller must keep Agent submission local')
+  assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must own delete planning')
 })
 
 test('Desktop FileExplorer provides system-style navigation, search, and persistent view mode', () => {
@@ -160,31 +162,26 @@ test('Desktop FileExplorer queues copy/cut/paste through the shared operation co
   assert.equal(explorer.includes('const plan = planPaste(current.id)'), false, 'Desktop must not execute paste planning locally')
 })
 
-test('Desktop FileExplorer supports bulk download and delete', () => {
+test('Desktop FileExplorer supports bulk download and shared delete-to-trash orchestration', () => {
   assert.ok(explorer.includes('async function downloadSelected(selected: XDriveFileExplorerItem[]) {'), 'Desktop bulk download helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop bulk download must use shared download planning')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)'), 'Desktop bulk download bridge is missing')
   assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
   assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
-  assert.ok(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), 'Desktop bulk delete confirmation flow is missing')
-  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must use the shared delete plan')
-  assert.ok(app.includes('plan.operation,\n            plan.items,'), 'Desktop bulk delete must enqueue one persistent file operation')
-  assert.ok(app.includes('rememberCloudFileOperation(result.data)'), 'Desktop bulk delete must seed task state immediately')
+  assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete confirmation and queue flow must be shared')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete transport must stay local to Agent IPC')
+  assert.ok(app.includes('onQueued: rememberCloudFileOperation'), 'Desktop delete must seed task state immediately')
+  assert.ok(app.includes("confirmationIntent: 'warning'"), 'Desktop delete confirmation must preserve its warning intent')
+  assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must own delete planning')
 })
 
-
-test('Desktop single-item delete queues the same persistent delete operation as bulk delete', () => {
-  const start = app.indexOf('const removeCloudNode = (node: AgentCloudNode) => {')
-  const end = app.indexOf('\n  const removeCloudNodes =', start)
-  assert.ok(start >= 0 && end > start, 'Desktop single-delete handler boundaries are missing')
-  const body = app.slice(start, end)
-  assert.ok(body.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Desktop single delete must use the shared delete plan')
-  assert.ok(body.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop single delete must enqueue a persistent operation')
-  assert.ok(body.includes('rememberCloudFileOperation(result.data)'), 'Desktop single delete must seed Task Center state immediately')
-  assert.ok(body.includes('setNotice(plan.message)'), 'Desktop single delete must use queued-operation feedback')
-  assert.equal(body.includes('cloudDelete('), false, 'Desktop single delete must not bypass Task Center through the legacy synchronous IPC')
-  assert.equal(body.includes('refreshCloudQuota()'), false, 'Desktop single delete must rely on terminal operation quota refresh')
-  assert.equal(body.includes('loadCloudDirectory('), false, 'Desktop single delete must rely on terminal operation directory refresh')
+test('Desktop single-item delete reuses the shared bulk delete path', () => {
+  assert.ok(deleteController.includes('const remove = useCallback((node: TNode) => {'), 'shared delete controller must expose single-item delete')
+  assert.ok(deleteController.includes('requestDelete([node])'), 'Desktop single delete must reuse shared delete confirmation and queue orchestration')
+  assert.ok(deleteController.includes('removeMany: requestDelete'), 'Desktop bulk delete must reuse the same shared path')
+  assert.equal(app.includes('const removeCloudNode = (node: AgentCloudNode) => {'), false, 'Desktop App must not keep a local single-delete orchestrator')
+  assert.equal(app.includes('const removeCloudNodes = (nodes: AgentCloudNode[]) => {'), false, 'Desktop App must not keep a local bulk-delete orchestrator')
+  assert.equal(app.includes('xDriveFileExplorerDeleteOperationPlan('), false, 'Desktop App must not plan delete operations locally')
 })
 
 test('Desktop FileExplorer supports shared internal drag operations and local external uploads', () => {
@@ -252,7 +249,9 @@ test('Desktop FileExplorer uses the shared Cloud Files controller for cursor-pag
   assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer must wire shared pagination dispatch near the scroll boundary')
 })
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
-  assert.ok(app.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must queue one shared delete plan')
+  assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop bulk delete must use one shared delete controller')
+  assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must queue one delete plan')
+  assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete must keep queued-operation transport local')
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use one shared queued-operation controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep queued-operation transport local')
   assert.ok(operationController.includes('planPaste(currentID)'), 'shared controller must preserve clipboard operation type for paste')
