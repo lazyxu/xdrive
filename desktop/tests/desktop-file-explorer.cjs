@@ -98,9 +98,10 @@ test('Desktop cloud capacity and CAS intelligence live in the shared Cloud Stora
 })
 
 test('Desktop Cloud Storage adapter owns cloud quota and storage intelligence refresh', () => {
-  assert.ok(app.includes('const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>'), 'Desktop is missing the shared Cloud Storage adapter')
-  assert.ok(app.includes("window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage adapter should retrieve cloud quota')
-  assert.ok(app.includes('window.xdriveDesktop.agent.cloudStorageStats()'), 'Cloud Storage adapter should retrieve CAS storage intelligence when supported')
+  assert.ok(app.includes('createXDriveCloudStorageDataSource({'), 'Desktop is missing the shared Cloud Storage data-source factory')
+  assert.ok(app.includes("getQuota: () => window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage port should retrieve cloud quota')
+  assert.ok(app.includes('getStats: storageStatsSupported'), 'Cloud Storage port should capability-gate CAS storage intelligence')
+  assert.ok(app.includes('onQuota: applyCloudQuota'), 'Cloud Storage factory should update shared Cloud Files quota state')
 })
 
 test('Desktop Files cloud lifecycle uses the shared controller without storage intelligence coupling', () => {
