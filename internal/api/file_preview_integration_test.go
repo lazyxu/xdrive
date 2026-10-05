@@ -129,16 +129,6 @@ func TestFilePreviewTicketRangeAndSafety(t *testing.T) {
 		t.Fatalf("etag=%q", got)
 	}
 
-	authedRange := requestWithHeaders(
-		t, router, http.MethodGet,
-		fmt.Sprintf("/api/v1/files/%d/preview", node.ID),
-		token, nil, http.StatusPartialContent,
-		map[string]string{"Range": "bytes=8-15"},
-	)
-	if !bytes.Equal(authedRange.Body.Bytes(), pdf[8:16]) {
-		t.Fatalf("authenticated range bytes=%q want=%q", authedRange.Body.Bytes(), pdf[8:16])
-	}
-
 	unsafe := meta.Node{
 		Name: "active.html", Type: meta.NodeTypeFile,
 		OwnerID: user.ID, Revision: 1,
