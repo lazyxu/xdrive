@@ -73,6 +73,10 @@ services:
     volumes:
       - "${XD_FILES_DATA_DIR:-../data/files}:/data"
       - "${XD_HOST_CONTROL_HOST_DIR:-../state/control}:/host-control"
+      - "${XD_PHOTO_FACE_RUNTIME_DIR:-../state/photo-face}:/run/xdrive-photo-face"
+    networks:
+      - default
+      - photo-intelligence
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -114,6 +118,38 @@ services:
     cpus: ${XD_WORKER_CPU_LIMIT:-0.50}
     pids_limit: ${XD_WORKER_PIDS_LIMIT:-128}
 
+  photo-face:
+    profiles: ["photo-intelligence"]
+    container_name: xdrive-photo-face
+    image: ${XD_PHOTO_FACE_IMAGE:-ghcr.io/lazyxu/xdrive-photo-face:latest}
+    user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
+    environment:
+      XD_FACE_SOCKET: /run/xdrive-photo-face/photo-face.sock
+      XD_FACE_ANALYZER_TOKEN: ${XD_PHOTO_FACE_ANALYZER_TOKEN:-}
+      XD_FACE_PREVIEW_ORIGIN: ${XD_PHOTO_FACE_PREVIEW_BASE_URL:-http://server:8080}
+    volumes:
+      - "${XD_PHOTO_FACE_RUNTIME_DIR:-../state/photo-face}:/run/xdrive-photo-face"
+    networks:
+      - photo-intelligence
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "/app/analyzer.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_PHOTO_FACE_MEMORY_LIMIT:-1g}
+    cpus: ${XD_PHOTO_FACE_CPU_LIMIT:-1.0}
+    pids_limit: ${XD_PHOTO_FACE_PIDS_LIMIT:-128}
+
   caddy:
     container_name: xdrive-caddy
     image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
@@ -149,3 +185,8 @@ services:
     mem_limit: ${XD_CADDY_MEMORY_LIMIT:-256m}
     cpus: ${XD_CADDY_CPU_LIMIT:-0.50}
     pids_limit: ${XD_CADDY_PIDS_LIMIT:-128}
+
+networks:
+  default:
+  photo-intelligence:
+    internal: true

@@ -118,6 +118,10 @@ grep -Fq "XD_FILES_DATA_DIR=$ROOTLESS_HOME/data/files" "$ENV"
 grep -Fq "XD_POSTGRES_DATA_DIR=$ROOTLESS_HOME/data/postgres" "$ENV"
 grep -Fq "XD_CADDY_DATA_DIR=$ROOTLESS_HOME/data/caddy/data" "$ENV"
 grep -Fq "XD_CADDY_CONFIG_DIR=$ROOTLESS_HOME/data/caddy/config" "$ENV"
+grep -Fq "XD_PHOTO_FACE_RUNTIME_DIR=$ROOTLESS_HOME/state/photo-face" "$ENV"
+grep -q '^COMPOSE_PROFILES=$' "$ENV"
+grep -q '^XD_PHOTO_FACE_ANALYZER_SOCKET=$' "$ENV"
+test -d "$ROOTLESS_HOME/state/photo-face"
 
 for dir in config bin data backups/snapshots backups/pre-upgrade backups/pre-restore logs state; do
   test -d "$ROOTLESS_HOME/$dir" || {
@@ -144,6 +148,16 @@ grep -q '^XD_SERVER_UID=65532$' "$ROOTFUL_HOME/config/.env"
 grep -q '^XD_SERVER_GID=65532$' "$ROOTFUL_HOME/config/.env"
 grep -Fq 'Docker mode: rootful (installer uid=1000, server uid=65532 gid=65532)' "$TMP/rootful.out"
 
+PHOTO_HOME="$TMP/photo-home"
+COMPOSE_PROFILES=photo-intelligence run_install "$PHOTO_HOME" 1 >"$TMP/photo.out" 2>"$TMP/photo.err"
+PHOTO_ENV="$PHOTO_HOME/config/.env"
+grep -q '^COMPOSE_PROFILES=photo-intelligence$' "$PHOTO_ENV"
+grep -q '^XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive-photo-face/photo-face.sock$' "$PHOTO_ENV"
+grep -q '^XD_PHOTO_FACE_PREVIEW_BASE_URL=http://server:8080$' "$PHOTO_ENV"
+grep -Eq '^XD_PHOTO_FACE_ANALYZER_TOKEN=[0-9a-f]{64}$' "$PHOTO_ENV"
+grep -Fq "XD_PHOTO_FACE_RUNTIME_DIR=$PHOTO_HOME/state/photo-face" "$PHOTO_ENV"
+test -d "$PHOTO_HOME/state/photo-face"
+
 set +e
 XD_WEB_PORT=80 run_install "$TMP/rootless-low-port" 1 >"$TMP/low.out" 2>"$TMP/low.err"
 low_status=$?
@@ -169,5 +183,8 @@ done
 
 grep -Fq '${XD_FILES_DATA_DIR:-../data/files}:/data' "$ROOT/deploy/docker-compose.yml"
 grep -Fq '${XD_POSTGRES_DATA_DIR:-../data/postgres}:/var/lib/postgresql/data' "$ROOT/deploy/docker-compose.yml"
+grep -Fq '${XD_PHOTO_FACE_RUNTIME_DIR:-../state/photo-face}:/run/xdrive-photo-face' "$ROOT/deploy/docker-compose.yml"
+grep -q 'profiles: \["photo-intelligence"\]' "$ROOT/deploy/docker-compose.yml"
+grep -q 'internal: true' "$ROOT/deploy/docker-compose.yml"
 
 echo "server rootless/non-root host-layout tests passed"

@@ -518,11 +518,14 @@ pull_service_json() {
 
   (
     printf '%s\n' "$BASHPID" > "$pid_file"
+    profile_args=()
     if [[ -n "$(env_value XD_DOMAIN)" ]]; then
-      exec docker compose --profile https --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
-    else
-      exec docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
+      profile_args+=(--profile https)
     fi
+    if compose_profile_enabled photo-intelligence; then
+      profile_args+=(--profile photo-intelligence)
+    fi
+    exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
     render_pull_json "$service" "$pid_file"
@@ -895,6 +898,14 @@ env_value() {
   printf '%s\n' "$value"
 }
 
+compose_profile_enabled() {
+  local needle="$1" profiles=""
+  profiles="$(printenv COMPOSE_PROFILES 2>/dev/null || true)"
+  [[ -n "$profiles" ]] || profiles="$(env_value COMPOSE_PROFILES)"
+  profiles=",${profiles//[[:space:]]/},"
+  [[ "$profiles" == *",$needle,"* ]]
+}
+
 configure_data_path() {
   local key="$1" default_path="$2" value
   value="$(printenv "$key" 2>/dev/null || true)"
@@ -1193,7 +1204,11 @@ EOF
 }
 
 rollback_compose() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  local -a profile_args=()
+  if compose_profile_enabled photo-intelligence; then
+    profile_args+=(--profile photo-intelligence)
+  fi
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 rollback_upgrade() {
@@ -1201,8 +1216,8 @@ rollback_upgrade() {
   local -a rollback_restore_args
   ROLLBACK_RUNNING=1
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
-  docker stop xdrive-caddy xdrive-server xdrive-worker xdrive-postgres \
-    xdrive-caddy-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
+  docker stop xdrive-caddy xdrive-photo-face xdrive-server xdrive-worker xdrive-postgres \
+    xdrive-caddy-1 xdrive-photo-face-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
     </dev/null >/dev/null 2>&1 || true
 
   echo "[xDrive] rollback: restoring previous deployment files..." >&2
@@ -1500,6 +1515,22 @@ configure_data_path XD_FILES_DATA_DIR "$DATA_DIR/files"
 configure_data_path XD_POSTGRES_DATA_DIR "$DATA_DIR/postgres"
 configure_data_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data"
 configure_data_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config"
+configure_data_path XD_PHOTO_FACE_RUNTIME_DIR "$STATE_DIR/photo-face"
+photo_face_runtime_dir="$(env_value XD_PHOTO_FACE_RUNTIME_DIR)"
+chgrp "$SERVER_GID" "$photo_face_runtime_dir" 2>/dev/null || true
+chmod 2770 "$photo_face_runtime_dir"
+ensure_env COMPOSE_PROFILES "${COMPOSE_PROFILES:-}"
+ensure_env XD_PHOTO_FACE_ANALYZER_SOCKET "${XD_PHOTO_FACE_ANALYZER_SOCKET:-}"
+ensure_env XD_PHOTO_FACE_ANALYZER_TOKEN "${XD_PHOTO_FACE_ANALYZER_TOKEN:-}"
+ensure_env XD_PHOTO_FACE_PREVIEW_BASE_URL "${XD_PHOTO_FACE_PREVIEW_BASE_URL:-http://server:8080}"
+if compose_profile_enabled photo-intelligence; then
+  if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_SOCKET)" ]]; then
+    set_env XD_PHOTO_FACE_ANALYZER_SOCKET "/run/xdrive-photo-face/photo-face.sock"
+  fi
+  if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_TOKEN)" ]]; then
+    set_env XD_PHOTO_FACE_ANALYZER_TOKEN "$(random_hex 32)"
+  fi
+fi
 ensure_env XD_POSTGRES_MEMORY_LIMIT "${XD_POSTGRES_MEMORY_LIMIT:-1g}"
 ensure_env XD_POSTGRES_CPU_LIMIT "${XD_POSTGRES_CPU_LIMIT:-1.0}"
 ensure_env XD_POSTGRES_PIDS_LIMIT "${XD_POSTGRES_PIDS_LIMIT:-256}"
@@ -1509,6 +1540,9 @@ ensure_env XD_SERVER_PIDS_LIMIT "${XD_SERVER_PIDS_LIMIT:-256}"
 ensure_env XD_CADDY_MEMORY_LIMIT "${XD_CADDY_MEMORY_LIMIT:-256m}"
 ensure_env XD_CADDY_CPU_LIMIT "${XD_CADDY_CPU_LIMIT:-0.50}"
 ensure_env XD_CADDY_PIDS_LIMIT "${XD_CADDY_PIDS_LIMIT:-128}"
+ensure_env XD_PHOTO_FACE_MEMORY_LIMIT "${XD_PHOTO_FACE_MEMORY_LIMIT:-1g}"
+ensure_env XD_PHOTO_FACE_CPU_LIMIT "${XD_PHOTO_FACE_CPU_LIMIT:-1.0}"
+ensure_env XD_PHOTO_FACE_PIDS_LIMIT "${XD_PHOTO_FACE_PIDS_LIMIT:-128}"
 ensure_env XD_LOG_MAX_SIZE "${XD_LOG_MAX_SIZE:-10m}"
 ensure_env XD_LOG_MAX_FILES "${XD_LOG_MAX_FILES:-5}"
 ensure_env XD_BACKUP_RETENTION_DAYS "${XD_BACKUP_RETENTION_DAYS:-7}"
@@ -1701,6 +1735,7 @@ stage 6 "install deployment files"
 # backed up successfully. Caddy now contains the exact CI-tested Web build.
 set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
+set_env XD_PHOTO_FACE_IMAGE "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
 unset_env XD_WEB_IMAGE
 unset_env XD_WEB_MEMORY_LIMIT
 unset_env XD_WEB_CPU_LIMIT
@@ -1720,11 +1755,19 @@ echo "Current terminal: run: source \"$SHELL_RC_PATH\""
 rm -rf "$STAGING_DIR"
 
 compose() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
+  local -a profile_args=()
+  if compose_profile_enabled photo-intelligence; then
+    profile_args+=(--profile photo-intelligence)
+  fi
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
 compose_with_stdin() {
-  docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
+  local -a profile_args=()
+  if compose_profile_enabled photo-intelligence; then
+    profile_args+=(--profile photo-intelligence)
+  fi
+  docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
 
 show_install_environment() {
@@ -1811,6 +1854,9 @@ else
 fi
 
 pull_services=(postgres server caddy)
+if compose_profile_enabled photo-intelligence; then
+  pull_services+=(photo-face)
+fi
 for pull_service in "${pull_services[@]}"; do
   pull_service_with_retry "$pull_service"
 done
@@ -1821,7 +1867,11 @@ rm -f "$PULL_LOG"
 if [[ "$UPGRADE_EXISTING" == "1" ]]; then
   DATABASE_ROLLBACK_REQUIRED=1
 fi
-compose up -d --remove-orphans postgres server
+initial_services=(postgres server)
+if compose_profile_enabled photo-intelligence; then
+  initial_services+=(photo-face)
+fi
+compose up -d --remove-orphans "${initial_services[@]}"
 
 stage 8 "verify service health"
 healthy=0
@@ -1840,7 +1890,25 @@ fi
 
 # Keep data rollback armed through all stage-8 validation. Caddy contains the
 # exact CI-tested Web build and proxies /api directly to the server.
-compose up -d --remove-orphans worker caddy
+edge_services=(worker caddy)
+compose up -d --remove-orphans "${edge_services[@]}"
+
+if compose_profile_enabled photo-intelligence; then
+  face_healthy=0
+  for _ in $(seq 1 30); do
+    if compose exec -T photo-face python /app/analyzer.py --healthcheck >/dev/null 2>&1; then
+      face_healthy=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$face_healthy" != "1" ]]; then
+    echo "xDrive Photo Intelligence face analyzer did not become healthy. Recent logs:" >&2
+    compose logs --tail=100 server photo-face >&2 || true
+    exit 1
+  fi
+fi
+
 edge_healthy=0
 for _ in $(seq 1 30); do
   if compose exec -T caddy wget -q -O /dev/null http://127.0.0.1/api/v1/readyz >/dev/null 2>&1; then

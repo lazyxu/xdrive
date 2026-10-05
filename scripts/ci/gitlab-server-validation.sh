@@ -81,6 +81,7 @@ bash -n scripts/ci/export-docker-image.sh
 bash -n scripts/ci/import-docker-image.sh
 bash -n scripts/ci/gitlab-server-image.sh
 bash -n scripts/ci/gitlab-caddy-image.sh
+bash -n scripts/ci/test-photo-face-image.sh
 bash -n scripts/ci/gitlab-server-backup.sh
 bash -n scripts/ci/gitlab-go-windows.sh
 bash -n scripts/ci/gitlab-package-windows-client.sh
@@ -100,6 +101,10 @@ XD_HTTPS_PORT=8443 \
 ALIYUN_ACCESS_KEY_ID=ci-key \
 ALIYUN_ACCESS_KEY_SECRET=ci-secret \
   docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+COMPOSE_PROFILES=photo-intelligence \
+XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive-photo-face/photo-face.sock \
+XD_PHOTO_FACE_RUNTIME_DIR=/tmp/xdrive-photo-face-runtime \
+  docker compose --profile photo-intelligence -f deploy/docker-compose.yml config >/dev/null
 
 generated="$(mktemp)"
 sed \
@@ -119,6 +124,9 @@ rm -f "$generated"
 grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml
 grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
 grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
+grep -q 'load_exact xdrive-photo-face-image xdrive/photo-face:test' .github/workflows/release.yml
+grep -q 'prepare_exact xdrive-photo-face dist/photo-face-image xdrive/photo-face:test' scripts/ci/gitlab-server-images.sh
+grep -q 'xdrive-photo-face' scripts/ci/gitlab-promote-images.sh
 if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml scripts/ci/gitlab-server-images.sh; then
   echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
   exit 1
@@ -126,6 +134,8 @@ fi
 grep -q 'container_name: xdrive-postgres' deploy/docker-compose.yml
 grep -q 'container_name: xdrive-server' deploy/docker-compose.yml
 grep -q 'container_name: xdrive-worker' deploy/docker-compose.yml
+grep -q 'container_name: xdrive-photo-face' deploy/docker-compose.yml
+grep -q 'profiles: \["photo-intelligence"\]' deploy/docker-compose.yml
 grep -q 'container_name: xdrive-caddy' deploy/docker-compose.yml
 grep -q 'COPY web/dist/ /srv/' deploy/Caddy.Dockerfile
 grep -q 'reverse_proxy server:8080' deploy/Caddyfile.common
