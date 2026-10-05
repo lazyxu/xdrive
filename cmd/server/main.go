@@ -114,6 +114,22 @@ func main() {
 			"attribution", photointelligence.GeoNamesAttribution,
 		)
 	}
+	var photoFaceAnalyzer photointelligence.FaceAnalyzer
+	if cfg.PhotoFaceAnalyzerSocket != "" {
+		analyzer, err := photointelligence.NewUnixFaceAnalyzer(
+			cfg.PhotoFaceAnalyzerSocket,
+			cfg.PhotoFaceAnalyzerToken,
+			2*time.Minute,
+		)
+		if err != nil {
+			log.Fatalf("configure photo face analyzer: %v", err)
+		}
+		photoFaceAnalyzer = analyzer
+		slog.Info(
+			"photo_face_analyzer_configured",
+			"socket", cfg.PhotoFaceAnalyzerSocket,
+		)
+	}
 	srv := &api.Server{
 		DB: db, Store: store,
 		Auth:                      auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
@@ -123,6 +139,8 @@ func main() {
 		SourceRunFailureRetention: cfg.SourceRunFailureRetention,
 		ConnectorSecrets:          connectorSecrets,
 		PhotoPlaceResolver:        photoPlaceResolver,
+		PhotoFaceAnalyzer:         photoFaceAnalyzer,
+		PhotoFacePreviewBaseURL:   cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 	}
 	janitorCtx, janitorCancel := context.WithCancel(context.Background())

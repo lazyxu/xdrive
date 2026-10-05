@@ -19,6 +19,38 @@ const (
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
 )
 
+func AnalysisPreviewETag(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	sha := strings.ToLower(strings.TrimSpace(sha256))
+	if sha != "" {
+		return fmt.Sprintf(
+			"\"media-analysis-%s-v%d-%d\"",
+			sha,
+			AnalysisPreviewVersion,
+			AnalysisPreviewEdge,
+		)
+	}
+	return fmt.Sprintf(
+		"\"media-analysis-node-%d-%d-v%d-%d\"",
+		nodeID,
+		nodeRevision,
+		AnalysisPreviewVersion,
+		AnalysisPreviewEdge,
+	)
+}
+
+func AnalysisPreviewFingerprint(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	return strings.Trim(
+		AnalysisPreviewETag(nodeID, nodeRevision, sha256),
+		"\"",
+	)
+}
+
 func ThumbnailStorageKey(
 	nodeID, nodeRevision uint64,
 	sha256 string,

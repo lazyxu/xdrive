@@ -57,6 +57,10 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		}
 	}
 
+	if !db.Migrator().HasColumn("xd_photo_faces", "landmarks_json") {
+		t.Fatal("photo face landmarks_json column was not created")
+	}
+
 	user := meta.User{
 		Username: "photo-intelligence-owner", PasswordHash: "unused",
 		Role: meta.UserRoleUser, SessionVersion: 1,
@@ -100,7 +104,8 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	face := meta.PhotoFace{
 		AssetID: asset.ID, DetectionKey: "face:0", AnalyzerVersion: "test-face-v1",
 		X: 0.1, Y: 0.2, Width: 0.3, Height: 0.4, Confidence: 0.99,
-		Embedding: []byte{1, 2, 3}, EmbeddingFormat: "f32le", EmbeddingVersion: "test-embed-v1",
+		LandmarksJSON: `[{"x":0.2,"y":0.3},{"x":0.3,"y":0.3},{"x":0.25,"y":0.4},{"x":0.2,"y":0.5},{"x":0.3,"y":0.5}]`,
+		Embedding:     []byte{1, 2, 3, 4}, EmbeddingFormat: "f32le", EmbeddingVersion: "test-embed-v1",
 	}
 	if err := db.Create(&face).Error; err != nil {
 		t.Fatal(err)

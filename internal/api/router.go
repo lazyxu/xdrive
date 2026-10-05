@@ -27,6 +27,8 @@ type Server struct {
 	SourceRunFailureRetention time.Duration
 	ConnectorSecrets          *connectorsecret.Keyring
 	PhotoPlaceResolver        photointelligence.PlaceResolver
+	PhotoFaceAnalyzer         photointelligence.FaceAnalyzer
+	PhotoFacePreviewBaseURL   string
 	HostControlDir            string
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser
@@ -56,6 +58,7 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/public/share/download", s.publicShareDownload)
 	v1.GET("/file-preview/:id", s.filePreviewTicketStream)
 	v1.HEAD("/file-preview/:id", s.filePreviewTicketStream)
+	v1.GET("/media-analysis-preview/:id", s.mediaAnalysisPreviewTicketStream)
 
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
