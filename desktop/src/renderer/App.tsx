@@ -5,12 +5,10 @@ import {
   Box as MuiBox,
   Button as MuiButton,
   Checkbox,
-  Chip,
   CircularProgress,
   Divider as MuiDivider,
   FormControlLabel,
   IconButton,
-  InputAdornment,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -33,16 +31,18 @@ import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
   XDriveAccountMenuActions,
   XDriveActionButton,
+  XDriveAuthField,
+  XDriveAuthFieldStatus,
   XDriveAuthPanel,
+  XDriveAuthPasswordField,
   XDriveAuthShell,
+  XDriveAuthSubmitRow,
   XDriveBrandLockup,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
@@ -236,7 +236,6 @@ export default function App({
   const [loginHistory, setLoginHistory] = useState<DesktopLoginHistory>({ profiles: [], secure_password_storage: false })
   const [rememberPassword, setRememberPassword] = useState(false)
   const [autoLogin, setAutoLogin] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
   const [serverProbe, setServerProbe] = useState<{
     key: 'idle' | 'checking' | 'ok' | 'error'
     version?: string
@@ -773,7 +772,6 @@ export default function App({
     setRememberPassword(loginHistory.secure_password_storage && profile.remember_password)
     setAutoLogin(loginHistory.secure_password_storage && profile.auto_login)
     setPassword('')
-    setShowPassword(false)
     setError('')
   }
 
@@ -833,8 +831,7 @@ export default function App({
     }))
     if (result) {
       setPassword('')
-      setShowPassword(false)
-      await refreshLoginHistory()
+        await refreshLoginHistory()
     }
   }
 
@@ -851,7 +848,6 @@ export default function App({
     setRememberPassword(false)
     setAutoLogin(false)
     setPassword('')
-    setShowPassword(false)
   }
 
   const changePassword = async (event: FormEvent) => {
@@ -1170,12 +1166,13 @@ export default function App({
           className="auth-panel auth-panel-form"
           onSubmit={login}
         >
-          <XDriveBrandLockup
-            iconSrc={xDriveBrandIcon}
-            variant="compact"
-            subtitle="桌面版"
-            className="auth-brand-lockup"
-          />
+          <MuiBox sx={{ mb: 2.25 }}>
+            <XDriveBrandLockup
+              iconSrc={xDriveBrandIcon}
+              variant="compact"
+              subtitle="桌面版"
+            />
+          </MuiBox>
           <Typography
             component="h1"
             variant="h4"
@@ -1190,7 +1187,7 @@ export default function App({
               : '连接到你的 xDrive 服务器，登录后即可访问并同步文件。'}
           </Typography>
 
-          <Stack className="auth-form" spacing={1.75}>
+          <Stack spacing={1.75} sx={{ mt: 2.75 }}>
             {loginHistory.auto_login_error ? (
               <XDriveStatusAlert tone="warning">
                 自动登录未成功，已暂时关闭自动登录：{loginHistory.auto_login_error}
@@ -1198,10 +1195,26 @@ export default function App({
             ) : null}
             {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
 
-            <MuiBox className="auth-field">
-              <Typography component="label" htmlFor="desktop-login-server" className="auth-field-label">
-                服务器 <span className="auth-required" aria-hidden="true">*</span>
-              </Typography>
+            <XDriveAuthField
+              label="服务器"
+              htmlFor="desktop-login-server"
+              required
+              helper={(
+                <XDriveAuthFieldStatus
+                  loading={serverProbe.key === 'checking'}
+                  tone={serverProbe.key === 'ok' ? 'good' : serverProbe.key === 'error' ? 'bad' : 'neutral'}
+                  title={serverProbe.key === 'error' ? serverProbe.detail : undefined}
+                >
+                  {serverProbe.key === 'checking'
+                    ? '正在检查服务器…'
+                    : serverProbe.key === 'ok'
+                      ? `服务器可访问${serverProbe.version ? ` · ${serverProbe.version}` : ''}`
+                      : serverProbe.key === 'error'
+                        ? '暂时无法连接此服务器；请检查地址、端口或证书。'
+                        : '支持自建 xDrive 服务器；连接会在登录时再次验证。'}
+                </XDriveAuthFieldStatus>
+              )}
+            >
               <Autocomplete
                 freeSolo
                 size="small"
@@ -1229,39 +1242,13 @@ export default function App({
                   />
                 )}
               />
-              <Typography
-                component="div"
-                className="auth-field-helper"
-                title={serverProbe.key === 'error' ? serverProbe.detail : undefined}
-              >
-                {serverProbe.key === 'checking' ? (
-                  <>
-                    <CircularProgress size={12} />
-                    正在检查服务器…
-                  </>
-                ) : serverProbe.key === 'ok' ? (
-                  <>
-                    <span className="auth-connection-dot good" aria-hidden="true" />
-                    服务器可访问{serverProbe.version ? ` · ${serverProbe.version}` : ''}
-                  </>
-                ) : serverProbe.key === 'error' ? (
-                  <>
-                    <span className="auth-connection-dot bad" aria-hidden="true" />
-                    暂时无法连接此服务器；请检查地址、端口或证书。
-                  </>
-                ) : (
-                  <>
-                    <span className="auth-connection-dot neutral" aria-hidden="true" />
-                    支持自建 xDrive 服务器；连接会在登录时再次验证。
-                  </>
-                )}
-              </Typography>
-            </MuiBox>
+            </XDriveAuthField>
 
-            <MuiBox className="auth-field">
-              <Typography component="label" htmlFor="desktop-login-username" className="auth-field-label">
-                用户名 <span className="auth-required" aria-hidden="true">*</span>
-              </Typography>
+            <XDriveAuthField
+              label="用户名"
+              htmlFor="desktop-login-username"
+              required
+            >
               <Autocomplete
                 freeSolo
                 size="small"
@@ -1289,75 +1276,46 @@ export default function App({
                   />
                 )}
               />
-            </MuiBox>
+            </XDriveAuthField>
 
-            <MuiBox className="auth-field">
-              <Typography component="label" htmlFor="desktop-login-password" className="auth-field-label">
-                密码 <span className="auth-required" aria-hidden="true">*</span>
-              </Typography>
-              <TextField
-                id="desktop-login-password"
-                fullWidth
-                size="small"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                disabled={busy === 'login'}
-                onChange={(event) => {
-                  setPassword(event.target.value)
-                  setError('')
-                }}
-                autoComplete="current-password"
-                autoFocus={Boolean(server) && Boolean(username)}
-                required={!savedPasswordAvailable}
-                placeholder={savedPasswordAvailable ? '••••••••••••' : '输入密码'}
-                slotProps={{
-                  input: {
-                    endAdornment: password ? (
-                      <InputAdornment position="end">
-                        <IconButton
-                          size="small"
-                          aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                          edge="end"
-                          onClick={() => setShowPassword((current) => !current)}
-                        >
-                          {showPassword
-                            ? <VisibilityOffRoundedIcon fontSize="small" />
-                            : <VisibilityRoundedIcon fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ) : hasStoredPassword ? (
-                      <InputAdornment position="end">
-                        <Chip className="auth-saved-chip" size="small" label="已保存" />
-                      </InputAdornment>
-                    ) : undefined,
-                  },
-                }}
-              />
-              <MuiBox className="auth-password-meta">
-                <Typography component="span" className="auth-field-helper">
-                  {password && hasStoredPassword
-                    ? '登录成功后将更新系统保存的密码。'
-                    : savedPasswordAvailable
-                      ? '将使用系统安全保存的密码。'
-                      : '密码输入默认隐藏，不会以明文写入配置文件。'}
-                </Typography>
-                {hasStoredPassword ? (
-                  <MuiButton
-                    className="auth-inline-action"
-                    size="small"
-                    variant="text"
-                    disabled={!!busy}
-                    onClick={() => void clearSavedLoginPassword()}
-                  >
-                    清除已保存密码
-                  </MuiButton>
-                ) : null}
-              </MuiBox>
-            </MuiBox>
+            <XDriveAuthPasswordField
+              id="desktop-login-password"
+              value={password}
+              disabled={busy === 'login'}
+              required={!savedPasswordAvailable}
+              autoFocus={Boolean(server) && Boolean(username)}
+              placeholder={savedPasswordAvailable ? '••••••••••••' : '输入密码'}
+              saved={hasStoredPassword}
+              clearSavedDisabled={Boolean(busy)}
+              onClearSaved={hasStoredPassword ? () => { void clearSavedLoginPassword() } : undefined}
+              helper={password && hasStoredPassword
+                ? '登录成功后将更新系统保存的密码。'
+                : savedPasswordAvailable
+                  ? '将使用系统安全保存的密码。'
+                  : '密码输入默认隐藏，不会以明文写入配置文件。'}
+              onChange={(value) => {
+                setPassword(value)
+                setError('')
+              }}
+            />
 
-            <MuiBox className="auth-options">
+            <Stack
+              direction="row"
+              useFlexGap
+              flexWrap="wrap"
+              sx={{
+                minHeight: 34,
+                gap: '8px 28px',
+                '& .MuiFormControlLabel-root': { m: 0 },
+                '& .MuiCheckbox-root': { p: '4px 7px 4px 0' },
+                '& .MuiFormControlLabel-label': {
+                  color: 'text.secondary',
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                },
+              }}
+            >
               <FormControlLabel
-                className="auth-option"
                 control={(
                   <Checkbox
                     size="small"
@@ -1373,7 +1331,6 @@ export default function App({
                 label="安全保存密码"
               />
               <FormControlLabel
-                className="auth-option"
                 control={(
                   <Checkbox
                     size="small"
@@ -1388,31 +1345,29 @@ export default function App({
                 )}
                 label="启动 xDrive 时自动登录"
               />
-            </MuiBox>
+            </Stack>
 
             {loginHistory.secure_password_storage ? (
-              <MuiBox className="auth-security-note">
-                <InfoOutlinedIcon fontSize="small" />
-                <Typography variant="caption">
+              <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ color: 'text.secondary' }}>
+                <InfoOutlinedIcon sx={{ mt: '1px', color: 'text.disabled', fontSize: 16 }} />
+                <Typography variant="caption" sx={{ fontSize: 11.5, lineHeight: 1.5 }}>
                   密码由操作系统安全凭据存储加密，不会以明文写入配置文件。
                 </Typography>
-              </MuiBox>
+              </Stack>
             ) : (
               <XDriveStatusAlert tone="warning">
                 当前系统没有可用的安全凭据存储，因此无法保存密码或启用自动登录。
               </XDriveStatusAlert>
             )}
 
-            <Typography className="auth-sync-note" variant="caption">
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5, lineHeight: 1.5 }}>
               {loginMount
                 ? '将继续使用已配置的同步文件夹；登录后可在“设置”中修改。'
                 : '同步文件夹将在登录后使用默认位置，并可在“设置”中修改。'}
             </Typography>
 
-            <MuiBox className="auth-submit-row">
-              <Typography variant="caption" className="auth-submit-hint">按 Enter 登录</Typography>
+            <XDriveAuthSubmitRow hint="按 Enter 登录">
               <XDriveActionButton
-                className="auth-submit"
                 intent="primary"
                 type="submit"
                 disabled={!loginReady || !!busy}
@@ -1421,16 +1376,29 @@ export default function App({
               >
                 登录
               </XDriveActionButton>
-            </MuiBox>
+            </XDriveAuthSubmitRow>
           </Stack>
 
-          <MuiBox className="auth-footer">
-            <Typography component="span" className="auth-version" title={info?.commit || undefined}>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            justifyContent="center"
+            sx={{ minHeight: 26, mt: 2 }}
+          >
+            <Typography
+              component="span"
+              variant="caption"
+              title={info?.commit || undefined}
+              color="text.disabled"
+              sx={{ overflowWrap: 'anywhere', textAlign: 'center', fontSize: 11, lineHeight: 1.45 }}
+            >
               {buildLabel}
             </Typography>
-            <span className="auth-footer-separator" aria-hidden="true">·</span>
+            <Typography component="span" variant="caption" color="text.disabled" sx={{ fontSize: 11 }}>
+              ·
+            </Typography>
             <XDriveActionButton
-              className="auth-diagnostics-toggle"
               compact
               startIcon={<BuildRoundedIcon fontSize="small" />}
               title={loginDiagnosticsOpen ? '收起登录诊断' : '展开登录诊断'}
@@ -1438,47 +1406,77 @@ export default function App({
             >
               {loginDiagnosticsOpen ? '收起诊断' : '诊断'}
             </XDriveActionButton>
-          </MuiBox>
+          </Stack>
 
           {loginDiagnosticsOpen ? (
-            <MuiBox className="auth-login-diagnostics" aria-label="登录诊断">
-              <div className="auth-diagnostic-row">
-                <span>Agent</span>
-                <strong className="good">已连接</strong>
-              </div>
-              <div className="auth-diagnostic-row">
-                <span>服务器</span>
-                <strong className={serverProbe.key === 'ok' ? 'good' : serverProbe.key === 'error' ? 'bad' : ''}>
-                  {serverProbe.key === 'ok'
+            <MuiBox
+              aria-label="登录诊断"
+              sx={{
+                mt: 0.75,
+                pt: 1.25,
+                borderTop: 1,
+                borderColor: 'divider',
+                display: 'grid',
+                gap: 0.75,
+              }}
+            >
+              {[
+                ['Agent', '已连接', 'good'],
+                [
+                  '服务器',
+                  serverProbe.key === 'ok'
                     ? '可访问'
                     : serverProbe.key === 'error'
                       ? '连接失败'
                       : serverProbe.key === 'checking'
                         ? '检查中'
-                        : '等待检查'}
-                </strong>
-              </div>
-              <div className="auth-diagnostic-row">
-                <span>安全凭据存储</span>
-                <strong className={loginHistory.secure_password_storage ? 'good' : 'bad'}>
-                  {loginHistory.secure_password_storage ? '可用' : '不可用'}
-                </strong>
-              </div>
-              <div className="auth-diagnostic-row">
-                <span>当前账号密码</span>
-                <strong>{hasStoredPassword ? '已安全保存' : '未保存'}</strong>
-              </div>
+                        : '等待检查',
+                  serverProbe.key === 'ok' ? 'good' : serverProbe.key === 'error' ? 'bad' : 'neutral',
+                ],
+                [
+                  '安全凭据存储',
+                  loginHistory.secure_password_storage ? '可用' : '不可用',
+                  loginHistory.secure_password_storage ? 'good' : 'bad',
+                ],
+                ['当前账号密码', hasStoredPassword ? '已安全保存' : '未保存', 'neutral'],
+              ].map(([label, value, tone]) => (
+                <Stack
+                  key={label}
+                  direction="row"
+                  spacing={1.5}
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5 }}>
+                    {label}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color={tone === 'good' ? 'success.main' : tone === 'bad' ? 'error.main' : 'text.secondary'}
+                    sx={{ fontSize: 11.5, fontWeight: 650 }}
+                  >
+                    {value}
+                  </Typography>
+                </Stack>
+              ))}
               {serverProbe.key === 'error' && serverProbe.detail ? (
-                <Typography className="auth-diagnostic-detail" variant="caption">{serverProbe.detail}</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ mt: 0.125, fontSize: 11, lineHeight: 1.45, overflowWrap: 'anywhere' }}
+                >
+                  {serverProbe.detail}
+                </Typography>
               ) : null}
-              <XDriveActionButton
-                className="auth-diagnostic-logs"
-                compact
-                disabled={!!busy}
-                onClick={() => void run('login-open-logs', () => window.xdriveDesktop.agent.openLogs())}
-              >
-                打开日志
-              </XDriveActionButton>
+              <MuiBox sx={{ justifySelf: 'end', mt: 0.125 }}>
+                <XDriveActionButton
+                  compact
+                  disabled={!!busy}
+                  onClick={() => void run('login-open-logs', () => window.xdriveDesktop.agent.openLogs())}
+                >
+                  打开日志
+                </XDriveActionButton>
+              </MuiBox>
             </MuiBox>
           ) : null}
         </XDriveAuthPanel>
@@ -1512,6 +1510,7 @@ export default function App({
           <XDrivePasswordChangeForm
             className="auth-form"
             buttonClassName="auth-submit"
+            sx={{ mt: 2.75 }}
             submitFullWidth
             values={{
               current: currentPassword,

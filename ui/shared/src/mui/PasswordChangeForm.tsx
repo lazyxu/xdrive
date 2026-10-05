@@ -1,6 +1,8 @@
 import type { FormEventHandler, ReactNode } from 'react'
-import { Stack, TextField } from '@mui/material'
+import { Stack } from '@mui/material'
+import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveAuthPasswordField } from './AuthForm'
 import { XDriveStatusAlert } from './StatusAlert'
 
 export interface XDrivePasswordChangeValues {
@@ -25,6 +27,7 @@ export function XDrivePasswordChangeForm({
   submitFullWidth = false,
   className,
   buttonClassName,
+  sx,
   onChange,
   onSubmit,
 }: {
@@ -36,46 +39,38 @@ export function XDrivePasswordChangeForm({
   submitFullWidth?: boolean
   className?: string
   buttonClassName?: string
+  sx?: SxProps<Theme>
   onChange: (field: keyof XDrivePasswordChangeValues, value: string) => void
   onSubmit: FormEventHandler<HTMLFormElement>
 }) {
   return (
-    <Stack component="form" className={className} spacing={2} onSubmit={onSubmit}>
+    <Stack component="form" className={className} spacing={2} sx={sx} onSubmit={onSubmit}>
       {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
-      <TextField
-        fullWidth
-        size="small"
-        type="password"
+      <XDriveAuthPasswordField
+        id="xdrive-current-password"
         label="当前密码"
         autoComplete="current-password"
         value={values.current}
         disabled={disabled || loading}
-        required
-        onChange={(event) => onChange('current', event.target.value)}
+        onChange={(value) => onChange('current', value)}
       />
-      <TextField
-        fullWidth
-        size="small"
-        type="password"
+      <XDriveAuthPasswordField
+        id="xdrive-new-password"
         label="新密码"
         autoComplete="new-password"
         value={values.next}
         disabled={disabled || loading}
-        required
-        inputProps={{ minLength: 8 }}
-        onChange={(event) => onChange('next', event.target.value)}
+        minLength={8}
+        onChange={(value) => onChange('next', value)}
       />
-      <TextField
-        fullWidth
-        size="small"
-        type="password"
+      <XDriveAuthPasswordField
+        id="xdrive-confirm-password"
         label="确认新密码"
         autoComplete="new-password"
         value={values.confirm}
         disabled={disabled || loading}
-        required
-        inputProps={{ minLength: 8 }}
-        onChange={(event) => onChange('confirm', event.target.value)}
+        minLength={8}
+        onChange={(value) => onChange('confirm', value)}
       />
       <XDriveActionButton
         className={buttonClassName}
