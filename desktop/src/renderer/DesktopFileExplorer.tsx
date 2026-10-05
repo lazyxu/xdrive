@@ -3,6 +3,7 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerArchiveDownloadPlan,
   xDriveFileExplorerDesktopArchiveDownloadFeedback,
+  xDriveFileExplorerLoadChildDirectories,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDownloadPlan,
@@ -12,6 +13,7 @@ import {
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
+  XDriveFileExplorerNavigationPane,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
@@ -102,6 +104,7 @@ export default function DesktopFileExplorer({
     sort,
     changeSort,
     refresh,
+    navigateTo,
     navigateToCrumb,
     goBack,
     goForward,
@@ -140,6 +143,18 @@ export default function DesktopFileExplorer({
     searchCrumbsForResult: (result) => result.crumbs,
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
+
+  const loadTreeDirectories = useCallback(
+    (parentID: number) => xDriveFileExplorerLoadChildDirectories({
+      parentID,
+      loadPage: async (id, options) => {
+        const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, options)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }),
+    [],
+  )
 
   const {
     busy: uploadBusy,
@@ -641,6 +656,14 @@ export default function DesktopFileExplorer({
         getItemMenuItems={getItemMenuItems}
         backgroundMenuItems={backgroundMenuItems}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
+        navigationPane={(
+          <XDriveFileExplorerNavigationPane
+            currentCrumbs={crumbs}
+            loadDirectories={loadTreeDirectories}
+            onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            onError={(error) => onError(error instanceof Error ? error.message : String(error))}
+          />
+        )}
         statusText={searchStatusText ?? (
           (actionBusy === 'upload' || uploadBusyAction === 'upload')
             ? '正在上传…'
