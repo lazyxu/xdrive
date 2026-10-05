@@ -190,7 +190,7 @@ test('Desktop FileExplorer supports shared internal drag operations and local ex
   assert.ok(operationController.includes('xDriveFileExplorerDropItemsToParentPlan('), 'shared operation controller must own breadcrumb-drop planning')
   assert.equal(explorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Desktop must not plan internal drag/drop locally')
   assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Desktop internal drag must not resolve drop targets locally')
-  assert.ok(explorer.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), 'Desktop external drop should resolve the target through shared controller logic')
+  assert.ok(explorer.includes('useXDriveFileExplorerExternalDropController<'), 'Desktop external drop should delegate target and refresh orchestration to the shared controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
   assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
@@ -322,7 +322,7 @@ test('Desktop FileExplorer uploads selected folders through the shared hierarchy
 test('Desktop FileExplorer recursively uploads dropped folders through shared payloads', () => {
   for (const token of [
     'XDriveFileExplorerExternalDropPayload',
-    'dropExternalFolderEntriesToParent',
+    'useXDriveFileExplorerExternalDropController<',
     'payload.files',
     'payload.directories',
     'onExternalFolderDrop={uploadConflictSupported',

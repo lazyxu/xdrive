@@ -13,6 +13,7 @@ const searchController = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.
 const workspaceController = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
 const operationController = read('ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts')
+const externalDropController = read('ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -244,7 +245,7 @@ test('shared FileExplorer controller owns archive-aware planning across Web and 
   assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop fallback must keep legacy native batch download execution')
 })
 
-test('shared FileExplorer controller owns external-drop target resolution', () => {
+test('shared FileExplorer external-drop controller owns target, breadcrumb, and refresh orchestration', () => {
   for (const token of [
     'xDriveFileExplorerExternalDropParentID',
     'target ? nodeByID.get(Number(target.id)) : undefined',
@@ -252,12 +253,25 @@ test('shared FileExplorer controller owns external-drop target resolution', () =
   ]) {
     assert.ok(shared.includes(token), `shared FileExplorer external-drop targeting missing: ${token}`)
   }
-  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), `${label} must use shared external-drop targeting`)
-    assert.equal(source.includes("targetNode?.type === 'dir' ? targetNode.id : current.id"), false, `${label} must not duplicate external-drop target rules`)
+  for (const token of [
+    'useXDriveFileExplorerExternalDropController',
+    'xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)',
+    'uploadFilesToParent(parentID, files)',
+    'uploadFolderEntriesToParent(parentID, payload)',
+    'await refreshCurrentDirectory()',
+    'Number(crumb.id)',
+    'folderDropEnabled',
+  ]) {
+    assert.ok(externalDropController.includes(token), `shared external-drop controller missing: ${token}`)
   }
-  assert.ok(web.includes('onUploadDroppedFiles(parentID, files)'), 'Web must keep dropped-file upload execution local')
-  assert.ok(desktop.includes('cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file upload execution local')
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('useXDriveFileExplorerExternalDropController<'), `${label} must consume the shared external-drop controller`)
+    assert.equal(source.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), false, `${label} must not resolve external-drop targets locally`)
+    assert.equal(source.includes('const dropExternalFilesToParent'), false, `${label} must not own external file target/refresh orchestration`)
+    assert.equal(source.includes('const dropExternalFolderEntriesToParent'), false, `${label} must not own external folder target/refresh orchestration`)
+  }
+  assert.ok(web.includes('uploadFilesToParent: onUploadDroppedFiles'), 'Web must keep dropped-file REST upload execution local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file Agent execution local')
 })
 
 test('shared FileExplorer controller owns item lookup and open-item planning', () => {
