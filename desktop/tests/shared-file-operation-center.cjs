@@ -12,6 +12,7 @@ const sharedModel = read('ui', 'shared', 'src', 'file-operations.ts')
 const lifecycleController = read('ui', 'shared', 'src', 'mui', 'FileOperationLifecycle.ts')
 const actionController = read('ui', 'shared', 'src', 'mui', 'FileOperationActions.ts')
 const explorerOperationController = read('ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts')
+const deleteController = read('ui', 'shared', 'src', 'mui', 'FileExplorerDeleteController.ts')
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -198,10 +199,10 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.equal(webExplorer.includes('const plan = planPaste(current.id)'), false, 'Web must not plan paste locally')
   assert.equal(webExplorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Web must not plan internal drag/drop locally')
 
-  assert.ok(web.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Web bulk delete must use the shared delete plan')
-  assert.ok(web.includes('api.createFileOperation(plan.operation, plan.items)'), 'Web bulk delete is not queued')
-  assert.ok(web.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Web single delete must use the shared delete plan')
-  assert.ok(web.includes('rememberFileOperation(operation)'), 'Web single delete must seed Task Center state')
+  assert.ok(web.includes('useXDriveFileExplorerDeleteController<Node, XDriveFileOperation>'), 'Web delete must use the shared delete controller')
+  assert.ok(web.includes('submitOperation: (operation, items) => api.createFileOperation(operation, items)'), 'Web delete transport is not queued')
+  assert.ok(deleteController.includes('requestDelete([node])'), 'shared delete controller must reuse bulk orchestration for single delete')
+  assert.ok(web.includes('onQueued: rememberFileOperation'), 'Web delete must seed Task Center state')
 
   assert.ok(desktopExplorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use the shared Explorer operation controller')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste/drop transport is not queued')
@@ -209,10 +210,10 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.equal(desktopExplorer.includes('const plan = planPaste(current.id)'), false, 'Desktop must not plan paste locally')
   assert.equal(desktopExplorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Desktop must not plan internal drag/drop locally')
 
-  assert.ok(desktop.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'Desktop bulk delete must use the shared delete plan')
-  assert.ok(desktop.includes('plan.operation,\n            plan.items,'), 'Desktop bulk delete is not queued')
-  assert.ok(desktop.includes('xDriveFileExplorerDeleteOperationPlan([node])'), 'Desktop single delete must use the shared delete plan')
-  assert.ok(desktop.includes('rememberCloudFileOperation(result.data)'), 'Desktop single delete must seed Task Center state')
+  assert.ok(desktop.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete must use the shared delete controller')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete transport is not queued')
+  assert.ok(deleteController.includes('removeMany: requestDelete'), 'shared delete controller must reuse one bulk delete path')
+  assert.ok(desktop.includes('onQueued: rememberCloudFileOperation'), 'Desktop delete must seed Task Center state')
 })
 
 test('shared file-operation lifecycle owns list state, polling, upsert and terminal transitions', () => {
@@ -268,8 +269,8 @@ test('shared FileExplorer delete plan owns refs, count and queued feedback', () 
   }
   assert.equal(web.includes("nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, 'Web must not build bulk-delete refs locally')
   assert.equal(desktop.includes("nodes.map((node) => ({ id: node.id, revision: node.revision }))"), false, 'Desktop must not build bulk-delete refs locally')
-  assert.ok(web.includes('setFeedback({ tone: \'good\', message: plan.message })'), 'Web must use the shared delete queued message')
-  assert.ok(desktop.includes('setNotice(plan.message)'), 'Desktop must use the shared delete queued message')
+  assert.ok(deleteController.includes('onFeedback(plan.message)'), 'shared delete controller must emit the shared queued message')
+  assert.ok(desktop.includes('onFeedback: setNotice'), 'Desktop must consume shared delete queued feedback')
 })
 
 test('Task Center uses the full retained file-operation history window', () => {
