@@ -68,7 +68,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerDeleteOperationPlan, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -320,14 +320,8 @@ function AuthView({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const username = loginUsername.trim()
-    const nextUsernameError = !username
-      ? '请填写用户名'
-      : username.length < 3 || username.length > 64
-        ? '用户名长度需要 3–64 个字符'
-        : ''
-    const nextPasswordError = password.length < 8 || password.length > 128
-      ? '密码长度需要 8–128 个字符'
-      : ''
+    const nextUsernameError = xDriveUsernameValidationError(loginUsername)
+    const nextPasswordError = xDrivePasswordValidationError(password)
     setUsernameError(nextUsernameError)
     setPasswordError(nextPasswordError)
     if (nextUsernameError || nextPasswordError) return
