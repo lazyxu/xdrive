@@ -92,15 +92,17 @@ write_status() {
   local state="$1" source="$2" channel="$3" request_id="$4"
   local stage="$5" stage_current="$6" stage_total="$7"
   local bytes_done="$8" bytes_total="$9" message="${10}" error="${11}"
-  local started_at="${12}" finished_at="${13}"
+  local started_at="${12}" finished_at="${13}" backup_file_data="${14:-false}"
   local dir tmp now
+  [[ "$backup_file_data" == "true" ]] || backup_file_data=false
   dir="$(prepare_dir)"
   now="$(now_utc)"
   tmp="$(mktemp "$dir/.status.XXXXXX")"
-  printf '{"supported":true,"state":"%s","source":"%s","channel":"%s","request_id":"%s","stage":"%s","stage_current":%s,"stage_total":%s,"bytes_done":%s,"bytes_total":%s,"message":"%s","error":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","runner_heartbeat_at":"%s"}\n' \
+  printf '{"supported":true,"state":"%s","source":"%s","channel":"%s","backup_file_data":%s,"request_id":"%s","stage":"%s","stage_current":%s,"stage_total":%s,"bytes_done":%s,"bytes_total":%s,"message":"%s","error":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","runner_heartbeat_at":"%s"}\n' \
     "$(json_escape "$state")" \
     "$(json_escape "$source")" \
     "$(json_escape "$channel")" \
+    "$backup_file_data" \
     "$(json_escape "$request_id")" \
     "$(json_escape "$stage")" \
     "${stage_current:-0}" "${stage_total:-0}" "${bytes_done:-0}" "${bytes_total:-0}" \
@@ -132,7 +134,7 @@ status_cmd() {
 }
 
 sync_progress() {
-  local progress_file="$1" source="$2" channel="$3" request_id="$4" started_at="$5"
+  local progress_file="$1" source="$2" channel="$3" request_id="$4" started_at="$5" backup_file_data="${6:-false}"
   local stage stage_current stage_total bytes_done bytes_total service message
   stage="$(progress_value "$progress_file" stage)"
   stage_current="$(progress_value "$progress_file" stage_current)"
@@ -151,7 +153,7 @@ sync_progress() {
   [[ -n "$service" ]] && message="$message · $service"
   write_status running "$source" "$channel" "$request_id" "$stage" \
     "$stage_current" "$stage_total" "$bytes_done" "$bytes_total" \
-    "$message" "" "$started_at" ""
+    "$message" "" "$started_at" "" "$backup_file_data"
 }
 
 process_request() {
@@ -176,7 +178,7 @@ process_request() {
   case "$channel" in stable|master) ;; *) channel="" ;; esac
   if [[ -z "$source" || -z "$channel" || -z "$request_id" ]] || ! request_time_is_fresh "$requested_at"; then
     write_status failed "${source:-github}" "${channel:-stable}" "$request_id" \
-      "校验更新请求" 0 9 0 0 "更新请求无效或已过期。" "invalid or stale host-control request" "" "$(now_utc)"
+      "校验更新请求" 0 9 0 0 "更新请求无效或已过期。" "invalid or stale host-control request" "" "$(now_utc)" "$backup_file_data"
     rm -f "$active"
     return 0
   fi
@@ -188,7 +190,7 @@ process_request() {
   : > "$run_log"
   chmod 0600 "$run_log"
   write_status running "$source" "$channel" "$request_id" \
-    "下载更新程序" 0 9 0 0 "正在下载并校验更新程序…" "" "$started_at" ""
+    "下载更新程序" 0 9 0 0 "正在下载并校验更新程序…" "" "$started_at" "" "$backup_file_data"
 
   update_args=(update --source "$source" --channel "$channel")
   [[ "$backup_file_data" == "true" ]] && update_args+=(--backup-file-data)
@@ -200,28 +202,28 @@ process_request() {
 
   while kill -0 "$update_pid" 2>/dev/null; do
     touch_heartbeat
-    sync_progress "$progress_file" "$source" "$channel" "$request_id" "$started_at"
+    sync_progress "$progress_file" "$source" "$channel" "$request_id" "$started_at" "$backup_file_data"
     sleep 1
   done
   if wait "$update_pid"; then status=0; else status=$?; fi
 
-  sync_progress "$progress_file" "$source" "$channel" "$request_id" "$started_at"
+  sync_progress "$progress_file" "$source" "$channel" "$request_id" "$started_at" "$backup_file_data"
   if [[ "$status" -eq 0 ]]; then
     write_status success "$source" "$channel" "$request_id" \
-      "更新完成" 9 9 0 0 "服务端更新完成并通过健康检查。" "" "$started_at" "$(now_utc)"
+      "更新完成" 9 9 0 0 "服务端更新完成并通过健康检查。" "" "$started_at" "$(now_utc)" "$backup_file_data"
   else
     error_text="$(tail -n 8 "$run_log" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' || true)"
     [[ -n "$error_text" ]] || error_text="xdrive-server update exited with status $status"
     write_status failed "$source" "$channel" "$request_id" \
       "更新失败" 0 9 0 0 "服务端更新失败；若升级事务已启动，安装器会按原有规则执行回滚。" \
-      "$error_text" "$started_at" "$(now_utc)"
+      "$error_text" "$started_at" "$(now_utc)" "$backup_file_data"
   fi
   rm -f "$active" "$progress_file"
 }
 
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
-  local dir pid_file existing lock_dir="" source channel
+  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
 
@@ -255,11 +257,13 @@ serve_cmd() {
     interrupted_source="$(json_value "$dir/active.json" source)"
     interrupted_channel="$(json_value "$dir/active.json" channel)"
     interrupted_request_id="$(json_value "$dir/active.json" request_id)"
+    interrupted_backup_file_data="$(json_bool_value "$dir/active.json" backup_file_data)"
+    [[ "$interrupted_backup_file_data" == "true" ]] || interrupted_backup_file_data=false
     case "$interrupted_source" in github|gitlab) ;; *) interrupted_source=github ;; esac
     case "$interrupted_channel" in stable|master) ;; *) interrupted_channel=stable ;; esac
     write_status failed "$interrupted_source" "$interrupted_channel" "$interrupted_request_id" \
       "更新中断" 0 9 0 0 "检测到上次服务端更新被宿主机重启或 runner 中断。" \
-      "host update interrupted before completion" "" "$(now_utc)"
+      "host update interrupted before completion" "" "$(now_utc)" "$interrupted_backup_file_data"
     rm -f "$dir/active.json" "$dir/install-progress.env"
   fi
 

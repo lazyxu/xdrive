@@ -69,6 +69,7 @@ export function XDriveServerUpdateCard({
   const progress = xDriveServerUpdateProgress(state)
   const supported = state?.supported !== false
   const buttonDisabled = disabled || active || !supported
+  const displayedBackupFileData = active ? Boolean(state?.backup_file_data) : backupFileData
 
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2, ...sx }}>
@@ -123,7 +124,7 @@ export function XDriveServerUpdateCard({
               control={(
                 <Checkbox
                   size="small"
-                  checked={backupFileData}
+                  checked={displayedBackupFileData}
                   disabled={buttonDisabled}
                   onChange={(event) => onBackupFileDataChange(event.target.checked)}
                 />
@@ -152,6 +153,7 @@ export function XDriveServerUpdateCard({
           <XDriveDescriptionGrid columns={4}>
             <XDriveDescriptionItem label="来源">{state?.source || source}</XDriveDescriptionItem>
             <XDriveDescriptionItem label="通道">{state?.channel || channel}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="文件数据备份">{state?.backup_file_data ? '开启' : '关闭'}</XDriveDescriptionItem>
             <XDriveDescriptionItem label="阶段">
               {(state?.stage_current || 0) > 0 && (state?.stage_total || 0) > 0
                 ? `${state?.stage_current} / ${state?.stage_total}`

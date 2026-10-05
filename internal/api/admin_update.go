@@ -21,6 +21,7 @@ type serverUpdateState struct {
 	State             string `json:"state"`
 	Source            string `json:"source"`
 	Channel           string `json:"channel"`
+	BackupFileData    bool   `json:"backup_file_data"`
 	RequestID         string `json:"request_id,omitempty"`
 	Stage             string `json:"stage,omitempty"`
 	StageCurrent      int    `json:"stage_current,omitempty"`
@@ -110,13 +111,14 @@ func (s *Server) adminStartServerUpdate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, serverUpdateState{
-		Supported: true,
-		State:     "queued",
-		Source:    request.Source,
-		Channel:   request.Channel,
-		RequestID: request.RequestID,
-		Message:   "更新请求已提交，等待服务器宿主机执行。",
-		UpdatedAt: request.CreatedAt,
+		Supported:      true,
+		State:          "queued",
+		Source:         request.Source,
+		Channel:        request.Channel,
+		BackupFileData: request.BackupFileData,
+		RequestID:      request.RequestID,
+		Message:        "更新请求已提交，等待服务器宿主机执行。",
+		UpdatedAt:      request.CreatedAt,
 	})
 }
 
@@ -152,6 +154,7 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 		stale := unavailableServerUpdateState("宿主机更新控制没有活动心跳，请检查 xdrive-server control。")
 		stale.Source = state.Source
 		stale.Channel = state.Channel
+		stale.BackupFileData = state.BackupFileData
 		stale.UpdatedAt = state.UpdatedAt
 		stale.RunnerHeartbeatAt = state.RunnerHeartbeatAt
 		return stale
@@ -172,6 +175,7 @@ func (s *Server) serverUpdateStatus() serverUpdateState {
 				state.State = "queued"
 				state.Source = request.Source
 				state.Channel = request.Channel
+				state.BackupFileData = request.BackupFileData
 				state.RequestID = request.RequestID
 				state.Message = "更新请求已提交，等待服务器宿主机执行。"
 				state.UpdatedAt = request.CreatedAt
