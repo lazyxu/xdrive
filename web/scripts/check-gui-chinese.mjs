@@ -80,9 +80,9 @@ requireText(files.sources, ['XDriveDescriptionGrid', 'XDriveDescriptionItem'], '
 if ((files.sources.match(/<XDriveSectionHeader\b/g) || []).length !== 5) throw new Error('Web 外部来源小节标题没有完整复用共享 SectionHeader')
 if (files.sources.includes('<MuiDivider') || files.sources.includes('Divider as MuiDivider')) throw new Error('Web 外部来源仍保留本地 Divider 小节标题')
 requireText(files.workspaceSidebar, ['XDriveWorkspaceSidebar', 'XDriveSidebarStorageSummary'], '共享完整侧栏')
-requireText(files.app, ['XDriveWorkspaceSidebar', 'usedBytes: quota.physical_used_bytes', 'totalBytes: quota.quota_bytes', 'diskAvailableBytes: quota.disk_available_bytes'], 'Web 侧栏存储摘要')
-requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'web-account-menu', '退出登录'], 'Web 账号菜单')
-requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', '<Avatar', '<Menu', '<Divider'], '共享账号 chrome')
+requireText(files.app + files.workspaceSidebar, ['XDriveWorkspaceSidebar', 'xDriveWorkspaceStorageSummary(quota)', 'usedBytes: quota.physical_used_bytes', 'totalBytes: quota.quota_bytes', 'diskAvailableBytes: quota.disk_available_bytes'], 'Web 侧栏存储摘要')
+requireText(files.app, ['WebAccountMenu', 'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'XDriveAccountMenuActions', 'web-account-menu'], 'Web 账号菜单')
+requireText(files.accountChrome, ['XDriveAccountAvatarButton', 'aria-label="账户菜单"', 'XDriveAccountSummary', 'XDriveAccountMenu', 'XDriveAccountMenuActions', '<Avatar', '<Menu', '<Divider', '设置', '退出登录'], '共享账号 chrome')
 if ((files.app.match(/<WebAccountMenu/g) || []).length !== 2) throw new Error('Web 两个已登录 Header 没有统一复用账号菜单')
 if (files.app.includes('LogoutOutlined')) throw new Error('Web 顶栏仍保留 AntD 退出图标')
 if ((files.app.match(/<XDriveBrandLockup/g) || []).length !== 3) {
@@ -187,7 +187,7 @@ requireText(files.synologyGuide, ['群晖 DSM 配置', 'DSM 操作示意图', '�
 if (/<Alert\b/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI Alert')
 if (/<DialogContent(?:\s|>)/.test(files.synologyGuide)) throw new Error('群晖 DSM 向导仍在直接渲染原生 MUI DialogContent')
 requireText(files.main, ['XDriveAppearanceThemeProvider', 'normalizeXDriveAppearance', "xdrive.appearance", '<App appearance={appearance} onAppearanceChange={changeAppearance} />'], 'MUI Web 入口')
-requireText(files.app + files.settingsDialog, ['<ListItemText>设置</ListItemText>', 'subtitle="外观与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
+requireText(files.app + files.settingsDialog + files.accountChrome, ['XDriveAccountMenuActions', '设置', 'subtitle="外观与服务端信息"', 'XDriveAppearanceField', 'XDriveBuildInfoCard', 'Server 构建信息'], 'Web 设置弹窗')
 if (/antd|ConfigProvider|AntApp|zhCN/.test(files.main)) throw new Error('Web 入口仍保留 Ant Design provider')
 if (/\.ant-[a-zA-Z0-9_-]+/.test(files.styles)) throw new Error('Web CSS 仍保留 Ant Design 选择器')
 

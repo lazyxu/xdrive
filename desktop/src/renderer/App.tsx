@@ -27,7 +27,6 @@ import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
-import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
@@ -40,6 +39,7 @@ import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'
 import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
+  XDriveAccountMenuActions,
   XDriveActionButton,
   XDriveAuthPanel,
   XDriveAuthShell,
@@ -50,6 +50,8 @@ import {
   XDriveCloudStoragePage,
   XDriveWorkspaceSidebar,
   XDriveWorkspaceContent,
+  xDriveWorkspacePresentation,
+  xDriveWorkspaceStorageSummary,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
@@ -68,6 +70,7 @@ import type {
   XDriveCloudStorageDataSource,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
+  XDriveWorkspaceViewKey,
   XDriveStatusTone,
 } from '@xdrive/ui/mui'
 import {
@@ -92,7 +95,7 @@ import type {
   XDriveFileExplorerPageState,
 } from '@xdrive/shared'
 
-type View = 'overview' | 'files' | 'gallery' | 'sources' | 'transfers' | 'local-storage' | 'cloud-storage' | 'conflicts' | 'diagnostics'
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>
 
 type ConfirmDialogState = {
   title: string
@@ -1746,24 +1749,17 @@ export default function App({
         secondary={status?.server}
         status={status?.auth_status}
       >
-        <MenuItem onClick={() => {
-          setAccountMenuAnchor(null)
-          setSettingsOpen(true)
-          window.setTimeout(() => {
-            document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }, 120)
-        }}>
-          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primary="关于 xDrive" secondary={info?.version ? `Desktop ${info.version}` : undefined} />
-        </MenuItem>
-        <MuiDivider />
-        <MenuItem sx={{ color: 'error.main' }} onClick={() => {
-          setAccountMenuAnchor(null)
-          requestLogout()
-        }}>
-          <ListItemIcon sx={{ color: 'inherit' }}><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>退出登录</ListItemText>
-        </MenuItem>
+        <XDriveAccountMenuActions
+          onClose={() => setAccountMenuAnchor(null)}
+          onAbout={() => {
+            setSettingsOpen(true)
+            window.setTimeout(() => {
+              document.getElementById('desktop-build-info')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }, 120)
+          }}
+          aboutSecondary={info?.version ? `Desktop ${info.version}` : undefined}
+          onLogout={requestLogout}
+        />
       </XDriveAccountMenu>
     </Stack>
   )
@@ -1778,16 +1774,11 @@ export default function App({
         transferBadge={taskCenter.badge}
         showLocalStorage
         sections={desktopSidebarSections}
-        storageSummary={cloudQuota ? {
-          usedBytes: cloudQuota.physical_used_bytes,
-          totalBytes: cloudQuota.quota_bytes,
-          diskTotalBytes: cloudQuota.disk_total_bytes,
-          diskAvailableBytes: cloudQuota.disk_available_bytes,
-        } : null}
+        storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}
         onSelect={(destination) => setView(destination as View)}
       />
 
-      <XDriveWorkspaceContent presentation={view === 'files' ? 'files' : 'page'}>
+      <XDriveWorkspaceContent presentation={xDriveWorkspacePresentation(view)}>
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}

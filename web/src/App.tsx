@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
-import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import {
   AppBar,
   Box,
   Button,
   Chip,
-  Divider,
-  ListItemIcon,
-  ListItemText,
-  MenuItem,
   Stack,
   TextField,
   Toolbar,
@@ -22,6 +16,7 @@ import {
 import {
   XDriveAccountAvatarButton,
   XDriveAccountMenu,
+  XDriveAccountMenuActions,
   XDriveActionButton,
   XDriveAuthPanel,
   XDriveAuthShell,
@@ -51,6 +46,8 @@ import {
   XDriveVersionHistoryDialog,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
+  xDriveWorkspacePresentation,
+  xDriveWorkspaceStorageSummary,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
 import type {
@@ -58,6 +55,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
+  XDriveRemoteWorkspaceViewKey,
 } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
@@ -100,15 +98,9 @@ type ConfirmAction = {
   run: () => Promise<void>
 }
 
-type AppView =
-  | 'files'
-  | 'gallery'
-  | 'sources'
-  | 'transfers'
-  | 'cloud-storage'
-  | 'admin-users'
-  | 'admin-audit'
-  | 'admin-storage'
+type AppView = XDriveRemoteWorkspaceViewKey<
+  'admin-users' | 'admin-audit' | 'admin-storage'
+>
 
 function initialSession(): AuthSession {
   const legacy = localStorage.getItem(LEGACY_TOKEN_KEY) ?? ''
@@ -162,28 +154,11 @@ function WebAccountMenu({
         secondary={`Server ${serverBuild?.version || '未知'}`}
         status="已登录"
       >
-        <MenuItem
-          onClick={() => {
-            setAnchorEl(null)
-            setSettingsOpen(true)
-          }}
-        >
-          <ListItemIcon><SettingsRoundedIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>设置</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem
-          sx={{ color: 'error.main' }}
-          onClick={() => {
-            setAnchorEl(null)
-            onLogout()
-          }}
-        >
-          <ListItemIcon sx={{ color: 'inherit' }}>
-            <LogoutRoundedIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>退出登录</ListItemText>
-        </MenuItem>
+        <XDriveAccountMenuActions
+          onClose={() => setAnchorEl(null)}
+          onSettings={() => setSettingsOpen(true)}
+          onLogout={onLogout}
+        />
       </XDriveAccountMenu>
       <XDriveSettingsDialog
         open={settingsOpen}
@@ -899,18 +874,13 @@ function FileManager({
           selected={appView}
           transferBadge={taskCenter.badge}
           sections={webSidebarSections}
-          storageSummary={quota ? {
-            usedBytes: quota.physical_used_bytes,
-            totalBytes: quota.quota_bytes,
-            diskTotalBytes: quota.disk_total_bytes,
-            diskAvailableBytes: quota.disk_available_bytes,
-          } : null}
+          storageSummary={xDriveWorkspaceStorageSummary(quota)}
           onSelect={(destination) => setAppView(destination as AppView)}
         />
 
         <XDriveWorkspaceContent
           responsive
-          presentation={appView === 'files' ? 'files' : 'page'}
+          presentation={xDriveWorkspacePresentation(appView)}
         >
         {appView === 'files' ? (
           <Box

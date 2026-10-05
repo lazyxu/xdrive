@@ -10,6 +10,7 @@ const sharedGallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
+const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
 const webAdapter = read('web', 'src', 'mediaGalleryAdapter.ts')
@@ -256,7 +257,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 })
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {
-  assert.match(desktopApp, /type View = [^\n]*'gallery'/)
+  assert.ok(desktopApp.includes("type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>"), 'Desktop must extend the shared workspace route model')
+  assert.ok(sharedRoute.includes("'gallery'"), 'shared workspace route model must expose Gallery')
   assert.ok(sharedGallery.includes('title="图库"'), 'shared Gallery page must own its workspace title')
   assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must expose Gallery through the shared workspace sidebar')
   assert.ok(desktopApp.includes('selected={view}'), 'Desktop must use its unified workspace key directly')
@@ -265,10 +267,10 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
 })
 
 test('Web exposes files, Gallery, Sync Folders, and Cloud Storage as first-class workspace views', () => {
-  assert.ok(webApp.includes('type AppView ='), 'Web workspace view type should remain explicit')
+  assert.ok(webApp.includes('type AppView = XDriveRemoteWorkspaceViewKey<'), 'Web workspace view type must extend the shared remote route model')
   assert.ok(webApp.includes("useState<AppView>('files')"), 'Files should remain the initial Web workspace')
   for (const view of ['files', 'gallery', 'sources', 'cloud-storage']) {
-    assert.ok(webApp.includes(`| '${view}'`), `AppView missing first-class workspace: ${view}`)
+    assert.ok(sharedRoute.includes(`'${view}'`), `shared workspace route missing first-class workspace: ${view}`)
   }
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must expose first-class workspaces through the shared workspace sidebar')
   assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
