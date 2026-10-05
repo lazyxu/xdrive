@@ -23,6 +23,7 @@ import {
   XDriveBrandLockup,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
+  createXDriveCloudStorageDataSource,
   XDriveWorkspaceSidebar,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -51,7 +52,6 @@ import {
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveCloudStorageDataSource,
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
@@ -493,19 +493,13 @@ function FileManager({
     onError: handleError,
   })
 
-  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
-    load: async () => {
-      const [quotaValue, statsValue] = await Promise.all([
-        api.quota(),
-        api.storageStats().catch(() => null),
-      ])
-      applyQuota(quotaValue)
-      return {
-        quota: quotaValue,
-        stats: statsValue,
-        statsUnavailableMessage: statsValue ? undefined : '当前服务端未提供云端存储情报。',
-      }
-    },
+  const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
+    getQuota: () => api.quota(),
+    getStats: () => api.storageStats(),
+  }, {
+    onQuota: applyQuota,
+    tolerateStatsError: true,
+    statsUnavailableMessage: '当前服务端未提供云端存储情报。',
   }), [api, applyQuota])
 
   useEffect(() => {

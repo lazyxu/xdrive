@@ -48,6 +48,7 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
+  createXDriveCloudStorageDataSource,
   XDriveWorkspaceSidebar,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
@@ -68,7 +69,6 @@ import {
   useXDriveServerUpdateController,
 } from '@xdrive/ui/mui'
 import type {
-  XDriveCloudStorageDataSource,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
   XDriveWorkspaceViewKey,
@@ -424,25 +424,16 @@ export default function App({
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
-  const cloudStorageSource = useMemo<XDriveCloudStorageDataSource>(() => ({
-    load: async () => {
-      const [quotaResult, statsResult] = await Promise.all([
-        window.xdriveDesktop.agent.cloudQuota(),
-        storageStatsSupported
-          ? window.xdriveDesktop.agent.cloudStorageStats()
-          : Promise.resolve(null),
-      ])
-      if (!quotaResult.ok) throw new Error(quotaResult.error.message)
-      applyCloudQuota(quotaResult.data)
-      if (statsResult && !statsResult.ok) throw new Error(statsResult.error.message)
-      return {
-        quota: quotaResult.data,
-        stats: statsResult?.ok ? statsResult.data : null,
-        statsUnavailableMessage: storageStatsSupported
-          ? undefined
-          : '当前 xdrive-agent 不支持云端存储情报，请更新客户端核心组件。',
-      }
-    },
+  const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
+    getQuota: () => window.xdriveDesktop.agent.cloudQuota(),
+    getStats: storageStatsSupported
+      ? () => window.xdriveDesktop.agent.cloudStorageStats()
+      : undefined,
+  }, {
+    onQuota: applyCloudQuota,
+    statsUnavailableMessage: storageStatsSupported
+      ? undefined
+      : '当前 xdrive-agent 不支持云端存储情报，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<DesktopLocalStorageDataSource>(() => ({
     load: async () => {
