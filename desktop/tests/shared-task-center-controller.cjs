@@ -8,6 +8,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const controller = read('ui', 'shared', 'src', 'mui', 'TaskCenterController.ts')
 const page = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
+const transferModel = read('ui', 'shared', 'src', 'transfers.ts')
+const fileOperationModel = read('ui', 'shared', 'src', 'file-operations.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
@@ -15,10 +17,10 @@ const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 test('shared Task Center controller owns summary, history and page-action presentation', () => {
   for (const token of [
     'useXDriveTaskCenterController',
-    "item.state === 'running' || item.state === 'retrying'",
-    'xDriveFileOperationActive(item.status)',
-    "item.state === 'completed' || item.state === 'failed'",
-    '!xDriveFileOperationActive(item.status)',
+    'xDriveActiveTransferCount(transfers)',
+    'xDriveActiveFileOperationCount(operations)',
+    'xDriveTransferHasHistory(transfers)',
+    'xDriveFileOperationHasHistory(operations)',
     'const badgeCount = activeTransferCount + activeOperationCount',
     'disabled: !hasHistory || externalBusy || operationActions.busy',
     'loading: operationActions.clearHistoryLoading',
@@ -38,6 +40,12 @@ test('shared Task Center controller owns summary, history and page-action presen
   }
 
   assert.ok(page.includes('export interface XDriveTaskCenterPageProps'), 'Task Center page props must be reusable by the controller')
+  assert.ok(transferModel.includes('export function xDriveTransferActive'), 'shared transfer model must own active-state selection')
+  assert.ok(transferModel.includes('export function xDriveTransferTerminal'), 'shared transfer model must own terminal-state selection')
+  assert.ok(transferModel.includes('export function xDriveActiveTransferCount'), 'shared transfer model must own active transfer counting')
+  assert.ok(transferModel.includes('export function xDriveTransferHasHistory'), 'shared transfer model must own transfer history selection')
+  assert.ok(fileOperationModel.includes('export function xDriveActiveFileOperationCount'), 'shared file-operation model must own active operation counting')
+  assert.ok(fileOperationModel.includes('export function xDriveFileOperationHasHistory'), 'shared file-operation model must own operation history selection')
   assert.ok(sharedMuiIndex.includes("export * from './TaskCenterController'"), 'Task Center controller must be exported')
 })
 

@@ -101,6 +101,18 @@ export function xDriveFileOperationActive(status: XDriveFileOperationStatus | st
   return status === 'queued' || status === 'running' || status === 'cancel_requested'
 }
 
+export function xDriveActiveFileOperationCount(
+  operations: readonly Pick<XDriveFileOperation, 'status'>[],
+) {
+  return operations.filter((operation) => xDriveFileOperationActive(operation.status)).length
+}
+
+export function xDriveFileOperationHasHistory(
+  operations: readonly Pick<XDriveFileOperation, 'status'>[],
+) {
+  return operations.some((operation) => !xDriveFileOperationActive(operation.status))
+}
+
 export function xDriveFileOperationPollIntervalMs(
   operations: readonly Pick<XDriveFileOperation, 'status'>[],
   taskCenterVisible = false,

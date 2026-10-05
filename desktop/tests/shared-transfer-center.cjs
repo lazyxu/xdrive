@@ -43,6 +43,10 @@ test('shared transfer center exposes detailed progress and history fields', () =
     assert.ok(shared.includes(token), `shared transfer center missing: ${token}`)
   }
   assert.ok(sharedModel.includes('xDriveTransferEtaMs'), 'shared transfer model must calculate ETA')
+  assert.ok(sharedModel.includes('xDriveTransferActive'), 'shared transfer model must classify active transfers')
+  assert.ok(sharedModel.includes('xDriveTransferTerminal'), 'shared transfer model must classify terminal transfers')
+  assert.ok(sharedModel.includes('xDriveActiveTransferCount'), 'shared transfer model must count active transfers')
+  assert.ok(sharedModel.includes('xDriveTransferHasHistory'), 'shared transfer model must detect transfer history')
   assert.ok(sharedModel.includes("direction: 'upload' | 'download' | 'local' | string"), 'shared transfer direction contract is missing')
 })
 
@@ -73,6 +77,8 @@ test('Web upload and download operations feed persistent transfer history', () =
   assert.ok(webStore.includes("xdrive.web.transfer_history"), 'Web transfer history must survive navigation/reload')
   assert.ok(webStore.includes('MAX_HISTORY = 200'), 'Web transfer history must be bounded')
   assert.ok(webStore.includes('页面刷新后无法继续跟踪该传输'), 'stale active Web transfers must fail closed after reload')
+  assert.ok(webStore.includes('xDriveTransferActive(item)'), 'Web stale-transfer recovery must use the shared active selector')
+  assert.ok(webStore.includes('this.items.filter(xDriveTransferActive)'), 'Web history clearing must preserve active work through the shared selector')
 })
 
 

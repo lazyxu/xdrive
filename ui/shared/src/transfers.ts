@@ -19,6 +19,30 @@ export type XDriveTransferTask = {
   completed_at?: string
 }
 
+export function xDriveTransferActive(
+  task: Pick<XDriveTransferTask, 'state'>,
+) {
+  return task.state === 'running' || task.state === 'retrying'
+}
+
+export function xDriveTransferTerminal(
+  task: Pick<XDriveTransferTask, 'state'>,
+) {
+  return task.state === 'completed' || task.state === 'failed'
+}
+
+export function xDriveActiveTransferCount(
+  tasks: readonly XDriveTransferTask[],
+) {
+  return tasks.filter(xDriveTransferActive).length
+}
+
+export function xDriveTransferHasHistory(
+  tasks: readonly XDriveTransferTask[],
+) {
+  return tasks.some(xDriveTransferTerminal)
+}
+
 export function xDriveTransferKindLabel(value: string) {
   switch (value) {
     case 'upload': return '上传'
