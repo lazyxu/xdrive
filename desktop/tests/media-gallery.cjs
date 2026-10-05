@@ -6,7 +6,16 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
-const sharedGallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
+const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
+const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
+const sharedGallery = [
+  sharedGalleryMain,
+  sharedGalleryDetails,
+  sharedGalleryPreview,
+  sharedGalleryUtils,
+].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
@@ -323,4 +332,36 @@ test('Web exposes files, Gallery, Sync Folders, and Cloud Storage as first-class
   assert.equal(webApp.includes("setStorageStatsScope('self')"), false)
   assert.ok(webApp.includes('<WebFileExplorer'), 'Web files workspace should use the shared Explorer adapter')
   assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 0, 'legacy Web file-card must not return')
+})
+
+
+test('Gallery delegates MediaDetails and preview-media helpers to internal modules', () => {
+  assert.ok(sharedGalleryMain.includes('<XDriveMediaDetailsDialog'), 'Gallery must render the internal media-details dialog')
+  assert.ok(sharedGalleryDetails.includes('export function XDriveMediaDetailsDialog'), 'missing MediaGallery details module')
+  assert.equal(sharedGalleryMain.includes('function MediaDetails('), false, 'MediaDetails implementation must not remain inline')
+  for (const token of [
+    'XDriveFilePreviewSurface',
+    'XDriveLivePhotoSurface',
+    '保存标签',
+    '保存人物',
+    '保存描述',
+    '从当前相册移除',
+    '资产资源',
+    '视频编码',
+    '缩略图',
+  ]) {
+    assert.ok(sharedGalleryDetails.includes(token), `MediaGalleryDetails missing: ${token}`)
+  }
+  for (const token of [
+    'export function XDriveMediaAsyncThumbnail',
+    'export function XDriveMediaAsyncVideoPoster',
+    'IntersectionObserver',
+    'drawImage',
+    "toDataURL('image/jpeg'",
+    'export function xDriveMediaFallback',
+  ]) {
+    assert.ok(sharedGalleryPreview.includes(token), `MediaGalleryPreviewMedia missing: ${token}`)
+  }
+  assert.ok(sharedGalleryUtils.includes('export function xDriveMediaGalleryErrorMessage'), 'shared Gallery error helper is missing')
+  assert.ok(sharedGalleryUtils.includes('export function xDriveMediaFormatDuration'), 'shared Gallery duration helper is missing')
 })
