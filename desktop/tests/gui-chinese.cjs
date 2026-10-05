@@ -9,6 +9,7 @@ const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDetailsDialog.tsx'), 'utf8'),
+  fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerCreateDialog.tsx'), 'utf8'),
 ].join('\n')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
 const sharedCloudStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
@@ -424,7 +425,8 @@ test('shared SourceManager owns run history, progress, pagination and cancellati
 test('shared SourceManager owns create, settings and connector forms', () => {
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
   assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
-  assert.ok(sharedSourceManager.includes('value={createValues.preset}'), 'shared Source create preset is not bound')
+  assert.ok(sharedSourceManager.includes('values={createValues}'), 'SourceManager must pass create form state into the create dialog')
+  assert.ok(sharedSourceManager.includes('value={values.preset}'), 'shared Source create preset is not bound inside the create dialog')
   assert.equal((sharedSourceManager.match(/<XDriveSourceNameField\b/g) || []).length, 2, 'Source create/settings name fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceRunModeField\b/g) || []).length, 2, 'Source create/settings run-mode fields must stay shared')
   assert.equal((sharedSourceManager.match(/<XDriveSourceStatusField\b/g) || []).length, 1, 'Source settings status field must stay shared')

@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const sourceManager = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8')
 const sourceDialogs = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8')
 const sourceDetails = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerDetailsDialog.tsx'), 'utf8')
+const sourceCreate = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'SourceManagerCreateDialog.tsx'), 'utf8')
 const webStyles = fs.readFileSync(path.join(repo, 'web', 'src', 'styles.css'), 'utf8')
 
 test('shared SourceManager owns list spacing without Web-only legacy CSS', () => {
@@ -100,4 +101,35 @@ test('SourceManager keeps pagination request policy in the parent controller', (
   assert.equal(sourceDetails.includes('export const SOURCE_HISTORY_PAGE_SIZE'), false, 'details UI must not define history request size')
   assert.equal(sourceDetails.includes('export const SOURCE_RUN_FAILURE_PAGE_SIZE'), false, 'details UI must not define failure request size')
   assert.equal(sourceDetails.includes('export const SOURCE_COLLECTION_ITEM_PAGE_SIZE'), false, 'details UI must not define collection request size')
+})
+
+
+test('SourceManager delegates the create dialog to an internal presentation module', () => {
+  assert.ok(sourceManager.includes('<XDriveSourceCreateDialog'), 'SourceManager must delegate the create dialog')
+  for (const token of [
+    'export function XDriveSourceCreateDialog',
+    'XDriveSourcePresetField',
+    'XDriveSourceNameField',
+    'XDriveSourceRunModeField',
+    'XDriveSourceSyncModeField',
+    'XDriveSourceScheduleFields',
+    'XDriveSourceIgnoreRulesField',
+    'XDriveSourceCookieField',
+    'XDriveSynologyDsmCredentialFields',
+    'XDriveSynologyPhotoSpacesField',
+    'XDriveSynologyFileRootsField',
+    'XDriveYikeCookieHelp',
+    '固定逻辑目录',
+    '目标文件夹',
+    'Synology DSM 连接',
+  ]) {
+    assert.ok(sourceCreate.includes(token), `SourceManagerCreateDialog missing: ${token}`)
+  }
+
+  assert.equal(/adapter\./.test(sourceCreate), false, 'create dialog presentation must not call the Source adapter')
+  assert.equal(/use(?:State|Effect)\(/.test(sourceCreate), false, 'create dialog presentation must not own async/state orchestration')
+  assert.equal(sourceManager.includes('<Dialog\n        open={createOpen}'), false, 'raw create Dialog shell must not remain inline')
+  assert.equal(sourceManager.includes('title="添加同步文件夹"'), false, 'create Dialog title must not remain inline')
+  assert.equal(sourceManager.includes('<XDriveSourcePresetField'), false, 'create preset field must not remain inline')
+  assert.equal(sourceManager.includes('固定逻辑目录：{yikeManagedTargetLabel}'), false, 'create target presentation must not remain inline')
 })

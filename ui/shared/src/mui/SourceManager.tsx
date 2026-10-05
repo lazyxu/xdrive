@@ -5,7 +5,6 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import {
   Box as MuiBox,
   Button as MuiButton,
-  CircularProgress,
   Dialog,
   MenuItem,
   Stack,
@@ -24,7 +23,6 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveSourceIgnoreRulesField } from './SourceIgnoreRulesField'
 import {
   XDriveSourceNameField,
-  XDriveSourcePresetField,
   XDriveSourceRunModeField,
   XDriveSourceStatusField,
   XDriveSourceSyncModeField,
@@ -42,6 +40,8 @@ import {
 import { XDriveSourceScheduleFields } from './SourceScheduleFields'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
 import { XDriveSourceSummaryCard } from './SourceSummaryCard'
+import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
+import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
 import {
   XDriveSourceClearCredentialDialog,
   XDriveSourceDeleteConfirmDialog,
@@ -71,9 +71,7 @@ import {
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
-  yikeConnectorNotice,
   yikeRateLimitNotice,
-  yikeManagedTargetLabel,
 } from '../external-sources'
 import { formatSize } from '../format'
 import type {
@@ -185,23 +183,6 @@ function selectedSourcePollDelay(row: ExternalSourceRow | null) {
   return null
 }
 
-type CreateSourceValues = {
-  preset: ExternalSourceCreatePreset
-  name: string
-  sync_mode: ExternalSourceSyncMode
-  run_mode: 'scan' | 'sync'
-  schedule_type: ExternalSourceScheduleType
-  schedule_expression: string
-  schedule_timezone: string
-  ignore_rules?: string
-  cookie?: string
-  base_url?: string
-  username?: string
-  password?: string
-  spaces?: SynologyPhotoSpace[]
-  roots?: string[]
-}
-
 function sourceActionErrorMessage(error: unknown, fallback: string) {
   const value = error instanceof Error && error.message.trim()
     ? error.message.trim()
@@ -213,7 +194,7 @@ function sourceActionErrorMessage(error: unknown, fallback: string) {
   )
 }
 
-function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): CreateSourceValues {
+function initialCreateSourceValues(preset: ExternalSourceCreatePreset = 'synology_push'): XDriveSourceCreateValues {
   const option = externalSourceCreateOption(preset)
   const defaults = externalSourceDefaults(option.kind, option.direction)
   return {
@@ -310,22 +291,15 @@ export function XDriveSourceManager({
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
   const [clearingCookie, setClearingCookie] = useState(false)
   const [settingsConnectorConfig, setSettingsConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
-  const [createValues, setCreateValues] = useState<CreateSourceValues>(initialCreateSourceValues)
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(initialCreateSourceValues)
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
-  const createScheduleType = createValues.schedule_type
-  const createScheduleExpression = createValues.schedule_expression
-  const createScheduleTimezone = createValues.schedule_timezone
   const createPreset = createValues.preset
   const createOption = externalSourceCreateOption(createPreset)
   const createProfile = externalSourceConnectorProfile(createOption.kind, createOption.direction)
   const createTarget = createTargetCrumbs.at(-1)
   const selectedCreateTargetNodeID = targetBrowser ? createTarget?.id : defaultTargetNodeID
-  const selectedCreateTargetLabel = targetBrowser
-    ? (createTargetCrumbs.map((item) => item.name).join(' / ') || defaultTargetLabel)
-    : defaultTargetLabel
-  const selectedCreateTargetPath = targetBrowser ? (createTarget?.path ?? '') : defaultTargetPath
 
   const showActionError = (title: string, error: unknown, fallback: string, detail?: string) => {
     setErrorDialog({
@@ -1276,274 +1250,57 @@ export function XDriveSourceManager({
         onClose={() => setFailedItemsOpen(false)}
       />
 
-      <Dialog
+      <XDriveSourceCreateDialog
         open={createOpen}
-        onClose={() => {
+        creating={creating}
+        values={createValues}
+        nameError={createNameError}
+        spacesError={createSpacesError}
+        rootsError={createRootsError}
+        targetBrowsingEnabled={Boolean(targetBrowser)}
+        targetCrumbs={createTargetCrumbs}
+        targetDirectories={createTargetDirectories}
+        targetLoading={createTargetLoading}
+        defaultTargetLabel={defaultTargetLabel}
+        defaultTargetPath={defaultTargetPath}
+        cookieHelpVariant={cookieHelpVariant}
+        testingCredential={testingCreateCredential}
+        credentialTest={createCredentialTest}
+        credentialTestError={createCredentialTestError}
+        onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
           setCreateValues(initialCreateSourceValues())
         }}
-        maxWidth="sm"
-        fullWidth
-        scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
-      >
-        <XDriveDialogTitle
-          title="添加同步文件夹"
-          onClose={() => {
-            if (creating) return
-            setCreateOpen(false)
-            setCreateValues(initialCreateSourceValues())
-          }}
-          closeDisabled={creating}
-        />
-        <XDriveDialogContent dividers>
-        {createOption.kind === 'yike_photos' ? (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
-          </XDriveStatusAlert>
-        ) : targetBrowser ? (
-          <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
-              <MuiBox>
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标文件夹</MuiTypography>
-                <MuiTypography variant="body2" color="text.secondary">
-                  当前选择：{selectedCreateTargetLabel || '正在加载…'}
-                </MuiTypography>
-              </MuiBox>
-              {createTargetLoading ? <CircularProgress size={18} /> : null}
-            </Stack>
-            <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-              {createTargetCrumbs.map((crumb, index) => (
-                <MuiButton
-                  key={crumb.id}
-                  size="small"
-                  variant={index === createTargetCrumbs.length - 1 ? 'contained' : 'text'}
-                  disabled={createTargetLoading || index === createTargetCrumbs.length - 1}
-                  onClick={() => void loadCreateTargetDirectory(crumb, createTargetCrumbs.slice(0, index + 1))}
-                >
-                  {crumb.name}
-                </MuiButton>
-              ))}
-            </Stack>
-            <Stack spacing={0.75} sx={{ mt: 1 }}>
-              {createTargetDirectories.length === 0 && !createTargetLoading ? (
-                <MuiTypography variant="caption" color="text.secondary">
-                  当前目录下没有子文件夹，可直接使用当前目录。
-                </MuiTypography>
-              ) : createTargetDirectories.map((directory) => (
-                <MuiButton
-                  key={directory.id}
-                  variant="outlined"
-                  size="small"
-                  disabled={createTargetLoading}
-                  onClick={() => void loadCreateTargetDirectory(
-                    directory,
-                    [...createTargetCrumbs, directory],
-                  )}
-                  sx={{ justifyContent: 'space-between' }}
-                >
-                  <span>{directory.name}</span>
-                  <span>进入文件夹 ›</span>
-                </MuiButton>
-              ))}
-            </Stack>
-            {createOption.direction === 'pull' && (
-              <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Pull 模式由 xDrive Server 直接连接 DSM；请确保服务器网络可以访问下面填写的 DSM 地址。
-              </MuiTypography>
-            )}
-          </MuiBox>
-        ) : (
-          <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>目标目录使用当前文件夹</MuiTypography>
-            <MuiTypography variant="body2">
-              当前目标：{selectedCreateTargetLabel}{selectedCreateTargetPath ? `（${selectedCreateTargetPath}）` : '（我的文件根目录）'}
-            </MuiTypography>
-            {createOption.direction === 'pull' && (
-              <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
-                Pull 模式由 xDrive Server 直接连接 DSM；请确保服务器网络可以访问下面填写的 DSM 地址。
-              </MuiTypography>
-            )}
-          </XDriveStatusAlert>
-        )}
-        <MuiBox id="external-source-create-form" component="form" onSubmit={(event) => void createSource(event)}>
-          <Stack spacing={2}>
-            <XDriveSourcePresetField
-              value={createValues.preset}
-              onChange={changeCreatePreset}
-            />
-            <XDriveSourceNameField
-              value={createValues.name}
-              error={Boolean(createNameError)}
-              helperText={createNameError || ' '}
-              onChange={(value) => {
-                setCreateValues((current) => ({ ...current, name: value }))
-                if (createNameError) setCreateNameError('')
-              }}
-            />
-            <XDriveSourceRunModeField
-              label="初始运行模式"
-              value={createValues.run_mode}
-              scanLabel="仅扫描（推荐先使用）"
-              onChange={(value) => setCreateValues((current) => ({ ...current, run_mode: value }))}
-            />
-            <XDriveSourceSyncModeField
-              value={createValues.sync_mode}
-              onChange={(value) => setCreateValues((current) => ({ ...current, sync_mode: value }))}
-            />
-            {createValues.sync_mode === 'mirror' && (
-              <XDriveStatusAlert tone="warning">
-                <MuiTypography variant="subtitle2" sx={{ fontWeight: 700 }}>镜像到回收站</MuiTypography>
-                <MuiTypography variant="body2">{externalSourceMirrorSafetyNotice}</MuiTypography>
-                {createValues.run_mode === 'scan' && (
-                  <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
-                )}
-              </XDriveStatusAlert>
-            )}
-            <XDriveSourceScheduleFields
-              wideAt="md"
-              scheduleType={createScheduleType}
-              expression={createScheduleExpression}
-              timezone={createScheduleTimezone}
-              onScheduleTypeChange={(value) => setCreateValues((current) => ({ ...current, schedule_type: value }))}
-              onExpressionChange={(value) => setCreateValues((current) => ({ ...current, schedule_expression: value }))}
-              onTimezoneChange={(value) => setCreateValues((current) => ({ ...current, schedule_timezone: value }))}
-            />
-            <XDriveSourceIgnoreRulesField
-              value={createValues.ignore_rules ?? ''}
-              onChange={(value) => setCreateValues((current) => ({ ...current, ignore_rules: value }))}
-              monospace
-            />
-            {createProfile.credential === 'cookie' && (
-              <>
-                <XDriveSourceCookieField
-                  value={createValues.cookie ?? ''}
-                  helperText="Cookie 只会加密保存到服务器，之后不会回传到浏览器。"
-                  onChange={(value) => {
-                    setCreateValues((current) => ({ ...current, cookie: value }))
-                    setCreateCredentialTest(null)
-                    setCreateCredentialTestError('')
-                  }}
-                />
-                <MuiBox>
-                  <XDriveStatusAlert tone="warning" sx={{ mb: 1 }}>{yikeConnectorNotice}</XDriveStatusAlert>
-                  <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>{yikeRateLimitNotice}</XDriveStatusAlert>
-                  <XDriveYikeCookieHelp variant={cookieHelpVariant} />
-                  <MuiBox sx={{ mt: 1 }}>
-                    <XDriveActionButton
-                      compact
-                      disabled={testingCreateCredential}
-                      loading={testingCreateCredential}
-                      loadingLabel="正在测试…"
-                      onClick={() => void testCreateCredential()}
-                    >
-                      测试连接
-                    </XDriveActionButton>
-                  </MuiBox>
-                  {createCredentialTest && (
-                    <XDriveStatusAlert tone="good" sx={{ mt: 1 }}>
-                      {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
-                    </XDriveStatusAlert>
-                  )}
-                  {createCredentialTestError && <XDriveStatusAlert tone="bad" sx={{ mt: 1 }}>{createCredentialTestError}</XDriveStatusAlert>}
-                </MuiBox>
-              </>
-            )}
-            {createProfile.credential === 'synology_dsm' && (
-              <>
-                <XDriveSectionHeader level="h3" title="Synology DSM 连接" />
-                <XDriveSynologyDsmCredentialFields
-                  baseURL={createValues.base_url ?? ''}
-                  username={createValues.username ?? ''}
-                  password={createValues.password ?? ''}
-                  onBaseURLChange={(value) => {
-                    setCreateValues((current) => ({ ...current, base_url: value }))
-                    setCreateCredentialTest(null)
-                    setCreateCredentialTestError('')
-                  }}
-                  onUsernameChange={(value) => {
-                    setCreateValues((current) => ({ ...current, username: value }))
-                    setCreateCredentialTest(null)
-                    setCreateCredentialTestError('')
-                  }}
-                  onPasswordChange={(value) => {
-                    setCreateValues((current) => ({ ...current, password: value }))
-                    setCreateCredentialTest(null)
-                    setCreateCredentialTestError('')
-                  }}
-                />
-                {createOption.kind === 'synology_photos' ? (
-                  <XDriveSynologyPhotoSpacesField
-                    value={createValues.spaces ?? []}
-                    error={Boolean(createSpacesError)}
-                    helperText={createSpacesError || '至少选择一个照片空间'}
-                    onChange={(value) => {
-                      setCreateValues((current) => ({ ...current, spaces: value }))
-                      if (createSpacesError) setCreateSpacesError('')
-                    }}
-                  />
-                ) : (
-                  <XDriveSynologyFileRootsField
-                    value={createValues.roots ?? []}
-                    error={Boolean(createRootsError)}
-                    helperText={createRootsError || '每行一个 DSM 绝对目录；会同步目录、空目录及其中的任意文件类型。'}
-                    onChange={(value) => {
-                      setCreateValues((current) => ({ ...current, roots: value }))
-                      if (createRootsError) setCreateRootsError('')
-                    }}
-                  />
-                )}
-                <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>
-                  {createOption.kind === 'synology_files'
-                    ? 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 File Station API 只读同步所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
-                    : 'DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
-                </XDriveStatusAlert>
-                <MuiBox>
-                  <XDriveActionButton
-                    compact
-                    disabled={testingCreateCredential}
-                    loading={testingCreateCredential}
-                    loadingLabel="正在测试…"
-                    onClick={() => void testCreateCredential()}
-                  >
-                    测试连接
-                  </XDriveActionButton>
-                </MuiBox>
-                {createCredentialTest && (
-                  <XDriveStatusAlert tone="good">
-                    {externalSourceCredentialTestSuccessLabel(createCredentialTest)}
-                  </XDriveStatusAlert>
-                )}
-                {createCredentialTestError && <XDriveStatusAlert tone="bad">{createCredentialTestError}</XDriveStatusAlert>}
-              </>
-            )}
-          </Stack>
-        </MuiBox>
-        </XDriveDialogContent>
-        <XDriveDialogActions>
-          <XDriveActionButton
-            onClick={() => {
-              setCreateOpen(false)
-              setCreateValues(initialCreateSourceValues())
-              setCreateNameError('')
-              setCreateSpacesError('')
-              setCreateRootsError('')
-            }}
-          >
-            取消
-          </XDriveActionButton>
-          <XDriveActionButton
-            intent="primary"
-            type="submit"
-            form="external-source-create-form"
-            loading={creating}
-            loadingLabel="正在添加…"
-          >
-            添加同步文件夹
-          </XDriveActionButton>
-        </XDriveDialogActions>
-      </Dialog>
+        onCancel={() => {
+          setCreateOpen(false)
+          setCreateValues(initialCreateSourceValues())
+          setCreateNameError('')
+          setCreateSpacesError('')
+          setCreateRootsError('')
+        }}
+        onSubmit={(event) => {
+          void createSource(event)
+        }}
+        onPresetChange={changeCreatePreset}
+        onChange={(patch) => {
+          setCreateValues((current) => ({ ...current, ...patch }))
+        }}
+        onCredentialChange={(patch) => {
+          setCreateValues((current) => ({ ...current, ...patch }))
+          setCreateCredentialTest(null)
+          setCreateCredentialTestError('')
+        }}
+        onClearNameError={() => setCreateNameError('')}
+        onClearSpacesError={() => setCreateSpacesError('')}
+        onClearRootsError={() => setCreateRootsError('')}
+        onLoadTargetDirectory={(node, crumbs) => {
+          void loadCreateTargetDirectory(node, crumbs)
+        }}
+        onTestCredential={() => {
+          void testCreateCredential()
+        }}
+      />
 
       <Dialog
         open={!!setting}

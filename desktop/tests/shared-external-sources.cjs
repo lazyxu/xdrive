@@ -32,6 +32,7 @@ function readSharedSourceManager(repo) {
     'SourceManager.tsx',
     'SourceManagerDialogs.tsx',
     'SourceManagerDetailsDialog.tsx',
+    'SourceManagerCreateDialog.tsx',
   ].map((name) => fs.readFileSync(
     path.join(repo, 'ui', 'shared', 'src', 'mui', name),
     'utf8',
