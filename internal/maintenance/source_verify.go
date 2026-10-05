@@ -6,14 +6,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"gorm.io/gorm"
 )
 
 type SourceBindingIssue struct {
 	SourceID     uint64 `json:"source_id"`
 	SourceItemID uint64 `json:"source_item_id,omitempty"`
+	RunID        string `json:"run_id,omitempty"`
 	ExternalID   string `json:"external_id,omitempty"`
 	NodeID       uint64 `json:"node_id,omitempty"`
 	Reason       string `json:"reason"`
@@ -22,10 +25,11 @@ type SourceBindingIssue struct {
 }
 
 type SourceVerifyReport struct {
-	Sources    int                  `json:"sources"`
-	Items      int                  `json:"items"`
-	BoundItems int                  `json:"bound_items"`
-	Issues     []SourceBindingIssue `json:"issues"`
+	Sources     int                  `json:"sources"`
+	Items       int                  `json:"items"`
+	BoundItems  int                  `json:"bound_items"`
+	RunningRuns int                  `json:"running_runs"`
+	Issues      []SourceBindingIssue `json:"issues"`
 }
 
 const sourceVerifyQueryBatchSize = 1000
@@ -67,6 +71,12 @@ func VerifySources(db *gorm.DB) (SourceVerifyReport, error) {
 	if err := db.Order("source_id ASC, source_item_id ASC").Find(&itemMetadata).Error; err != nil {
 		return report, fmt.Errorf("query source item metadata: %w", err)
 	}
+	var runningRuns []meta.SyncRun
+	if err := db.Where("status = ?", meta.SyncRunStatusRunning).
+		Order("source_id ASC, started_at ASC, id ASC").
+		Find(&runningRuns).Error; err != nil {
+		return report, fmt.Errorf("query running source runs: %w", err)
+	}
 
 	nodeIDs := make(map[uint64]struct{})
 	for _, source := range sources {
@@ -104,7 +114,7 @@ func VerifySources(db *gorm.DB) (SourceVerifyReport, error) {
 	}); err != nil {
 		return report, err
 	}
-	return verifySourceState(
+	report = verifySourceState(
 		sources,
 		items,
 		aliases,
@@ -113,7 +123,10 @@ func VerifySources(db *gorm.DB) (SourceVerifyReport, error) {
 		itemMetadata,
 		nodes,
 		files,
-	), nil
+	)
+	verifySourceRuns(&report, runningRuns, time.Now().UTC())
+	sortSourceBindingIssues(report.Issues)
+	return report, nil
 }
 
 func forSourceVerifyIDBatches(ids []uint64, fn func([]uint64) error) error {
@@ -534,6 +547,34 @@ func verifySourceRelations(
 	}
 }
 
+func verifySourceRuns(
+	report *SourceVerifyReport,
+	runs []meta.SyncRun,
+	now time.Time,
+) {
+	if report == nil {
+		return
+	}
+	report.RunningRuns = len(runs)
+	for _, run := range runs {
+		if !sourcepkg.SyncRunStale(run, now) {
+			continue
+		}
+		heartbeat := sourcepkg.SyncRunHeartbeatAt(run)
+		actual := ""
+		if !heartbeat.IsZero() {
+			actual = heartbeat.UTC().Format(time.RFC3339Nano)
+		}
+		report.Issues = append(report.Issues, SourceBindingIssue{
+			SourceID: run.SourceID,
+			RunID:    run.ID,
+			Reason:   "stale_running_run",
+			Expected: "heartbeat within " + sourcepkg.SyncRunStaleAfter.String(),
+			Actual:   actual,
+		})
+	}
+}
+
 func sortSourceBindingIssues(issues []SourceBindingIssue) {
 	sort.SliceStable(issues, func(i, j int) bool {
 		left, right := issues[i], issues[j]
@@ -542,6 +583,9 @@ func sortSourceBindingIssues(issues []SourceBindingIssue) {
 		}
 		if left.SourceItemID != right.SourceItemID {
 			return left.SourceItemID < right.SourceItemID
+		}
+		if left.RunID != right.RunID {
+			return left.RunID < right.RunID
 		}
 		if left.ExternalID != right.ExternalID {
 			return left.ExternalID < right.ExternalID

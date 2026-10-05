@@ -22,11 +22,12 @@ type SourceRepairAction struct {
 }
 
 type SourceRepairReport struct {
-	DryRun  bool                 `json:"dry_run"`
-	Before  SourceVerifyReport   `json:"before"`
-	After   SourceVerifyReport   `json:"after"`
-	Actions []SourceRepairAction `json:"actions"`
-	Skipped []SourceBindingIssue `json:"skipped,omitempty"`
+	DryRun     bool                    `json:"dry_run"`
+	Before     SourceVerifyReport      `json:"before"`
+	After      SourceVerifyReport      `json:"after"`
+	Actions    []SourceRepairAction    `json:"actions"`
+	RunActions []SourceRunRepairAction `json:"run_actions,omitempty"`
+	Skipped    []SourceBindingIssue    `json:"skipped,omitempty"`
 }
 
 var repairableSourceBindingReasons = map[string]struct{}{
@@ -42,9 +43,11 @@ var repairableSourceBindingReasons = map[string]struct{}{
 // timestamps, hashes, or provider semantics. The stable SourceItem ExternalID
 // is preserved so the next complete scan can create/rebind the item normally.
 //
-// File/CAS corruption, target-directory problems, identity conflicts, and
-// collection/metadata issues remain read-only verifier findings until they have
-// a separately proven repair contract.
+// Stale running SyncRuns use the same heartbeat contract as the live API and
+// can be finalized without inferring missing files. File/CAS corruption,
+// target-directory problems, identity conflicts, and collection/metadata issues
+// remain read-only verifier findings until they have a separately proven repair
+// contract.
 func RepairSources(
 	ctx context.Context,
 	db *gorm.DB,
@@ -65,53 +68,67 @@ func RepairSources(
 	}
 	report.Before = before
 	report.Actions, report.Skipped = planSourceRepair(before)
-	if dryRun || len(report.Actions) == 0 {
+	report.RunActions, report.Skipped, err = planSourceRunRepairs(ctx, db, report.Skipped)
+	if err != nil {
+		return report, err
+	}
+	if dryRun || (len(report.Actions) == 0 && len(report.RunActions) == 0) {
 		report.After = before
 		return report, nil
 	}
 
 	now := time.Now().UTC()
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for index := range report.Actions {
-			action := &report.Actions[index]
-			var item meta.SourceItem
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("id = ? AND source_id = ?", action.SourceItemID, action.SourceID).
-				First(&item).Error; err != nil {
-				return fmt.Errorf("load source item %d for repair: %w", action.SourceItemID, err)
-			}
-			if strings.TrimSpace(item.ExternalID) != strings.TrimSpace(action.ExternalID) {
-				return fmt.Errorf("source item %d identity changed during repair", action.SourceItemID)
-			}
-			if action.PreviousNodeID == 0 {
-				if item.NodeID != nil {
+	if len(report.Actions) != 0 {
+		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			for index := range report.Actions {
+				action := &report.Actions[index]
+				var item meta.SourceItem
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND source_id = ?", action.SourceItemID, action.SourceID).
+					First(&item).Error; err != nil {
+					return fmt.Errorf("load source item %d for repair: %w", action.SourceItemID, err)
+				}
+				if strings.TrimSpace(item.ExternalID) != strings.TrimSpace(action.ExternalID) {
+					return fmt.Errorf("source item %d identity changed during repair", action.SourceItemID)
+				}
+				if action.PreviousNodeID == 0 {
+					if item.NodeID != nil {
+						return fmt.Errorf("source item %d binding changed during repair", action.SourceItemID)
+					}
+				} else if item.NodeID == nil || *item.NodeID != action.PreviousNodeID {
 					return fmt.Errorf("source item %d binding changed during repair", action.SourceItemID)
 				}
-			} else if item.NodeID == nil || *item.NodeID != action.PreviousNodeID {
-				return fmt.Errorf("source item %d binding changed during repair", action.SourceItemID)
-			}
 
-			state := item.State
-			switch state {
-			case meta.SourceItemStateSynced, meta.SourceItemStatePending, meta.SourceItemStateError:
-				state = meta.SourceItemStatePending
+				state := item.State
+				switch state {
+				case meta.SourceItemStateSynced, meta.SourceItemStatePending, meta.SourceItemStateError:
+					state = meta.SourceItemStatePending
+				}
+				if err := tx.Model(&meta.SourceItem{}).
+					Where("id = ? AND source_id = ?", item.ID, item.SourceID).
+					Updates(map[string]any{
+						"node_id":       nil,
+						"node_revision": 0,
+						"state":         state,
+						"last_error":    "",
+						"updated_at":    now,
+					}).Error; err != nil {
+					return fmt.Errorf("detach invalid source binding %d: %w", item.ID, err)
+				}
+				action.Applied = true
 			}
-			if err := tx.Model(&meta.SourceItem{}).
-				Where("id = ? AND source_id = ?", item.ID, item.SourceID).
-				Updates(map[string]any{
-					"node_id":       nil,
-					"node_revision": 0,
-					"state":         state,
-					"last_error":    "",
-					"updated_at":    now,
-				}).Error; err != nil {
-				return fmt.Errorf("detach invalid source binding %d: %w", item.ID, err)
-			}
-			action.Applied = true
+			return nil
+		}); err != nil {
+			return report, err
 		}
-		return nil
-	}); err != nil {
-		return report, err
+	}
+
+	for index := range report.RunActions {
+		action := &report.RunActions[index]
+		if err := applySourceRunRepair(ctx, db, *action); err != nil {
+			return report, err
+		}
+		action.Applied = true
 	}
 
 	after, err := VerifySources(db.WithContext(ctx))

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
+	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -83,7 +84,7 @@ func TestRepairSourcesDetachesInvalidBindingsIdempotently(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
-		&meta.Source{}, &meta.SourceItem{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SyncRun{},
 		&meta.SourceItemAlias{}, &meta.SourceCollection{},
 		&meta.SourceCollectionItem{}, &meta.SourceItemMetadata{},
 	); err != nil {
@@ -143,6 +144,31 @@ func TestRepairSourcesDetachesInvalidBindingsIdempotently(t *testing.T) {
 	if err := db.Create(&items).Error; err != nil {
 		t.Fatal(err)
 	}
+	staleAt := now.Add(-sourcepkg.SyncRunStaleAfter - time.Minute)
+	cancelRequestedAt := staleAt.Add(time.Minute)
+	runs := []meta.SyncRun{
+		{
+			ID:       "00000000-0000-0000-0000-000000000101",
+			SourceID: source.ID, RunNumber: 1, SourceRevision: source.Revision,
+			Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerScheduled,
+			Status: meta.SyncRunStatusRunning, StartedAt: staleAt,
+			ActiveTransferPath: "stale.bin", ActiveTransferBytes: 10, ActiveTransferTotal: 100,
+			CreatedAt: staleAt, UpdatedAt: staleAt,
+		},
+		{
+			ID:       "00000000-0000-0000-0000-000000000102",
+			SourceID: source.ID, RunNumber: 2, SourceRevision: source.Revision,
+			Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+			Status: meta.SyncRunStatusRunning, StartedAt: staleAt,
+			CancelRequestedAt:  &cancelRequestedAt,
+			ActiveTransferPath: "cancel.bin", ActiveTransferBytes: 20, ActiveTransferTotal: 200,
+			CreatedAt: staleAt, UpdatedAt: staleAt,
+		},
+	}
+	if err := db.Create(&runs).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	baseline := make(map[uint64]meta.SourceItem, len(items))
 	for _, item := range items {
 		var persisted meta.SourceItem
@@ -156,13 +182,33 @@ func TestRepairSourcesDetachesInvalidBindingsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dry.Actions) != 2 {
-		t.Fatalf("dry actions=%+v", dry.Actions)
+	if len(dry.Actions) != 2 || len(dry.RunActions) != 2 {
+		t.Fatalf("dry actions=%+v run_actions=%+v", dry.Actions, dry.RunActions)
+	}
+	if dry.RunActions[0].RunID != runs[0].ID ||
+		dry.RunActions[0].TargetStatus != meta.SyncRunStatusFailed ||
+		dry.RunActions[1].RunID != runs[1].ID ||
+		dry.RunActions[1].TargetStatus != meta.SyncRunStatusCancelled {
+		t.Fatalf("dry run actions=%+v", dry.RunActions)
 	}
 	for _, action := range dry.Actions {
 		if action.Applied {
 			t.Fatalf("dry-run action applied: %+v", action)
 		}
+	}
+	for _, action := range dry.RunActions {
+		if action.Applied {
+			t.Fatalf("dry-run run action applied: %+v", action)
+		}
+	}
+	var dryRuns []meta.SyncRun
+	if err := db.Where("source_id = ?", source.ID).Order("run_number ASC").Find(&dryRuns).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(dryRuns) != 2 ||
+		dryRuns[0].Status != meta.SyncRunStatusRunning ||
+		dryRuns[1].Status != meta.SyncRunStatusRunning {
+		t.Fatalf("dry run mutated source runs: %+v", dryRuns)
 	}
 	var dryWrong meta.SourceItem
 	if err := db.First(&dryWrong, items[1].ID).Error; err != nil {
@@ -177,12 +223,34 @@ func TestRepairSourcesDetachesInvalidBindingsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(applied.Actions) != 2 {
-		t.Fatalf("applied actions=%+v", applied.Actions)
+	if len(applied.Actions) != 2 || len(applied.RunActions) != 2 {
+		t.Fatalf("applied actions=%+v run_actions=%+v", applied.Actions, applied.RunActions)
 	}
 	for _, action := range applied.Actions {
 		if !action.Applied {
 			t.Fatalf("action not applied: %+v", action)
+		}
+	}
+	for _, action := range applied.RunActions {
+		if !action.Applied {
+			t.Fatalf("run action not applied: %+v", action)
+		}
+	}
+	var repairedRuns []meta.SyncRun
+	if err := db.Where("source_id = ?", source.ID).Order("run_number ASC").Find(&repairedRuns).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(repairedRuns) != 2 ||
+		repairedRuns[0].Status != meta.SyncRunStatusFailed ||
+		repairedRuns[1].Status != meta.SyncRunStatusCancelled {
+		t.Fatalf("stale runs not finalized: %+v", repairedRuns)
+	}
+	for _, run := range repairedRuns {
+		if run.FinishedAt == nil ||
+			run.ActiveTransferPath != "" ||
+			run.ActiveTransferBytes != 0 ||
+			run.ActiveTransferTotal != 0 {
+			t.Fatalf("stale run active state not cleared: %+v", run)
 		}
 	}
 	if !applied.After.OK() {
@@ -217,7 +285,7 @@ func TestRepairSourcesDetachesInvalidBindingsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Actions) != 0 || !second.After.OK() {
+	if len(second.Actions) != 0 || len(second.RunActions) != 0 || !second.After.OK() {
 		t.Fatalf("second repair=%+v", second)
 	}
 }

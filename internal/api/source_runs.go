@@ -17,7 +17,6 @@ import (
 
 const (
 	sourceObservationBatchLimit = 500
-	sourceRunStaleAfter         = 30 * time.Minute
 	sourceRunTextLimit          = 64 << 10
 	sourceItemFailureTextLimit  = 4 << 10
 )
@@ -196,11 +195,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 		activeErr := tx.Where("source_id = ? AND status = ?", source.ID, meta.SyncRunStatusRunning).
 			Order("updated_at DESC, started_at DESC").First(&active).Error
 		if activeErr == nil {
-			heartbeat := active.UpdatedAt
-			if heartbeat.IsZero() {
-				heartbeat = active.StartedAt
-			}
-			if now.Sub(heartbeat) <= sourceRunStaleAfter {
+			if !sourcepkg.SyncRunStale(active, now) {
 				return errSourceRunActive
 			}
 			finished := now
