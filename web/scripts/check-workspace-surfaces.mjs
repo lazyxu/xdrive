@@ -168,7 +168,8 @@ if (/\.cloud-explorer-panel > \[data-xdrive-file-explorer\]\s*\{[^}]*\b(border|b
 
 requireText(app, [
   '<XDriveSourceManager',
-  'adapter={api}',
+  'adapter={sourceManagerAdapter}',
+  'createXDriveSourceManagerAdapter(api)',
 ], 'Web Source manager mount')
 
 requireText(sources, [

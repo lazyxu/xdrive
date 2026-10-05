@@ -35,7 +35,7 @@ test('Web browses existing File Station sources through the Server API', () => {
 
 test('Desktop browses existing File Station sources through Agent IPC', () => {
   assert.match(preload, /agent:browse-source-directories/)
-  assert.match(desktop, /window\.xdriveDesktop\.agent\.browseSourceDirectories/)
+  assert.match(desktopAdapter, /agent\.browseSourceDirectories\(sourceID, path, limit, offset\)/)
   assert.match(sourceManager, /setting\.credential\?\.configured/)
   assert.equal((desktopAdapter.match(/browseSourceDirectories\(/g) || []).length, 1)
 })
