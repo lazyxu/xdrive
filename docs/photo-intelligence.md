@@ -82,7 +82,7 @@ Initial analysis kinds are:
 
 `PhotoFace` is asset-scoped derived evidence. Bounding boxes use normalized coordinates relative to the analyzed still image. A detection key is unique within an asset so a single analyzer pass cannot duplicate the same detection.
 
-Embeddings are opaque versioned derived bytes. Their encoding is identified by `EmbeddingFormat` and `EmbeddingVersion`; application code must never compare embeddings produced by incompatible versions as if they were the same vector space.
+Embeddings are opaque versioned derived bytes. Their encoding is identified by `EmbeddingFormat` and `EmbeddingVersion`; application code must never compare embeddings produced by incompatible versions as if they were the same vector space. `PhotoFace.LandmarksJSON` stores the detector's five normalized alignment landmarks as derived evidence so embedding/model upgrades do not lose the exact geometry contract used for face alignment.
 
 ### `PhotoPersonCluster` / `PhotoPersonClusterFace`
 
@@ -124,16 +124,57 @@ A future local inference worker should authenticate as the asset owner through t
 
 ### Analyzer/runtime requirements
 
-Requirements for any future analyzer:
+The host-side face pipeline uses the existing 1280px analysis-preview contract instead of adding another image-decoding path. The Server selects only current image `PhotoAsset` rows whose `MediaMetadata.node_revision/SHA256` still matches the current `Node + File`. For each selected asset it issues a short-lived preview-stream ticket bound to owner, node, revision, and `kind=analysis`, then sends only a signed preview URL plus preview contract identity to the local analyzer.
 
-1. Read only local xDrive-derived analysis previews or other explicitly versioned local analysis inputs.
-2. Version detector, embedding model, preprocessing, and clustering behavior.
-3. Keep normalized face geometry and embedding provenance so results can be invalidated safely.
+The local analyzer contract is:
+
+```text
+GET  /v1/info
+POST /v1/analyze
+```
+
+`GET /v1/info` reports:
+
+- protocol version, analyzer name, and required `pipeline_version`;
+- detector model name/version/SHA-256/license;
+- embedding model name/version/SHA-256/license;
+- embedding format and exact vector dimensions.
+
+`POST /v1/analyze` receives JSON containing the signed analysis-preview URL, preview contract version/edge, and input fingerprint. The analyzer fetches that scoped URL from xDrive Server and returns normalized detections. xDrive currently accepts `f32le` embeddings, requires exactly the declared vector dimensions, rejects NaN/Inf, accepts at most 256 faces per image, and requires exactly five normalized alignment landmarks per face.
+
+The scoped preview ticket is intentionally narrower than a normal user access token: the analyzer cannot enumerate files or call unrelated user APIs, and the ticket becomes stale immediately when the file revision changes. The analyzer never mounts xDrive storage and never receives Source credentials.
+
+Detector and embedding analyzer versions are compact SHA-256 tokens derived from the reported model manifest plus `pipeline_version`. The analyzer must change `pipeline_version` whenever detector thresholds/NMS, color normalization, face alignment, crop policy, embedding normalization, or other inference/preprocessing behavior can change outputs without changing model files. The input fingerprint is the same identity used by the canonical analysis-preview ETag (`media-analysis-...`), so changing original bytes, node revision fallback, preview version, or preview edge makes derived face state eligible for rebuild without a second input-identity scheme.
+
+Configuration is optional:
+
+```text
+XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive/photo-face.sock
+XD_PHOTO_FACE_ANALYZER_TOKEN=<optional analyzer-local bearer token>
+XD_PHOTO_FACE_PREVIEW_BASE_URL=http://server:8080
+```
+
+If the socket is absent, automatic face analysis is disabled. The preview base URL must be an absolute HTTP(S) origin without credentials, query, fragment, or path. Analyzer failures only move the affected `face_detection` / `face_embedding` state to failed with bounded retry; native media indexing, Gallery, Source sync, originals, and user metadata remain usable.
+
+Requirements for every analyzer:
+
+1. Read only xDrive-issued analysis-preview URLs or another explicitly versioned local analysis input; never mount the storage root or independently decode HEIC/RAW/LIVP.
+2. Version detector, embedding model, preprocessing, and clustering behavior and report exact model hashes/licenses.
+3. Keep normalized face geometry, five alignment landmarks, and embedding provenance so results can be invalidated safely.
 4. Rebuild derived rows transactionally for the affected asset/model version.
 5. Never merge PhotoAssets or files because faces appear similar.
 6. Never treat an automatic cluster as a confirmed person name without explicit user intent.
-7. Prefer local inference. A future remote inference backend would require a separate privacy/security design and explicit opt-in; it is not part of this foundation.
-8. Do not make the main `xdrive-server` binary depend on a particular ML runtime, cgo, GPU stack, or model package. Native inference dependencies belong behind an optional worker/process/container boundary so the current static server build contract remains intact.
+7. Never overwrite user-managed `PeopleJSON`, tags, favorites, descriptions, or album membership.
+8. Do not make the main `xdrive-server` binary depend on a particular ML runtime, cgo, GPU stack, or model package. Native inference dependencies belong behind an optional worker/process/container boundary so the current static Server build remains `CGO_ENABLED=0` and distroless.
+9. A future remote/cloud inference backend requires a separate privacy/security design and explicit opt-in; it is not part of this contract.
+
+The first reference backend should benchmark **OpenCV Zoo YuNet** for detection and **SFace** for embeddings. YuNet's model directory is MIT-licensed and SFace's model directory is Apache-2.0:
+
+- https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+- https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface
+
+InsightFace remains a valid bring-your-own/licensed backend, but xDrive must not silently redistribute or select its public pretrained model packages as defaults: InsightFace documents those supplied pretrained models as non-commercial research by default even though the library code itself is MIT licensed.
+
 
 ## Place-name analysis policy
 
@@ -221,10 +262,12 @@ When automatic facets are exposed later:
    - one native decode path for ordinary images, HEIC/HEIF, CR3, DNG/NEF/ARW, and LIVP still resources;
    - deterministic derived cache with existing thumbnail GC lifecycle;
    - Gallery 512px thumbnail semantics remain unchanged.
-4. **Face detection + embeddings**
-   - benchmark candidate local detector/embedding runtimes behind the worker boundary;
-   - define model packaging/update policy and CPU/GPU fallback;
-   - add bounded worker and deterministic invalidation without changing the static main Server build.
+4. **Face detection + embeddings — host pipeline current**
+   - reuse the canonical 1280px analysis-preview input with short-lived revision-scoped tickets;
+   - Unix-socket analyzer protocol with model/license/hash/dimension manifest;
+   - bounded worker with dual detection/embedding state, retry/running timeout, and deterministic invalidation;
+   - transactional PhotoFace replacement with normalized box, five-point landmarks, and embedding;
+   - next: ship/benchmark the separate YuNet + SFace reference analyzer and define CPU/GPU packaging/update policy.
 5. **Person clustering**
    - cluster only within one owner;
    - support rebuilds across model versions;

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,9 @@ type Config struct {
 	SourceRunFailureRetention    time.Duration
 	PhotoPlaceGeoNamesDir        string
 	PhotoPlaceMaxDistanceKM      float64
+	PhotoFaceAnalyzerSocket      string
+	PhotoFaceAnalyzerToken       string
+	PhotoFacePreviewBaseURL      string
 	ConnectorSecretActiveVersion string
 	ConnectorSecretKeys          string
 	ConnectorSecretLegacyKey     string
@@ -46,6 +50,9 @@ func Load() (Config, error) {
 		SourceRunFailureRetention:    180 * 24 * time.Hour,
 		PhotoPlaceGeoNamesDir:        strings.TrimSpace(os.Getenv("XD_PHOTO_PLACE_GEONAMES_DIR")),
 		PhotoPlaceMaxDistanceKM:      100,
+		PhotoFaceAnalyzerSocket:      strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_SOCKET")),
+		PhotoFaceAnalyzerToken:       strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_TOKEN")),
+		PhotoFacePreviewBaseURL:      strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_PREVIEW_BASE_URL")),
 		ConnectorSecretActiveVersion: strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_ACTIVE_VERSION")),
 		ConnectorSecretKeys:          strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEYS")),
 		ConnectorSecretLegacyKey:     strings.TrimSpace(os.Getenv("XD_CONNECTOR_SECRET_KEY")),
@@ -88,7 +95,36 @@ func Load() (Config, error) {
 		}
 		cfg.PhotoPlaceMaxDistanceKM = distance
 	}
+	if cfg.PhotoFacePreviewBaseURL != "" {
+		baseURL, err := normalizeInternalHTTPBaseURL(cfg.PhotoFacePreviewBaseURL)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid XD_PHOTO_FACE_PREVIEW_BASE_URL: %w", err)
+		}
+		cfg.PhotoFacePreviewBaseURL = baseURL
+	}
+	if cfg.PhotoFaceAnalyzerSocket != "" && cfg.PhotoFacePreviewBaseURL == "" {
+		return Config{}, fmt.Errorf(
+			"XD_PHOTO_FACE_PREVIEW_BASE_URL is required when XD_PHOTO_FACE_ANALYZER_SOCKET is set",
+		)
+	}
 	return cfg, nil
+}
+
+func normalizeInternalHTTPBaseURL(value string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" ||
+		parsed.User != nil ||
+		parsed.RawQuery != "" ||
+		parsed.Fragment != "" {
+		return "", fmt.Errorf("expected an absolute http(s) URL without credentials, query, or fragment")
+	}
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	if path != "" {
+		return "", fmt.Errorf("URL path must be empty")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func env(key, fallback string) string {

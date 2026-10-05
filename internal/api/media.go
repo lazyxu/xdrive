@@ -751,6 +751,8 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	_, _ = c.Writer.Write(thumbnail.Data)
 }
 
+const mediaAnalysisPreviewTicketKind = "analysis"
+
 func (s *Server) mediaAnalysisPreview(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
@@ -772,10 +774,76 @@ func (s *Server) mediaAnalysisPreview(c *gin.Context) {
 		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
 		return
 	}
+	s.serveMediaAnalysisPreview(
+		c,
+		node,
+		metadata,
+		"private, max-age=3600",
+	)
+}
 
+func (s *Server) mediaAnalysisPreviewTicketStream(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	claims, err := s.Auth.ParsePreviewStream(
+		strings.TrimSpace(c.Query("ticket")),
+	)
+	if err != nil ||
+		claims.NodeID != id ||
+		claims.PreviewKind != mediaAnalysisPreviewTicketKind {
+		fail(c, http.StatusUnauthorized, "invalid analysis preview ticket")
+		return
+	}
+
+	var user meta.User
+	if err := s.DB.WithContext(c.Request.Context()).
+		First(&user, claims.UserID).Error; err != nil {
+		fail(c, http.StatusUnauthorized, "invalid analysis preview ticket")
+		return
+	}
+	if user.DisabledAt != nil ||
+		user.MustChangePassword ||
+		claims.SessionVersion != user.SessionVersion {
+		fail(c, http.StatusUnauthorized, "analysis preview ticket is no longer valid")
+		return
+	}
+
+	node, err := s.ownedNode(claims.UserID, id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if node.Revision != claims.NodeRevision {
+		fail(c, http.StatusGone, "analysis preview ticket is stale")
+		return
+	}
+	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "media indexing failed")
+		return
+	}
+	if metadata.MediaKind != meta.MediaKindImage ||
+		!mediaThumbnailSupported(metadata) {
+		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
+		return
+	}
+	s.serveMediaAnalysisPreview(c, node, metadata, "private, no-store")
+}
+
+func (s *Server) serveMediaAnalysisPreview(
+	c *gin.Context,
+	node meta.Node,
+	metadata meta.MediaMetadata,
+	cacheControl string,
+) {
 	key := mediaAnalysisPreviewStorageKey(node, metadata)
 	c.Header("ETag", mediaAnalysisPreviewETag(node, metadata))
-	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("Cache-Control", cacheControl)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "no-referrer")
 	c.Header(
 		"X-XDrive-Analysis-Preview-Version",
 		strconv.Itoa(mediapkg.AnalysisPreviewVersion),
@@ -900,20 +968,10 @@ func mediaAnalysisPreviewETag(
 	node meta.Node,
 	row meta.MediaMetadata,
 ) string {
-	if sha := strings.ToLower(strings.TrimSpace(row.SHA256)); sha != "" {
-		return fmt.Sprintf(
-			"\"media-analysis-%s-v%d-%d\"",
-			sha,
-			mediapkg.AnalysisPreviewVersion,
-			mediapkg.AnalysisPreviewEdge,
-		)
-	}
-	return fmt.Sprintf(
-		"\"media-analysis-node-%d-%d-v%d-%d\"",
+	return mediapkg.AnalysisPreviewETag(
 		node.ID,
 		node.Revision,
-		mediapkg.AnalysisPreviewVersion,
-		mediapkg.AnalysisPreviewEdge,
+		row.SHA256,
 	)
 }
 

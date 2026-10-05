@@ -62,6 +62,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/files/:id/preview-ticket", suite: "files"},
 		{method: "GET", path: "/api/v1/file-preview/:id", suite: "files"},
 		{method: "HEAD", path: "/api/v1/file-preview/:id", suite: "files"},
+		{method: "GET", path: "/api/v1/media-analysis-preview/:id", suite: "media"},
 		{method: "POST", path: "/api/v1/download/archive", suite: "files"},
 		{method: "GET", path: "/api/v1/media/items", suite: "media"},
 		{method: "GET", path: "/api/v1/media/items/:id", suite: "media"},
@@ -186,17 +187,18 @@ func TestEveryProtectedAPIEndpointRequiresBearerToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	public := map[string]struct{}{
-		"GET /metrics":                       {},
-		"GET /api/v1/healthz":                {},
-		"GET /api/v1/readyz":                 {},
-		"GET /api/v1/version":                {},
-		"POST /api/v1/auth/login":            {},
-		"POST /api/v1/auth/refresh":          {},
-		"POST /api/v1/auth/logout":           {},
-		"GET /api/v1/public/share":           {},
-		"POST /api/v1/public/share/download": {},
-		"GET /api/v1/file-preview/:id":       {},
-		"HEAD /api/v1/file-preview/:id":      {},
+		"GET /metrics":                           {},
+		"GET /api/v1/healthz":                    {},
+		"GET /api/v1/readyz":                     {},
+		"GET /api/v1/version":                    {},
+		"POST /api/v1/auth/login":                {},
+		"POST /api/v1/auth/refresh":              {},
+		"POST /api/v1/auth/logout":               {},
+		"GET /api/v1/public/share":               {},
+		"POST /api/v1/public/share/download":     {},
+		"GET /api/v1/file-preview/:id":           {},
+		"HEAD /api/v1/file-preview/:id":          {},
+		"GET /api/v1/media-analysis-preview/:id": {},
 	}
 	replacer := strings.NewReplacer(":versionID", "1", ":collectionID", "1", ":albumID", "folder:1", ":runID", "run-1", ":index", "0", ":id", "1")
 	router := (&Server{}).Router()

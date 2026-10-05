@@ -42,6 +42,7 @@ type PhotoFace struct {
 	Width            float64 `gorm:"not null"`
 	Height           float64 `gorm:"not null"`
 	Confidence       float64 `gorm:"not null;default:0"`
+	LandmarksJSON    string  `gorm:"type:text"`
 	Embedding        []byte  `gorm:"type:bytea"`
 	EmbeddingFormat  string  `gorm:"size:32"`
 	EmbeddingVersion string  `gorm:"size:128"`

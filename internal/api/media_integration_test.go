@@ -371,6 +371,48 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal("analysis preview cache response changed")
 	}
 
+	var mediaUser meta.User
+	if err := db.Where("username = ?", "media-user").First(&mediaUser).Error; err != nil {
+		t.Fatal(err)
+	}
+	analysisTicket, _, err := server.Auth.IssuePreviewStream(
+		mediaUser.ID,
+		mediaUser.SessionVersion,
+		file.ID,
+		file.Revision,
+		mediaAnalysisPreviewTicketKind,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analysisTicketPath := fmt.Sprintf(
+		"/api/v1/media-analysis-preview/%d?ticket=%s",
+		file.ID,
+		url.QueryEscape(analysisTicket),
+	)
+	ticketAnalysisPreview := request(
+		t,
+		router,
+		http.MethodGet,
+		analysisTicketPath,
+		"",
+		nil,
+		http.StatusOK,
+	)
+	if ticketAnalysisPreview.Header().Get("ETag") != analysisETag ||
+		ticketAnalysisPreview.Header().Get("Cache-Control") != "private, no-store" ||
+		!bytes.Equal(
+			ticketAnalysisPreview.Body.Bytes(),
+			analysisPreviewResponse.Body.Bytes(),
+		) {
+		t.Fatalf(
+			"ticket analysis preview headers/body mismatch: etag=%q cache=%q",
+			ticketAnalysisPreview.Header().Get("ETag"),
+			ticketAnalysisPreview.Header().Get("Cache-Control"),
+		)
+	}
+
 	var nodeCount, fileCount int64
 	if err := db.Model(&meta.Node{}).Count(&nodeCount).Error; err != nil {
 		t.Fatal(err)
@@ -406,6 +448,15 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 			file.Revision,
 		)
 	}
+	request(
+		t,
+		router,
+		http.MethodGet,
+		analysisTicketPath,
+		"",
+		nil,
+		http.StatusGone,
+	)
 
 	detailResponse := request(
 		t,
