@@ -239,6 +239,11 @@ When adding a new ordinary preview format:
 A file being recognized as image/video/audio metadata does not automatically mean its
 raw original must be browser-previewable.
 
+The shared classifier must therefore use the same safe extension allowlist as the
+Server ticket issuer for binary preview. MIME metadata may refine presentation, but it
+must not make an otherwise non-allowlisted original previewable. In particular,
+`image/svg+xml` must not turn an SVG file into an ordinary Image Preview.
+
 ## Non-goals
 
 The Preview Engine does not own:

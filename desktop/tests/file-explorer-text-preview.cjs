@@ -46,10 +46,10 @@ test('shared Preview Engine owns classification and renderer surface', () => {
     "export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf'",
     'export type XDriveFilePreviewTarget',
     'xDriveClassifyFilePreview',
-    "mimeType.startsWith('image/')",
-    "mimeType.startsWith('video/')",
-    "mimeType.startsWith('audio/')",
     "extension === 'pdf'",
+    'xDriveImagePreviewExtensions.has(extension)',
+    'xDriveVideoPreviewExtensions.has(extension)',
+    'xDriveAudioPreviewExtensions.has(extension)',
   ]) {
     assert.ok(preview.includes(token), 'missing shared Preview Model token: ' + token)
   }
@@ -65,6 +65,10 @@ test('shared Preview Engine owns classification and renderer surface', () => {
   ]) {
     assert.ok(previewSurface.includes(token), 'missing shared Preview Surface token: ' + token)
   }
+  assert.equal(preview.includes("mimeType.startsWith('image/')"), false, 'MIME metadata must not broaden image previewability')
+  assert.equal(preview.includes("mimeType.startsWith('video/')"), false, 'MIME metadata must not broaden video previewability')
+  assert.equal(preview.includes("mimeType.startsWith('audio/')"), false, 'MIME metadata must not broaden audio previewability')
+  assert.equal(preview.includes("mimeType === 'application/pdf'"), false, 'MIME metadata must not broaden PDF previewability')
   assert.equal(previewSurface.includes('dangerouslySetInnerHTML'), false, 'Preview Surface must never inject active markup')
   assert.ok(previewSurface.includes('onError={() => setFailed(true)}'), 'Video renderer must fall back when browser decoding fails')
   assert.ok((previewSurface.match(/onError=\{\(\) => setFailed\(true\)\}/g) || []).length >= 2, 'Video and Audio renderers must both fall back on decode errors')
