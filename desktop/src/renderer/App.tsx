@@ -64,7 +64,6 @@ import {
   useXDriveTaskCenterController,
 } from '@xdrive/ui/mui'
 import type {
-  MediaGalleryDataSource,
   XDriveCloudStorageDataSource,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
@@ -84,6 +83,7 @@ import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
+import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
@@ -216,111 +216,10 @@ export default function App({
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
 
-  const mediaGallerySource = useMemo<MediaGalleryDataSource>(() => ({
-    listItems: async (limit, offset, query) => {
-      const result = await window.xdriveDesktop.agent.getMediaItems('', limit, offset, query)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    listAlbums: async () => {
-      const result = await window.xdriveDesktop.agent.getMediaAlbums()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    listPlaces: async (limit = 24) => {
-      const result = await window.xdriveDesktop.agent.getMediaPlaces(limit)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    createAlbum: async (name) => {
-      const result = await window.xdriveDesktop.agent.createMediaAlbum(name)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    renameAlbum: async (albumID, revision, name) => {
-      const result = await window.xdriveDesktop.agent.renameMediaAlbum(albumID, revision, name)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    deleteAlbum: async (albumID, revision) => {
-      const result = await window.xdriveDesktop.agent.deleteMediaAlbum(albumID, revision)
-      if (!result.ok) throw new Error(result.error.message)
-    },
-    createSmartAlbum: async (name, query) => {
-      const result = await window.xdriveDesktop.agent.createSmartMediaAlbum(name, query)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    updateSmartAlbum: async (albumID, revision, input) => {
-      const result = await window.xdriveDesktop.agent.updateSmartMediaAlbum(
-        albumID,
-        revision,
-        input,
-      )
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    deleteSmartAlbum: async (albumID, revision) => {
-      const result = await window.xdriveDesktop.agent.deleteSmartMediaAlbum(albumID, revision)
-      if (!result.ok) throw new Error(result.error.message)
-    },
-    addToAlbum: async (albumID, revision, nodeIDs) => {
-      const result = await window.xdriveDesktop.agent.addMediaAlbumItems(albumID, revision, nodeIDs)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    removeFromAlbum: async (albumID, revision, nodeID) => {
-      const result = await window.xdriveDesktop.agent.removeMediaAlbumItem(albumID, revision, nodeID)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    listAlbumItems: async (albumID, limit, offset, query) => {
-      const result = await window.xdriveDesktop.agent.getMediaAlbumItems(
-        albumID,
-        limit,
-        offset,
-        query,
-      )
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    setFavorite: async (nodeID, favorite) => {
-      const result = await window.xdriveDesktop.agent.setMediaFavorite(nodeID, favorite)
-      if (!result.ok) throw new Error(result.error.message)
-    },
-    setTags: async (nodeID, tags) => {
-      const result = await window.xdriveDesktop.agent.setMediaTags(nodeID, tags)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data.tags
-    },
-    setPeople: async (nodeID, people) => {
-      const result = await window.xdriveDesktop.agent.setMediaPeople(nodeID, people)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data.people
-    },
-    setDescription: async (nodeID, description) => {
-      const result = await window.xdriveDesktop.agent.setMediaDescription(nodeID, description)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data.description
-    },
-    loadThumbnail: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.getMediaThumbnail(nodeID)
-      if (!result.ok) throw new Error(result.error.message)
-      const contentType = result.data.content_type || 'image/jpeg'
-      return `data:${contentType};base64,${result.data.data_base64}`
-    },
-    loadLivePhotoMotion: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(nodeID)
-      if (!result.ok) throw new Error(result.error.message)
-      const contentType = result.data.content_type || 'video/quicktime'
-      return `data:${contentType};base64,${result.data.data_base64}`
-    },
-    loadVideo: async (nodeID) => {
-      const result = await window.xdriveDesktop.agent.getMediaVideoURL(nodeID)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-  }), [])
+  const mediaGallerySource = useMemo(
+    () => createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent),
+    [],
+  )
 
 
   const requestConfirmation = (
