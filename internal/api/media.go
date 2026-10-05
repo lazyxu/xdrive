@@ -87,6 +87,7 @@ type mediaItemDTO struct {
 	AssetKind        string                    `json:"asset_kind,omitempty"`
 	Favorite         bool                      `json:"favorite"`
 	Tags             []string                  `json:"tags,omitempty"`
+	People           []string                  `json:"people,omitempty"`
 	Description      string                    `json:"description,omitempty"`
 	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
@@ -237,6 +238,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		AssetKind:        presentation.Kind,
 		Favorite:         presentation.Favorite,
 		Tags:             presentation.Tags,
+		People:           presentation.People,
 		Description:      presentation.Description,
 		Resources:        presentation.Resources,
 		DerivedResources: resources,
@@ -525,6 +527,7 @@ func (s *Server) queryMediaItems(
 				AssetKind:   presentation.Kind,
 				Favorite:    presentation.Favorite,
 				Tags:        presentation.Tags,
+				People:      presentation.People,
 				Description: presentation.Description,
 				Resources:   presentation.Resources,
 				LivePhoto:   standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,

@@ -24,6 +24,7 @@ type mediaSmartAlbumQuery struct {
 	HasLocation  *bool      `json:"has_location,omitempty"`
 	Favorite     *bool      `json:"favorite,omitempty"`
 	Tag          string     `json:"tag,omitempty"`
+	Person       string     `json:"person,omitempty"`
 	Place        string     `json:"place,omitempty"`
 }
 
@@ -57,6 +58,13 @@ func normalizeMediaSmartAlbumQuery(
 		}
 		value.Tag = normalized
 	}
+	if value.Person != "" {
+		normalized, err := normalizeMediaPerson(value.Person)
+		if err != nil {
+			return mediaSmartAlbumQuery{}, err
+		}
+		value.Person = normalized
+	}
 	if value.CapturedFrom != nil {
 		normalized := value.CapturedFrom.UTC()
 		value.CapturedFrom = &normalized
@@ -84,6 +92,7 @@ func (value mediaSmartAlbumQuery) empty() bool {
 		value.HasLocation == nil &&
 		value.Favorite == nil &&
 		value.Tag == "" &&
+		value.Person == "" &&
 		value.Place == ""
 }
 
@@ -103,6 +112,7 @@ func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
 		HasLocation:  value.HasLocation,
 		Favorite:     value.Favorite,
 		Tag:          value.Tag,
+		Person:       value.Person,
 		Place:        place,
 	}
 }

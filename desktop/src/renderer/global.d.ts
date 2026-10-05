@@ -213,6 +213,7 @@ declare global {
 
   type AgentMediaItem = MediaItem
   type AgentMediaAlbum = MediaAlbum
+  type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
   type AgentMediaThumbnail = { content_type: string; data_base64: string }
   type AgentMediaMotion = { content_type: string; data_base64: string; size: number }
@@ -363,6 +364,7 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaItem[]>>
         setMediaFavorite: (nodeID: number, favorite: boolean) => Promise<DesktopResult<{ favorite: boolean }>>
         setMediaTags: (nodeID: number, tags: string[]) => Promise<DesktopResult<{ tags: string[] }>>
+        setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>
         setMediaDescription: (nodeID: number, description: string) => Promise<DesktopResult<AgentMediaDescription>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>

@@ -132,9 +132,9 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	photoMetadata := []meta.PhotoMetadata{
-		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true, Description: "Sunset at Marina Bay", TagsJSON: `["Family","Travel"]`},
-		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo, Description: "Portrait lighting test", TagsJSON: `["Studio"]`},
-		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon, TagsJSON: `["Family"]`},
+		{AssetID: assets[0].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedOne, Latitude: &lat, Longitude: &lon, Favorite: true, Description: "Sunset at Marina Bay", TagsJSON: `["Family","Travel"]`, PeopleJSON: `["Alice","Bob"]`},
+		{AssetID: assets[1].ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg", CapturedAt: &capturedTwo, Description: "Portrait lighting test", TagsJSON: `["Studio"]`, PeopleJSON: `["Charlie"]`},
+		{AssetID: assets[2].ID, MediaKind: meta.MediaKindVideo, MIMEType: "video/quicktime", CapturedAt: &capturedThree, Latitude: &lat, Longitude: &lon, TagsJSON: `["Family"]`, PeopleJSON: `["Alice"]`},
 	}
 	if err := db.Create(&photoMetadata).Error; err != nil {
 		t.Fatal(err)

@@ -66,6 +66,7 @@ type MediaItem struct {
 	AssetKind        string                 `json:"asset_kind,omitempty"`
 	Favorite         bool                   `json:"favorite"`
 	Tags             []string               `json:"tags,omitempty"`
+	People           []string               `json:"people,omitempty"`
 	Description      string                 `json:"description,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
@@ -81,6 +82,7 @@ type MediaSmartAlbumQuery struct {
 	HasLocation  *bool      `json:"has_location,omitempty"`
 	Favorite     *bool      `json:"favorite,omitempty"`
 	Tag          string     `json:"tag,omitempty"`
+	Person       string     `json:"person,omitempty"`
 	Place        string     `json:"place,omitempty"`
 }
 
@@ -114,6 +116,7 @@ type MediaQuery struct {
 	HasLocation  *bool
 	Favorite     *bool
 	Tag          string
+	Person       string
 	Place        string
 }
 
@@ -141,6 +144,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Tag); value != "" {
 		values.Set("tag", value)
+	}
+	if value := strings.TrimSpace(q.Person); value != "" {
+		values.Set("person", value)
 	}
 	if value := strings.TrimSpace(q.Place); value != "" {
 		values.Set("place", value)
@@ -430,6 +436,26 @@ func (c *Client) SetMediaTags(
 		http.MethodPatch,
 		fmt.Sprintf("/api/v1/media/items/%d/tags", nodeID),
 		map[string][]string{"tags": tags},
+		&out,
+	)
+	return out, err
+}
+
+type MediaPeople struct {
+	People []string `json:"people"`
+}
+
+func (c *Client) SetMediaPeople(
+	ctx context.Context,
+	nodeID uint64,
+	people []string,
+) (MediaPeople, error) {
+	var out MediaPeople
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/items/%d/people", nodeID),
+		map[string][]string{"people": people},
 		&out,
 	)
 	return out, err

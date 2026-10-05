@@ -18,6 +18,7 @@ const agent = Object.freeze({
     has_location?: boolean
     favorite?: boolean
     tag?: string
+    person?: string
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
@@ -36,6 +37,7 @@ const agent = Object.freeze({
       has_location?: boolean
       favorite?: boolean
       tag?: string
+      person?: string
       place?: string
     },
   ) => ipcRenderer.invoke('agent:create-smart-media-album', name, query),
@@ -52,6 +54,7 @@ const agent = Object.freeze({
         has_location?: boolean
         favorite?: boolean
         tag?: string
+        person?: string
         place?: string
       }
     },
@@ -72,11 +75,13 @@ const agent = Object.freeze({
     has_location?: boolean
     favorite?: boolean
     tag?: string
+    person?: string
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   setMediaTags: (nodeID: number, tags: string[]) => ipcRenderer.invoke('agent:set-media-tags', nodeID, tags),
+  setMediaPeople: (nodeID: number, people: string[]) => ipcRenderer.invoke('agent:set-media-people', nodeID, people),
   setMediaDescription: (nodeID: number, description: string) => ipcRenderer.invoke('agent:set-media-description', nodeID, description),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),

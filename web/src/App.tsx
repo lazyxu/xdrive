@@ -529,6 +529,10 @@ function FileManager({
       const result = await api.setMediaTags(nodeID, tags)
       return result.tags
     },
+    setPeople: async (nodeID, people) => {
+      const result = await api.setMediaPeople(nodeID, people)
+      return result.people
+    },
     setDescription: async (nodeID, description) => {
       const result = await api.setMediaDescription(nodeID, description)
       return result.description

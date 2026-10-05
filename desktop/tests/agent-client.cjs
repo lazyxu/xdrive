@@ -73,6 +73,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
     has_location: true,
     favorite: true,
     tag: 'Travel',
+    person: 'Alice',
     place: 'place:135:10381',
   }
   await client.mediaItems('', 25, 10, filters)
@@ -87,6 +88,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
     assert.equal(url.searchParams.get('has_location'), 'true')
     assert.equal(url.searchParams.get('favorite'), 'true')
     assert.equal(url.searchParams.get('tag'), 'Travel')
+    assert.equal(url.searchParams.get('person'), 'Alice')
     assert.equal(url.searchParams.get('place'), 'place:135:10381')
   }
   assert.equal(new URL(seen[0], 'http://127.0.0.1').searchParams.get('offset'), '10')

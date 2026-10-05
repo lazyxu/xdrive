@@ -204,6 +204,7 @@ type desktopIPCController interface {
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
 	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
+	CloudSetMediaPeople(context.Context, uint64, []string) (client.MediaPeople, error)
 	CloudSetMediaDescription(context.Context, uint64, string) (client.MediaDescription, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
@@ -475,6 +476,7 @@ func newDesktopIPCHandlerWithMediaToken(
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
 	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)
+	mux.HandleFunc("PATCH /v1/media/people", h.mediaPeople)
 	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
@@ -1860,6 +1862,26 @@ func (h *desktopIPCHandler) mediaTags(w http.ResponseWriter, r *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
+func (h *desktopIPCHandler) mediaPeople(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeID uint64   `json:"node_id"`
+		People []string `json:"people"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.People == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_people", "node_id and people are required")
+		return
+	}
+	result, err := h.ctrl.CloudSetMediaPeople(r.Context(), input.NodeID, input.People)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
 func (h *desktopIPCHandler) mediaDescription(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		NodeID      uint64  `json:"node_id"`
@@ -1998,6 +2020,13 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.Tag = raw
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("person")); raw != "" {
+		if len([]rune(raw)) > 64 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person", "person must be at most 64 characters")
+			return client.MediaQuery{}, false
+		}
+		out.Person = raw
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("place")); raw != "" {
 		if len(raw) > 64 || !strings.HasPrefix(raw, "place:") {

@@ -328,6 +328,7 @@ export interface MediaItem {
   asset_kind?: PhotoAssetKind
   favorite?: boolean
   tags?: string[]
+  people?: string[]
   description?: string
   resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
@@ -353,6 +354,7 @@ export interface MediaGalleryQuery {
   has_location?: boolean
   favorite?: boolean
   tag?: string
+  person?: string
   place?: string
 }
 

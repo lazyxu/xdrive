@@ -81,6 +81,7 @@ import {
   type AgentMediaQuery,
   type AgentMediaFavorite,
   type AgentMediaTags,
+  type AgentMediaPeople,
   type AgentMediaDescription,
   type AgentMediaThumbnail,
   type AgentMediaMotion,
@@ -1235,6 +1236,13 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     const tag = input.tag.trim()
     if (tag) out.tag = tag
   }
+  if (input.person !== undefined) {
+    if (typeof input.person !== 'string' || [...input.person].length > 64) {
+      throw new AgentIPCError('invalid_input', 0, 'Media person must be at most 64 characters.')
+    }
+    const person = input.person.trim()
+    if (person) out.person = person
+  }
   if (input.place !== undefined) {
     if (
       typeof input.place !== 'string' ||
@@ -1831,6 +1839,22 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media node id and up to 32 tags are required.')
     }
     return requireAgentClient().setMediaTags(nodeID, tags)
+  }, false))
+
+  ipcMain.handle('agent:set-media-people', (_event, nodeID: unknown, people: unknown) => runAgentAction<AgentMediaPeople>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0 ||
+      !Array.isArray(people) ||
+      people.length > 32 ||
+      !people.every((value) => typeof value === 'string')
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id and up to 32 people labels are required.')
+    }
+    return requireAgentClient().setMediaPeople(nodeID, people)
   }, false))
 
   ipcMain.handle('agent:set-media-description', (_event, nodeID: unknown, description: unknown) => runAgentAction<AgentMediaDescription>(async () => {

@@ -22,6 +22,7 @@ type mediaQueryOptions struct {
 	HasLocation  *bool
 	Favorite     *bool
 	Tag          string
+	Person       string
 	Place        *mediaPlaceCell
 }
 
@@ -77,6 +78,14 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 		}
 		out.Tag = value
 	}
+	if raw := strings.TrimSpace(c.Query("person")); raw != "" {
+		value, err := normalizeMediaPerson(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return mediaQueryOptions{}, false
+		}
+		out.Person = value
+	}
 	if raw := strings.TrimSpace(c.Query("place")); raw != "" {
 		value, ok := parseMediaPlaceKey(raw)
 		if !ok {
@@ -112,8 +121,8 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 	if options.Search != "" {
 		like := "%" + strings.ToLower(options.Search) + "%"
 		query = query.Where(
-			"LOWER(n.name) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? OR LOWER(COALESCE(pm.description, '')) LIKE ?",
-			like, like, like, like, like,
+			"LOWER(n.name) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? OR LOWER(COALESCE(pm.description, '')) LIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.people_json, ''), '[]')::jsonb) AS media_person(value) WHERE LOWER(media_person.value) LIKE ?)",
+			like, like, like, like, like, like,
 		)
 	}
 	if options.CapturedFrom != nil {
@@ -136,6 +145,12 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 		query = query.Where(
 			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.tags_json, ''), '[]')::jsonb) AS media_tag(value) WHERE LOWER(media_tag.value) = LOWER(?))",
 			options.Tag,
+		)
+	}
+	if options.Person != "" {
+		query = query.Where(
+			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.people_json, ''), '[]')::jsonb) AS media_person(value) WHERE LOWER(media_person.value) = LOWER(?))",
+			options.Person,
 		)
 	}
 	if options.Place != nil {

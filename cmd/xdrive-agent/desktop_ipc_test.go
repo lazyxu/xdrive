@@ -602,6 +602,14 @@ func (f *fakeDesktopIPCController) CloudSetMediaTags(
 	return client.MediaTags{Tags: append([]string(nil), tags...)}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudSetMediaPeople(
+	_ context.Context,
+	_ uint64,
+	people []string,
+) (client.MediaPeople, error) {
+	return client.MediaPeople{People: append([]string(nil), people...)}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudSetMediaDescription(
 	_ context.Context,
 	_ uint64,

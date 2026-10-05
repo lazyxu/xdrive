@@ -293,6 +293,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data.tags
     },
+    setPeople: async (nodeID, people) => {
+      const result = await window.xdriveDesktop.agent.setMediaPeople(nodeID, people)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data.people
+    },
     setDescription: async (nodeID, description) => {
       const result = await window.xdriveDesktop.agent.setMediaDescription(nodeID, description)
       if (!result.ok) throw new Error(result.error.message)
