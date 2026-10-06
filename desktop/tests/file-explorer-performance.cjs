@@ -205,3 +205,14 @@ test('FileExplorer directory pagination avoids rebuilding a whole-directory ID M
   assert.ok(cloudFilesController.includes('const directoryItemIDsRef = useRef(new Set<number>())'), 'directory controller must retain seen IDs across page loads')
   assert.ok(cloudFilesController.includes('directoryItemIDsRef.current.clear()'), 'directory ID cache must reset with the workspace')
 })
+
+
+test('FileExplorer search pagination appends unique cursor pages without rebuilding all result IDs', () => {
+  assert.ok(explorerController.includes('xDriveFileExplorerMergeSearchResults'), 'shared search merge is missing')
+  assert.ok(explorerController.includes('const pageIDs = new Set<number>()'), 'search merge should inspect only the incoming page')
+  assert.ok(explorerController.includes('if (knownIDs.has(id) || pageIDs.has(id))'), 'search merge must preserve duplicate detection')
+  assert.ok(explorerController.includes('return [...current, ...page]'), 'unique search pages should use the direct append path')
+  assert.ok(searchController.includes('const resultIDsRef = useRef<Record<string, Set<number>>>({})'), 'search controller must retain result IDs per workspace')
+  assert.ok(searchController.includes('delete resultIDsRef.current[workspaceKey]'), 'search result ID cache must clear with search state')
+  assert.ok(searchController.includes('resultIDs = new Set(currentResults.map((item) => item.node.id))'), 'restored search state must lazily rebuild its ID cache')
+})

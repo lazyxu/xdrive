@@ -46,6 +46,7 @@ export function useXDriveFileExplorerSearch<
 }) {
   const requestRef = useRef<Record<string, number>>({})
   const loadMoreRequestRef = useRef<Record<string, boolean>>({})
+  const resultIDsRef = useRef<Record<string, Set<number>>>({})
   const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry<TResult>>>({})
 
   const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry<TResult>()
@@ -73,6 +74,7 @@ export function useXDriveFileExplorerSearch<
 
   const clearSearch = () => {
     nextRequestID(workspaceKey)
+    delete resultIDsRef.current[workspaceKey]
     updateEntry(workspaceKey, () => idleWorkspaceSearchEntry<TResult>())
   }
 
@@ -97,6 +99,8 @@ export function useXDriveFileExplorerSearch<
 
     const key = workspaceKey
     const requestID = nextRequestID(key)
+    const resultIDs = new Set<number>()
+    resultIDsRef.current[key] = resultIDs
     updateEntry(key, (current) => ({
       value: current.value || decision.query,
       state: xDriveFileExplorerStartSearchState<TResult>(decision.query),
@@ -106,7 +110,7 @@ export function useXDriveFileExplorerSearch<
       if (requestID !== requestRef.current[key]) return
       updateEntry(key, (current) => ({
         ...current,
-        state: xDriveFileExplorerApplySearchPageState(current.state, page, false),
+        state: xDriveFileExplorerApplySearchPageState(current.state, page, false, resultIDs),
       }))
     } catch (error) {
       if (requestID === requestRef.current[key]) onError(error)
@@ -121,16 +125,25 @@ export function useXDriveFileExplorerSearch<
   }
 
   const loadMoreSearch = async () => {
-    if (!xDriveFileExplorerCanLoadMoreSearch(
-      searchState.results,
-      searchState.cursor,
-      searchState.loadingMore,
-    )) return
+    const currentResults = searchState.results
+    if (
+      !currentResults ||
+      !xDriveFileExplorerCanLoadMoreSearch(
+        currentResults,
+        searchState.cursor,
+        searchState.loadingMore,
+      )
+    ) return
     if (!searchState.query) return
 
     const key = workspaceKey
     if (loadMoreRequestRef.current[key]) return
     loadMoreRequestRef.current[key] = true
+    let resultIDs = resultIDsRef.current[key]
+    if (!resultIDs) {
+      resultIDs = new Set(currentResults.map((item) => item.node.id))
+      resultIDsRef.current[key] = resultIDs
+    }
     const requestID = requestRef.current[key] ?? 0
     updateEntry(key, (current) => ({
       ...current,
@@ -141,7 +154,7 @@ export function useXDriveFileExplorerSearch<
       if (requestID !== requestRef.current[key]) return
       updateEntry(key, (current) => ({
         ...current,
-        state: xDriveFileExplorerApplySearchPageState(current.state, page, true),
+        state: xDriveFileExplorerApplySearchPageState(current.state, page, true, resultIDs),
       }))
     } catch (error) {
       if (requestID === requestRef.current[key]) onError(error)
