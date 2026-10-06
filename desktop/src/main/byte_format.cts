@@ -1,4 +1,4 @@
-import { partial } from 'filesize'
+const { partial } = require('filesize')
 
 const formatIECBytes = partial({
   standard: 'iec',
@@ -11,11 +11,6 @@ export function formatBytes(bytes: number) {
 }
 
 export function formatBytesPerSecond(bytesPerSecond: number) {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '—'
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return ''
   return `${formatIECBytes(bytesPerSecond)}/s`
-}
-
-export function formatSignedBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes === 0) return '0 B'
-  return `${bytes > 0 ? '+' : '-'}${formatIECBytes(Math.abs(bytes))}`
 }

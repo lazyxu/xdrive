@@ -31,9 +31,9 @@ test('tray transfer summary shows active count and aggregate speed', () => {
       transfer('photo.jpg', 'running', 25, 100, 512 * 1024, 'upload'),
     ],
   })
-  assert.equal(view.label, '传输 · 2 进行中 · 2.50 MiB/s')
+  assert.equal(view.label, '传输 · 2 进行中 · 2.5 MiB/s')
   assert.equal(view.items.length, 2)
-  assert.equal(view.items[0].label, '下载 · video.mp4 · 50.0% · 2.00 MiB/s')
+  assert.equal(view.items[0].label, '下载 · video.mp4 · 50.0% · 2 MiB/s')
   assert.equal(view.items[1].label, '上传 · photo.jpg · 25.0% · 512 KiB/s')
   assert.equal(view.failed, 0)
 })
@@ -95,7 +95,7 @@ test('tray counts a hierarchical folder transfer once and summarizes parent prog
     revision: 2,
     transfers: [parent, childA, childB],
   })
-  assert.equal(view.label, '传输 · 1 进行中 · 1.00 MiB/s')
+  assert.equal(view.label, '传输 · 1 进行中 · 1 MiB/s')
   assert.equal(view.items.length, 1)
   assert.match(view.items[0].label, /上传 · Photos · 25.0% · 2\/4 文件/)
   assert.equal(view.extraActive, 0)

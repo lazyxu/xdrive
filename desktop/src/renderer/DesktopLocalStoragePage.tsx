@@ -4,7 +4,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { formatBinarySize } from '@xdrive/shared'
+import { formatBytes } from '@xdrive/shared'
 import {
   XDriveActionButton,
   XDriveMetricCard,
@@ -119,7 +119,7 @@ function LocalFolderRow({
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography variant="body2" fontWeight={600} noWrap>{node.name}</Typography>
           <Typography variant="caption" color="text.secondary">
-            {node.file_count.toLocaleString()} 个文件 · {formatBinarySize(node.total_bytes)}
+            {node.file_count.toLocaleString()} 个文件 · {formatBytes(node.total_bytes)}
             {policySupported && inherited ? ` · 继承：${modeLabel(node.effective_mode)}` : ''}
           </Typography>
         </Box>
@@ -202,7 +202,7 @@ export function DesktopLocalStoragePage({
       const result = await source.releaseCache()
       const failed = result.failed_files > 0 ? ` · ${result.failed_files} 个文件无法释放` : ''
       setNotice(result.released_files > 0
-        ? `已从 ${result.released_files} 个文件释放 ${formatBinarySize(result.released_bytes)}${failed}。`
+        ? `已从 ${result.released_files} 个文件释放 ${formatBytes(result.released_bytes)}${failed}。`
         : '当前没有可释放的缓存。')
       await load()
     } catch (releaseError) {
@@ -274,10 +274,10 @@ export function DesktopLocalStoragePage({
             {cache ? (
               <>
                 <XDriveMetricGrid>
-                  <XDriveMetricCard title="已使用" value={formatBinarySize(cache.used_bytes)} suffix={`${cache.cached_files.toLocaleString()} 个缓存文件`} />
-                  <XDriveMetricCard title="上限" value={cache.limit_bytes > 0 ? formatBinarySize(cache.limit_bytes) : '不限'} suffix="已固定内容受保护" />
-                  <XDriveMetricCard title="可释放" value={formatBinarySize(cache.reclaimable_bytes)} suffix={`${cache.reclaimable_files.toLocaleString()} 个文件`} />
-                  <XDriveMetricCard title="已固定" value={formatBinarySize(cache.pinned_bytes)} suffix={`${cache.pinned_files.toLocaleString()} 个文件`} />
+                  <XDriveMetricCard title="已使用" value={formatBytes(cache.used_bytes)} suffix={`${cache.cached_files.toLocaleString()} 个缓存文件`} />
+                  <XDriveMetricCard title="上限" value={cache.limit_bytes > 0 ? formatBytes(cache.limit_bytes) : '不限'} suffix="已固定内容受保护" />
+                  <XDriveMetricCard title="可释放" value={formatBytes(cache.reclaimable_bytes)} suffix={`${cache.reclaimable_files.toLocaleString()} 个文件`} />
+                  <XDriveMetricCard title="已固定" value={formatBytes(cache.pinned_bytes)} suffix={`${cache.pinned_files.toLocaleString()} 个文件`} />
                 </XDriveMetricGrid>
                 {cache.supported ? (
                   <Box>

@@ -42,15 +42,10 @@ import type {
   StagingCleanupRun,
   UploadStagingDetail,
 } from '../../ui/shared/src'
-import { formatSize } from '../../ui/shared/src'
+import { formatBytes, formatSignedBytes } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
 const STAGING_PAGE_SIZE = 20
-
-function signedSize(value: number) {
-  if (value === 0) return '0 B'
-  return `${value > 0 ? '+' : '-'}${formatSize(Math.abs(value))}`
-}
 
 function decisionMessage(decision: StorageDecision) {
   switch (decision.priority) {
@@ -208,7 +203,7 @@ export default function StorageStatsPanel({
     }
 
     setCleanupConfirmOpen(false)
-    const notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatSize(result.deleted_bytes)
+    const notice = '已清理 ' + result.deleted_files.toLocaleString() + ' 个临时文件，共 ' + formatBytes(result.deleted_bytes)
     setStagingNotice(notice)
     if (result.failed_files > 0) {
       setCleanupResultWarning(
@@ -290,12 +285,12 @@ export default function StorageStatsPanel({
                   <Stack spacing={1.5}>
                     <XDriveSectionHeader level="h3" title="磁盘容量" />
                     <XDriveMetricGrid>
-                      <XDriveMetricCard title="磁盘总容量" value={formatSize(stats.disk_total_bytes)} />
-                      <XDriveMetricCard title="磁盘已用" value={formatSize(stats.disk_used_bytes)} />
-                      <XDriveMetricCard title="磁盘可用" value={formatSize(stats.disk_available_bytes)} />
-                      <XDriveMetricCard title="xDrive 物理占用" value={formatSize(stats.xdrive_physical_bytes)} />
+                      <XDriveMetricCard title="磁盘总容量" value={formatBytes(stats.disk_total_bytes)} />
+                      <XDriveMetricCard title="磁盘已用" value={formatBytes(stats.disk_used_bytes)} />
+                      <XDriveMetricCard title="磁盘可用" value={formatBytes(stats.disk_available_bytes)} />
+                      <XDriveMetricCard title="xDrive 物理占用" value={formatBytes(stats.xdrive_physical_bytes)} />
                       {otherDiskUsed !== undefined && (
-                        <XDriveMetricCard title="非 xDrive 占用（估算）" value={formatSize(otherDiskUsed)} />
+                        <XDriveMetricCard title="非 xDrive 占用（估算）" value={formatBytes(otherDiskUsed)} />
                       )}
                     </XDriveMetricGrid>
                   </Stack>
@@ -322,15 +317,15 @@ export default function StorageStatsPanel({
                   )}
                   <XDriveMetricGrid>
                     <XDriveMetricCard title="活跃 Upload Session" value={staging.stats.active_sessions} />
-                    <XDriveMetricCard title="容量 Reservation" value={formatSize(staging.stats.reserved_bytes)} />
-                    <XDriveMetricCard title="Staging 实际占用" value={formatSize(staging.stats.staging_bytes)} />
+                    <XDriveMetricCard title="容量 Reservation" value={formatBytes(staging.stats.reserved_bytes)} />
+                    <XDriveMetricCard title="Staging 实际占用" value={formatBytes(staging.stats.staging_bytes)} />
                     <XDriveMetricCard title="Staging 文件" value={staging.stats.staging_files} />
-                    <XDriveMetricCard title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatSize(staging.stats.part_bytes)} />
-                    <XDriveMetricCard title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatSize(staging.stats.recent_untracked_bytes)} />
-                    <XDriveMetricCard title="可回收临时空间" value={formatSize(staging.stats.reclaimable_bytes)} />
-                    <XDriveMetricCard title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatSize(staging.stats.orphan_bytes)} />
+                    <XDriveMetricCard title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatBytes(staging.stats.part_bytes)} />
+                    <XDriveMetricCard title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatBytes(staging.stats.recent_untracked_bytes)} />
+                    <XDriveMetricCard title="可回收临时空间" value={formatBytes(staging.stats.reclaimable_bytes)} />
+                    <XDriveMetricCard title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatBytes(staging.stats.orphan_bytes)} />
                     <XDriveMetricCard title="过期 Session" value={staging.stats.expired_sessions} />
-                    <XDriveMetricCard title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatSize(staging.stats.missing_part_bytes)} />
+                    <XDriveMetricCard title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatBytes(staging.stats.missing_part_bytes)} />
                   </XDriveMetricGrid>
                   <Typography variant="body2" color="text.secondary">
                     Reservation 表示活跃 resumable 上传未来仍可能需要写入的峰值空间，不等于当前物理占用；Staging 实际占用已计入 xDrive 物理占用。
@@ -371,7 +366,7 @@ export default function StorageStatsPanel({
                             {staging.orphans.map((file) => (
                               <TableRow key={file.key} hover>
                                 <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{file.key}</TableCell>
-                                <TableCell align="right">{formatSize(file.size)}</TableCell>
+                                <TableCell align="right">{formatBytes(file.size)}</TableCell>
                                 <TableCell>{new Date(file.modified_at).toLocaleString()}</TableCell>
                               </TableRow>
                             ))}
@@ -414,7 +409,7 @@ export default function StorageStatsPanel({
                               label={run.status === 'success' ? '成功' : run.status === 'partial' ? '部分失败' : '失败'}
                             />
                             <Typography variant="body2" color="text.secondary">
-                              删除 {run.deleted_files.toLocaleString()} 个 / {formatSize(run.deleted_bytes)}
+                              删除 {run.deleted_files.toLocaleString()} 个 / {formatBytes(run.deleted_bytes)}
                               {run.failed_files > 0 ? ` · 失败 ${run.failed_files.toLocaleString()} 个` : ''}
                             </Typography>
                           </Stack>
@@ -434,7 +429,7 @@ export default function StorageStatsPanel({
                               {(cleanupFailures[run.id] ?? []).map((failure) => (
                                 <Box key={failure.id}>
                                   <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-                                    {failure.storage_key} · {formatSize(failure.size)}
+                                    {failure.storage_key} · {formatBytes(failure.size)}
                                   </Typography>
                                   <Typography variant="caption" color="error" sx={{ wordBreak: 'break-word' }}>
                                     {failure.error}
@@ -464,11 +459,11 @@ export default function StorageStatsPanel({
                     <XDriveMetricCard title="历史样本" value={history.samples.length} suffix={`/ ${history.retention_days} 天`} />
                     <XDriveMetricCard
                       title="窗口内物理容量变化"
-                      value={firstHistory && lastHistory ? signedSize(lastHistory.cas_physical_bytes - firstHistory.cas_physical_bytes) : '—'}
+                      value={firstHistory && lastHistory ? formatSignedBytes(lastHistory.cas_physical_bytes - firstHistory.cas_physical_bytes) : '—'}
                     />
                     <XDriveMetricCard
                       title="窗口内逻辑容量变化"
-                      value={firstHistory && lastHistory ? signedSize(lastHistory.cas_logical_referenced_bytes - firstHistory.cas_logical_referenced_bytes) : '—'}
+                      value={firstHistory && lastHistory ? formatSignedBytes(lastHistory.cas_logical_referenced_bytes - firstHistory.cas_logical_referenced_bytes) : '—'}
                     />
                     <XDriveMetricCard title="最新去重倍率" value={lastHistory ? `${lastHistory.cas_dedup_ratio.toFixed(2)}×` : '—'} />
                   </XDriveMetricGrid>
@@ -495,8 +490,8 @@ export default function StorageStatsPanel({
                             <TableRow key={point.slot_at} hover>
                               <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
                               <TableCell align="right">{point.cas_blob_count.toLocaleString()}</TableCell>
-                              <TableCell align="right">{formatSize(point.cas_physical_bytes)}</TableCell>
-                              <TableCell align="right">{formatSize(point.cas_logical_referenced_bytes)}</TableCell>
+                              <TableCell align="right">{formatBytes(point.cas_physical_bytes)}</TableCell>
+                              <TableCell align="right">{formatBytes(point.cas_logical_referenced_bytes)}</TableCell>
                               <TableCell align="right">{point.cas_dedup_ratio.toFixed(2)}×</TableCell>
                               <TableCell align="right">{(point.small_lt64_kib_count_share * 100).toFixed(1)}%</TableCell>
                               <TableCell align="right">{(point.large_ge16_mib_byte_share * 100).toFixed(1)}%</TableCell>
@@ -511,18 +506,18 @@ export default function StorageStatsPanel({
 
               <XDriveMetricGrid>
                 <XDriveMetricCard title="CAS Blob" value={stats.cas_blob_count} />
-                <XDriveMetricCard title="CAS 物理容量" value={formatSize(stats.cas_physical_bytes)} />
-                <XDriveMetricCard title="逻辑引用容量" value={formatSize(stats.cas_logical_referenced_bytes)} />
-                <XDriveMetricCard title="去重节省" value={formatSize(stats.cas_dedup_saved_bytes)} />
+                <XDriveMetricCard title="CAS 物理容量" value={formatBytes(stats.cas_physical_bytes)} />
+                <XDriveMetricCard title="逻辑引用容量" value={formatBytes(stats.cas_logical_referenced_bytes)} />
+                <XDriveMetricCard title="去重节省" value={formatBytes(stats.cas_dedup_saved_bytes)} />
                 <XDriveMetricCard title="去重倍率" value={`${stats.cas_dedup_ratio.toFixed(2)}×`} />
                 <XDriveMetricCard title="节省比例" value={`${(stats.cas_savings_ratio * 100).toFixed(1)}%`} />
-                <XDriveMetricCard title="平均 Blob" value={formatSize(stats.average_blob_size_bytes)} />
-                <XDriveMetricCard title="P50 / P90 / P99" value={`${formatSize(stats.p50_blob_size_bytes)} / ${formatSize(stats.p90_blob_size_bytes)} / ${formatSize(stats.p99_blob_size_bytes)}`} />
+                <XDriveMetricCard title="平均 Blob" value={formatBytes(stats.average_blob_size_bytes)} />
+                <XDriveMetricCard title="P50 / P90 / P99" value={`${formatBytes(stats.p50_blob_size_bytes)} / ${formatBytes(stats.p90_blob_size_bytes)} / ${formatBytes(stats.p99_blob_size_bytes)}`} />
               </XDriveMetricGrid>
 
               {stats.legacy_blob_count > 0 && (
                 <XDriveStatusAlert tone="neutral">
-                  {`仍有 ${stats.legacy_blob_count.toLocaleString()} 个 legacy 对象，共 ${formatSize(stats.legacy_physical_bytes)}。它们不计入 CAS 尺寸分布。`}
+                  {`仍有 ${stats.legacy_blob_count.toLocaleString()} 个 legacy 对象，共 ${formatBytes(stats.legacy_physical_bytes)}。它们不计入 CAS 尺寸分布。`}
                 </XDriveStatusAlert>
               )}
 
@@ -545,7 +540,7 @@ export default function StorageStatsPanel({
                         <TableRow key={bucket.key} hover>
                           <TableCell>{bucket.label}</TableCell>
                           <TableCell align="right">{bucket.count.toLocaleString()}</TableCell>
-                          <TableCell align="right">{formatSize(bucket.bytes)}</TableCell>
+                          <TableCell align="right">{formatBytes(bucket.bytes)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -571,7 +566,7 @@ export default function StorageStatsPanel({
             {staging && (
               <XDriveStatusAlert
                 tone="warning"
-                title={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatSize(staging.stats.reclaimable_bytes)}`}
+                title={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatBytes(staging.stats.reclaimable_bytes)}`}
               >
                 另有 {staging.stats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。
               </XDriveStatusAlert>

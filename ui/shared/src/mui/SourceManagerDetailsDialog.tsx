@@ -35,7 +35,7 @@ import {
   externalSourceRunDetailView,
   formatExternalSourceTime,
 } from '../external-sources'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import type {
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -203,7 +203,7 @@ export function XDriveSourceDetailsDialog({
                               <XDriveSourceCollectionItem
                                 key={item.external_id}
                                 item={item}
-                                sizeLabel={formatSize(item.size)}
+                                sizeLabel={formatBytes(item.size)}
                                 wideAt="md"
                               />
                             ))}
@@ -287,7 +287,7 @@ export function XDriveSourceDetailsDialog({
                           {runDetail.metrics.map((metric) => (
                             <XDriveDescriptionItem key={metric.key} label={metric.label}>
                               {metric.items.toLocaleString('zh-CN')} 项
-                              {metric.bytes === undefined ? '' : ' · ' + formatSize(metric.bytes)}
+                              {metric.bytes === undefined ? '' : ' · ' + formatBytes(metric.bytes)}
                             </XDriveDescriptionItem>
                           ))}
                         </XDriveDescriptionGrid>
@@ -309,7 +309,7 @@ export function XDriveSourceDetailsDialog({
                                     compact
                                     title={failure.path || failure.external_id}
                                     externalID={failure.external_id}
-                                    sizeLabel={formatSize(failure.size)}
+                                    sizeLabel={formatBytes(failure.size)}
                                     failedAt={failure.failed_at}
                                     error={failure.error}
                                   />

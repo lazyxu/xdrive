@@ -52,7 +52,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import type { XDriveFileTextPreview } from '../file-preview'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
@@ -1724,7 +1724,7 @@ export function XDriveFileExplorer({
     if (key === 'name') return item.name
     if (key === 'updated') return item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'
     if (key === 'type') return defaultTypeLabel(item)
-    return item.kind === 'dir' ? '—' : formatSize(item.size ?? 0)
+    return item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0)
   }
 
   const estimatedTextWidth = (value: string) => {
@@ -2068,7 +2068,7 @@ export function XDriveFileExplorer({
 
   const propertiesForItem = (item: XDriveFileExplorerItem) => [
     { label: '类型', value: defaultTypeLabel(item) },
-    { label: '大小', value: item.kind === 'dir' ? '—' : formatSize(item.size ?? 0) },
+    { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0) },
     { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—' },
     { label: '位置', value: item.path || item.secondaryLabel || derivedPath },
     ...(item.properties ?? []),
@@ -2093,7 +2093,7 @@ export function XDriveFileExplorer({
       ? [
           { label: '项目数', value: `${propertiesItems.length} 个` },
           { label: '内容', value: `${propertiesDialogFileCount} 个文件 · ${propertiesDialogFolderCount} 个文件夹` },
-          { label: '文件大小合计', value: formatSize(propertiesDialogSize) },
+          { label: '文件大小合计', value: formatBytes(propertiesDialogSize) },
           { label: '位置', value: derivedPath },
         ] satisfies XDriveFileExplorerProperty[]
       : []
@@ -3084,7 +3084,7 @@ export function XDriveFileExplorer({
                   {inspectorFileCount} 个文件 · {inspectorFolderCount} 个文件夹
                 </Typography>
                 {selectedSize > 0 ? (
-                  <Typography variant="body2" color="text.secondary">文件大小合计 {formatSize(selectedSize)}</Typography>
+                  <Typography variant="body2" color="text.secondary">文件大小合计 {formatBytes(selectedSize)}</Typography>
                 ) : null}
               </Stack>
             ) : inspectorItem ? (
@@ -3209,7 +3209,7 @@ export function XDriveFileExplorer({
         <Typography variant="caption">
           {loadingMore
             ? '正在加载更多…'
-            : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatSize(selectedSize)}` : '')}
+            : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatBytes(selectedSize)}` : '')}
         </Typography>
       </Stack>
     </Paper>

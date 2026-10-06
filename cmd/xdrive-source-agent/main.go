@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/lazyxu/xdrive/internal/client"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
@@ -715,5 +715,5 @@ func printRun(run client.SyncRun) {
 }
 
 func formatBytes(bytes int64) string {
-	return humanize.Bytes(float64(bytes))
+	return humanize.IBytes(uint64(max(int64(0), bytes)))
 }

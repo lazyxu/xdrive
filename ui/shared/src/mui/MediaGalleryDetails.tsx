@@ -13,6 +13,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { MediaAlbum, MediaItem } from '../models'
+import { formatBytes } from '../format'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
@@ -38,16 +39,9 @@ type MediaPreviewURLLoader = (
   kind: 'image' | 'video',
 ) => Promise<string | null>
 
-function formatBytes(bytes?: number) {
-  if (!bytes || bytes < 0) return '—'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${unit === 0 || value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
+function formatMediaBytes(bytes?: number) {
+  if (bytes === undefined || bytes < 0) return '—'
+  return formatBytes(bytes)
 }
 
 function orientationLabel(orientation?: number) {
@@ -220,7 +214,7 @@ export function XDriveMediaDetailsDialog({
       ['标签', item.tags?.length ? item.tags.join('、') : '—'],
       ['人物', item.people?.length ? item.people.join('、') : '—'],
       ['文件名', item.node.name],
-      ['大小', formatBytes(item.node.size)],
+      ['大小', formatMediaBytes(item.node.size)],
       ['格式', metadata.mime_type || '—'],
       [
         '分辨率',
@@ -573,7 +567,7 @@ export function XDriveMediaDetailsDialog({
                       <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
                         {resource.name}
                         {resource.mime_type ? ` · ${resource.mime_type}` : ''}
-                        {resource.size > 0 ? ` · ${formatBytes(resource.size)}` : ''}
+                        {resource.size > 0 ? ` · ${formatMediaBytes(resource.size)}` : ''}
                       </Typography>
                     </Box>
                   ))}

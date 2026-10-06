@@ -39,6 +39,9 @@
       ],
       "@mui/icons-material/*": [
         "node_modules/@mui/icons-material/*"
+      ],
+      "filesize": [
+        "node_modules/filesize"
       ]
     }
   },

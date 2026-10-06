@@ -34,7 +34,7 @@ import {
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 import type { AdminUser } from '../../ui/shared/src'
-import { formatBinarySize as formatBytes } from '../../ui/shared/src'
+import { formatBytes } from '../../ui/shared/src'
 
 type CreateForm = {
   username: string

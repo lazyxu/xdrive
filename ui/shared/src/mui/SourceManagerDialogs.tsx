@@ -11,7 +11,7 @@ import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveSourceFailureItem } from './SourceFailureItem'
 import { XDriveStatusAlert } from './StatusAlert'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import type { ExternalSourceItem } from '../external-sources'
 
 export type XDriveSourceErrorDialogState = {
@@ -53,7 +53,7 @@ export function XDriveSourceFailedItemsDialog({
               key={item.source_item_id}
               title={item.path || item.external_id}
               externalID={item.external_id}
-              sizeLabel={formatSize(item.size)}
+              sizeLabel={formatBytes(item.size)}
               error={item.last_error}
             />
           ))}

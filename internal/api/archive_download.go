@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/gin-gonic/gin"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -297,7 +297,7 @@ func (s *Server) validateArchiveStoredFile(ctx context.Context, file meta.File) 
 		return fmt.Errorf("%w: %v", errArchiveStoredContent, closeErr)
 	}
 	if info.Size() != file.Size {
-		return fmt.Errorf("%w: stored size=%s metadata size=%s", errArchiveStoredContent, humanize.Bytes(float64(info.Size())), humanize.Bytes(float64(file.Size)))
+		return fmt.Errorf("%w: stored size=%s metadata size=%s", errArchiveStoredContent, humanize.IBytes(uint64(max(int64(0), info.Size()))), humanize.IBytes(uint64(max(int64(0), file.Size))))
 	}
 	return nil
 }
@@ -388,7 +388,7 @@ func writeArchiveDownloadEntry(
 		return err
 	}
 	if written != entry.Size {
-		return fmt.Errorf("archive source size changed: got %s want %s", humanize.Bytes(float64(written)), humanize.Bytes(float64(entry.Size)))
+		return fmt.Errorf("archive source size changed: got %s want %s", humanize.IBytes(uint64(max(int64(0), written))), humanize.IBytes(uint64(max(int64(0), entry.Size))))
 	}
 	return nil
 }

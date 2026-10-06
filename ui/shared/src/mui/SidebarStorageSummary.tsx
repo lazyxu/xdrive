@@ -1,6 +1,6 @@
 import { Box, LinearProgress, Stack, Typography } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { formatBinarySize } from '../format'
+import { formatBytes } from '../format'
 import type { XDriveSidebarAppearance } from './SidebarNav'
 
 export function XDriveSidebarStorageSummary({
@@ -28,7 +28,7 @@ export function XDriveSidebarStorageSummary({
   const hasDiskAvailable = diskAvailableBytes !== undefined && Number.isFinite(diskAvailableBytes) && diskAvailableBytes >= 0
   const boundedDiskTotal = hasDiskTotal ? Math.max(0, diskTotalBytes) : null
   const boundedDiskAvailable = hasDiskAvailable ? Math.max(0, diskAvailableBytes) : null
-  const usedLabel = boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB' : formatBinarySize(boundedUsed)
+  const usedLabel = boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB' : formatBytes(boundedUsed)
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
   const diskPercentage = !hasQuota && boundedDiskTotal !== null && boundedDiskAvailable !== null
     ? ((boundedDiskTotal - Math.min(boundedDiskTotal, boundedDiskAvailable)) / boundedDiskTotal) * 100
@@ -101,7 +101,7 @@ export function XDriveSidebarStorageSummary({
           overflowWrap: 'anywhere',
         }}
       >
-        已使用 {usedLabel}{hasQuota ? ` / ${formatBinarySize(boundedTotal)}` : ''}
+        已使用 {usedLabel}{hasQuota ? ` / ${formatBytes(boundedTotal)}` : ''}
       </Typography>
       {boundedDiskAvailable !== null ? (
         <Typography
@@ -114,8 +114,8 @@ export function XDriveSidebarStorageSummary({
           }}
         >
           {diskPercentageLabel
-            ? `磁盘占用 ${diskPercentageLabel} · 可用 ${formatBinarySize(boundedDiskAvailable)}`
-            : `磁盘可用 ${formatBinarySize(boundedDiskAvailable)}`}
+            ? `磁盘占用 ${diskPercentageLabel} · 可用 ${formatBytes(boundedDiskAvailable)}`
+            : `磁盘可用 ${formatBytes(boundedDiskAvailable)}`}
         </Typography>
       ) : null}
       {progressPercentage !== null ? (

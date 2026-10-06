@@ -12,7 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { Node } from '../models'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveDialogActions } from './DialogActions'
@@ -142,7 +142,7 @@ export function XDriveTrashDialog({
                           <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{node.name}</Typography>
                         </Stack>
                       </TableCell>
-                      <TableCell>{node.type === 'dir' ? '—' : formatSize(node.size)}</TableCell>
+                      <TableCell>{node.type === 'dir' ? '—' : formatBytes(node.size)}</TableCell>
                       <TableCell>{node.deleted_at ? new Date(node.deleted_at).toLocaleString() : '—'}</TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">

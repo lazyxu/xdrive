@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lazyxu/xdrive/internal/humanize"
+	humanize "github.com/dustin/go-humanize"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -94,7 +94,7 @@ func Run(ctx context.Context) Report {
 			if result.UpdateAvailable {
 				detail := "update available: " + result.Latest
 				if result.Asset.Size > 0 {
-					detail += " (" + FormatBytes(uint64(result.Asset.Size)) + ")"
+					detail += " (" + humanize.IBytes(uint64(max(int64(0), result.Asset.Size))) + ")"
 				}
 				checks = append(checks, Check{Name: "update metadata", Status: Warn, Detail: detail})
 			} else {
@@ -109,7 +109,7 @@ func Run(ctx context.Context) Report {
 				} else {
 					detail := source
 					if result.Asset.Size > 0 {
-						detail += "; asset " + FormatBytes(uint64(result.Asset.Size))
+						detail += "; asset " + humanize.IBytes(uint64(max(int64(0), result.Asset.Size)))
 					}
 					checks = append(checks, Check{Name: "update download", Status: Pass, Detail: detail})
 				}
@@ -138,7 +138,7 @@ func Run(ctx context.Context) Report {
 
 	cacheDetail := "unlimited"
 	if cfg.CacheLimitBytes > 0 {
-		cacheDetail = "limit " + FormatBytes(uint64(cfg.CacheLimitBytes))
+		cacheDetail = "limit " + humanize.IBytes(uint64(max(int64(0), cfg.CacheLimitBytes)))
 	}
 	checks = append(checks, Check{Name: "cache policy", Status: Pass, Detail: cacheDetail})
 
@@ -362,5 +362,5 @@ func RedactDetail(s string) string {
 }
 
 func FormatBytes(v uint64) string {
-	return humanize.Bytes(float64(v))
+	return humanize.IBytes(v)
 }

@@ -6,7 +6,7 @@ import { Box, InputAdornment, Stack, TextField, Typography } from '@mui/material
 import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDriveStatePanel, XDriveStatusAlert } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
-import { formatSize } from '../../ui/shared/src'
+import { formatBytes } from '../../ui/shared/src'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 export default function PublicShareView({ token }: { token: string }) {
@@ -81,7 +81,7 @@ export default function PublicShareView({ token }: { token: string }) {
                 <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
                   {share.name}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">{formatSize(share.size)}</Typography>
+                <Typography variant="body2" color="text.secondary">{formatBytes(share.size)}</Typography>
               </Box>
             </Stack>
 

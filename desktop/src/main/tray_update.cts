@@ -1,22 +1,10 @@
 import type { AgentUpdateState } from './agent_client.cjs'
+import { formatBytes, formatBytesPerSecond } from './byte_format.cjs'
 
 export type TrayUpdatePresentation = {
   headline: string
   detail?: string
   busy: boolean
-}
-
-function formatBinarySize(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit++
-  }
-  const digits = unit === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2
-  return `${value.toFixed(digits)} ${units[unit]}`
 }
 
 function versionLabel(value?: string) {
@@ -43,9 +31,9 @@ export function trayUpdatePresentation(state: AgentUpdateState | null): TrayUpda
       const percent = total > 0 ? Math.max(0, Math.min(100, done * 100 / total)) : null
       const headline = percent === null ? '正在下载更新' : `正在下载 ${percent.toFixed(1)}%`
       const details = []
-      if (total > 0) details.push(`已下载 ${formatBinarySize(done)} / 总大小 ${formatBinarySize(total)}`)
-      else if (done > 0) details.push(`已下载 ${formatBinarySize(done)}`)
-      if ((state.bytes_per_second || 0) > 0) details.push(`当前速度 ${formatBinarySize(state.bytes_per_second || 0)}/s`)
+      if (total > 0) details.push(`已下载 ${formatBytes(done)} / 总大小 ${formatBytes(total)}`)
+      else if (done > 0) details.push(`已下载 ${formatBytes(done)}`)
+      if ((state.bytes_per_second || 0) > 0) details.push(`当前速度 ${formatBytesPerSecond(state.bytes_per_second || 0)}`)
       return { headline, detail: details.join(' · ') || undefined, busy: true }
     }
     case 'downloaded':

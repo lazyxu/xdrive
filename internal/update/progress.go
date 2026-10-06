@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lazyxu/xdrive/internal/humanize"
+	humanize "github.com/dustin/go-humanize"
 )
 
 const updateProgressSteps = 5
@@ -60,5 +60,5 @@ func FormatProgress(event ProgressEvent) string {
 }
 
 func formatBytes(value float64) string {
-	return humanize.Bytes(value)
+	return humanize.IBytes(uint64(max(float64(0), value)))
 }

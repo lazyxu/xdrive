@@ -14,6 +14,7 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@xdrive/shared': path.join(repositoryRoot, 'ui', 'shared', 'src', 'index.ts'),
+      filesize: path.join(desktopRoot, 'node_modules', 'filesize', 'dist', 'filesize.js'),
     },
   },
   server: {

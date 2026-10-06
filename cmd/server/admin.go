@@ -9,10 +9,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/lazyxu/xdrive/internal/admin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/config"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -118,7 +118,7 @@ func listAdminUsers(db *gorm.DB, args []string) error {
 		}
 		quota := "unlimited"
 		if user.QuotaBytes > 0 {
-			quota = humanize.Bytes(float64(user.QuotaBytes))
+			quota = humanize.IBytes(uint64(max(int64(0), user.QuotaBytes)))
 		}
 		if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%t\t%s\t%s\n",
 			user.ID, user.Username, user.Role, status, user.MustChangePassword, quota, lastLogin); err != nil {

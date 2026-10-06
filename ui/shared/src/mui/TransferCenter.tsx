@@ -11,7 +11,8 @@ import {
   Typography,
 } from '@mui/material'
 import {
-  formatBinarySize,
+  formatBytes,
+  formatBytesPerSecond,
   formatXDriveTransferDuration,
   xDriveTransferActive,
   xDriveTransferAggregateBytes,
@@ -41,10 +42,6 @@ function transferTone(state: string) {
   return 'busy' as const
 }
 
-function transferSpeed(bytesPerSecond: number) {
-  return bytesPerSecond > 0 ? `${formatBinarySize(bytesPerSecond)}/s` : '—'
-}
-
 function transferTime(value?: string) {
   if (!value) return '—'
   const parsed = new Date(value)
@@ -53,8 +50,8 @@ function transferTime(value?: string) {
 
 function transferBytes(item: XDriveTransferTask) {
   return item.bytes_total > 0
-    ? `${formatBinarySize(item.bytes_done)} / ${formatBinarySize(item.bytes_total)}`
-    : item.bytes_done > 0 ? formatBinarySize(item.bytes_done) : '等待数据'
+    ? `${formatBytes(item.bytes_done)} / ${formatBytes(item.bytes_total)}`
+    : item.bytes_done > 0 ? formatBytes(item.bytes_done) : '等待数据'
 }
 
 function TransferLeafItem({
@@ -120,7 +117,7 @@ function TransferLeafItem({
         />
         <Stack direction="row" spacing={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
           <Typography variant="caption" color="text.secondary">
-            {transferSpeed(item.instant_bytes_per_second)}
+            {formatBytesPerSecond(item.instant_bytes_per_second)}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
@@ -183,15 +180,15 @@ function TransferLeafItem({
 
         <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="状态">{xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前大小">{formatBinarySize(item.bytes_done)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="总大小">{item.bytes_total > 0 ? formatBinarySize(item.bytes_total) : '未知'}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="当前大小">{formatBytes(item.bytes_done)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="总大小">{item.bytes_total > 0 ? formatBytes(item.bytes_total) : '未知'}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="百分比">{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{transferTime(item.completed_at)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{transferSpeed(item.instant_bytes_per_second)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{transferSpeed(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(item.instant_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="方向">{xDriveTransferKindLabel(item.direction)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
@@ -226,7 +223,7 @@ function TransferGroupItem({
   const processed = Math.min(progress.total, progress.completed + progress.failed)
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
   const discoveredLabel = scanIncomplete
-    ? `已发现 ${progress.total.toLocaleString('zh-CN')} 个文件${bytes.total > 0 ? ` · ${formatBinarySize(bytes.total)}` : ''}`
+    ? `已发现 ${progress.total.toLocaleString('zh-CN')} 个文件${bytes.total > 0 ? ` · ${formatBytes(bytes.total)}` : ''}`
     : null
 
   return (
@@ -275,8 +272,8 @@ function TransferGroupItem({
         <Stack direction="row" justifyContent="space-between" spacing={1} flexWrap="wrap" sx={{ mb: 0.75 }}>
           <Typography variant="body2">
             {bytes.total > 0
-              ? `${formatBinarySize(bytes.done)} / ${formatBinarySize(bytes.total)}`
-              : bytes.done > 0 ? formatBinarySize(bytes.done) : discoveredLabel || '等待扫描'}
+              ? `${formatBytes(bytes.done)} / ${formatBytes(bytes.total)}`
+              : bytes.done > 0 ? formatBytes(bytes.done) : discoveredLabel || '等待扫描'}
           </Typography>
           <Typography variant="body2" fontWeight={700}>
             {scanIncomplete
@@ -312,8 +309,8 @@ function TransferGroupItem({
         <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{transferSpeed(item.instant_bytes_per_second)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{transferSpeed(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(item.instant_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>

@@ -76,7 +76,6 @@ import type {
   XDriveStatusTone,
 } from '@xdrive/ui/mui'
 import {
-  formatBinarySize,
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
   xDriveLatestRedoableFileOperation,
   xDriveLatestUndoableFileOperation,
