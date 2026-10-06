@@ -45,6 +45,31 @@ test('status uses bearer token and parses status', async (t) => {
   assert.equal(status.username, 'alice')
 })
 
+test('cloud children page forwards exact-name lookup options', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/children')
+    assert.equal(url.searchParams.get('parent_id'), '42')
+    assert.equal(url.searchParams.get('limit'), '1')
+    assert.equal(url.searchParams.get('sort'), 'name')
+    assert.equal(url.searchParams.get('order'), 'asc')
+    assert.equal(url.searchParams.get('name'), 'Exact Folder')
+    json(res, 200, {
+      items: [{ id: 9, name: 'Exact Folder', type: 'dir', size: 0, revision: 1 }],
+      has_more: false,
+      sort: 'name',
+      order: 'asc',
+    })
+  })
+  const page = await client.cloudChildrenPage(42, {
+    limit: 1,
+    sort: 'name',
+    order: 'asc',
+    name: 'Exact Folder',
+  })
+  assert.equal(page.items[0].name, 'Exact Folder')
+})
+
 test('media Gallery filters are serialized for items and album items', async (t) => {
   const seen = []
   const { client } = await fixture(t, (req, res) => {

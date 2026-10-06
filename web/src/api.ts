@@ -916,6 +916,7 @@ export class XDriveApi {
       order: options.order ?? 'asc',
     })
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
+    if (options.name) query.set('name', options.name)
     return this.request<XDriveCloudFilesPage<Node>>(`/api/v1/nodes/${parentID}/children?${query.toString()}`)
   }
 

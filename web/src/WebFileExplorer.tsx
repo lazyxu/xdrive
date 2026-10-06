@@ -20,6 +20,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerWebDownloadPlan,
@@ -161,7 +162,13 @@ export default function WebFileExplorer({
       cursor,
     ),
     loadRoot: () => api.root(),
-    listChildren: (parentID) => api.list(parentID),
+    findChildDirectory: async (parentID, name) => {
+      const page = await api.listPage(
+        parentID,
+        xDriveFileExplorerPathLookupPageOptions(name),
+      )
+      return page.items[0] ?? null
+    },
     searchCrumbsForResult: (result) => result.breadcrumbs,
     onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
     onFileAccess: (nodeID) => { void recent.record(nodeID) },

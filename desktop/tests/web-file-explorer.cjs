@@ -39,6 +39,8 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows-style separators')
   assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Web Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('loadRoot: () => api.root()'), 'Web typed-path submission should keep REST root loading local')
+  assert.ok(explorer.includes('findChildDirectory: async (parentID, name) =>'), 'Web typed-path traversal should use exact child lookup')
+  assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Web typed-path traversal should request one indexed child')
   assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Web must not orchestrate typed-path traversal locally')
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
   assert.ok(explorer.includes('pathValue={pathValue}'), 'Web Explorer path display must come from shared navigation')

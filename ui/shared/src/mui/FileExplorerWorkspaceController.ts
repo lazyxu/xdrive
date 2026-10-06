@@ -51,7 +51,7 @@ export function useXDriveFileExplorerWorkspace<
   onLoadMoreDirectory,
   loadSearchPage,
   loadRoot,
-  listChildren,
+  findChildDirectory,
   searchCrumbsForResult,
   onDirectoryAccess,
   onFileAccess,
@@ -70,7 +70,7 @@ export function useXDriveFileExplorerWorkspace<
   onLoadMoreDirectory: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   loadSearchPage: XDriveFileExplorerSearchLoader<TSearch>
   loadRoot: () => Promise<{ id: number }>
-  listChildren: (parentID: number) => Promise<TNode[]>
+  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
   searchCrumbsForResult?: (
     result: TSearch,
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
@@ -121,7 +121,7 @@ export function useXDriveFileExplorerWorkspace<
         rawPath,
         currentCrumbs: crumbs,
         loadRoot,
-        listChildren,
+        findChildDirectory,
         navigate: navigation.navigateTo,
       })
     } catch (error) {
