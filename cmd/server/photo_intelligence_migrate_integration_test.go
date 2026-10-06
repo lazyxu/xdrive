@@ -53,6 +53,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_person_cluster_faces",
 		"xd_photo_person_cluster_states",
 		"xd_photo_intelligence_reanalyze_intents",
+		"xd_background_runtime_cancel_intents",
 		"xd_photo_people",
 		"xd_photo_person_assets",
 		"xd_photo_place_labels",
@@ -90,6 +91,24 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	duplicateIntent.RequestedEpoch = 2
 	if err := db.Create(&duplicateIntent).Error; err == nil {
 		t.Fatal("duplicate owner+kind reanalyze intent was accepted")
+	}
+	cancelIntent := meta.BackgroundRuntimeCancelIntent{
+		OwnerID:        user.ID,
+		Kind:           "photo.face",
+		RequestedEpoch: 1,
+		AppliedEpoch:   0,
+		Trigger:        "user_action",
+		Initiator:      "user",
+		InitiatorID:    user.ID,
+		RequestedAt:    time.Now().UTC(),
+	}
+	if err := db.Create(&cancelIntent).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateCancel := cancelIntent
+	duplicateCancel.RequestedEpoch = 2
+	if err := db.Create(&duplicateCancel).Error; err == nil {
+		t.Fatal("duplicate owner+kind runtime cancel intent was accepted")
 	}
 	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
 	if err := db.Create(&root).Error; err != nil {

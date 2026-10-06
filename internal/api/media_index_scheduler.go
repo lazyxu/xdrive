@@ -17,14 +17,15 @@ const (
 )
 
 type mediaIndexOwnerState struct {
-	running         bool
-	pending         bool
-	generation      uint64
-	currentKey      string
-	currentPriority background.Priority
-	currentTrigger  background.Trigger
-	nextPriority    background.Priority
-	nextTrigger     background.Trigger
+	running            bool
+	pending            bool
+	generation         uint64
+	currentKey         string
+	currentPriority    background.Priority
+	currentTrigger     background.Trigger
+	currentCancelEpoch uint64
+	nextPriority       background.Priority
+	nextTrigger        background.Trigger
 }
 
 func (s *Server) StartMediaIndexer(ctx context.Context) {
@@ -81,6 +82,10 @@ func (s *Server) scheduleStaleMediaOwners(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	s.reconcileBackgroundRuntimeCancellations(
+		ctx,
+		[]string{"media.index"},
+	)
 	owners, err := s.staleMediaOwnerIDs(
 		ctx,
 		mediaIndexReconcileOwnerLimit,
@@ -114,37 +119,58 @@ func (s *Server) requestMediaIndexOwner(
 		s.mediaIndexOwners = make(map[uint64]*mediaIndexOwnerState)
 	}
 	state := s.mediaIndexOwners[ownerID]
-	if state == nil {
-		state = &mediaIndexOwnerState{}
-		s.mediaIndexOwners[ownerID] = state
-	}
-	if state.running {
+	if state != nil && state.running {
 		s.mergePendingMediaIndexRequest(state, priority, trigger)
 		taskKey := state.currentKey
 		generation := state.generation
+		cancelEpoch := state.currentCancelEpoch
 		promote := priority < state.currentPriority
 		if promote {
 			state.currentPriority = priority
 			state.currentTrigger = trigger
 		}
 		s.mediaIndexMu.Unlock()
-
 		if promote && taskKey != "" {
-			// Submitting the same owner/generation key lets the shared
-			// scheduler promote a queued P2 reconcile task to P1 when a real
-			// file-commit event arrives. If the task is already running, the
-			// pending P1 request below still drives the next generation.
 			_ = s.submitMediaIndexOwnerTask(
 				ownerID,
 				generation,
 				taskKey,
+				cancelEpoch,
 				priority,
 				trigger,
 			)
 		}
 		return
 	}
+	s.mediaIndexMu.Unlock()
 
+	cancelEpoch, err := s.backgroundRuntimeCancelEpochForSubmit(
+		ownerID,
+		"media.index",
+	)
+	if err != nil {
+		slog.Warn(
+			"media_index_cancel_epoch_read_failed",
+			"owner_id", ownerID,
+			"error", err,
+		)
+		return
+	}
+
+	s.mediaIndexMu.Lock()
+	if s.mediaIndexOwners == nil {
+		s.mediaIndexOwners = make(map[uint64]*mediaIndexOwnerState)
+	}
+	state = s.mediaIndexOwners[ownerID]
+	if state == nil {
+		state = &mediaIndexOwnerState{}
+		s.mediaIndexOwners[ownerID] = state
+	}
+	if state.running {
+		s.mergePendingMediaIndexRequest(state, priority, trigger)
+		s.mediaIndexMu.Unlock()
+		return
+	}
 	state.running = true
 	state.generation++
 	generation := state.generation
@@ -156,12 +182,14 @@ func (s *Server) requestMediaIndexOwner(
 	state.currentKey = taskKey
 	state.currentPriority = priority
 	state.currentTrigger = trigger
+	state.currentCancelEpoch = cancelEpoch
 	s.mediaIndexMu.Unlock()
 
-	err := s.submitMediaIndexOwnerTask(
+	err = s.submitMediaIndexOwnerTask(
 		ownerID,
 		generation,
 		taskKey,
+		cancelEpoch,
 		priority,
 		trigger,
 	)
@@ -191,6 +219,7 @@ func (s *Server) requestMediaIndexOwner(
 func (s *Server) submitMediaIndexOwnerTask(
 	ownerID, generation uint64,
 	taskKey string,
+	cancelEpoch uint64,
 	priority background.Priority,
 	trigger background.Trigger,
 ) error {
@@ -204,15 +233,40 @@ func (s *Server) submitMediaIndexOwnerTask(
 		Initiator:         background.InitiatorSystem,
 		Priority:          priority,
 		Resource:          background.ResourceMediaCPU,
-		Lease:             s.backgroundOwnerLeaseProvider("media.index"),
+		Lease:             s.backgroundOwnerLeaseProvider("media.index", cancelEpoch),
 		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
+			if err := s.prepareBackgroundRuntimeGeneration(
+				taskCtx,
+				ownerID,
+				"media.index",
+				cancelEpoch,
+			); err != nil {
+				s.finishMediaIndexOwner(
+					ownerID,
+					generation,
+					0,
+					0,
+					err,
+				)
+				return err
+			}
+
 			seen, indexed, runErr := s.refreshMediaIndexOwnerBatch(
 				taskCtx,
 				ownerID,
 				mediaIndexOwnerBatchSize,
 			)
-			if indexed > 0 {
+			runErr = backgroundRuntimeRunError(taskCtx, runErr)
+			if errors.Is(runErr, background.ErrCancelRequested) {
+				if err := s.finalizeBackgroundRuntimeCancellationAfterRun(
+					ownerID,
+					"media.index",
+				); err != nil {
+					runErr = err
+				}
+			}
+			if indexed > 0 && !errors.Is(runErr, background.ErrCancelRequested) {
 				s.requestPhotoIntelligenceForMedia(ownerID)
 			}
 			s.finishMediaIndexOwner(

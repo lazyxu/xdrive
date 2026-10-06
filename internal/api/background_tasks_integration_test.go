@@ -45,7 +45,10 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		&meta.SyncRun{},
 		&meta.FileOperation{},
 		&meta.SystemMaintenanceRun{},
+		&meta.PhotoAnalysisState{},
+		&meta.PhotoPersonClusterState{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.BackgroundRuntimeCancelIntent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -526,6 +529,40 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	userBSnapshots := scheduler.TaskSnapshots(&userB.ID)
 	if len(userBSnapshots) == 0 {
 		t.Fatal("cancelling user A runtime task also cancelled user B work")
+	}
+	var mediaCancel meta.BackgroundRuntimeCancelIntent
+	if err := db.First(
+		&mediaCancel,
+		"owner_id = ? AND kind = ?",
+		userA.ID,
+		"media.index",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if mediaCancel.RequestedEpoch != 1 ||
+		mediaCancel.AppliedEpoch != 1 ||
+		mediaCancel.AppliedAt == nil {
+		t.Fatalf("media-index cancel intent=%+v", mediaCancel)
+	}
+	cancelledTasksResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/background-tasks?limit=50",
+		userAToken,
+		nil,
+		http.StatusOK,
+	)
+	var cancelledTasks []backgroundTaskDTO
+	if err := json.Unmarshal(
+		cancelledTasksResponse.Body.Bytes(),
+		&cancelledTasks,
+	); err != nil {
+		t.Fatal(err)
+	}
+	cancelledMediaTask := backgroundTaskByID(cancelledTasks, runtimeAID)
+	if cancelledMediaTask == nil || cancelledMediaTask.State != "cancelled" {
+		t.Fatalf("cancelled media-index task=%+v", cancelledMediaTask)
 	}
 
 	request(

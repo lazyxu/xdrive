@@ -10,7 +10,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourceaccount"
 )
 
-const backgroundOwnerLeaseHeartbeatInterval = 5 * time.Second
+const backgroundOwnerLeaseHeartbeatInterval = 2 * time.Second
 
 func backgroundOwnerLeaseKey(kind string, ownerID uint64) string {
 	return fmt.Sprintf(
@@ -22,6 +22,7 @@ func backgroundOwnerLeaseKey(kind string, ownerID uint64) string {
 
 func (s *Server) backgroundOwnerLeaseProvider(
 	kind string,
+	submittedCancelEpoch uint64,
 ) background.LeaseProvider {
 	kind = strings.TrimSpace(kind)
 	return func(
@@ -55,7 +56,23 @@ func (s *Server) backgroundOwnerLeaseProvider(
 			return background.Lease{}, false, nil
 		}
 		return background.Lease{
-			Heartbeat: lease.Heartbeat,
+			Heartbeat: func(heartbeatCtx context.Context) error {
+				if err := lease.Heartbeat(heartbeatCtx); err != nil {
+					return err
+				}
+				requested, _, err := s.backgroundRuntimeCancelEpoch(
+					heartbeatCtx,
+					descriptor.OwnerID,
+					kind,
+				)
+				if err != nil {
+					return err
+				}
+				if requested > submittedCancelEpoch {
+					return background.ErrCancelRequested
+				}
+				return nil
+			},
 			Release: func(context.Context, error) error {
 				lease.Close()
 				return nil

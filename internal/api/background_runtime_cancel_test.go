@@ -80,18 +80,15 @@ func TestCancelBackgroundRuntimeMediaIndexInvalidatesOwnerGeneration(t *testing.
 	oldGeneration := state.generation
 	server.mediaIndexMu.Unlock()
 
-	cancelled, err := server.cancelBackgroundRuntimeTaskGroup(
-		context.Background(),
+	cancelled := server.cancelLocalRuntimeTaskGroup(
 		backgroundTaskRef{
 			domain:  "scheduler",
 			scope:   background.ScopeUser,
 			ownerID: ownerID,
 			kind:    "media.index",
 		},
+		background.ErrCancelRequested,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !cancelled {
 		t.Fatal("failed to cancel media-index runtime group")
 	}
@@ -132,18 +129,15 @@ func TestCancelBackgroundRuntimeMediaIndexInvalidatesOwnerGeneration(t *testing.
 	}
 	server.mediaIndexMu.Unlock()
 
-	cancelled, err = server.cancelBackgroundRuntimeTaskGroup(
-		context.Background(),
+	cancelled = server.cancelLocalRuntimeTaskGroup(
 		backgroundTaskRef{
 			domain:  "scheduler",
 			scope:   background.ScopeUser,
 			ownerID: ownerID,
 			kind:    "media.index",
 		},
+		background.ErrCancelRequested,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !cancelled {
 		t.Fatal("failed to cancel replacement media-index generation")
 	}
@@ -200,18 +194,15 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 	oldGeneration := state.generation
 	server.photoIntelligenceMu.Unlock()
 
-	cancelled, err := server.cancelBackgroundRuntimeTaskGroup(
-		context.Background(),
+	cancelled := server.cancelLocalRuntimeTaskGroup(
 		backgroundTaskRef{
 			domain:  "scheduler",
 			scope:   background.ScopeUser,
 			ownerID: ownerID,
 			kind:    "photo.face",
 		},
+		background.ErrCancelRequested,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !cancelled {
 		t.Fatal("failed to cancel photo-intelligence runtime group")
 	}
@@ -257,18 +248,15 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 	}
 	server.photoIntelligenceMu.Unlock()
 
-	cancelled, err = server.cancelBackgroundRuntimeTaskGroup(
-		context.Background(),
+	cancelled = server.cancelLocalRuntimeTaskGroup(
 		backgroundTaskRef{
 			domain:  "scheduler",
 			scope:   background.ScopeUser,
 			ownerID: ownerID,
 			kind:    "photo.face",
 		},
+		background.ErrCancelRequested,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !cancelled {
 		t.Fatal("failed to cancel replacement photo-intelligence generation")
 	}
@@ -281,8 +269,6 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 	const ownerID = uint64(42)
 	for _, kind := range []string{
-		"media.thumbnail",
-		"media.analysis_preview",
 		"media.index",
 		"photo.face",
 		"photo.place",
@@ -309,8 +295,20 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 	if !backgroundTaskActionAllowed(photoActions, backgroundTaskActionReanalyze) {
 		t.Fatalf("photo actions=%v missing reanalyze", photoActions)
 	}
+	for _, kind := range []string{"media.thumbnail", "media.analysis_preview"} {
+		actions := backgroundRuntimeControlActions(
+			kind,
+			background.ScopeUser,
+			ownerID,
+			ownerID,
+			false,
+		)
+		if backgroundTaskActionAllowed(actions, backgroundTaskActionCancel) {
+			t.Fatalf("shared derivative %s unexpectedly exposed group cancel: %v", kind, actions)
+		}
+	}
 	adminActions := backgroundRuntimeControlActions(
-		"media.thumbnail",
+		"media.index",
 		background.ScopeUser,
 		ownerID,
 		999,

@@ -35,8 +35,8 @@ func TestBackgroundOwnerLeaseProviderCoordinatesServers(t *testing.T) {
 		OwnerID: 42,
 	}
 
-	providerA := serverA.backgroundOwnerLeaseProvider("media.index")
-	providerB := serverB.backgroundOwnerLeaseProvider("media.index")
+	providerA := serverA.backgroundOwnerLeaseProvider("media.index", 0)
+	providerB := serverB.backgroundOwnerLeaseProvider("media.index", 0)
 	leaseA, acquired, err := providerA(ctx, descriptor)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestBackgroundOwnerLeaseProviderCoordinatesServers(t *testing.T) {
 		_ = leaseOther.Release(context.Background(), nil)
 	}
 
-	photoProvider := serverB.backgroundOwnerLeaseProvider("photo.face")
+	photoProvider := serverB.backgroundOwnerLeaseProvider("photo.face", 0)
 	photoLease, acquired, err := photoProvider(ctx, descriptor)
 	if err != nil {
 		t.Fatal(err)

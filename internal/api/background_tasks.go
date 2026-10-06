@@ -141,6 +141,18 @@ func (s *Server) backgroundTasks(
 	}
 	out = mergePhotoIntelligenceIntentTasks(out, reanalyzeIntents)
 
+	cancelIntents, err := s.backgroundRuntimeCancelTasks(
+		ctx,
+		ownerID,
+		viewerID,
+		admin,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	out = mergeBackgroundRuntimeCancelTasks(out, cancelIntents)
+
 	fileOperations, err := s.backgroundFileOperationTasks(
 		ctx,
 		ownerID,

@@ -302,7 +302,19 @@ acquired the distributed owner/kind lease consumes the intent: it invalidates th
 and then advances `applied_epoch`. A newer request arriving during invalidation therefore remains pending for
 the next generation instead of being lost or overwritten by an older task.
 
-Photo Intelligence exposes safe `reanalyze` control capability in the background-task read model for the
-owner and for administrators. Mid-flight cancel is intentionally not exposed yet because face/place runners
-persist `running` analysis state; cancellation requires an explicit durable rollback/stale contract rather
-than merely killing an in-process task.
+Photo Intelligence and MediaIndexer expose owner cancellation through the same background-task control
+contract. Cancellation is durable in `xd_background_runtime_cancel_intents`: an owner+kind cancel epoch is
+advanced before the API returns 202, each submitted generation captures the current epoch, and a generation
+whose captured epoch is older than the durable request terminates before work or through the distributed
+lease heartbeat. If no Server currently owns the advisory lease, the cancel request is finalized immediately;
+otherwise the lease-holder finalizes it after the runner stops. Photo Intelligence cancellation restores
+persisted `running` analysis/person-cluster state to `stale` before acknowledging the cancel epoch, and it
+only acknowledges reanalysis intent that existed when cancellation was requested, so a newer reanalysis
+request is never swallowed. Queued/running cancellation therefore remains correct across Server processes,
+restart, and missed in-process state. Web/Desktop render the same server-derived `cancel` control and
+`cancel_requested / cancelled` lifecycle through the shared Task Center.
+
+Thumbnail and analysis-preview work are deliberately excluded from owner-group cancellation here. They use
+shared/singleflight derivative tasks, so cancellation must be consumer-aware: one viewer may detach without
+terminating an underlying derivative still required by another consumer. That contract is handled together
+with cross-Server derivative singleflight rather than by cancelling an entire owner group.

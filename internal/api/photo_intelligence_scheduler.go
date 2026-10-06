@@ -46,6 +46,7 @@ type photoIntelligenceOwnerState struct {
 	currentTrigger     background.Trigger
 	currentInitiator   background.Initiator
 	currentInitiatorID uint64
+	currentCancelEpoch uint64
 	nextPriority       background.Priority
 	nextTrigger        background.Trigger
 	nextInitiator      background.Initiator
@@ -140,6 +141,14 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	s.reconcileBackgroundRuntimeCancellations(
+		ctx,
+		[]string{
+			"photo.face",
+			"photo.place",
+			"photo.person_cluster",
+		},
+	)
 	s.schedulePendingPhotoIntelligenceReanalyzeIntents(ctx)
 
 	type candidateSource struct {
@@ -234,16 +243,13 @@ func (s *Server) requestPhotoIntelligenceOwner(
 	}
 
 	key := photoIntelligenceOwnerKey{OwnerID: ownerID, Kind: kind}
+	kindName := "photo." + string(kind)
 	s.photoIntelligenceMu.Lock()
 	if s.photoIntelligenceOwners == nil {
 		s.photoIntelligenceOwners = make(map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState)
 	}
 	state := s.photoIntelligenceOwners[key]
-	if state == nil {
-		state = &photoIntelligenceOwnerState{}
-		s.photoIntelligenceOwners[key] = state
-	}
-	if state.running {
+	if state != nil && state.running {
 		s.mergePendingPhotoIntelligenceRequest(
 			state,
 			priority,
@@ -253,6 +259,7 @@ func (s *Server) requestPhotoIntelligenceOwner(
 		)
 		taskKey := state.currentKey
 		generation := state.generation
+		cancelEpoch := state.currentCancelEpoch
 		promote := priority < state.currentPriority
 		if promote {
 			state.currentPriority = priority
@@ -266,12 +273,43 @@ func (s *Server) requestPhotoIntelligenceOwner(
 				key,
 				generation,
 				taskKey,
+				cancelEpoch,
 				priority,
 				trigger,
 				initiator,
 				initiatorID,
 			)
 		}
+		return nil
+	}
+	s.photoIntelligenceMu.Unlock()
+
+	cancelEpoch, err := s.backgroundRuntimeCancelEpochForSubmit(
+		ownerID,
+		kindName,
+	)
+	if err != nil {
+		return err
+	}
+
+	s.photoIntelligenceMu.Lock()
+	if s.photoIntelligenceOwners == nil {
+		s.photoIntelligenceOwners = make(map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState)
+	}
+	state = s.photoIntelligenceOwners[key]
+	if state == nil {
+		state = &photoIntelligenceOwnerState{}
+		s.photoIntelligenceOwners[key] = state
+	}
+	if state.running {
+		s.mergePendingPhotoIntelligenceRequest(
+			state,
+			priority,
+			trigger,
+			initiator,
+			initiatorID,
+		)
+		s.photoIntelligenceMu.Unlock()
 		return nil
 	}
 
@@ -289,12 +327,14 @@ func (s *Server) requestPhotoIntelligenceOwner(
 	state.currentTrigger = trigger
 	state.currentInitiator = initiator
 	state.currentInitiatorID = initiatorID
+	state.currentCancelEpoch = cancelEpoch
 	s.photoIntelligenceMu.Unlock()
 
-	err := s.submitPhotoIntelligenceOwnerTask(
+	err = s.submitPhotoIntelligenceOwnerTask(
 		key,
 		generation,
 		taskKey,
+		cancelEpoch,
 		priority,
 		trigger,
 		initiator,
@@ -317,6 +357,7 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 	key photoIntelligenceOwnerKey,
 	generation uint64,
 	taskKey string,
+	cancelEpoch uint64,
 	priority background.Priority,
 	trigger background.Trigger,
 	initiator background.Initiator,
@@ -336,9 +377,23 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 		InitiatorID:       initiatorID,
 		Priority:          priority,
 		Resource:          resource,
-		Lease:             s.backgroundOwnerLeaseProvider(kindName),
+		Lease:             s.backgroundOwnerLeaseProvider(kindName, cancelEpoch),
 		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
+			if err := s.prepareBackgroundRuntimeGeneration(
+				taskCtx,
+				key.OwnerID,
+				kindName,
+				cancelEpoch,
+			); err != nil {
+				s.finishPhotoIntelligenceOwner(
+					key,
+					generation,
+					0,
+					err,
+				)
+				return err
+			}
 			if _, err := s.consumePhotoIntelligenceReanalyzeIntent(
 				taskCtx,
 				key.Kind,
@@ -362,6 +417,15 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 				key.Kind,
 				key.OwnerID,
 			)
+			runErr = backgroundRuntimeRunError(taskCtx, runErr)
+			if errors.Is(runErr, background.ErrCancelRequested) {
+				if err := s.finalizeBackgroundRuntimeCancellationAfterRun(
+					key.OwnerID,
+					kindName,
+				); err != nil {
+					runErr = err
+				}
+			}
 			if processed > 0 {
 				background.ReportProgress(taskCtx, background.TaskProgress{
 					Phase:   "processing",
@@ -375,7 +439,9 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 				processed,
 				runErr,
 			)
-			if key.Kind == photoIntelligenceFace && processed > 0 {
+			if key.Kind == photoIntelligenceFace &&
+				processed > 0 &&
+				!errors.Is(runErr, background.ErrCancelRequested) {
 				_ = s.requestPhotoIntelligenceOwner(
 					photoIntelligencePersonCluster,
 					key.OwnerID,
@@ -434,6 +500,12 @@ func (s *Server) finishPhotoIntelligenceOwner(
 	}
 	state.running = false
 	state.currentKey = ""
+
+	if errors.Is(runErr, background.ErrCancelRequested) {
+		delete(s.photoIntelligenceOwners, key)
+		s.photoIntelligenceMu.Unlock()
+		return
+	}
 
 	if runErr != nil {
 		if !state.pending {

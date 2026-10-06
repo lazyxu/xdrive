@@ -93,6 +93,7 @@ var (
 	ErrRunTimeout       = errors.New("background task run timeout")
 	ErrLeaseUnavailable = errors.New("background task lease unavailable")
 	ErrLeaseLost        = errors.New("background task lease lost")
+	ErrCancelRequested  = errors.New("background task cancel requested")
 )
 
 type Descriptor struct {
@@ -193,7 +194,8 @@ func (p RetryPolicy) retryable(err error, attempt int) bool {
 	if errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, ErrExpired) ||
-		errors.Is(err, ErrSuperseded) {
+		errors.Is(err, ErrSuperseded) ||
+		errors.Is(err, ErrCancelRequested) {
 		return false
 	}
 	if p.Retryable != nil {
@@ -939,8 +941,15 @@ func (s *Scheduler) Submit(task Task) (*Handle, error) {
 }
 
 func (s *Scheduler) Cancel(identity Identity) bool {
+	return s.CancelWithCause(identity, context.Canceled)
+}
+
+func (s *Scheduler) CancelWithCause(identity Identity, cause error) bool {
 	if s == nil || !identity.valid() {
 		return false
+	}
+	if cause == nil {
+		cause = context.Canceled
 	}
 	s.mu.Lock()
 	entry := s.entries[identity]
@@ -960,7 +969,7 @@ func (s *Scheduler) Cancel(identity Identity) bool {
 		s.metrics.mu.Lock()
 		s.metrics.cancelled++
 		s.metrics.mu.Unlock()
-		entry.handle.complete(context.Canceled)
+		entry.handle.complete(cause)
 		return true
 	}
 	entry.cancelRequested = true
@@ -968,7 +977,7 @@ func (s *Scheduler) Cancel(identity Identity) bool {
 	cancel := entry.cancel
 	s.mu.Unlock()
 	if cancel != nil {
-		cancel(context.Canceled)
+		cancel(cause)
 		return true
 	}
 	return false
@@ -1267,7 +1276,10 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	s.mu.Unlock()
 
 	switch {
-	case s.ctx.Err() != nil, errors.Is(err, context.Canceled), errors.Is(err, ErrClosed):
+	case s.ctx.Err() != nil,
+		errors.Is(err, context.Canceled),
+		errors.Is(err, ErrCancelRequested),
+		errors.Is(err, ErrClosed):
 		s.metrics.mu.Lock()
 		s.metrics.cancelled++
 		s.metrics.mu.Unlock()
@@ -1338,7 +1350,11 @@ func (s *Scheduler) execute(ctx context.Context, cancel context.CancelCauseFunc,
 					return
 				case <-ticker.C:
 					if err := lease.Heartbeat(ctx); err != nil {
-						cancel(fmt.Errorf("%w: %v", ErrLeaseLost, err))
+						if errors.Is(err, ErrCancelRequested) {
+							cancel(ErrCancelRequested)
+						} else {
+							cancel(fmt.Errorf("%w: %v", ErrLeaseLost, err))
+						}
 						return
 					}
 				}

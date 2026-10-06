@@ -353,6 +353,7 @@ func assertMediaDerivativeResponses(
 
 func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	if err := db.Migrator().DropTable(
+		&meta.BackgroundRuntimeCancelIntent{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.PhotoCollectionAsset{},
 		&meta.PhotoCollection{},
@@ -406,6 +407,7 @@ func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 		&meta.PhotoMetadata{},
 		&meta.PhotoCollection{},
 		&meta.PhotoCollectionAsset{},
+		&meta.BackgroundRuntimeCancelIntent{},
 	); err != nil {
 		return err
 	}
