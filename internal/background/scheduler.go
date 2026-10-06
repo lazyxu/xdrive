@@ -281,23 +281,24 @@ func (p TaskProgress) normalized() TaskProgress {
 }
 
 type RuntimeTaskSnapshot struct {
-	Identity    Identity
-	Kind        string
-	GroupKey    string
-	State       string
-	Trigger     Trigger
-	Initiator   Initiator
-	InitiatorID uint64
-	ParentKey   string
-	TraceID     string
-	Priority    Priority
-	Resource    ResourceClass
-	Attempt     int
-	Progress    TaskProgress
-	SubmittedAt time.Time
-	StartedAt   *time.Time
-	UpdatedAt   time.Time
-	ReadyAt     *time.Time
+	Identity      Identity
+	Kind          string
+	GroupKey      string
+	State         string
+	Trigger       Trigger
+	Initiator     Initiator
+	InitiatorID   uint64
+	ParentKey     string
+	TraceID       string
+	Priority      Priority
+	Resource      ResourceClass
+	Attempt       int
+	Progress      TaskProgress
+	SubmittedAt   time.Time
+	StartedAt     *time.Time
+	UpdatedAt     time.Time
+	ReadyAt       *time.Time
+	LeaseDeferred bool
 }
 
 type progressReporterKey struct{}
@@ -443,6 +444,7 @@ type taskEntry struct {
 	index           int
 	cancel          context.CancelCauseFunc
 	cancelRequested bool
+	leaseDeferred   bool
 }
 
 type taskHeap []*taskEntry
@@ -1078,23 +1080,24 @@ func (s *Scheduler) TaskSnapshots(ownerID *uint64) []RuntimeTaskSnapshot {
 			readyAt = &value
 		}
 		out = append(out, RuntimeTaskSnapshot{
-			Identity:    entry.identity,
-			Kind:        entry.task.Kind,
-			GroupKey:    entry.task.GroupKey,
-			State:       state,
-			Trigger:     entry.task.Trigger,
-			Initiator:   entry.task.Initiator,
-			InitiatorID: entry.task.InitiatorID,
-			ParentKey:   entry.task.ParentKey,
-			TraceID:     entry.task.TraceID,
-			Priority:    entry.task.Priority,
-			Resource:    entry.task.Resource,
-			Attempt:     entry.attempt,
-			Progress:    entry.progress,
-			SubmittedAt: entry.submittedAt.UTC(),
-			StartedAt:   startedAt,
-			UpdatedAt:   entry.updatedAt.UTC(),
-			ReadyAt:     readyAt,
+			Identity:      entry.identity,
+			Kind:          entry.task.Kind,
+			GroupKey:      entry.task.GroupKey,
+			State:         state,
+			Trigger:       entry.task.Trigger,
+			Initiator:     entry.task.Initiator,
+			InitiatorID:   entry.task.InitiatorID,
+			ParentKey:     entry.task.ParentKey,
+			TraceID:       entry.task.TraceID,
+			Priority:      entry.task.Priority,
+			Resource:      entry.task.Resource,
+			Attempt:       entry.attempt,
+			Progress:      entry.progress,
+			SubmittedAt:   entry.submittedAt.UTC(),
+			StartedAt:     startedAt,
+			UpdatedAt:     entry.updatedAt.UTC(),
+			ReadyAt:       readyAt,
+			LeaseDeferred: entry.leaseDeferred,
 		})
 	}
 	s.mu.Unlock()
@@ -1194,6 +1197,7 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	now := time.Now().UTC()
 	entry.state = itemRunning
 	entry.cancel = cancel
+	entry.leaseDeferred = false
 	entry.startedAt = &now
 	entry.updatedAt = now
 	runCtx = context.WithValue(
@@ -1230,6 +1234,7 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 		entry.readyAt = time.Now().Add(s.leaseRetryDelay)
 		entry.state = itemQueued
 		entry.cancel = nil
+		entry.leaseDeferred = true
 		entry.updatedAt = time.Now().UTC()
 		s.metrics.mu.Lock()
 		s.metrics.leaseUnavailable++

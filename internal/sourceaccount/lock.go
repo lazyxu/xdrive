@@ -99,6 +99,26 @@ func IsHeld(
 	return held, err
 }
 
+func (l *Lease) Heartbeat(ctx context.Context) error {
+	if l == nil || l.conn == nil {
+		return fmt.Errorf("source account lease is closed")
+	}
+	heartbeatCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var value int
+	if err := l.conn.QueryRowContext(
+		heartbeatCtx,
+		"SELECT 1",
+	).Scan(&value); err != nil {
+		return err
+	}
+	if value != 1 {
+		return fmt.Errorf("source account lease heartbeat returned %d", value)
+	}
+	return nil
+}
+
 func (l *Lease) Close() {
 	if l == nil || l.conn == nil {
 		return

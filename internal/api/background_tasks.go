@@ -279,6 +279,11 @@ func aggregateRuntimeBackgroundTasks(
 			viewerID,
 			admin,
 		)
+		if snapshot.LeaseDeferred && snapshot.State == "queued" {
+			group.task.Progress = backgroundTaskProgressDTO{
+				Phase: "waiting_for_cluster_lease",
+			}
+		}
 
 		switch snapshot.State {
 		case "cancelling":
