@@ -74,6 +74,12 @@ import {
   xDriveMediaGalleryGridMetrics,
   xDriveMediaGalleryGridWindow,
 } from './MediaGalleryVirtualGrid'
+import {
+  XDriveMediaThumbnailScheduler,
+} from './MediaGalleryThumbnailScheduler'
+import type {
+  XDriveMediaThumbnailPriority,
+} from './MediaGalleryThumbnailScheduler'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
@@ -1198,6 +1204,8 @@ function keyboardActivate(
 type MediaTileProps = {
   item: MediaItem
   loadThumbnail: MediaThumbnailLoader
+  thumbnailScheduler?: XDriveMediaThumbnailScheduler
+  thumbnailPriority?: XDriveMediaThumbnailPriority
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
@@ -1209,6 +1217,8 @@ type MediaTileProps = {
 function MediaTile({
   item,
   loadThumbnail,
+  thumbnailScheduler,
+  thumbnailPriority = 1,
   loadPreviewURL,
   onSetFavorite,
   onSetCover,
@@ -1239,6 +1249,13 @@ function MediaTile({
     }
     onPreview(item)
   }
+
+  const effectiveThumbnailLoader = useCallback(
+    (nodeID: number) => thumbnailScheduler
+      ? thumbnailScheduler.load(nodeID, thumbnailPriority)
+      : loadThumbnail(nodeID),
+    [loadThumbnail, thumbnailPriority, thumbnailScheduler],
+  )
 
   return (
     <Paper
@@ -1276,8 +1293,9 @@ function MediaTile({
         <XDriveMediaAsyncThumbnail
           nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
           alt={item.node.name}
-          loadThumbnail={loadThumbnail}
+          loadThumbnail={effectiveThumbnailLoader}
           fallback={xDriveMediaFallback(item.metadata.media_kind)}
+          revokeOnDispose={!thumbnailScheduler}
         />
       )}
       {onSetFavorite ? (
@@ -1421,6 +1439,7 @@ function mediaGalleryScrollParent(element: HTMLElement) {
 function MediaVirtualTileGrid({
   collection,
   loadThumbnail,
+  thumbnailScheduler,
   loadPreviewURL,
   onSetFavorite,
   onSetCover,
@@ -1430,6 +1449,7 @@ function MediaVirtualTileGrid({
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   loadThumbnail: MediaThumbnailLoader
+  thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
@@ -1445,6 +1465,7 @@ function MediaVirtualTileGrid({
       itemCount: collection.itemCount,
     }),
     window: { start: 0, end: 0, startRow: 0, endRow: 0 },
+    visibleWindow: { start: 0, end: 0, startRow: 0, endRow: 0 },
   }))
 
   useLayoutEffect(() => {
@@ -1477,6 +1498,14 @@ function MediaVirtualTileGrid({
           metrics.totalHeight,
           Math.max(visibleTop, viewportBottom - hostRect.top),
         )
+        const visibleWindow = xDriveMediaGalleryGridWindow({
+          itemCount: collection.itemCount,
+          columns: metrics.columns,
+          rowStep: metrics.rowStep,
+          visibleTop,
+          visibleBottom,
+          overscanRows: 0,
+        })
         const nextWindow = xDriveMediaGalleryGridWindow({
           itemCount: collection.itemCount,
           columns: metrics.columns,
@@ -1488,9 +1517,11 @@ function MediaVirtualTileGrid({
           current.metrics.columns === metrics.columns &&
           Math.abs(current.metrics.totalHeight - metrics.totalHeight) < 0.5 &&
           current.window.start === nextWindow.start &&
-          current.window.end === nextWindow.end
+          current.window.end === nextWindow.end &&
+          current.visibleWindow.start === visibleWindow.start &&
+          current.visibleWindow.end === visibleWindow.end
             ? current
-            : { metrics, window: nextWindow }
+            : { metrics, window: nextWindow, visibleWindow }
         ))
         if (nextWindow.end > nextWindow.start) {
           void collection.onRangeChange(nextWindow.start, nextWindow.end - 1)
@@ -1516,15 +1547,40 @@ function MediaVirtualTileGrid({
     }
   }, [collection.itemCount, collection.onRangeChange])
 
+  useEffect(() => {
+    const retainedNodeIDs: number[] = []
+    for (let index = layout.window.start; index < layout.window.end; index += 1) {
+      const item = collection.itemAt(index)
+      if (item?.metadata.has_thumbnail) retainedNodeIDs.push(item.node.id)
+    }
+    thumbnailScheduler.setRetention(retainedNodeIDs)
+  }, [
+    collection.itemAt,
+    collection.loadedItems,
+    layout.window.end,
+    layout.window.start,
+    thumbnailScheduler,
+  ])
+
+  useEffect(() => () => {
+    thumbnailScheduler.setRetention([])
+  }, [thumbnailScheduler])
+
   const slots = []
   for (let index = layout.window.start; index < layout.window.end; index += 1) {
     const item = collection.itemAt(index)
+    const thumbnailPriority: XDriveMediaThumbnailPriority = (
+      index >= layout.visibleWindow.start &&
+      index < layout.visibleWindow.end
+    ) ? 0 : 1
     slots.push(
       item ? (
         <MediaTile
           key={item.node.id}
           item={item}
           loadThumbnail={loadThumbnail}
+          thumbnailScheduler={thumbnailScheduler}
+          thumbnailPriority={thumbnailPriority}
           loadPreviewURL={loadPreviewURL}
           onSetFavorite={onSetFavorite}
           onSetCover={onSetCover}
@@ -1615,6 +1671,14 @@ export function XDriveMediaGallery({
   onLoadMore,
   onRefresh,
 }: XDriveMediaGalleryProps) {
+  const thumbnailScheduler = useMemo(
+    () => new XDriveMediaThumbnailScheduler(loadThumbnail),
+    [loadThumbnail],
+  )
+  useEffect(() => () => {
+    thumbnailScheduler.dispose()
+  }, [thumbnailScheduler])
+
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
@@ -2290,6 +2354,7 @@ export function XDriveMediaGallery({
           <MediaVirtualTileGrid
             collection={virtualCollection}
             loadThumbnail={loadThumbnail}
+            thumbnailScheduler={thumbnailScheduler}
             loadPreviewURL={loadPreviewURL}
             onSetFavorite={onSetFavorite}
             onSetCover={
