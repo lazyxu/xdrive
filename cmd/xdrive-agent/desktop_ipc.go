@@ -1414,12 +1414,12 @@ func (h *desktopIPCHandler) cloudResolveFileOperationConflict(w http.ResponseWri
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_operation", "id is required")
 		return
 	}
-	if input.ConflictPolicy != "skip" && input.ConflictPolicy != "keep_both" {
+	if input.ConflictPolicy != "skip" && input.ConflictPolicy != "keep_both" && input.ConflictPolicy != "replace" {
 		writeDesktopIPCError(
 			w,
 			http.StatusBadRequest,
 			"invalid_file_operation_conflict_policy",
-			"conflict_policy must be skip or keep_both",
+			"conflict_policy must be skip, keep_both, or replace",
 		)
 		return
 	}

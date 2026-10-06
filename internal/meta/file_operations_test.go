@@ -44,15 +44,16 @@ func TestFileOperationConflictPolicies(t *testing.T) {
 		FileOperationConflictPolicyFail,
 		FileOperationConflictPolicySkip,
 		FileOperationConflictPolicyKeepBoth,
+		FileOperationConflictPolicyReplace,
 	} {
 		if !ValidFileOperationConflictPolicy(value) {
 			t.Fatalf("expected valid conflict policy %q", value)
 		}
 	}
-	if ValidFileOperationConflictPolicy("") || ValidFileOperationConflictPolicy("overwrite") {
+	if ValidFileOperationConflictPolicy("") || ValidFileOperationConflictPolicy("overwrite") || ValidFileOperationConflictPolicy("merge") {
 		t.Fatal("unexpected valid conflict policy")
 	}
-	if got := DefaultFileOperationConflictPolicy(FileOperationTypeCopy); got != FileOperationConflictPolicyKeepBoth {
+	if got := DefaultFileOperationConflictPolicy(FileOperationTypeCopy); got != FileOperationConflictPolicyFail {
 		t.Fatalf("copy default policy=%q", got)
 	}
 	if got := DefaultFileOperationConflictPolicy(FileOperationTypeMove); got != FileOperationConflictPolicyFail {

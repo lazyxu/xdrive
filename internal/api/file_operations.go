@@ -431,7 +431,7 @@ func (s *Server) resolveFileOperationConflict(c *gin.Context) {
 	}
 	policy, ok := meta.NormalizeFileOperationConflictPolicy(old.Type, req.ConflictPolicy)
 	if !ok || policy == meta.FileOperationConflictPolicyFail {
-		fail(c, http.StatusBadRequest, "conflict_policy must be skip or keep_both")
+		fail(c, http.StatusBadRequest, "conflict_policy must be skip, keep_both, or replace")
 		return
 	}
 
@@ -943,6 +943,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "copy selection cannot contain both a directory and its descendant"}
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
+		replaceOrMerge := false
 		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
 		var copiedNodes []fileOperationUndoNodeRef
 		hooks.AfterNode = func(_ meta.Node, copied meta.Node, _ string) error {
@@ -969,6 +970,58 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 			policy := operation.ConflictPolicy
 			if policy == "" {
 				policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
+			}
+			if source.ParentID != nil && *source.ParentID == parentID {
+				if policy == meta.FileOperationConflictPolicySkip {
+					size, err := fileOperationNodeBytesTx(tx, uid, source)
+					if err != nil {
+						return err
+					}
+					if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
+						return err
+					}
+					continue
+				}
+				name, err := copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
+				if err != nil {
+					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "name_conflict", Message: "cannot allocate destination name"}
+				}
+				copiedNodes = copiedNodes[:0]
+				copiedRoot, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, source.Name, hooks)
+				if err != nil {
+					return err
+				}
+				plan.CopyRoots = append(plan.CopyRoots, fileOperationUndoCopyRoot{
+					Root:  fileOperationUndoNodeRef{ID: copiedRoot.ID, Revision: copiedRoot.Revision},
+					Name:  copiedRoot.Name,
+					Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
+				})
+				if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
+					return err
+				}
+				continue
+			}
+			if policy == meta.FileOperationConflictPolicyReplace {
+				copiedNodes = copiedNodes[:0]
+				copiedRoot, replaced, err := s.copyNodeReplaceOrMergeTx(
+					ctx, tx, uid, source, parentID, source.Name, source.Name, hooks, index,
+				)
+				if err != nil {
+					return err
+				}
+				if replaced {
+					replaceOrMerge = true
+				} else {
+					plan.CopyRoots = append(plan.CopyRoots, fileOperationUndoCopyRoot{
+						Root:  fileOperationUndoNodeRef{ID: copiedRoot.ID, Revision: copiedRoot.Revision},
+						Name:  copiedRoot.Name,
+						Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
+					})
+				}
+				if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
+					return err
+				}
+				continue
 			}
 			name := source.Name
 			exists, err := batchNameExistsTx(tx, uid, parentID, source.Name, 0)
@@ -1009,8 +1062,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 				return err
 			}
 		}
-		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
-			return err
+		if !replaceOrMerge {
+			if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
+				return err
+			}
 		}
 		return s.completeFileOperationTx(tx, operation)
 	})
@@ -1034,6 +1089,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "move selection cannot contain both a directory and its descendant"}
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
+		replaceOrMerge := false
 		for index, ref := range refs {
 			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
@@ -1070,6 +1126,30 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				policy := operation.ConflictPolicy
 				if policy == "" {
 					policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
+				}
+				if policy == meta.FileOperationConflictPolicyReplace {
+					size, err := fileOperationNodeBytesTx(tx, uid, node)
+					if err != nil {
+						return err
+					}
+					moved, replaced, err := s.moveNodeReplaceOrMergeTx(ctx, tx, uid, node, parentID, index)
+					if err != nil {
+						return err
+					}
+					if replaced {
+						replaceOrMerge = true
+					} else {
+						plan.Moves = append(plan.Moves, fileOperationUndoMove{
+							ID:       moved.ID,
+							Revision: moved.Revision,
+							ParentID: originalParentID,
+							Name:     originalName,
+						})
+					}
+					if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+						return err
+					}
+					continue
 				}
 				targetName := node.Name
 				exists, err := batchNameExistsTx(tx, uid, parentID, node.Name, node.ID)
@@ -1135,8 +1215,10 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				return err
 			}
 		}
-		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
-			return err
+		if !replaceOrMerge {
+			if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
+				return err
+			}
 		}
 		return s.completeFileOperationTx(tx, operation)
 	})

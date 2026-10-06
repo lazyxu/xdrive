@@ -1042,7 +1042,7 @@ test('file operation conflict resolution posts the selected policy', async (t) =
       type: 'move',
       status: 'queued',
       retry_of_id: 'failed-op',
-      conflict_policy: 'keep_both',
+      conflict_policy: 'replace',
       total_items: 1,
       processed_items: 0,
       total_bytes: 3,
@@ -1054,13 +1054,13 @@ test('file operation conflict resolution posts the selected policy', async (t) =
     })
   })
 
-  const operation = await client.cloudResolveFileOperationConflict('failed-op', 'keep_both')
+  const operation = await client.cloudResolveFileOperationConflict('failed-op', 'replace')
   assert.equal(operation.id, 'resolved-op')
-  assert.equal(operation.conflict_policy, 'keep_both')
+  assert.equal(operation.conflict_policy, 'replace')
   assert.deepEqual(seen, {
     method: 'POST',
     path: '/v1/cloud/file-operation/resolve',
-    body: { id: 'failed-op', conflict_policy: 'keep_both' },
+    body: { id: 'failed-op', conflict_policy: 'replace' },
   })
 })
 

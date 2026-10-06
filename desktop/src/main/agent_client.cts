@@ -472,7 +472,7 @@ export type AgentCloudFileOperation = {
   redone_by_id?: string
   undoable?: boolean
   redoable?: boolean
-  conflict_policy?: 'fail' | 'skip' | 'keep_both'
+  conflict_policy?: 'fail' | 'skip' | 'keep_both' | 'replace'
   total_items: number
   processed_items: number
   total_bytes: number
@@ -1590,7 +1590,7 @@ export class AgentIPCClient {
     return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/redo', { id }, 45_000)
   }
 
-  cloudResolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both') {
+  cloudResolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both' | 'replace') {
     return this.request<AgentCloudFileOperation>('POST', '/v1/cloud/file-operation/resolve', {
       id,
       conflict_policy: conflictPolicy,

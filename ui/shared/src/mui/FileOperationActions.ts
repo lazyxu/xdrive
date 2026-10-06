@@ -181,7 +181,9 @@ export function useXDriveFileOperationActions<
     ? 'skip'
     : action.startsWith('resolve:keep_both:')
       ? 'keep_both'
-      : ''
+      : action.startsWith('resolve:replace:')
+        ? 'replace'
+        : ''
   const resolvingID = resolvingPolicy
     ? action.slice(`resolve:${resolvingPolicy}:`.length)
     : ''

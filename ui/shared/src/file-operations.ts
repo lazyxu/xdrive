@@ -5,7 +5,7 @@ export const XDRIVE_FILE_OPERATION_VISIBLE_IDLE_POLL_MS = 3_000
 export const XDRIVE_FILE_OPERATION_IDLE_POLL_MS = 15_000
 
 export type XDriveFileOperationType = 'copy' | 'move' | 'delete' | 'undo' | 'redo'
-export type XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both'
+export type XDriveFileOperationConflictPolicy = 'fail' | 'skip' | 'keep_both' | 'replace'
 export type XDriveFileOperationConflictResolution = Exclude<XDriveFileOperationConflictPolicy, 'fail'>
 
 export type XDriveFileOperationStatus =
@@ -288,6 +288,7 @@ export function xDriveFileOperationConflictPolicyLabel(
   switch (policy) {
     case 'skip': return '跳过冲突'
     case 'keep_both': return '保留两者'
+    case 'replace': return '替换或合并'
     default: return '遇到冲突时停止'
   }
 }

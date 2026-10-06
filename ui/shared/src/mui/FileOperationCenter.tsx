@@ -188,6 +188,15 @@ function OperationItem({
               >
                 保留两者
               </XDriveActionButton>
+              <XDriveActionButton
+                compact
+                disabled={disabled}
+                loading={resolving && resolvingPolicy === 'replace'}
+                loadingLabel="正在处理…"
+                onClick={() => onResolveConflict?.(operation.id, 'replace')}
+              >
+                替换或合并
+              </XDriveActionButton>
             </>
           ) : null}
         </Stack>

@@ -1404,7 +1404,7 @@ export class XDriveApi {
     })
   }
 
-  resolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both') {
+  resolveFileOperationConflict(id: string, conflictPolicy: 'skip' | 'keep_both' | 'replace') {
     return this.request<XDriveFileOperation>(`/api/v1/file-operations/${encodeURIComponent(id)}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ conflict_policy: conflictPolicy }),
