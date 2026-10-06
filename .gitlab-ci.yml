@@ -289,6 +289,25 @@ file-explorer-directory-sort-performance:
   script:
     - go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+file-explorer-virtual-collection-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  variables:
+    XD_FILEEXPLORER_VIRTUAL_COLLECTION_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-virtual-100k-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-virtual-100k-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
+
 build-source-agent:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
