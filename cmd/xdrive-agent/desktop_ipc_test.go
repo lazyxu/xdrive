@@ -418,6 +418,20 @@ func (f *fakeDesktopIPCController) CloudBackgroundTasks(context.Context, bool, i
 	}}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudControlBackgroundTask(
+	context.Context,
+	bool,
+	string,
+	string,
+) (client.BackgroundTaskControlResult, error) {
+	return client.BackgroundTaskControlResult{
+		TaskID:       "sync-run:run",
+		Action:       "cancel",
+		ResultTaskID: "sync-run:run",
+		Accepted:     true,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileOperations(context.Context, int) ([]client.FileOperation, error) {
 	return []client.FileOperation{{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1, TotalBytes: 7, ProcessedBytes: 3}}, f.err
 }

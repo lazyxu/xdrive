@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { XDRIVE_BACKGROUND_TASK_LIMIT, xDriveActiveFileOperationCount, xDriveBackgroundTaskPollIntervalMs, xDriveFileOperationHasHistory } from '..'
-import type { XDriveBackgroundTask, XDriveFileOperation, XDriveFileOperationConflictResolution } from '..'
+import {
+  XDRIVE_BACKGROUND_TASK_LIMIT,
+  xDriveActiveFileOperationCount,
+  xDriveBackgroundTaskPollIntervalMs,
+  xDriveFileOperationHasHistory,
+} from '..'
+import type {
+  XDriveBackgroundTask,
+  XDriveBackgroundTaskControlAction,
+  XDriveFileOperation,
+  XDriveFileOperationConflictResolution,
+} from '..'
 import { xDriveActiveTransferCount, xDriveTransferHasHistory } from '../transfers'
 import type { XDriveTransferTask } from '../transfers'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
@@ -21,34 +31,73 @@ export type XDriveTaskCenterOperationActions = {
   resolveConflict: (id: string, policy: XDriveFileOperationConflictResolution) => Promise<boolean>
   clearHistory: () => Promise<boolean>
 }
+
+export type XDriveBackgroundTaskScope = 'mine' | 'global'
+
 export type XDriveBackgroundTaskPort = {
   loadMine: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
   loadGlobal?: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
+  control?: (
+    taskID: string,
+    action: XDriveBackgroundTaskControlAction,
+    global: boolean,
+  ) => Promise<unknown>
 }
-function useXDriveBackgroundTasks({ port, enabled, visible, globalEnabled }: {
+
+function useXDriveBackgroundTasks({
+  port,
+  enabled,
+  visible,
+  globalEnabled,
+  scope,
+  onError,
+}: {
   port?: XDriveBackgroundTaskPort
   enabled: boolean
   visible: boolean
   globalEnabled: boolean
+  scope: XDriveBackgroundTaskScope
+  onError?: (error: unknown) => void
 }) {
   const [mine, setMine] = useState<XDriveBackgroundTask[]>([])
   const [globalTasks, setGlobalTasks] = useState<XDriveBackgroundTask[]>([])
   const [mineLoading, setMineLoading] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(false)
+
+  const effectiveScope: XDriveBackgroundTaskScope =
+    scope === 'global' && globalEnabled && port?.loadGlobal ? 'global' : 'mine'
+
   const refresh = useCallback(async () => {
     if (!port || !enabled || !visible) return
+
+    if (effectiveScope === 'global' && port.loadGlobal) {
+      setGlobalLoading(true)
+      try {
+        setGlobalTasks([...(await port.loadGlobal(XDRIVE_BACKGROUND_TASK_LIMIT))])
+      } catch (error) {
+        onError?.(error)
+      } finally {
+        setGlobalLoading(false)
+      }
+      return
+    }
+
     setMineLoading(true)
-    if (globalEnabled && port.loadGlobal) setGlobalLoading(true)
-    const [mineResult, globalResult] = await Promise.allSettled([
-      port.loadMine(XDRIVE_BACKGROUND_TASK_LIMIT),
-      globalEnabled && port.loadGlobal ? port.loadGlobal(XDRIVE_BACKGROUND_TASK_LIMIT) : Promise.resolve([] as readonly XDriveBackgroundTask[]),
-    ])
-    if (mineResult.status === 'fulfilled') setMine([...mineResult.value])
-    if (globalResult.status === 'fulfilled') setGlobalTasks([...globalResult.value])
-    setMineLoading(false)
-    setGlobalLoading(false)
-  }, [enabled, globalEnabled, port, visible])
-  const pollIntervalMs = useMemo(() => xDriveBackgroundTaskPollIntervalMs([...mine, ...globalTasks]), [globalTasks, mine])
+    try {
+      setMine([...(await port.loadMine(XDRIVE_BACKGROUND_TASK_LIMIT))])
+    } catch (error) {
+      onError?.(error)
+    } finally {
+      setMineLoading(false)
+    }
+  }, [effectiveScope, enabled, onError, port, visible])
+
+  const visibleTasks = effectiveScope === 'global' ? globalTasks : mine
+  const pollIntervalMs = useMemo(
+    () => xDriveBackgroundTaskPollIntervalMs(visibleTasks),
+    [visibleTasks],
+  )
+
   useEffect(() => {
     if (!enabled || !port) {
       setMine([])
@@ -62,14 +111,31 @@ function useXDriveBackgroundTasks({ port, enabled, visible, globalEnabled }: {
     const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
     return () => window.clearInterval(timer)
   }, [enabled, pollIntervalMs, port, refresh, visible])
-  return { mine, globalTasks, mineLoading, globalLoading, refresh }
+
+  return {
+    mine,
+    globalTasks,
+    mineLoading,
+    globalLoading,
+    effectiveScope,
+    refresh,
+  }
 }
 
 export function useXDriveTaskCenterController({
-  transfers, operations, operationActions, externalBusy = false,
-  transferRetryingID = '', transferRetryDisabled = false, onRetryTransfer,
-  conflictResolutionEnabled = true, backgroundTaskPort, backgroundTasksEnabled = false,
-  backgroundTasksVisible = false, globalTasksEnabled = false,
+  transfers,
+  operations,
+  operationActions,
+  externalBusy = false,
+  transferRetryingID = '',
+  transferRetryDisabled = false,
+  onRetryTransfer,
+  conflictResolutionEnabled = true,
+  backgroundTaskPort,
+  backgroundTasksEnabled = false,
+  backgroundTasksVisible = false,
+  globalTasksEnabled = false,
+  onBackgroundTaskError,
 }: {
   transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
@@ -83,12 +149,54 @@ export function useXDriveTaskCenterController({
   backgroundTasksEnabled?: boolean
   backgroundTasksVisible?: boolean
   globalTasksEnabled?: boolean
+  onBackgroundTaskError?: (error: unknown) => void
 }) {
   const activeTransferCount = xDriveActiveTransferCount(transfers)
   const activeOperationCount = xDriveActiveFileOperationCount(operations)
   const hasHistory = xDriveTransferHasHistory(transfers) || xDriveFileOperationHasHistory(operations)
   const badgeCount = activeTransferCount + activeOperationCount
-  const background = useXDriveBackgroundTasks({ port: backgroundTaskPort, enabled: backgroundTasksEnabled, visible: backgroundTasksVisible, globalEnabled: globalTasksEnabled })
+  const [backgroundScope, setBackgroundScope] = useState<XDriveBackgroundTaskScope>('mine')
+  const [backgroundControlKey, setBackgroundControlKey] = useState('')
+
+  useEffect(() => {
+    if (!globalTasksEnabled && backgroundScope === 'global') {
+      setBackgroundScope('mine')
+    }
+  }, [backgroundScope, globalTasksEnabled])
+
+  const background = useXDriveBackgroundTasks({
+    port: backgroundTaskPort,
+    enabled: backgroundTasksEnabled,
+    visible: backgroundTasksVisible,
+    globalEnabled: globalTasksEnabled,
+    scope: backgroundScope,
+    onError: onBackgroundTaskError,
+  })
+
+  const controlBackgroundTask = useCallback(async (
+    task: XDriveBackgroundTask,
+    action: XDriveBackgroundTaskControlAction,
+  ) => {
+    if (!backgroundTaskPort?.control || backgroundControlKey) return
+    const global = background.effectiveScope === 'global'
+    const key = `${task.id}:${action}`
+    setBackgroundControlKey(key)
+    try {
+      await backgroundTaskPort.control(task.id, action, global)
+      await background.refresh()
+    } catch (error) {
+      onBackgroundTaskError?.(error)
+    } finally {
+      setBackgroundControlKey('')
+    }
+  }, [
+    background.effectiveScope,
+    background.refresh,
+    backgroundControlKey,
+    backgroundTaskPort,
+    onBackgroundTaskError,
+  ])
+
   const pageProps: XDriveTaskCenterPageProps = {
     transfers,
     operations,
@@ -98,12 +206,19 @@ export function useXDriveTaskCenterController({
     globalBackgroundTasksLoading: background.globalLoading,
     backgroundTasksAvailable: Boolean(backgroundTaskPort) && backgroundTasksEnabled,
     globalTasksEnabled: Boolean(backgroundTaskPort?.loadGlobal) && globalTasksEnabled,
+    backgroundScope: background.effectiveScope,
+    onBackgroundScopeChange: setBackgroundScope,
+    backgroundControlKey,
+    onBackgroundTaskControl: backgroundTaskPort?.control
+      ? (task, action) => { void controlBackgroundTask(task, action) }
+      : undefined,
     clearHistory: {
       disabled: !hasHistory || externalBusy || operationActions.busy,
       loading: operationActions.clearHistoryLoading,
       onClear: () => { void operationActions.clearHistory() },
     },
-    transferRetryingID, transferRetryDisabled,
+    transferRetryingID,
+    transferRetryDisabled,
     operationCancellingID: operationActions.cancellingID,
     operationRetryingID: operationActions.retryingID,
     operationUndoingID: operationActions.undoingID,
@@ -116,11 +231,21 @@ export function useXDriveTaskCenterController({
     onRetryOperation: (id) => { void operationActions.retryOperation(id) },
     onUndoOperation: (id) => { void operationActions.undoOperation(id) },
     onRedoOperation: (id) => { void operationActions.redoOperation(id) },
-    onResolveOperationConflict: conflictResolutionEnabled ? (id, policy) => { void operationActions.resolveConflict(id, policy) } : undefined,
+    onResolveOperationConflict: conflictResolutionEnabled
+      ? (id, policy) => { void operationActions.resolveConflict(id, policy) }
+      : undefined,
   }
+
   return {
-    activeTransferCount, activeOperationCount, badgeCount, badge: badgeCount || undefined, hasHistory,
-    backgroundTasks: background.mine, globalBackgroundTasks: background.globalTasks,
-    refreshBackgroundTasks: background.refresh, pageProps,
+    activeTransferCount,
+    activeOperationCount,
+    badgeCount,
+    badge: badgeCount || undefined,
+    hasHistory,
+    backgroundTasks: background.mine,
+    globalBackgroundTasks: background.globalTasks,
+    backgroundScope: background.effectiveScope,
+    refreshBackgroundTasks: background.refresh,
+    pageProps,
   }
 }

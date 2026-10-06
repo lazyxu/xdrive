@@ -13,6 +13,21 @@ export type XDriveBackgroundTaskProgress = {
   current_item?: string
 }
 
+export type XDriveBackgroundTaskControlAction =
+  | 'cancel'
+  | 'retry'
+  | 'undo'
+  | 'redo'
+  | 'reanalyze'
+  | string
+
+export type XDriveBackgroundTaskControlResult = {
+  task_id: string
+  action: string
+  result_task_id?: string
+  accepted: boolean
+}
+
 export type XDriveBackgroundTask = {
   id: string
   kind: string
@@ -106,13 +121,18 @@ export function xDriveBackgroundTaskTriggerLabel(trigger?: string) {
 
 export function xDriveBackgroundTaskControlLabel(action: string) {
   switch (action) {
-    case 'cancel': return '可取消'
-    case 'retry': return '可重试'
-    case 'undo': return '可撤销'
-    case 'redo': return '可重做'
-    case 'reanalyze': return '可重新分析'
+    case 'cancel': return '取消'
+    case 'retry': return '重试'
+    case 'undo': return '撤销'
+    case 'redo': return '重做'
+    case 'reanalyze': return '重新分析'
     default: return action
   }
+}
+
+export function xDriveBackgroundTaskControlCapabilityLabel(action: string) {
+  const label = xDriveBackgroundTaskControlLabel(action)
+  return label ? `可${label}` : action
 }
 
 export function xDriveBackgroundTaskPercent(task: XDriveBackgroundTask) {

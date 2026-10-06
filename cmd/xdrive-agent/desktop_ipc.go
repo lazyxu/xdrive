@@ -181,6 +181,7 @@ type desktopIPCController interface {
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
 	CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error)
+	CloudControlBackgroundTask(context.Context, bool, string, string) (client.BackgroundTaskControlResult, error)
 	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
 	CloudClearFileOperationHistory(context.Context) error
 	CloudFileOperation(context.Context, string) (client.FileOperation, error)
@@ -472,6 +473,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
+	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
 	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
 	mux.HandleFunc("DELETE /v1/cloud/file-operations", h.cloudClearFileOperationHistory)
 	mux.HandleFunc("GET /v1/cloud/file-operation", h.cloudFileOperation)
@@ -1243,6 +1245,39 @@ func (h *desktopIPCHandler) cloudBackgroundTasks(w http.ResponseWriter, r *http.
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, tasks)
+}
+
+func (h *desktopIPCHandler) cloudBackgroundTaskControl(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID     string `json:"id"`
+		Action string `json:"action"`
+		Global bool   `json:"global"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	input.Action = strings.ToLower(strings.TrimSpace(input.Action))
+	if input.ID == "" || input.Action == "" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_background_task_control",
+			"id and action are required",
+		)
+		return
+	}
+	result, err := h.ctrl.CloudControlBackgroundTask(
+		r.Context(),
+		input.Global,
+		input.ID,
+		input.Action,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, result)
 }
 
 func (h *desktopIPCHandler) cloudFileOperations(w http.ResponseWriter, r *http.Request) {

@@ -491,6 +491,15 @@ export default function App({
           return result.data
         }
       : undefined,
+    control: async (id: string, action: string, global: boolean) => {
+      const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
+        id,
+        action,
+        global,
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
   }) : undefined, [backgroundTasksSupported, status?.role])
 
   const taskCenter = useXDriveTaskCenterController({
@@ -503,6 +512,9 @@ export default function App({
     backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
     backgroundTasksVisible: view === 'transfers',
     globalTasksEnabled: status?.role === 'admin',
+    onBackgroundTaskError: (taskError) => setError(
+      taskError instanceof Error ? taskError.message : String(taskError),
+    ),
   })
 
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false

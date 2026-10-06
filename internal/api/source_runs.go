@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -832,28 +833,26 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (s *Server) cancelSourceRun(c *gin.Context) {
-	sourceID, ok := parseID(c.Param("id"))
-	if !ok {
-		fail(c, http.StatusBadRequest, "invalid source id")
-		return
-	}
-	runID, ok := canonicalRunID(c.Param("runID"))
-	if !ok {
-		fail(c, http.StatusBadRequest, "invalid run id")
-		return
-	}
-
+func (s *Server) requestSourceRunCancel(
+	ctx context.Context,
+	ownerID, sourceID uint64,
+	runID string,
+) (meta.SyncRun, bool, error) {
 	now := time.Now().UTC()
 	accepted := false
 	var out meta.SyncRun
-	err := s.DB.Transaction(func(tx *gorm.DB) error {
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var source meta.Source
-		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+		if err := tx.Where(
+			"id = ? AND owner_id = ?",
+			sourceID,
+			ownerID,
+		).First(&source).Error; err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND source_id = ?", runID, sourceID).First(&out).Error; err != nil {
+			Where("id = ? AND source_id = ?", runID, sourceID).
+			First(&out).Error; err != nil {
 			return err
 		}
 		if meta.SyncRunTerminal(out.Status) {
@@ -866,13 +865,35 @@ func (s *Server) cancelSourceRun(c *gin.Context) {
 			out.CancelRequestedAt = &now
 			out.UpdatedAt = now
 			accepted = true
-			return tx.Model(&meta.SyncRun{}).Where("id = ?", out.ID).Updates(map[string]any{
-				"cancel_requested_at": &now,
-				"updated_at":          now,
-			}).Error
+			return tx.Model(&meta.SyncRun{}).
+				Where("id = ?", out.ID).
+				Updates(map[string]any{
+					"cancel_requested_at": &now,
+					"updated_at":          now,
+				}).Error
 		}
 		return nil
 	})
+	return out, accepted, err
+}
+
+func (s *Server) cancelSourceRun(c *gin.Context) {
+	sourceID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid source id")
+		return
+	}
+	runID, ok := canonicalRunID(c.Param("runID"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid run id")
+		return
+	}
+	out, accepted, err := s.requestSourceRunCancel(
+		c.Request.Context(),
+		userID(c),
+		sourceID,
+		runID,
+	)
 	if err != nil {
 		writeSourceRunError(c, err)
 		return

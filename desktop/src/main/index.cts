@@ -68,6 +68,7 @@ import {
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
   type AgentBackgroundTask,
+  type AgentBackgroundTaskControlResult,
   type AgentCloudFileOperation,
   type AgentCloudUploadConflictPreflight,
   type AgentCloudUploadResult,
@@ -2716,6 +2717,26 @@ function registerIPCHandlers() {
       ? Math.min(200, Math.max(1, limit))
       : 100
     return requireAgentClient().cloudBackgroundTasks(global === true, parsedLimit)
+  }, false))
+  ipcMain.handle('agent:cloud-background-task-control', (
+    _event,
+    id: unknown,
+    action: unknown,
+    global: unknown,
+  ) => runAgentAction<AgentBackgroundTaskControlResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'background-tasks')
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Background task id is required.')
+    }
+    if (typeof action !== 'string' || !action.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Background task action is required.')
+    }
+    return requireAgentClient().cloudBackgroundTaskControl(
+      id.trim(),
+      action.trim(),
+      global === true,
+    )
   }, false))
   ipcMain.handle('agent:cloud-file-operations', (_event, limit: unknown) => runAgentAction<AgentCloudFileOperation[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

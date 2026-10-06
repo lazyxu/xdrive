@@ -606,6 +606,8 @@ function FileManager({
     loadGlobal: profile?.role === 'admin'
       ? (limit: number) => api.adminBackgroundTasks(limit)
       : undefined,
+    control: (id: string, action: string, global: boolean) =>
+      api.controlBackgroundTask(id, action, global),
   }), [api, profile?.role])
 
   const taskCenter = useXDriveTaskCenterController({
@@ -616,6 +618,7 @@ function FileManager({
     backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
     backgroundTasksVisible: appView === 'transfers',
     globalTasksEnabled: profile?.role === 'admin',
+    onBackgroundTaskError: handleError,
   })
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -17,8 +18,9 @@ import (
 )
 
 var (
-	errFileOperationCancelled = errors.New("file operation cancelled")
-	errFileOperationTerminal  = errors.New("file operation is already terminal")
+	errFileOperationCancelled        = errors.New("file operation cancelled")
+	errFileOperationTerminal         = errors.New("file operation is already terminal")
+	errFileOperationRetryUnavailable = errors.New("file operation cannot be retried")
 )
 
 const (
@@ -351,39 +353,57 @@ func (s *Server) cancelFileOperation(c *gin.Context) {
 	c.JSON(http.StatusOK, toFileOperationDTO(operation))
 }
 
-func (s *Server) retryFileOperation(c *gin.Context) {
-	old, err := s.loadOwnedFileOperation(c.Request.Context(), userID(c), c.Param("id"))
+func (s *Server) enqueueFileOperationRetry(
+	ctx context.Context,
+	uid uint64,
+	id string,
+) (meta.FileOperation, error) {
+	old, err := s.loadOwnedFileOperation(ctx, uid, id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			fail(c, http.StatusNotFound, "file operation not found")
-		} else {
-			fail(c, http.StatusInternalServerError, "load file operation failed")
-		}
-		return
+		return meta.FileOperation{}, err
 	}
-	if old.Status != meta.FileOperationStatusFailed && old.Status != meta.FileOperationStatusCancelled {
-		fail(c, http.StatusConflict, "only failed or cancelled file operations can be retried")
-		return
+	if old.Status != meta.FileOperationStatusFailed &&
+		old.Status != meta.FileOperationStatusCancelled {
+		return meta.FileOperation{}, errFileOperationRetryUnavailable
 	}
 	if !fileOperationRetryable(old) {
-		fail(c, http.StatusConflict, "file operation conflict must be resolved before retry")
-		return
+		return meta.FileOperation{}, errFileOperationRetryUnavailable
 	}
 	refs, err := decodeFileOperationRefs(old.ItemsJSON)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "stored file operation is invalid")
-		return
+		return meta.FileOperation{}, fmt.Errorf("decode stored file operation refs: %w", err)
 	}
 	parentID := uint64(0)
 	if old.ParentID != nil {
 		parentID = *old.ParentID
 	}
 	retryOf := old.ID
-	operation, err := s.enqueueFileOperationWithConflictPolicy(
-		c.Request.Context(), userID(c), old.Type, refs, parentID, &retryOf, old.ConflictPolicy,
+	return s.enqueueFileOperationWithConflictPolicy(
+		ctx,
+		uid,
+		old.Type,
+		refs,
+		parentID,
+		&retryOf,
+		old.ConflictPolicy,
+	)
+}
+
+func (s *Server) retryFileOperation(c *gin.Context) {
+	operation, err := s.enqueueFileOperationRetry(
+		c.Request.Context(),
+		userID(c),
+		c.Param("id"),
 	)
 	if err != nil {
-		writeFileOperationError(c, old.Type, err)
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "file operation not found")
+		case errors.Is(err, errFileOperationRetryUnavailable):
+			fail(c, http.StatusConflict, "file operation cannot be retried")
+		default:
+			fail(c, http.StatusInternalServerError, "retry file operation failed")
+		}
 		return
 	}
 	c.JSON(http.StatusAccepted, toFileOperationDTO(operation))

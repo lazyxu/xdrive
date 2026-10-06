@@ -153,8 +153,10 @@ func (s *Server) backgroundTasks(
 	}
 	out = append(out, sourceRuns...)
 
-	if err := s.populateBackgroundTaskOwnerUsernames(ctx, out); err != nil {
-		return nil, err
+	if admin {
+		if err := s.populateBackgroundTaskOwnerUsernames(ctx, out); err != nil {
+			return nil, err
+		}
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -265,11 +267,13 @@ func aggregateRuntimeBackgroundTasks(
 			}
 		}
 
-		if strings.HasPrefix(kind, "photo.") &&
-			snapshot.Identity.Scope == background.ScopeUser &&
-			(snapshot.Identity.OwnerID == viewerID || admin) {
-			group.task.ControlActions = []string{"reanalyze"}
-		}
+		group.task.ControlActions = backgroundRuntimeControlActions(
+			kind,
+			snapshot.Identity.Scope,
+			snapshot.Identity.OwnerID,
+			viewerID,
+			admin,
+		)
 
 		switch snapshot.State {
 		case "cancelling":
@@ -359,20 +363,11 @@ func (s *Server) backgroundFileOperationTasks(
 			Error:      operation.Error,
 		}
 		task.Progress = fileOperationBackgroundProgress(operation)
-		if operation.OwnerID == viewerID {
-			switch operation.Status {
-			case meta.FileOperationStatusQueued,
-				meta.FileOperationStatusRunning:
-				task.ControlActions = append(task.ControlActions, "cancel")
-			}
-			if fileOperationRetryable(operation) {
-				task.ControlActions = append(task.ControlActions, "retry")
-			}
-		} else if admin {
-			// Cross-user admin control is intentionally not inferred from the
-			// admin role. Domain PRs must explicitly authorize each action.
-			task.ControlActions = nil
-		}
+		task.ControlActions = backgroundFileOperationControlActions(
+			operation,
+			viewerID,
+			admin,
+		)
 		out = append(out, task)
 	}
 	return out, nil
@@ -482,13 +477,12 @@ func (s *Server) backgroundSourceRunTasks(
 			Error:      run.Error,
 		}
 		task.Progress = sourceRunBackgroundProgress(run)
-		if source.OwnerID == viewerID &&
-			run.Status == meta.SyncRunStatusRunning &&
-			run.CancelRequestedAt == nil {
-			task.ControlActions = []string{"cancel"}
-		} else if admin {
-			task.ControlActions = nil
-		}
+		task.ControlActions = backgroundSourceRunControlActions(
+			source.OwnerID,
+			run,
+			viewerID,
+			admin,
+		)
 		out = append(out, task)
 	}
 	return out, nil
