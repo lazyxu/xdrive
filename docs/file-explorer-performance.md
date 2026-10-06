@@ -51,3 +51,8 @@ The FileExplorer performance suite should keep these workloads stable:
 4. Add measured render/interaction budgets to CI once trace fixtures are stable enough to avoid noisy failures.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
+
+
+### Sparse logical directory surface
+
+The FileExplorer surface can separate the logical directory item count from loaded/rendered items. Details and Grid compute scrollbar geometry from the full logical count, while only the current viewport plus bounded overscan creates render slots. Missing slots are lightweight non-interactive placeholders; the surface never allocates an array sized to the full directory. The dense compatibility path retains adaptive prefetch/load-more behavior, while sparse mode bypasses legacy bottom pagination entirely. Search remains dense until its own range contract migrates.

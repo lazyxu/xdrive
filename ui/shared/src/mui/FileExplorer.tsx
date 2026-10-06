@@ -63,6 +63,11 @@ import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
 import { xDriveFileExplorerReadExternalDrop } from './FileExplorerExternalDrop'
 import type { XDriveFileExplorerExternalDropPayload } from './FileExplorerExternalDrop'
+import {
+  xDriveFileExplorerDetailsVirtualWindow,
+  xDriveFileExplorerGridVirtualWindow,
+  xDriveFileExplorerVirtualWindowSlots,
+} from './FileExplorerVirtualSurface'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
@@ -268,6 +273,12 @@ export type XDriveFileExplorerItem = {
   path?: string
   revision?: string | number
   properties?: XDriveFileExplorerProperty[]
+}
+
+export type XDriveFileExplorerVirtualCollection = {
+  itemCount: number
+  itemAt: (index: number) => XDriveFileExplorerItem | undefined
+  onRangeChange?: (startIndex: number, endIndex: number) => void
 }
 
 export type XDriveFileExplorerSort = {
@@ -714,6 +725,7 @@ export function XDriveFileExplorer({
   loadingMore = false,
   onLoadMore,
   externallySorted = false,
+  virtualCollection,
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
@@ -788,6 +800,7 @@ export function XDriveFileExplorer({
   loadingMore?: boolean
   onLoadMore?: () => void
   externallySorted?: boolean
+  virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -950,6 +963,10 @@ export function XDriveFileExplorer({
     })
     return result
   }, [externallySorted, items, sort.direction, sort.key])
+  const virtualCollectionEnabled = virtualCollection !== undefined
+  const logicalItemCount = virtualCollectionEnabled
+    ? Math.max(0, Math.trunc(virtualCollection.itemCount) || 0)
+    : visibleItems.length
 
   const visibleItemProjection = useMemo(() => {
     const indexByKey = new Map<string, number>()
@@ -2259,8 +2276,21 @@ export function XDriveFileExplorer({
     [selectedItems],
   )
 
-  const virtualizeDetails = viewMode === 'details' && visibleItems.length >= detailsVirtualizationThreshold
+  const virtualizeDetails = (
+    viewMode === 'details' &&
+    (virtualCollectionEnabled || visibleItems.length >= detailsVirtualizationThreshold)
+  )
   const detailsWindow = useMemo(() => {
+    if (virtualCollectionEnabled) {
+      return xDriveFileExplorerDetailsVirtualWindow({
+        itemCount: logicalItemCount,
+        scrollTop,
+        viewportHeight,
+        rowHeight: detailsRowHeight,
+        headerHeight: detailsHeaderHeight,
+        overscan: detailsOverscan,
+      })
+    }
     if (!virtualizeDetails) return { start: 0, end: visibleItems.length, before: 0, after: 0 }
     const effectiveHeight = Math.max(viewportHeight, detailsRowHeight * 8)
     const rawFirstVisible = Math.max(0, Math.floor(Math.max(0, scrollTop - detailsHeaderHeight) / detailsRowHeight))
@@ -2274,18 +2304,43 @@ export function XDriveFileExplorer({
       before: start * detailsRowHeight,
       after: Math.max(0, (visibleItems.length - end) * detailsRowHeight),
     }
-  }, [scrollTop, viewportHeight, virtualizeDetails, visibleItems.length])
+  }, [
+    detailsRowHeight,
+    logicalItemCount,
+    scrollTop,
+    viewportHeight,
+    virtualCollectionEnabled,
+    virtualizeDetails,
+    visibleItems.length,
+  ])
 
-  const detailItems = virtualizeDetails
-    ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
-    : visibleItems
+  const detailItems = virtualCollection
+    ? xDriveFileExplorerVirtualWindowSlots({
+        start: detailsWindow.start,
+        end: detailsWindow.end,
+        itemAt: virtualCollection.itemAt,
+      }).map((slot) => slot.item)
+    : virtualizeDetails
+      ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
+      : visibleItems
 
   const virtualizeGrid = (
     viewMode === 'grid' &&
-    viewportWidth > 0 &&
-    visibleItems.length >= gridVirtualizationThreshold
+    (virtualCollectionEnabled || (viewportWidth > 0 && visibleItems.length >= gridVirtualizationThreshold))
   )
   const gridWindow = useMemo(() => {
+    if (virtualCollectionEnabled) {
+      return xDriveFileExplorerGridVirtualWindow({
+        itemCount: logicalItemCount,
+        scrollTop,
+        viewportHeight,
+        columns: gridColumns,
+        rowHeight: gridMetrics.estimatedRowHeight,
+        rowGap: gridGapPx,
+        padding: gridPaddingPx,
+        overscanRows: gridOverscanRows,
+      })
+    }
     const totalRows = Math.ceil(visibleItems.length / gridColumns)
     if (!virtualizeGrid) {
       return {
@@ -2323,14 +2378,30 @@ export function XDriveFileExplorer({
     gridMetrics.estimatedRowHeight,
     gridPaddingPx,
     gridRowStep,
+    logicalItemCount,
     scrollTop,
     viewportHeight,
+    virtualCollectionEnabled,
     virtualizeGrid,
     visibleItems.length,
   ])
-  const gridItems = virtualizeGrid
-    ? visibleItems.slice(gridWindow.start, gridWindow.end)
-    : visibleItems
+  const gridItems = virtualCollection
+    ? xDriveFileExplorerVirtualWindowSlots({
+        start: gridWindow.start,
+        end: gridWindow.end,
+        itemAt: virtualCollection.itemAt,
+      }).map((slot) => slot.item)
+    : virtualizeGrid
+      ? visibleItems.slice(gridWindow.start, gridWindow.end)
+      : visibleItems
+
+  useEffect(() => {
+    const onRangeChange = virtualCollection?.onRangeChange
+    if (!onRangeChange || logicalItemCount <= 0) return
+    const window = viewMode === 'details' ? detailsWindow : gridWindow
+    if (window.end <= window.start) return
+    onRangeChange(window.start, window.end - 1)
+  }, [detailsWindow, gridWindow, logicalItemCount, viewMode, virtualCollection?.onRangeChange])
 
   useEffect(() => {
     const host = scrollHostRef.current
@@ -2361,6 +2432,7 @@ export function XDriveFileExplorer({
     }
     const loadMorePrefetchDistance = xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)
     if (
+      !virtualCollectionEnabled &&
       hasMore &&
       !loadingMore &&
       onLoadMore &&
@@ -2835,7 +2907,7 @@ export function XDriveFileExplorer({
           overflow: 'auto',
           userSelect: marqueeRect ? 'none' : undefined,
         }}
-        tabIndex={visibleItems.length === 0 ? 0 : -1}
+        tabIndex={logicalItemCount === 0 ? 0 : -1}
         onScroll={handleScroll}
         onWheel={handleViewWheel}
         onPointerDown={startMarqueeSelection}
@@ -2871,9 +2943,9 @@ export function XDriveFileExplorer({
         }}
         onDrop={dropExternalFilesOnBackground}
       >
-        {loading && visibleItems.length === 0 ? (
+        {loading && logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
-        ) : visibleItems.length === 0 ? (
+        ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
         ) : viewMode === 'details' ? (
           <Box role="table" aria-label="文件列表" sx={{ minWidth: detailsMinWidth }}>
@@ -2974,6 +3046,25 @@ export function XDriveFileExplorer({
             ) : null}
             {detailItems.map((item, windowIndex) => {
               const index = virtualizeDetails ? detailsWindow.start + windowIndex : windowIndex
+              if (!item) {
+                return (
+                  <Box
+                    key={`virtual-detail-placeholder-${index}`}
+                    role="row"
+                    aria-hidden
+                    data-xdrive-file-explorer-placeholder
+                    sx={{
+                      minHeight: detailsRowHeight,
+                      display: 'grid',
+                      gridTemplateColumns: detailsGridTemplate,
+                      alignItems: 'center',
+                      px: 1.5,
+                    }}
+                  >
+                    <Box sx={{ width: '44%', height: 10, borderRadius: 0.5, bgcolor: 'action.hover' }} />
+                  </Box>
+                )
+              }
               const selected = selectedKeySet.has(explorerIDKey(item.id))
               const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
               const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
@@ -3085,6 +3176,25 @@ export function XDriveFileExplorer({
             >
             {gridItems.map((item, windowIndex) => {
               const index = virtualizeGrid ? gridWindow.start + windowIndex : windowIndex
+              if (!item) {
+                return (
+                  <Box
+                    key={`virtual-grid-placeholder-${index}`}
+                    role="listitem"
+                    aria-hidden
+                    data-xdrive-file-explorer-placeholder
+                    sx={{
+                      minWidth: 0,
+                      minHeight: gridMetrics.minItemHeight,
+                      maxWidth: gridMetrics.maxItemWidth,
+                      borderRadius: 1,
+                      p: gridMetrics.itemPadding,
+                      bgcolor: 'action.hover',
+                      opacity: 0.55,
+                    }}
+                  />
+                )
+              }
               const selected = selectedKeySet.has(explorerIDKey(item.id))
               const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
               const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
@@ -3183,7 +3293,7 @@ export function XDriveFileExplorer({
           />
         ) : null}
 
-        {loading && visibleItems.length > 0 ? (
+        {loading && logicalItemCount > 0 ? (
           <Box
             aria-label="正在刷新文件"
             sx={{
@@ -3349,10 +3459,10 @@ export function XDriveFileExplorer({
         sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
         <Typography variant="caption">
-          {items.length} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
+          {logicalItemCount} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
-          {loadingMore
+          {!virtualCollectionEnabled && loadingMore
             ? '正在加载更多…'
             : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatBytes(selectedSize)}` : '')}
         </Typography>
