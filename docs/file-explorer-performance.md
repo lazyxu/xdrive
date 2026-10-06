@@ -18,7 +18,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Thumbnail viewport scheduler + bounded cache | **Merged** | Unmeasured wall-clock | Shared viewport observer, max **6** concurrent thumbnail requests, bounded **96-entry** per-Explorer cache. |
 | Unsupported video-thumbnail request suppression | **Implemented** | Structural | FileExplorer only schedules image thumbnails; video files stay on icon/preview paths until a real poster-thumbnail contract exists. |
 | Desktop binary thumbnail transport | **Merged** | Unmeasured wall-clock | Agent raw bytes -> ArrayBuffer -> Blob URL; base64 thumbnail transport removed. |
-| Desktop warm-thumbnail server transport | **Measured baseline** | Measured structural requests/bytes | **600 full GETs**, **0 conditional requests**, **39,321,600 B (37.5 MiB)** payload for 200 unique x 64 KiB thumbnails across 3 sequential passes; CI wall **162.373 ms diagnostic only**. |
+| Desktop warm-thumbnail Agent cache | **Accepted / Merged** | Measured structural requests/bytes | Same 200 unique x 64 KiB x 3-pass workload: upstream requests **600 -> 200 (-66.7%)** and payload **39,321,600 -> 13,107,200 B (-66.7%, 25 MiB saved)**. Wall time remains diagnostic only. |
 | Adaptive infinite-scroll prefetch | **Merged** | Unmeasured wall-clock | Prefetch threshold is viewport-adaptive and protected by in-flight request locks. |
 | Indexed typed-path lookup | **Merged** | Unmeasured wall-clock | One exact child lookup per path segment instead of full child-list scans. |
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
@@ -71,7 +71,7 @@ Only measurements produced from a stable, repeatable workload belong in this tab
 | Directory-sort 100k mixed-file fixture, updated first/middle | n/a | 150.115920 ms / 275.943830 ms | Baseline |
 | Directory-sort 100k mixed-file fixture, size first/middle | n/a | 150.348111 ms / 273.407850 ms | Baseline |
 | Directory-sort 100k mixed-file fixture, type first/middle | n/a | 273.676411 ms / 422.931606 ms | Slowest current directory sort baseline |
-| Desktop warm-thumbnail transport, 200 unique x 64 KiB x 3 passes | n/a | **600 full GETs / 0 conditional / 39,321,600 B**; **162.373 ms diagnostic wall** | **Measured baseline**; full payload is retransmitted on every view beyond renderer-cache residency; wall time is not a regression gate |
+| Desktop warm-thumbnail transport, 200 unique x 64 KiB x 3 passes | **600 upstream GETs / 39,321,600 B** | **200 upstream GETs / 13,107,200 B** | **Accepted**: **-66.7% requests**, **-66.7% payload**, **25 MiB less upstream payload**; hosted httptest wall time is diagnostic only and is not compared across layers |
 
 ### Rejected measured attempt: type expression index
 
@@ -128,9 +128,9 @@ This is a controller/VirtualCollection CPU and retained-metadata baseline only. 
 
 Thumbnail queue/cache changes, Desktop binary thumbnail transport, adaptive prefetch, indexed typed-path lookup, indexed folder-upload conflict lookup, navigation-tree pagination, and several controller/projection refactors have correctness/complexity/resource regression coverage but do **not** have an equivalent wall-clock BEFORE/AFTER workload. Do not quote a timing speedup for these changes until a stable benchmark exists.
 
-### Desktop warm-thumbnail transport baseline
+### Desktop warm-thumbnail transport and Agent cache
 
-Status: **Measured baseline**.
+Status: **Accepted / measured**.
 
 This benchmark isolates the Server -> Go client transport that xdrive-agent uses for Desktop thumbnails; it does not measure Electron IPC, Blob creation, React commit/layout/paint, or browser decode.
 
@@ -221,17 +221,28 @@ Before sparse runtime is enabled, item interactions must also be logical-index a
 
 Measured evidence:
 
-- branch-scoped GitHub CI run: **1 structural sample**
-- full GET requests: **600**
-- conditional `If-None-Match` requests: **0**
-- response payload: **39,321,600 bytes (37.5 MiB)**
-- diagnostic wall time: **162.373 ms**
-- wall time is **diagnostic only** and has **no regression budget** because the httptest timing is not representative of Server/network/Desktop end-to-end latency
-- deterministic counters exactly matched the pre-measurement expectation
+- BEFORE baseline, branch-scoped GitHub CI:
+  - upstream/full GET requests: **600**
+  - conditional `If-None-Match` requests: **0**
+  - response payload: **39,321,600 bytes (37.5 MiB)**
+  - diagnostic wall time: **162.373 ms** in the original baseline run; a later paired CI run measured **82.651 ms**
+- AFTER Agent-cache run from PR #720 authoritative CI:
+  - upstream requests: **200**
+  - upstream payload: **13,107,200 bytes (12.5 MiB)**
+  - unique thumbnails: **200**
+  - passes: **3**
+  - thumbnail payload: **64 KiB**
+  - diagnostic cache-layer wall time: **0.158 ms**
+- structural delta:
+  - upstream requests: **600 -> 200**, **-66.7% / 3x fewer**
+  - upstream payload: **39,321,600 -> 13,107,200 bytes**, **-66.7%**
+  - bytes avoided on the stable workload: **26,214,400 bytes (25 MiB)**
 
-Decision: **accept this as the current Desktop warm-thumbnail transport baseline**. The result confirms that repeated views beyond the renderer's 96-entry URL cache can retransmit the complete thumbnail payload through the Agent's Go client.
+The wall-time values are **not comparable** and remain diagnostic only: the baseline measures the Go client/httptest transport path while the AFTER cache benchmark measures the in-process Agent cache layer. No wall-clock speedup or regression budget is claimed from those values.
 
-Next action: evaluate a **bounded Desktop Agent ETag/byte cache** against this exact workload. The candidate should preserve freshness through conditional validation, keep resident memory bounded, and materially reduce full payload bytes. Do not claim a speedup until the same benchmark records the AFTER counters.
+Decision: **accept the bounded Desktop Agent thumbnail cache**. The deterministic request/byte counters materially improve on the exact baseline while the implementation keeps resident entries/bytes bounded, singleflights concurrent misses, and revalidates expired entries with ETag.
+
+Next action: use this accepted warm-cache transport as an input to the planned **100k image cold/warm media-directory traces**, where renderer CPU, long tasks/FPS, RSS, Blob URL memory, request counts, and Web-vs-Desktop transport can be measured end to end.
 
 ## Current video-thumbnail capability gap
 
