@@ -379,87 +379,194 @@ function setFileExplorerDragImage(
 }
 
 const fileThumbnailConcurrency = 6
-let fileThumbnailActive = 0
-const fileThumbnailQueue: Array<() => void> = []
+const fileThumbnailCacheLimit = 96
 
-function scheduleFileThumbnail<T>(task: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const run = () => {
-      fileThumbnailActive += 1
-      void task()
-        .then(resolve, reject)
-        .finally(() => {
-          fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
-          fileThumbnailQueue.shift()?.()
-        })
-    }
-    if (fileThumbnailActive < fileThumbnailConcurrency) run()
-    else fileThumbnailQueue.push(run)
+type FileThumbnailCache = {
+  values: Map<string, string>
+  disposed: boolean
+}
+
+type FileThumbnailQueueEntry = {
+  task: () => Promise<string | null | undefined>
+  resolve: (value: string | null | undefined) => void
+  reject: (reason?: unknown) => void
+  started: boolean
+  cancelled: boolean
+}
+
+let fileThumbnailActive = 0
+const fileThumbnailQueue: FileThumbnailQueueEntry[] = []
+let fileThumbnailVisibilityObserver: IntersectionObserver | null = null
+const fileThumbnailVisibilityCallbacks = new Map<Element, () => void>()
+
+function revokeFileThumbnailSource(value: string | null | undefined) {
+  if (value?.startsWith('blob:') && typeof URL !== 'undefined') URL.revokeObjectURL(value)
+}
+
+function fileThumbnailCacheKey(item: XDriveFileExplorerItem) {
+  return [
+    explorerIDKey(item.id),
+    String(item.revision ?? ''),
+    item.updatedAt ?? '',
+  ].join(':')
+}
+
+function fileThumbnailCacheGet(cache: FileThumbnailCache, key: string) {
+  const value = cache.values.get(key)
+  if (!value) return null
+  cache.values.delete(key)
+  cache.values.set(key, value)
+  return value
+}
+
+function fileThumbnailCacheSet(cache: FileThumbnailCache, key: string, value: string) {
+  if (cache.disposed) {
+    revokeFileThumbnailSource(value)
+    return false
+  }
+  const current = cache.values.get(key)
+  if (current && current !== value) revokeFileThumbnailSource(current)
+  cache.values.delete(key)
+  cache.values.set(key, value)
+  while (cache.values.size > fileThumbnailCacheLimit) {
+    const oldestKey = cache.values.keys().next().value
+    if (typeof oldestKey !== 'string') break
+    const oldest = cache.values.get(oldestKey)
+    cache.values.delete(oldestKey)
+    revokeFileThumbnailSource(oldest)
+  }
+  return true
+}
+
+function disposeFileThumbnailCache(cache: FileThumbnailCache) {
+  cache.disposed = true
+  for (const value of cache.values.values()) revokeFileThumbnailSource(value)
+  cache.values.clear()
+}
+
+function pumpFileThumbnailQueue() {
+  while (fileThumbnailActive < fileThumbnailConcurrency && fileThumbnailQueue.length > 0) {
+    const entry = fileThumbnailQueue.shift()!
+    if (entry.cancelled) continue
+    entry.started = true
+    fileThumbnailActive += 1
+    void entry.task()
+      .then(entry.resolve, entry.reject)
+      .finally(() => {
+        fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
+        pumpFileThumbnailQueue()
+      })
+  }
+}
+
+function scheduleFileThumbnail(task: () => Promise<string | null | undefined>) {
+  let entry!: FileThumbnailQueueEntry
+  const promise = new Promise<string | null | undefined>((resolve, reject) => {
+    entry = { task, resolve, reject, started: false, cancelled: false }
+    fileThumbnailQueue.push(entry)
+    pumpFileThumbnailQueue()
   })
+  return {
+    promise,
+    cancel: () => {
+      if (entry.started || entry.cancelled) return
+      entry.cancelled = true
+      const index = fileThumbnailQueue.indexOf(entry)
+      if (index >= 0) fileThumbnailQueue.splice(index, 1)
+      entry.resolve(undefined)
+    },
+  }
+}
+
+function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
+  if (typeof IntersectionObserver === 'undefined') {
+    onVisible()
+    return () => {}
+  }
+  if (!fileThumbnailVisibilityObserver) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const callback = fileThumbnailVisibilityCallbacks.get(entry.target)
+        if (!callback) continue
+        fileThumbnailVisibilityCallbacks.delete(entry.target)
+        observer.unobserve(entry.target)
+        callback()
+      }
+      if (fileThumbnailVisibilityCallbacks.size === 0) {
+        observer.disconnect()
+        if (fileThumbnailVisibilityObserver === observer) fileThumbnailVisibilityObserver = null
+      }
+    }, { rootMargin: '240px' })
+    fileThumbnailVisibilityObserver = observer
+  }
+  const observer = fileThumbnailVisibilityObserver
+  fileThumbnailVisibilityCallbacks.set(host, onVisible)
+  observer.observe(host)
+  return () => {
+    fileThumbnailVisibilityCallbacks.delete(host)
+    observer.unobserve(host)
+    if (fileThumbnailVisibilityCallbacks.size === 0) {
+      observer.disconnect()
+      if (fileThumbnailVisibilityObserver === observer) fileThumbnailVisibilityObserver = null
+    }
+  }
 }
 
 function XDriveLazyFileThumbnail({
   item,
   loadThumbnail,
   fallback,
+  cache,
 }: {
   item: XDriveFileExplorerItem
   loadThumbnail: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
   fallback: ReactNode
+  cache: FileThumbnailCache
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const cacheKey = fileThumbnailCacheKey(item)
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     setFailed(false)
-    setSrc(null)
-  }, [item.id, item.updatedAt])
+    setSrc(fileThumbnailCacheGet(cache, cacheKey))
+  }, [cache, cacheKey])
 
   useEffect(() => {
     const host = hostRef.current
-    if (!host || visible) return
-    if (typeof IntersectionObserver === 'undefined') {
-      setVisible(true)
-      return
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setVisible(true)
-        observer.disconnect()
-      }
-    }, { rootMargin: '240px' })
-    observer.observe(host)
-    return () => observer.disconnect()
-  }, [visible])
+    if (!host || visible || src) return
+    return observeFileThumbnailVisibility(host, () => setVisible(true))
+  }, [src, visible])
 
   useEffect(() => {
-    if (!visible || failed) return
+    if (!visible || failed || src) return
+    const cached = fileThumbnailCacheGet(cache, cacheKey)
+    if (cached) {
+      setSrc(cached)
+      return
+    }
     let active = true
-    void scheduleFileThumbnail(() => loadThumbnail(item))
+    const scheduled = scheduleFileThumbnail(() => loadThumbnail(item))
+    void scheduled.promise
       .then((value) => {
-        if (!active) {
-          if (value?.startsWith('blob:')) URL.revokeObjectURL(value)
-          return
-        }
         if (!value) {
-          setFailed(true)
+          if (active) setFailed(true)
           return
         }
-        setSrc(value)
+        if (!fileThumbnailCacheSet(cache, cacheKey, value)) return
+        if (active) setSrc(value)
       })
       .catch(() => {
         if (active) setFailed(true)
       })
     return () => {
       active = false
+      scheduled.cancel()
     }
-  }, [failed, item.id, item.updatedAt, loadThumbnail, visible])
-
-  useEffect(() => () => {
-    if (src?.startsWith('blob:')) URL.revokeObjectURL(src)
-  }, [src])
+  }, [cache, cacheKey, failed, item, loadThumbnail, src, visible])
 
   return (
     <Box ref={hostRef} sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -733,6 +840,10 @@ export function XDriveFileExplorer({
     ? detailsCompactRowHeight
     : detailsNormalRowHeight
   const gridMetrics = fileExplorerGridMetrics[viewPreferences.gridSize]
+  const thumbnailCache = useMemo<FileThumbnailCache>(
+    () => ({ values: new Map(), disposed: false }),
+    [loadThumbnail],
+  )
   const gridGapPx = gridMetrics.gap * muiSpacingPixel
   const gridPaddingPx = gridMetrics.padding * muiSpacingPixel
   const gridColumns = useMemo(() => {
@@ -761,6 +872,11 @@ export function XDriveFileExplorer({
     () => new Set(selectedIDs.map(explorerIDKey)),
     [selectedIDs],
   )
+
+  useEffect(() => {
+    thumbnailCache.disposed = false
+    return () => disposeFileThumbnailCache(thumbnailCache)
+  }, [thumbnailCache])
 
   useEffect(() => {
     if (!editingPath) setPathDraft(derivedPath)
@@ -1794,6 +1910,7 @@ export function XDriveFileExplorer({
         item={item}
         loadThumbnail={loadThumbnail}
         fallback={defaultItemIcon(item, true)}
+        cache={thumbnailCache}
       />
     )
   }

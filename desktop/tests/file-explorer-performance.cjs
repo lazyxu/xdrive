@@ -34,12 +34,19 @@ test('FileExplorer derives system-style file types and icons from extensions', (
   assert.equal(desktop.includes("typeLabel: node.type === 'dir' ? '文件夹' : '文件'"), false, 'Desktop must not override shared file type inference')
 })
 
-test('FileExplorer loads media thumbnails only when grid items approach the viewport', () => {
+test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(shared.includes('export function xDriveFileSupportsThumbnail'), 'thumbnail eligibility classifier is missing')
-  assert.ok(shared.includes('IntersectionObserver'), 'grid thumbnails should be intersection-lazy')
+  assert.ok(shared.includes('let fileThumbnailVisibilityObserver: IntersectionObserver | null = null'), 'thumbnail visibility must use one shared observer')
+  assert.ok(shared.includes('const fileThumbnailVisibilityCallbacks = new Map<Element, () => void>()'), 'shared thumbnail visibility callback registry is missing')
   assert.ok(shared.includes("rootMargin: '240px'"), 'thumbnail prefetch margin should stay bounded')
-  assert.ok(shared.includes("if (value?.startsWith('blob:')) URL.revokeObjectURL(value)"), 'abandoned Web blob thumbnails must be released')
-  assert.ok(shared.includes("if (src?.startsWith('blob:')) URL.revokeObjectURL(src)"), 'mounted Web blob thumbnails must be released on replacement/unmount')
+  assert.ok(shared.includes('const fileThumbnailConcurrency = 6'), 'thumbnail concurrency budget is missing')
+  assert.ok(shared.includes('const fileThumbnailCacheLimit = 96'), 'thumbnail cache must stay bounded')
+  assert.ok(shared.includes('const scheduled = scheduleFileThumbnail(() => loadThumbnail(item))'), 'thumbnail loads must pass through the cancellable scheduler')
+  assert.ok(shared.includes('scheduled.cancel()'), 'unmounted queued thumbnails must be cancellable')
+  assert.ok(shared.includes('fileThumbnailCacheGet(cache, cacheKey)'), 'thumbnail remounts should reuse cached sources')
+  assert.ok(shared.includes('fileThumbnailCacheSet(cache, cacheKey, value)'), 'loaded thumbnails should enter the bounded cache')
+  assert.ok(shared.includes('disposeFileThumbnailCache(thumbnailCache)'), 'Explorer teardown must release cached blob URLs')
+  assert.ok(shared.includes("if (value?.startsWith('blob:') && typeof URL !== 'undefined') URL.revokeObjectURL(value)"), 'cached Web blob thumbnails must be released on eviction/disposal')
   assert.ok(web.includes('api.mediaThumbnail(Number(item.id))'), 'Web Explorer is not wired to the real media thumbnail API')
   assert.ok(web.includes('URL.createObjectURL(blob)'), 'Web Explorer should avoid base64 inflation for thumbnail blobs')
   assert.ok(desktop.includes('getMediaThumbnail(Number(item.id))'), 'Desktop Explorer is not wired to the Agent thumbnail API')
@@ -70,7 +77,7 @@ test('type sorting uses the same labels users see', () => {
 
 test('FileExplorer bounds thumbnail and pointer/scroll work under large directories', () => {
   assert.ok(shared.includes('const fileThumbnailConcurrency = 6'), 'thumbnail concurrency budget is missing')
-  assert.ok(shared.includes('scheduleFileThumbnail(() => loadThumbnail(item))'), 'thumbnail loads must pass through the shared scheduler')
+  assert.ok(shared.includes('pumpFileThumbnailQueue()'), 'thumbnail queue must refill from one bounded scheduler')
   assert.ok(shared.includes('scrollFrameRef.current = window.requestAnimationFrame(updateVirtualWindow)'), 'virtual-list scroll updates must be frame bounded')
   assert.ok(shared.includes('Math.floor((raw - detailsHeaderHeight) / detailsRowHeight)'), 'virtual-list scroll updates should advance by row boundaries')
   assert.ok(shared.includes('marqueeFrameRef.current = window.requestAnimationFrame(flushMarqueeSelection)'), 'marquee selection must be frame bounded')

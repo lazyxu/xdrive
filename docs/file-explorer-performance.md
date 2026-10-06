@@ -14,7 +14,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Grid keyboard navigation and marquee selection use computed virtual geometry instead of scanning every mounted item.
 - Selection, active-item, Shift-anchor, keyboard-current-item, and Quick Look position lookup use memoized ID indexes instead of repeated whole-directory scans.
 - Selected-size aggregation scales with the selected set rather than the complete loaded directory.
-- Grid thumbnails are viewport-proximate and share a global concurrency budget of 6 requests.
+- Grid thumbnails are viewport-proximate through one shared IntersectionObserver, share a global concurrency budget of 6 requests, cancel queued work when tiles unmount, and reuse a bounded 96-entry per-Explorer thumbnail cache.
 - Directory and search pagination reject duplicate in-flight load-more requests synchronously.
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
