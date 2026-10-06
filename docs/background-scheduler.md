@@ -117,7 +117,9 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    emits person-cluster(owner). Face uses P2 `ml_cpu`; place/person clustering use P3 `background_cpu`.
    Bursts coalesce by owner+kind and candidate-owner scans remain a 30-second fallback reconciliation path.
    User/admin reanalysis is explicit `user_action/admin_action` work and never becomes P0.
-5. FileOperation: PostgreSQL `NOTIFY` wakeup plus a fallback poll; retain `FileOperation` as the durable queue.
+5. FileOperation: **current**. Entering durable `queued` state emits a transactional PostgreSQL
+   wakeup; the worker drains with the existing `FOR UPDATE SKIP LOCKED` claim path and falls back to a
+   5-second reconciliation poll if notifications are lost or the listener reconnects.
 6. Source worker: retain `SyncRun`; integrate only resource budget, priority, and unified health/status.
 7. Janitor/storage sampler: remain timer-driven; add PostgreSQL advisory-lock leader election for multi-server
    deployments when needed.

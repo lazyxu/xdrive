@@ -15,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	"github.com/lazyxu/xdrive/internal/fileoperationwake"
 	"github.com/lazyxu/xdrive/internal/mediawake"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
@@ -144,6 +145,11 @@ func main() {
 		cfg.DatabaseURL,
 		slog.Default(),
 	)
+	fileOperationListener := fileoperationwake.Listen(
+		serverCtx,
+		cfg.DatabaseURL,
+		slog.Default(),
+	)
 
 	srv := &api.Server{
 		DB: db, Store: store,
@@ -159,6 +165,7 @@ func main() {
 		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 		BackgroundScheduler:       backgroundScheduler,
 		MediaIndexWakeups:         mediaIndexListener.Events,
+		FileOperationWakeups:      fileOperationListener.Wakeups,
 	}
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
@@ -323,7 +330,10 @@ func migrate(db *gorm.DB) error {
 	if err := meta.InstallNodeChangeJournal(db); err != nil {
 		return err
 	}
-	return mediawake.InstallPostgreSQLTrigger(db)
+	if err := mediawake.InstallPostgreSQLTrigger(db); err != nil {
+		return err
+	}
+	return fileoperationwake.InstallPostgreSQLTrigger(db)
 }
 
 func runHealthcheck(args []string) error {

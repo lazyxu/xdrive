@@ -33,6 +33,7 @@ type Server struct {
 	HostControlDir            string
 	BackgroundScheduler       *background.Scheduler
 	MediaIndexWakeups         <-chan uint64
+	FileOperationWakeups      <-chan struct{}
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser
 	obs                       *serverObservability
