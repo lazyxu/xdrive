@@ -35,3 +35,7 @@ Gallery must reuse the same controller. Its query key additionally includes medi
 This foundation does not force FileExplorer and Gallery to share layout code. Details rows, icon grids, gallery timeline sections, Live Photo affordances, and media semantic overlays remain surface-specific.
 
 Cursor pagination may remain for compatibility while range APIs are introduced, but new system-style virtual scrolling must not be built by repeatedly appending cursor pages and growing the scroll height.
+
+## FileExplorer directory range transport
+
+The children endpoint supports an explicit range mode when `offset` is present. Range responses return `items`, `total_count`, the requested `offset` and `limit`, plus the stable server sort. The requested limit remains the logical page width even on the final partial page so cache keys do not change after `total_count` becomes known. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.

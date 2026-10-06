@@ -199,6 +199,66 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		t.Fatalf("empty directory page should be empty and terminal: %+v", emptyPage)
 	}
 
+	readRange := func(path string, wantStatus int) childrenRangeDTO {
+		res := request(t, router, http.MethodGet, path, tokenA, nil, wantStatus)
+		if wantStatus != http.StatusOK {
+			return childrenRangeDTO{}
+		}
+		var page childrenRangeDTO
+		if err := json.Unmarshal(res.Body.Bytes(), &page); err != nil {
+			t.Fatalf("decode range: %v body=%s", err, res.Body.String())
+		}
+		return page
+	}
+
+	range1 := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=3&sort=name&order=asc",
+		rootA.ID,
+	), http.StatusOK)
+	if range1.TotalCount != 8 || range1.Offset != 0 || range1.Limit != 3 ||
+		range1.Sort != "name" || range1.Order != "asc" {
+		t.Fatalf("unexpected range1 metadata: %+v", range1)
+	}
+	if got := []string{range1.Items[0].Name, range1.Items[1].Name, range1.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"AlphaDir", "EmptyDir", "ZuluDir"}) {
+		t.Fatalf("range1 order=%v", got)
+	}
+
+	range2 := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=3&limit=3&sort=name&order=asc",
+		rootA.ID,
+	), http.StatusOK)
+	if range2.TotalCount != 8 || range2.Offset != 3 || range2.Limit != 3 {
+		t.Fatalf("unexpected range2 metadata: %+v", range2)
+	}
+	if got := []string{range2.Items[0].Name, range2.Items[1].Name, range2.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"a.txt", "b.txt", "c.pdf"}) {
+		t.Fatalf("range2 order=%v", got)
+	}
+
+	lastRange := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=7&limit=3&sort=name&order=asc",
+		rootA.ID,
+	), http.StatusOK)
+	if lastRange.TotalCount != 8 || lastRange.Offset != 7 || lastRange.Limit != 3 ||
+		len(lastRange.Items) != 1 || lastRange.Items[0].Name != "e.zip" {
+		t.Fatalf("unexpected final range: %+v", lastRange)
+	}
+
+	pastEnd := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=20&limit=3&sort=name&order=asc",
+		rootA.ID,
+	), http.StatusOK)
+	if pastEnd.TotalCount != 8 || pastEnd.Offset != 20 || pastEnd.Limit != 3 || len(pastEnd.Items) != 0 {
+		t.Fatalf("out-of-range window must preserve total and requested width: %+v", pastEnd)
+	}
+
+	emptyRange := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=3&sort=name&order=asc",
+		emptyDir.ID,
+	), http.StatusOK)
+	if emptyRange.TotalCount != 0 || emptyRange.Offset != 0 || emptyRange.Limit != 3 || len(emptyRange.Items) != 0 {
+		t.Fatalf("empty range=%+v", emptyRange)
+	}
+
 	readPage(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?limit=3&sort=size&order=asc&cursor=%s",
 		rootA.ID, url.QueryEscape(page1.NextCursor),
@@ -208,5 +268,15 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		rootA.ID, url.QueryEscape("AlphaDir"), url.QueryEscape(page1.NextCursor),
 	), http.StatusBadRequest)
 	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=0", rootA.ID), http.StatusBadRequest)
+	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=-1&limit=3", rootA.ID), http.StatusBadRequest)
+	readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=3&cursor=%s",
+		rootA.ID, url.QueryEscape(page1.NextCursor),
+	), http.StatusBadRequest)
+	readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=1&name=%s",
+		rootA.ID, url.QueryEscape("AlphaDir"),
+	), http.StatusBadRequest)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
 }
