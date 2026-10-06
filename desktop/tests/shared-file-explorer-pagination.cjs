@@ -74,3 +74,17 @@ test('Web and Desktop delegate directory range rules while keeping transport ada
   assert.equal(web.includes('setLoadingMore(true)'), false, 'Web App must not own directory loading-more state')
   assert.equal(desktop.includes('setCloudLoadingMore(true)'), false, 'Desktop App must not own directory loading-more state')
 })
+
+
+test('shared Explorer pagination is directory-only after Search VirtualCollection migration', () => {
+  for (const legacy of [
+    'searchActive:',
+    'searchCursor:',
+    'searchLoadingMore:',
+    'loadMoreSearch:',
+  ]) {
+    assert.equal(controller.includes(legacy), false, `pagination controller must not know Search load-more state: ${legacy}`)
+  }
+  assert.ok(controller.includes("mode: 'directory' as const"), 'pagination presentation must remain directory-only compatibility')
+  assert.ok(controller.includes('void loadMoreDirectory(currentID, sort)'), 'directory compatibility load-more must remain intact')
+})
