@@ -58,6 +58,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     [viewModeStorageKey],
   )
   const nextTabIDRef = useRef(2)
+  const navigationRequestRef = useRef({ id: 0, targetTabID: 'tab-1' })
   const [tabs, setTabs] = useState<XDriveFileExplorerNavigationTab<TCrumb>[]>(() => [
     createNavigationTab<TCrumb>('tab-1', initialViewMode),
   ])
@@ -76,6 +77,19 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
   const isSearchActive = () => (
     typeof searchActive === 'function' ? searchActive() : searchActive
+  )
+
+  const beginNavigation = (targetTabID = activeTabID) => {
+    const request = {
+      id: navigationRequestRef.current.id + 1,
+      targetTabID,
+    }
+    navigationRequestRef.current = request
+    return request.id
+  }
+
+  const isNavigationCurrent = (requestID: number) => (
+    navigationRequestRef.current.id === requestID
   )
 
   const updateActiveTab = (
@@ -109,11 +123,17 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const changeSort = (nextSort: XDriveFileExplorerSort) => {
     updateActiveTab((tab) => ({ ...tab, sort: nextSort }))
     if (isSearchActive()) return
-    if (current) void onLoadDirectory(current.id, crumbs, nextSort)
+    if (current) {
+      beginNavigation(activeTabID)
+      void onLoadDirectory(current.id, crumbs, nextSort)
+    }
   }
 
   const refresh = () => {
-    if (current) void onLoadDirectory(current.id, crumbs, sort)
+    if (current) {
+      beginNavigation(activeTabID)
+      void onLoadDirectory(current.id, crumbs, sort)
+    }
   }
 
   const recordHistory = (nextCrumbs: TCrumb[]) => {
@@ -137,7 +157,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const navigateTo = async (nextCrumbs: TCrumb[], record = true) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
+    const requestID = beginNavigation(activeTabID)
     await onLoadDirectory(target.id, nextCrumbs, sort)
+    if (!isNavigationCurrent(requestID)) return
     if (record) recordHistory(nextCrumbs)
     finishNavigation(nextCrumbs)
   }
@@ -148,7 +170,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
+    const requestID = beginNavigation(activeTabID)
     await onLoadDirectory(target.id, next, sort)
+    if (!isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
   }
@@ -159,7 +183,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const next = history[nextIndex]
     const target = next?.at(-1)
     if (!target) return
+    const requestID = beginNavigation(activeTabID)
     await onLoadDirectory(target.id, next, sort)
+    if (!isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
   }
@@ -181,7 +207,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const id = `tab-${nextTabIDRef.current++}`
     const nextCrumbs = [root]
     const nextTab = createNavigationTab<TCrumb>(id, viewMode, nextCrumbs)
+    const requestID = beginNavigation(id)
     await onLoadDirectory(root.id, nextCrumbs, nextTab.sort)
+    if (!isNavigationCurrent(requestID)) return
     setTabs((currentTabs) => [...currentTabs, nextTab])
     setActiveTabID(id)
   }
@@ -193,7 +221,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const targetCrumbs = targetTab.history[targetTab.historyIndex]
     const target = targetCrumbs?.at(-1)
     if (!target || !targetCrumbs) return
+    const requestID = beginNavigation(id)
     await onLoadDirectory(target.id, targetCrumbs, targetTab.sort)
+    if (!isNavigationCurrent(requestID)) return
     setActiveTabID(id)
     finishNavigation(targetCrumbs)
   }
@@ -204,6 +234,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (closingIndex < 0) return
 
     if (id !== activeTabID) {
+      if (navigationRequestRef.current.targetTabID === id && current) {
+        beginNavigation(activeTabID)
+        void onLoadDirectory(current.id, crumbs, sort)
+      }
       setTabs((currentTabs) => currentTabs.filter((tab) => tab.id !== id))
       return
     }
@@ -213,7 +247,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = targetCrumbs?.at(-1)
     if (!targetTab || !target || !targetCrumbs) return
 
+    const requestID = beginNavigation(targetTab.id)
     await onLoadDirectory(target.id, targetCrumbs, targetTab.sort)
+    if (!isNavigationCurrent(requestID)) return
     setTabs((currentTabs) => currentTabs.filter((tab) => tab.id !== id))
     setActiveTabID(targetTab.id)
   }
