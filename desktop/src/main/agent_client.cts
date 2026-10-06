@@ -250,6 +250,8 @@ export type AgentSourceRun = {
   status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
   scanned_items: number
   scanned_bytes: number
+  scanned_file_items: number
+  scanned_directory_items: number
   ignored_items: number
   ignored_bytes: number
   new_items: number
@@ -265,6 +267,9 @@ export type AgentSourceRun = {
   planned_transfer_bytes: number
   processed_transfer_items?: number
   processed_transfer_bytes?: number
+  synced_file_items: number
+  synced_directory_items: number
+  synced_bytes: number
   created_items: number
   updated_items: number
   skipped_items: number

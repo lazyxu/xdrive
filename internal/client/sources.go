@@ -93,6 +93,8 @@ type SyncRun struct {
 	CheckpointAfter        string     `json:"checkpoint_after,omitempty"`
 	ScannedItems           int64      `json:"scanned_items"`
 	ScannedBytes           int64      `json:"scanned_bytes"`
+	ScannedFileItems       int64      `json:"scanned_file_items"`
+	ScannedDirectoryItems  int64      `json:"scanned_directory_items"`
 	IgnoredItems           int64      `json:"ignored_items"`
 	IgnoredBytes           int64      `json:"ignored_bytes"`
 	NewItems               int64      `json:"new_items"`
@@ -108,6 +110,9 @@ type SyncRun struct {
 	PlannedTransferBytes   int64      `json:"planned_transfer_bytes"`
 	ProcessedTransferItems int64      `json:"processed_transfer_items"`
 	ProcessedTransferBytes int64      `json:"processed_transfer_bytes"`
+	SyncedFileItems        int64      `json:"synced_file_items"`
+	SyncedDirectoryItems   int64      `json:"synced_directory_items"`
+	SyncedBytes            int64      `json:"synced_bytes"`
 	CreatedItems           int64      `json:"created_items"`
 	UpdatedItems           int64      `json:"updated_items"`
 	SkippedItems           int64      `json:"skipped_items"`

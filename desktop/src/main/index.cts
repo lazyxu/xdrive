@@ -38,6 +38,10 @@ import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_
 import { DesktopLifecycleLog, formatLifecycleError } from './lifecycle_log.cjs'
 import { DesktopFilePreviewProxy } from './file_preview_proxy.cjs'
 import {
+  sourceRunIsTerminal,
+  sourceRunNotificationPresentation,
+} from './source_run_notification.cjs'
+import {
   defaultDesktopPreferences,
   normalizeDesktopPreferences,
   resolveWindowBounds,
@@ -155,7 +159,10 @@ let agentTransfers: AgentTransfers = { revision: 0, transfers: [] }
 let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
+let sourceRunMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
+let sourceRunNotificationInitialized = false
+const sourceRunNotificationState = new Map<number, { runID: string; status: AgentSourceRun['status'] }>()
 let startupFailurePending = false
 let startupCoreReady = false
 let startupRendererReady = false
@@ -997,6 +1004,11 @@ function showDesktopNotification(title: string, body: string, view?: DesktopView
   notification.show()
 }
 
+function resetSourceRunNotificationState() {
+  sourceRunNotificationInitialized = false
+  sourceRunNotificationState.clear()
+}
+
 function notifyAgentTransition(previous: AgentConnectionState, next: AgentConnectionState) {
   if (!previous.connected || !next.connected || !previous.status || !next.status) return
 
@@ -1044,6 +1056,16 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
   const changed = JSON.stringify(previous) !== JSON.stringify(next)
+  if (
+    previous.status &&
+    next.status &&
+    (
+      previous.status.configured !== next.status.configured ||
+      previous.status.auth_status !== next.status.auth_status
+    )
+  ) {
+    resetSourceRunNotificationState()
+  }
   if (changed) notifyAgentTransition(previous, next)
   agentState = next
   rebuildTrayMenu()
@@ -1439,9 +1461,71 @@ function startTransferMonitor() {
   })()
 }
 
+function publishSourceRunSnapshot(rows: Array<{ source: AgentSource; run?: AgentSourceRun }>) {
+  const initializing = !sourceRunNotificationInitialized
+  const sourceIDs = new Set<number>()
+
+  for (const row of rows) {
+    sourceIDs.add(row.source.id)
+    const run = row.run
+    const previous = sourceRunNotificationState.get(row.source.id)
+    if (!run) {
+      sourceRunNotificationState.delete(row.source.id)
+      continue
+    }
+    sourceRunNotificationState.set(row.source.id, { runID: run.id, status: run.status })
+
+    const becameTerminal = sourceRunIsTerminal(run.status) && (
+      !previous ||
+      previous.runID !== run.id ||
+      !sourceRunIsTerminal(previous.status)
+    )
+    if (!initializing && becameTerminal) {
+      const presentation = sourceRunNotificationPresentation(row.source, run)
+      showDesktopNotification(presentation.title, presentation.body, 'sources')
+    }
+  }
+
+  for (const sourceID of [...sourceRunNotificationState.keys()]) {
+    if (!sourceIDs.has(sourceID)) sourceRunNotificationState.delete(sourceID)
+  }
+  sourceRunNotificationInitialized = true
+}
+
+function startSourceRunMonitor() {
+  sourceRunMonitor?.abort()
+  const monitor = new AbortController()
+  sourceRunMonitor = monitor
+  void (async () => {
+    while (!monitor.signal.aborted) {
+      try {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        if (!hello.capabilities.includes('external-sources')) {
+          resetSourceRunNotificationState()
+          await wait(30_000, monitor.signal)
+          continue
+        }
+        const sources = await requireAgentClient().sources()
+        const rows = await Promise.all(sources.map(async (source) => ({
+          source,
+          run: (await requireAgentClient().sourceRuns(source.id, 1, 0))[0],
+        })))
+        publishSourceRunSnapshot(rows)
+        const active = rows.some((row) => row.run?.status === 'running') ||
+          sources.some((source) => Boolean(source.run_requested_at))
+        await wait(active ? 3_000 : 15_000, monitor.signal)
+      } catch {
+        if (monitor.signal.aborted) return
+        await wait(5_000, monitor.signal)
+      }
+    }
+  })()
+}
+
 function restartDesktopMonitors() {
   startAgentMonitor()
   startTransferMonitor()
+  startSourceRunMonitor()
   startUpdateMonitor()
 }
 
@@ -3650,6 +3734,7 @@ if (!primaryInstance) {
     lifecycleLog?.record('before_quit', { reason: quitReason })
     agentMonitor?.abort()
     transferMonitor?.abort()
+    sourceRunMonitor?.abort()
     updateMonitor?.abort()
     void filePreviewProxy?.close()
   })

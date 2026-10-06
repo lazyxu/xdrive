@@ -535,6 +535,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
+		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
 		run.TransferredItems != 1 || run.TransferredBytes != 10 {
 		t.Fatalf("unexpected execution counters: %+v", run)
 	}
@@ -545,6 +546,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
+		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
 		run.TransferredItems != 1 || run.TransferredBytes != 10 {
 		t.Fatalf("idempotent commit changed counters: %+v", run)
 	}
@@ -594,7 +596,8 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if run.CreatedItems != 1 || run.UpdatedItems != 1 ||
-		run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 {
+		run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
+		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 1 || run.SyncedBytes != 10 {
 		t.Fatalf("unexpected create/update counters: %+v", run)
 	}
 

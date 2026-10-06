@@ -69,6 +69,25 @@ func TestPlannerUsesStrongIdentityWhenAvailable(t *testing.T) {
 	assertAction(t, &current, next, nil, ActionUpdate)
 }
 
+func TestSummaryTracksScannedFileAndDirectoryCounts(t *testing.T) {
+	var summary Summary
+	summary.Add(PlanResult{Action: ActionCreate, Item: DiscoveredItem{
+		ExternalID: "file", Kind: meta.SourceItemKindFile, Path: "photo.jpg", Size: 25,
+	}})
+	summary.Add(PlanResult{Action: ActionCreate, Item: DiscoveredItem{
+		ExternalID: "dir", Kind: meta.SourceItemKindDirectory, Path: "album", Size: 0,
+	}})
+	if summary.ScannedItems != 2 || summary.ScannedFileItems != 1 ||
+		summary.ScannedDirectoryItems != 1 || summary.ScannedBytes != 25 {
+		t.Fatalf("unexpected split scan totals: %+v", summary)
+	}
+	var run meta.SyncRun
+	summary.ApplyToSyncRun(&run)
+	if run.ScannedFileItems != 1 || run.ScannedDirectoryItems != 1 {
+		t.Fatalf("split scan totals not copied to run: %+v", run)
+	}
+}
+
 func TestPlannerIgnoreAndSummary(t *testing.T) {
 	matcher, err := CompileIgnoreRules("@eaDir/\n*.tmp\n")
 	if err != nil {

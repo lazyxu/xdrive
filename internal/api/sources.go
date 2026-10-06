@@ -61,6 +61,8 @@ type syncRunDTO struct {
 	CheckpointAfter        string     `json:"checkpoint_after,omitempty"`
 	ScannedItems           int64      `json:"scanned_items"`
 	ScannedBytes           int64      `json:"scanned_bytes"`
+	ScannedFileItems       int64      `json:"scanned_file_items"`
+	ScannedDirectoryItems  int64      `json:"scanned_directory_items"`
 	IgnoredItems           int64      `json:"ignored_items"`
 	IgnoredBytes           int64      `json:"ignored_bytes"`
 	NewItems               int64      `json:"new_items"`
@@ -76,6 +78,9 @@ type syncRunDTO struct {
 	PlannedTransferBytes   int64      `json:"planned_transfer_bytes"`
 	ProcessedTransferItems int64      `json:"processed_transfer_items"`
 	ProcessedTransferBytes int64      `json:"processed_transfer_bytes"`
+	SyncedFileItems        int64      `json:"synced_file_items"`
+	SyncedDirectoryItems   int64      `json:"synced_directory_items"`
+	SyncedBytes            int64      `json:"synced_bytes"`
 	CreatedItems           int64      `json:"created_items"`
 	UpdatedItems           int64      `json:"updated_items"`
 	SkippedItems           int64      `json:"skipped_items"`
@@ -128,12 +133,14 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
 		ScannedItems: run.ScannedItems, ScannedBytes: run.ScannedBytes,
+		ScannedFileItems: run.ScannedFileItems, ScannedDirectoryItems: run.ScannedDirectoryItems,
 		IgnoredItems: run.IgnoredItems, IgnoredBytes: run.IgnoredBytes,
 		NewItems: run.NewItems, NewBytes: run.NewBytes, ChangedItems: run.ChangedItems, ChangedBytes: run.ChangedBytes,
 		MovedItems: run.MovedItems, UnchangedItems: run.UnchangedItems, UnchangedBytes: run.UnchangedBytes,
 		MissingItems: run.MissingItems, MissingBytes: run.MissingBytes,
 		PlannedTransferItems: run.PlannedTransferItems, PlannedTransferBytes: run.PlannedTransferBytes,
 		ProcessedTransferItems: run.ProcessedTransferItems, ProcessedTransferBytes: run.ProcessedTransferBytes,
+		SyncedFileItems: run.SyncedFileItems, SyncedDirectoryItems: run.SyncedDirectoryItems, SyncedBytes: run.SyncedBytes,
 		CreatedItems: run.CreatedItems, UpdatedItems: run.UpdatedItems, SkippedItems: run.SkippedItems,
 		DeletedItems:     run.DeletedItems,
 		TransferredItems: run.TransferredItems, TransferredBytes: run.TransferredBytes,
