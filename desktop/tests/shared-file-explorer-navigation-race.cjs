@@ -734,3 +734,64 @@ test('newer Quick Access refresh wins when refresh responses complete out of ord
     'an older Quick Access refresh must not overwrite the newer refresh result',
   )
 })
+
+test('stale Recent refresh cannot overwrite a newer recorded access', async () => {
+  const runtime = createHookRuntime()
+  const useRecent = loadRecentHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const oldItem = {
+    node: { id: 2, name: 'Old', type: 'file' },
+    path: '/Old',
+    crumbs: [root],
+    accessed_at: '2026-10-06T00:00:00Z',
+  }
+  const recordedItem = {
+    node: { id: 3, name: 'New', type: 'file' },
+    path: '/New',
+    crumbs: [root],
+    accessed_at: '2026-10-06T00:01:00Z',
+  }
+
+  let controlled = false
+  let releaseRefresh
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([oldItem])
+    return new Promise((resolve) => {
+      releaseRefresh = () => resolve([oldItem])
+    })
+  }
+  const renderRecent = () => runtime.render(() => useRecent({
+    loadItems,
+    touchItem: async (nodeID) => {
+      assert.equal(nodeID, recordedItem.node.id)
+      return recordedItem
+    },
+    clearItems: async () => undefined,
+  }))
+
+  renderRecent()
+  await flushAsync()
+  let recent = renderRecent()
+  assert.deepEqual(recent.items.map((item) => item.id), [oldItem.node.id])
+
+  controlled = true
+  const staleRefresh = recent.refresh()
+  await flushAsync()
+
+  await recent.record(recordedItem.node.id)
+  recent = renderRecent()
+  assert.deepEqual(
+    recent.items.map((item) => item.id),
+    [recordedItem.node.id, oldItem.node.id],
+  )
+
+  releaseRefresh()
+  await staleRefresh
+
+  recent = renderRecent()
+  assert.deepEqual(
+    recent.items.map((item) => item.id),
+    [recordedItem.node.id, oldItem.node.id],
+    'a stale Recent refresh must not erase a newer recorded access',
+  )
+})

@@ -70,14 +70,22 @@ test('shared Recent controller refreshes live identity and silently records acce
   for (const token of [
     'useXDriveFileExplorerRecent',
     'const loadItemsRef = useRef(loadItems)',
+    'const loadRequestRef = useRef(0)',
     'const record = useCallback',
     'const clear = useCallback',
     'const activate = useCallback',
-    'const latest = await loadFresh()',
+    'const latest = await loadFresh(requestID)',
+    'if (requestID !== loadRequestRef.current) return false',
     "target.node.type === 'dir'",
     'await handlers.onDirectory(target.crumbs)',
     'await handlers.onFile(target)',
   ]) assert.ok(controller.includes(token), 'shared Recent controller missing: ' + token)
+
+  for (const token of [
+    'if (requestID === loadRequestRef.current) {',
+    'loadRequestRef.current += 1',
+    'if (requestID === loadRequestRef.current) setLoading(false)',
+  ]) assert.ok(controller.includes(token), 'shared Recent race guard missing: ' + token)
 
   assert.equal(controller.includes('localStorage'), false, 'Recent must remain server-side')
 })
