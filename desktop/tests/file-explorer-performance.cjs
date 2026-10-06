@@ -156,7 +156,7 @@ test('FileExplorer search avoids full-tree path materialization for component qu
   assert.ok(serverSearch.includes('bool_or(ancestry.parent_id IS NULL) AS rooted'), 'candidate search must prove reachability from an active root')
   assert.ok(serverSearch.includes('WHERE candidate_paths.rooted'), 'unrooted/deleted-ancestor candidates must be excluded')
   assert.ok(serverSearch.includes('const recursivePathSearch = `WITH RECURSIVE tree AS ('), 'full-path fallback must remain available')
-  assert.ok(serverSearch.includes('if !strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
+  assert.ok(serverSearch.includes('if strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
 })
 
 

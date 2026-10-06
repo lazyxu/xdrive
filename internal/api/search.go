@@ -38,6 +38,15 @@ type searchPageDTO struct {
 	NextCursor string            `json:"next_cursor,omitempty"`
 }
 
+type searchRangeDTO struct {
+	Items      []searchResultDTO `json:"items"`
+	TotalCount int64             `json:"total_count"`
+	Offset     int               `json:"offset"`
+	Limit      int               `json:"limit"`
+	Sort       string            `json:"sort"`
+	Order      string            `json:"order"`
+}
+
 type searchCursor struct {
 	Query string `json:"q"`
 	Type  string `json:"type,omitempty"`
@@ -61,6 +70,7 @@ type searchRow struct {
 	SHA256          string
 	Path            string
 	BreadcrumbsJSON string
+	TotalCount      int64
 }
 
 func (s *Server) searchNodes(c *gin.Context) {
@@ -111,41 +121,65 @@ func (s *Server) searchNodes(c *gin.Context) {
 		limit = value
 	}
 
+	rawOffset, rangeRequested := c.GetQuery("offset")
+	offset := 0
+	if rangeRequested {
+		rawOffset = strings.TrimSpace(rawOffset)
+		value, err := strconv.Atoi(rawOffset)
+		if rawOffset == "" || err != nil || value < 0 {
+			fail(c, http.StatusBadRequest, "offset must be zero or greater")
+			return
+		}
+		offset = value
+		if strings.TrimSpace(c.Query("cursor")) != "" {
+			fail(c, http.StatusBadRequest, "offset does not accept cursor")
+			return
+		}
+	}
+
 	var cursor searchCursor
-	if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
-		decoded, err := decodeSearchCursor(raw)
-		if err != nil {
-			fail(c, http.StatusBadRequest, "invalid cursor")
-			return
+	if !rangeRequested {
+		if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
+			decoded, err := decodeSearchCursor(raw)
+			if err != nil {
+				fail(c, http.StatusBadRequest, "invalid cursor")
+				return
+			}
+			if decoded.Query != query || decoded.Type != nodeType ||
+				decoded.Sort != sortKey || decoded.Order != order {
+				fail(c, http.StatusBadRequest, "cursor does not match q/type/sort/order")
+				return
+			}
+			cursor = decoded
 		}
-		if decoded.Query != query || decoded.Type != nodeType ||
-			decoded.Sort != sortKey || decoded.Order != order {
-			fail(c, http.StatusBadRequest, "cursor does not match q/type/sort/order")
-			return
-		}
-		cursor = decoded
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
+
+	c.Header("Cache-Control", "no-store")
+	if rangeRequested {
+		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, offset, limit, sortKey, order)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "search failed")
+			return
+		}
+		c.JSON(http.StatusOK, page)
+		return
+	}
 
 	page, err := s.searchNodePage(ctx, userID(c), query, nodeType, limit, sortKey, order, cursor)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "search failed")
 		return
 	}
-	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, page)
 }
 
-func (s *Server) searchNodePage(
-	ctx context.Context,
+func searchNodeBaseQuery(
 	ownerID uint64,
 	query, nodeType string,
-	limit int,
-	sortKey, order string,
-	cursor searchCursor,
-) (searchPageDTO, error) {
+) (string, []any) {
 	const recursivePathSearch = `WITH RECURSIVE tree AS (
   SELECT
     n.id, n.parent_id, n.name, n.type, n.revision, n.created_at, n.updated_at,
@@ -267,24 +301,70 @@ FROM search_rows
 WHERE (? = '' OR search_rows.type = ?)
 `
 
-	sqlText := recursivePathSearch
-	args := []any{ownerID, ownerID, query, nodeType, nodeType}
-	if !strings.Contains(query, "/") {
-		sqlText = componentSearch
-		args = []any{ownerID, query, ownerID, ownerID, ownerID, ownerID, nodeType, nodeType}
+	if strings.Contains(query, "/") {
+		return recursivePathSearch, []any{ownerID, ownerID, query, nodeType, nodeType}
 	}
+	return componentSearch, []any{ownerID, query, ownerID, ownerID, ownerID, ownerID, nodeType, nodeType}
+}
 
-	rankExpr := "(CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END)"
-	pathExpr := "lower(search_rows.path)"
-	sortExpr := "lower(search_rows.name)"
+func searchNodeOrderExpressions(alias, sortKey, order string) (
+	rankExpr, sortExpr, pathExpr, direction string,
+) {
+	rankExpr = fmt.Sprintf("(CASE WHEN %s.type = 'dir' THEN 0 ELSE 1 END)", alias)
+	pathExpr = fmt.Sprintf("lower(%s.path)", alias)
+	sortExpr = fmt.Sprintf("lower(%s.name)", alias)
 	switch sortKey {
 	case "updated":
-		sortExpr = "search_rows.updated_at"
+		sortExpr = fmt.Sprintf("%s.updated_at", alias)
 	case "size":
-		sortExpr = "search_rows.size"
+		sortExpr = fmt.Sprintf("%s.size", alias)
 	case "type":
-		sortExpr = "(CASE WHEN search_rows.type = 'dir' THEN '' WHEN strpos(search_rows.name, '.') > 1 AND right(search_rows.name, 1) <> '.' THEN lower(regexp_replace(search_rows.name, '^.*\\.', '')) ELSE '' END)"
+		sortExpr = fmt.Sprintf(
+			"(CASE WHEN %s.type = 'dir' THEN '' WHEN strpos(%s.name, '.') > 1 AND right(%s.name, 1) <> '.' THEN lower(regexp_replace(%s.name, '^.*\\.', '')) ELSE '' END)",
+			alias, alias, alias, alias,
+		)
 	}
+	direction = "ASC"
+	if order == "desc" {
+		direction = "DESC"
+	}
+	return
+}
+
+func searchRowsToResults(rows []searchRow) ([]searchResultDTO, error) {
+	items := make([]searchResultDTO, 0, len(rows))
+	for _, row := range rows {
+		var breadcrumbs []searchBreadcrumbDTO
+		if err := json.Unmarshal([]byte(row.BreadcrumbsJSON), &breadcrumbs); err != nil {
+			return nil, err
+		}
+		items = append(items, searchResultDTO{
+			Node: nodeDTO{
+				ID: row.ID, ParentID: row.ParentID, Name: row.Name, Type: row.Type,
+				Size: row.Size, Revision: row.Revision, SHA256: row.SHA256,
+				CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+			},
+			Path:        row.Path,
+			Breadcrumbs: breadcrumbs,
+		})
+	}
+	return items, nil
+}
+
+func (s *Server) searchNodePage(
+	ctx context.Context,
+	ownerID uint64,
+	query, nodeType string,
+	limit int,
+	sortKey, order string,
+	cursor searchCursor,
+) (searchPageDTO, error) {
+	sqlText, args := searchNodeBaseQuery(ownerID, query, nodeType)
+	rankExpr, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
+		"search_rows",
+		sortKey,
+		order,
+	)
 
 	if cursor.ID != 0 {
 		value, err := searchCursorQueryValue(cursor, sortKey)
@@ -316,10 +396,7 @@ WHERE (? = '' OR search_rows.type = ?)
 			cursor.ID,
 		)
 	}
-	direction := "ASC"
-	if order == "desc" {
-		direction = "DESC"
-	}
+
 	sqlText += fmt.Sprintf(
 		"ORDER BY %s ASC, %s %s, %s ASC, search_rows.id ASC\nLIMIT ?",
 		rankExpr,
@@ -338,21 +415,9 @@ WHERE (? = '' OR search_rows.type = ?)
 	if hasMore {
 		rows = rows[:limit]
 	}
-	items := make([]searchResultDTO, 0, len(rows))
-	for _, row := range rows {
-		var breadcrumbs []searchBreadcrumbDTO
-		if err := json.Unmarshal([]byte(row.BreadcrumbsJSON), &breadcrumbs); err != nil {
-			return searchPageDTO{}, err
-		}
-		items = append(items, searchResultDTO{
-			Node: nodeDTO{
-				ID: row.ID, ParentID: row.ParentID, Name: row.Name, Type: row.Type,
-				Size: row.Size, Revision: row.Revision, SHA256: row.SHA256,
-				CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-			},
-			Path:        row.Path,
-			Breadcrumbs: breadcrumbs,
-		})
+	items, err := searchRowsToResults(rows)
+	if err != nil {
+		return searchPageDTO{}, err
 	}
 
 	page := searchPageDTO{Items: items}
@@ -374,6 +439,69 @@ WHERE (? = '' OR search_rows.type = ?)
 		})
 	}
 	return page, nil
+}
+
+func (s *Server) searchNodeRange(
+	ctx context.Context,
+	ownerID uint64,
+	query, nodeType string,
+	offset, limit int,
+	sortKey, order string,
+) (searchRangeDTO, error) {
+	baseSQL, baseArgs := searchNodeBaseQuery(ownerID, query, nodeType)
+	rankExpr, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
+		"search_page",
+		sortKey,
+		order,
+	)
+	sqlText := fmt.Sprintf(`SELECT search_page.*, COUNT(*) OVER() AS total_count
+FROM (
+%s
+) AS search_page
+ORDER BY %s ASC, %s %s, %s ASC, search_page.id ASC
+OFFSET ? LIMIT ?`,
+		baseSQL,
+		rankExpr,
+		sortExpr,
+		direction,
+		pathExpr,
+	)
+	args := append(append([]any{}, baseArgs...), offset, limit)
+
+	var rows []searchRow
+	if err := s.DB.WithContext(ctx).Raw(sqlText, args...).Scan(&rows).Error; err != nil {
+		return searchRangeDTO{}, err
+	}
+
+	totalCount := int64(0)
+	if len(rows) > 0 {
+		totalCount = rows[0].TotalCount
+	} else if offset > 0 {
+		countSQL := fmt.Sprintf(
+			"SELECT COUNT(*) AS total_count FROM (\n%s\n) AS search_count",
+			baseSQL,
+		)
+		var count struct {
+			TotalCount int64 `gorm:"column:total_count"`
+		}
+		if err := s.DB.WithContext(ctx).Raw(countSQL, baseArgs...).Scan(&count).Error; err != nil {
+			return searchRangeDTO{}, err
+		}
+		totalCount = count.TotalCount
+	}
+
+	items, err := searchRowsToResults(rows)
+	if err != nil {
+		return searchRangeDTO{}, err
+	}
+	return searchRangeDTO{
+		Items:      items,
+		TotalCount: totalCount,
+		Offset:     offset,
+		Limit:      limit,
+		Sort:       sortKey,
+		Order:      order,
+	}, nil
 }
 
 func searchRowCursorValue(row searchRow, sortKey string) string {
