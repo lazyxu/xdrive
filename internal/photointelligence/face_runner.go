@@ -47,6 +47,79 @@ func (r *FaceRunner) RunBatch(
 	ctx context.Context,
 	limit int,
 ) (int, error) {
+	return r.runBatch(ctx, 0, limit)
+}
+
+func (r *FaceRunner) RunOwnerBatch(
+	ctx context.Context,
+	ownerID uint64,
+	limit int,
+) (int, error) {
+	if ownerID == 0 {
+		return 0, fmt.Errorf("photo face owner id is required")
+	}
+	return r.runBatch(ctx, ownerID, limit)
+}
+
+func (r *FaceRunner) CandidateOwnerIDs(
+	ctx context.Context,
+	limit int,
+) ([]uint64, error) {
+	if r == nil || r.DB == nil || r.Analyzer == nil || r.PreviewURL == nil {
+		return nil, fmt.Errorf("photo face runner is not configured")
+	}
+	if limit <= 0 {
+		limit = 64
+	}
+	now := time.Now().UTC()
+	if r.Now != nil {
+		now = r.Now().UTC()
+	}
+	info, err := r.Analyzer.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateFaceAnalyzerInfo(info); err != nil {
+		return nil, err
+	}
+	detectorVersion := FaceDetectorAnalyzerVersion(info)
+	embeddingVersion := FaceEmbeddingAnalyzerVersion(info)
+
+	type ownerRow struct {
+		OwnerID uint64 `gorm:"column:owner_id"`
+	}
+	var rows []ownerRow
+	err = r.faceCandidateQuery(
+		ctx,
+		detectorVersion,
+		embeddingVersion,
+		now,
+	).
+		Select("pa.owner_id AS owner_id").
+		Group("pa.owner_id").
+		Order(
+			"MIN(COALESCE(fd.updated_at, fe.updated_at, TIMESTAMP '1970-01-01')) ASC, " +
+				"pa.owner_id ASC",
+		).
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		if row.OwnerID != 0 {
+			owners = append(owners, row.OwnerID)
+		}
+	}
+	return owners, nil
+}
+
+func (r *FaceRunner) runBatch(
+	ctx context.Context,
+	ownerID uint64,
+	limit int,
+) (int, error) {
 	if r == nil || r.DB == nil || r.Analyzer == nil || r.PreviewURL == nil {
 		return 0, fmt.Errorf("photo face runner is not configured")
 	}
@@ -68,8 +141,9 @@ func (r *FaceRunner) RunBatch(
 	detectorVersion := FaceDetectorAnalyzerVersion(info)
 	embeddingVersion := FaceEmbeddingAnalyzerVersion(info)
 
-	candidates, err := r.faceCandidates(
+	candidates, err := r.faceCandidatesForOwner(
 		ctx,
+		ownerID,
 		detectorVersion,
 		embeddingVersion,
 		now,
@@ -173,15 +247,57 @@ func (r *FaceRunner) faceCandidates(
 	now time.Time,
 	limit int,
 ) ([]faceCandidate, error) {
+	return r.faceCandidatesForOwner(
+		ctx,
+		0,
+		detectorVersion,
+		embeddingVersion,
+		now,
+		limit,
+	)
+}
+
+func (r *FaceRunner) faceCandidatesForOwner(
+	ctx context.Context,
+	ownerID uint64,
+	detectorVersion, embeddingVersion string,
+	now time.Time,
+	limit int,
+) ([]faceCandidate, error) {
 	inputExpr := faceInputFingerprintSQL()
+	query := r.faceCandidateQuery(
+		ctx,
+		detectorVersion,
+		embeddingVersion,
+		now,
+	)
+	if ownerID != 0 {
+		query = query.Where("pa.owner_id = ?", ownerID)
+	}
 	var candidates []faceCandidate
-	err := r.DB.WithContext(ctx).
-		Table("xd_photo_assets AS pa").
+	err := query.
 		Select(
-			"pa.id AS asset_id, pa.owner_id, u.session_version, "+
-				"n.id AS node_id, n.revision AS node_revision, f.sha256, "+
-				inputExpr+" AS input_fingerprint",
+			"pa.id AS asset_id, pa.owner_id, u.session_version, " +
+				"n.id AS node_id, n.revision AS node_revision, f.sha256, " +
+				inputExpr + " AS input_fingerprint",
 		).
+		Order(
+			"COALESCE(fd.updated_at, fe.updated_at, TIMESTAMP '1970-01-01') ASC, " +
+				"pa.id ASC",
+		).
+		Limit(limit).
+		Scan(&candidates).Error
+	return candidates, err
+}
+
+func (r *FaceRunner) faceCandidateQuery(
+	ctx context.Context,
+	detectorVersion, embeddingVersion string,
+	now time.Time,
+) *gorm.DB {
+	inputExpr := faceInputFingerprintSQL()
+	return r.DB.WithContext(ctx).
+		Table("xd_photo_assets AS pa").
 		Joins(
 			"JOIN xd_users AS u ON u.id = pa.owner_id "+
 				"AND u.disabled_at IS NULL AND u.must_change_password = false",
@@ -235,14 +351,7 @@ func (r *FaceRunner) faceCandidates(
 			now.Add(-faceAnalysisRetryInterval),
 			meta.PhotoAnalysisStateRunning,
 			now.Add(-faceAnalysisRunningTimeout),
-		).
-		Order(
-			"COALESCE(fd.updated_at, fe.updated_at, TIMESTAMP '1970-01-01') ASC, " +
-				"pa.id ASC",
-		).
-		Limit(limit).
-		Scan(&candidates).Error
-	return candidates, err
+		)
 }
 
 func faceInputFingerprintSQL() string {

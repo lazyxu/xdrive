@@ -121,7 +121,11 @@ func (s *Server) backgroundTasks(
 	out := make([]backgroundTaskDTO, 0)
 	if s.BackgroundScheduler != nil {
 		snapshots := s.BackgroundScheduler.TaskSnapshots(ownerID)
-		out = append(out, aggregateRuntimeBackgroundTasks(snapshots)...)
+		out = append(out, aggregateRuntimeBackgroundTasks(
+			snapshots,
+			viewerID,
+			admin,
+		)...)
 	}
 
 	fileOperations, err := s.backgroundFileOperationTasks(
@@ -166,6 +170,8 @@ type runtimeTaskGroup struct {
 
 func aggregateRuntimeBackgroundTasks(
 	snapshots []background.RuntimeTaskSnapshot,
+	viewerID uint64,
+	admin bool,
 ) []backgroundTaskDTO {
 	groups := make(map[string]*runtimeTaskGroup)
 	for _, snapshot := range snapshots {
@@ -219,6 +225,12 @@ func aggregateRuntimeBackgroundTasks(
 			if group.task.Initiator != string(snapshot.Initiator) {
 				group.task.Initiator = "mixed"
 			}
+		}
+
+		if strings.HasPrefix(kind, "photo.") &&
+			snapshot.Identity.Scope == background.ScopeUser &&
+			(snapshot.Identity.OwnerID == viewerID || admin) {
+			group.task.ControlActions = []string{"reanalyze"}
 		}
 
 		switch snapshot.State {

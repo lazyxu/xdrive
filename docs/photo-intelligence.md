@@ -326,6 +326,12 @@ GeoNames free gazetteer data is licensed under **Creative Commons Attribution 4.
 
 Photo Intelligence is lower priority than file synchronization, user-triggered file operations, and native media indexing.
 
+The current implementation uses the shared Background Scheduler rather than independent polling workers.
+Native media indexing emits owner-scoped face/place events, and successful face processing emits an
+owner-scoped person-cluster event. Face analysis uses the `ml_cpu` resource class at P2; place resolution and
+person clustering use `background_cpu` at P3. A 30-second candidate-owner reconcile scan remains as a
+correctness fallback for lost events, restarts, version invalidation, and retry eligibility.
+
 The intended lifecycle is:
 
 ```text
@@ -341,7 +347,20 @@ input/model changes
   -> re-run when resources allow
 ```
 
-Failures are isolated per asset and analysis kind. Retry/backoff must be bounded; a failing model must not create an endless hot loop.
+Failures are isolated per asset and analysis kind. Retry/backoff is bounded by the durable analysis-state
+eligibility rules; a failing model must not create an endless hot loop.
+
+Users may request owner-scoped reanalysis explicitly; administrators may request reanalysis for another
+active user's derived intelligence. These requests are recorded as `user_action` / `admin_action`
+scheduler attribution and run at bounded background priority, never P0. A manual force request is deferred
+to the next generation when work is already active, preventing an older generation from overwriting a
+premature stale marker. Reanalysis only invalidates/rebuilds derived Photo Intelligence state; it does not
+modify originals, durable people, manual `PeopleJSON`, tags, favorites, descriptions, or albums.
+
+The current control surface intentionally does not expose mid-flight cancellation for face/place/person
+analysis. Killing a process-local task without first defining durable cancellation recovery could strand
+`running` analysis rows, so cancellation remains unavailable until that state transition is explicitly
+designed.
 
 Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place label, and cluster memberships. Durable person membership is checked separately because its owner and cover invariants represent user intent. Smart-album `person_identity` references are verified but never guessed or silently removed when they are broken.
 

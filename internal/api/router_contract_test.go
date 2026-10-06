@@ -42,6 +42,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "DELETE", path: "/api/v1/file-quick-access/:id", suite: "quick-access"},
 		{method: "GET", path: "/api/v1/file-recent", suite: "recent"},
 		{method: "GET", path: "/api/v1/background-tasks", suite: "background-tasks"},
+		{method: "POST", path: "/api/v1/photo-intelligence/reanalyze", suite: "photo-intelligence"},
 		{method: "POST", path: "/api/v1/file-recent/:id", suite: "recent"},
 		{method: "DELETE", path: "/api/v1/file-recent", suite: "recent"},
 		{method: "POST", path: "/api/v1/nodes/:id/directories", suite: "nodes"},
@@ -162,6 +163,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "DELETE", path: "/api/v1/admin/users/:id", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/users/:id/reset-password", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/users/:id/revoke-sessions", suite: "admin"},
+		{method: "POST", path: "/api/v1/admin/users/:id/photo-intelligence/reanalyze", suite: "photo-intelligence"},
 	}
 
 	manifest := make(map[string]string, len(coverage))

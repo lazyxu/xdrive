@@ -124,6 +124,50 @@ func (r *PersonClusterRunner) RunBatch(
 	return processed, firstError
 }
 
+func (r *PersonClusterRunner) RunOwner(
+	ctx context.Context,
+	ownerID uint64,
+) error {
+	if r == nil || r.DB == nil {
+		return fmt.Errorf("photo person cluster runner is not configured")
+	}
+	if ownerID == 0 {
+		return fmt.Errorf("photo person cluster owner id is required")
+	}
+	now := time.Now().UTC()
+	if r.Now != nil {
+		now = r.Now().UTC()
+	}
+	return r.reconcileOwner(ctx, ownerID, now)
+}
+
+func (r *PersonClusterRunner) CandidateOwnerIDs(
+	ctx context.Context,
+	limit int,
+) ([]uint64, error) {
+	if r == nil || r.DB == nil {
+		return nil, fmt.Errorf("photo person cluster runner is not configured")
+	}
+	if limit <= 0 {
+		limit = 64
+	}
+	now := time.Now().UTC()
+	if r.Now != nil {
+		now = r.Now().UTC()
+	}
+	candidates, err := r.personClusterCandidates(ctx, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]uint64, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.OwnerID != 0 {
+			owners = append(owners, candidate.OwnerID)
+		}
+	}
+	return owners, nil
+}
+
 func (r *PersonClusterRunner) personClusterCandidates(
 	ctx context.Context,
 	now time.Time,

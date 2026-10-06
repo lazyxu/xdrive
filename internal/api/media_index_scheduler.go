@@ -210,6 +210,9 @@ func (s *Server) submitMediaIndexOwnerTask(
 				ownerID,
 				mediaIndexOwnerBatchSize,
 			)
+			if indexed > 0 {
+				s.requestPhotoIntelligenceForMedia(ownerID)
+			}
 			s.finishMediaIndexOwner(
 				ownerID,
 				generation,
