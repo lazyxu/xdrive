@@ -19,6 +19,7 @@ export type XDriveFileExplorerKeyboardCommand =
   | 'context-menu'
   | 'select-all'
   | 'copy'
+  | 'copy-path'
   | 'cut'
   | 'paste'
   | 'delete'
@@ -94,6 +95,17 @@ export function xDriveFileExplorerKeyboardCommand(
   const key = event.key.toLocaleLowerCase()
   const primary = xDriveFileExplorerPrimaryModifierActive(event, profile)
 
+  if (
+    profile === 'macos' &&
+    key === 'c' &&
+    Boolean(event.metaKey) &&
+    Boolean(event.altKey) &&
+    !event.ctrlKey &&
+    !event.shiftKey
+  ) {
+    return 'copy-path'
+  }
+
   if (xDriveFileExplorerPrimaryOnly(event, profile)) {
     if (key === 't') return 'new-tab'
     if (key === 'w') return 'close-tab'
@@ -124,6 +136,7 @@ export function xDriveFileExplorerKeyboardCommand(
     if (key === 'tab') return 'previous-tab'
     if (key === 'n') return 'new-folder'
     if (key === 'z') return 'redo'
+    if (key === 'c' && profile !== 'macos') return 'copy-path'
 
     if (profile === 'macos') {
       if (key === 'g') return 'focus-path'

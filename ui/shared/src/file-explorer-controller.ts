@@ -63,6 +63,27 @@ export async function xDriveResolveFileExplorerPath<
 
 export type XDriveFileExplorerPathRoot = { id: number }
 
+export type XDriveFileExplorerCopyPathItem = {
+  name: string
+  path?: string
+  secondaryLabel?: string
+}
+
+export function xDriveFileExplorerCopyPath(
+  item: XDriveFileExplorerCopyPathItem,
+  currentCrumbs: readonly { name: string }[],
+) {
+  const searchPath = item.secondaryLabel?.trim()
+  const parts = searchPath
+    ? searchPath.replace(/\\/g, '/').split('/')
+    : [...currentCrumbs.slice(1).map((crumb) => crumb.name), item.name]
+
+  return '/' + parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('/')
+}
+
 export async function xDriveFileExplorerSubmitPath<
   TNode extends XDriveFileExplorerPathNode,
 >({

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
@@ -360,6 +360,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   setAppearance: (appearance: 'system' | 'light' | 'dark') => ipcRenderer.invoke('desktop:set-appearance', appearance),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
+  copyText: (text: string) => clipboard.writeText(text),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),
   onNavigate: (callback: (view: string) => void) => {

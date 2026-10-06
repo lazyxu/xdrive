@@ -23,6 +23,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   xDriveFileExplorerKeyboardProfileFromPlatform,
+  xDriveFileExplorerCopyPath,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerNodeForItem,
@@ -288,6 +289,27 @@ export default function WebFileExplorer({
     })
   }
 
+  const copyItemPaths = async (selected: XDriveFileExplorerItem[]) => {
+    if (selected.length === 0) return
+    const text = selected
+      .map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))
+      .join('\n')
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('当前浏览器不支持写入剪贴板。')
+      }
+      await navigator.clipboard.writeText(text)
+      onFeedback(
+        'good',
+        selected.length === 1
+          ? `已复制路径：${text}`
+          : `已复制 ${selected.length} 条路径。`,
+      )
+    } catch (error) {
+      onError(error)
+    }
+  }
+
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
     const plan = xDriveFileExplorerWebDownloadPlan(nodes)
@@ -429,6 +451,7 @@ export default function WebFileExplorer({
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}
+        onCopyPaths={(selected) => { void copyItemPaths(selected) }}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
         canPaste={fileOperationCanPaste}
