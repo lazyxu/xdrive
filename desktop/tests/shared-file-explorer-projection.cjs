@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
@@ -45,15 +46,66 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
   assert.ok(controller.includes('xDriveFileExplorerDispatchOpenItem'), 'shared controller must own open-item dispatch')
   assert.ok(workspace.includes('useXDriveFileExplorerProjection<'), 'workspace controller must compose shared projection')
   assert.ok(workspace.includes('xDriveFileExplorerDispatchOpenItem({'), 'workspace controller must compose shared open-item dispatch')
-  assert.ok(web.includes('searchCrumbsForResult: (result) => result.breadcrumbs'), 'Web must adapt result.breadcrumbs into the shared workspace')
+  assert.ok(web.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web must adapt shared result.crumbs into the workspace')
   assert.ok(desktop.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Desktop must adapt result.crumbs into the shared workspace')
 })
 
 
 test('FileExplorer projection indexes bounded virtual nodes without logical-array materialization', () => {
   assert.ok(shared.includes('virtualItems?: ReadonlyMap<number, TNode>'), 'projection must accept sparse node indexes')
-  assert.ok(shared.includes('const virtualExplorerItems = !results && virtualItems'), 'projection must keep search dense and directory sparse')
+  assert.ok(shared.includes('const virtualSearchActive = virtualSearchItems !== undefined'), 'projection must keep Search sparse by logical index')
   assert.ok(shared.includes('for (const [index, node] of virtualItems)'), 'projection must iterate only loaded sparse metadata')
   assert.ok(shared.includes('nodeByID.set(node.id, node)'), 'loaded remote nodes must participate in operation lookup')
   assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(virtualItems.size)'), false, 'sparse projection must not create a second loaded array')
+})
+
+
+test('sparse Search projection preserves logical indexes without dense aliases', () => {
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts')
+  const output = ts.transpileModule(shared, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+  const mod = { exports: {} }
+  const react = { useMemo: (factory) => factory() }
+  const execute = new Function('exports', 'module', 'require', output)
+  execute(mod.exports, mod, (request) => request === 'react' ? react : require(request))
+
+  const result400 = {
+    node: {
+      id: 401,
+      name: 'result-400.jpg',
+      type: 'file',
+      size: 10,
+      revision: 1,
+      updated_at: '2026-10-06T00:00:00Z',
+    },
+    path: 'Search/result-400.jpg',
+  }
+  const result401 = {
+    node: {
+      id: 402,
+      name: 'result-401.jpg',
+      type: 'file',
+      size: 20,
+      revision: 1,
+      updated_at: '2026-10-06T00:00:00Z',
+    },
+    path: 'Search/result-401.jpg',
+  }
+  const projected = mod.exports.useXDriveFileExplorerProjection({
+    items: [],
+    crumbs: [{ id: 1, name: '我的文件' }],
+    searchResults: [result400, result401],
+    virtualSearchItems: new Map([[400, result400], [401, result401]]),
+  })
+
+  assert.equal(projected.explorerItems.length, 0, 'sparse Search must not create dense 0..N aliases')
+  assert.deepEqual([...projected.virtualExplorerItems.keys()], [400, 401])
+  assert.equal(projected.virtualExplorerItems.get(400).secondaryLabel, 'Search/result-400.jpg')
+  assert.equal(projected.nodeByID.get(401).name, 'result-400.jpg')
+  assert.equal(projected.searchByID.get(402).path, 'Search/result-401.jpg')
 })

@@ -54,7 +54,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'loadSearchPage: async (query, searchSort, cursor) =>',
+    'loadSearchRange: async (query, searchSort, offset, limit) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
@@ -78,22 +78,17 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
 
-test('Desktop FileExplorer paginates server search results through Agent cursors', () => {
+test('Desktop FileExplorer virtualizes server Search ranges through Agent transport', () => {
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>'), 'Desktop search lifecycle must come from the shared workspace controller')
-  assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared React controller')
+  assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
-  assert.equal(explorer.includes("setSearchValue('')"), false, 'Desktop navigation must not clear search draft separately')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch('), 'Desktop search controller must keep Agent cursor execution local')
-  assert.ok(explorer.includes('searchSort.key'), 'Desktop search must forward the shared sort key')
-  assert.ok(explorer.includes('searchSort.direction'), 'Desktop search must forward the shared sort direction')
-  assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
-  assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
-  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own search/directory pagination dispatch')
-  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer load-more must use shared pagination dispatch')
-  assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Desktop must not branch search/directory pagination locally')
-  assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own search request sequencing')
-  assert.equal(explorer.includes('setSearchState('), false, 'Desktop must not own search lifecycle transitions')
-  assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop search must not truncate the UI to one page')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop Search must use Agent range transport')
+  assert.ok(explorer.includes('searchSort.key'), 'Desktop Search range must forward sort key')
+  assert.ok(explorer.includes('searchSort.direction'), 'Desktop Search range must forward sort direction')
+  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')
+  assert.equal(explorer.includes('window.xdriveDesktop.agent.cloudSearch('), false, 'Desktop Explorer must not use cursor Search after migration')
+  assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own Search request sequencing')
+  assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop Search must not truncate the logical result set')
 })
 
 test('Desktop cloud capacity and CAS intelligence live in the shared Cloud Storage workspace', () => {

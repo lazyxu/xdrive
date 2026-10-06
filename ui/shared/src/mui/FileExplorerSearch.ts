@@ -1,22 +1,25 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  xDriveFileExplorerApplySearchPageState,
-  xDriveFileExplorerCanLoadMoreSearch,
-  xDriveFileExplorerIdleSearchState,
+  XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerSearchDecision,
-  xDriveFileExplorerSettleSearchState,
-  xDriveFileExplorerStartSearchLoadMoreState,
-  xDriveFileExplorerStartSearchState,
 } from '../file-explorer-controller'
 import type {
-  XDriveFileExplorerSearchPage,
   XDriveFileExplorerSearchResultLike,
-  XDriveFileExplorerSearchState,
 } from '../file-explorer-controller'
 import type { XDriveFileExplorerSort } from './FileExplorer'
+import { useXDriveVirtualCollection } from './VirtualCollectionController'
 
 function searchSortSignature(sort: XDriveFileExplorerSort) {
   return `${sort.key}:${sort.direction}`
+}
+
+export type XDriveFileExplorerSearchRange<
+  TResult extends XDriveFileExplorerSearchResultLike,
+> = {
+  items: readonly TResult[]
+  totalCount: number
+  offset: number
+  limit: number
 }
 
 export type XDriveFileExplorerSearchLoader<
@@ -24,111 +27,189 @@ export type XDriveFileExplorerSearchLoader<
 > = (
   query: string,
   sort: XDriveFileExplorerSort,
-  cursor?: string,
-) => Promise<XDriveFileExplorerSearchPage<TResult>>
+  offset: number,
+  limit: number,
+) => Promise<XDriveFileExplorerSearchRange<TResult>>
 
-type XDriveFileExplorerWorkspaceSearchEntry<TResult extends XDriveFileExplorerSearchResultLike> = {
+type XDriveFileExplorerWorkspaceSearchEntry = {
   value: string
-  state: XDriveFileExplorerSearchState<TResult>
+  query: string
+  sortSignature: string
+  loading: boolean
 }
 
-function idleWorkspaceSearchEntry<TResult extends XDriveFileExplorerSearchResultLike>(): XDriveFileExplorerWorkspaceSearchEntry<TResult> {
+type XDriveFileExplorerSearchTarget = {
+  workspaceKey: string
+  query: string
+  sort: XDriveFileExplorerSort
+  sortSignature: string
+  requestID: number
+}
+
+function idleWorkspaceSearchEntry(): XDriveFileExplorerWorkspaceSearchEntry {
   return {
     value: '',
-    state: xDriveFileExplorerIdleSearchState<TResult>(),
+    query: '',
+    sortSignature: '',
+    loading: false,
   }
+}
+
+function searchQueryKey(target: XDriveFileExplorerSearchTarget | null) {
+  if (!target) return 'file-explorer:search:idle'
+  return [
+    'file-explorer:search',
+    target.workspaceKey,
+    target.query,
+    target.sortSignature,
+    target.requestID,
+  ].join(':')
 }
 
 export function useXDriveFileExplorerSearch<
   TResult extends XDriveFileExplorerSearchResultLike,
 >({
-  loadPage,
+  loadRange,
   sort,
   onError,
   workspaceKey = 'default',
 }: {
-  loadPage: XDriveFileExplorerSearchLoader<TResult>
+  loadRange: XDriveFileExplorerSearchLoader<TResult>
   sort: XDriveFileExplorerSort
   onError: (error: unknown) => void
   workspaceKey?: string
 }) {
   const requestRef = useRef<Record<string, number>>({})
-  const loadMoreRequestRef = useRef<Record<string, boolean>>({})
-  const resultIDsRef = useRef<Record<string, Set<number>>>({})
-  const sortSignatureRef = useRef<Record<string, string>>({})
-  const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry<TResult>>>({})
+  const targetRef = useRef<XDriveFileExplorerSearchTarget | null>(null)
+  const [target, setTarget] = useState<XDriveFileExplorerSearchTarget | null>(null)
+  const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry>>({})
 
-  const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry<TResult>()
+  const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry()
   const searchValue = entry.value
-  const searchState = entry.state
+  const sortSignature = searchSortSignature(sort)
 
-  const updateEntry = (
+  const updateEntry = useCallback((
     key: string,
     updater: (
-      current: XDriveFileExplorerWorkspaceSearchEntry<TResult>,
-    ) => XDriveFileExplorerWorkspaceSearchEntry<TResult>,
+      current: XDriveFileExplorerWorkspaceSearchEntry,
+    ) => XDriveFileExplorerWorkspaceSearchEntry,
   ) => {
     setEntries((current) => ({
       ...current,
-      [key]: updater(current[key] ?? idleWorkspaceSearchEntry<TResult>()),
+      [key]: updater(current[key] ?? idleWorkspaceSearchEntry()),
     }))
-  }
+  }, [])
 
-  const nextRequestID = (key: string) => {
+  const nextRequestID = useCallback((key: string) => {
     const next = (requestRef.current[key] ?? 0) + 1
     requestRef.current[key] = next
-    loadMoreRequestRef.current[key] = false
     return next
-  }
+  }, [])
 
-  const clearSearch = () => {
-    nextRequestID(workspaceKey)
-    delete resultIDsRef.current[workspaceKey]
-    delete sortSignatureRef.current[workspaceKey]
-    updateEntry(workspaceKey, () => idleWorkspaceSearchEntry<TResult>())
-  }
+  const targetIsCurrent = useCallback((candidate: XDriveFileExplorerSearchTarget) => (
+    requestRef.current[candidate.workspaceKey] === candidate.requestID &&
+    targetRef.current?.workspaceKey === candidate.workspaceKey &&
+    targetRef.current.requestID === candidate.requestID
+  ), [])
 
-  const changeSearchValue = (value: string) => {
-    if (!value.trim()) {
-      clearSearch()
-      return
+  const loadVirtualRange = useCallback(async (
+    range: { offset: number; limit: number },
+  ) => {
+    const active = targetRef.current
+    if (!active) {
+      return {
+        items: [] as TResult[],
+        offset: range.offset,
+        limit: range.limit,
+        totalCount: 0,
+      }
     }
-    updateEntry(workspaceKey, (current) => ({ ...current, value }))
-  }
+    return loadRange(
+      active.query,
+      active.sort,
+      range.offset,
+      range.limit,
+    )
+  }, [loadRange])
 
-  const executeSearch = async (
+  const virtualCollection = useXDriveVirtualCollection<TResult>({
+    queryKey: searchQueryKey(target),
+    loadRange: loadVirtualRange,
+    onError,
+    pageSize: XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  })
+
+  const executeSearch = useCallback(async (
     key: string,
     query: string,
     targetSort: XDriveFileExplorerSort,
   ) => {
     const requestID = nextRequestID(key)
-    const resultIDs = new Set<number>()
-    resultIDsRef.current[key] = resultIDs
-    sortSignatureRef.current[key] = searchSortSignature(targetSort)
+    const nextTarget: XDriveFileExplorerSearchTarget = {
+      workspaceKey: key,
+      query,
+      sort: targetSort,
+      sortSignature: searchSortSignature(targetSort),
+      requestID,
+    }
+    targetRef.current = nextTarget
+    setTarget(nextTarget)
+    virtualCollection.reset(searchQueryKey(nextTarget))
     updateEntry(key, (current) => ({
       value: current.value || query,
-      state: xDriveFileExplorerStartSearchState<TResult>(query),
+      query,
+      sortSignature: nextTarget.sortSignature,
+      loading: true,
     }))
+
     try {
-      const page = await loadPage(query, targetSort)
-      if (requestID !== requestRef.current[key]) return
-      updateEntry(key, (current) => ({
-        ...current,
-        state: xDriveFileExplorerApplySearchPageState(current.state, page, false, resultIDs),
-      }))
+      const page = await loadRange(
+        query,
+        targetSort,
+        0,
+        XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+      )
+      if (!targetIsCurrent(nextTarget)) return
+      virtualCollection.primePage(page)
     } catch (error) {
-      if (requestID === requestRef.current[key]) onError(error)
+      if (targetIsCurrent(nextTarget)) onError(error)
     } finally {
-      if (requestID === requestRef.current[key]) {
+      if (targetIsCurrent(nextTarget)) {
         updateEntry(key, (current) => ({
           ...current,
-          state: xDriveFileExplorerSettleSearchState(current.state, false),
+          loading: false,
         }))
       }
     }
-  }
+  }, [
+    loadRange,
+    nextRequestID,
+    onError,
+    targetIsCurrent,
+    updateEntry,
+    virtualCollection.primePage,
+    virtualCollection.reset,
+  ])
 
-  const submitSearch = async (rawQuery: string) => {
+  const clearSearch = useCallback(() => {
+    nextRequestID(workspaceKey)
+    if (targetRef.current?.workspaceKey === workspaceKey) {
+      targetRef.current = null
+      setTarget(null)
+      virtualCollection.reset(`file-explorer:search:idle:${workspaceKey}`)
+    }
+    updateEntry(workspaceKey, () => idleWorkspaceSearchEntry())
+  }, [nextRequestID, updateEntry, virtualCollection.reset, workspaceKey])
+
+  const changeSearchValue = useCallback((value: string) => {
+    if (!value.trim()) {
+      clearSearch()
+      return
+    }
+    updateEntry(workspaceKey, (current) => ({ ...current, value }))
+  }, [clearSearch, updateEntry, workspaceKey])
+
+  const submitSearch = useCallback(async (rawQuery: string) => {
     const decision = xDriveFileExplorerSearchDecision(rawQuery)
     if (decision.kind === 'clear') {
       clearSearch()
@@ -139,73 +220,82 @@ export function useXDriveFileExplorerSearch<
       return
     }
     await executeSearch(workspaceKey, decision.query, sort)
-  }
+  }, [clearSearch, executeSearch, onError, sort, workspaceKey])
 
-  const sortSignature = searchSortSignature(sort)
   useEffect(() => {
-    if (searchState.results === null || !searchState.query) return
-    if (sortSignatureRef.current[workspaceKey] === sortSignature) return
-    void executeSearch(workspaceKey, searchState.query, sort)
-  }, [sort.direction, sort.key, workspaceKey])
-
-  const loadMoreSearch = async () => {
-    const currentResults = searchState.results
-    if (
-      !currentResults ||
-      !xDriveFileExplorerCanLoadMoreSearch(
-        currentResults,
-        searchState.cursor,
-        searchState.loadingMore,
-      )
-    ) return
-    if (!searchState.query) return
-
-    const key = workspaceKey
-    if (sortSignatureRef.current[key] !== sortSignature) return
-    if (loadMoreRequestRef.current[key]) return
-    loadMoreRequestRef.current[key] = true
-    let resultIDs = resultIDsRef.current[key]
-    if (!resultIDs) {
-      resultIDs = new Set(currentResults.map((item) => item.node.id))
-      resultIDsRef.current[key] = resultIDs
-    }
-    const requestID = requestRef.current[key] ?? 0
-    updateEntry(key, (current) => ({
-      ...current,
-      state: xDriveFileExplorerStartSearchLoadMoreState(current.state),
-    }))
-    try {
-      const page = await loadPage(searchState.query, sort, searchState.cursor)
-      if (requestID !== requestRef.current[key]) return
-      updateEntry(key, (current) => ({
-        ...current,
-        state: xDriveFileExplorerApplySearchPageState(current.state, page, true, resultIDs),
-      }))
-    } catch (error) {
-      if (requestID === requestRef.current[key]) onError(error)
-    } finally {
-      loadMoreRequestRef.current[key] = false
-      if (requestID === requestRef.current[key]) {
-        updateEntry(key, (current) => ({
-          ...current,
-          state: xDriveFileExplorerSettleSearchState(current.state, true),
-        }))
+    if (!entry.query) {
+      if (targetRef.current?.workspaceKey !== workspaceKey) {
+        targetRef.current = null
+        setTarget(null)
+        virtualCollection.reset(`file-explorer:search:idle:${workspaceKey}`)
       }
+      return
     }
+    const active = targetRef.current
+    if (
+      active?.workspaceKey === workspaceKey &&
+      active.query === entry.query &&
+      active.sortSignature === sortSignature
+    ) return
+    void executeSearch(workspaceKey, entry.query, sort)
+  }, [
+    entry.query,
+    executeSearch,
+    sort.direction,
+    sort.key,
+    sortSignature,
+    virtualCollection.reset,
+    workspaceKey,
+  ])
+
+  const activeTarget = (
+    target?.workspaceKey === workspaceKey &&
+    target.query === entry.query &&
+    target.sortSignature === sortSignature
+  )
+  const searchActive = Boolean(entry.query)
+  const searchVirtualItems = activeTarget
+    ? virtualCollection.loadedItems
+    : new Map<number, TResult>()
+  const searchResults = useMemo(
+    () => searchActive
+      ? [...searchVirtualItems.entries()]
+          .sort((left, right) => left[0] - right[0])
+          .map((entryValue) => entryValue[1])
+      : null,
+    [searchActive, searchVirtualItems],
+  )
+
+  const searchVirtualCollection = searchActive && activeTarget
+    ? {
+        itemCount: virtualCollection.totalCount ?? searchResults?.length ?? 0,
+        loadedItems: searchVirtualItems,
+        itemAt: virtualCollection.itemAt,
+        ensureViewport: virtualCollection.ensureViewport,
+      }
+    : null
+
+  const searchState = {
+    query: entry.query,
+    results: searchResults,
+    cursor: '',
+    loading: entry.loading,
+    loadingMore: false,
   }
 
   return {
     searchValue,
     searchState,
-    searchResults: searchState.results,
-    searchCursor: searchState.cursor,
-    searchLoading: searchState.loading,
-    searchLoadingMore: searchState.loadingMore,
-    searchSortMatches: searchState.results === null ||
-      sortSignatureRef.current[workspaceKey] === sortSignature,
+    searchResults,
+    searchVirtualItems,
+    searchVirtualCollection,
+    searchCursor: '',
+    searchLoading: entry.loading,
+    searchLoadingMore: false,
+    searchSortMatches: !searchActive || entry.sortSignature === sortSignature,
     changeSearchValue,
     clearSearch,
     submitSearch,
-    loadMoreSearch,
+    loadMoreSearch: async () => {},
   }
 }

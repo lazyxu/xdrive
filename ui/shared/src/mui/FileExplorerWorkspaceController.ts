@@ -60,7 +60,7 @@ export function useXDriveFileExplorerWorkspace<
   directoryLoadingMore,
   onLoadDirectory,
   onLoadMoreDirectory,
-  loadSearchPage,
+  loadSearchRange,
   loadRoot,
   findChildDirectory,
   searchCrumbsForResult,
@@ -80,7 +80,7 @@ export function useXDriveFileExplorerWorkspace<
     sort: XDriveFileExplorerSort,
   ) => Promise<void>
   onLoadMoreDirectory: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
-  loadSearchPage: XDriveFileExplorerSearchLoader<TSearch>
+  loadSearchRange: XDriveFileExplorerSearchLoader<TSearch>
   loadRoot: () => Promise<{ id: number }>
   findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
   searchCrumbsForResult?: (
@@ -106,7 +106,7 @@ export function useXDriveFileExplorerWorkspace<
   })
 
   const search = useXDriveFileExplorerSearch<TSearch>({
-    loadPage: loadSearchPage,
+    loadRange: loadSearchRange,
     sort: navigation.sort,
     onError,
     workspaceKey: navigation.activeTabID,
@@ -126,27 +126,28 @@ export function useXDriveFileExplorerWorkspace<
     crumbs,
     searchResults: search.searchResults,
     virtualItems: directoryVirtualItems,
+    virtualSearchItems: search.searchVirtualItems,
   })
 
   const explorerVirtualCollection = useMemo<XDriveFileExplorerVirtualCollection | undefined>(() => {
-    if (
-      search.searchResults !== null ||
-      !directoryVirtualCollection ||
-      !projection.virtualExplorerItems
-    ) return undefined
+    const activeCollection = search.searchResults !== null
+      ? search.searchVirtualCollection
+      : directoryVirtualCollection
+    if (!activeCollection || !projection.virtualExplorerItems) return undefined
     const loadedItems = projection.virtualExplorerItems
     return {
-      itemCount: directoryVirtualCollection.itemCount,
+      itemCount: activeCollection.itemCount,
       loadedItems,
       itemAt: (index) => loadedItems.get(index),
       onRangeChange: (startIndex, endIndex) => (
-        directoryVirtualCollection.ensureViewport(startIndex, endIndex)
+        activeCollection.ensureViewport(startIndex, endIndex)
       ),
     }
   }, [
     directoryVirtualCollection,
     projection.virtualExplorerItems,
     search.searchResults,
+    search.searchVirtualCollection,
   ])
 
   const clipboard = useXDriveFileExplorerClipboard<TNode>({
