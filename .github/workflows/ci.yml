@@ -360,7 +360,7 @@ jobs:
         run: node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
 
   file-explorer-media-renderer-trace:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-media-renderer-trace'
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/file-explorer-media-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

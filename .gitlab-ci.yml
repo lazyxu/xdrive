@@ -335,8 +335,8 @@ file-explorer-media-renderer-trace:
   tags:
     - linux
   rules:
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-media-renderer-trace"'
-    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-media-renderer-trace"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/file-explorer-media-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/file-explorer-media-/'
   before_script:
     - |
       set -euo pipefail
