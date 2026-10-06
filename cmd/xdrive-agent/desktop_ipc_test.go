@@ -403,6 +403,16 @@ func (f *fakeDesktopIPCController) CloudBatchDelete(_ context.Context, items []c
 	return client.BatchNodesResult{OperationID: "delete-op", DeletedIDs: ids}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudFilePropertiesStats(_ context.Context, items []client.BatchNodeRef) (client.FilePropertiesStats, error) {
+	return client.FilePropertiesStats{
+		SelectedCount:      int64(len(items)),
+		EffectiveRootCount: 1,
+		TotalBytes:         123,
+		FileCount:          4,
+		FolderCount:        2,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudCreateFileOperation(_ context.Context, operationType string, items []client.BatchNodeRef, parentID uint64) (client.FileOperation, error) {
 	return client.FileOperation{
 		ID: "file-op", Type: operationType, Status: "queued", ParentID: &parentID,
@@ -1576,6 +1586,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/batch/copy", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"copy-op\""},
 		{http.MethodPost, "/v1/cloud/batch/move", `{"items":[{"id":3,"revision":2}],"parent_id":8}`, "\"operation_id\":\"move-op\""},
 		{http.MethodPost, "/v1/cloud/batch/delete", `{"items":[{"id":3,"revision":2}]}`, "\"operation_id\":\"delete-op\""},
+		{http.MethodPost, "/v1/cloud/properties/stats", `{"items":[{"id":3,"revision":2}]}`, "\"total_bytes\":123"},
 		{http.MethodPost, "/v1/cloud/file-operations", `{"type":"copy","items":[{"id":3,"revision":2}],"parent_id":8}`, "\"id\":\"file-op\""},
 		{http.MethodGet, "/v1/cloud/file-operations?limit=20", "", "\"status\":\"running\""},
 		{http.MethodDelete, "/v1/cloud/file-operations", "", ""},

@@ -81,6 +81,7 @@ var desktopIPCCapabilities = []string{
 	"file-operation-redo",
 	"file-quick-access",
 	"file-recent",
+	"file-properties-stats",
 	"upload-conflict-preflight",
 	"upload-conflict-policy",
 	"server-update",
@@ -179,6 +180,7 @@ type desktopIPCController interface {
 	CloudBatchCopy(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
 	CloudBatchMove(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
+	CloudFilePropertiesStats(context.Context, []client.BatchNodeRef) (client.FilePropertiesStats, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
 	CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error)
 	CloudControlBackgroundTask(context.Context, bool, string, string) (client.BackgroundTaskControlResult, error)
@@ -471,6 +473,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/batch/copy", h.cloudBatchCopy)
 	mux.HandleFunc("POST /v1/cloud/batch/move", h.cloudBatchMove)
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
+	mux.HandleFunc("POST /v1/cloud/properties/stats", h.cloudFilePropertiesStats)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
@@ -1199,6 +1202,21 @@ func (h *desktopIPCHandler) cloudBatchDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	result, err := h.ctrl.CloudBatchDelete(r.Context(), input.Items)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudFilePropertiesStats(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items []client.BatchNodeRef `json:"items"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	result, err := h.ctrl.CloudFilePropertiesStats(r.Context(), input.Items)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

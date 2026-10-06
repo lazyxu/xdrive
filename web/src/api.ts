@@ -47,6 +47,7 @@ import type {
   XDriveBackgroundTaskControlAction,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
+  XDriveFileExplorerPropertiesStats,
   XDriveFileTextPreview,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
@@ -1384,6 +1385,14 @@ export class XDriveApi {
     return this.request<BatchNodesResult>('/api/v1/nodes/batch/delete', {
       method: 'POST',
       body: JSON.stringify({ items }),
+    })
+  }
+
+  filePropertiesStats(items: BatchNodeRef[], signal?: AbortSignal) {
+    return this.request<XDriveFileExplorerPropertiesStats>('/api/v1/nodes/properties/stats', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+      signal,
     })
   }
 

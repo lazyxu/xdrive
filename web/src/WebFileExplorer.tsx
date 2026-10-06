@@ -27,6 +27,7 @@ import {
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerNodeForItem,
+  xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerWebDownloadFeedback,
@@ -254,6 +255,14 @@ export default function WebFileExplorer({
     }
   }, [api])
 
+  const loadPropertiesStats = useCallback((
+    selected: readonly XDriveFileExplorerItem[],
+    signal: AbortSignal,
+  ) => api.filePropertiesStats(
+    xDriveFileExplorerPropertiesRefs(selected),
+    signal,
+  ), [api])
+
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
@@ -421,6 +430,7 @@ export default function WebFileExplorer({
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
+        loadPropertiesStats={loadPropertiesStats}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

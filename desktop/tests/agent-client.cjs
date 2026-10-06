@@ -121,6 +121,41 @@ test('cloud children range preserves offset zero and total count', async (t) => 
   assert.equal(range.items[0].id, 9)
 })
 
+
+test('cloud File Properties cancellation aborts the Agent HTTP request', async (t) => {
+  let resolveStarted
+  let resolveClosed
+  const started = new Promise((resolve) => { resolveStarted = resolve })
+  const closed = new Promise((resolve) => { resolveClosed = resolve })
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(req.method, 'POST')
+    assert.equal(url.pathname, '/v1/cloud/properties/stats')
+    res.on('close', resolveClosed)
+    resolveStarted()
+  })
+
+  const controller = new AbortController()
+  const pending = client.cloudFilePropertiesStats(
+    [{ id: 3, revision: 4 }],
+    controller.signal,
+  )
+  await started
+  controller.abort()
+
+  await assert.rejects(
+    pending,
+    (error) => error instanceof AgentIPCError && error.code === 'aborted',
+  )
+  await Promise.race([
+    closed,
+    new Promise((_, reject) => setTimeout(
+      () => reject(new Error('Agent HTTP request did not close after abort')),
+      1000,
+    )),
+  ])
+})
+
 test('cloud search forwards server sort and cursor options', async (t) => {
   const { client } = await fixture(t, (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')

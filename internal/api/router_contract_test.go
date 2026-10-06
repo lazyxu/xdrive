@@ -52,6 +52,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/nodes/batch/copy", suite: "nodes"},
 		{method: "POST", path: "/api/v1/nodes/batch/move", suite: "nodes"},
 		{method: "POST", path: "/api/v1/nodes/batch/delete", suite: "nodes"},
+		{method: "POST", path: "/api/v1/nodes/properties/stats", suite: "nodes"},
 		{method: "POST", path: "/api/v1/file-operations", suite: "file-operations"},
 		{method: "GET", path: "/api/v1/file-operations", suite: "file-operations"},
 		{method: "DELETE", path: "/api/v1/file-operations", suite: "file-operations"},

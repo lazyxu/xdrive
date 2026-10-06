@@ -353,6 +353,17 @@ func (c *agentController) CloudBatchDelete(ctx context.Context, items []client.B
 	return result, err
 }
 
+func (c *agentController) CloudFilePropertiesStats(
+	ctx context.Context,
+	items []client.BatchNodeRef,
+) (client.FilePropertiesStats, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FilePropertiesStats{}, err
+	}
+	return cli.FilePropertiesStats(ctx, items)
+}
+
 func (c *agentController) CloudCreateFileOperation(
 	ctx context.Context,
 	operationType string,

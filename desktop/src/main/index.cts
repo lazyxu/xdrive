@@ -71,6 +71,7 @@ import {
   type AgentCloudNode,
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
+  type AgentCloudFilePropertiesStats,
   type AgentBackgroundTask,
   type AgentBackgroundTaskControlResult,
   type AgentCloudFileOperation,
@@ -161,6 +162,16 @@ let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
 let sourceRunMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
+const filePropertiesRequests = new Map<string, AbortController>()
+const cancelledFilePropertiesRequests = new Set<string>()
+
+function rememberCancelledFilePropertiesRequest(requestID: string) {
+  cancelledFilePropertiesRequests.add(requestID)
+  const timer = setTimeout(() => {
+    cancelledFilePropertiesRequests.delete(requestID)
+  }, 5_000)
+  timer.unref()
+}
 let sourceRunNotificationInitialized = false
 const sourceRunNotificationState = new Map<number, { runID: string; status: AgentSourceRun['status'] }>()
 let startupFailurePending = false
@@ -1197,6 +1208,17 @@ function normalizeCloudFileOperationType(value: unknown): 'copy' | 'move' | 'del
 function normalizeCloudFileOperationID(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new AgentIPCError('invalid_input', 0, 'File operation id is required.')
+  }
+  return value.trim()
+}
+
+function normalizeFilePropertiesRequestID(value: unknown) {
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value.trim().length > 160
+  ) {
+    throw new AgentIPCError('invalid_input', 0, 'File Properties request id is required.')
   }
   return value.trim()
 }
@@ -2775,6 +2797,53 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudBatchDelete(normalizeCloudBatchItems(items))
   }, false))
+
+  ipcMain.handle(
+    'agent:cloud-file-properties-stats',
+    (event, items: unknown, requestIDValue: unknown) =>
+      runAgentAction<AgentCloudFilePropertiesStats>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'cloud-files')
+        requireAgentCapability(hello, 'file-properties-stats')
+        const refs = normalizeCloudBatchItems(items)
+        const requestID = normalizeFilePropertiesRequestID(requestIDValue)
+        if (filePropertiesRequests.has(requestID)) {
+          throw new AgentIPCError('invalid_input', 0, 'Duplicate File Properties request id.')
+        }
+        if (cancelledFilePropertiesRequests.delete(requestID)) {
+          throw new AgentIPCError('aborted', 0, 'File Properties request was cancelled.')
+        }
+
+        const controller = new AbortController()
+        filePropertiesRequests.set(requestID, controller)
+        const onDestroyed = () => controller.abort()
+        event.sender.once('destroyed', onDestroyed)
+        try {
+          return await requireAgentClient().cloudFilePropertiesStats(
+            refs,
+            controller.signal,
+          )
+        } finally {
+          event.sender.removeListener('destroyed', onDestroyed)
+          if (filePropertiesRequests.get(requestID) === controller) {
+            filePropertiesRequests.delete(requestID)
+          }
+        }
+      }, false),
+  )
+  ipcMain.handle(
+    'agent:cloud-file-properties-stats-cancel',
+    (_event, requestIDValue: unknown) => runAgentAction(async () => {
+      const requestID = normalizeFilePropertiesRequestID(requestIDValue)
+      const controller = filePropertiesRequests.get(requestID)
+      if (controller) {
+        controller.abort()
+      } else {
+        rememberCancelledFilePropertiesRequest(requestID)
+      }
+      return { cancelled: true }
+    }, false),
+  )
 
   ipcMain.handle('agent:cloud-file-operation-create', (_event, type: unknown, items: unknown, parentID: unknown) => runAgentAction<AgentCloudFileOperation>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

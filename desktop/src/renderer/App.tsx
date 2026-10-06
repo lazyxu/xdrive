@@ -394,6 +394,8 @@ export default function App({
     agent.hello?.capabilities.includes('file-quick-access') ?? false
   const fileRecentSupported =
     agent.hello?.capabilities.includes('file-recent') ?? false
+  const filePropertiesStatsSupported =
+    agent.hello?.capabilities.includes('file-properties-stats') ?? false
   const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
   const backgroundTasksSupported =
     agent.hello?.capabilities.includes('background-tasks') ?? false
@@ -1833,6 +1835,7 @@ export default function App({
               folderTreeDownloadSupported: agent.hello?.capabilities.includes('folder-download-tree') ?? false,
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
+              propertiesStatsSupported: filePropertiesStatsSupported,
               quickAccessSupported: fileQuickAccessSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
