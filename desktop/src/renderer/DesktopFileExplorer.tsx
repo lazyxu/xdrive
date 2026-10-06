@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Box } from '@mui/material'
 import {
   type XDriveFileExplorerKeyboardProfile,
+  xDriveFileExplorerCopyPath,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerCaseInsensitiveNameLookupPageOptions,
   xDriveFileExplorerArchiveDownloadPlan,
@@ -433,6 +434,24 @@ export default function DesktopFileExplorer({
       updatedAt: node.updated_at,
       revision: node.revision,
     })
+  }
+
+  const copyItemPaths = (selected: XDriveFileExplorerItem[]) => {
+    if (selected.length === 0) return
+    const text = selected
+      .map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))
+      .join('\n')
+    try {
+      window.xdriveDesktop.copyText(text)
+      onFeedback(
+        'good',
+        selected.length === 1
+          ? `已复制路径：${text}`
+          : `已复制 ${selected.length} 条路径。`,
+      )
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    }
   }
 
   const relativePathForNode = (node: AgentCloudNode) => {
@@ -890,6 +909,7 @@ export default function DesktopFileExplorer({
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}
+        onCopyPaths={copyItemPaths}
         onCutItems={cutItems}
         onPaste={() => { void pasteClipboard() }}
         canPaste={fileOperationCanPaste}

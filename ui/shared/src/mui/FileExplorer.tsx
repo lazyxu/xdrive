@@ -695,6 +695,7 @@ export function XDriveFileExplorer({
   defaultSelectedIDs = [],
   onSelectionChange,
   onCopyItems,
+  onCopyPaths,
   onCutItems,
   onPaste,
   canPaste = false,
@@ -768,6 +769,7 @@ export function XDriveFileExplorer({
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
   onCopyItems?: (items: XDriveFileExplorerItem[]) => void
+  onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
   onCutItems?: (items: XDriveFileExplorerItem[]) => void
   onPaste?: () => void
   canPaste?: boolean
@@ -1583,6 +1585,15 @@ export function XDriveFileExplorer({
         onSelect: () => onCopyItems(selection),
       })
     }
+    if (onCopyPaths) {
+      clipboardItems.push({
+        id: 'copy-path',
+        label: selection.length > 1 ? '复制所选路径' : '复制路径',
+        icon: <ContentCopyRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
+        onSelect: () => onCopyPaths(selection),
+      })
+    }
     const bulkItems: XDriveFileExplorerMenuItem[] = []
     const downloadableSelection = selection.some((candidate) => (
       candidate.kind === 'file' || folderDownloadSupported
@@ -2284,6 +2295,18 @@ export function XDriveFileExplorer({
       commitSelection(selectableItems.map((candidate) => candidate.id))
       if (activeItemID === null && selectableItems[0]) setActiveItemID(selectableItems[0].id)
       return
+    }
+    if (command === 'copy-path' && onCopyPaths) {
+      const targets = selectedItems.length > 0
+        ? selectedItems
+        : activeItem
+          ? [activeItem]
+          : []
+      if (targets.length > 0) {
+        event.preventDefault()
+        onCopyPaths(targets)
+        return
+      }
     }
     if (command === 'copy' && onCopyItems && selectedItems.length > 0) {
       event.preventDefault()
