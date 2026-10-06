@@ -176,3 +176,50 @@ export function xDriveVirtualCollectionLoadedCount<TItem>(
 ) {
   return snapshot.items.size
 }
+
+
+export type XDriveVirtualCollectionFixedRowWindow = {
+  start: number
+  end: number
+  before: number
+  after: number
+}
+
+export function xDriveVirtualCollectionFixedRowWindow({
+  itemCount,
+  scrollTop,
+  viewportHeight,
+  rowHeight,
+  headerHeight = 0,
+  overscanRows = 0,
+}: {
+  itemCount: number
+  scrollTop: number
+  viewportHeight: number
+  rowHeight: number
+  headerHeight?: number
+  overscanRows?: number
+}): XDriveVirtualCollectionFixedRowWindow {
+  const count = nonNegativeInteger(itemCount)
+  const row = positiveInteger(rowHeight, 1)
+  const header = nonNegativeInteger(headerHeight)
+  const overscan = nonNegativeInteger(overscanRows)
+  if (count === 0) return { start: 0, end: 0, before: 0, after: 0 }
+
+  const effectiveHeight = Math.max(nonNegativeInteger(viewportHeight), row * 8)
+  const rawFirstVisible = Math.max(
+    0,
+    Math.floor(Math.max(0, scrollTop - header) / row),
+  )
+  const firstVisible = Math.min(count - 1, rawFirstVisible)
+  const visibleCount = Math.max(1, Math.ceil(effectiveHeight / row))
+  const start = Math.max(0, firstVisible - overscan)
+  const end = Math.min(count, firstVisible + visibleCount + overscan)
+
+  return {
+    start,
+    end,
+    before: start * row,
+    after: Math.max(0, (count - end) * row),
+  }
+}

@@ -185,4 +185,73 @@ func TestAuditLogCoversSecurityAndDestructiveActions(t *testing.T) {
 	if len(failures) == 0 || failures[0].Action != auditpkg.ActionLoginFailure || failures[0].Result != auditpkg.ResultFailure {
 		t.Fatalf("filtered audit events=%+v", failures)
 	}
+
+	rangeRes := request(t, router, http.MethodGet,
+		"/api/v1/admin/audit?range=true&limit=2&offset=0",
+		adminSession.AccessToken, nil, http.StatusOK)
+	var firstRange auditEventRangeDTO
+	if err := json.Unmarshal(rangeRes.Body.Bytes(), &firstRange); err != nil {
+		t.Fatal(err)
+	}
+	if firstRange.TotalCount != int64(len(events)) ||
+		firstRange.Offset != 0 || firstRange.Limit != 2 ||
+		firstRange.SnapshotMaxID == 0 || len(firstRange.Items) != 2 {
+		t.Fatalf("unexpected first audit range: %+v", firstRange)
+	}
+	if firstRange.Items[0].ID != firstRange.SnapshotMaxID {
+		t.Fatalf("snapshot max id %d does not match newest row %d", firstRange.SnapshotMaxID, firstRange.Items[0].ID)
+	}
+
+	if err := auditpkg.Record(db, auditpkg.Event{
+		ActorUsername: "snapshot-test",
+		ActorRole:     "system",
+		Action:        auditpkg.ActionBackup,
+		TargetType:    "system",
+		TargetID:      "snapshot",
+		Result:        auditpkg.ResultSuccess,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stableRes := request(t, router, http.MethodGet,
+		fmt.Sprintf(
+			"/api/v1/admin/audit?range=true&limit=2&offset=0&snapshot_max_id=%d",
+			firstRange.SnapshotMaxID,
+		),
+		adminSession.AccessToken, nil, http.StatusOK)
+	var stableRange auditEventRangeDTO
+	if err := json.Unmarshal(stableRes.Body.Bytes(), &stableRange); err != nil {
+		t.Fatal(err)
+	}
+	if stableRange.TotalCount != firstRange.TotalCount ||
+		stableRange.SnapshotMaxID != firstRange.SnapshotMaxID ||
+		len(stableRange.Items) != len(firstRange.Items) ||
+		stableRange.Items[0].ID != firstRange.Items[0].ID {
+		t.Fatalf("audit snapshot drifted after append: first=%+v stable=%+v", firstRange, stableRange)
+	}
+
+	freshRes := request(t, router, http.MethodGet,
+		"/api/v1/admin/audit?range=true&limit=2&offset=0",
+		adminSession.AccessToken, nil, http.StatusOK)
+	var freshRange auditEventRangeDTO
+	if err := json.Unmarshal(freshRes.Body.Bytes(), &freshRange); err != nil {
+		t.Fatal(err)
+	}
+	if freshRange.TotalCount != firstRange.TotalCount+1 ||
+		freshRange.SnapshotMaxID <= firstRange.SnapshotMaxID ||
+		len(freshRange.Items) == 0 ||
+		freshRange.Items[0].Action != auditpkg.ActionBackup {
+		t.Fatalf("fresh audit snapshot did not include appended event: %+v", freshRange)
+	}
+
+	filteredRangeRes := request(t, router, http.MethodGet,
+		"/api/v1/admin/audit?range=true&limit=20&offset=0&action="+auditpkg.ActionLoginFailure+"&result=failure",
+		adminSession.AccessToken, nil, http.StatusOK)
+	var filteredRange auditEventRangeDTO
+	if err := json.Unmarshal(filteredRangeRes.Body.Bytes(), &filteredRange); err != nil {
+		t.Fatal(err)
+	}
+	if filteredRange.TotalCount != int64(len(failures)) || len(filteredRange.Items) == 0 {
+		t.Fatalf("filtered audit range=%+v failures=%d", filteredRange, len(failures))
+	}
 }
