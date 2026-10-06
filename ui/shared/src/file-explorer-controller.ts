@@ -118,216 +118,39 @@ export type XDriveFileExplorerSearchResultLike = {
   node: { id: number }
 }
 
-export function xDriveFileExplorerMergeSearchResults<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  current: readonly TResult[],
-  page: readonly TResult[],
-  knownIDs?: Set<number>,
-): TResult[] {
-  if (knownIDs) {
-    const pageIDs = new Set<number>()
-    let hasDuplicate = false
-    for (const item of page) {
-      const id = item.node.id
-      if (knownIDs.has(id) || pageIDs.has(id)) {
-        hasDuplicate = true
-        break
-      }
-      pageIDs.add(id)
-    }
-    if (!hasDuplicate) {
-      for (const id of pageIDs) knownIDs.add(id)
-      return [...current, ...page]
-    }
-  }
-
-  const merged = new Map(current.map((item) => [item.node.id, item] as const))
-  for (const item of page) merged.set(item.node.id, item)
-  if (knownIDs) {
-    knownIDs.clear()
-    for (const item of merged.values()) knownIDs.add(item.node.id)
-  }
-  return [...merged.values()]
-}
-
-export type XDriveFileExplorerSearchPage<
-  TResult extends XDriveFileExplorerSearchResultLike,
-> = {
-  items: readonly TResult[]
-  next_cursor?: string | null
-}
-
-export function xDriveFileExplorerSearchPageState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  current: readonly TResult[] | null,
-  page: XDriveFileExplorerSearchPage<TResult>,
-  append: boolean,
-  knownIDs?: Set<number>,
-) {
-  let items: TResult[]
-  if (append) {
-    items = xDriveFileExplorerMergeSearchResults(current ?? [], page.items, knownIDs)
-  } else {
-    if (knownIDs) {
-      knownIDs.clear()
-      for (const item of page.items) knownIDs.add(item.node.id)
-    }
-    items = [...page.items]
-  }
-  const cursor = page.next_cursor ?? ''
-  return {
-    items,
-    cursor,
-    hasMore: Boolean(cursor),
-  }
-}
-
-export type XDriveFileExplorerSearchState<
-  TResult extends XDriveFileExplorerSearchResultLike,
-> = {
-  query: string
-  results: TResult[] | null
-  cursor: string
-  loading: boolean
-  loadingMore: boolean
-}
-
-export function xDriveFileExplorerIdleSearchState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(): XDriveFileExplorerSearchState<TResult> {
-  return {
-    query: '',
-    results: null,
-    cursor: '',
-    loading: false,
-    loadingMore: false,
-  }
-}
-
-export function xDriveFileExplorerStartSearchState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(query: string): XDriveFileExplorerSearchState<TResult> {
-  return {
-    query,
-    results: [],
-    cursor: '',
-    loading: true,
-    loadingMore: false,
-  }
-}
-
-export function xDriveFileExplorerStartSearchLoadMoreState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  current: XDriveFileExplorerSearchState<TResult>,
-): XDriveFileExplorerSearchState<TResult> {
-  return {
-    ...current,
-    loadingMore: true,
-  }
-}
-
-export function xDriveFileExplorerApplySearchPageState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  current: XDriveFileExplorerSearchState<TResult>,
-  page: XDriveFileExplorerSearchPage<TResult>,
-  append: boolean,
-  knownIDs?: Set<number>,
-): XDriveFileExplorerSearchState<TResult> {
-  const nextPage = xDriveFileExplorerSearchPageState(current.results, page, append, knownIDs)
-  return {
-    ...current,
-    results: nextPage.items,
-    cursor: nextPage.cursor,
-    loading: false,
-    loadingMore: false,
-  }
-}
-
-export function xDriveFileExplorerSettleSearchState<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  current: XDriveFileExplorerSearchState<TResult>,
-  append: boolean,
-): XDriveFileExplorerSearchState<TResult> {
-  return append
-    ? { ...current, loadingMore: false }
-    : { ...current, loading: false }
-}
-
-export function xDriveFileExplorerCanLoadMoreSearch<
-  TResult extends XDriveFileExplorerSearchResultLike,
->(
-  results: readonly TResult[] | null,
-  cursor: string,
-  loadingMore: boolean,
-) {
-  return results !== null && Boolean(cursor) && !loadingMore
-}
-
 export function xDriveFileExplorerPaginationPresentation({
-  searchActive,
-  searchCursor,
-  searchLoadingMore,
   directoryHasMore,
   directoryLoadingMore,
 }: {
-  searchActive: boolean
-  searchCursor: string
-  searchLoadingMore: boolean
   directoryHasMore: boolean
   directoryLoadingMore: boolean
 }) {
-  return searchActive
-    ? {
-        mode: 'search' as const,
-        hasMore: Boolean(searchCursor),
-        loadingMore: searchLoadingMore,
-      }
-    : {
-        mode: 'directory' as const,
-        hasMore: directoryHasMore,
-        loadingMore: directoryLoadingMore,
-      }
+  return {
+    mode: 'directory' as const,
+    hasMore: directoryHasMore,
+    loadingMore: directoryLoadingMore,
+  }
 }
 
 export function xDriveFileExplorerPaginationController<TID, TSort>({
-  searchActive,
-  searchCursor,
-  searchLoadingMore,
   directoryHasMore,
   directoryLoadingMore,
   currentID,
   sort,
-  loadMoreSearch,
   loadMoreDirectory,
 }: {
-  searchActive: boolean
-  searchCursor: string
-  searchLoadingMore: boolean
   directoryHasMore: boolean
   directoryLoadingMore: boolean
   currentID: TID | null | undefined
   sort: TSort
-  loadMoreSearch: () => void | Promise<void>
   loadMoreDirectory: (id: TID, sort: TSort) => void | Promise<void>
 }) {
   const presentation = xDriveFileExplorerPaginationPresentation({
-    searchActive,
-    searchCursor,
-    searchLoadingMore,
     directoryHasMore,
     directoryLoadingMore,
   })
 
   const onLoadMore = () => {
-    if (presentation.mode === 'search') {
-      void loadMoreSearch()
-      return
-    }
     if (currentID === null || currentID === undefined) return
     void loadMoreDirectory(currentID, sort)
   }

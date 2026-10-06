@@ -101,14 +101,39 @@ test('shared FileExplorer controller owns sparse Search range state', () => {
     'targetIsCurrent(nextTarget)',
     'searchVirtualItems = activeTarget',
     'searchVirtualCollection',
-    'loadMoreSearch: async () => {}',
     'searchSortMatches:',
   ]) {
     assert.ok(searchController.includes(token), `shared Search VirtualCollection contract missing: ${token}`)
   }
-  assert.equal(searchController.includes('xDriveFileExplorerMergeSearchResults'), false, 'Search must not append cursor pages')
-  assert.equal(searchController.includes('loadMoreRequestRef'), false, 'Search must not own cursor load-more locks')
-  assert.equal(searchController.includes('resultIDsRef'), false, 'Search must not retain all-result ID sets')
+  for (const legacy of [
+    'searchCursor',
+    'searchLoadingMore',
+    'loadMoreSearch',
+    'loadMoreRequestRef',
+    'resultIDsRef',
+  ]) {
+    assert.equal(searchController.includes(legacy), false, `Search controller must not retain legacy load-more state: ${legacy}`)
+  }
+  for (const legacy of [
+    'xDriveFileExplorerMergeSearchResults',
+    'XDriveFileExplorerSearchPage',
+    'XDriveFileExplorerSearchState',
+    'xDriveFileExplorerStartSearchLoadMoreState',
+    'xDriveFileExplorerCanLoadMoreSearch',
+  ]) {
+    assert.equal(shared.includes(legacy), false, `shared FileExplorer core must not retain legacy Search pagination helper: ${legacy}`)
+  }
+  assert.equal(workspaceController.includes('searchCursor'), false, 'workspace must not consume a Search cursor')
+  assert.equal(workspaceController.includes('searchLoadingMore'), false, 'workspace must not expose Search loading-more state')
+  assert.equal(workspaceController.includes('loadMoreSearch'), false, 'workspace must not dispatch Search load-more')
+  assert.ok(
+    workspaceController.includes('directoryHasMore: search.searchResults === null && directoryHasMore'),
+    'Search mode must suppress directory load-more presentation',
+  )
+  assert.ok(
+    workspaceController.includes('directoryLoadingMore: search.searchResults === null && directoryLoadingMore'),
+    'Search mode must suppress directory loading-more presentation',
+  )
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must use the shared workspace controller`)

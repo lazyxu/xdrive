@@ -230,9 +230,16 @@ test('FileExplorer search ranges keep metadata sparse instead of appending curso
   assert.ok(searchController.includes('searchVirtualItems = activeTarget'), 'Search must expose bounded sparse results')
   assert.ok(searchController.includes('virtualCollection.loadedItems'), 'Search must use VirtualCollection metadata storage')
   assert.ok(searchController.includes('virtualCollection.primePage(page)'), 'first Search range must seed the sparse cache')
-  assert.ok(searchController.includes('loadMoreSearch: async () => {}'), 'legacy Search load-more must be inert')
-  assert.equal(searchController.includes('resultIDsRef'), false, 'Search must not retain a growing all-result ID set')
-  assert.equal(searchController.includes('xDriveFileExplorerMergeSearchResults'), false, 'Search must not append cursor pages')
+  for (const legacy of [
+    'searchCursor',
+    'searchLoadingMore',
+    'loadMoreSearch',
+    'resultIDsRef',
+  ]) {
+    assert.equal(searchController.includes(legacy), false, `Search must not retain legacy load-more state: ${legacy}`)
+  }
+  assert.equal(explorerController.includes('xDriveFileExplorerMergeSearchResults'), false, 'shared core must not append Search cursor pages')
+  assert.equal(explorerController.includes('xDriveFileExplorerCanLoadMoreSearch'), false, 'shared core must not expose Search load-more eligibility')
 })
 
 test('FileExplorer search sorting stays server-ranged instead of re-sorting loaded metadata', () => {

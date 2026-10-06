@@ -76,3 +76,8 @@ Measured contract:
 - retained Search metadata: **10,000 → 1,000 (-90%)**
 
 This is an allocation/residency metric rather than a wall-clock microbenchmark, so it is deterministic in CI and directly guards the growth behavior that the migration is intended to remove.
+
+
+### Search load-more cleanup
+
+After Search moved to VirtualCollection, the FileExplorer frontend no longer carries cursor, loading-more, append/merge, or Search pagination-dispatch state. Search viewport loading is exclusively range-driven through VirtualCollection. The server, Go client, Agent, and Web transport may continue to expose cursor Search for compatibility, but the FileExplorer UI does not consume it.

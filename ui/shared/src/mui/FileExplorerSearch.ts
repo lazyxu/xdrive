@@ -278,9 +278,7 @@ export function useXDriveFileExplorerSearch<
   const searchState = {
     query: entry.query,
     results: searchResults,
-    cursor: '',
     loading: entry.loading,
-    loadingMore: false,
   }
 
   return {
@@ -289,13 +287,10 @@ export function useXDriveFileExplorerSearch<
     searchResults,
     searchVirtualItems,
     searchVirtualCollection,
-    searchCursor: '',
     searchLoading: entry.loading,
-    searchLoadingMore: false,
     searchSortMatches: !searchActive || entry.sortSignature === sortSignature,
     changeSearchValue,
     clearSearch,
     submitSearch,
-    loadMoreSearch: async () => {},
   }
 }

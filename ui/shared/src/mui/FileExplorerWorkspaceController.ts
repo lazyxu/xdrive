@@ -192,14 +192,10 @@ export function useXDriveFileExplorerWorkspace<
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
-    searchActive: search.searchResults !== null,
-    searchCursor: search.searchCursor,
-    searchLoadingMore: search.searchLoadingMore,
-    directoryHasMore,
-    directoryLoadingMore,
+    directoryHasMore: search.searchResults === null && directoryHasMore,
+    directoryLoadingMore: search.searchResults === null && directoryLoadingMore,
     currentID: navigation.current?.id,
     sort: navigation.sort,
-    loadMoreSearch: search.loadMoreSearch,
     loadMoreDirectory: onLoadMoreDirectory,
   })
 
