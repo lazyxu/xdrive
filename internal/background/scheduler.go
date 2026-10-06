@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"sync"
 	"time"
 )
@@ -203,6 +204,8 @@ func (p RetryPolicy) retryable(err error, attempt int) bool {
 
 type Task struct {
 	Key               string
+	Kind              string
+	GroupKey          string
 	Scope             Scope
 	OwnerID           uint64
 	Trigger           Trigger
@@ -254,6 +257,59 @@ func (t Task) normalized() (Task, error) {
 
 func (t Task) identity() Identity {
 	return Identity{Scope: t.Scope, OwnerID: t.OwnerID, Key: t.Key}
+}
+
+type TaskProgress struct {
+	Phase   string
+	Current int64
+	Total   int64
+	Unit    string
+	Message string
+}
+
+func (p TaskProgress) normalized() TaskProgress {
+	if p.Current < 0 {
+		p.Current = 0
+	}
+	if p.Total < 0 {
+		p.Total = 0
+	}
+	if p.Total > 0 && p.Current > p.Total {
+		p.Current = p.Total
+	}
+	return p
+}
+
+type RuntimeTaskSnapshot struct {
+	Identity    Identity
+	Kind        string
+	GroupKey    string
+	State       string
+	Trigger     Trigger
+	Initiator   Initiator
+	InitiatorID uint64
+	ParentKey   string
+	TraceID     string
+	Priority    Priority
+	Resource    ResourceClass
+	Attempt     int
+	Progress    TaskProgress
+	SubmittedAt time.Time
+	StartedAt   *time.Time
+	UpdatedAt   time.Time
+	ReadyAt     *time.Time
+}
+
+type progressReporterKey struct{}
+
+func ReportProgress(ctx context.Context, progress TaskProgress) {
+	if ctx == nil {
+		return
+	}
+	report, _ := ctx.Value(progressReporterKey{}).(func(TaskProgress))
+	if report != nil {
+		report(progress.normalized())
+	}
 }
 
 type Config struct {
@@ -380,6 +436,10 @@ type taskEntry struct {
 	attempt         int
 	sequence        uint64
 	readyAt         time.Time
+	submittedAt     time.Time
+	startedAt       *time.Time
+	updatedAt       time.Time
+	progress        TaskProgress
 	index           int
 	cancel          context.CancelCauseFunc
 	cancelRequested bool
@@ -668,6 +728,13 @@ func (s *Scheduler) Submit(task Task) (*Handle, error) {
 		if existing.state == itemQueued && task.Priority < existing.task.Priority {
 			promoted = s.queues[existing.task.Resource].promote(existing, task)
 		}
+		if existing.task.Kind == "" && task.Kind != "" {
+			existing.task.Kind = task.Kind
+		}
+		if existing.task.GroupKey == "" && task.GroupKey != "" {
+			existing.task.GroupKey = task.GroupKey
+		}
+		existing.updatedAt = time.Now().UTC()
 		if promoted {
 			s.metrics.mu.Lock()
 			s.metrics.promoted++
@@ -720,14 +787,17 @@ func (s *Scheduler) Submit(task Task) (*Handle, error) {
 	}
 
 	s.sequence++
+	now := time.Now().UTC()
 	entry := &taskEntry{
-		task:     task,
-		identity: identity,
-		handle:   newHandle(),
-		state:    itemQueued,
-		attempt:  1,
-		sequence: s.sequence,
-		index:    -1,
+		task:        task,
+		identity:    identity,
+		handle:      newHandle(),
+		state:       itemQueued,
+		attempt:     1,
+		sequence:    s.sequence,
+		submittedAt: now,
+		updatedAt:   now,
+		index:       -1,
 	}
 	if !q.push(entry, false) {
 		s.mu.Unlock()
@@ -775,6 +845,7 @@ func (s *Scheduler) Cancel(identity Identity) bool {
 		return true
 	}
 	entry.cancelRequested = true
+	entry.updatedAt = time.Now().UTC()
 	cancel := entry.cancel
 	s.mu.Unlock()
 	if cancel != nil {
@@ -837,6 +908,93 @@ func (s *Scheduler) shutdown(cause error) {
 		}
 	}
 	s.mu.Unlock()
+}
+
+func (s *Scheduler) updateTaskProgress(
+	identity Identity,
+	progress TaskProgress,
+) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry := s.entries[identity]
+	if entry == nil || entry.state == itemDone {
+		return
+	}
+	entry.progress = progress.normalized()
+	entry.updatedAt = time.Now().UTC()
+}
+
+func (s *Scheduler) TaskSnapshots(ownerID *uint64) []RuntimeTaskSnapshot {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	out := make([]RuntimeTaskSnapshot, 0, len(s.entries))
+	for _, entry := range s.entries {
+		if entry == nil || entry.state == itemDone {
+			continue
+		}
+		if ownerID != nil {
+			if entry.identity.Scope != ScopeUser ||
+				entry.identity.OwnerID != *ownerID {
+				continue
+			}
+		}
+		state := "queued"
+		if entry.state == itemRunning {
+			state = "running"
+			if entry.cancelRequested {
+				state = "cancelling"
+			}
+		}
+		var startedAt *time.Time
+		if entry.startedAt != nil {
+			value := entry.startedAt.UTC()
+			startedAt = &value
+		}
+		var readyAt *time.Time
+		if !entry.readyAt.IsZero() {
+			value := entry.readyAt.UTC()
+			readyAt = &value
+		}
+		out = append(out, RuntimeTaskSnapshot{
+			Identity:    entry.identity,
+			Kind:        entry.task.Kind,
+			GroupKey:    entry.task.GroupKey,
+			State:       state,
+			Trigger:     entry.task.Trigger,
+			Initiator:   entry.task.Initiator,
+			InitiatorID: entry.task.InitiatorID,
+			ParentKey:   entry.task.ParentKey,
+			TraceID:     entry.task.TraceID,
+			Priority:    entry.task.Priority,
+			Resource:    entry.task.Resource,
+			Attempt:     entry.attempt,
+			Progress:    entry.progress,
+			SubmittedAt: entry.submittedAt.UTC(),
+			StartedAt:   startedAt,
+			UpdatedAt:   entry.updatedAt.UTC(),
+			ReadyAt:     readyAt,
+		})
+	}
+	s.mu.Unlock()
+
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].SubmittedAt.Equal(out[j].SubmittedAt) {
+			return out[i].SubmittedAt.Before(out[j].SubmittedAt)
+		}
+		if out[i].Identity.Scope != out[j].Identity.Scope {
+			return out[i].Identity.Scope < out[j].Identity.Scope
+		}
+		if out[i].Identity.OwnerID != out[j].Identity.OwnerID {
+			return out[i].Identity.OwnerID < out[j].Identity.OwnerID
+		}
+		return out[i].Identity.Key < out[j].Identity.Key
+	})
+	return out
 }
 
 func (s *Scheduler) Snapshot() MetricsSnapshot {
@@ -916,8 +1074,18 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 		cancel(ErrExpired)
 		return
 	}
+	now := time.Now().UTC()
 	entry.state = itemRunning
 	entry.cancel = cancel
+	entry.startedAt = &now
+	entry.updatedAt = now
+	runCtx = context.WithValue(
+		runCtx,
+		progressReporterKey{},
+		func(progress TaskProgress) {
+			s.updateTaskProgress(entry.identity, progress)
+		},
+	)
 	s.metrics.mu.Lock()
 	s.metrics.started++
 	s.metrics.running[resource]++
@@ -945,6 +1113,7 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 		entry.readyAt = time.Now().Add(s.leaseRetryDelay)
 		entry.state = itemQueued
 		entry.cancel = nil
+		entry.updatedAt = time.Now().UTC()
 		s.metrics.mu.Lock()
 		s.metrics.leaseUnavailable++
 		s.metrics.mu.Unlock()
@@ -960,6 +1129,7 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 		entry.readyAt = time.Now().Add(entry.task.Retry.delay(entry.attempt-1, entry.identity))
 		entry.state = itemQueued
 		entry.cancel = nil
+		entry.updatedAt = time.Now().UTC()
 		s.metrics.mu.Lock()
 		s.metrics.retried++
 		s.metrics.mu.Unlock()

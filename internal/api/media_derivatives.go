@@ -74,8 +74,14 @@ func (s *Server) ensureMediaDerivative(
 		node.ID,
 		edge,
 	)
+	taskKind := "media.thumbnail"
+	if req.Kind == mediaDerivativeAnalysis {
+		taskKind = "media.analysis_preview"
+	}
 	handle, err := s.BackgroundScheduler.Submit(background.Task{
 		Key:          taskKey,
+		Kind:         taskKind,
+		GroupKey:     taskKind,
 		Scope:        background.ScopeUser,
 		OwnerID:      node.OwnerID,
 		Trigger:      req.Trigger,
@@ -87,7 +93,12 @@ func (s *Server) ensureMediaDerivative(
 		Resource:     background.ResourceMediaCPU,
 		RunTimeout:   mediaDerivativeRunTimeout,
 		Run: func(taskCtx context.Context) error {
-			return s.generateMediaDerivative(
+			background.ReportProgress(taskCtx, background.TaskProgress{
+				Phase: "generating",
+				Total: 1,
+				Unit:  "item",
+			})
+			err := s.generateMediaDerivative(
 				taskCtx,
 				node,
 				metadata,
@@ -95,6 +106,15 @@ func (s *Server) ensureMediaDerivative(
 				key,
 				edge,
 			)
+			if err == nil {
+				background.ReportProgress(taskCtx, background.TaskProgress{
+					Phase:   "completed",
+					Current: 1,
+					Total:   1,
+					Unit:    "item",
+				})
+			}
+			return err
 		},
 	})
 	if err != nil {

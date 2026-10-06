@@ -196,6 +196,8 @@ func (s *Server) submitMediaIndexOwnerTask(
 ) error {
 	_, err := s.BackgroundScheduler.Submit(background.Task{
 		Key:       taskKey,
+		Kind:      "media.index",
+		GroupKey:  "media.index",
 		Scope:     background.ScopeUser,
 		OwnerID:   ownerID,
 		Trigger:   trigger,

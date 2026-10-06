@@ -1,0 +1,309 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
+	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(6)
+	sqlDB.SetMaxIdleConns(2)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	if err := resetMediaDerivativeTestSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.SyncRun{},
+		&meta.FileOperation{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	scheduler := background.NewScheduler(
+		ctx,
+		background.Config{
+			Capacity: map[background.ResourceClass]int{
+				background.ResourceMediaCPU: 2,
+			},
+			QueueCapacity: map[background.ResourceClass]int{
+				background.ResourceMediaCPU: 16,
+			},
+		},
+	)
+	t.Cleanup(scheduler.Close)
+
+	server := &Server{
+		DB: db, Store: store,
+		Auth:                auth.New("background-task-test-secret", time.Hour),
+		RefreshTTL:          24 * time.Hour,
+		AllowedOrigin:       "http://localhost",
+		MaxUploadBytes:      10 << 20,
+		BackgroundScheduler: scheduler,
+	}
+	router := server.Router()
+
+	userAToken := createTestUser(
+		t, db, router,
+		"background-user-a",
+		"password-user-a",
+	)
+	userBToken := createTestUser(
+		t, db, router,
+		"background-user-b",
+		"password-user-b",
+	)
+	adminToken := createTestUser(
+		t, db, router,
+		"background-admin",
+		"password-admin",
+	)
+	if err := db.Model(&meta.User{}).
+		Where("username = ?", "background-admin").
+		Update("role", meta.UserRoleAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var userA, userB, admin meta.User
+	for username, target := range map[string]*meta.User{
+		"background-user-a": &userA,
+		"background-user-b": &userB,
+		"background-admin":  &admin,
+	} {
+		if err := db.Where("username = ?", username).First(target).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sourceA := meta.Source{
+		OwnerID:   userA.ID,
+		Name:      "Source A",
+		Kind:      "test",
+		Direction: meta.SourceDirectionPull,
+		SyncMode:  meta.SourceSyncModeBackup,
+		RunMode:   meta.SourceRunModeSync,
+		Status:    meta.SourceStatusActive,
+		Revision:  1,
+	}
+	sourceB := sourceA
+	sourceB.OwnerID = userB.ID
+	sourceB.Name = "Source B"
+	if err := db.Create(&sourceA).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&sourceB).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	runA := meta.SyncRun{
+		ID:                     "11111111-1111-4111-8111-111111111111",
+		SourceID:               sourceA.ID,
+		RunNumber:              1,
+		Mode:                   meta.SourceRunModeSync,
+		SyncMode:               meta.SourceSyncModeBackup,
+		Trigger:                meta.SyncRunTriggerManual,
+		Status:                 meta.SyncRunStatusRunning,
+		PlannedTransferItems:   10,
+		ProcessedTransferItems: 4,
+		StartedAt:              now.Add(-time.Minute),
+		UpdatedAt:              now,
+	}
+	runB := runA
+	runB.ID = "22222222-2222-4222-8222-222222222222"
+	runB.SourceID = sourceB.ID
+	runB.Status = meta.SyncRunStatusCompleted
+	runB.ProcessedTransferItems = 10
+	finished := now
+	runB.FinishedAt = &finished
+	if err := db.Create(&runA).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&runB).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	opA := meta.FileOperation{
+		ID:             "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		OwnerID:        userA.ID,
+		Type:           meta.FileOperationTypeCopy,
+		Status:         meta.FileOperationStatusRunning,
+		ItemsJSON:      "[]",
+		TotalItems:     10,
+		ProcessedItems: 3,
+		CreatedAt:      now.Add(-time.Minute),
+		UpdatedAt:      now,
+	}
+	opB := opA
+	opB.ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	opB.OwnerID = userB.ID
+	opB.Status = meta.FileOperationStatusFailed
+	opB.FailureCode = "internal_error"
+	opB.Error = "test failure"
+	if err := db.Create(&opA).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&opB).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	submitRuntime := func(ownerID uint64, key string) {
+		t.Helper()
+		_, err := scheduler.Submit(background.Task{
+			Key:       key,
+			Kind:      "media.index",
+			GroupKey:  "media.index",
+			Scope:     background.ScopeUser,
+			OwnerID:   ownerID,
+			Trigger:   background.TriggerSystemEvent,
+			Initiator: background.InitiatorSystem,
+			Priority:  background.PriorityP1,
+			Resource:  background.ResourceMediaCPU,
+			Run: func(ctx context.Context) error {
+				background.ReportProgress(ctx, background.TaskProgress{
+					Phase:   "indexing",
+					Current: 2,
+					Total:   5,
+					Unit:    "item",
+				})
+				select {
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				case <-release:
+					return nil
+				}
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	submitRuntime(userA.ID, "runtime-a")
+	submitRuntime(userB.ID, "runtime-b")
+
+	userResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/background-tasks?limit=50",
+		userAToken,
+		nil,
+		http.StatusOK,
+	)
+	var userTasks []backgroundTaskDTO
+	if err := json.Unmarshal(userResponse.Body.Bytes(), &userTasks); err != nil {
+		t.Fatal(err)
+	}
+	if len(userTasks) < 3 {
+		t.Fatalf("user tasks=%d want runtime + file operation + sync run: %s", len(userTasks), userResponse.Body.String())
+	}
+	for _, task := range userTasks {
+		if task.OwnerID != userA.ID {
+			t.Fatalf("user saw foreign task: %+v", task)
+		}
+	}
+	if !backgroundTaskHasControl(userTasks, "file-operation:"+opA.ID, "cancel") {
+		t.Fatal("owner file operation did not expose cancel")
+	}
+	if !backgroundTaskHasControl(userTasks, "sync-run:"+runA.ID, "cancel") {
+		t.Fatal("owner sync run did not expose cancel")
+	}
+
+	request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/admin/background-tasks",
+		userAToken,
+		nil,
+		http.StatusForbidden,
+	)
+
+	adminResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/admin/background-tasks?limit=100",
+		adminToken,
+		nil,
+		http.StatusOK,
+	)
+	var adminTasks []backgroundTaskDTO
+	if err := json.Unmarshal(adminResponse.Body.Bytes(), &adminTasks); err != nil {
+		t.Fatal(err)
+	}
+	seenA, seenB := false, false
+	for _, task := range adminTasks {
+		if task.OwnerID == userA.ID {
+			seenA = true
+		}
+		if task.OwnerID == userB.ID {
+			seenB = true
+			if len(task.ControlActions) != 0 {
+				t.Fatalf("admin unexpectedly received cross-user controls: %+v", task)
+			}
+		}
+	}
+	if !seenA || !seenB {
+		t.Fatalf("admin visibility missing owners: seenA=%v seenB=%v tasks=%+v", seenA, seenB, adminTasks)
+	}
+
+	_ = userBToken
+	_ = admin
+}
+
+func backgroundTaskHasControl(
+	tasks []backgroundTaskDTO,
+	id, action string,
+) bool {
+	for _, task := range tasks {
+		if task.ID != id {
+			continue
+		}
+		for _, control := range task.ControlActions {
+			if control == action {
+				return true
+			}
+		}
+	}
+	return false
+}
