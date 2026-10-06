@@ -177,10 +177,22 @@ function loadRecentHook(react) {
 
 function loadSearchHook(react) {
   const controller = loadFileExplorerController()
+  const virtualCore = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'virtual-collection.ts'],
+    null,
+  )
+  const virtualController = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts'],
+    react,
+    { '../virtual-collection': virtualCore },
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'],
     react,
-    { '../file-explorer-controller': controller },
+    {
+      '../file-explorer-controller': controller,
+      './VirtualCollectionController': virtualController,
+    },
   ).useXDriveFileExplorerSearch
 }
 
@@ -643,16 +655,16 @@ test('stale Recent lookup cannot override a newer direct folder click', async ()
   assert.equal(finalNavigation.pathValue, '我的文件/B')
 })
 
-test('newer search submission wins when search responses complete out of order', async () => {
+test('newer search submission wins when range responses complete out of order', async () => {
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadPage = (query) => new Promise((resolve) => {
-    pending.set(query, resolve)
+  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+    pending.set(query, { resolve, offset, limit })
   })
   const errors = []
   const renderSearch = () => runtime.render(() => useSearch({
-    loadPage,
+    loadRange,
     sort: { key: 'name', direction: 'asc' },
     onError: (error) => errors.push(error),
   }))
@@ -662,15 +674,19 @@ test('newer search submission wins when search responses complete out of order',
   search = renderSearch()
   const newSearch = search.submitSearch('new')
 
-  pending.get('new')({
+  pending.get('new').resolve({
     items: [{ node: { id: 20 }, path: '/new' }],
-    next_cursor: '',
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
   })
   await newSearch
 
-  pending.get('old')({
+  pending.get('old').resolve({
     items: [{ node: { id: 10 }, path: '/old' }],
-    next_cursor: '',
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
   })
   await oldSearch
 
@@ -678,6 +694,149 @@ test('newer search submission wins when search responses complete out of order',
   assert.equal(errors.length, 0)
   assert.equal(search.searchState.query, 'new')
   assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
+  assert.equal(search.searchVirtualCollection.itemCount, 1)
+})
+
+
+test('stale Search viewport ranges cannot overwrite a newer query', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const pending = new Map()
+  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+    pending.set(`${query}:${offset}`, { resolve, limit })
+  })
+  const errors = []
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadRange,
+    sort: { key: 'name', direction: 'asc' },
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  const initialOld = search.submitSearch('old')
+  pending.get('old:0').resolve({
+    items: [{ node: { id: 10 }, path: '/old-0' }],
+    totalCount: 1000,
+    offset: 0,
+    limit: 200,
+  })
+  await initialOld
+
+  search = renderSearch()
+  const staleViewport = search.searchVirtualCollection.ensureViewport(400, 420)
+  assert.ok(pending.has('old:200'))
+  assert.ok(pending.has('old:400'))
+  assert.ok(pending.has('old:600'))
+
+  const newer = search.submitSearch('new')
+  pending.get('new:0').resolve({
+    items: [{ node: { id: 99 }, path: '/new' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+  })
+  await newer
+
+  for (const offset of [200, 400, 600]) {
+    pending.get(`old:${offset}`).resolve({
+      items: [{ node: { id: 1000 + offset }, path: `/old-${offset}` }],
+      totalCount: 1000,
+      offset,
+      limit: 200,
+    })
+  }
+  await staleViewport
+
+  search = renderSearch()
+  assert.equal(errors.length, 0)
+  assert.equal(search.searchState.query, 'new')
+  assert.equal(search.searchVirtualCollection.itemCount, 1)
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [99])
+})
+
+test('Search tab switch invalidates old ranges and restores the tab query on return', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const pending = new Map()
+  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+    const key = `${query}:${offset}`
+    const queue = pending.get(key) ?? []
+    queue.push({ resolve, limit })
+    pending.set(key, queue)
+  })
+  const take = (query, offset) => {
+    const key = `${query}:${offset}`
+    const queue = pending.get(key) ?? []
+    assert.ok(queue.length > 0, `missing pending Search range ${key}`)
+    return queue.shift()
+  }
+  const errors = []
+  let workspaceKey = 'tab-a'
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadRange,
+    sort: { key: 'name', direction: 'asc' },
+    workspaceKey,
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  const aInitial = search.submitSearch('alpha')
+  take('alpha', 0).resolve({
+    items: [{ node: { id: 1 }, path: '/alpha' }],
+    totalCount: 600,
+    offset: 0,
+    limit: 200,
+  })
+  await aInitial
+
+  search = renderSearch()
+  const staleAViewport = search.searchVirtualCollection.ensureViewport(200, 220)
+  assert.ok((pending.get('alpha:200') ?? []).length > 0)
+
+  workspaceKey = 'tab-b'
+  search = renderSearch()
+  const bInitial = search.submitSearch('beta')
+  take('beta', 0).resolve({
+    items: [{ node: { id: 2 }, path: '/beta' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+  })
+  await bInitial
+
+  for (const offset of [200, 400]) {
+    const queue = pending.get(`alpha:${offset}`) ?? []
+    while (queue.length > 0) {
+      queue.shift().resolve({
+        items: [{ node: { id: 100 + offset }, path: `/alpha-${offset}` }],
+        totalCount: 600,
+        offset,
+        limit: 200,
+      })
+    }
+  }
+  await staleAViewport
+
+  search = renderSearch()
+  assert.equal(search.searchState.query, 'beta')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [2])
+
+  workspaceKey = 'tab-a'
+  search = renderSearch()
+  assert.equal(search.searchState.query, 'alpha')
+  const restored = take('alpha', 0)
+  restored.resolve({
+    items: [{ node: { id: 3 }, path: '/alpha-restored' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+  })
+  await flushAsync()
+
+  search = renderSearch()
+  assert.equal(errors.length, 0)
+  assert.equal(search.searchState.query, 'alpha')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [3])
 })
 
 test('newer Quick Access refresh wins when refresh responses complete out of order', async () => {

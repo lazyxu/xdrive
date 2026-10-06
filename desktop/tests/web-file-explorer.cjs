@@ -27,7 +27,7 @@ test('Web files workspace consumes the shared FileExplorer instead of a bespoke 
 
 test('Web FileExplorer navigation matches system explorer behavior', () => {
   for (const token of [
-    'useXDriveFileExplorerWorkspace<Node, SearchResult>({',
+    'useXDriveFileExplorerWorkspace<Node, WebSearchResult>({',
     'canGoBack={canGoBack}',
     'canGoForward={canGoForward}',
     'canGoUp={canGoUp}',
@@ -52,7 +52,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web Explorer must execute search through the shared workspace controller adapter')
+  assert.ok(explorer.includes('loadSearchRange: async (query, searchSort, offset, limit) =>'), 'Web Explorer must execute Search ranges through the shared workspace controller adapter')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
@@ -68,32 +68,25 @@ test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(explorer.includes('backgroundMenuItems={backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
 })
 
-test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
+test('Web FileExplorer Search preserves paths and breadcrumbs across sparse ranges', () => {
   assert.ok(projection.includes('secondaryLabel: resultPath'), 'shared Explorer projection should show search-result paths')
-  assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a search result should use shared workspace open-item dispatch')
-  assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.breadcrumbs'), 'Web shared workspace should preserve search breadcrumbs')
-  assert.ok(workspaceController.includes('navigate: navigation.navigateTo'), 'shared workspace should inject shared navigation for search directories')
-  assert.ok(explorer.includes('const openWebNode = async (node: Node) => {'), 'opening a file should keep Web download execution local')
-  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web search lifecycle must come from the shared workspace controller')
-  assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Web search draft must come from the shared React controller')
-  assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Web must not own search draft state')
-  assert.ok(explorer.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web workspace controller must keep REST search execution local')
-  assert.ok(explorer.includes('searchSort.key'), 'Web search must forward the shared sort key')
-  assert.ok(explorer.includes('searchSort.direction'), 'Web search must forward the shared sort direction')
-  assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
-  assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
-  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Web search/directory pagination dispatch')
-  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Web Explorer load-more must use shared pagination dispatch')
-  assert.equal(explorer.includes("explorerPagination.mode === 'search'"), false, 'Web must not branch search/directory pagination locally')
-  assert.equal(explorer.includes('searchRequestRef'), false, 'Web must not own search request sequencing')
-  assert.equal(explorer.includes('setSearchState('), false, 'Web must not own search lifecycle transitions')
-  assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web search must not truncate the UI to the first page')
+  assert.ok(projection.includes('virtualSearchItems?: ReadonlyMap<number, TSearch>'), 'projection must accept sparse Search result metadata')
+  assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a Search result should use shared workspace dispatch')
+  assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web shared workspace should preserve Search breadcrumbs')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, WebSearchResult>'), 'Web Search lifecycle must come from the shared workspace controller')
+  assert.ok(explorer.includes('loadSearchRange: async (query, searchSort, offset, limit) =>'), 'Web must inject REST Search range execution')
+  assert.ok(explorer.includes('api.searchRange('), 'Web Search must use REST range transport')
+  assert.ok(explorer.includes('searchSort.key'), 'Web Search range must forward sort key')
+  assert.ok(explorer.includes('searchSort.direction'), 'Web Search range must forward sort direction')
+  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Web Search must reuse the shared sparse surface')
+  assert.equal(explorer.includes('api.search('), false, 'Web Explorer must not use cursor Search after migration')
+  assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web Search must not truncate the logical result set')
 })
 
 test('Web FileExplorer queues copy/cut/paste through the shared operation controller', () => {
   assert.ok(api.includes('copy(nodeID: number, parentID: number, name?: string)'), 'legacy Web copy API is missing')
   assert.ok(api.includes('move(nodeID: number, revision: number, parentID: number)'), 'legacy Web move API is missing')
-  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web must consume clipboard state through the shared workspace controller')
+  assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, WebSearchResult>'), 'Web must consume clipboard state through the shared workspace controller')
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web must consume the shared queued-operation controller')
   assert.ok(explorer.includes('submitOperation: (plan) => api.createFileOperation('), 'Web must keep persistent-operation transport local')
   assert.ok(explorer.includes('onQueued: onOperationQueued'), 'Web must surface queued operations immediately')
@@ -323,4 +316,12 @@ test('Web FileExplorer recursively uploads dropped folders and empty directories
   ]) {
     assert.ok(app.includes(token), `missing Web dropped-folder orchestration: ${token}`)
   }
+})
+
+
+test('Web Search range normalizes server breadcrumbs into the shared crumbs contract', () => {
+  assert.ok(api.includes('async searchRange('), 'Web Search range adapter must normalize the raw server response')
+  assert.ok(api.includes('crumbs: item.breadcrumbs'), 'Web Search range must normalize breadcrumbs to shared crumbs')
+  assert.ok(explorer.includes('type WebSearchResult = XDriveCloudFilesSearchResult<Node>'), 'Web Explorer must consume the shared Search result contract')
+  assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web Explorer must consume normalized shared crumbs')
 })

@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
 import {
-  XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   type XDriveFileExplorerKeyboardProfile,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerCaseInsensitiveNameLookupPageOptions,
@@ -184,15 +183,21 @@ export default function DesktopFileExplorer({
     directoryLoadingMore: loadingMore,
     onLoadDirectory,
     onLoadMoreDirectory: onLoadMore,
-    loadSearchPage: async (query, searchSort, cursor) => {
-      const result = await window.xdriveDesktop.agent.cloudSearch(
+    loadSearchRange: async (query, searchSort, offset, limit) => {
+      const result = await window.xdriveDesktop.agent.cloudSearchRange(
         query,
-        cursor,
+        offset,
+        limit,
         searchSort.key,
         searchSort.direction,
       )
       if (!result.ok) throw new Error(result.error.message)
-      return result.data
+      return {
+        items: result.data.items,
+        totalCount: result.data.total_count,
+        offset: result.data.offset,
+        limit: result.data.limit,
+      }
     },
     loadRoot: async () => {
       const result = await window.xdriveDesktop.agent.cloudRoot()

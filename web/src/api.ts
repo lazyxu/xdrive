@@ -1073,13 +1073,13 @@ export class XDriveApi {
     return this.request<SearchPage>(`/api/v1/search?${params.toString()}`)
   }
 
-  searchRange(
+  async searchRange(
     query: string,
     offset: number,
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
-  ) {
+  ): Promise<XDriveCloudFilesSearchRange<Node>> {
     const params = new URLSearchParams({
       q: query.trim(),
       offset: String(Math.max(0, Math.trunc(offset))),
@@ -1087,9 +1087,26 @@ export class XDriveApi {
       sort,
       order,
     })
-    return this.request<XDriveCloudFilesSearchRange<Node>>(
-      `/api/v1/search?${params.toString()}`,
-    )
+    const page = await this.request<{
+      items: SearchResult[]
+      total_count: number
+      offset: number
+      limit: number
+      sort: 'name' | 'updated' | 'size' | 'type'
+      order: 'asc' | 'desc'
+    }>(`/api/v1/search?${params.toString()}`)
+    return {
+      items: page.items.map((item) => ({
+        node: item.node,
+        path: item.path,
+        crumbs: item.breadcrumbs,
+      })),
+      total_count: page.total_count,
+      offset: page.offset,
+      limit: page.limit,
+      sort: page.sort,
+      order: page.order,
+    }
   }
 
   createDirectory(parentID: number, name: string) {

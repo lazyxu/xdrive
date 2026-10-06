@@ -20,7 +20,6 @@ import type {
   XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
 import {
-  XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerKeyboardProfileFromPlatform,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
@@ -31,9 +30,12 @@ import {
 } from '../../ui/shared/src'
 import type {
   Node,
+  XDriveCloudFilesSearchResult,
   XDriveFileOperation,
 } from '../../ui/shared/src'
-import type { SearchResult, XDriveApi } from './api'
+import type { XDriveApi } from './api'
+
+type WebSearchResult = XDriveCloudFilesSearchResult<Node>
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
@@ -160,7 +162,7 @@ export default function WebFileExplorer({
     previousTab,
     canNewTab,
     canCloseTab,
-  } = useXDriveFileExplorerWorkspace<Node, SearchResult>({
+  } = useXDriveFileExplorerWorkspace<Node, WebSearchResult>({
     items,
     crumbs,
     directoryVirtualCollection: virtualDirectory,
@@ -169,13 +171,21 @@ export default function WebFileExplorer({
     directoryLoadingMore: loadingMore,
     onLoadDirectory,
     onLoadMoreDirectory: onLoadMore,
-    loadSearchPage: (query, searchSort, cursor) => api.search(
-      query,
-      XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
-      cursor,
-      searchSort.key,
-      searchSort.direction,
-    ),
+    loadSearchRange: async (query, searchSort, offset, limit) => {
+      const page = await api.searchRange(
+        query,
+        offset,
+        limit,
+        searchSort.key,
+        searchSort.direction,
+      )
+      return {
+        items: page.items,
+        totalCount: page.total_count,
+        offset: page.offset,
+        limit: page.limit,
+      }
+    },
     loadRoot: () => api.root(),
     findChildDirectory: async (parentID, name) => {
       const page = await api.listPage(
@@ -184,7 +194,7 @@ export default function WebFileExplorer({
       )
       return page.items[0] ?? null
     },
-    searchCrumbsForResult: (result) => result.breadcrumbs,
+    searchCrumbsForResult: (result) => result.crumbs,
     onDirectoryAccess: (nodeID) => { void recent.record(nodeID) },
     onFileAccess: (nodeID) => { void recent.record(nodeID) },
     onError,

@@ -36,11 +36,13 @@ export function useXDriveFileExplorerProjection<
   crumbs,
   searchResults,
   virtualItems,
+  virtualSearchItems,
 }: {
   items: TNode[]
   crumbs: TCrumb[]
   searchResults?: TSearch[] | null
   virtualItems?: ReadonlyMap<number, TNode>
+  virtualSearchItems?: ReadonlyMap<number, TSearch>
 }) {
   const crumbProjection = useMemo(() => {
     const explorerCrumbs = new Array<XDriveFileExplorerCrumb>(crumbs.length)
@@ -57,13 +59,25 @@ export function useXDriveFileExplorerProjection<
   }, [crumbs])
 
   const projection = useMemo(() => {
-    const results = searchResults ?? undefined
-    const sourceLength = results ? results.length : items.length
-    const activeNodes = results ? new Array<TNode>(sourceLength) : items
+    const virtualSearchActive = virtualSearchItems !== undefined
+    const results = virtualSearchActive ? undefined : searchResults ?? undefined
+    const sourceLength = virtualSearchActive
+      ? 0
+      : results
+        ? results.length
+        : items.length
+    const activeNodes = virtualSearchActive
+      ? []
+      : results
+        ? new Array<TNode>(sourceLength)
+        : items
     const nodeByID = new Map<number, TNode>()
     const searchByID = new Map<number, TSearch>()
     const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)
-    const virtualExplorerItems = !results && virtualItems
+    const virtualExplorerItems = (
+      virtualSearchItems ||
+      (!results && virtualItems)
+    )
       ? new Map<number, XDriveFileExplorerItem>()
       : undefined
 
@@ -83,7 +97,21 @@ export function useXDriveFileExplorerProjection<
       virtualExplorerItems?.set(index, explorerItem)
     }
 
-    if (virtualExplorerItems && virtualItems) {
+    if (virtualExplorerItems && virtualSearchItems) {
+      for (const [index, result] of virtualSearchItems) {
+        const node = result.node
+        nodeByID.set(node.id, node)
+        searchByID.set(node.id, result)
+        virtualExplorerItems.set(
+          index,
+          xDriveProjectFileExplorerNode(
+            node,
+            crumbProjection.pathPrefix,
+            result.path || undefined,
+          ),
+        )
+      }
+    } else if (virtualExplorerItems && virtualItems) {
       for (const [index, node] of virtualItems) {
         nodeByID.set(node.id, node)
         const explorerItem = xDriveProjectFileExplorerNode(
@@ -102,7 +130,13 @@ export function useXDriveFileExplorerProjection<
       explorerItems,
       virtualExplorerItems,
     }
-  }, [crumbProjection.pathPrefix, items, searchResults, virtualItems])
+  }, [
+    crumbProjection.pathPrefix,
+    items,
+    searchResults,
+    virtualItems,
+    virtualSearchItems,
+  ])
 
   return {
     ...projection,

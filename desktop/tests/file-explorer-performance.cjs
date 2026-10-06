@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const ts = require('typescript')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const shared = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
@@ -16,6 +17,22 @@ const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', '
 const serverSearch = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'search.go'), 'utf8')
 const navigationPane = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'), 'utf8')
 const explorerController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
+
+function loadPerformanceTypeScriptModule(relativePath) {
+  const filename = path.join(repoRoot, ...relativePath)
+  const source = fs.readFileSync(filename, 'utf8')
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+  const mod = { exports: {} }
+  const execute = new Function('exports', 'module', 'require', output)
+  execute(mod.exports, mod, require)
+  return mod.exports
+}
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
   assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
@@ -93,14 +110,15 @@ test('FileExplorer bounds thumbnail and pointer/scroll work under large director
   assert.ok(shared.includes('const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)'), 'Grid marquee selection must use virtual geometry')
 })
 
-test('FileExplorer range and search paging reject duplicate and stale requests', () => {
+test('FileExplorer directory and search ranges reject duplicate and stale requests', () => {
   assert.ok(cloudFilesController.includes('const directoryRequestRef = useRef(0)'), 'directory request generation guard is missing')
   assert.ok(cloudFilesController.includes('if (requestID !== directoryRequestRef.current) return'), 'stale directory responses must be ignored')
   assert.ok(cloudFilesController.includes('useXDriveVirtualCollection<TNode>'), 'directory range loading must delegate in-flight ownership to VirtualCollection')
   assert.ok(virtualCollectionController.includes('const inFlightRef = useRef(new Map<string, InFlightRange>())'), 'VirtualCollection in-flight range map is missing')
   assert.ok(virtualCollectionController.includes('existing && existing.generation === generation'), 'VirtualCollection must deduplicate same-generation range requests')
-  assert.ok(searchController.includes('const loadMoreRequestRef = useRef<Record<string, boolean>>({})'), 'search pagination lock is missing')
-  assert.ok(searchController.includes('if (loadMoreRequestRef.current[key]) return'), 'search pagination must synchronously reject duplicate load-more calls')
+  assert.ok(searchController.includes('const requestRef = useRef<Record<string, number>>({})'), 'search request generation guard is missing')
+  assert.ok(searchController.includes('targetIsCurrent(nextTarget)'), 'stale search responses must be rejected against the active target')
+  assert.ok(searchController.includes('useXDriveVirtualCollection<TResult>'), 'Search must delegate viewport ranges to VirtualCollection')
 })
 
 
@@ -208,28 +226,23 @@ test('FileExplorer virtual directories avoid rebuilding a whole-directory ID Map
 })
 
 
-test('FileExplorer search pagination appends unique cursor pages without rebuilding all result IDs', () => {
-  assert.ok(explorerController.includes('xDriveFileExplorerMergeSearchResults'), 'shared search merge is missing')
-  assert.ok(explorerController.includes('const pageIDs = new Set<number>()'), 'search merge should inspect only the incoming page')
-  assert.ok(explorerController.includes('if (knownIDs.has(id) || pageIDs.has(id))'), 'search merge must preserve duplicate detection')
-  assert.ok(explorerController.includes('return [...current, ...page]'), 'unique search pages should use the direct append path')
-  assert.ok(searchController.includes('const resultIDsRef = useRef<Record<string, Set<number>>>({})'), 'search controller must retain result IDs per workspace')
-  assert.ok(searchController.includes('delete resultIDsRef.current[workspaceKey]'), 'search result ID cache must clear with search state')
-  assert.ok(searchController.includes('resultIDs = new Set(currentResults.map((item) => item.node.id))'), 'restored search state must lazily rebuild its ID cache')
+test('FileExplorer search ranges keep metadata sparse instead of appending cursor pages', () => {
+  assert.ok(searchController.includes('searchVirtualItems = activeTarget'), 'Search must expose bounded sparse results')
+  assert.ok(searchController.includes('virtualCollection.loadedItems'), 'Search must use VirtualCollection metadata storage')
+  assert.ok(searchController.includes('virtualCollection.primePage(page)'), 'first Search range must seed the sparse cache')
+  assert.ok(searchController.includes('loadMoreSearch: async () => {}'), 'legacy Search load-more must be inert')
+  assert.equal(searchController.includes('resultIDsRef'), false, 'Search must not retain a growing all-result ID set')
+  assert.equal(searchController.includes('xDriveFileExplorerMergeSearchResults'), false, 'Search must not append cursor pages')
 })
 
-
-test('FileExplorer search sorting stays server-paged instead of re-sorting the loaded subset', () => {
+test('FileExplorer search sorting stays server-ranged instead of re-sorting loaded metadata', () => {
   assert.ok(serverSearch.includes('sort must be name, updated, size, or type'), 'Search API sort validation is missing')
-  assert.ok(serverSearch.includes('cursor does not match q/type/sort/order'), 'Search cursor must bind sort/order')
-  assert.ok(serverSearch.includes('ORDER BY %s ASC, %s %s, %s ASC, search_rows.id ASC'), 'Search keyset order must include server sort and stable path tie-breaker')
-  assert.ok(searchController.includes('const sortSignatureRef = useRef<Record<string, string>>({})'), 'search sort signature cache is missing')
-  assert.ok(searchController.includes('void executeSearch(workspaceKey, searchState.query, sort)'), 'sort changes must reload the active search')
-  assert.ok(searchController.includes('loadPage(searchState.query, sort, searchState.cursor)'), 'search load-more must keep the same server sort')
-  assert.ok(web.includes('searchSort.key'), 'Web search adapter must forward sort key')
-  assert.ok(desktop.includes('searchSort.direction'), 'Desktop search adapter must forward sort direction')
+  assert.ok(serverSearch.includes('COUNT(*) OVER() AS total_count'), 'Search range must report stable logical count')
+  assert.ok(searchController.includes('sortSignature: searchSortSignature(targetSort)'), 'Search target must bind sort/order')
+  assert.ok(searchController.includes('active.sortSignature === sortSignature'), 'sort changes must invalidate the active search generation')
+  assert.ok(web.includes('searchSort.key'), 'Web Search range adapter must forward sort key')
+  assert.ok(desktop.includes('searchSort.direction'), 'Desktop Search range adapter must forward sort direction')
 })
-
 
 test('FileExplorer folder uploads reuse existing directories with indexed name lookups', () => {
   assert.ok(explorerController.includes('xDriveFileExplorerCaseInsensitiveNameLookupPageOptions'), 'case-insensitive upload lookup helper is missing')
@@ -302,4 +315,50 @@ test('FileExplorer sparse interactions stay bounded to loaded metadata', () => {
   assert.ok(shared.includes('if (virtualCollectionEnabled) return false'), 'dense type-select must not scan sparse logical indexes')
   assert.ok(shared.includes('const selectableItems = interactionProjection.orderedItems'), 'Ctrl+A must stay bounded to loaded metadata')
   assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(logicalItemCount)'), false, 'interaction lookup must not materialize the logical directory')
+})
+
+
+test('FileExplorer Search VirtualCollection reduces retained metadata by at least 90% at 10k results', () => {
+  const virtual = loadPerformanceTypeScriptModule([
+    'ui', 'shared', 'src', 'virtual-collection.ts',
+  ])
+  const totalCount = 10_000
+  const pageSize = virtual.XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE
+  const retentionOverscanPages = virtual.XDRIVE_VIRTUAL_COLLECTION_DEFAULT_RETENTION_OVERSCAN_PAGES
+
+  // Before: legacy dense cursor append retained every result the user had scrolled through.
+  const denseRetained = new Map()
+  for (let index = 0; index < totalCount; index += 1) denseRetained.set(index, index)
+  const beforeRetained = denseRetained.size
+
+  // After: apply the same 10k logical results, then retain only the real viewport window.
+  let snapshot = virtual.xDriveCreateVirtualCollectionSnapshot('search-perf', 1)
+  for (let offset = 0; offset < totalCount; offset += pageSize) {
+    const items = Array.from(
+      { length: Math.min(pageSize, totalCount - offset) },
+      (_, index) => offset + index,
+    )
+    snapshot = virtual.xDriveVirtualCollectionApplyPage(snapshot, 1, {
+      items,
+      offset,
+      limit: pageSize,
+      totalCount,
+    })
+  }
+  const retentionRanges = virtual.xDriveVirtualCollectionRangesForViewport({
+    startIndex: 5_000,
+    endIndex: 5_039,
+    totalCount,
+    pageSize,
+    overscanPages: retentionOverscanPages,
+  })
+  snapshot = virtual.xDriveVirtualCollectionRetainRanges(snapshot, retentionRanges)
+  const afterRetained = virtual.xDriveVirtualCollectionLoadedCount(snapshot)
+  const reduction = 1 - afterRetained / beforeRetained
+
+  assert.equal(beforeRetained, 10_000, 'legacy dense baseline changed')
+  assert.equal(pageSize, 200, 'Search performance workload assumes the shared 200-item page')
+  assert.equal(retentionOverscanPages, 2, 'Search performance workload assumes two retention overscan pages')
+  assert.equal(afterRetained, 1_000, 'VirtualCollection should retain five 200-item pages around the middle viewport')
+  assert.ok(reduction >= 0.9, `retained metadata reduction ${(reduction * 100).toFixed(1)}% is below 90%`)
 })

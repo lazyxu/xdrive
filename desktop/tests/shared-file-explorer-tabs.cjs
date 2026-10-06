@@ -36,14 +36,15 @@ test('shared navigation controller owns independent tab workspaces', () => {
   }
 })
 
-test('shared search controller preserves search state per workspace tab', () => {
+test('shared search controller preserves range search state per workspace tab', () => {
   for (const token of [
     "workspaceKey = 'default'",
     'const requestRef = useRef<Record<string, number>>({})',
     'const [entries, setEntries]',
     'const entry = entries[workspaceKey]',
-    'updateEntry(workspaceKey',
-    'const key = workspaceKey',
+    'workspaceKey: key',
+    'targetRef.current = nextTarget',
+    'targetRef.current?.workspaceKey === workspaceKey',
   ]) {
     assert.ok(search.includes(token), 'tab search-state contract missing: ' + token)
   }
