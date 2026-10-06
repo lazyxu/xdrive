@@ -192,6 +192,22 @@ export function useXDriveVirtualCollection<TItem>({
     snapshot.totalCount,
   ])
 
+  const updateLoadedItems = useCallback((
+    updater: (item: TItem, index: number) => TItem,
+  ) => {
+    setSnapshot((current) => {
+      let changed = false
+      const items = new Map(current.items)
+      for (const [index, item] of current.items) {
+        const next = updater(item, index)
+        if (Object.is(next, item)) continue
+        items.set(index, next)
+        changed = true
+      }
+      return changed ? { ...current, items } : current
+    })
+  }, [])
+
   const itemAt = useCallback(
     (index: number) => snapshot.items.get(index),
     [snapshot.items],
@@ -206,5 +222,6 @@ export function useXDriveVirtualCollection<TItem>({
     ensureViewport,
     reset,
     primePage,
+    updateLoadedItems,
   }
 }

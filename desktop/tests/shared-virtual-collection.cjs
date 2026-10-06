@@ -300,6 +300,40 @@ test('VirtualCollection reset stays stable and primed pages do not refetch', asy
   assert.equal(pending.length, 0, 'primed first page must not be fetched twice')
 })
 
+test('VirtualCollection patches retained metadata without expanding the cache', () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const loadRange = async () => {
+    throw new Error('unexpected range load')
+  }
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'gallery',
+    loadRange,
+    onError: () => {},
+    pageSize: 2,
+    overscanPages: 0,
+  }))
+
+  let collection = render()
+  collection.primePage({
+    offset: 400,
+    limit: 2,
+    totalCount: 1000,
+    items: [{ id: 1, favorite: false }, { id: 2, favorite: false }],
+  })
+  collection = render()
+
+  collection.updateLoadedItems((item) => (
+    item.id === 2 ? { ...item, favorite: true } : item
+  ))
+  collection = render()
+
+  assert.equal(collection.loadedCount, 2)
+  assert.deepEqual(collection.itemAt(400), { id: 1, favorite: false })
+  assert.deepEqual(collection.itemAt(401), { id: 2, favorite: true })
+  assert.equal(collection.itemAt(0), undefined)
+})
+
 test('VirtualCollection cancels and evicts ranges that move outside retention', async () => {
   const runtime = createHookRuntime()
   const useVirtualCollection = loadVirtualCollectionHook(runtime.react)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
@@ -68,6 +68,12 @@ import {
 } from './MediaGalleryUtils'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { useXDriveVirtualCollection } from './VirtualCollectionController'
+import {
+  XDRIVE_MEDIA_GALLERY_GRID_GAP,
+  xDriveMediaGalleryGridMetrics,
+  xDriveMediaGalleryGridWindow,
+} from './MediaGalleryVirtualGrid'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
@@ -172,6 +178,45 @@ export interface MediaGalleryDataSource {
   removeFromAlbum?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
 }
 
+type MediaGalleryCollectionTarget = {
+  kind: 'all' | 'album' | 'suggested-person' | 'person'
+  id?: string
+  query: MediaGalleryQuery
+  requestID: number
+}
+
+function mediaGalleryQuerySignature(query: MediaGalleryQuery) {
+  return JSON.stringify(
+    Object.entries(query)
+      .filter(([, value]) => value !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  )
+}
+
+function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) {
+  if (!target) return 'media-gallery:idle'
+  return [
+    'media-gallery',
+    target.kind,
+    target.id ?? '',
+    mediaGalleryQuerySignature(target.query),
+    target.requestID,
+  ].join(':')
+}
+
+function mediaGalleryTarget(
+  requestID: number,
+  album: MediaAlbum | null,
+  query: MediaGalleryQuery,
+  suggestedPerson: MediaSuggestedPerson | null,
+  person: MediaPersonIdentity | null,
+): MediaGalleryCollectionTarget {
+  if (person) return { kind: 'person', id: person.id, query, requestID }
+  if (suggestedPerson) return { kind: 'suggested-person', id: suggestedPerson.id, query, requestID }
+  if (album) return { kind: 'album', id: album.id, query, requestID }
+  return { kind: 'all', query, requestID }
+}
+
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   pageSize?: number
@@ -204,6 +249,79 @@ export function XDriveMediaGalleryPage({
   const [smartDialogBusy, setSmartDialogBusy] = useState(false)
   const [smartDialogError, setSmartDialogError] = useState('')
   const requestID = useRef(0)
+  const collectionTargetRef = useRef<MediaGalleryCollectionTarget | null>(null)
+  const [collectionTarget, setCollectionTarget] = useState<MediaGalleryCollectionTarget | null>(null)
+
+  const reportError = useCallback((loadError: unknown) => {
+    const message = xDriveMediaGalleryErrorMessage(loadError)
+    setError(message)
+    onError?.(loadError)
+  }, [onError])
+
+  const loadTargetRange = useCallback(async (
+    target: MediaGalleryCollectionTarget,
+    offset: number,
+    limit: number,
+  ): Promise<MediaItemRange> => {
+    switch (target.kind) {
+      case 'person':
+        if (!target.id || !source.listPersonItemRange) {
+          throw new Error('当前客户端不支持人物图库范围加载')
+        }
+        return source.listPersonItemRange(target.id, limit, offset, target.query)
+      case 'suggested-person':
+        if (!target.id || !source.listSuggestedPersonItemRange) {
+          throw new Error('当前客户端不支持人物建议范围加载')
+        }
+        return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+      case 'album':
+        if (!target.id) throw new Error('相册 ID 缺失')
+        return source.listAlbumItemRange(target.id, limit, offset, target.query)
+      default:
+        return source.listItemRange(limit, offset, target.query)
+    }
+  }, [source])
+
+  const loadVirtualRange = useCallback(async (
+    range: { offset: number; limit: number },
+  ) => {
+    const target = collectionTargetRef.current
+    if (!target) {
+      return {
+        items: [] as MediaItem[],
+        totalCount: 0,
+        offset: range.offset,
+        limit: range.limit,
+      }
+    }
+    const page = await loadTargetRange(target, range.offset, range.limit)
+    return {
+      items: page.items,
+      totalCount: page.total_count,
+      offset: page.offset,
+      limit: page.limit,
+    }
+  }, [loadTargetRange])
+
+  const virtualCollection = useXDriveVirtualCollection<MediaItem>({
+    queryKey: mediaGalleryCollectionKey(collectionTarget),
+    loadRange: loadVirtualRange,
+    onError: reportError,
+    pageSize,
+  })
+
+  const galleryVirtualCollection = useMemo<XDriveMediaGalleryVirtualCollection>(() => ({
+    itemCount: virtualCollection.totalCount ?? items.length,
+    loadedItems: virtualCollection.loadedItems,
+    itemAt: virtualCollection.itemAt,
+    onRangeChange: virtualCollection.ensureViewport,
+  }), [
+    items.length,
+    virtualCollection.ensureViewport,
+    virtualCollection.itemAt,
+    virtualCollection.loadedItems,
+    virtualCollection.totalCount,
+  ])
 
   const replaceAlbum = useCallback((next: MediaAlbum) => {
     setAlbums((current) => current.map((album) => album.id === next.id ? next : album))
@@ -237,80 +355,86 @@ export function XDriveMediaGalleryPage({
     person: MediaPersonIdentity | null = null,
   ) => {
     const request = ++requestID.current
+    const target = mediaGalleryTarget(
+      request,
+      album,
+      nextQuery,
+      suggestedPerson,
+      person,
+    )
+    collectionTargetRef.current = target
+    setCollectionTarget(target)
+    virtualCollection.reset(mediaGalleryCollectionKey(target))
     setLoading(true)
     setError('')
     try {
-      if (person && source.listPersonItems) {
-        const nextItems = await source.listPersonItems(
-          person.id,
-          pageSize + 1,
-          0,
-          nextQuery,
-        )
-        if (request !== requestID.current) return
+      const rangePromise = loadTargetRange(target, 0, pageSize)
+      if (target.kind === 'all') {
+        const [range, nextAlbums, nextPlaces, nextSuggestedPeople, nextPeople] = await Promise.all([
+          rangePromise,
+          source.listAlbums(),
+          source.listPlaces ? source.listPlaces(24) : Promise.resolve([]),
+          source.listSuggestedPeople ? source.listSuggestedPeople(24) : Promise.resolve([]),
+          listAllPeople(),
+        ])
+        if (
+          request !== requestID.current ||
+          collectionTargetRef.current?.requestID !== request
+        ) return
         setCurrentAlbum(null)
         setCurrentSuggestedPerson(null)
-        setCurrentPerson(person)
-        setItems(nextItems.slice(0, pageSize))
-        setHasMore(nextItems.length > pageSize)
-        return
-      }
-      if (suggestedPerson && source.listSuggestedPersonItems) {
-        const nextItems = await source.listSuggestedPersonItems(
-          suggestedPerson.id,
-          pageSize + 1,
-          0,
-          nextQuery,
-        )
-        if (request !== requestID.current) return
-        setCurrentAlbum(null)
         setCurrentPerson(null)
-        setCurrentSuggestedPerson(suggestedPerson)
-        setItems(nextItems.slice(0, pageSize))
-        setHasMore(nextItems.length > pageSize)
+        setAlbums(nextAlbums)
+        setPlaces(nextPlaces)
+        setSuggestedPeople(nextSuggestedPeople)
+        setPersonIdentities(nextPeople)
+        setItems([...range.items])
+        setHasMore(range.total_count > range.items.length)
+        virtualCollection.primePage({
+          items: range.items,
+          totalCount: range.total_count,
+          offset: range.offset,
+          limit: range.limit,
+        })
         return
       }
-      if (album) {
-        const nextItems = await source.listAlbumItems(
-          album.id,
-          pageSize + 1,
-          0,
-          nextQuery,
-        )
-        if (request !== requestID.current) return
-        setCurrentSuggestedPerson(null)
-        setCurrentPerson(null)
-        setCurrentAlbum(album)
-        setItems(nextItems.slice(0, pageSize))
-        setHasMore(nextItems.length > pageSize)
-        return
-      }
-      const [nextItems, nextAlbums, nextPlaces, nextSuggestedPeople, nextPeople] = await Promise.all([
-        source.listItems(pageSize + 1, 0, nextQuery),
-        source.listAlbums(),
-        source.listPlaces ? source.listPlaces(24) : Promise.resolve([]),
-        source.listSuggestedPeople ? source.listSuggestedPeople(24) : Promise.resolve([]),
-        listAllPeople(),
-      ])
-      if (request !== requestID.current) return
-      setCurrentAlbum(null)
-      setCurrentSuggestedPerson(null)
-      setCurrentPerson(null)
-      setAlbums(nextAlbums)
-      setPlaces(nextPlaces)
-      setSuggestedPeople(nextSuggestedPeople)
-      setPersonIdentities(nextPeople)
-      setItems(nextItems.slice(0, pageSize))
-      setHasMore(nextItems.length > pageSize)
+
+      const range = await rangePromise
+      if (
+        request !== requestID.current ||
+        collectionTargetRef.current?.requestID !== request
+      ) return
+      setCurrentAlbum(target.kind === 'album' ? album : null)
+      setCurrentSuggestedPerson(
+        target.kind === 'suggested-person' ? suggestedPerson : null,
+      )
+      setCurrentPerson(target.kind === 'person' ? person : null)
+      setItems([...range.items])
+      setHasMore(range.total_count > range.items.length)
+      virtualCollection.primePage({
+        items: range.items,
+        totalCount: range.total_count,
+        offset: range.offset,
+        limit: range.limit,
+      })
     } catch (loadError) {
-      if (request !== requestID.current) return
-      const message = xDriveMediaGalleryErrorMessage(loadError)
-      setError(message)
-      onError?.(loadError)
+      if (
+        request !== requestID.current ||
+        collectionTargetRef.current?.requestID !== request
+      ) return
+      reportError(loadError)
     } finally {
       if (request === requestID.current) setLoading(false)
     }
-  }, [listAllPeople, onError, pageSize, source])
+  }, [
+    listAllPeople,
+    loadTargetRange,
+    pageSize,
+    reportError,
+    source,
+    virtualCollection.primePage,
+    virtualCollection.reset,
+  ])
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return
@@ -634,6 +758,18 @@ export function XDriveMediaGalleryPage({
     }
   }, [loadFirstPage, onError, source])
 
+  const patchLoadedItems = useCallback((
+    nodeID: number,
+    updater: (item: MediaItem) => MediaItem,
+  ) => {
+    setItems((current) => current.map((item) => (
+      item.node.id === nodeID ? updater(item) : item
+    )))
+    virtualCollection.updateLoadedItems((item) => (
+      item.node.id === nodeID ? updater(item) : item
+    ))
+  }, [virtualCollection.updateLoadedItems])
+
   const setFavorite = useCallback(async (
     item: MediaItem,
     favorite: boolean,
@@ -642,11 +778,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       await source.setFavorite(item.node.id, favorite)
-      setItems((current) => current.map((value) => (
-        value.node.id === item.node.id
-          ? { ...value, favorite }
-          : value
-      )))
+      patchLoadedItems(item.node.id, (value) => ({ ...value, favorite }))
       if (
         query.favorite !== undefined ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.favorite !== undefined)
@@ -664,7 +796,7 @@ export function XDriveMediaGalleryPage({
       onError?.(favoriteError)
       throw favoriteError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
 
   const setTags = useCallback(async (
@@ -675,11 +807,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setTags(item.node.id, tags)
-      setItems((current) => current.map((value) => (
-        value.node.id === item.node.id
-          ? { ...value, tags: normalized }
-          : value
-      )))
+      patchLoadedItems(item.node.id, (value) => ({ ...value, tags: normalized }))
       if (
         query.tag ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.tag)
@@ -698,7 +826,7 @@ export function XDriveMediaGalleryPage({
       onError?.(tagError)
       throw tagError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
   const setPeople = useCallback(async (
     item: MediaItem,
@@ -708,11 +836,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setPeople(item.node.id, people)
-      setItems((current) => current.map((value) => (
-        value.node.id === item.node.id
-          ? { ...value, people: normalized }
-          : value
-      )))
+      patchLoadedItems(item.node.id, (value) => ({ ...value, people: normalized }))
       if (
         query.person ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.person)
@@ -731,7 +855,7 @@ export function XDriveMediaGalleryPage({
       onError?.(peopleError)
       throw peopleError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
   const setDescription = useCallback(async (
     item: MediaItem,
@@ -741,11 +865,7 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setDescription(item.node.id, description)
-      setItems((current) => current.map((value) => (
-        value.node.id === item.node.id
-          ? { ...value, description: normalized }
-          : value
-      )))
+      patchLoadedItems(item.node.id, (value) => ({ ...value, description: normalized }))
       if (
         query.search ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.search)
@@ -764,7 +884,7 @@ export function XDriveMediaGalleryPage({
       onError?.(descriptionError)
       throw descriptionError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
   useEffect(() => {
     void loadFirstPage(null, {})
@@ -777,6 +897,7 @@ export function XDriveMediaGalleryPage({
     <XDriveWorkspaceSurface presentation="page" title="图库">
       <XDriveMediaGallery
         items={items}
+        virtualCollection={galleryVirtualCollection}
         albums={albums}
         places={places}
         suggestedPeople={suggestedPeople}
@@ -933,8 +1054,16 @@ export function XDriveMediaGalleryPage({
   )
 }
 
+export type XDriveMediaGalleryVirtualCollection = {
+  itemCount: number
+  loadedItems: ReadonlyMap<number, MediaItem>
+  itemAt: (index: number) => MediaItem | undefined
+  onRangeChange: (startIndex: number, endIndex: number) => void | Promise<void>
+}
+
 export interface XDriveMediaGalleryProps {
   items: MediaItem[]
+  virtualCollection?: XDriveMediaGalleryVirtualCollection
   albums?: MediaAlbum[]
   places?: MediaPlaceFacet[]
   suggestedPeople?: MediaSuggestedPerson[]
@@ -1279,8 +1408,175 @@ function MediaTileGrid({
   )
 }
 
+function mediaGalleryScrollParent(element: HTMLElement) {
+  let parent = element.parentElement
+  while (parent) {
+    const style = window.getComputedStyle(parent)
+    if (/(auto|scroll|overlay)/.test(style.overflowY)) return parent
+    parent = parent.parentElement
+  }
+  return null
+}
+
+function MediaVirtualTileGrid({
+  collection,
+  loadThumbnail,
+  loadPreviewURL,
+  onSetFavorite,
+  onSetCover,
+  onOpen,
+  onPreview,
+  onToggleFavorite,
+}: {
+  collection: XDriveMediaGalleryVirtualCollection
+  loadThumbnail: MediaThumbnailLoader
+  loadPreviewURL?: MediaPreviewURLLoader
+  onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onSetCover?: (item: MediaItem) => void
+  onOpen: (item: MediaItem) => void
+  onPreview: (item: MediaItem, index: number) => void
+  onToggleFavorite: (item: MediaItem) => void
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const frameRef = useRef<number | null>(null)
+  const [layout, setLayout] = useState(() => ({
+    metrics: xDriveMediaGalleryGridMetrics({
+      width: 0,
+      itemCount: collection.itemCount,
+    }),
+    window: { start: 0, end: 0, startRow: 0, endRow: 0 },
+  }))
+
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const scrollParent = mediaGalleryScrollParent(host)
+    const scrollTarget: HTMLElement | Window = scrollParent ?? window
+    let disposed = false
+
+    const update = () => {
+      if (disposed) return
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current)
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null
+        if (disposed || !hostRef.current) return
+        const currentHost = hostRef.current
+        const metrics = xDriveMediaGalleryGridMetrics({
+          width: currentHost.clientWidth,
+          itemCount: collection.itemCount,
+        })
+        const hostRect = currentHost.getBoundingClientRect()
+        const viewportTop = scrollParent
+          ? scrollParent.getBoundingClientRect().top
+          : 0
+        const viewportBottom = scrollParent
+          ? scrollParent.getBoundingClientRect().bottom
+          : window.innerHeight
+        const visibleTop = Math.max(0, viewportTop - hostRect.top)
+        const visibleBottom = Math.min(
+          metrics.totalHeight,
+          Math.max(visibleTop, viewportBottom - hostRect.top),
+        )
+        const nextWindow = xDriveMediaGalleryGridWindow({
+          itemCount: collection.itemCount,
+          columns: metrics.columns,
+          rowStep: metrics.rowStep,
+          visibleTop,
+          visibleBottom,
+        })
+        setLayout((current) => (
+          current.metrics.columns === metrics.columns &&
+          Math.abs(current.metrics.totalHeight - metrics.totalHeight) < 0.5 &&
+          current.window.start === nextWindow.start &&
+          current.window.end === nextWindow.end
+            ? current
+            : { metrics, window: nextWindow }
+        ))
+        if (nextWindow.end > nextWindow.start) {
+          void collection.onRangeChange(nextWindow.start, nextWindow.end - 1)
+        }
+      })
+    }
+
+    const resizeObserver = new ResizeObserver(update)
+    resizeObserver.observe(host)
+    scrollTarget.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    update()
+
+    return () => {
+      disposed = true
+      resizeObserver.disconnect()
+      scrollTarget.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
+      }
+    }
+  }, [collection.itemCount, collection.onRangeChange])
+
+  const slots = []
+  for (let index = layout.window.start; index < layout.window.end; index += 1) {
+    const item = collection.itemAt(index)
+    slots.push(
+      item ? (
+        <MediaTile
+          key={item.node.id}
+          item={item}
+          loadThumbnail={loadThumbnail}
+          loadPreviewURL={loadPreviewURL}
+          onSetFavorite={onSetFavorite}
+          onSetCover={onSetCover}
+          onOpen={onOpen}
+          onPreview={(value) => onPreview(value, index)}
+          onToggleFavorite={onToggleFavorite}
+        />
+      ) : (
+        <Paper
+          key={`media-placeholder-${index}`}
+          variant="outlined"
+          aria-hidden
+          data-xdrive-media-gallery-placeholder
+          sx={{
+            aspectRatio: '1 / 1',
+            bgcolor: 'action.hover',
+            opacity: 0.55,
+          }}
+        />
+      ),
+    )
+  }
+
+  return (
+    <Box
+      ref={hostRef}
+      data-xdrive-media-gallery-virtual-grid
+      sx={{
+        position: 'relative',
+        height: layout.metrics.totalHeight,
+        minHeight: collection.itemCount > 0 ? 150 : 0,
+      }}
+    >
+      <Box
+        sx={{
+          position: 'absolute',
+          top: layout.window.startRow * layout.metrics.rowStep,
+          insetInline: 0,
+          display: 'grid',
+          gridTemplateColumns: `repeat(${layout.metrics.columns}, minmax(0, 1fr))`,
+          gap: `${XDRIVE_MEDIA_GALLERY_GRID_GAP}px`,
+        }}
+      >
+        {slots}
+      </Box>
+    </Box>
+  )
+}
+
 export function XDriveMediaGallery({
   items,
+  virtualCollection,
   albums = [],
   places = [],
   suggestedPeople = [],
@@ -1321,6 +1617,8 @@ export function XDriveMediaGallery({
 }: XDriveMediaGalleryProps) {
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
+  const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
+  const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<MediaGalleryViewMode>('grid')
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
@@ -1361,11 +1659,41 @@ export function XDriveMediaGallery({
   }, [onSetFavorite])
 
   const timelineGroups = useMemo(() => mediaTimelineGroups(items), [items])
+  const logicalItemCount = virtualCollection?.itemCount ?? items.length
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
-  const openMediaPreview = useCallback((item: MediaItem) => setPreviewItem(item), [])
-  const previewIndex = previewItem
-    ? items.findIndex((item) => item.node.id === previewItem.node.id)
-    : -1
+  const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
+    setPreviewItem(item)
+    setPreviewLogicalIndex(index ?? null)
+    setPendingPreviewIndex(null)
+  }, [])
+  const previewIndex = previewLogicalIndex ?? (
+    previewItem
+      ? items.findIndex((item) => item.node.id === previewItem.node.id)
+      : -1
+  )
+
+  const requestPreviewIndex = useCallback((index: number) => {
+    if (index < 0 || index >= logicalItemCount) return
+    const item = virtualCollection?.itemAt(index) ?? items[index]
+    if (item) {
+      setPreviewItem(item)
+      setPreviewLogicalIndex(index)
+      setPendingPreviewIndex(null)
+      return
+    }
+    if (!virtualCollection) return
+    setPendingPreviewIndex(index)
+    void virtualCollection.onRangeChange(index, index)
+  }, [items, logicalItemCount, virtualCollection])
+
+  useEffect(() => {
+    if (pendingPreviewIndex === null || !virtualCollection) return
+    const item = virtualCollection.itemAt(pendingPreviewIndex)
+    if (!item) return
+    setPreviewItem(item)
+    setPreviewLogicalIndex(pendingPreviewIndex)
+    setPendingPreviewIndex(null)
+  }, [pendingPreviewIndex, virtualCollection, virtualCollection?.loadedItems])
   const previewLivePhoto = Boolean(previewItem?.live_photo || previewItem?.asset_kind === 'live_photo')
   const previewTarget = useMemo(() => (
     previewItem
@@ -1908,11 +2236,11 @@ export function XDriveMediaGallery({
             所有照片和视频
           </Typography>
         ) : null}
-        {loading && items.length === 0 ? (
+        {loading && logicalItemCount === 0 ? (
           <Box sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
             <CircularProgress />
           </Box>
-        ) : items.length === 0 ? (
+        ) : logicalItemCount === 0 ? (
           <Paper
             variant="outlined"
             sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
@@ -1958,6 +2286,21 @@ export function XDriveMediaGallery({
               </Box>
             ))}
           </Stack>
+        ) : virtualCollection ? (
+          <MediaVirtualTileGrid
+            collection={virtualCollection}
+            loadThumbnail={loadThumbnail}
+            loadPreviewURL={loadPreviewURL}
+            onSetFavorite={onSetFavorite}
+            onSetCover={
+              currentPerson && onSetPersonCover
+                ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
+                : undefined
+            }
+            onOpen={openMediaItem}
+            onPreview={openMediaPreview}
+            onToggleFavorite={toggleMediaFavorite}
+          />
         ) : (
           <MediaTileGrid
             items={items}
@@ -1976,7 +2319,7 @@ export function XDriveMediaGallery({
         )}
       </Box>
 
-      {hasMore && onLoadMore ? (
+      {viewMode === 'timeline' && hasMore && onLoadMore ? (
         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
           <Button variant="outlined" onClick={onLoadMore} disabled={loading}>
             {loading ? '加载中…' : '加载更多'}
@@ -1987,18 +2330,16 @@ export function XDriveMediaGallery({
       <XDriveOpenPreviewDialog
         open={Boolean(previewItem)}
         title={previewItem?.node.name ?? ''}
-        positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${items.length}` : undefined}
+        positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
         canPrevious={previewIndex > 0}
-        canNext={previewIndex >= 0 && previewIndex < items.length - 1}
-        onPrevious={() => {
-          if (previewIndex > 0) setPreviewItem(items[previewIndex - 1])
+        canNext={previewIndex >= 0 && previewIndex < logicalItemCount - 1}
+        onPrevious={() => requestPreviewIndex(previewIndex - 1)}
+        onNext={() => requestPreviewIndex(previewIndex + 1)}
+        onClose={() => {
+          setPreviewItem(null)
+          setPreviewLogicalIndex(null)
+          setPendingPreviewIndex(null)
         }}
-        onNext={() => {
-          if (previewIndex >= 0 && previewIndex < items.length - 1) {
-            setPreviewItem(items[previewIndex + 1])
-          }
-        }}
-        onClose={() => setPreviewItem(null)}
       >
         {previewItem ? (
           previewLivePhoto && loadLivePhotoMotion ? (

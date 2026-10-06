@@ -101,3 +101,12 @@ Gallery VirtualCollection consumers must use this range contract from the first 
 ### Gallery range transport
 
 Web and Desktop now expose the same explicit Gallery range transport for all media, album items, durable-person items, and suggested-person items. The shared transport shape is `MediaItemRange { items, total_count, offset, limit }`. Legacy array methods remain available during migration, while Gallery VirtualCollection consumers use only the range methods so the UI can establish stable scrollbar geometry from the first response.
+
+
+## Gallery VirtualCollection activation
+
+Gallery Grid now consumes the same shared VirtualCollection controller as FileExplorer. The first range response for all media, an album, a durable person, or a suggested person primes `total_count`; the media grid then occupies the complete logical height inside the existing workspace scroll host while rendering only viewport rows plus bounded overscan. Scrolling requests aligned media ranges and the VirtualCollection retention window evicts metadata outside the active area.
+
+Gallery mutations such as favorite, tags, people, and description patch only retained loaded metadata and never expand the sparse cache. Preview navigation uses logical indexes; if the adjacent asset is not retained, Gallery requests that logical range before opening it.
+
+The existing Timeline view remains on its dense grouped compatibility path for now because month grouping requires a separate group index/height model. Its explicit load-more control is isolated to Timeline; Grid no longer exposes append pagination.
