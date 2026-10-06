@@ -1192,6 +1192,82 @@ func (c *agentController) CloudMediaSuggestedPersonItems(
 	)
 }
 
+func (c *agentController) CloudMediaPeople(
+	ctx context.Context,
+	includeHidden bool,
+	limit, offset int,
+) ([]client.MediaPersonIdentity, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaPersonIdentities(ctx, includeHidden, limit, offset)
+}
+
+func (c *agentController) CloudMediaPersonItems(
+	ctx context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaPersonIdentityItemsQuery(ctx, personID, query, limit, offset)
+}
+
+func (c *agentController) CloudAdoptMediaSuggestedPerson(
+	ctx context.Context,
+	suggestionID, name string,
+) (client.MediaPersonIdentity, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonIdentity{}, err
+	}
+	return cli.AdoptMediaSuggestedPerson(ctx, suggestionID, name)
+}
+
+func (c *agentController) CloudUpdateMediaPerson(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	input client.UpdateMediaPersonIdentityInput,
+) (client.MediaPersonIdentity, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonIdentity{}, err
+	}
+	return cli.UpdateMediaPersonIdentity(ctx, personID, revision, input)
+}
+
+func (c *agentController) CloudMergeMediaPeople(
+	ctx context.Context,
+	targetID string,
+	revision uint64,
+	sourceIDs []string,
+) (client.MediaPersonIdentity, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonIdentity{}, err
+	}
+	return cli.MergeMediaPersonIdentities(ctx, targetID, revision, sourceIDs)
+}
+
+func (c *agentController) CloudSplitMediaPerson(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	nodeIDs []uint64,
+	name string,
+) (client.MediaPersonSplit, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonSplit{}, err
+	}
+	return cli.SplitMediaPersonIdentity(ctx, personID, revision, nodeIDs, name)
+}
+
 func (c *agentController) CloudCreateMediaAlbum(
 	ctx context.Context,
 	name string,

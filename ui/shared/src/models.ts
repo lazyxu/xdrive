@@ -377,3 +377,24 @@ export interface MediaSuggestedPerson {
   cover_node_id?: number
   updated_at?: string
 }
+
+export interface MediaPersonIdentity {
+  id: string
+  name: string
+  hidden: boolean
+  revision: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export interface MediaPersonSplit {
+  source: MediaPersonIdentity
+  created: MediaPersonIdentity
+}
+
+export interface UpdateMediaPersonIdentityInput {
+  name?: string
+  hidden?: boolean
+  cover_node_id?: number
+}

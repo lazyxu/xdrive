@@ -17,8 +17,11 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaPersonIdentity,
+  MediaPersonSplit,
   MediaPlaceFacet,
   MediaSuggestedPerson,
+  UpdateMediaPersonIdentityInput,
   Node,
   QuotaUsage,
   StorageStats,
@@ -330,6 +333,37 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaPeople: (
+          includeHidden?: boolean,
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<MediaPersonIdentity[]>>
+        getMediaPersonItems: (
+          personID: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItem[]>>
+        adoptMediaSuggestedPerson: (
+          suggestionID: string,
+          name?: string,
+        ) => Promise<DesktopResult<MediaPersonIdentity>>
+        updateMediaPerson: (
+          personID: string,
+          revision: number,
+          input: UpdateMediaPersonIdentityInput,
+        ) => Promise<DesktopResult<MediaPersonIdentity>>
+        mergeMediaPeople: (
+          targetID: string,
+          revision: number,
+          sourceIDs: string[],
+        ) => Promise<DesktopResult<MediaPersonIdentity>>
+        splitMediaPerson: (
+          personID: string,
+          revision: number,
+          nodeIDs: number[],
+          name?: string,
+        ) => Promise<DesktopResult<MediaPersonSplit>>
         createMediaAlbum: (name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         renameMediaAlbum: (albumID: string, revision: number, name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         deleteMediaAlbum: (albumID: string, revision: number) => Promise<DesktopResult<{ ok: boolean }>>

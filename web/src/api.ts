@@ -22,8 +22,11 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaPersonIdentity,
+  MediaPersonSplit,
   MediaPlaceFacet,
   MediaSuggestedPerson,
+  UpdateMediaPersonIdentityInput,
   Node,
   PublicShare,
   QuotaUsage,
@@ -490,6 +493,85 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItem[]>(
       `/api/v1/media/people/suggestions/${encodeURIComponent(personID)}/items?${query.toString()}`,
+    )
+  }
+
+  mediaPeople(includeHidden = false, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    if (includeHidden) query.set('include_hidden', 'true')
+    return this.request<MediaPersonIdentity[]>(
+      `/api/v1/media/people/identities?${query.toString()}`,
+    )
+  }
+
+  mediaPersonItems(
+    personID: string,
+    limit = 100,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItem[]>(
+      `/api/v1/media/people/identities/${encodeURIComponent(personID)}/items?${query.toString()}`,
+    )
+  }
+
+  adoptMediaSuggestedPerson(suggestionID: string, name: string) {
+    return this.request<MediaPersonIdentity>(
+      `/api/v1/media/people/suggestions/${encodeURIComponent(suggestionID)}/adopt`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      },
+    )
+  }
+
+  updateMediaPerson(
+    personID: string,
+    revision: number,
+    input: UpdateMediaPersonIdentityInput,
+  ) {
+    return this.request<MediaPersonIdentity>(
+      `/api/v1/media/people/identities/${encodeURIComponent(personID)}`,
+      {
+        method: 'PATCH',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify(input),
+      },
+    )
+  }
+
+  mergeMediaPeople(targetID: string, revision: number, sourceIDs: string[]) {
+    return this.request<MediaPersonIdentity>(
+      `/api/v1/media/people/identities/${encodeURIComponent(targetID)}/merge`,
+      {
+        method: 'POST',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ source_ids: sourceIDs }),
+      },
+    )
+  }
+
+  splitMediaPerson(
+    personID: string,
+    revision: number,
+    nodeIDs: number[],
+    name: string,
+  ) {
+    return this.request<MediaPersonSplit>(
+      `/api/v1/media/people/identities/${encodeURIComponent(personID)}/split`,
+      {
+        method: 'POST',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ node_ids: nodeIDs, name }),
+      },
     )
   }
 

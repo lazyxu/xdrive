@@ -553,6 +553,27 @@ export type AgentMediaSuggestedPerson = {
   updated_at?: string
 }
 
+export type AgentMediaPersonIdentity = {
+  id: string
+  name: string
+  hidden: boolean
+  revision: number
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export type AgentMediaPersonSplit = {
+  source: AgentMediaPersonIdentity
+  created: AgentMediaPersonIdentity
+}
+
+export type AgentUpdateMediaPersonInput = {
+  name?: string
+  hidden?: boolean
+  cover_node_id?: number
+}
+
 export type AgentMediaFavorite = {
   favorite: boolean
 }
@@ -910,6 +931,77 @@ export class AgentIPCClient {
     return this.request<AgentMediaItem[]>(
       'GET',
       `/v1/media/people/suggestion-items?${query.toString()}`,
+    )
+  }
+
+  mediaPeople(includeHidden = false, limit = 100, offset = 0) {
+    const query = new URLSearchParams({
+      include_hidden: String(includeHidden),
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaPersonIdentity[]>(
+      'GET',
+      `/v1/media/people/identities?${query.toString()}`,
+    )
+  }
+
+  mediaPersonItems(
+    personID: string,
+    limit = 100,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      person_id: personID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItem[]>(
+      'GET',
+      `/v1/media/people/identity-items?${query.toString()}`,
+    )
+  }
+
+  adoptMediaSuggestedPerson(suggestionID: string, name: string) {
+    return this.request<AgentMediaPersonIdentity>(
+      'POST',
+      '/v1/media/people/adopt',
+      { suggestion_id: suggestionID, name },
+    )
+  }
+
+  updateMediaPerson(
+    personID: string,
+    revision: number,
+    input: AgentUpdateMediaPersonInput,
+  ) {
+    return this.request<AgentMediaPersonIdentity>(
+      'PATCH',
+      '/v1/media/person',
+      { person_id: personID, revision, ...input },
+    )
+  }
+
+  mergeMediaPeople(targetID: string, revision: number, sourceIDs: string[]) {
+    return this.request<AgentMediaPersonIdentity>(
+      'POST',
+      '/v1/media/person/merge',
+      { target_id: targetID, revision, source_ids: sourceIDs },
+    )
+  }
+
+  splitMediaPerson(
+    personID: string,
+    revision: number,
+    nodeIDs: number[],
+    name: string,
+  ) {
+    return this.request<AgentMediaPersonSplit>(
+      'POST',
+      '/v1/media/person/split',
+      { person_id: personID, revision, node_ids: nodeIDs, name },
     )
   }
 

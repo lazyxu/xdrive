@@ -124,6 +124,14 @@ type fakeDesktopIPCController struct {
 	cloudSuggestedPeople       []client.MediaSuggestedPerson
 	cloudSuggestedItems        []client.MediaItem
 	cloudSuggestedID           string
+	cloudPeople                []client.MediaPersonIdentity
+	cloudPersonItems           []client.MediaItem
+	cloudPersonID              string
+	cloudPersonRevision        uint64
+	cloudPersonUpdate          client.UpdateMediaPersonIdentityInput
+	cloudPersonMergeSources    []string
+	cloudPersonSplitNodeIDs    []uint64
+	cloudPersonSplitName       string
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
 	cloudMediaMotion           agentMediaMotion
@@ -585,6 +593,98 @@ func (f *fakeDesktopIPCController) CloudMediaSuggestedPersonItems(
 		[]client.MediaItem(nil),
 		f.cloudSuggestedItems...,
 	), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPeople(
+	_ context.Context,
+	_ bool,
+	limit, offset int,
+) ([]client.MediaPersonIdentity, error) {
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return append([]client.MediaPersonIdentity(nil), f.cloudPeople...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPersonItems(
+	_ context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) ([]client.MediaItem, error) {
+	f.cloudPersonID = personID
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return append([]client.MediaItem(nil), f.cloudPersonItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudAdoptMediaSuggestedPerson(
+	_ context.Context,
+	suggestionID, name string,
+) (client.MediaPersonIdentity, error) {
+	f.cloudSuggestedID = suggestionID
+	return client.MediaPersonIdentity{
+		ID:        "person:v1:11111111-1111-1111-1111-111111111111",
+		Name:      name,
+		Revision:  1,
+		ItemCount: 2,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateMediaPerson(
+	_ context.Context,
+	personID string,
+	revision uint64,
+	input client.UpdateMediaPersonIdentityInput,
+) (client.MediaPersonIdentity, error) {
+	f.cloudPersonID = personID
+	f.cloudPersonRevision = revision
+	f.cloudPersonUpdate = input
+	return client.MediaPersonIdentity{
+		ID:        personID,
+		Name:      "Alice",
+		Revision:  revision + 1,
+		ItemCount: 2,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMergeMediaPeople(
+	_ context.Context,
+	targetID string,
+	revision uint64,
+	sourceIDs []string,
+) (client.MediaPersonIdentity, error) {
+	f.cloudPersonID = targetID
+	f.cloudPersonRevision = revision
+	f.cloudPersonMergeSources = append([]string(nil), sourceIDs...)
+	return client.MediaPersonIdentity{
+		ID:        targetID,
+		Name:      "Alice",
+		Revision:  revision + 1,
+		ItemCount: 4,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSplitMediaPerson(
+	_ context.Context,
+	personID string,
+	revision uint64,
+	nodeIDs []uint64,
+	name string,
+) (client.MediaPersonSplit, error) {
+	f.cloudPersonID = personID
+	f.cloudPersonRevision = revision
+	f.cloudPersonSplitNodeIDs = append([]uint64(nil), nodeIDs...)
+	f.cloudPersonSplitName = name
+	return client.MediaPersonSplit{
+		Source: client.MediaPersonIdentity{
+			ID: personID, Name: "Alice", Revision: revision + 1, ItemCount: 1,
+		},
+		Created: client.MediaPersonIdentity{
+			ID:   "person:v1:22222222-2222-2222-2222-222222222222",
+			Name: name, Revision: 1, ItemCount: 1,
+		},
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudCreateMediaAlbum(
@@ -1362,6 +1462,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 				IndexState: "ready", HasThumbnail: true,
 			},
 		}},
+		cloudPeople: []client.MediaPersonIdentity{{
+			ID:   "person:v1:11111111-1111-1111-1111-111111111111",
+			Name: "Alice", Revision: 3, ItemCount: 2,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
+		cloudPersonItems: []client.MediaItem{{
+			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
+			Metadata: client.MediaMetadata{
+				MediaKind: "image", MIMEType: "image/jpeg", Width: 1920, Height: 1080,
+				IndexState: "ready", HasThumbnail: true,
+			},
+		}},
 		cloudMediaAlbumItems: []client.MediaItem{{
 			Node: client.Node{ID: 31, Name: "photo.jpg", Type: "file", Revision: 1, Size: 123},
 			Metadata: client.MediaMetadata{
@@ -1461,6 +1573,84 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	durableID := "person:v1:11111111-1111-1111-1111-111111111111"
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/people/identities?include_hidden=true&limit=20&offset=0",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), durableID) ||
+		!strings.Contains(res.Body.String(), "\"Alice\"") {
+		t.Fatalf("durable people status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/people/identity-items?person_id="+url.QueryEscape(durableID)+
+			"&limit=20&offset=0&q=portrait",
+		"",
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("durable person items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudPersonID != durableID || ctrl.cloudMediaQuery.Search != "portrait" {
+		t.Fatalf("durable person query not forwarded: id=%q query=%+v", ctrl.cloudPersonID, ctrl.cloudMediaQuery)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/people/adopt",
+		fmt.Sprintf(
+			`{"suggestion_id":"auto:v1:%s","name":"Alice"}`,
+			strings.Repeat("a", 64),
+		),
+	)
+	if res.Code != http.StatusCreated || !strings.Contains(res.Body.String(), "\"Alice\"") {
+		t.Fatalf("adopt durable person status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/media/person",
+		`{"person_id":"person:v1:11111111-1111-1111-1111-111111111111","revision":3,"name":"Alice Renamed"}`,
+	)
+	if res.Code != http.StatusOK {
+		t.Fatalf("update durable person status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/person/merge",
+		`{"target_id":"person:v1:11111111-1111-1111-1111-111111111111","revision":3,"source_ids":["person:v1:22222222-2222-2222-2222-222222222222"]}`,
+	)
+	if res.Code != http.StatusOK || len(ctrl.cloudPersonMergeSources) != 1 {
+		t.Fatalf("merge durable person status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/person/split",
+		`{"person_id":"person:v1:11111111-1111-1111-1111-111111111111","revision":4,"node_ids":[31],"name":"Alice B"}`,
+	)
+	if res.Code != http.StatusOK ||
+		len(ctrl.cloudPersonSplitNodeIDs) != 1 ||
+		ctrl.cloudPersonSplitName != "Alice B" {
+		t.Fatalf("split durable person status=%d body=%s", res.Code, res.Body.String())
+	}
+
 	res = desktopIPCRequest(
 		t,
 		handler,
@@ -1540,6 +1730,8 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/places?limit=0",
 		"/v1/media/people/suggestions?limit=0",
 		"/v1/media/people/suggestion-items?person_id=invalid",
+		"/v1/media/people/identity-items?person_id=invalid",
+		"/v1/media/people/identities?limit=0",
 		"/v1/media/items?limit=0",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",

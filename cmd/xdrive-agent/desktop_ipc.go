@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
 	"github.com/lazyxu/xdrive/internal/diagnostics"
@@ -207,6 +208,12 @@ type desktopIPCController interface {
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
 	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudMediaPeople(context.Context, bool, int, int) ([]client.MediaPersonIdentity, error)
+	CloudMediaPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudAdoptMediaSuggestedPerson(context.Context, string, string) (client.MediaPersonIdentity, error)
+	CloudUpdateMediaPerson(context.Context, string, uint64, client.UpdateMediaPersonIdentityInput) (client.MediaPersonIdentity, error)
+	CloudMergeMediaPeople(context.Context, string, uint64, []string) (client.MediaPersonIdentity, error)
+	CloudSplitMediaPerson(context.Context, string, uint64, []uint64, string) (client.MediaPersonSplit, error)
 	CloudCreateMediaAlbum(context.Context, string) (client.MediaAlbum, error)
 	CloudRenameMediaAlbum(context.Context, string, uint64, string) (client.MediaAlbum, error)
 	CloudDeleteMediaAlbum(context.Context, string, uint64) error
@@ -478,6 +485,12 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
 	mux.HandleFunc("GET /v1/media/people/suggestion-items", h.mediaSuggestedPersonItems)
+	mux.HandleFunc("GET /v1/media/people/identities", h.mediaPersonIdentities)
+	mux.HandleFunc("GET /v1/media/people/identity-items", h.mediaPersonItems)
+	mux.HandleFunc("POST /v1/media/people/adopt", h.adoptMediaSuggestedPerson)
+	mux.HandleFunc("PATCH /v1/media/person", h.updateMediaPerson)
+	mux.HandleFunc("POST /v1/media/person/merge", h.mergeMediaPeople)
+	mux.HandleFunc("POST /v1/media/person/split", h.splitMediaPerson)
 	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
 	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
@@ -1815,6 +1828,178 @@ func (h *desktopIPCHandler) mediaSuggestedPersonItems(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func desktopIPCValidPersonIdentityID(value string) bool {
+	value = strings.TrimSpace(value)
+	const prefix = "person:v1:"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	_, err := uuid.Parse(strings.TrimPrefix(value, prefix))
+	return err == nil
+}
+
+func (h *desktopIPCHandler) mediaPersonIdentities(w http.ResponseWriter, r *http.Request) {
+	includeHidden := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_hidden")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_people_hidden", "include_hidden must be true or false")
+			return
+		}
+		includeHidden = value
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	if limit > 100 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_people_limit", "limit must be between 1 and 100")
+		return
+	}
+	items, err := h.ctrl.CloudMediaPeople(r.Context(), includeHidden, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaPersonItems(w http.ResponseWriter, r *http.Request) {
+	personID := strings.TrimSpace(r.URL.Query().Get("person_id"))
+	if !desktopIPCValidPersonIdentityID(personID) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person", "valid person_id is required")
+		return
+	}
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.ctrl.CloudMediaPersonItems(r.Context(), personID, query, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) adoptMediaSuggestedPerson(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SuggestionID string `json:"suggestion_id"`
+		Name         string `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidSuggestedPersonID(input.SuggestionID) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_suggested_person", "valid suggestion_id is required")
+		return
+	}
+	person, err := h.ctrl.CloudAdoptMediaSuggestedPerson(r.Context(), input.SuggestionID, input.Name)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, person)
+}
+
+func (h *desktopIPCHandler) updateMediaPerson(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		PersonID    string  `json:"person_id"`
+		Revision    uint64  `json:"revision"`
+		Name        *string `json:"name,omitempty"`
+		Hidden      *bool   `json:"hidden,omitempty"`
+		CoverNodeID *uint64 `json:"cover_node_id,omitempty"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidPersonIdentityID(input.PersonID) ||
+		input.Revision == 0 ||
+		(input.Name == nil && input.Hidden == nil && input.CoverNodeID == nil) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person", "person_id, revision, and update fields are required")
+		return
+	}
+	person, err := h.ctrl.CloudUpdateMediaPerson(
+		r.Context(),
+		input.PersonID,
+		input.Revision,
+		client.UpdateMediaPersonIdentityInput{
+			Name: input.Name, Hidden: input.Hidden, CoverNodeID: input.CoverNodeID,
+		},
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, person)
+}
+
+func (h *desktopIPCHandler) mergeMediaPeople(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		TargetID  string   `json:"target_id"`
+		Revision  uint64   `json:"revision"`
+		SourceIDs []string `json:"source_ids"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidPersonIdentityID(input.TargetID) ||
+		input.Revision == 0 || len(input.SourceIDs) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person_merge", "target_id, revision, and source_ids are required")
+		return
+	}
+	for _, sourceID := range input.SourceIDs {
+		if !desktopIPCValidPersonIdentityID(sourceID) || sourceID == input.TargetID {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person_merge", "source_ids contains an invalid person")
+			return
+		}
+	}
+	person, err := h.ctrl.CloudMergeMediaPeople(
+		r.Context(),
+		input.TargetID,
+		input.Revision,
+		input.SourceIDs,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, person)
+}
+
+func (h *desktopIPCHandler) splitMediaPerson(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		PersonID string   `json:"person_id"`
+		Revision uint64   `json:"revision"`
+		NodeIDs  []uint64 `json:"node_ids"`
+		Name     string   `json:"name"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidPersonIdentityID(input.PersonID) ||
+		input.Revision == 0 || len(input.NodeIDs) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person_split", "person_id, revision, and node_ids are required")
+		return
+	}
+	result, err := h.ctrl.CloudSplitMediaPerson(
+		r.Context(),
+		input.PersonID,
+		input.Revision,
+		input.NodeIDs,
+		input.Name,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func desktopIPCValidMediaAlbumID(value string, manualOnly bool) bool {

@@ -48,6 +48,39 @@ const agent = Object.freeze({
     offset,
     query,
   ),
+  getMediaPeople: (includeHidden = false, limit = 100, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-people', includeHidden, limit, offset),
+  getMediaPersonItems: (
+    personID: string,
+    limit = 100,
+    offset = 0,
+    query: {
+      search?: string
+      asset_kind?: string
+      captured_from?: string
+      captured_to?: string
+      has_location?: boolean
+      favorite?: boolean
+      tag?: string
+      person?: string
+      place?: string
+    } = {},
+  ) => ipcRenderer.invoke('agent:get-media-person-items', personID, limit, offset, query),
+  adoptMediaSuggestedPerson: (suggestionID: string, name = '') =>
+    ipcRenderer.invoke('agent:adopt-media-suggested-person', suggestionID, name),
+  updateMediaPerson: (
+    personID: string,
+    revision: number,
+    input: { name?: string; hidden?: boolean; cover_node_id?: number },
+  ) => ipcRenderer.invoke('agent:update-media-person', personID, revision, input),
+  mergeMediaPeople: (targetID: string, revision: number, sourceIDs: string[]) =>
+    ipcRenderer.invoke('agent:merge-media-people', targetID, revision, sourceIDs),
+  splitMediaPerson: (
+    personID: string,
+    revision: number,
+    nodeIDs: number[],
+    name = '',
+  ) => ipcRenderer.invoke('agent:split-media-person', personID, revision, nodeIDs, name),
   createMediaAlbum: (name: string) => ipcRenderer.invoke('agent:create-media-album', name),
   renameMediaAlbum: (albumID: string, revision: number, name: string) => ipcRenderer.invoke('agent:rename-media-album', albumID, revision, name),
   deleteMediaAlbum: (albumID: string, revision: number) => ipcRenderer.invoke('agent:delete-media-album', albumID, revision),
