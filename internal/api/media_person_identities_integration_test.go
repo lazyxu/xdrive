@@ -247,6 +247,21 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatalf("person items=%+v", mediaItems)
 	}
 
+	personRangeResponse := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/identities/"+url.PathEscape(person.ID)+
+			"/items?range=true&limit=1&offset=1",
+		token, nil, http.StatusOK,
+	)
+	var personRange mediaItemRangeDTO
+	if err := json.Unmarshal(personRangeResponse.Body.Bytes(), &personRange); err != nil {
+		t.Fatal(err)
+	}
+	if personRange.TotalCount != 2 || personRange.Offset != 1 || personRange.Limit != 1 ||
+		len(personRange.Items) != 1 {
+		t.Fatalf("person range=%+v", personRange)
+	}
+
 	filteredItems := request(
 		t, router, http.MethodGet,
 		"/api/v1/media/items?person_identity="+url.QueryEscape(person.ID)+"&limit=100",
