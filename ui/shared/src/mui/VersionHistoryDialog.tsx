@@ -9,7 +9,7 @@ import {
   TableRow,
 } from '@mui/material'
 import type { FileVersion, Node } from '../models'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveDialogActions } from './DialogActions'
@@ -139,7 +139,7 @@ export function XDriveVersionHistoryDialog({
                   {versions.map((version) => (
                     <TableRow key={version.id} hover>
                       <TableCell>{`r${version.revision}`}</TableCell>
-                      <TableCell>{formatSize(version.size)}</TableCell>
+                      <TableCell>{formatBytes(version.size)}</TableCell>
                       <TableCell>{new Date(version.created_at).toLocaleString()}</TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">

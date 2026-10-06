@@ -763,7 +763,7 @@ func TestFormatProgressShowsCurrentAndTotal(t *testing.T) {
 		Current: 2 << 20, Total: 8 << 20,
 		BytesPerSecond: 512 << 10, Elapsed: 5 * time.Second,
 	})
-	for _, want := range []string{"2.0 MiB / 8.0 MiB", "25.0%", "512.0 KiB/s", "elapsed 5s"} {
+	for _, want := range []string{"2.0 MiB / 8.0 MiB", "25.0%", "512 KiB/s", "elapsed 5s"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("progress %q missing %q", got, want)
 		}

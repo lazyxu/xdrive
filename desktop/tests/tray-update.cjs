@@ -17,7 +17,7 @@ test('tray update presentation shows percentage, total size, and current speed',
     bytes_per_second: 4 * 1024 * 1024,
   })
   assert.equal(view.headline, '正在下载 25.0%')
-  assert.equal(view.detail, '已下载 50.0 MiB / 总大小 200 MiB · 当前速度 4.00 MiB/s')
+  assert.equal(view.detail, '已下载 50 MiB / 总大小 200 MiB · 当前速度 4 MiB/s')
   assert.equal(view.busy, true)
 })
 

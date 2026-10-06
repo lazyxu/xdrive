@@ -23,7 +23,7 @@ import {
   XDriveStatePanel,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
-import { formatBinarySize } from '@xdrive/shared'
+import { formatBytes, formatBytesPerSecond } from '@xdrive/shared'
 
 function updateStatusLabel(state: AgentUpdateState | null) {
   if (!state) return '未知'
@@ -43,11 +43,6 @@ function updateModeDescription(mode: AgentUpdateMode) {
   if (mode === 'download') return 'Agent 会自动检查并下载更新，等待你手动安装。'
   if (mode === 'install') return 'Agent 会自动检查、下载并安装更新。'
   return '只在你主动点击“检查更新”时访问更新源。'
-}
-
-function formatTransferSpeed(bytesPerSecond: number) {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '—'
-  return `${formatBinarySize(bytesPerSecond)}/s`
 }
 
 export function DesktopSettingsContent({
@@ -232,7 +227,7 @@ export function DesktopSettingsContent({
               <XDriveMetricCard title="状态" value={updateStatusLabel(clientUpdate)} />
               <XDriveMetricCard title="发布时间" value={clientUpdate.published_at ? new Date(clientUpdate.published_at).toLocaleString() : '未知'} />
               <XDriveMetricCard title="发布名称" value={clientUpdate.release_name || clientUpdate.latest_version || '—'} />
-              <XDriveMetricCard title="安装包大小" value={clientUpdate.bytes_total ? formatBinarySize(clientUpdate.bytes_total) : '未知'} />
+              <XDriveMetricCard title="安装包大小" value={clientUpdate.bytes_total ? formatBytes(clientUpdate.bytes_total) : '未知'} />
               <XDriveMetricCard title="更新通道" value={clientUpdate.channel || '—'} />
               <XDriveMetricCard title="上次检查" value={clientUpdate.last_checked_at ? new Date(clientUpdate.last_checked_at).toLocaleString() : '尚未检查'} />
             </XDriveMetricGrid>
@@ -265,9 +260,9 @@ export function DesktopSettingsContent({
                   </Typography>
                   <Typography variant="caption" color="text.secondary" fontWeight={600}>
                     {clientUpdate.bytes_total
-                      ? `${formatBinarySize(clientUpdate.bytes_done || 0)} / ${formatBinarySize(clientUpdate.bytes_total)} · ${updateProgress.toFixed(1)}%`
+                      ? `${formatBytes(clientUpdate.bytes_done || 0)} / ${formatBytes(clientUpdate.bytes_total)} · ${updateProgress.toFixed(1)}%`
                       : clientUpdate.bytes_done
-                        ? formatBinarySize(clientUpdate.bytes_done)
+                        ? formatBytes(clientUpdate.bytes_done)
                         : ''}
                   </Typography>
                 </Stack>
@@ -276,7 +271,7 @@ export function DesktopSettingsContent({
                 ) : null}
                 {clientUpdate.bytes_per_second ? (
                   <Typography variant="caption" color="text.secondary">
-                    {formatTransferSpeed(clientUpdate.bytes_per_second)}
+                    {formatBytesPerSecond(clientUpdate.bytes_per_second)}
                   </Typography>
                 ) : null}
               </Stack>
@@ -379,7 +374,7 @@ export function DesktopSettingsContent({
               />
               <Typography variant="caption" color="text.secondary">
                 {platform === 'win32'
-                  ? `0 表示不限；新设备默认 20 GiB。当前值：${formatBinarySize(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
+                  ? `0 表示不限；新设备默认 20 GiB。当前值：${formatBytes(settings.cache_limit_bytes)}。已固定 / 始终保留的内容不会被清理。`
                   : '持久化下载缓存上限适用于 Windows CfAPI；Linux FUSE 对每次打开使用临时文件。'}
               </Typography>
             </Stack>

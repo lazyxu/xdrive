@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
@@ -1064,7 +1064,7 @@ func (s *Server) reusableUploadParts(ctx context.Context, session meta.UploadSes
 			return nil, err
 		}
 		if n != sourceSize {
-			return nil, fmt.Errorf("short read while hashing reusable chunk %d: got %s want %s", index, humanize.Bytes(float64(n)), humanize.Bytes(float64(sourceSize)))
+			return nil, fmt.Errorf("short read while hashing reusable chunk %d: got %s want %s", index, humanize.IBytes(uint64(max(int64(0), n))), humanize.IBytes(uint64(max(int64(0), sourceSize))))
 		}
 		actual := hex.EncodeToString(h.Sum(nil))
 		if !strings.EqualFold(actual, localHashes[index]) {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/lazyxu/xdrive/internal/client"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/mount"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
@@ -193,7 +193,7 @@ func logout() error {
 }
 
 func formatStorageBytes(bytes int64) string {
-	return humanize.Bytes(float64(bytes))
+	return humanize.IBytes(uint64(max(int64(0), bytes)))
 }
 
 func status() error {

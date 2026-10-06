@@ -16,7 +16,7 @@ import {
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
 } from '../external-sources'
-import { formatSize } from '../format'
+import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
 
 export function XDriveSourceManagerListPage({
@@ -83,7 +83,7 @@ export function XDriveSourceManagerListPage({
             const card = externalSourceCardView(row)
             const stats = card.scannedItems === undefined || card.scannedBytes === undefined
               ? '尚无扫描统计'
-              : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatSize(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
+              : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBytes(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
 
             return (
               <XDriveSourceSummaryCard

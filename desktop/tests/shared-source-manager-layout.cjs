@@ -48,7 +48,7 @@ test('SourceManager delegates secondary dialogs to an internal shared module', (
     'XDriveDialogContent',
     'XDriveDialogActions',
     'XDriveSourceFailureItem',
-    'formatSize(item.size)',
+    'formatBytes(item.size)',
     '已经同步到 xDrive 的文件会保留，不会删除',
     '该 Pull 同步文件夹会自动暂停',
     'whiteSpace: \'pre-wrap\'',

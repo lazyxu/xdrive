@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/lazyxu/xdrive/internal/config"
-	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
@@ -69,7 +69,7 @@ func runStorageVerify(args []string) error {
 		fmt.Printf("referenced files:    %d\n", report.ReferencedFiles)
 		fmt.Printf("referenced versions: %d\n", report.ReferencedVersions)
 		fmt.Printf("blob files:          %d\n", report.BlobFiles)
-		fmt.Printf("blob size:          %s\n", humanize.Bytes(float64(report.BlobBytes)))
+		fmt.Printf("blob size:          %s\n", humanize.IBytes(uint64(max(int64(0), report.BlobBytes))))
 		fmt.Printf("missing blobs:    %d\n", len(report.Missing))
 		fmt.Printf("size mismatches:  %d\n", len(report.SizeMismatches))
 		fmt.Printf("duplicate refs:   %d\n", len(report.DuplicateRefs))
@@ -79,10 +79,10 @@ func runStorageVerify(args []string) error {
 		fmt.Printf("hash mismatches:  %d\n", len(report.HashMismatches))
 		fmt.Printf("ignored temp:     %d\n", report.IgnoredTemps)
 		for _, issue := range report.Missing {
-			fmt.Printf("MISSING node=%d key=%q expected=%s reason=%s\n", issue.NodeID, issue.StorageKey, humanize.Bytes(float64(issue.Expected)), issue.Reason)
+			fmt.Printf("MISSING node=%d key=%q expected=%s reason=%s\n", issue.NodeID, issue.StorageKey, humanize.IBytes(uint64(max(int64(0), issue.Expected))), issue.Reason)
 		}
 		for _, issue := range report.SizeMismatches {
-			fmt.Printf("SIZE_MISMATCH node=%d key=%q expected=%s actual=%s\n", issue.NodeID, issue.StorageKey, humanize.Bytes(float64(issue.Expected)), humanize.Bytes(float64(issue.Actual)))
+			fmt.Printf("SIZE_MISMATCH node=%d key=%q expected=%s actual=%s\n", issue.NodeID, issue.StorageKey, humanize.IBytes(uint64(max(int64(0), issue.Expected))), humanize.IBytes(uint64(max(int64(0), issue.Actual))))
 		}
 		for _, issue := range report.DuplicateRefs {
 			fmt.Printf("DUPLICATE_REFERENCE key=%q references=%d\n", issue.StorageKey, issue.References)
@@ -95,7 +95,7 @@ func runStorageVerify(args []string) error {
 				issue.SHA256, issue.StorageKey, issue.ExpectedRefs, issue.RecordedRefs, issue.State, issue.Reason)
 		}
 		for _, issue := range report.Orphans {
-			fmt.Printf("ORPHAN key=%q size=%s\n", issue.StorageKey, humanize.Bytes(float64(issue.Size)))
+			fmt.Printf("ORPHAN key=%q size=%s\n", issue.StorageKey, humanize.IBytes(uint64(max(int64(0), issue.Size))))
 		}
 		for _, issue := range report.HashMismatches {
 			fmt.Printf("HASH_MISMATCH node=%d version=%d key=%q expected=%s actual=%s\n",

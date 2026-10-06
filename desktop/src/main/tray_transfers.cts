@@ -1,4 +1,5 @@
 import type { AgentTransfer, AgentTransfers } from './agent_client.cjs'
+import { formatBytesPerSecond } from './byte_format.cjs'
 
 export type TrayTransferItem = {
   label: string
@@ -9,19 +10,6 @@ export type TrayTransferPresentation = {
   items: TrayTransferItem[]
   extraActive: number
   failed: number
-}
-
-function formatBinaryRate(bytesPerSecond: number) {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return ''
-  const units = ['B/s', 'KiB/s', 'MiB/s', 'GiB/s']
-  let value = bytesPerSecond
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit++
-  }
-  const digits = unit === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2
-  return `${value.toFixed(digits)} ${units[unit]}`
 }
 
 function compactName(value: string, max = 34) {
@@ -67,7 +55,7 @@ function transferLine(item: AgentTransfer) {
   if (group && progress.total > 0 && item.scan_complete !== false) {
     parts.push(`${progress.processed}/${progress.total} 文件`)
   }
-  const speed = formatBinaryRate(item.instant_bytes_per_second)
+  const speed = formatBytesPerSecond(item.instant_bytes_per_second)
   if (speed) parts.push(speed)
   return parts.join(' · ')
 }
@@ -85,7 +73,7 @@ export function trayTransferPresentation(transfers: AgentTransfers, maxItems = 3
 
   let label = '传输 · 空闲'
   if (active.length > 0) {
-    const speed = formatBinaryRate(totalSpeed)
+    const speed = formatBytesPerSecond(totalSpeed)
     label = `传输 · ${active.length} 进行中${speed ? ` · ${speed}` : ''}`
   } else if (failed > 0) {
     label = `传输 · ${failed} 个失败`

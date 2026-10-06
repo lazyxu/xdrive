@@ -35,5 +35,8 @@
     "@xdrive/ui": "file:../ui/shared"
   },
   "author": "xDrive Project",
-  "homepage": "https://github.com/lazyxu/xdrive"
+  "homepage": "https://github.com/lazyxu/xdrive",
+  "dependencies": {
+    "filesize": "11.0.25"
+  }
 }

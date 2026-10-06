@@ -2,7 +2,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
 import { useCallback, useEffect, useState } from 'react'
 import type { QuotaUsage, StorageStats } from '../models'
-import { formatBinarySize } from '../format'
+import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
 import { XDriveSectionHeader } from './SectionHeader'
@@ -88,18 +88,18 @@ export function XDriveCloudStoragePage({
               <XDriveMetricGrid>
                 <XDriveMetricCard
                   title="物理占用"
-                  value={formatBinarySize(quota.physical_used_bytes)}
-                  suffix={quota.quota_bytes > 0 ? `配额 ${formatBinarySize(quota.quota_bytes)}` : '不限配额'}
+                  value={formatBytes(quota.physical_used_bytes)}
+                  suffix={quota.quota_bytes > 0 ? `配额 ${formatBytes(quota.quota_bytes)}` : '不限配额'}
                 />
                 <XDriveMetricCard
                   title="可用空间"
-                  value={formatBinarySize(quota.available_bytes)}
+                  value={formatBytes(quota.available_bytes)}
                   suffix={quota.quota_bytes > 0 ? '用户配额可用' : '服务器可用空间'}
                 />
-                <XDriveMetricCard title="当前文件" value={formatBinarySize(quota.logical_file_bytes)} suffix="有效逻辑内容" />
-                <XDriveMetricCard title="回收站" value={formatBinarySize(quota.trash_bytes)} suffix="计入物理占用" />
-                <XDriveMetricCard title="历史版本" value={formatBinarySize(quota.history_bytes)} suffix="已保存的历史内容" />
-                <XDriveMetricCard title="上传预占" value={formatBinarySize(quota.reserved_bytes)} suffix="进行中上传预留空间" />
+                <XDriveMetricCard title="当前文件" value={formatBytes(quota.logical_file_bytes)} suffix="有效逻辑内容" />
+                <XDriveMetricCard title="回收站" value={formatBytes(quota.trash_bytes)} suffix="计入物理占用" />
+                <XDriveMetricCard title="历史版本" value={formatBytes(quota.history_bytes)} suffix="已保存的历史内容" />
+                <XDriveMetricCard title="上传预占" value={formatBytes(quota.reserved_bytes)} suffix="进行中上传预留空间" />
               </XDriveMetricGrid>
             </Stack>
           ) : null}
@@ -113,22 +113,22 @@ export function XDriveCloudStoragePage({
               />
               <XDriveMetricGrid>
                 <XDriveMetricCard title="CAS Blob" value={stats.cas_blob_count.toLocaleString()} suffix="唯一物理对象" />
-                <XDriveMetricCard title="CAS 物理容量" value={formatBinarySize(stats.cas_physical_bytes)} suffix="实际占用" />
-                <XDriveMetricCard title="逻辑引用容量" value={formatBinarySize(stats.cas_logical_referenced_bytes)} suffix="含重复引用" />
+                <XDriveMetricCard title="CAS 物理容量" value={formatBytes(stats.cas_physical_bytes)} suffix="实际占用" />
+                <XDriveMetricCard title="逻辑引用容量" value={formatBytes(stats.cas_logical_referenced_bytes)} suffix="含重复引用" />
                 <XDriveMetricCard
                   title="去重节省"
-                  value={formatBinarySize(stats.cas_dedup_saved_bytes)}
+                  value={formatBytes(stats.cas_dedup_saved_bytes)}
                   suffix={`${stats.cas_dedup_ratio.toFixed(2)}× · ${(stats.cas_savings_ratio * 100).toFixed(1)}%`}
                 />
-                <XDriveMetricCard title="平均 Blob" value={formatBinarySize(stats.average_blob_size_bytes)} suffix="算术平均" />
-                <XDriveMetricCard title="P50" value={formatBinarySize(stats.p50_blob_size_bytes)} suffix="中位尺寸" />
-                <XDriveMetricCard title="P90" value={formatBinarySize(stats.p90_blob_size_bytes)} suffix="90% Blob 不超过" />
-                <XDriveMetricCard title="P99" value={formatBinarySize(stats.p99_blob_size_bytes)} suffix="99% Blob 不超过" />
+                <XDriveMetricCard title="平均 Blob" value={formatBytes(stats.average_blob_size_bytes)} suffix="算术平均" />
+                <XDriveMetricCard title="P50" value={formatBytes(stats.p50_blob_size_bytes)} suffix="中位尺寸" />
+                <XDriveMetricCard title="P90" value={formatBytes(stats.p90_blob_size_bytes)} suffix="90% Blob 不超过" />
+                <XDriveMetricCard title="P99" value={formatBytes(stats.p99_blob_size_bytes)} suffix="99% Blob 不超过" />
               </XDriveMetricGrid>
 
               {stats.legacy_blob_count > 0 ? (
                 <XDriveStatusAlert tone="neutral">
-                  仍有 {stats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBinarySize(stats.legacy_physical_bytes)}），未计入 CAS 尺寸分布。
+                  仍有 {stats.legacy_blob_count.toLocaleString()} 个 legacy 对象（{formatBytes(stats.legacy_physical_bytes)}），未计入 CAS 尺寸分布。
                 </XDriveStatusAlert>
               ) : null}
 
@@ -151,7 +151,7 @@ export function XDriveCloudStoragePage({
                         <TableRow key={bucket.key} hover>
                           <TableCell>{bucket.label}</TableCell>
                           <TableCell align="right">{bucket.count.toLocaleString()}</TableCell>
-                          <TableCell align="right">{formatBinarySize(bucket.bytes)}</TableCell>
+                          <TableCell align="right">{formatBytes(bucket.bytes)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

@@ -14,8 +14,19 @@ function loadSharedModule(filename) {
     fileName: filename,
   }).outputText
   const mod = { exports: {} }
+  const localRequire = (request) => {
+    if (request.startsWith('.')) {
+      const base = path.resolve(path.dirname(filename), request)
+      for (const candidate of [base, `${base}.ts`, `${base}.tsx`]) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return loadSharedModule(candidate)
+        }
+      }
+    }
+    return require(request)
+  }
   const execute = new Function('exports', 'module', 'require', output)
-  execute(mod.exports, mod, require)
+  execute(mod.exports, mod, localRequire)
   return mod.exports
 }
 

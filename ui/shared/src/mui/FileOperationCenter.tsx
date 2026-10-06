@@ -1,6 +1,7 @@
 import { Box, LinearProgress, Stack, Typography } from '@mui/material'
 import {
-  formatBinarySize,
+  formatBytes,
+  formatBytesPerSecond,
   formatXDriveTransferDuration,
   xDriveFileOperationActive,
   xDriveFileOperationAverageBytesPerSecond,
@@ -39,7 +40,7 @@ function operationTime(value?: string) {
 function operationRate(operation: XDriveFileOperation, now: number) {
   const bytesPerSecond = xDriveFileOperationAverageBytesPerSecond(operation, now)
   if (operation.total_bytes > 0 && bytesPerSecond > 0) {
-    return `${formatBinarySize(bytesPerSecond)}/秒`
+    return formatBytesPerSecond(bytesPerSecond)
   }
   const itemsPerSecond = xDriveFileOperationAverageItemsPerSecond(operation, now)
   if (itemsPerSecond <= 0) return '—'
@@ -83,8 +84,8 @@ function OperationItem({
   const now = Date.now()
   const elapsed = xDriveFileOperationElapsedMs(operation, now)
   const eta = xDriveFileOperationEtaMs(operation, now)
-  const currentSize = operation.total_bytes > 0 ? formatBinarySize(operation.processed_bytes) : '—'
-  const totalSize = operation.total_bytes > 0 ? formatBinarySize(operation.total_bytes) : '—'
+  const currentSize = operation.total_bytes > 0 ? formatBytes(operation.processed_bytes) : '—'
+  const totalSize = operation.total_bytes > 0 ? formatBytes(operation.total_bytes) : '—'
   const elapsedLabel = operation.started_at ? formatXDriveTransferDuration(elapsed) : '—'
   const etaLabel = operation.status === 'queued'
     ? '等待开始'

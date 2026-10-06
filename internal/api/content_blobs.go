@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lazyxu/xdrive/internal/humanize"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
@@ -157,7 +157,7 @@ func (s *Server) writeBlobFromTemp(ctx context.Context, tempKey, targetKey strin
 	}
 	if written != expectedSize {
 		_ = s.Store.Delete(ctx, targetKey)
-		return fmt.Errorf("content blob size mismatch: got %s want %s", humanize.Bytes(float64(written)), humanize.Bytes(float64(expectedSize)))
+		return fmt.Errorf("content blob size mismatch: got %s want %s", humanize.IBytes(uint64(max(int64(0), written))), humanize.IBytes(uint64(max(int64(0), expectedSize))))
 	}
 	return nil
 }

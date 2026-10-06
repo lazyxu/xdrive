@@ -1,3 +1,5 @@
+import { formatBytes } from './format'
+
 export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos'
 export type ExternalSourceDirection = 'push' | 'pull'
 export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull'
@@ -701,14 +703,6 @@ export function externalSourceDetailView(row: ExternalSourceRow): ExternalSource
   }
 }
 
-function formatExternalSourceBytes(bytes: number) {
-  if (!bytes) return '0 B'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** i
-  return `${value >= 10 || i === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`
-}
-
 function externalSourceRunDurationLabel(run: ExternalSourceRun) {
   const started = new Date(run.started_at).getTime()
   const finished = run.finished_at ? new Date(run.finished_at).getTime() : Date.now()
@@ -745,7 +739,7 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
         label: run.cancel_requested_at
           ? '正在取消…'
           : run.mode === 'sync' && run.planned_transfer_items > 0
-            ? `已处理 ${processedItems.toLocaleString('zh-CN')} / 已发现 ${run.planned_transfer_items.toLocaleString('zh-CN')} 项 · ${formatExternalSourceBytes(processedBytes)} / ${formatExternalSourceBytes(plannedBytes)} · 已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`
+            ? `已处理 ${processedItems.toLocaleString('zh-CN')} / 已发现 ${run.planned_transfer_items.toLocaleString('zh-CN')} 项 · ${formatBytes(processedBytes)} / ${formatBytes(plannedBytes)} · 已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`
             : `已扫描 ${run.scanned_items.toLocaleString('zh-CN')} 项`,
         activePath: run.active_transfer_path || undefined,
         cancelling: Boolean(run.cancel_requested_at),
