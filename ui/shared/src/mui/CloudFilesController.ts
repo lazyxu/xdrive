@@ -47,6 +47,7 @@ export function useXDriveCloudFilesController<
   const [loadingMore, setLoadingMore] = useState(false)
   const directoryRequestRef = useRef(0)
   const loadMoreRequestRef = useRef(false)
+  const directoryItemIDsRef = useRef(new Set<number>())
 
   const current = crumbs.at(-1)
 
@@ -84,6 +85,7 @@ export function useXDriveCloudFilesController<
         page,
         effectiveSort,
         false,
+        directoryItemIDsRef.current,
       )
       setItems(transition.applyItems)
       setPageState(transition.pageState)
@@ -116,6 +118,7 @@ export function useXDriveCloudFilesController<
         page,
         sort,
         true,
+        directoryItemIDsRef.current,
       )
       setItems(transition.applyItems)
       setPageState(transition.pageState)
@@ -148,6 +151,7 @@ export function useXDriveCloudFilesController<
         page,
         defaultSort,
         false,
+        directoryItemIDsRef.current,
       )
       setQuota(quotaValue)
       setCrumbs([{ id: root.id, name: rootLabel }])
@@ -164,6 +168,7 @@ export function useXDriveCloudFilesController<
     if (!enabled) {
       directoryRequestRef.current += 1
       loadMoreRequestRef.current = false
+      directoryItemIDsRef.current.clear()
       setQuota(null)
       setItems([])
       setCrumbs([])
