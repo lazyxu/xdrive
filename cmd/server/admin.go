@@ -12,6 +12,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/admin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/config"
+	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -103,7 +104,7 @@ func listAdminUsers(db *gorm.DB, args []string) error {
 		return err
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "ID\tUSERNAME\tROLE\tSTATUS\tMUST_CHANGE\tQUOTA_BYTES\tLAST_LOGIN"); err != nil {
+	if _, err := fmt.Fprintln(w, "ID\tUSERNAME\tROLE\tSTATUS\tMUST_CHANGE\tQUOTA\tLAST_LOGIN"); err != nil {
 		return err
 	}
 	for _, user := range users {
@@ -115,8 +116,12 @@ func listAdminUsers(db *gorm.DB, args []string) error {
 		if user.LastLoginAt != nil {
 			lastLogin = user.LastLoginAt.UTC().Format(time.RFC3339)
 		}
-		if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%t\t%d\t%s\n",
-			user.ID, user.Username, user.Role, status, user.MustChangePassword, user.QuotaBytes, lastLogin); err != nil {
+		quota := "unlimited"
+		if user.QuotaBytes > 0 {
+			quota = humanize.Bytes(float64(user.QuotaBytes))
+		}
+		if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%t\t%s\t%s\n",
+			user.ID, user.Username, user.Role, status, user.MustChangePassword, quota, lastLogin); err != nil {
 			return err
 		}
 	}

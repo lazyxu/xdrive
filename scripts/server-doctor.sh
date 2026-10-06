@@ -47,6 +47,15 @@ safe_path() {
   fi
 }
 
+format_bytes() {
+  awk -v bytes="${1:-0}" 'BEGIN {
+    split("B KiB MiB GiB TiB PiB EiB", unit, " ");
+    n = bytes + 0; i = 1;
+    while (n >= 1024 && i < 7) { n /= 1024; i++ }
+    if (i == 1) printf "%.0f %s", n, unit[i]; else printf "%.1f %s", n, unit[i]
+  }'
+}
+
 redact_stream() {
   local home_re=""
   local -a args
@@ -340,7 +349,7 @@ if command -v curl >/dev/null 2>&1; then
       "$url" 2>/dev/null || true)"
     IFS=$'\t' read -r code remote connect tls total speed <<< "$result"
     if [[ -n "$code" && "$code" != "000" ]]; then
-      record PASS "$name" "HTTP $code remote=${remote:-?} connect=${connect:-?}s tls=${tls:-?}s total=${total:-?}s avg=${speed:-0}B/s"
+      record PASS "$name" "HTTP $code remote=${remote:-?} connect=${connect:-?}s tls=${tls:-?}s total=${total:-?}s avg=$(format_bytes "${speed:-0}")/s"
     else
       record WARN "$name" "$url unreachable or timed out"
     fi

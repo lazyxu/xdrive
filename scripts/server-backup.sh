@@ -92,9 +92,9 @@ write_backup_progress() {
 
 format_bytes() {
   awk -v bytes="${1:-0}" 'BEGIN {
-    split("B KiB MiB GiB TiB", unit, " ");
+    split("B KiB MiB GiB TiB PiB EiB", unit, " ");
     n = bytes + 0; i = 1;
-    while (n >= 1024 && i < 5) { n /= 1024; i++ }
+    while (n >= 1024 && i < 7) { n /= 1024; i++ }
     if (i == 1) printf "%.0f %s", n, unit[i]; else printf "%.1f %s", n, unit[i]
   }'
 }
@@ -254,10 +254,10 @@ for pair in "blob_bytes=$blob_bytes" "database_bytes=$database_bytes" "available
 done
 estimated_source_bytes=$(( blob_bytes + database_bytes ))
 required_bytes=$(( estimated_source_bytes + estimated_source_bytes / 10 + 64 * 1024 * 1024 ))
-echo "[xDrive] backup space preflight: source≈$estimated_source_bytes bytes, required≈$required_bytes bytes, available=$available_bytes bytes" >&2
+echo "[xDrive] backup space preflight: source≈$(format_bytes "$estimated_source_bytes"), required≈$(format_bytes "$required_bytes"), available=$(format_bytes "$available_bytes")" >&2
 if (( available_bytes < required_bytes )); then
   echo "backup aborted: insufficient free space in $OUTPUT_ROOT" >&2
-  echo "required approximately $required_bytes bytes; available $available_bytes bytes." >&2
+  echo "required approximately $(format_bytes "$required_bytes"); available $(format_bytes "$available_bytes")." >&2
   exit 1
 fi
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceagent"
 	"github.com/lazyxu/xdrive/internal/sourceagentconfig"
@@ -714,15 +715,5 @@ func printRun(run client.SyncRun) {
 }
 
 func formatBytes(bytes int64) string {
-	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
-	value := float64(bytes)
-	unit := 0
-	for value >= 1024 && unit < len(units)-1 {
-		value /= 1024
-		unit++
-	}
-	if unit == 0 || value >= 10 {
-		return fmt.Sprintf("%.0f %s", value, units[unit])
-	}
-	return fmt.Sprintf("%.1f %s", value, units[unit])
+	return humanize.Bytes(float64(bytes))
 }

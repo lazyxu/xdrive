@@ -3,6 +3,8 @@ package update
 import (
 	"fmt"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/humanize"
 )
 
 const updateProgressSteps = 5
@@ -58,17 +60,5 @@ func FormatProgress(event ProgressEvent) string {
 }
 
 func formatBytes(value float64) string {
-	if value < 0 {
-		value = 0
-	}
-	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
-	unit := 0
-	for value >= 1024 && unit < len(units)-1 {
-		value /= 1024
-		unit++
-	}
-	if unit == 0 {
-		return fmt.Sprintf("%.0f %s", value, units[unit])
-	}
-	return fmt.Sprintf("%.1f %s", value, units[unit])
+	return humanize.Bytes(value)
 }
