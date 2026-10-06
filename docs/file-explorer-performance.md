@@ -11,6 +11,8 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Details scroll-window state is updated at most once per animation frame and only when the effective row boundary changes.
 - Grid view windows large directories once 400 items are loaded, with deterministic row geometry and three overscan rows.
 - Grid keyboard navigation and marquee selection use computed virtual geometry instead of scanning every mounted item.
+- Selection, active-item, Shift-anchor, keyboard-current-item, and Quick Look position lookup use memoized ID indexes instead of repeated whole-directory scans.
+- Selected-size aggregation scales with the selected set rather than the complete loaded directory.
 - Grid thumbnails are viewport-proximate and share a global concurrency budget of 6 requests.
 - Directory and search pagination reject duplicate in-flight load-more requests synchronously.
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
