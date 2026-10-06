@@ -10,6 +10,18 @@ export function createDesktopMediaGalleryDataSource(
     listSuggestedPeople: (limit = 24) => agent.getMediaSuggestedPeople(limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       agent.getMediaSuggestedPersonItems(personID, limit, offset, query),
+    listPeople: (includeHidden = false, limit = 100, offset = 0) =>
+      agent.getMediaPeople(includeHidden, limit, offset),
+    listPersonItems: (personID, limit, offset, query) =>
+      agent.getMediaPersonItems(personID, limit, offset, query),
+    adoptSuggestedPerson: (suggestionID, name) =>
+      agent.adoptMediaSuggestedPerson(suggestionID, name),
+    updatePerson: (personID, revision, input) =>
+      agent.updateMediaPerson(personID, revision, input),
+    mergePeople: (targetID, revision, sourceIDs) =>
+      agent.mergeMediaPeople(targetID, revision, sourceIDs),
+    splitPerson: (personID, revision, nodeIDs, name) =>
+      agent.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItems(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => agent.getMediaThumbnail(nodeID),

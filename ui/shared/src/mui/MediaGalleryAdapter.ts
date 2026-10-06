@@ -2,8 +2,11 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaPersonIdentity,
+  MediaPersonSplit,
   MediaPlaceFacet,
   MediaSuggestedPerson,
+  UpdateMediaPersonIdentityInput,
 } from '../models'
 import { resolveXDriveTransport } from '../transport-result'
 import type {
@@ -44,6 +47,37 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  listPeople?: (
+    includeHidden?: boolean,
+    limit?: number,
+    offset?: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonIdentity[]>>
+  listPersonItems?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  adoptSuggestedPerson?: (
+    suggestionID: string,
+    name: string,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonIdentity>>
+  updatePerson?: (
+    personID: string,
+    revision: number,
+    input: UpdateMediaPersonIdentityInput,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonIdentity>>
+  mergePeople?: (
+    targetID: string,
+    revision: number,
+    sourceIDs: string[],
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonIdentity>>
+  splitPerson?: (
+    personID: string,
+    revision: number,
+    nodeIDs: number[],
+    name: string,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonSplit>>
   listAlbumItems: (
     albumID: string,
     limit: number,
@@ -141,6 +175,36 @@ export function createXDriveMediaGalleryDataSource(
     listSuggestedPersonItems: port.listSuggestedPersonItems
       ? (personID, limit, offset, query) => resolveXDriveTransport(
           port.listSuggestedPersonItems!(personID, limit, offset, query),
+        )
+      : undefined,
+    listPeople: port.listPeople
+      ? (includeHidden, limit, offset) => resolveXDriveTransport(
+          port.listPeople!(includeHidden, limit, offset),
+        )
+      : undefined,
+    listPersonItems: port.listPersonItems
+      ? (personID, limit, offset, query) => resolveXDriveTransport(
+          port.listPersonItems!(personID, limit, offset, query),
+        )
+      : undefined,
+    adoptSuggestedPerson: port.adoptSuggestedPerson
+      ? (suggestionID, name) => resolveXDriveTransport(
+          port.adoptSuggestedPerson!(suggestionID, name),
+        )
+      : undefined,
+    updatePerson: port.updatePerson
+      ? (personID, revision, input) => resolveXDriveTransport(
+          port.updatePerson!(personID, revision, input),
+        )
+      : undefined,
+    mergePeople: port.mergePeople
+      ? (targetID, revision, sourceIDs) => resolveXDriveTransport(
+          port.mergePeople!(targetID, revision, sourceIDs),
+        )
+      : undefined,
+    splitPerson: port.splitPerson
+      ? (personID, revision, nodeIDs, name) => resolveXDriveTransport(
+          port.splitPerson!(personID, revision, nodeIDs, name),
         )
       : undefined,
     listAlbumItems: (albumID, limit, offset, query) => resolveXDriveTransport(

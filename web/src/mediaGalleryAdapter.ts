@@ -9,6 +9,18 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listSuggestedPeople: (limit = 24) => api.mediaSuggestedPeople(limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       api.mediaSuggestedPersonItems(personID, limit, offset, query),
+    listPeople: (includeHidden = false, limit = 100, offset = 0) =>
+      api.mediaPeople(includeHidden, limit, offset),
+    listPersonItems: (personID, limit, offset, query) =>
+      api.mediaPersonItems(personID, limit, offset, query),
+    adoptSuggestedPerson: (suggestionID, name) =>
+      api.adoptMediaSuggestedPerson(suggestionID, name),
+    updatePerson: (personID, revision, input) =>
+      api.updateMediaPerson(personID, revision, input),
+    mergePeople: (targetID, revision, sourceIDs) =>
+      api.mergeMediaPeople(targetID, revision, sourceIDs),
+    splitPerson: (personID, revision, nodeIDs, name) =>
+      api.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       api.mediaAlbumItems(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => api.mediaThumbnail(nodeID),

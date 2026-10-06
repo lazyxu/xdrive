@@ -83,6 +83,8 @@ import {
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaSuggestedPerson,
+  type AgentMediaPersonIdentity,
+  type AgentMediaPersonSplit,
   type AgentMediaQuery,
   type AgentMediaFavorite,
   type AgentMediaTags,
@@ -1712,6 +1714,185 @@ function registerIPCHandlers() {
         requestedLimit,
         requestedOffset,
         normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-people',
+    (
+      _event,
+      includeHidden: unknown = false,
+      limit: unknown = 100,
+      offset: unknown = 0,
+    ) => runAgentAction<AgentMediaPersonIdentity[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (typeof includeHidden !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'includeHidden must be boolean.')
+      }
+      if (
+        typeof limit !== 'number' || !Number.isSafeInteger(limit) ||
+        limit < 1 || limit > 100 ||
+        typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid durable people pagination.')
+      }
+      return requireAgentClient().mediaPeople(includeHidden, limit, offset)
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-person-items',
+    (
+      _event,
+      personID: unknown,
+      limit: unknown = 100,
+      offset: unknown = 0,
+      query: unknown = undefined,
+    ) => runAgentAction<AgentMediaItem[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof personID !== 'string' ||
+        !/^person:v1:[0-9a-f-]{36}$/.test(personID.trim())
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Durable person id is invalid.')
+      }
+      if (
+        typeof limit !== 'number' || !Number.isSafeInteger(limit) ||
+        limit < 1 || limit > 500 ||
+        typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid durable person pagination.')
+      }
+      return requireAgentClient().mediaPersonItems(
+        personID.trim(),
+        limit,
+        offset,
+        normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:adopt-media-suggested-person',
+    (_event, suggestionID: unknown, name: unknown = '') =>
+      runAgentAction<AgentMediaPersonIdentity>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof suggestionID !== 'string' ||
+          !/^auto:v1:[0-9a-f]{64}$/.test(suggestionID.trim()) ||
+          typeof name !== 'string'
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Suggested person input is invalid.')
+        }
+        return requireAgentClient().adoptMediaSuggestedPerson(
+          suggestionID.trim(),
+          name.trim(),
+        )
+      }, false),
+  )
+
+  ipcMain.handle(
+    'agent:update-media-person',
+    (_event, personID: unknown, revision: unknown, input: unknown) =>
+      runAgentAction<AgentMediaPersonIdentity>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof personID !== 'string' ||
+          !/^person:v1:[0-9a-f-]{36}$/.test(personID.trim()) ||
+          typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+          !input || typeof input !== 'object'
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Durable person update is invalid.')
+        }
+        const value = input as {
+          name?: unknown
+          hidden?: unknown
+          cover_node_id?: unknown
+        }
+        const next: { name?: string; hidden?: boolean; cover_node_id?: number } = {}
+        if (value.name !== undefined) {
+          if (typeof value.name !== 'string') throw new AgentIPCError('invalid_input', 0, 'Person name is invalid.')
+          next.name = value.name
+        }
+        if (value.hidden !== undefined) {
+          if (typeof value.hidden !== 'boolean') throw new AgentIPCError('invalid_input', 0, 'Hidden flag is invalid.')
+          next.hidden = value.hidden
+        }
+        if (value.cover_node_id !== undefined) {
+          if (
+            typeof value.cover_node_id !== 'number' ||
+            !Number.isSafeInteger(value.cover_node_id) ||
+            value.cover_node_id <= 0
+          ) {
+            throw new AgentIPCError('invalid_input', 0, 'Cover node id is invalid.')
+          }
+          next.cover_node_id = value.cover_node_id
+        }
+        if (Object.keys(next).length === 0) {
+          throw new AgentIPCError('invalid_input', 0, 'Durable person update is empty.')
+        }
+        return requireAgentClient().updateMediaPerson(
+          personID.trim(),
+          revision,
+          next,
+        )
+      }, false),
+  )
+
+  ipcMain.handle(
+    'agent:merge-media-people',
+    (_event, targetID: unknown, revision: unknown, sourceIDs: unknown) =>
+      runAgentAction<AgentMediaPersonIdentity>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof targetID !== 'string' ||
+          !/^person:v1:[0-9a-f-]{36}$/.test(targetID.trim()) ||
+          typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+          !Array.isArray(sourceIDs) || sourceIDs.length === 0 ||
+          sourceIDs.some((id) => typeof id !== 'string' || !/^person:v1:[0-9a-f-]{36}$/.test(id.trim()))
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Durable person merge is invalid.')
+        }
+        return requireAgentClient().mergeMediaPeople(
+          targetID.trim(),
+          revision,
+          sourceIDs.map((id) => id.trim()),
+        )
+      }, false),
+  )
+
+  ipcMain.handle(
+    'agent:split-media-person',
+    (
+      _event,
+      personID: unknown,
+      revision: unknown,
+      nodeIDs: unknown,
+      name: unknown = '',
+    ) => runAgentAction<AgentMediaPersonSplit>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof personID !== 'string' ||
+        !/^person:v1:[0-9a-f-]{36}$/.test(personID.trim()) ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        !Array.isArray(nodeIDs) || nodeIDs.length === 0 ||
+        nodeIDs.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) ||
+        typeof name !== 'string'
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Durable person split is invalid.')
+      }
+      return requireAgentClient().splitMediaPerson(
+        personID.trim(),
+        revision,
+        nodeIDs,
+        name.trim(),
       )
     }, false),
   )

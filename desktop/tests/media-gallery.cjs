@@ -150,6 +150,8 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /place\?: string/)
   assert.match(sharedModels, /export interface MediaPlaceFacet/)
   assert.match(sharedModels, /export interface MediaSuggestedPerson/)
+  assert.match(sharedModels, /export interface MediaPersonIdentity/)
+  assert.match(sharedModels, /export interface MediaPersonSplit/)
   assert.match(sharedModels, /face_count: number/)
   assert.match(sharedModels, /attribution\?: string/)
   assert.match(sharedModels, /attribution_url\?: string/)
@@ -158,6 +160,13 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedGallery, /人物建议/)
   assert.match(sharedGallery, /自动聚类建议/)
   assert.match(sharedGallery, /尚未写入手工人物标签/)
+  assert.match(sharedGallery, /已保存的长期人物/)
+  assert.match(sharedGallery, /保存为人物/)
+  assert.match(sharedGallery, /重命名人物/)
+  assert.match(sharedGallery, /合并人物/)
+  assert.match(sharedGallery, /拆分人物/)
+  assert.match(sharedGallery, /设封面/)
+  assert.match(sharedGallery, /显示已隐藏/)
   assert.match(sharedGallery, /place\.attribution/)
   assert.match(sharedGallery, /地点/)
   assert.match(sharedGallery, /RAW 组合/)
@@ -193,7 +202,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaPeople(', 'mediaPersonItems(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -203,6 +212,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.mediaPlaces(',
     'api.mediaSuggestedPeople(',
     'api.mediaSuggestedPersonItems(',
+    'api.mediaPeople(',
+    'api.mediaPersonItems(',
+    'api.adoptMediaSuggestedPerson(',
+    'api.updateMediaPerson(',
+    'api.mergeMediaPeople(',
+    'api.splitMediaPerson(',
     'api.mediaAlbumItems(',
     'api.createMediaAlbum(',
     'api.createSmartMediaAlbum(',
@@ -229,6 +244,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaPlaces:',
     'getMediaSuggestedPeople:',
     'getMediaSuggestedPersonItems:',
+    'getMediaPeople:',
+    'getMediaPersonItems:',
+    'adoptMediaSuggestedPerson:',
+    'updateMediaPerson:',
+    'mergeMediaPeople:',
+    'splitMediaPerson:',
     'getMediaAlbumItems:',
     'createMediaAlbum:',
     'renameMediaAlbum:',
@@ -255,6 +276,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaPlaces(',
     'mediaSuggestedPeople(',
     'mediaSuggestedPersonItems(',
+    'mediaPeople(',
+    'mediaPersonItems(',
+    'adoptMediaSuggestedPerson(',
+    'updateMediaPerson(',
+    'mergeMediaPeople(',
+    'splitMediaPerson(',
     'mediaAlbumItems(',
     'createMediaAlbum(name:',
     'renameMediaAlbum(albumID:',
@@ -281,6 +308,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/places'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestions'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestion-items'))
+  assert.ok(desktopIPC.includes('GET /v1/media/people/identities'))
+  assert.ok(desktopIPC.includes('GET /v1/media/people/identity-items'))
+  assert.ok(desktopIPC.includes('POST /v1/media/people/adopt'))
+  assert.ok(desktopIPC.includes('PATCH /v1/media/person'))
+  assert.ok(desktopIPC.includes('POST /v1/media/person/merge'))
+  assert.ok(desktopIPC.includes('POST /v1/media/person/split'))
   assert.ok(desktopIPC.includes('POST /v1/media/albums'))
   assert.ok(desktopIPC.includes('PATCH /v1/media/album'))
   assert.ok(desktopIPC.includes('DELETE /v1/media/album'))
@@ -301,6 +334,12 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaSuggestedPeople/)
   assert.match(desktopAdapter, /getMediaSuggestedPersonItems/)
+  assert.match(desktopAdapter, /getMediaPeople/)
+  assert.match(desktopAdapter, /getMediaPersonItems/)
+  assert.match(desktopAdapter, /adoptMediaSuggestedPerson/)
+  assert.match(desktopAdapter, /updateMediaPerson/)
+  assert.match(desktopAdapter, /mergeMediaPeople/)
+  assert.match(desktopAdapter, /splitMediaPerson/)
   assert.match(desktopAdapter, /getMediaAlbumItems\([\s\S]*query\)/)
   assert.match(desktopAdapter, /setPeople/)
   assert.match(desktopAdapter, /setDescription/)
