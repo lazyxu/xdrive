@@ -154,6 +154,14 @@ type BatchNodesResult struct {
 	DeletedIDs  []uint64 `json:"deleted_ids,omitempty"`
 }
 
+type FilePropertiesStats struct {
+	SelectedCount      int64 `json:"selected_count"`
+	EffectiveRootCount int64 `json:"effective_root_count"`
+	TotalBytes         int64 `json:"total_bytes"`
+	FileCount          int64 `json:"file_count"`
+	FolderCount        int64 `json:"folder_count"`
+}
+
 type BackgroundTaskProgress struct {
 	Phase       string   `json:"phase,omitempty"`
 	Current     int64    `json:"current,omitempty"`
@@ -598,6 +606,18 @@ func (c *Client) BatchMove(ctx context.Context, items []BatchNodeRef, parentID u
 func (c *Client) BatchDelete(ctx context.Context, items []BatchNodeRef) (BatchNodesResult, error) {
 	var out BatchNodesResult
 	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/batch/delete", map[string]any{"items": items}, &out)
+	return out, err
+}
+
+func (c *Client) FilePropertiesStats(ctx context.Context, items []BatchNodeRef) (FilePropertiesStats, error) {
+	var out FilePropertiesStats
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/nodes/properties/stats",
+		map[string]any{"items": items},
+		&out,
+	)
 	return out, err
 }
 

@@ -38,6 +38,7 @@ import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
+  XDriveFileExplorerPropertiesStats,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
@@ -499,6 +500,13 @@ declare global {
         cloudBatchCopy: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudBatchMove: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudBatchDelete: (items: AgentCloudBatchNodeRef[]) => Promise<DesktopResult<AgentCloudBatchResult>>
+        cloudFilePropertiesStats: (
+          items: AgentCloudBatchNodeRef[],
+          requestID: string,
+        ) => Promise<DesktopResult<XDriveFileExplorerPropertiesStats>>
+        cloudCancelFilePropertiesStats: (
+          requestID: string,
+        ) => Promise<DesktopResult<{ cancelled: boolean }>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudBackgroundTasks: (global?: boolean, limit?: number) => Promise<DesktopResult<AgentBackgroundTask[]>>
         cloudBackgroundTaskControl: (

@@ -14,6 +14,7 @@ import {
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerResolveFolderUploadTargets,
+  xDriveFileExplorerPropertiesRefs,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -44,6 +45,12 @@ import type {
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'
+let desktopFilePropertiesRequestSequence = 0
+
+function nextDesktopFilePropertiesRequestID() {
+  desktopFilePropertiesRequestSequence += 1
+  return `file-properties-${Date.now()}-${desktopFilePropertiesRequestSequence}`
+}
 
 export default function DesktopFileExplorer({
   items,
@@ -67,6 +74,7 @@ export default function DesktopFileExplorer({
   folderTreeDownloadSupported = false,
   textPreviewSupported = false,
   previewStreamSupported = false,
+  propertiesStatsSupported = false,
   quickAccessSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
@@ -95,6 +103,7 @@ export default function DesktopFileExplorer({
   folderTreeDownloadSupported?: boolean
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
+  propertiesStatsSupported?: boolean
   quickAccessSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
@@ -393,6 +402,38 @@ export default function DesktopFileExplorer({
     const result = await window.xdriveDesktop.agent.cloudTextPreview(Number(item.id))
     return result.ok ? result.data : null
   }, [textPreviewSupported])
+
+  const loadPropertiesStats = useCallback(async (
+    selected: readonly XDriveFileExplorerItem[],
+    signal: AbortSignal,
+  ) => {
+    if (!propertiesStatsSupported) {
+      throw new Error('当前 xdrive-agent 不支持文件夹属性统计，请更新客户端核心组件。')
+    }
+    const requestID = nextDesktopFilePropertiesRequestID()
+    const refs = xDriveFileExplorerPropertiesRefs(selected)
+    const cancel = () => {
+      void window.xdriveDesktop.agent.cloudCancelFilePropertiesStats(requestID)
+    }
+    if (signal.aborted) {
+      cancel()
+      throw new Error('File Properties request was cancelled.')
+    }
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      const result = await window.xdriveDesktop.agent.cloudFilePropertiesStats(
+        refs,
+        requestID,
+      )
+      if (signal.aborted) {
+        throw new Error('File Properties request was cancelled.')
+      }
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    } finally {
+      signal.removeEventListener('abort', cancel)
+    }
+  }, [propertiesStatsSupported])
 
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
@@ -877,6 +918,7 @@ export default function DesktopFileExplorer({
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
+        loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

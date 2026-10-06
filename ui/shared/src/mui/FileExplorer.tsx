@@ -66,6 +66,8 @@ import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
+import { useXDriveFileExplorerPropertiesController } from './FileExplorerPropertiesController'
+import type { XDriveFileExplorerPropertiesLoader } from './FileExplorerPropertiesController'
 import { xDriveFileExplorerReadExternalDrop } from './FileExplorerExternalDrop'
 import type { XDriveFileExplorerExternalDropPayload } from './FileExplorerExternalDrop'
 import {
@@ -719,6 +721,7 @@ export function XDriveFileExplorer({
   loadThumbnail,
   loadTextPreview,
   loadPreviewURL,
+  loadPropertiesStats,
   externallySorted = false,
   virtualCollection,
 }: {
@@ -793,6 +796,7 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
   ) => Promise<string | null | undefined>
+  loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   externallySorted?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
@@ -844,6 +848,10 @@ export function XDriveFileExplorer({
   const [viewportWidth, setViewportWidth] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
+  const propertiesStatsState = useXDriveFileExplorerPropertiesController({
+    items: propertiesItems,
+    loadStats: loadPropertiesStats,
+  })
   const [quickLookItemID, setQuickLookItemID] = useState<XDriveFileExplorerID | null>(null)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
@@ -2354,16 +2362,52 @@ export function XDriveFileExplorer({
   const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
   const propertiesDialogFileCount = propertiesItems.filter((item) => item.kind === 'file').length
   const propertiesDialogFolderCount = propertiesItems.length - propertiesDialogFileCount
-  const propertiesDialogSize = propertiesItems.reduce((total, item) => (
+  const propertiesDialogHasFolder = propertiesDialogFolderCount > 0
+  const propertiesDialogLocalSize = propertiesItems.reduce((total, item) => (
     item.kind === 'file' ? total + (item.size ?? 0) : total
   ), 0)
+  const propertiesDialogRecursiveSize = propertiesStatsState.stats
+    ? formatBytes(propertiesStatsState.stats.total_bytes)
+    : propertiesStatsState.loading
+      ? '正在计算…'
+      : propertiesStatsState.error
+        ? '计算失败'
+        : '—'
+  const propertiesDialogRecursiveContent = propertiesStatsState.stats
+    ? `${propertiesStatsState.stats.file_count} 个文件 · ${propertiesStatsState.stats.folder_count} 个文件夹`
+    : propertiesStatsState.loading
+      ? '正在计算…'
+      : propertiesStatsState.error
+        ? '计算失败'
+        : '—'
   const propertiesDialogProperties = propertiesDialogItem
-    ? propertiesForItem(propertiesDialogItem)
+    ? propertiesDialogItem.kind === 'dir'
+      ? [
+          { label: '类型', value: defaultTypeLabel(propertiesDialogItem) },
+          { label: '大小', value: propertiesDialogRecursiveSize },
+          { label: '内容', value: propertiesDialogRecursiveContent },
+          { label: '修改时间', value: propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—' },
+          { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath },
+          ...(propertiesDialogItem.properties ?? []),
+          { label: 'Revision', value: propertiesDialogItem.revision ?? '—', technical: true },
+          { label: 'ID', value: String(propertiesDialogItem.id), technical: true },
+        ] satisfies XDriveFileExplorerProperty[]
+      : propertiesForItem(propertiesDialogItem)
     : propertiesItems.length > 1
       ? [
           { label: '项目数', value: `${propertiesItems.length} 个` },
-          { label: '内容', value: `${propertiesDialogFileCount} 个文件 · ${propertiesDialogFolderCount} 个文件夹` },
-          { label: '文件大小合计', value: formatBytes(propertiesDialogSize) },
+          {
+            label: '内容',
+            value: propertiesDialogHasFolder
+              ? propertiesDialogRecursiveContent
+              : `${propertiesDialogFileCount} 个文件 · 0 个文件夹`,
+          },
+          {
+            label: '文件大小合计',
+            value: propertiesDialogHasFolder
+              ? propertiesDialogRecursiveSize
+              : formatBytes(propertiesDialogLocalSize),
+          },
           { label: '位置', value: derivedPath },
         ] satisfies XDriveFileExplorerProperty[]
       : []

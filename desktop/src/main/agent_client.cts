@@ -390,6 +390,14 @@ export type AgentCloudBatchResult = {
   deleted_ids?: number[]
 }
 
+export type AgentCloudFilePropertiesStats = {
+  selected_count: number
+  effective_root_count: number
+  total_bytes: number
+  file_count: number
+  folder_count: number
+}
+
 export type AgentCloudUploadConflictPreflight = {
   conflict: boolean
   target_type?: 'file' | 'dir'
@@ -1545,6 +1553,19 @@ export class AgentIPCClient {
 
   cloudBatchDelete(items: AgentCloudBatchNodeRef[]) {
     return this.request<AgentCloudBatchResult>('POST', '/v1/cloud/batch/delete', { items }, 45_000)
+  }
+
+  cloudFilePropertiesStats(
+    items: AgentCloudBatchNodeRef[],
+    signal?: AbortSignal,
+  ) {
+    return this.request<AgentCloudFilePropertiesStats>(
+      'POST',
+      '/v1/cloud/properties/stats',
+      { items },
+      5 * 60_000,
+      signal,
+    )
   }
 
   cloudCreateFileOperation(type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) {
