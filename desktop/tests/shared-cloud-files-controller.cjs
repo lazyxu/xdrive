@@ -14,6 +14,8 @@ const webApi = read('web', 'src', 'api.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const desktopTypes = read('desktop', 'src', 'renderer', 'global.d.ts')
+const desktopMain = read('desktop', 'src', 'main', 'index.cts')
+const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
 
 test('shared cloud files port owns the transport-neutral read contract', () => {
   for (const token of [
@@ -150,4 +152,30 @@ test('Desktop renderer aliases cloud page and search contracts to shared types',
   ]) {
     assert.ok(desktopTypes.includes(token), `Desktop shared cloud type alias missing: ${token}`)
   }
+})
+
+
+test('Desktop page lookup filters survive the Electron IPC bridge', () => {
+  assert.ok(desktopPreload.includes('name?: string; nameInsensitive?: string'), 'preload page options must retain name filters')
+  assert.ok(desktopMain.includes("const name = typeof input.name === 'string' ? input.name : ''"), 'Electron main must read exact-name filters')
+  assert.ok(desktopMain.includes("const nameInsensitive = typeof input.nameInsensitive === 'string' ? input.nameInsensitive : ''"), 'Electron main must read folded-name filters')
+  assert.ok(desktopMain.includes('...(name ? { name } : {})'), 'Electron main must forward exact-name filters')
+  assert.ok(desktopMain.includes('...(nameInsensitive ? { nameInsensitive } : {})'), 'Electron main must forward folded-name filters')
+})
+
+test('Cloud Files exposes dedicated range transport for VirtualCollection', () => {
+  for (const token of [
+    'export type XDriveCloudFilesRange',
+    'total_count: number',
+    'offset: number',
+    'limit: number',
+    'getRange: (',
+  ]) {
+    assert.ok(contract.includes(token), `shared Cloud Files range contract missing: ${token}`)
+  }
+  assert.ok(webApi.includes('listRange('), 'Web API must expose children range transport')
+  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort) => api.listRange('), 'Web shared port must wire range transport')
+  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort) =>'), 'Desktop shared port must wire range transport')
+  assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
+  assert.ok(desktopTypes.includes('type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>'), 'Desktop renderer must alias the shared range contract')
 })

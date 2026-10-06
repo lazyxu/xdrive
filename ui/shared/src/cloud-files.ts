@@ -24,6 +24,15 @@ export type XDriveCloudFilesPage<TNode extends { id: number }> = {
   order: XDriveCloudFilesSortDirection
 }
 
+export type XDriveCloudFilesRange<TNode extends { id: number }> = {
+  items: TNode[]
+  total_count: number
+  offset: number
+  limit: number
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+}
+
 export type XDriveCloudFilesCrumb = {
   id: number
   name: string
@@ -64,5 +73,11 @@ export interface XDriveCloudFilesPort<
     parentID: number,
     options: XDriveFileExplorerPageRequestOptions<TSort>,
   ) => Promise<XDriveCloudFilesPage<TNode>>
+  getRange: (
+    parentID: number,
+    offset: number,
+    limit: number,
+    sort: TSort,
+  ) => Promise<XDriveCloudFilesRange<TNode>>
   getQuota: () => Promise<TQuota>
 }

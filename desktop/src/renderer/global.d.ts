@@ -30,6 +30,7 @@ import type {
   XDriveCloudFilesCrumb,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
+  XDriveCloudFilesRange,
   XDriveCloudFilesSearchPage,
   XDriveCloudFilesSearchResult,
   XDriveFileOperation,
@@ -243,6 +244,7 @@ declare global {
   type AgentCloudFileTextPreview = XDriveFileTextPreview
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
+  type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
   type AgentCloudRecentItem = XDriveFileRecentItem<AgentCloudNode>
   type AgentCloudQuota = QuotaUsage
@@ -436,6 +438,13 @@ declare global {
           parentID: number,
           options?: XDriveCloudFilesPageOptions,
         ) => Promise<DesktopResult<AgentCloudChildrenPage>>
+        cloudChildrenRange: (
+          parentID: number,
+          offset: number,
+          limit?: number,
+          sort?: 'name' | 'updated' | 'size' | 'type',
+          order?: 'asc' | 'desc',
+        ) => Promise<DesktopResult<AgentCloudChildrenRange>>
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
         cloudUnpinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>

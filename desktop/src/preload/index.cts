@@ -192,8 +192,15 @@ const agent = Object.freeze({
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),
   cloudChildrenPage: (
     parentID: number,
-    options: { limit?: number; cursor?: string; sort?: 'name' | 'updated' | 'size' | 'type'; order?: 'asc' | 'desc' } = {},
+    options: { limit?: number; cursor?: string; sort?: 'name' | 'updated' | 'size' | 'type'; order?: 'asc' | 'desc'; name?: string; nameInsensitive?: string } = {},
   ) => ipcRenderer.invoke('agent:cloud-children-page', parentID, options),
+  cloudChildrenRange: (
+    parentID: number,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) => ipcRenderer.invoke('agent:cloud-children-range', parentID, offset, limit, sort, order),
   cloudFileQuickAccess: () => ipcRenderer.invoke('agent:cloud-quick-access'),
   cloudPinFileQuickAccess: (nodeID: number) => ipcRenderer.invoke('agent:cloud-quick-access-pin', nodeID),
   cloudUnpinFileQuickAccess: (nodeID: number) => ipcRenderer.invoke('agent:cloud-quick-access-unpin', nodeID),
