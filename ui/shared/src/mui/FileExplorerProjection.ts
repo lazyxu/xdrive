@@ -23,44 +23,57 @@ export function useXDriveFileExplorerProjection<
   crumbs: TCrumb[]
   searchResults?: TSearch[] | null
 }) {
-  const activeNodes = useMemo(
-    () => (searchResults ? searchResults.map((result) => result.node) : items),
-    [items, searchResults],
-  )
-  const nodeByID = useMemo(
-    () => new Map(activeNodes.map((node) => [node.id, node] as const)),
-    [activeNodes],
-  )
-  const searchByID = useMemo(
-    () => new Map((searchResults ?? []).map((result) => [result.node.id, result] as const)),
-    [searchResults],
-  )
-  const explorerItems = useMemo<XDriveFileExplorerItem[]>(
-    () => activeNodes.map((node) => {
-      const result = searchByID.get(node.id)
-      return {
+  const crumbProjection = useMemo(() => {
+    const explorerCrumbs = new Array<XDriveFileExplorerCrumb>(crumbs.length)
+    const names = new Array<string>(crumbs.length)
+    for (let index = 0; index < crumbs.length; index += 1) {
+      const crumb = crumbs[index]
+      explorerCrumbs[index] = { id: crumb.id, name: crumb.name }
+      names[index] = crumb.name
+    }
+    return {
+      explorerCrumbs,
+      pathPrefix: crumbs.length > 0 ? `${names.join('/')}/` : '',
+    }
+  }, [crumbs])
+
+  const projection = useMemo(() => {
+    const results = searchResults ?? undefined
+    const sourceLength = results ? results.length : items.length
+    const activeNodes = results ? new Array<TNode>(sourceLength) : items
+    const nodeByID = new Map<number, TNode>()
+    const searchByID = new Map<number, TSearch>()
+    const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)
+
+    for (let index = 0; index < sourceLength; index += 1) {
+      const result = results?.[index]
+      const node = result ? result.node : items[index]
+      if (results) activeNodes[index] = node
+      nodeByID.set(node.id, node)
+      if (result) searchByID.set(node.id, result)
+      const resultPath = result?.path || undefined
+      explorerItems[index] = {
         id: node.id,
         name: node.name,
         kind: node.type,
         size: node.size,
         updatedAt: node.updated_at,
-        secondaryLabel: result?.path || undefined,
-        path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/'),
+        secondaryLabel: resultPath,
+        path: resultPath || `${crumbProjection.pathPrefix}${node.name}`,
         revision: node.revision,
       }
-    }),
-    [activeNodes, crumbs, searchByID],
-  )
-  const explorerCrumbs = useMemo<XDriveFileExplorerCrumb[]>(
-    () => crumbs.map((crumb) => ({ id: crumb.id, name: crumb.name })),
-    [crumbs],
-  )
+    }
+
+    return {
+      activeNodes,
+      nodeByID,
+      searchByID,
+      explorerItems,
+    }
+  }, [crumbProjection.pathPrefix, items, searchResults])
 
   return {
-    activeNodes,
-    nodeByID,
-    searchByID,
-    explorerItems,
-    explorerCrumbs,
+    ...projection,
+    explorerCrumbs: crumbProjection.explorerCrumbs,
   }
 }

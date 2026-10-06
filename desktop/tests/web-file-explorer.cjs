@@ -67,7 +67,7 @@ test('Web FileExplorer uses real file operations and server search', () => {
 })
 
 test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pagination', () => {
-  assert.ok(projection.includes('secondaryLabel: result?.path || undefined'), 'shared Explorer projection should show search-result paths')
+  assert.ok(projection.includes('secondaryLabel: resultPath'), 'shared Explorer projection should show search-result paths')
   assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a search result should use shared workspace open-item dispatch')
   assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.breadcrumbs'), 'Web shared workspace should preserve search breadcrumbs')
   assert.ok(workspaceController.includes('navigate: navigation.navigateTo'), 'shared workspace should inject shared navigation for search directories')
@@ -148,7 +148,7 @@ test('Web uses a dedicated persistent FileExplorer details-column layout', () =>
 })
 
 test('Web FileExplorer supplies preview/properties metadata without a new plaintext preview channel', () => {
-  assert.ok(projection.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'shared Explorer projection path metadata is missing')
+  assert.ok(projection.includes('path: resultPath || `${crumbProjection.pathPrefix}${node.name}`'), 'shared Explorer projection path metadata is missing')
   assert.ok(projection.includes('revision: node.revision'), 'shared Explorer projection revision metadata is missing')
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Web inspector should reuse the protected thumbnail loader')
   assert.equal(api.includes('previewPlaintext'), false, 'Web must not add a plaintext preview API')
