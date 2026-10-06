@@ -32,6 +32,7 @@ type Server struct {
 	PhotoFacePreviewBaseURL   string
 	HostControlDir            string
 	BackgroundScheduler       *background.Scheduler
+	MediaIndexWakeups         <-chan uint64
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser
 	obs                       *serverObservability
@@ -40,6 +41,8 @@ type Server struct {
 	stagingCache              uploadStagingInventory
 	fileOperationCancelMu     sync.Mutex
 	fileOperationCancels      map[string]context.CancelCauseFunc
+	mediaIndexMu              sync.Mutex
+	mediaIndexOwners          map[uint64]*mediaIndexOwnerState
 }
 
 func (s *Server) Router() *gin.Engine {

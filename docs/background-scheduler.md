@@ -107,7 +107,12 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    singleflight, bounded `media_cpu` workers, visible thumbnails at P0, analysis preview at P1, and
    deterministic revision-aware cache keys. HTTP request cancellation stops only that waiter; the shared
    derivative task continues for other waiters.
-3. MediaIndexer: `file commit -> media job`; keep the 30-second stale scan only as fallback reconciliation.
+3. MediaIndexer: **current**. Committed `xd_files` content writes emit a PostgreSQL owner wakeup, which
+   submits an owner-scoped P1 media-index batch. Bursts coalesce per owner and every generation handles one
+   bounded batch before yielding. If a P2 reconcile batch is still queued when a real file event arrives, the
+   existing task is promoted to P1; if it is already running, P1 is retained for the next generation.
+   Full batches continue immediately only when indexing made progress; a full batch with zero progress stops
+   instead of hot-looping and waits for the next 30-second P2 fallback reconciliation.
 4. Photo Intelligence: `Media ready -> face/place`, then `Face ready -> person-cluster(owner)` with owner-level
    coalescing.
 5. FileOperation: PostgreSQL `NOTIFY` wakeup plus a fallback poll; retain `FileOperation` as the durable queue.
@@ -173,3 +178,27 @@ work still needed by another waiter.
 
 A saturated `media_cpu` queue returns service-unavailable with retry guidance. It never falls back to
 synchronous image decode/resize/encode on the request goroutine.
+
+
+## Event-driven MediaIndexer
+
+Normal media indexing is commit-driven. A PostgreSQL trigger on `xd_files` emits the owning user id after a
+file-content INSERT or content-changing UPDATE commits. This covers multipart upload, chunk finalize,
+overwrite, version restore, copy, and sync-folder writes without adding enqueue calls to every API path.
+
+The listener converts that hint into an owner-scoped scheduler request:
+
+- `ScopeUser + OwnerID`;
+- P1 / `system_event` for committed file-content wakeups;
+- P2 / `reconcile` for the 30-second fallback scan;
+- `media_cpu` resource class;
+- one bounded batch per owner generation.
+
+Repeated notifications while one owner is already running set a pending bit instead of creating one task per
+file. If a batch fills its limit, another generation is submitted after the current generation yields. This
+keeps large imports moving while allowing visible P0 derivative work and other owners to enter the shared CPU
+pool.
+
+PostgreSQL `NOTIFY` is deliberately only a wakeup hint, not durable job storage. Lost notifications, listener
+reconnects, server restarts, rename-only node revisions, and old analyzer/index versions are recovered by the
+same stale-state query every 30 seconds. Existing media/domain tables remain the source of truth.
