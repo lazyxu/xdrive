@@ -12,6 +12,7 @@ const searchController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'sr
 const childrenPagination = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'children_pagination.go'), 'utf8')
 const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'handlers.go'), 'utf8')
 const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
+const serverSearch = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'search.go'), 'utf8')
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
   assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
@@ -138,4 +139,16 @@ test('FileExplorer projection builds large paged view-models in one node pass', 
   assert.ok(explorerProjection.includes('if (result) searchByID.set(node.id, result)'), 'search result index should be populated in the same pass')
   assert.equal(explorerProjection.includes('activeNodes.map('), false, 'projection must not remap active nodes')
   assert.equal(explorerProjection.includes('crumbs.map((crumb) => crumb.name)'), false, 'item projection must not rebuild breadcrumb names per item')
+})
+
+
+test('FileExplorer search avoids full-tree path materialization for component queries', () => {
+  assert.ok(serverSearch.includes('const componentSearch = `WITH RECURSIVE candidate_tree AS ('), 'component candidate search is missing')
+  assert.ok(serverSearch.includes('AND strpos(lower(n.name), lower(?)) > 0'), 'component search must seed on matching node names')
+  assert.ok(serverSearch.includes('JOIN candidate_tree candidate ON n.parent_id = candidate.id'), 'matching directories must expand to descendants')
+  assert.ok(serverSearch.includes("string_agg(ancestry.name, '/' ORDER BY ancestry.depth DESC)"), 'candidate paths must be reconstructed only after filtering')
+  assert.ok(serverSearch.includes('bool_or(ancestry.parent_id IS NULL) AS rooted'), 'candidate search must prove reachability from an active root')
+  assert.ok(serverSearch.includes('WHERE candidate_paths.rooted'), 'unrooted/deleted-ancestor candidates must be excluded')
+  assert.ok(serverSearch.includes('const recursivePathSearch = `WITH RECURSIVE tree AS ('), 'full-path fallback must remain available')
+  assert.ok(serverSearch.includes('if !strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
 })
