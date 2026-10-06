@@ -34,6 +34,7 @@ import type {
   XDriveCloudFilesSearchPage,
   XDriveCloudFilesSearchRange,
   XDriveCloudFilesSearchResult,
+  XDriveBackgroundTask,
   XDriveFileOperation,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
@@ -76,6 +77,7 @@ declare global {
     revision: number
     configured: boolean
     username?: string
+    role?: 'user' | 'admin' | string
     server?: string
     mount_path?: string
     auth_status: string
@@ -241,6 +243,7 @@ declare global {
     items?: AgentCloudNode[]
     deleted_ids?: number[]
   }
+  type AgentBackgroundTask = XDriveBackgroundTask
   type AgentCloudFileOperation = XDriveFileOperation
   type AgentCloudFileTextPreview = XDriveFileTextPreview
   type AgentCloudNode = Node
@@ -468,6 +471,7 @@ declare global {
         cloudBatchMove: (items: AgentCloudBatchNodeRef[], parentID: number) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudBatchDelete: (items: AgentCloudBatchNodeRef[]) => Promise<DesktopResult<AgentCloudBatchResult>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudBackgroundTasks: (global?: boolean, limit?: number) => Promise<DesktopResult<AgentBackgroundTask[]>>
         cloudFileOperations: (limit?: number) => Promise<DesktopResult<AgentCloudFileOperation[]>>
         cloudClearFileOperationHistory: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>

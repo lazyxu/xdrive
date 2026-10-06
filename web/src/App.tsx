@@ -601,10 +601,21 @@ function FileManager({
     onError: handleError,
   })
 
+  const backgroundTaskPort = useMemo(() => ({
+    loadMine: (limit: number) => api.backgroundTasks(limit),
+    loadGlobal: profile?.role === 'admin'
+      ? (limit: number) => api.adminBackgroundTasks(limit)
+      : undefined,
+  }), [api, profile?.role])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers,
     operations: fileOperations,
     operationActions: fileOperationActions,
+    backgroundTaskPort,
+    backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
+    backgroundTasksVisible: appView === 'transfers',
+    globalTasksEnabled: profile?.role === 'admin',
   })
 
   useEffect(() => {

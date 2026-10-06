@@ -10,6 +10,12 @@ const controller = read('ui', 'shared', 'src', 'mui', 'TaskCenterController.ts')
 const page = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const transferModel = read('ui', 'shared', 'src', 'transfers.ts')
 const fileOperationModel = read('ui', 'shared', 'src', 'file-operations.ts')
+const backgroundModel = read('ui', 'shared', 'src', 'background-tasks.ts')
+const backgroundCenter = read('ui', 'shared', 'src', 'mui', 'BackgroundTaskCenter.tsx')
+const webApi = read('web', 'src', 'api.ts')
+const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
@@ -108,4 +114,25 @@ test('Desktop delegates shared Task Center composition while retaining native tr
   ]) {
     assert.equal(desktop.includes(token), false, `Desktop must not duplicate Task Center derivation: ${token}`)
   }
+})
+
+
+test('shared Task Center renders sync folders, background processing and admin global view', () => {
+  for (const token of ['backgroundTaskPort?: XDriveBackgroundTaskPort','backgroundTasksVisible','globalTasksEnabled','loadMine','loadGlobal','xDriveBackgroundTaskPollIntervalMs']) assert.ok(controller.includes(token), 'shared background controller missing: ' + token)
+  for (const token of ['同步文件夹','后台处理','我的任务','全局任务','<XDriveBackgroundTaskList','<XDriveBackgroundTaskTable']) assert.ok(page.includes(token), 'Task Center background UI missing: ' + token)
+  for (const token of ['媒体索引','缩略图生成','分析预览','人脸识别','地点识别','人物聚类','owner_username','control_actions']) assert.ok(backgroundModel.includes(token), 'background task model missing: ' + token)
+  for (const token of ['用户','任务类型','优先级','资源类','触发方式','控制能力']) assert.ok(backgroundCenter.includes(token), 'global task table missing: ' + token)
+})
+
+test('Web and Desktop use adapters for the same background-task contract', () => {
+  assert.ok(webApi.includes('backgroundTasks(limit = 100)'))
+  assert.ok(webApi.includes('adminBackgroundTasks(limit = 100)'))
+  assert.ok(web.includes('backgroundTaskPort'))
+  assert.ok(web.includes("globalTasksEnabled: profile?.role === 'admin'"))
+  assert.ok(agentIPC.includes('"background-tasks"'))
+  assert.ok(agentIPC.includes('GET /v1/cloud/background-tasks'))
+  assert.ok(agentClient.includes('cloudBackgroundTasks(global = false, limit = 100)'))
+  assert.ok(desktopPreload.includes('cloudBackgroundTasks: (global = false, limit = 100)'))
+  assert.ok(desktop.includes('backgroundTasksSupported'))
+  assert.ok(desktop.includes("globalTasksEnabled: status?.role === 'admin'"))
 })

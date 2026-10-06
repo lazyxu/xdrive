@@ -24,6 +24,7 @@ export type AgentStatus = {
   revision: number
   configured: boolean
   username?: string
+  role?: 'user' | 'admin' | string
   server?: string
   mount_path?: string
   auth_status: string
@@ -417,6 +418,39 @@ export type AgentCloudFolderDownloadResult = {
   root: string
   downloaded: number
   failed: number
+}
+
+export type AgentBackgroundTask = {
+  id: string
+  kind: string
+  domain: string
+  scope: string
+  owner_id?: number
+  owner_username?: string
+  state: string
+  trigger?: string
+  initiator?: string
+  priority?: number
+  resource?: string
+  source_id?: number
+  source_name?: string
+  source_kind?: string
+  progress: {
+    phase?: string
+    current?: number
+    total?: number
+    unit?: string
+    percent?: number
+    current_item?: string
+  }
+  active_count?: number
+  queued_count?: number
+  running_count?: number
+  control_actions?: string[]
+  started_at?: string
+  updated_at: string
+  finished_at?: string
+  error?: string
 }
 
 export type AgentCloudFileOperation = {
@@ -1416,6 +1450,14 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
+  }
+
+  cloudBackgroundTasks(global = false, limit = 100) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      ...(global ? { global: 'true' } : {}),
+    })
+    return this.request<AgentBackgroundTask[]>('GET', `/v1/cloud/background-tasks?${query.toString()}`)
   }
 
   cloudFileOperations(limit = 100) {

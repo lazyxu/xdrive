@@ -34,6 +34,7 @@ type backgroundTaskDTO struct {
 	Domain         string                    `json:"domain"`
 	Scope          string                    `json:"scope"`
 	OwnerID        uint64                    `json:"owner_id,omitempty"`
+	OwnerUsername  string                    `json:"owner_username,omitempty"`
 	State          string                    `json:"state"`
 	Trigger        string                    `json:"trigger,omitempty"`
 	Initiator      string                    `json:"initiator,omitempty"`
@@ -152,6 +153,10 @@ func (s *Server) backgroundTasks(
 	}
 	out = append(out, sourceRuns...)
 
+	if err := s.populateBackgroundTaskOwnerUsernames(ctx, out); err != nil {
+		return nil, err
+	}
+
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
 			return out[i].UpdatedAt.After(out[j].UpdatedAt)
@@ -162,6 +167,39 @@ func (s *Server) backgroundTasks(
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *Server) populateBackgroundTaskOwnerUsernames(ctx context.Context, tasks []backgroundTaskDTO) error {
+	ownerIDs := make([]uint64, 0)
+	seen := make(map[uint64]struct{})
+	for _, task := range tasks {
+		if task.OwnerID == 0 {
+			continue
+		}
+		if _, exists := seen[task.OwnerID]; exists {
+			continue
+		}
+		seen[task.OwnerID] = struct{}{}
+		ownerIDs = append(ownerIDs, task.OwnerID)
+	}
+	if len(ownerIDs) == 0 {
+		return nil
+	}
+	var users []struct {
+		ID       uint64
+		Username string
+	}
+	if err := s.DB.WithContext(ctx).Model(&meta.User{}).Select("id, username").Where("id IN ?", ownerIDs).Find(&users).Error; err != nil {
+		return err
+	}
+	usernameByID := make(map[uint64]string, len(users))
+	for _, user := range users {
+		usernameByID[user.ID] = user.Username
+	}
+	for index := range tasks {
+		tasks[index].OwnerUsername = usernameByID[tasks[index].OwnerID]
+	}
+	return nil
 }
 
 type runtimeTaskGroup struct {
