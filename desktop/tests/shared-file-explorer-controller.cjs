@@ -142,7 +142,10 @@ test('shared FileExplorer controller owns sparse Search range state', () => {
     assert.equal(source.includes('searchRequestRef'), false, `${label} must not own search request sequencing`)
     assert.equal(source.includes('setSearchState('), false, `${label} must not own search lifecycle state`)
   }
-  assert.ok(workspaceController.includes('virtualSearchItems: search.searchVirtualItems'), 'workspace projection must receive sparse Search metadata')
+  assert.ok(
+    workspaceController.includes('virtualSearchItems: search.searchResults !== null'),
+    'workspace projection must receive sparse Search metadata only while Search is active',
+  )
   assert.ok(workspaceController.includes('? search.searchVirtualCollection'), 'workspace must switch the surface to Search VirtualCollection')
   assert.ok(workspaceController.includes('search.searchResults !== null'), 'workspace must preserve Search active-state semantics')
 })
