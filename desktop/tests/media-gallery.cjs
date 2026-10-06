@@ -143,6 +143,11 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /description\?: string/)
   assert.match(sharedModels, /tag\?: string/)
   assert.match(sharedModels, /person\?: string/)
+  assert.match(sharedModels, /person_identity\?: string/)
+  assert.match(sharedGallery, /personIdentity: query\.person_identity/)
+  assert.match(sharedGallery, /人物 ·/)
+  assert.match(sharedGallery, /personIdentityLocked/)
+  assert.match(sharedGallery, /!currentAlbum && !currentSuggestedPerson && source\.createSmartAlbum/)
   assert.match(sharedModels, /kind: 'folder' \| 'imported' \| 'manual' \| 'smart' \| string/)
   assert.match(sharedModels, /query\?: MediaGalleryQuery/)
   assert.match(sharedModels, /live_photo\?: boolean/)
@@ -202,6 +207,10 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
+  assert.match(webAPI, /person_identity/)
+  assert.match(agentClient, /person_identity/)
+  assert.match(desktopIPC, /person_identity/)
+
   for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaPeople(', 'mediaPersonItems(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }

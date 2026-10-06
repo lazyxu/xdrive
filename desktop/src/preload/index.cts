@@ -19,6 +19,7 @@ const agent = Object.freeze({
     favorite?: boolean
     tag?: string
     person?: string
+    person_identity?: string
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
@@ -39,6 +40,7 @@ const agent = Object.freeze({
       favorite?: boolean
       tag?: string
       person?: string
+      person_identity?: string
       place?: string
     } = {},
   ) => ipcRenderer.invoke(
@@ -63,6 +65,7 @@ const agent = Object.freeze({
       favorite?: boolean
       tag?: string
       person?: string
+      person_identity?: string
       place?: string
     } = {},
   ) => ipcRenderer.invoke('agent:get-media-person-items', personID, limit, offset, query),
@@ -95,6 +98,7 @@ const agent = Object.freeze({
       favorite?: boolean
       tag?: string
       person?: string
+      person_identity?: string
       place?: string
     },
   ) => ipcRenderer.invoke('agent:create-smart-media-album', name, query),
@@ -112,6 +116,7 @@ const agent = Object.freeze({
         favorite?: boolean
         tag?: string
         person?: string
+        person_identity?: string
         place?: string
       }
     },
@@ -133,6 +138,7 @@ const agent = Object.freeze({
     favorite?: boolean
     tag?: string
     person?: string
+    person_identity?: string
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),

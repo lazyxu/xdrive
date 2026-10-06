@@ -1251,6 +1251,15 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     const person = input.person.trim()
     if (person) out.person = person
   }
+  if (input.person_identity !== undefined) {
+    if (
+      typeof input.person_identity !== 'string' ||
+      !/^person:v1:[0-9a-f-]{36}$/.test(input.person_identity.trim())
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Durable person id is invalid.')
+    }
+    out.person_identity = input.person_identity.trim()
+  }
   if (input.place !== undefined) {
     if (
       typeof input.place !== 'string' ||

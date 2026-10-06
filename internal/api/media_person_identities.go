@@ -661,6 +661,15 @@ func (s *Server) mergeMediaPersonIdentities(c *gin.Context) {
 				}
 			}
 		}
+		if err := rewriteMediaSmartAlbumPersonIdentityReferences(
+			tx,
+			userID(c),
+			sourceIDs,
+			targetID,
+			now,
+		); err != nil {
+			return err
+		}
 		sourceNumericIDs := make([]uint64, 0, len(sources))
 		for _, source := range sources {
 			sourceNumericIDs = append(sourceNumericIDs, source.ID)

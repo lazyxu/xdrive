@@ -284,9 +284,11 @@ A current suggestion whose asset set exactly matches an existing durable person 
 
 `PhotoMetadata.PeopleJSON` remains the existing manual per-photo label list. Durable `PhotoPerson` operations do not rewrite, infer, rename, or delete `PeopleJSON`. The two surfaces remain distinct until an explicit migration/product contract is designed.
 
-Durable person ids are suitable for future saved filters because they survive face/cluster rebuilds. The shared Web/Desktop Gallery now exposes the management surface directly: durable People cards, adopt-from-suggestion, rename/unname, hide/unhide, member cover selection, merge, and split all use the same shared component and transport contract. Durable-person views remain transient Gallery contexts, so ordinary search/date/location/favorite/tag/manual-person filters can be applied without serializing the durable id into `MediaGalleryQuery`.
+Durable person ids are the canonical saved-filter identity because they survive face/cluster rebuilds. The shared Web/Desktop Gallery exposes durable People cards, adopt-from-suggestion, rename/unname, hide/unhide, member cover selection, merge, split, and durable-person browsing through the same shared component and transport contract.
 
-Smart-album persistence of a durable person id remains intentionally separate. This keeps the user-intent management contract independent from saved-query schema evolution.
+`MediaGalleryQuery.person_identity` stores a durable `person:v1:<uuid>` reference. It is intentionally distinct from `person`, which remains the manual `PhotoMetadata.PeopleJSON` label filter. Durable-person views keep the stable identity in the shared filter draft without exposing the UUID as editable text, so “保存为智能相册” captures the durable person plus any ordinary search/date/location/favorite/tag/manual-person constraints.
+
+Smart-album create/update locks the referenced durable person while persisting the rule. Merging durable people rewrites every affected smart-album `person_identity` from a source id to the preserved target id in the same transaction and increments the smart-album revision. Split keeps the source id, so existing saved filters remain attached to the source identity.
 
 ## Place-name analysis policy
 
@@ -398,8 +400,13 @@ When automatic facets are exposed later:
    - durable-person views preserve ordinary temporary Gallery filters/pagination and allow a member photo to become the cover;
    - hidden people stay durable and can be revealed again from the shared People section;
    - automatic clustering never rewrites durable memberships or manual `PeopleJSON`.
-7. **Gallery integration — remaining**
-   - durable-person smart-album filters;
-   - integrity verify/repair and derived-state GC for durable person membership/cover references.
+7. **Durable-person smart albums — current**
+   - public/shared `person_identity` filter contract using stable `person:v1:<uuid>` ids;
+   - Web/Desktop shared Gallery can save a durable-person view as a smart album without exposing raw ids;
+   - smart-album edits preserve/remove the durable-person rule explicitly;
+   - merge rewrites persisted source-person filters to the preserved target identity transactionally.
+8. **Integrity lifecycle — remaining**
+   - integrity verify/repair for durable person membership, cover, and saved-filter references;
+   - derived-state GC for orphan/stale person-analysis rows and owner-scoped empty derived clusters.
 
 The model/runtime choice is intentionally deferred until representative accuracy, memory, CPU/GPU cost, package size, and platform support are measured. The schema must not force xDrive to one ML runtime.

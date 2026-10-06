@@ -17,6 +17,7 @@ export type MediaGalleryFilterDraft = {
   favorite: 'any' | 'favorite' | 'not-favorite'
   tag: string
   person: string
+  personIdentity: string
   place: string
 }
 
@@ -29,6 +30,7 @@ export const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   favorite: 'any',
   tag: '',
   person: '',
+  personIdentity: '',
   place: '',
 }
 
@@ -63,6 +65,9 @@ export function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): Medi
         : {}),
     ...(draft.tag.trim() ? { tag: draft.tag.trim() } : {}),
     ...(draft.person.trim() ? { person: draft.person.trim() } : {}),
+    ...(draft.personIdentity.trim()
+      ? { person_identity: draft.personIdentity.trim() }
+      : {}),
     ...(draft.place.trim() ? { place: draft.place.trim() } : {}),
   }
 }
@@ -96,6 +101,7 @@ export function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): Media
         : 'any',
     tag: query.tag || '',
     person: query.person || '',
+    personIdentity: query.person_identity || '',
     place: query.place || '',
   }
 }
@@ -110,6 +116,7 @@ export function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.favorite !== 'any' ||
     draft.tag.trim() ||
     draft.person.trim() ||
+    draft.personIdentity.trim() ||
     draft.place.trim(),
   )
 }
@@ -120,6 +127,8 @@ export function XDriveMediaGalleryFilterBar({
   applyLabel = '应用',
   clearLabel = '清除',
   placeLabel,
+  personIdentityLabel,
+  personIdentityLocked = false,
   onChange,
   onApply,
   onClear,
@@ -130,6 +139,8 @@ export function XDriveMediaGalleryFilterBar({
   applyLabel?: string
   clearLabel?: string
   placeLabel?: string
+  personIdentityLabel?: string
+  personIdentityLocked?: boolean
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
@@ -243,6 +254,16 @@ export function XDriveMediaGalleryFilterBar({
           <MenuItem value="favorite">已收藏</MenuItem>
           <MenuItem value="not-favorite">未收藏</MenuItem>
         </TextField>
+        {draft.personIdentity ? (
+          <Chip
+            label={`人物 · ${personIdentityLabel || '未命名人物'}`}
+            onDelete={personIdentityLocked
+              ? undefined
+              : () => onChange({ ...draft, personIdentity: '' })}
+            variant="outlined"
+            size="small"
+          />
+        ) : null}
         {draft.place && placeLabel ? (
           <Chip
             label={`地点 · ${placeLabel}`}

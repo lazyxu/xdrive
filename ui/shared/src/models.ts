@@ -355,6 +355,7 @@ export interface MediaGalleryQuery {
   favorite?: boolean
   tag?: string
   person?: string
+  person_identity?: string
   place?: string
 }
 

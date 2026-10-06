@@ -1497,7 +1497,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&place=place%3A135%3A10381",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -1511,6 +1511,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
 		ctrl.cloudMediaQuery.Tag != "Travel" ||
+		ctrl.cloudMediaQuery.PersonIdentity != "person:v1:11111111-1111-1111-1111-111111111111" ||
 		ctrl.cloudMediaQuery.Place != "place:135:10381" ||
 		ctrl.cloudMediaQuery.CapturedFrom == nil ||
 		ctrl.cloudMediaQuery.CapturedTo == nil {
