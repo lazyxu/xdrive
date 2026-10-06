@@ -114,9 +114,31 @@ export function xDriveFileExplorerMergeSearchResults<
 >(
   current: readonly TResult[],
   page: readonly TResult[],
+  knownIDs?: Set<number>,
 ): TResult[] {
+  if (knownIDs) {
+    const pageIDs = new Set<number>()
+    let hasDuplicate = false
+    for (const item of page) {
+      const id = item.node.id
+      if (knownIDs.has(id) || pageIDs.has(id)) {
+        hasDuplicate = true
+        break
+      }
+      pageIDs.add(id)
+    }
+    if (!hasDuplicate) {
+      for (const id of pageIDs) knownIDs.add(id)
+      return [...current, ...page]
+    }
+  }
+
   const merged = new Map(current.map((item) => [item.node.id, item] as const))
   for (const item of page) merged.set(item.node.id, item)
+  if (knownIDs) {
+    knownIDs.clear()
+    for (const item of merged.values()) knownIDs.add(item.node.id)
+  }
   return [...merged.values()]
 }
 
@@ -133,10 +155,18 @@ export function xDriveFileExplorerSearchPageState<
   current: readonly TResult[] | null,
   page: XDriveFileExplorerSearchPage<TResult>,
   append: boolean,
+  knownIDs?: Set<number>,
 ) {
-  const items = append
-    ? xDriveFileExplorerMergeSearchResults(current ?? [], page.items)
-    : [...page.items]
+  let items: TResult[]
+  if (append) {
+    items = xDriveFileExplorerMergeSearchResults(current ?? [], page.items, knownIDs)
+  } else {
+    if (knownIDs) {
+      knownIDs.clear()
+      for (const item of page.items) knownIDs.add(item.node.id)
+    }
+    items = [...page.items]
+  }
   const cursor = page.next_cursor ?? ''
   return {
     items,
@@ -196,8 +226,9 @@ export function xDriveFileExplorerApplySearchPageState<
   current: XDriveFileExplorerSearchState<TResult>,
   page: XDriveFileExplorerSearchPage<TResult>,
   append: boolean,
+  knownIDs?: Set<number>,
 ): XDriveFileExplorerSearchState<TResult> {
-  const nextPage = xDriveFileExplorerSearchPageState(current.results, page, append)
+  const nextPage = xDriveFileExplorerSearchPageState(current.results, page, append, knownIDs)
   return {
     ...current,
     results: nextPage.items,

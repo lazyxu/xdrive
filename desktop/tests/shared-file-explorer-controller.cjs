@@ -88,6 +88,10 @@ test('shared FileExplorer controller owns search pagination state', () => {
   for (const token of [
     'XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200',
     'xDriveFileExplorerMergeSearchResults',
+    'knownIDs?: Set<number>',
+    'const pageIDs = new Set<number>()',
+    'if (knownIDs.has(id) || pageIDs.has(id))',
+    'return [...current, ...page]',
     'current.map((item) => [item.node.id, item] as const)',
     'for (const item of page) merged.set(item.node.id, item)',
     'xDriveFileExplorerSearchPageState',
@@ -117,6 +121,7 @@ test('shared FileExplorer controller owns search pagination state', () => {
   }
   for (const token of [
     'useRef<Record<string, number>>({})',
+    'useRef<Record<string, Set<number>>>({})',
     "workspaceKey = 'default'",
     'const [entries, setEntries]',
     'const entry = entries[workspaceKey]',
@@ -127,8 +132,8 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'requestID !== requestRef.current[key]',
     'xDriveFileExplorerStartSearchState<TResult>(decision.query)',
     'xDriveFileExplorerStartSearchLoadMoreState(current.state)',
-    'xDriveFileExplorerApplySearchPageState(current.state, page, false)',
-    'xDriveFileExplorerApplySearchPageState(current.state, page, true)',
+    'xDriveFileExplorerApplySearchPageState(current.state, page, false, resultIDs)',
+    'xDriveFileExplorerApplySearchPageState(current.state, page, true, resultIDs)',
     'xDriveFileExplorerSettleSearchState(current.state, false)',
     'xDriveFileExplorerSettleSearchState(current.state, true)',
     'xDriveFileExplorerCanLoadMoreSearch(',
