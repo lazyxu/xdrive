@@ -197,6 +197,7 @@ type BackgroundTask struct {
 	ActiveCount    int                    `json:"active_count,omitempty"`
 	QueuedCount    int                    `json:"queued_count,omitempty"`
 	RunningCount   int                    `json:"running_count,omitempty"`
+	InstanceCount  int                    `json:"instance_count,omitempty"`
 	ControlActions []string               `json:"control_actions,omitempty"`
 	StartedAt      *time.Time             `json:"started_at,omitempty"`
 	UpdatedAt      time.Time              `json:"updated_at"`

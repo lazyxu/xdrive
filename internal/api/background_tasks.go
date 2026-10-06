@@ -47,6 +47,7 @@ type backgroundTaskDTO struct {
 	ActiveCount    int                       `json:"active_count,omitempty"`
 	QueuedCount    int                       `json:"queued_count,omitempty"`
 	RunningCount   int                       `json:"running_count,omitempty"`
+	InstanceCount  int                       `json:"instance_count,omitempty"`
 	ControlActions []string                  `json:"control_actions,omitempty"`
 	StartedAt      *time.Time                `json:"started_at,omitempty"`
 	UpdatedAt      time.Time                 `json:"updated_at"`
@@ -120,14 +121,13 @@ func (s *Server) backgroundTasks(
 	limit int,
 ) ([]backgroundTaskDTO, error) {
 	out := make([]backgroundTaskDTO, 0)
-	if s.BackgroundScheduler != nil {
-		snapshots := s.BackgroundScheduler.TaskSnapshots(ownerID)
-		out = append(out, aggregateRuntimeBackgroundTasks(
-			snapshots,
-			viewerID,
-			admin,
-		)...)
-	}
+	runtimeTasks := s.backgroundClusterRuntimeTasks(
+		ctx,
+		ownerID,
+		viewerID,
+		admin,
+	)
+	out = append(out, runtimeTasks...)
 
 	reanalyzeIntents, err := s.backgroundPhotoIntelligenceIntentTasks(
 		ctx,
@@ -256,19 +256,20 @@ func aggregateRuntimeBackgroundTasks(
 		if group == nil {
 			priority := uint8(snapshot.Priority)
 			group = &runtimeTaskGroup{task: backgroundTaskDTO{
-				ID:          "runtime:" + groupKey,
-				Kind:        kind,
-				Domain:      "scheduler",
-				Scope:       string(snapshot.Identity.Scope),
-				OwnerID:     snapshot.Identity.OwnerID,
-				State:       snapshot.State,
-				Trigger:     string(snapshot.Trigger),
-				Initiator:   string(snapshot.Initiator),
-				Priority:    &priority,
-				Resource:    string(snapshot.Resource),
-				StartedAt:   snapshot.StartedAt,
-				UpdatedAt:   snapshot.UpdatedAt,
-				ActiveCount: 1,
+				ID:            "runtime:" + groupKey,
+				Kind:          kind,
+				Domain:        "scheduler",
+				Scope:         string(snapshot.Identity.Scope),
+				OwnerID:       snapshot.Identity.OwnerID,
+				State:         snapshot.State,
+				Trigger:       string(snapshot.Trigger),
+				Initiator:     string(snapshot.Initiator),
+				Priority:      &priority,
+				Resource:      string(snapshot.Resource),
+				StartedAt:     snapshot.StartedAt,
+				UpdatedAt:     snapshot.UpdatedAt,
+				ActiveCount:   1,
+				InstanceCount: 1,
 			}}
 			group.task.Progress = toBackgroundTaskProgress(snapshot.Progress)
 			groups[groupKey] = group

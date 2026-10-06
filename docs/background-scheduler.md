@@ -260,7 +260,10 @@ same stale-state query every 30 seconds. Existing media/domain tables remain the
 
 The server exposes background work as a read model without introducing a generic persisted task table.
 
-- Scheduler-owned work contributes only its current in-process queued/running snapshot.
+- Scheduler-owned work publishes an ephemeral TTL presence projection grouped by Server instance + owner + kind.
+  The current Server contributes its live in-process snapshot immediately, while fresh presence from other
+  Server processes is merged into the same Task Center row. Presence is observation-only: it never drives
+  scheduling, retry, cancellation, or ownership, and expired rows are ignored/cleaned automatically.
 - Durable `FileOperation` and `SyncRun` rows remain their own sources of truth and contribute recent
   instance-level progress/history.
 - High-frequency scheduler work is grouped by `owner + kind` so thumbnail, preview, media-index and future
@@ -274,8 +277,9 @@ The server exposes background work as a read model without introducing a generic
 Scheduler runtime tasks expose `kind`, state, owner attribution, trigger/initiator, priority/resource,
 timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. A queued task
 that is deferred because another Server owns its distributed domain lease exposes phase
-`waiting_for_cluster_lease`; the Web/Desktop shared Task Center renders this as “等待其他服务器”. Runtime entries
-are removed after completion; history belongs to the durable domain models, not to the scheduler.
+`waiting_for_cluster_lease`; the Web/Desktop shared Task Center renders this as “等待其他服务器”. Runtime entries are removed after completion; cluster presence expires shortly after a Server disappears, and
+history belongs to the durable domain models, not to the scheduler. When the same owner+kind is active on more
+than one Server, the shared Web/Desktop Task Center reports the merged active count and Server instance count.
 
 
 ## Photo Intelligence consumer

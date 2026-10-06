@@ -136,6 +136,36 @@ func (BackgroundOwnerCancellation) TableName() string {
 	return "xd_background_owner_cancellations"
 }
 
+type BackgroundRuntimePresence struct {
+	InstanceID      string     `gorm:"size:64;primaryKey"`
+	TaskID          string     `gorm:"size:255;primaryKey"`
+	Kind            string     `gorm:"size:64;not null;index"`
+	Scope           string     `gorm:"size:16;not null;index:idx_xd_runtime_presence_scope_owner,priority:1"`
+	OwnerID         uint64     `gorm:"not null;index:idx_xd_runtime_presence_scope_owner,priority:2"`
+	State           string     `gorm:"size:24;not null;index"`
+	Trigger         string     `gorm:"size:32;not null"`
+	Initiator       string     `gorm:"size:16;not null"`
+	Priority        uint8      `gorm:"not null"`
+	Resource        string     `gorm:"size:32;not null;index"`
+	ProgressPhase   string     `gorm:"size:64"`
+	ProgressCurrent int64      `gorm:"not null;default:0"`
+	ProgressTotal   int64      `gorm:"not null;default:0"`
+	ProgressUnit    string     `gorm:"size:32"`
+	ProgressMessage string     `gorm:"type:text"`
+	ActiveCount     int        `gorm:"not null;default:0"`
+	QueuedCount     int        `gorm:"not null;default:0"`
+	RunningCount    int        `gorm:"not null;default:0"`
+	StartedAt       *time.Time `gorm:"index"`
+	TaskUpdatedAt   time.Time  `gorm:"not null;index"`
+	ExpiresAt       time.Time  `gorm:"not null;index"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+func (BackgroundRuntimePresence) TableName() string {
+	return "xd_background_runtime_presence"
+}
+
 const (
 	SystemMaintenanceKindJanitor        = "janitor"
 	SystemMaintenanceKindStorageSampler = "storage_sampler"

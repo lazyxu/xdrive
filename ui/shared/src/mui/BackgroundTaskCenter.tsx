@@ -144,6 +144,11 @@ function BackgroundTaskItem({
                   {task.active_count.toLocaleString('zh-CN')} 个活动任务
                 </Typography>
               ) : null}
+              {task.instance_count && task.instance_count > 1 ? (
+                <Typography variant="caption" color="text.secondary">
+                  {task.instance_count.toLocaleString('zh-CN')} 台服务器
+                </Typography>
+              ) : null}
             </Stack>
             {task.progress?.current_item ? (
               <Typography
@@ -302,10 +307,17 @@ export function XDriveBackgroundTaskTable({
                 </Stack>
               </TableCell>
               <TableCell>
-                <XDriveStatusBadge
-                  tone={taskTone(task.state)}
-                  label={xDriveBackgroundTaskStateLabel(task.state)}
-                />
+                <Stack spacing={0.25} alignItems="flex-start">
+                  <XDriveStatusBadge
+                    tone={taskTone(task.state)}
+                    label={xDriveBackgroundTaskStateLabel(task.state)}
+                  />
+                  {task.instance_count && task.instance_count > 1 ? (
+                    <Typography variant="caption" color="text.secondary">
+                      {task.instance_count.toLocaleString('zh-CN')} 台服务器
+                    </Typography>
+                  ) : null}
+                </Stack>
               </TableCell>
               <TableCell>
                 {task.priority === undefined ? '—' : `P${task.priority}`}
