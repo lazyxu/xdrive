@@ -16,6 +16,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Sparse VirtualCollection CPU at 100k | **Accepted structural baseline / no optimization (PR #708)** | Measured | Three CI CPU medians: **126.877 / 160.081 / 161.319 ms per sweep** (**50.751 / 64.032 / 64.528 us per viewport**); hosted-runner timing is diagnostic only, while structural counts are stable at **500 page loads / 800 peak / 600 final retained**. |
 | Details/Grid windowing and logical-index interaction | **Merged** | Unmeasured wall-clock | Bounded mounted/retained work; no comparable end-to-end BEFORE/AFTER timing yet. |
 | Thumbnail viewport scheduler + bounded cache | **Merged** | Unmeasured wall-clock | Shared viewport observer, max **6** concurrent thumbnail requests, bounded **96-entry** per-Explorer cache. |
+| Unsupported video-thumbnail request suppression | **Implemented** | Structural | FileExplorer only schedules image thumbnails; video files stay on icon/preview paths until a real poster-thumbnail contract exists. |
 | Desktop binary thumbnail transport | **Merged** | Unmeasured wall-clock | Agent raw bytes -> ArrayBuffer -> Blob URL; base64 thumbnail transport removed. |
 | Adaptive infinite-scroll prefetch | **Merged** | Unmeasured wall-clock | Prefetch threshold is viewport-adaptive and protected by in-flight request locks. |
 | Indexed typed-path lookup | **Merged** | Unmeasured wall-clock | One exact child lookup per path segment instead of full child-list scans. |
@@ -127,21 +128,16 @@ Thumbnail queue/cache changes, Desktop binary thumbnail transport, adaptive pref
 
 ## Current video-thumbnail capability gap
 
-The current FileExplorer thumbnail contract is internally inconsistent and must be reflected in benchmark interpretation:
+The Server media-thumbnail endpoint is currently image-only. FileExplorer now mirrors that capability instead of speculatively scheduling video thumbnails:
 
-- `xDriveFileSupportsThumbnail()` marks both **image** and **video** files as thumbnail-eligible.
-- Web and Desktop FileExplorer adapters both call the media-thumbnail endpoint for eligible items.
-- The current Server media-thumbnail handler rejects any `MediaKind` other than **image**.
+- `xDriveFileSupportsThumbnail()` is image-only by default.
+- Grid, Inspector, and Quick Look no longer send ordinary video files through the image-thumbnail loader.
+- Video files continue to use their normal video icon and the shared preview engine for actual video playback.
+- The explicit `thumbnailEligible` override remains available for a future capability-aware adapter, but current Web/Desktop FileExplorer projections do not opt videos into it.
 
-Therefore, today’s video-heavy FileExplorer behavior is **not** “warm poster thumbnail support.” A visible video may issue a thumbnail request that cannot succeed, then fall back to the ordinary video icon. Because negative results are not the same as a warm thumbnail-cache entry, remount/scroll-back behavior must also be measured for repeated failed requests.
+This removes the previous 415/fallback request path from video-heavy directories. A real derived/cached video-poster contract is still required before FileExplorer can offer warm video poster thumbnails.
 
-For the 100k video workloads below:
-
-1. first measure the **current unsupported-thumbnail fallback** exactly as shipped;
-2. keep “warm video poster thumbnails” marked **blocked / not runnable** until a real video-poster thumbnail contract exists for FileExplorer;
-3. do not report a video-thumbnail warm/cold comparison until both states are actually supported by the same endpoint/transport.
-
-Gallery already has a **client-side** video poster fallback that loads the video preview into a browser `<video>`, decodes it, and captures a canvas frame. That is useful for Gallery presentation but is **not** a reusable FileExplorer thumbnail cache. Using it as the “warm poster” case for a 100k video directory would benchmark repeated video decode/canvas work rather than warm thumbnail transport, so it does not unblock the FileExplorer warm-video workload.
+Gallery's client-side video poster fallback remains Gallery-specific; it loads a video preview and captures a canvas frame, which is not a reusable FileExplorer thumbnail cache and should not be treated as the future FileExplorer poster contract.
 
 ## 100k media-directory benchmark matrix
 
@@ -151,14 +147,14 @@ The following four workloads are mandatory before claiming FileExplorer is valid
 | --- | --- | --- | --- |
 | 100k images | Cold / no pre-existing thumbnails | **Planned - not measured** | first-page latency, time-to-first-grid, viewport/scroll CPU, long tasks/FPS, renderer RSS, thumbnail request count, peak in-flight, cold thumbnail latency, bytes transferred, retained metadata |
 | 100k images | Warm / thumbnails pre-existing | **Planned - not measured** | same metrics plus thumbnail cache hit behavior and Blob URL memory; compare directly with cold image run |
-| 100k videos | Current unsupported-thumbnail fallback | **Planned - not measured** | first-page/grid latency, failed thumbnail request count, repeated requests after remount/scroll-back, long tasks/FPS, renderer RSS, and icon-fallback latency |
+| 100k videos | Image-thumbnail suppression / icon fallback | **Planned - not measured** | first-page/grid latency, verify **0** image-thumbnail requests for ordinary videos, long tasks/FPS, renderer RSS, and icon-fallback latency |
 | 100k videos | Warm / poster thumbnails pre-existing | **Blocked - capability not implemented** | FileExplorer Server thumbnail endpoint is image-only today; measure only after a real video-poster thumbnail contract exists |
 
 ### Current assessment of the four 100k media cases
 
 - **100k images, cold/no thumbnails:** sparse metadata and DOM work are already bounded; expected dominant costs are thumbnail generation, object-store I/O, HTTP/Agent transport, image decode, and Blob creation. Client thumbnail work must stay capped at **6 concurrent requests**, and request count must scale with viewport exposure rather than 100k logical items.
 - **100k images, warm thumbnails:** generation cost is removed, isolating cached-object reads, transport, Blob URL creation, renderer commit/layout/paint, and the bounded **96-entry** FileExplorer thumbnail cache. This is the cleanest Web-vs-Desktop transport comparison.
-- **100k videos, current no-thumbnail fallback:** videos are thumbnail-eligible in FileExplorer while the Server thumbnail endpoint is image-only. Visible videos can therefore issue failed thumbnail requests and fall back to the video icon. Because failed state is component-local rather than a reusable thumbnail-cache entry, remount/scroll-back can repeat the failed request; the benchmark must count that explicitly.
+- **100k videos, image-thumbnail suppression/icon fallback:** ordinary videos are not thumbnail-eligible while the Server thumbnail endpoint is image-only. The benchmark must verify **zero** image-thumbnail requests for video tiles, stable icon fallback, and no request growth after remount/scroll-back.
 - **100k videos, warm poster thumbnails:** blocked until a real derived/cached video-poster contract exists. Do not substitute Gallery's client-side video decode/canvas capture for this workload.
 
 ### Media benchmark execution rules
@@ -167,7 +163,7 @@ The following four workloads are mandatory before claiming FileExplorer is valid
 - Record **cold** and **warm** states separately. Never compare a cold image/video run against a warm run and call the difference a renderer optimization.
 - Keep FileExplorer structural budgets visible in the result: thumbnail requests must remain **O(viewport/scroll exposure), not O(100k)**; in-flight thumbnail work must remain at or below **6**; the per-Explorer thumbnail cache must remain bounded at **96**; sparse logical metadata must remain bounded rather than retaining 100,000 rows.
 - Run both **Web** and **Desktop** for warm-thumbnail transport because Desktop uses Agent IPC/ArrayBuffer while Web uses HTTP/Blob transport.
-- For cold video thumbnails, record server/Agent poster-generation time separately from renderer time. A slow ffmpeg/poster extraction path is not the same bottleneck as VirtualCollection or React rendering.
+- For the current video fallback run, assert that ordinary video tiles do not call the image-thumbnail endpoint. Once a real poster generator exists, benchmark its Server/Agent extraction time separately from renderer time.
 - The pure Node VirtualCollection baseline above is a prerequisite reference, not a substitute for these browser/Electron traces.
 - Until these four runs have real numbers, keep their status as **Planned - not measured** and do not claim that 100k thumbnail-heavy media directories are fully validated.
 
