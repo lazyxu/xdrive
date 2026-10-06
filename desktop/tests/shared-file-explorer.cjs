@@ -236,7 +236,7 @@ test('shared FileExplorer supports server-paged incremental loading without re-s
     'loadingMore?: boolean',
     'onLoadMore?: () => void',
     'externallySorted?: boolean',
-    'if (externallySorted) return result',
+    'if (externallySorted) return items',
     'host.scrollHeight - host.scrollTop - host.clientHeight <= 500',
     "loadingMore\n            ? '正在加载更多…'",
   ]) {

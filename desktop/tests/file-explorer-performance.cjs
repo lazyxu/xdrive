@@ -101,7 +101,7 @@ test('FileExplorer pagination rejects duplicate and stale page requests', () => 
 
 
 test('FileExplorer selection and keyboard lookup avoid repeated whole-directory scans', () => {
-  assert.ok(shared.includes('const visibleItemIndexByKey = useMemo('), 'visible-item index is missing')
+  assert.ok(shared.includes('const visibleItemProjection = useMemo(() => {'), 'one-pass visible-item projection is missing')
   assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(id))'), 'selected items must use indexed lookup')
   assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1'), 'active item lookup must be indexed')
   assert.ok(shared.includes('visibleItemIndexByKey.get(anchorKey) ?? -1'), 'mouse Shift anchor lookup must be indexed')
@@ -165,4 +165,18 @@ test('FileExplorer navigation tree expands with bounded pages instead of drainin
   assert.ok(navigationPane.includes('loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)'), 'tree load-more must advance one cursor page')
   assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), 'tree must expose an explicit load-more affordance')
   assert.ok(navigationPane.includes('const pathChild = pathChildByParent.get(node.id)'), 'current path child must remain visible outside the loaded page')
+})
+
+
+test('FileExplorer reuses server-sorted arrays and derives item indexes in one pass', () => {
+  assert.ok(shared.includes('if (externallySorted) return items'), 'server-sorted directory items should not be cloned')
+  assert.ok(shared.includes('const visibleItemProjection = useMemo(() => {'), 'visible-item projection should be shared')
+  assert.ok(shared.includes('const indexByKey = new Map<string, number>()'), 'visible ID index is missing')
+  assert.ok(shared.includes('const names = new Array<string>(visibleItems.length)'), 'type-select names should be allocated once')
+  assert.ok(shared.includes('const files: XDriveFileExplorerItem[] = []'), 'Quick Look file list should share the same pass')
+  assert.ok(shared.includes('const fileIndexByKey = new Map<string, number>()'), 'Quick Look index should share the same pass')
+  assert.ok(shared.includes('for (let index = 0; index < visibleItems.length; index += 1)'), 'visible items should be traversed once for indexes')
+  assert.equal(shared.includes('visibleItems.map((item, index)'), false, 'visible ID index must not trigger a second map')
+  assert.equal(shared.includes('visibleItems.map((item) => item.name)'), false, 'type-select names must not trigger a second map')
+  assert.equal(shared.includes("visibleItems.filter((item) => item.kind === 'file')"), false, 'Quick Look files must not trigger a second pass')
 })

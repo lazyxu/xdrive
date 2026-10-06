@@ -13,6 +13,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Grid view windows large directories once 400 items are loaded, with deterministic row geometry and three overscan rows.
 - Grid keyboard navigation and marquee selection use computed virtual geometry instead of scanning every mounted item.
 - Selection, active-item, Shift-anchor, keyboard-current-item, and Quick Look position lookup use memoized ID indexes instead of repeated whole-directory scans.
+- Server-sorted directory arrays are reused without cloning, and the visible-item ID index, type-select names, Quick Look file list, and Quick Look index are built in one traversal.
 - Selected-size aggregation scales with the selected set rather than the complete loaded directory.
 - Paged node projection builds the node index and Explorer item view models in one pass, while breadcrumb path prefixes are computed once per directory instead of once per item.
 - Grid thumbnails are viewport-proximate through one shared IntersectionObserver, share a global concurrency budget of 6 requests, cancel queued work when tiles unmount, and reuse a bounded 96-entry per-Explorer thumbnail cache.

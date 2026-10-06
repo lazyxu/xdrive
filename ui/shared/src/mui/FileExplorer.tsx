@@ -921,8 +921,8 @@ export function XDriveFileExplorer({
   }, [])
 
   const visibleItems = useMemo(() => {
+    if (externallySorted) return items
     const result = [...items]
-    if (externallySorted) return result
     const multiplier = sort.direction === 'asc' ? 1 : -1
     result.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'dir' ? -1 : 1
@@ -942,14 +942,32 @@ export function XDriveFileExplorer({
     return result
   }, [externallySorted, items, sort.direction, sort.key])
 
-  const visibleItemIndexByKey = useMemo(
-    () => new Map(visibleItems.map((item, index) => [explorerIDKey(item.id), index] as const)),
-    [visibleItems],
-  )
-  const visibleItemNames = useMemo(
-    () => visibleItems.map((item) => item.name),
-    [visibleItems],
-  )
+  const visibleItemProjection = useMemo(() => {
+    const indexByKey = new Map<string, number>()
+    const names = new Array<string>(visibleItems.length)
+    const files: XDriveFileExplorerItem[] = []
+    const fileIndexByKey = new Map<string, number>()
+    for (let index = 0; index < visibleItems.length; index += 1) {
+      const item = visibleItems[index]
+      const key = explorerIDKey(item.id)
+      indexByKey.set(key, index)
+      names[index] = item.name
+      if (item.kind === 'file') {
+        fileIndexByKey.set(key, files.length)
+        files.push(item)
+      }
+    }
+    return {
+      indexByKey,
+      names,
+      files,
+      fileIndexByKey,
+    }
+  }, [visibleItems])
+  const visibleItemIndexByKey = visibleItemProjection.indexByKey
+  const visibleItemNames = visibleItemProjection.names
+  const quickLookFiles = visibleItemProjection.files
+  const quickLookIndexByKey = visibleItemProjection.fileIndexByKey
   const selectedItems = useMemo(
     () => selectedIDs
       .map((id) => {
@@ -963,14 +981,6 @@ export function XDriveFileExplorer({
     ? -1
     : (visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1)
   const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : visibleItems[0]
-  const quickLookFiles = useMemo(
-    () => visibleItems.filter((item) => item.kind === 'file'),
-    [visibleItems],
-  )
-  const quickLookIndexByKey = useMemo(
-    () => new Map(quickLookFiles.map((item, index) => [explorerIDKey(item.id), index] as const)),
-    [quickLookFiles],
-  )
   const quickLookIndex = quickLookItemID === null
     ? -1
     : (quickLookIndexByKey.get(explorerIDKey(quickLookItemID)) ?? -1)
