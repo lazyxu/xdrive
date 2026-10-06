@@ -40,6 +40,15 @@ type agentCloudSearchPage struct {
 	NextCursor string                   `json:"next_cursor,omitempty"`
 }
 
+type agentCloudSearchRange struct {
+	Items      []agentCloudSearchResult `json:"items"`
+	TotalCount int64                    `json:"total_count"`
+	Offset     int                      `json:"offset"`
+	Limit      int                      `json:"limit"`
+	Sort       string                   `json:"sort"`
+	Order      string                   `json:"order"`
+}
+
 type agentCloudUploadResult struct {
 	Node             client.Node `json:"node"`
 	Skipped          bool        `json:"skipped"`
@@ -1397,6 +1406,52 @@ func (c *agentController) CloudSearch(ctx context.Context, query, cursor, sortKe
 		})
 	}
 	return agentCloudSearchPage{Items: out, NextCursor: page.NextCursor}, nil
+}
+
+func (c *agentController) CloudSearchRange(
+	ctx context.Context,
+	query string,
+	offset, limit int,
+	sortKey, order string,
+) (agentCloudSearchRange, error) {
+	query = strings.TrimSpace(query)
+	if len([]rune(query)) < 2 {
+		return agentCloudSearchRange{}, fmt.Errorf("search query must contain at least 2 characters")
+	}
+	if offset < 0 {
+		return agentCloudSearchRange{}, fmt.Errorf("search offset must be zero or greater")
+	}
+	if limit <= 0 || limit > cloudSearchLimit {
+		return agentCloudSearchRange{}, fmt.Errorf("search limit must be between 1 and %d", cloudSearchLimit)
+	}
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentCloudSearchRange{}, err
+	}
+	page, err := cli.SearchRange(ctx, client.SearchRangeOptions{
+		Query:  query,
+		Limit:  limit,
+		Offset: offset,
+		Sort:   strings.TrimSpace(sortKey),
+		Order:  strings.TrimSpace(order),
+	})
+	if err != nil {
+		return agentCloudSearchRange{}, err
+	}
+	out := make([]agentCloudSearchResult, 0, len(page.Items))
+	for _, item := range page.Items {
+		out = append(out, agentCloudSearchResult{
+			Node: item.Node, Path: item.Path, Crumbs: agentCloudCrumbs(item.Breadcrumbs),
+		})
+	}
+	return agentCloudSearchRange{
+		Items:      out,
+		TotalCount: page.TotalCount,
+		Offset:     page.Offset,
+		Limit:      page.Limit,
+		Sort:       page.Sort,
+		Order:      page.Order,
+	}, nil
 }
 
 func agentCloudCrumbs(items []client.SearchBreadcrumb) []agentCloudCrumb {

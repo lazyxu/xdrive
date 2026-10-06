@@ -199,3 +199,14 @@ test('Web and Desktop pass sparse virtual directory state into FileExplorer', ()
     assert.ok(desktopApp.includes(token), `Desktop sparse directory wiring missing: ${token}`)
   }
 })
+
+
+test('Search range transport is explicit across Web and Desktop adapters', () => {
+  assert.ok(contract.includes('XDriveCloudFilesSearchRange<TNode'), 'shared Search range DTO is missing')
+  assert.ok(webApi.includes('searchRange('), 'Web API must expose Search range transport')
+  assert.ok(webApi.includes('this.request<XDriveCloudFilesSearchRange<Node>>'), 'Web Search range must use the shared DTO')
+  assert.ok(desktopTypes.includes('type AgentCloudSearchRange = XDriveCloudFilesSearchRange<AgentCloudNode>'), 'Desktop renderer must alias the shared Search range DTO')
+  assert.ok(desktopTypes.includes('cloudSearchRange: ('), 'Desktop renderer bridge must expose Search range')
+  assert.ok(desktopPreload.includes("ipcRenderer.invoke('agent:cloud-search-range'"), 'preload must expose dedicated Search range IPC')
+  assert.ok(desktopMain.includes("ipcMain.handle('agent:cloud-search-range'"), 'Electron main must validate dedicated Search range IPC')
+})

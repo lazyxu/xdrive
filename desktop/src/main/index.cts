@@ -80,6 +80,7 @@ import {
   type AgentCloudShare,
   type AgentCreatedCloudShare,
   type AgentCloudSearchPage,
+  type AgentCloudSearchRange,
   type AgentMediaItem,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
@@ -2970,6 +2971,43 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudSearch(
       query.trim(),
       typeof cursor === 'string' ? cursor.trim() : '',
+      sortKey,
+      sortOrder,
+    )
+  }, false))
+  ipcMain.handle('agent:cloud-search-range', (
+    _event,
+    query: unknown,
+    offset: unknown,
+    limit: unknown,
+    sort: unknown,
+    order: unknown,
+  ) => runAgentAction<AgentCloudSearchRange>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof query !== 'string' || query.trim().length < 2) {
+      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters.')
+    }
+    if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Search range offset must be zero or greater.')
+    }
+    const normalizedLimit = limit === undefined ? 200 : limit
+    if (typeof normalizedLimit !== 'number' || !Number.isSafeInteger(normalizedLimit) ||
+        normalizedLimit < 1 || normalizedLimit > 200) {
+      throw new AgentIPCError('invalid_input', 0, 'Search range limit must be between 1 and 200.')
+    }
+    const sortKey = sort === undefined ? 'name' : sort
+    const sortOrder = order === undefined ? 'asc' : order
+    if (sortKey !== 'name' && sortKey !== 'updated' && sortKey !== 'size' && sortKey !== 'type') {
+      throw new AgentIPCError('invalid_input', 0, 'Search sort is invalid.')
+    }
+    if (sortOrder !== 'asc' && sortOrder !== 'desc') {
+      throw new AgentIPCError('invalid_input', 0, 'Search order is invalid.')
+    }
+    return requireAgentClient().cloudSearchRange(
+      query.trim(),
+      offset,
+      normalizedLimit,
       sortKey,
       sortOrder,
     )

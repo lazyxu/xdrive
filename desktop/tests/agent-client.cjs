@@ -143,6 +143,36 @@ test('cloud search forwards server sort and cursor options', async (t) => {
   assert.equal(page.next_cursor, 'after')
 })
 
+test('cloud search range preserves offset zero and total count', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/search')
+    assert.equal(url.searchParams.get('q'), 'report')
+    assert.equal(url.searchParams.get('offset'), '0')
+    assert.equal(url.searchParams.get('limit'), '200')
+    assert.equal(url.searchParams.get('sort'), 'updated')
+    assert.equal(url.searchParams.get('order'), 'desc')
+    assert.equal(url.searchParams.get('cursor'), null)
+    json(res, 200, {
+      items: [{
+        node: { id: 3, name: 'report.pdf', type: 'file', size: 12, revision: 1 },
+        path: 'Projects/report.pdf',
+        crumbs: [{ id: 1, name: 'My files' }, { id: 2, name: 'Projects' }],
+      }],
+      total_count: 640,
+      offset: 0,
+      limit: 200,
+      sort: 'updated',
+      order: 'desc',
+    })
+  })
+  const range = await client.cloudSearchRange('report', 0, 200, 'updated', 'desc')
+  assert.equal(range.total_count, 640)
+  assert.equal(range.offset, 0)
+  assert.equal(range.limit, 200)
+  assert.equal(range.items[0].path, 'Projects/report.pdf')
+})
+
 test('media Gallery filters are serialized for items and album items', async (t) => {
   const seen = []
   const { client } = await fixture(t, (req, res) => {

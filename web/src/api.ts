@@ -47,6 +47,7 @@ import type {
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
+  XDriveCloudFilesSearchRange,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
@@ -1070,6 +1071,25 @@ export class XDriveApi {
     })
     if (cursor.trim()) params.set('cursor', cursor.trim())
     return this.request<SearchPage>(`/api/v1/search?${params.toString()}`)
+  }
+
+  searchRange(
+    query: string,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
+    const params = new URLSearchParams({
+      q: query.trim(),
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+    })
+    return this.request<XDriveCloudFilesSearchRange<Node>>(
+      `/api/v1/search?${params.toString()}`,
+    )
   }
 
   createDirectory(parentID: number, name: string) {
