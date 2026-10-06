@@ -279,10 +279,13 @@ lost events, process restarts, analyzer-version changes, and retry eligibility.
 
 Users may explicitly request reanalysis with `POST /api/v1/photo-intelligence/reanalyze`. Administrators may
 request the same derived-state rebuild for a specific active user with
-`POST /api/v1/admin/users/:id/photo-intelligence/reanalyze`. Manual reanalysis is implemented as a
-generation-level `force` flag: if another generation is already active, invalidation is deferred until the
-next generation actually starts so an older task cannot overwrite the user's request by writing `ready`
-after an early `stale` update.
+`POST /api/v1/admin/users/:id/photo-intelligence/reanalyze`. Manual reanalysis is a durable owner+kind intent
+in `xd_photo_intelligence_reanalyze_intents`: the API atomically advances `requested_epoch` before returning
+202, then scheduling is best-effort. Startup and the 30-second reconcile scan recover any
+`requested_epoch > applied_epoch` row after queue pressure or Server restart. Only a generation that has
+acquired the distributed owner/kind lease consumes the intent: it invalidates the corresponding derived state
+and then advances `applied_epoch`. A newer request arriving during invalidation therefore remains pending for
+the next generation instead of being lost or overwritten by an older task.
 
 Photo Intelligence exposes safe `reanalyze` control capability in the background-task read model for the
 owner and for administrators. Mid-flight cancel is intentionally not exposed yet because face/place runners

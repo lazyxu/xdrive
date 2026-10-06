@@ -183,3 +183,14 @@ test('shared Task Center renders distributed lease deferral consistently', () =>
     'Desktop must not duplicate cluster lease wording',
   )
 })
+
+
+test('shared Task Center owns durable reanalyze intent wording', () => {
+  for (const token of [
+    "case 'reanalyze_queued': return '重新分析已排队'",
+    "case 'reanalyze_applying': return '正在准备重新分析'",
+  ]) assert.ok(backgroundModel.includes(token), 'shared durable reanalyze label missing: ' + token)
+
+  assert.equal(web.includes('reanalyze_queued'), false, 'Web must not duplicate durable reanalyze phase logic')
+  assert.equal(desktop.includes('reanalyze_queued'), false, 'Desktop must not duplicate durable reanalyze phase logic')
+})

@@ -178,6 +178,19 @@ func TestPhotoIntelligenceReanalyzeUserAndAdminControls(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("manual face reanalysis did not start")
 	}
+	var faceIntent meta.PhotoIntelligenceReanalyzeIntent
+	if err := db.Where(
+		"owner_id = ? AND kind = ?",
+		user.ID,
+		string(photoIntelligenceFace),
+	).First(&faceIntent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if faceIntent.RequestedEpoch != 1 ||
+		faceIntent.AppliedEpoch != 1 ||
+		faceIntent.AppliedAt == nil {
+		t.Fatalf("face reanalyze intent was not durably applied: %+v", faceIntent)
+	}
 	waitForPhotoAnalysisState(
 		t,
 		db,
@@ -349,6 +362,7 @@ func openPhotoIntelligenceAPITestDB(
 		&meta.PhotoAsset{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoPersonClusterState{},
+		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.FileOperation{},
 		&meta.Source{},
 		&meta.SyncRun{},

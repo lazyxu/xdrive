@@ -45,6 +45,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		&meta.SyncRun{},
 		&meta.FileOperation{},
 		&meta.SystemMaintenanceRun{},
+		&meta.PhotoIntelligenceReanalyzeIntent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +182,20 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	reanalyzeIntent := meta.PhotoIntelligenceReanalyzeIntent{
+		OwnerID:        userA.ID,
+		Kind:           string(photoIntelligenceFace),
+		RequestedEpoch: 2,
+		AppliedEpoch:   1,
+		Trigger:        string(background.TriggerUserAction),
+		Initiator:      string(background.InitiatorUser),
+		InitiatorID:    userA.ID,
+		RequestedAt:    now.Add(-5 * time.Second),
+	}
+	if err := db.Create(&reanalyzeIntent).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	janitorFinished := now.Add(-10 * time.Second)
 	janitorRun := meta.SystemMaintenanceRun{
 		Kind:           meta.SystemMaintenanceKindJanitor,
@@ -286,6 +301,20 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	}
 	if !backgroundTaskHasControl(userTasks, "sync-run:"+runA.ID, "cancel") {
 		t.Fatal("owner sync run did not expose cancel")
+	}
+	reanalyzeTaskID := fmt.Sprintf(
+		"runtime:user:%d:photo.face",
+		userA.ID,
+	)
+	reanalyzeTask := backgroundTaskByID(userTasks, reanalyzeTaskID)
+	if reanalyzeTask == nil ||
+		reanalyzeTask.State != "queued" ||
+		reanalyzeTask.Progress.Phase != photoIntelligencePhaseReanalyzeQueued ||
+		reanalyzeTask.Priority == nil ||
+		*reanalyzeTask.Priority != uint8(background.PriorityP2) ||
+		reanalyzeTask.Resource != string(background.ResourceMLCPU) ||
+		!backgroundTaskHasControl(userTasks, reanalyzeTaskID, "reanalyze") {
+		t.Fatalf("unexpected durable reanalyze task: %+v", reanalyzeTask)
 	}
 	syncTask := backgroundTaskByID(userTasks, "sync-run:"+runA.ID)
 	if syncTask == nil {

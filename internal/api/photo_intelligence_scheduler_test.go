@@ -202,7 +202,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
 	t.Fatalf("photo intelligence tasks did not drain: %+v", scheduler.TaskSnapshots(&owner))
 }
 
-func TestPhotoIntelligencePendingRequestPreservesForceAndUserAttribution(t *testing.T) {
+func TestPhotoIntelligencePendingRequestPreservesUserAttribution(t *testing.T) {
 	state := &photoIntelligenceOwnerState{
 		running:          true,
 		currentPriority:  background.PriorityP3,
@@ -216,9 +216,8 @@ func TestPhotoIntelligencePendingRequestPreservesForceAndUserAttribution(t *test
 		background.TriggerUserAction,
 		background.InitiatorUser,
 		9,
-		true,
 	)
-	if !state.pending || !state.nextForce ||
+	if !state.pending ||
 		state.nextPriority != background.PriorityP2 ||
 		state.nextTrigger != background.TriggerUserAction ||
 		state.nextInitiator != background.InitiatorUser ||
@@ -227,7 +226,7 @@ func TestPhotoIntelligencePendingRequestPreservesForceAndUserAttribution(t *test
 	}
 }
 
-func TestPhotoIntelligenceFailurePreservesPendingUserForce(t *testing.T) {
+func TestPhotoIntelligenceFailurePreservesPendingUserRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -288,7 +287,6 @@ func TestPhotoIntelligenceFailurePreservesPendingUserForce(t *testing.T) {
 				nextTrigger:     background.TriggerUserAction,
 				nextInitiator:   background.InitiatorUser,
 				nextInitiatorID: 77,
-				nextForce:       true,
 			},
 		},
 	}
@@ -312,8 +310,7 @@ func TestPhotoIntelligenceFailurePreservesPendingUserForce(t *testing.T) {
 		got.generation != 2 ||
 		got.currentTrigger != background.TriggerUserAction ||
 		got.currentInitiator != background.InitiatorUser ||
-		got.currentInitiatorID != ownerID ||
-		!got.currentForce {
+		got.currentInitiatorID != ownerID {
 		t.Fatalf("next generation state=%+v", got)
 	}
 
