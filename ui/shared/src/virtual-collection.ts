@@ -1,5 +1,6 @@
 export const XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE = 200
 export const XDRIVE_VIRTUAL_COLLECTION_DEFAULT_OVERSCAN_PAGES = 1
+export const XDRIVE_VIRTUAL_COLLECTION_DEFAULT_RETENTION_OVERSCAN_PAGES = 2
 
 export type XDriveVirtualCollectionRange = {
   offset: number
@@ -132,6 +133,40 @@ export function xDriveVirtualCollectionApplyPage<TItem>(
   return {
     ...current,
     totalCount,
+    items,
+  }
+}
+
+export function xDriveVirtualCollectionRetainRanges<TItem>(
+  current: XDriveVirtualCollectionSnapshot<TItem>,
+  ranges: readonly XDriveVirtualCollectionRange[],
+): XDriveVirtualCollectionSnapshot<TItem> {
+  if (current.items.size === 0) return current
+
+  const normalized = ranges
+    .map((range) => ({
+      offset: nonNegativeInteger(range.offset),
+      limit: positiveInteger(range.limit, 1),
+    }))
+  if (normalized.length === 0) {
+    return {
+      ...current,
+      items: new Map<number, TItem>(),
+    }
+  }
+
+  const items = new Map<number, TItem>()
+  for (const [index, item] of current.items) {
+    if (normalized.some((range) => (
+      index >= range.offset &&
+      index < range.offset + range.limit
+    ))) {
+      items.set(index, item)
+    }
+  }
+  if (items.size === current.items.size) return current
+  return {
+    ...current,
     items,
   }
 }

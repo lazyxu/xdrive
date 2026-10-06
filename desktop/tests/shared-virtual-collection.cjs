@@ -142,6 +142,37 @@ test('VirtualCollection aligns viewport requests to stable pages with bounded ov
   )
 })
 
+test('VirtualCollection can evict metadata outside retained page ranges', () => {
+  const {
+    xDriveCreateVirtualCollectionSnapshot,
+    xDriveVirtualCollectionApplyPage,
+    xDriveVirtualCollectionRetainRanges,
+  } = loadVirtualCollection()
+
+  let snapshot = xDriveCreateVirtualCollectionSnapshot('directory', 1)
+  snapshot = xDriveVirtualCollectionApplyPage(snapshot, 1, {
+    offset: 0,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  snapshot = xDriveVirtualCollectionApplyPage(snapshot, 1, {
+    offset: 2,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 3 }, { id: 4 }],
+  })
+  snapshot = xDriveVirtualCollectionRetainRanges(snapshot, [
+    { offset: 2, limit: 2 },
+  ])
+
+  assert.equal(snapshot.items.size, 2)
+  assert.equal(snapshot.items.has(0), false)
+  assert.equal(snapshot.items.has(1), false)
+  assert.deepEqual(snapshot.items.get(2), { id: 3 })
+  assert.deepEqual(snapshot.items.get(3), { id: 4 })
+})
+
 test('VirtualCollection ignores stale pages from an older generation', () => {
   const {
     xDriveCreateVirtualCollectionSnapshot,
@@ -225,6 +256,91 @@ test('old range completion cannot release the new generation in-flight lock', as
     2,
     'learning totalCount must not change the page cache key and refetch the final page',
   )
+})
+
+test('VirtualCollection cancels and evicts ranges that move outside retention', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const pending = []
+  const errors = []
+  const loadRange = (range, signal) => new Promise((resolve) => {
+    pending.push({ range, signal, resolve })
+  })
+  const onError = (error) => errors.push(error)
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'directory',
+    loadRange,
+    onError,
+    pageSize: 2,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+
+  let collection = render()
+  const staleRequest = collection.ensureViewport(0, 1)
+  assert.equal(pending.length, 1)
+
+  const nextRequest = collection.ensureViewport(4, 5)
+  assert.equal(pending.length, 2)
+  assert.equal(pending[0].signal.aborted, true)
+
+  pending[0].resolve({
+    offset: 0,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  pending[1].resolve({
+    offset: 4,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 5 }, { id: 6 }],
+  })
+  await Promise.all([staleRequest, nextRequest])
+
+  collection = render()
+  assert.equal(errors.length, 0)
+  assert.equal(collection.loadedCount, 2)
+  assert.equal(collection.loadedItems.size, 2)
+  assert.equal(collection.itemAt(0), undefined)
+  assert.deepEqual(collection.itemAt(4), { id: 5 })
+  assert.deepEqual(collection.itemAt(5), { id: 6 })
+})
+
+test('VirtualCollection evicts previously loaded pages after the viewport moves away', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const errors = []
+  const loadRange = async (range) => ({
+    offset: range.offset,
+    limit: range.limit,
+    totalCount: 6,
+    items: range.offset === 0
+      ? [{ id: 1 }, { id: 2 }]
+      : [{ id: 5 }, { id: 6 }],
+  })
+  const onError = (error) => errors.push(error)
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'directory',
+    loadRange,
+    onError,
+    pageSize: 2,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+
+  let collection = render()
+  await collection.ensureViewport(0, 1)
+  collection = render()
+  assert.equal(collection.loadedCount, 2)
+  assert.deepEqual(collection.itemAt(0), { id: 1 })
+
+  await collection.ensureViewport(4, 5)
+  collection = render()
+  assert.equal(errors.length, 0)
+  assert.equal(collection.loadedCount, 2)
+  assert.equal(collection.itemAt(0), undefined)
+  assert.deepEqual(collection.itemAt(4), { id: 5 })
 })
 
 test('VirtualCollection is exported from shared core and shared MUI', () => {

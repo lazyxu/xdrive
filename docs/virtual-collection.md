@@ -23,6 +23,8 @@ FileExplorer and Gallery must expose system-style scrolling over the complete lo
 - loaded-range reuse
 - stale response suppression
 - request ownership checks so an old request cannot clear a newer in-flight lock that reused the same range key
+- bounded residency around the current viewport; loaded and in-flight pages outside the retention window are evicted/cancelled
+- read-only loaded-index exposure so consumers can build raw-node lookup maps without duplicating transport state
 
 ## Consumers
 

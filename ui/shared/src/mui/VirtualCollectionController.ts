@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   XDRIVE_VIRTUAL_COLLECTION_DEFAULT_OVERSCAN_PAGES,
   XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE,
+  XDRIVE_VIRTUAL_COLLECTION_DEFAULT_RETENTION_OVERSCAN_PAGES,
   xDriveCreateVirtualCollectionSnapshot,
   xDriveVirtualCollectionApplyPage,
   xDriveVirtualCollectionRangeKey,
   xDriveVirtualCollectionRangesForViewport,
+  xDriveVirtualCollectionRetainRanges,
 } from '../virtual-collection'
 import type {
   XDriveVirtualCollectionPage,
@@ -29,12 +31,14 @@ export function useXDriveVirtualCollection<TItem>({
   onError,
   pageSize = XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE,
   overscanPages = XDRIVE_VIRTUAL_COLLECTION_DEFAULT_OVERSCAN_PAGES,
+  retentionOverscanPages = XDRIVE_VIRTUAL_COLLECTION_DEFAULT_RETENTION_OVERSCAN_PAGES,
 }: {
   queryKey: string
   loadRange: XDriveVirtualCollectionLoader<TItem>
   onError: (error: unknown) => void
   pageSize?: number
   overscanPages?: number
+  retentionOverscanPages?: number
 }) {
   const generationRef = useRef(1)
   const queryKeyRef = useRef(queryKey)
@@ -85,6 +89,39 @@ export function useXDriveVirtualCollection<TItem>({
       pageSize,
       overscanPages,
     })
+    const retentionRanges = xDriveVirtualCollectionRangesForViewport({
+      startIndex,
+      endIndex,
+      totalCount: snapshot.totalCount,
+      pageSize,
+      overscanPages: Math.max(overscanPages, retentionOverscanPages),
+    })
+    const retainedKeys = new Set(
+      retentionRanges.map((range) => xDriveVirtualCollectionRangeKey(range)),
+    )
+
+    for (const [key, entry] of inFlightRef.current) {
+      if (entry.generation !== generation || retainedKeys.has(key)) continue
+      entry.controller.abort()
+      if (inFlightRef.current.get(key) === entry) {
+        inFlightRef.current.delete(key)
+      }
+    }
+
+    let evicted = false
+    for (const key of [...loadedRangeRef.current]) {
+      if (retainedKeys.has(key)) continue
+      loadedRangeRef.current.delete(key)
+      evicted = true
+    }
+    if (evicted) {
+      setSnapshot((current) => (
+        current.generation === generation
+          ? xDriveVirtualCollectionRetainRanges(current, retentionRanges)
+          : current
+      ))
+    }
+
     const tasks: Promise<void>[] = []
 
     for (const range of ranges) {
@@ -139,6 +176,7 @@ export function useXDriveVirtualCollection<TItem>({
     overscanPages,
     pageSize,
     queryKey,
+    retentionOverscanPages,
     snapshot.totalCount,
   ])
 
@@ -151,6 +189,7 @@ export function useXDriveVirtualCollection<TItem>({
     generation: snapshot.generation,
     totalCount: snapshot.totalCount,
     loadedCount: snapshot.items.size,
+    loadedItems: snapshot.items,
     itemAt,
     ensureViewport,
     reset,
