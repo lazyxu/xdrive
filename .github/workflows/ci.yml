@@ -261,6 +261,733 @@ jobs:
       - name: Race test internal/api
         run: go test -race ./internal/api
 
+  file-explorer-search-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-search-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_SEARCH_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure FileExplorer Search 100k baseline
+        run: go test -run TestFileExplorerSearchPerformanceBaseline100K -count=1 -v ./internal/api
+  build-source-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - name: Build Synology source-agent binaries
+        shell: bash
+        run: bash scripts/build-source-agent.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: |
+            release/source-agent/xdrive-source-agent-linux-amd64
+            release/source-agent/xdrive-source-agent-linux-arm64
+          if-no-files-found: error
+          retention-days: 14
+
+  package-linux-client:
+    needs: [desktop-linux, build-client-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-linux-amd64
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-client-core
+          path: release/core
+      - name: Restore Linux desktop runtime
+        run: |
+          mkdir -p desktop/release
+          tar -C desktop/release -xzf dist/desktop-runtime-linux-amd64.tar.gz
+          test -x desktop/release/linux-unpacked/xdrive-desktop
+      - name: Package Linux installer once
+        run: bash scripts/build-linux-deb.sh "$XDRIVE_RELEASE_VERSION" release desktop/release/linux-unpacked release/core/linux-amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-linux-amd64
+          path: release/xdrive-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  server-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Validate server deployment files
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          XD_JWT_SECRET: ci-jwt-secret-that-is-long-enough
+          XD_SERVER_IMAGE: ghcr.io/lazyxu/xdrive-server:edge
+          XD_CADDY_IMAGE: ghcr.io/lazyxu/xdrive-caddy:edge
+        run: |
+          bash -n deploy/install-server.sh
+          bash -n scripts/server-backup.sh
+          bash -n scripts/server-backup-scheduled.sh
+          bash -n scripts/server-restore.sh
+          bash -n scripts/server-verify.sh
+          bash -n scripts/test-server-verify.sh
+          bash scripts/test-server-verify.sh
+          bash -n scripts/server-doctor.sh
+          bash -n scripts/test-server-doctor.sh
+          bash scripts/test-server-doctor.sh
+          bash -n scripts/server-migrate-user.sh
+          bash -n scripts/test-server-user-migration.sh
+          bash scripts/test-server-user-migration.sh
+          bash -n scripts/test-server-backup-restore.sh
+          bash -n scripts/test-server-chunk-storage.sh
+          bash -n scripts/test-server-installer-bootstrap.sh
+          bash scripts/test-server-installer-bootstrap.sh
+          bash -n scripts/test-server-installer-transaction.sh
+          bash scripts/test-server-installer-transaction.sh
+          bash -n scripts/test-server-installer-pipe.sh
+          bash scripts/test-server-installer-pipe.sh
+          bash -n scripts/test-server-rootless-layout.sh
+          bash scripts/test-server-rootless-layout.sh
+          bash -n scripts/test-server-legacy-layout-migration.sh
+          bash scripts/test-server-legacy-layout-migration.sh
+          bash -n scripts/test-server-uninstall.sh
+          bash scripts/test-server-uninstall.sh
+          bash -n scripts/xdrive-server-host.sh
+          bash -n scripts/test-xdrive-server-host.sh
+          bash scripts/test-xdrive-server-host.sh
+          bash -n scripts/test-server-status-summary.sh
+          bash scripts/test-server-status-summary.sh
+          bash -n scripts/ci/test-server-rootless-e2e.sh
+          bash -n scripts/cleanup-merged-branches.sh
+          bash -n scripts/test-cleanup-merged-branches.sh
+          bash scripts/test-cleanup-merged-branches.sh
+          bash -n scripts/test-update-channels.sh
+          bash scripts/test-update-channels.sh
+          bash -n scripts/ci/download-with-fallback.sh
+          bash -n scripts/ci/install-node22.sh
+          bash -n scripts/ci/install-docker-cli.sh
+          bash -n scripts/ci/test-download-with-fallback.sh
+          bash scripts/ci/test-download-with-fallback.sh
+          bash -n scripts/ci/check-go-min-version.sh
+          bash -n scripts/ci/client-artifact-version.sh
+          bash -n scripts/ci/test-client-artifact-version.sh
+          bash scripts/ci/test-client-artifact-version.sh
+          bash -n scripts/ci/build-metadata.sh
+          bash -n scripts/ci/test-build-metadata.sh
+          bash scripts/ci/test-build-metadata.sh
+          bash -n scripts/ci/gitlab-release-version.sh
+          bash -n scripts/ci/gitlab-release-assets.sh
+          bash -n scripts/ci/gitlab-server-images.sh
+          bash -n scripts/ci/gitlab-promote-images.sh
+          sh -n scripts/ci/gitlab-publish-release.sh
+          bash -n scripts/ci/test-gitlab-release-version.sh
+          bash scripts/ci/test-gitlab-release-version.sh
+          XDRIVE_CI_GO_VERSION_OVERRIDE=go1.25.0 bash scripts/ci/check-go-min-version.sh 1.25
+          XDRIVE_CI_GO_VERSION_OVERRIDE=go1.26.0 bash scripts/ci/check-go-min-version.sh 1.25
+          if XDRIVE_CI_GO_VERSION_OVERRIDE=go1.24.9 bash scripts/ci/check-go-min-version.sh 1.25; then
+            echo "Go 1.24 must be rejected by the minimum-version check" >&2
+            exit 1
+          fi
+          bash -n scripts/build-client-core.sh
+          bash -n scripts/ci/gitlab-desktop-windows.sh
+          bash -n scripts/ci/gitlab-go-linux.sh
+          bash -n scripts/ci/gitlab-package-linux-client.sh
+          bash -n scripts/ci/gitlab-source-agent.sh
+          bash -n scripts/ci/gitlab-server-validation.sh
+          bash -n scripts/ci/export-docker-image.sh
+          bash -n scripts/ci/import-docker-image.sh
+          bash -n scripts/ci/gitlab-server-image.sh
+          bash -n scripts/ci/gitlab-caddy-image.sh
+          bash -n scripts/ci/test-photo-face-image.sh
+          bash -n scripts/ci/gitlab-server-backup.sh
+          bash -n scripts/ci/gitlab-go-windows.sh
+          bash -n scripts/ci/gitlab-package-windows-client.sh
+          bash -n scripts/ci/gitlab-test-linux-artifact.sh
+          bash -n scripts/ci/gitlab-test-source-agent-artifact.sh
+          bash -n scripts/ci/gitlab-test-windows-artifact.sh
+          bash -n scripts/ci/gitlab-test-windows-smoke-artifact.sh
+          bash -n scripts/ci/test-linux-client-package.sh
+          bash -n scripts/ci/test-source-agent-package.sh
+          bash -n scripts/ci/prepare-go-mod-cache.sh
+          bash -n scripts/ci/test-prepare-go-mod-cache.sh
+          bash scripts/ci/test-prepare-go-mod-cache.sh
+          docker buildx version
+          docker compose -f deploy/docker-compose.yml config >/dev/null
+          XD_DOMAIN=drive.example.test XD_HTTPS_PORT=8443 ALIYUN_ACCESS_KEY_ID=ci-key ALIYUN_ACCESS_KEY_SECRET=ci-secret docker compose --profile https -f deploy/docker-compose.yml config >/dev/null
+          COMPOSE_PROFILES=photo-intelligence XD_PHOTO_FACE_ANALYZER_SOCKET=/run/xdrive-photo-face/photo-face.sock XD_PHOTO_FACE_RUNTIME_DIR=/tmp/xdrive-photo-face-runtime docker compose --profile photo-intelligence -f deploy/docker-compose.yml config >/dev/null
+
+          generated="$(mktemp)"
+          sed \
+            -e 's|@SOURCE_REF@|0123456789abcdef0123456789abcdef01234567|g' \
+            -e 's|@IMAGE_TAG@|sha-0123456789ab|g' \
+            -e 's|@IMAGE_REGISTRY@|ghcr.io/lazyxu|g' \
+            -e 's|@RELEASE_CHANNEL@|master|g' \
+            -e 's|@RELEASE_COMMIT@|0123456789abcdef0123456789abcdef01234567|g' \
+            -e 's|@UPDATE_SOURCE@|github|g' \
+            deploy/install-server.sh > "$generated"
+          bash -n "$generated"
+          grep -q 'sha-0123456789ab' "$generated"
+          grep -q 'BUILT_CHANNEL="${XD_BUILT_CHANNEL:-master}"' "$generated"
+          grep -q 'BUILT_SOURCE="${XD_BUILT_SOURCE:-github}"' "$generated"
+          rm -f "$generated"
+
+          grep -q 'pattern: xdrive-\*-image' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-photo-face-image xdrive/photo-face:test' .github/workflows/release.yml
+          if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml; then
+            echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
+            exit 1
+          fi
+          grep -q 'container_name: xdrive-postgres' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-server' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-worker' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-photo-face' deploy/docker-compose.yml
+          grep -q 'profiles: \["photo-intelligence"\]' deploy/docker-compose.yml
+          grep -q 'container_name: xdrive-caddy' deploy/docker-compose.yml
+          grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
+          grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
+          grep -q 'docker push "$remote" &' .github/workflows/release.yml
+          grep -q 'gh release create snapshot release/\* --repo "$repo" --prerelease' .github/workflows/release.yml
+          if grep -q 'tag="snapshot-${GITHUB_SHA::12}"' .github/workflows/release.yml; then
+            echo "release workflow must not create immutable snapshot-<sha> tags" >&2
+            exit 1
+          fi
+          grep -q 'target_tag="edge"' .github/workflows/release.yml
+          grep -q 'xdrive-caddy' .github/workflows/release.yml
+          grep -q '8443}:443/tcp' deploy/docker-compose.yml
+          grep -Fq '${XD_FILES_DATA_DIR:-../data/files}:/data' deploy/docker-compose.yml
+          grep -Fq '${XD_POSTGRES_DATA_DIR:-../data/postgres}:/var/lib/postgresql/data' deploy/docker-compose.yml
+          if grep -Eq '(postgres-data:/var/lib/postgresql/data|file-data:/data|caddy-data:/data|caddy-config:/config)' deploy/docker-compose.yml; then
+            echo "server Compose must default to host bind mounts, not named data volumes" >&2
+            exit 1
+          fi
+          grep -q '^# Server host layout and Rootless Docker contract' docs/server-host-layout.md
+          grep -q 'dns alidns' deploy/Caddyfile
+          if grep -q 'docker/build-push-action@v6' .github/workflows/release.yml; then
+            echo "release must publish exact tested server images without docker rebuild" >&2
+            exit 1
+          fi
+          if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
+            echo "server image jobs must not publish edge before the full bundle succeeds" >&2
+            exit 1
+          fi
+
+          backup_line="$(grep -n '^stage 5 "create pre-upgrade backup"' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+          image_line="$(grep -n '^set_env XD_SERVER_IMAGE ' deploy/install-server.sh | head -n1 | cut -d: -f1)"
+          test -n "$backup_line" -a -n "$image_line"
+          test "$backup_line" -lt "$image_line"
+          grep -q 'STAGING_DIR/server-backup.sh' deploy/install-server.sh
+          grep -q 'server-doctor.sh' deploy/install-server.sh
+          grep -q 'server-doctor.sh' .github/workflows/release.yml
+          grep -q 'server-migrate-user.sh' deploy/install-server.sh
+          grep -q 'server-migrate-user.sh' .github/workflows/release.yml
+          grep -q 'migrate-user) migrate_user_cmd' scripts/xdrive-server-host.sh
+          if grep -Eq 'HOST_BIN_DIR|HOST_MANAGER_LINK|ln -sfn .*xdrive-server' deploy/install-server.sh scripts/xdrive-server-host.sh; then
+            echo "xDrive host manager must not create a system-wide command link" >&2
+            exit 1
+          fi
+          grep -q '/api/v1/readyz' deploy/install-server.sh
+          grep -q '/api/v1/readyz' scripts/server-doctor.sh
+          if grep -q '/api/v1/healthz' deploy/install-server.sh; then
+            echo "install readiness gates must use /readyz, not /healthz" >&2
+            exit 1
+          fi
+          grep -q 'xdrive-server-host.sh' deploy/install-server.sh
+          grep -q 'release/xdrive-server' .github/workflows/release.yml
+          if grep -q 'compose create server' scripts/server-backup.sh; then
+            echo "server backup must not create/recreate the formal server service" >&2
+            exit 1
+          fi
+          grep -q 'UPGRADE INCOMPLETE' deploy/install-server.sh
+          grep -q -- '--leave-server-stopped </dev/null' deploy/install-server.sh
+          grep -q 'flock -n 9' deploy/install-server.sh
+          grep -q -- '--leave-server-stopped' deploy/install-server.sh
+          grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' deploy/install-server.sh
+          grep -q 'detailed Docker output is captured in' deploy/install-server.sh
+  server-image:
+    runs-on: ubuntu-latest
+    # Dockerfile defaults keep GitHub on official registries; GitLab passes
+    # region-friendly mirrors into the same build arguments.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and validate exact server image
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/build-metadata.sh
+          docker build \
+            --build-arg "VERSION=$XDRIVE_BUILD_VERSION" \
+            --build-arg "BUILD_CHANNEL=$XDRIVE_BUILD_CHANNEL" \
+            --build-arg "BUILD_COMMIT=$XDRIVE_BUILD_COMMIT" \
+            --build-arg "BUILD_COMMIT_MESSAGE_B64=$XDRIVE_BUILD_COMMIT_MESSAGE_B64" \
+            --build-arg "BUILD_COMMIT_TIME=$XDRIVE_BUILD_COMMIT_TIME" \
+            --build-arg "BUILD_TIME=$XDRIVE_BUILD_TIME" \
+            -t xdrive/server:test .
+          server_version_output="$(docker run --rm xdrive/server:test version)"
+          grep -Fqx "server version: $XDRIVE_BUILD_VERSION" <<<"$server_version_output"
+          grep -Fqx "channel: $XDRIVE_BUILD_CHANNEL" <<<"$server_version_output"
+          grep -Fqx "commit: $XDRIVE_BUILD_COMMIT" <<<"$server_version_output"
+          grep -Fqx "commit time: $XDRIVE_BUILD_COMMIT_TIME" <<<"$server_version_output"
+          grep -Fqx "build time: $XDRIVE_BUILD_TIME" <<<"$server_version_output"
+          bash scripts/test-server-chunk-storage.sh
+          bash scripts/ci/export-docker-image.sh xdrive/server:test dist/server-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  server-rootless-e2e:
+    needs: [server-image, caddy-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          path: dist/caddy-image
+      - name: Install Rootless Docker prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y uidmap dbus-user-session slirp4netns fuse-overlayfs
+          if ! command -v dockerd-rootless.sh >/dev/null 2>&1; then
+            rootless_installer="$RUNNER_TEMP/docker-rootless-install.sh"
+            curl -fsSL https://get.docker.com/rootless -o "$rootless_installer"
+            install_runtime="$RUNNER_TEMP/docker-rootless-install-runtime"
+            mkdir -p "$install_runtime"
+            chmod 700 "$install_runtime"
+            FORCE_ROOTLESS_INSTALL=1 SKIP_IPTABLES=1 XDG_RUNTIME_DIR="$install_runtime" sh "$rootless_installer"
+            echo "$HOME/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/bin:$PATH"
+          fi
+          command -v dockerd-rootless.sh
+          rootlesskit_path="$(command -v rootlesskit)"
+          if [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" == "1" ]]; then
+            profile_name="${rootlesskit_path#/}"
+            profile_name="${profile_name//\//.}"
+            profile_file="/etc/apparmor.d/$profile_name"
+            cat <<EOF | sudo tee "$profile_file" >/dev/null
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          $rootlesskit_path flags=(unconfined) {
+            userns,
+          }
+          EOF
+            sudo apparmor_parser -r "$profile_file"
+          fi
+          user_name="$(id -un)"
+          user_id="$(id -u)"
+          sudo mkdir -p /etc/systemd/system/user@.service.d
+          cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/xdrive-rootless-delegate.conf >/dev/null
+          [Service]
+          Delegate=cpu cpuset io memory pids
+          EOF
+          sudo systemctl daemon-reload
+          sudo loginctl enable-linger "$user_name"
+          sudo systemctl restart "user@$user_id.service"
+          user_runtime="/run/user/$user_id"
+          for _ in $(seq 1 30); do
+            [[ -S "$user_runtime/bus" ]] && break
+            sleep 1
+          done
+          [[ -S "$user_runtime/bus" ]] || {
+            echo "rootless E2E could not establish the runner's systemd user bus" >&2
+            exit 1
+          }
+          sudo systemctl show "user@$user_id.service" -p Delegate -p DelegateControllers
+          export XDG_RUNTIME_DIR="$user_runtime"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$user_runtime/bus"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          subuid_count="$(awk -F: -v u="$user_name" '$1==u {sum += $3} END {print sum+0}' /etc/subuid)"
+          subgid_count="$(awk -F: -v u="$user_name" '$1==u {sum += $3} END {print sum+0}' /etc/subgid)"
+          if (( subuid_count < 65536 )); then
+            sudo usermod --add-subuids 100000-165535 "$user_name"
+          fi
+          if (( subgid_count < 65536 )); then
+            sudo usermod --add-subgids 100000-165535 "$user_name"
+          fi
+          grep "^$user_name:" /etc/subuid
+          grep "^$user_name:" /etc/subgid
+      - name: Real Rootless Docker install/status/doctor E2E
+        shell: bash
+        run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image
+
+  photo-face-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test, benchmark, and export Photo Intelligence analyzer
+        shell: bash
+        run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-photo-face-image
+          path: dist/photo-face-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  caddy-image:
+    needs: web
+    runs-on: ubuntu-latest
+    # Dockerfile defaults keep GitHub on official Go infrastructure; GitLab
+    # overrides the same build arguments for its runner network.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-web-dist
+          path: web/dist
+      - name: Build and validate exact Caddy/Web image
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          test -f web/dist/index.html
+          docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
+          docker run --rm xdrive/caddy:test caddy list-modules | grep -q '^dns.providers.alidns$'
+          docker run --rm xdrive/caddy:test test -f /srv/index.html
+          docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
+          docker run --rm -e XD_DOMAIN=drive.example.test -e ALIYUN_ACCESS_KEY_ID=test -e ALIYUN_ACCESS_KEY_SECRET=test xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-caddy-image
+          path: dist/caddy-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  server-backup:
+    needs: server-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-server-image
+          path: dist/server-image
+      - name: Load exact server image tested by CI
+        run: bash scripts/ci/import-docker-image.sh dist/server-image xdrive/server:test
+      - name: Backup, corruption detection, and restore drill
+        run: bash scripts/test-server-backup-restore.sh
+
+  go-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - run: go mod verify
+      - run: go test -mod=readonly ./internal/... ./cmd/xdrive-agent
+      - name: Windows CfAPI E2E suite
+        run: go test -mod=readonly -tags=xdrive_e2e ./internal/mount -run ^TestWindowsCfAPI -v -count=1
+
+  package-windows-client:
+    needs: [desktop-windows, build-client-core]
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+      XD_WINDOWS_SIGN_PFX_PASSWORD: ${{ secrets.XD_WINDOWS_SIGN_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-runtime-windows-amd64
+          path: desktop/release/win-unpacked
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-client-core
+          path: release/core
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          $candidate = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if ($null -eq $candidate -and $null -eq (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
+          }
+      - name: Prepare unified installer signing
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            throw "Stable Windows releases require XD_WINDOWS_SIGN_PFX_B64 and XD_WINDOWS_SIGN_PFX_PASSWORD secrets."
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            if ([string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_PASSWORD)) {
+              throw "XD_WINDOWS_SIGN_PFX_PASSWORD is required when XD_WINDOWS_SIGN_PFX_B64 is set."
+            }
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-signing.pfx"
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:XD_WINDOWS_SIGN_PFX_B64))
+            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $password = "xdrive-ci-signing"
+            $secure = ConvertTo-SecureString $password -AsPlainText -Force
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=xDrive CI Test" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable
+            $path = Join-Path $env:RUNNER_TEMP "xdrive-unified-ci-signing.pfx"
+            Export-PfxCertificate -Cert $cert -FilePath $path -Password $secure | Out-Null
+            "XD_WINDOWS_SIGN_PFX_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "XD_WINDOWS_SIGN_PFX_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      - name: Package unified Windows installer once
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -CoreSourceDir release/core/windows-amd64 -TimestampUrl "" -SkipSignatureTrustCheck
+          } else {
+            ./scripts/build-windows-installer.ps1 -Version $env:XDRIVE_RELEASE_VERSION -OutputDir release -DesktopSourceDir desktop/release/win-unpacked -CoreSourceDir release/core/windows-amd64
+          }
+          if (-not (Test-Path ./release/xDriveSetup-amd64.exe)) { throw "installer missing" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release/xDriveSetup-amd64.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  test-linux-artifact:
+    needs: package-linux-client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-linux-amd64
+          path: release
+      - name: Test exact Linux release package
+        run: bash scripts/ci/test-linux-client-package.sh "$XDRIVE_RELEASE_VERSION" release/xdrive-linux-amd64.deb
+
+  test-source-agent-artifact:
+    needs: build-source-agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-source-agent-linux
+          path: release/source-agent
+      - name: Test exact source-agent binaries
+        run: bash scripts/ci/test-source-agent-package.sh "$XDRIVE_RELEASE_VERSION" release/source-agent
+
+  test-windows-rollback-artifact:
+    needs: package-windows-client
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Test exact Windows rollback
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario rollback -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario rollback
+          }
+
+  test-windows-upgrade-artifact:
+    needs: [package-windows-client, test-windows-rollback-artifact]
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Test exact Windows successful upgrade
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario upgrade -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-client-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -Scenario upgrade
+          }
+
+  test-windows-smoke-artifact:
+    needs: [package-windows-client, test-windows-upgrade-artifact]
+    runs-on: windows-latest
+    env:
+      XD_WINDOWS_SIGN_PFX_B64: ${{ secrets.XD_WINDOWS_SIGN_PFX_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve client artifact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/ci/client-artifact-version.sh
+          echo "XDRIVE_RELEASE_VERSION=$XDRIVE_RELEASE_VERSION" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdrive-windows-amd64
+          path: release
+      - name: Smoke install and uninstall exact Windows release package
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request" -or -not [string]::IsNullOrWhiteSpace($env:XD_WINDOWS_SIGN_PFX_B64)) {
+            & ./scripts/ci/test-windows-smoke-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION -ExpectSigned
+          } else {
+            & ./scripts/ci/test-windows-smoke-package.ps1 -Installer ./release/xDriveSetup-amd64.exe -TargetVersion $env:XDRIVE_RELEASE_VERSION
+          }
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-web-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 2
+
+
+  final-gate:
+    if: always()
+    needs:
+      - desktop-tests
+      - go-linux
+      - go-linux-api
+      - go-windows
+      - server-validation
+      - server-image
+      - photo-face-image
+      - server-rootless-e2e
+      - caddy-image
+      - server-backup
+      - web
+      - test-linux-artifact
+      - test-source-agent-artifact
+      - test-windows-rollback-artifact
+      - test-windows-upgrade-artifact
+      - test-windows-smoke-artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI gate to succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")' >/dev/null
+          echo "All source, server, web, and exact-artifact tests passed."
+
+  publish:
+    needs: [final-gate]
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      publish: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) }}
+    secrets: inherit
+ -count=1 -v ./internal/api
+
   build-source-agent:
     runs-on: ubuntu-latest
     steps:
