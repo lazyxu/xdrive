@@ -413,6 +413,12 @@ export type AgentCloudArchiveExtractResult = {
   downloaded: string[]
 }
 
+export type AgentCloudFolderDownloadResult = {
+  root: string
+  downloaded: number
+  failed: number
+}
+
 export type AgentCloudFileOperation = {
   id: string
   type: 'copy' | 'move' | 'delete' | 'undo' | 'redo'
@@ -1488,6 +1494,14 @@ export class AgentIPCClient {
   cloudDownload(id: number, destination: string) {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/download', {
       id,
+      destination,
+    }, 6 * 60 * 60 * 1000)
+  }
+
+  cloudDownloadFolder(id: number, parentID: number, destination: string) {
+    return this.request<AgentCloudFolderDownloadResult>('POST', '/v1/cloud/download/folder', {
+      id,
+      parent_id: parentID,
       destination,
     }, 6 * 60 * 60 * 1000)
   }

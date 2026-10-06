@@ -50,6 +50,23 @@ type agentCloudArchiveDownloadResult struct {
 	Downloaded []string `json:"downloaded"`
 }
 
+type agentCloudFolderDownloadResult struct {
+	Root       string `json:"root"`
+	Downloaded int    `json:"downloaded"`
+	Failed     int    `json:"failed"`
+}
+
+type agentCloudFolderDownloadFile struct {
+	Node         client.Node
+	RelativePath string
+}
+
+type agentCloudFolderDownloadManifest struct {
+	Directories []string
+	Files       []agentCloudFolderDownloadFile
+	TotalBytes  int64
+}
+
 type agentCreatedShare struct {
 	Share client.CreatedFileShare `json:"share"`
 	URL   string                  `json:"url"`
@@ -675,6 +692,359 @@ func replaceDownloadedFile(stagedPath, destination string) error {
 	}
 	_ = os.Remove(backupPath)
 	return nil
+}
+
+func agentCloudDownloadPathSegment(name string) (string, error) {
+	if err := meta.ValidateName(name); err != nil {
+		return "", err
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
+		return "", fmt.Errorf("unsafe cloud download path segment %q", name)
+	}
+	return name, nil
+}
+
+func resolveAgentCloudDownloadFolderRoot(
+	ctx context.Context,
+	cli *client.Client,
+	id uint64,
+	parentID uint64,
+) (client.Node, error) {
+	if id == 0 || parentID == 0 {
+		return client.Node{}, fmt.Errorf("folder id and parent id are required")
+	}
+	children, err := cli.List(ctx, parentID)
+	if err != nil {
+		return client.Node{}, err
+	}
+	for _, node := range children {
+		if node.ID != id {
+			continue
+		}
+		if node.Type != meta.NodeTypeDir {
+			return client.Node{}, fmt.Errorf("download root is not a directory")
+		}
+		if _, err := agentCloudDownloadPathSegment(node.Name); err != nil {
+			return client.Node{}, err
+		}
+		return node, nil
+	}
+	return client.Node{}, fmt.Errorf("download folder is no longer available")
+}
+
+func scanAgentCloudDownloadFolder(
+	ctx context.Context,
+	root client.Node,
+	list func(context.Context, uint64) ([]client.Node, error),
+) (agentCloudFolderDownloadManifest, error) {
+	if root.Type != meta.NodeTypeDir {
+		return agentCloudFolderDownloadManifest{}, fmt.Errorf("download root is not a directory")
+	}
+	manifest := agentCloudFolderDownloadManifest{}
+	visited := make(map[uint64]struct{})
+
+	var walk func(client.Node, string) error
+	walk = func(node client.Node, relativePath string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, exists := visited[node.ID]; exists {
+			return fmt.Errorf("cloud download tree contains a cycle")
+		}
+		visited[node.ID] = struct{}{}
+		if len(visited) > maxAgentArchiveEntries {
+			return fmt.Errorf("cloud download tree contains too many entries")
+		}
+
+		switch node.Type {
+		case meta.NodeTypeDir:
+			manifest.Directories = append(manifest.Directories, relativePath)
+			children, err := list(ctx, node.ID)
+			if err != nil {
+				return err
+			}
+			for _, child := range children {
+				segment, err := agentCloudDownloadPathSegment(child.Name)
+				if err != nil {
+					return err
+				}
+				childPath := segment
+				if relativePath != "" {
+					childPath = pathpkg.Join(relativePath, segment)
+				}
+				if err := walk(child, childPath); err != nil {
+					return err
+				}
+			}
+		case meta.NodeTypeFile:
+			if node.Size < 0 {
+				return fmt.Errorf("cloud download file has invalid size")
+			}
+			const maxInt64 = int64(^uint64(0) >> 1)
+			if node.Size > 0 && manifest.TotalBytes > maxInt64-node.Size {
+				return fmt.Errorf("cloud download tree is too large")
+			}
+			manifest.TotalBytes += node.Size
+			manifest.Files = append(manifest.Files, agentCloudFolderDownloadFile{
+				Node:         node,
+				RelativePath: relativePath,
+			})
+		default:
+			return fmt.Errorf("unsupported cloud download node type %q", node.Type)
+		}
+		return nil
+	}
+
+	if err := walk(root, ""); err != nil {
+		return agentCloudFolderDownloadManifest{}, err
+	}
+	return manifest, nil
+}
+
+func downloadAgentCloudFileIntoPath(
+	ctx context.Context,
+	cli *client.Client,
+	id uint64,
+	destination string,
+	progress func(done, total int64),
+) error {
+	parent := filepath.Dir(destination)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(parent, ".xdrive-download-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		cleanup()
+		return err
+	}
+	if err := cli.DownloadToProgress(ctx, id, tmp, progress); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := replaceDownloadedFile(tmpPath, destination); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func existingAgentCloudDownloadRootNames(destination string) (map[string]struct{}, error) {
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		return nil, err
+	}
+	reserved := make(map[string]struct{}, len(entries)+1)
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".xdrive-download-") ||
+			strings.HasPrefix(name, ".xdrive-archive-") ||
+			strings.HasPrefix(name, ".xdrive-extract-") {
+			continue
+		}
+		reserved[strings.ToLower(name)] = struct{}{}
+	}
+	return reserved, nil
+}
+
+func (c *agentController) CloudDownloadFolder(
+	ctx context.Context,
+	id uint64,
+	parentID uint64,
+	destination string,
+) (agentCloudFolderDownloadResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentCloudFolderDownloadResult{}, err
+	}
+	destination = filepath.Clean(strings.TrimSpace(destination))
+	if destination == "." || !filepath.IsAbs(destination) {
+		return agentCloudFolderDownloadResult{}, fmt.Errorf("absolute folder download destination is required")
+	}
+	if info, err := os.Stat(destination); err != nil {
+		return agentCloudFolderDownloadResult{}, err
+	} else if !info.IsDir() {
+		return agentCloudFolderDownloadResult{}, fmt.Errorf("folder download destination is not a directory")
+	}
+
+	root, err := resolveAgentCloudDownloadFolderRoot(ctx, cli, id, parentID)
+	if err != nil {
+		return agentCloudFolderDownloadResult{}, err
+	}
+
+	group := c.transfers.StartGroup(transfer.Spec{
+		FileName:     root.Name,
+		Path:         destination,
+		Kind:         transfer.KindDownload,
+		Direction:    "download",
+		Phase:        transfer.PhaseScanning,
+		ScanComplete: false,
+	})
+	if group == nil {
+		return agentCloudFolderDownloadResult{}, fmt.Errorf("transfer manager is unavailable")
+	}
+
+	manifest, err := scanAgentCloudDownloadFolder(ctx, root, cli.List)
+	if err != nil {
+		_ = group.Finish(transfer.StateFailed, err)
+		return agentCloudFolderDownloadResult{}, err
+	}
+
+	reserved, err := existingAgentCloudDownloadRootNames(destination)
+	if err != nil {
+		_ = group.Finish(transfer.StateFailed, err)
+		return agentCloudFolderDownloadResult{}, err
+	}
+	rootName, err := allocateDownloadedArchiveName(root.Name, true, reserved)
+	if err != nil {
+		_ = group.Finish(transfer.StateFailed, err)
+		return agentCloudFolderDownloadResult{}, err
+	}
+	rootPath := filepath.Join(destination, rootName)
+	if err := os.Mkdir(rootPath, 0o755); err != nil {
+		_ = group.Finish(transfer.StateFailed, err)
+		return agentCloudFolderDownloadResult{}, err
+	}
+	for _, relativeDir := range manifest.Directories {
+		if relativeDir == "" {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Join(rootPath, filepath.FromSlash(relativeDir)), 0o755); err != nil {
+			_ = group.Finish(transfer.StateFailed, err)
+			return agentCloudFolderDownloadResult{}, err
+		}
+	}
+
+	childHandles := make([]*transfer.Handle, len(manifest.Files))
+	childDone := make([]int64, len(manifest.Files))
+	childTotals := make([]int64, len(manifest.Files))
+	for index, file := range manifest.Files {
+		childTotals[index] = max(int64(0), file.Node.Size)
+		childHandles[index] = c.transfers.StartChild(group, transfer.Spec{
+			FileName:     file.Node.Name,
+			Path:         filepath.Join(rootPath, filepath.FromSlash(file.RelativePath)),
+			RelativePath: pathpkg.Join(root.Name, file.RelativePath),
+			Kind:         transfer.KindDownload,
+			Direction:    "download",
+			Phase:        transfer.PhaseQueued,
+			TotalBytes:   childTotals[index],
+		})
+		if childHandles[index] == nil {
+			err := fmt.Errorf("cannot create folder download child transfer")
+			_ = group.Finish(transfer.StateFailed, err)
+			return agentCloudFolderDownloadResult{}, err
+		}
+	}
+
+	completed := int64(0)
+	failed := int64(0)
+	running := int64(0)
+	processed := int64(0)
+	groupProgress := func() transfer.GroupProgress {
+		var bytesDone int64
+		var bytesTotal int64
+		for index := range childDone {
+			bytesDone += max(int64(0), childDone[index])
+			bytesTotal += max(int64(0), childTotals[index])
+		}
+		return transfer.GroupProgress{
+			Phase:          transfer.PhaseTransferring,
+			ScanComplete:   true,
+			BytesDone:      bytesDone,
+			BytesTotal:     bytesTotal,
+			TotalItems:     int64(len(manifest.Files)),
+			CompletedItems: completed,
+			FailedItems:    failed,
+			RunningItems:   running,
+			QueuedItems:    max(int64(0), int64(len(manifest.Files))-processed-running),
+		}
+	}
+	group.UpdateGroup(groupProgress())
+
+	result := agentCloudFolderDownloadResult{Root: rootName}
+	if len(manifest.Files) == 0 {
+		_ = group.Finish(transfer.StateCompleted, nil)
+		return result, nil
+	}
+
+	var firstFailure error
+	for index, file := range manifest.Files {
+		child := childHandles[index]
+		running = 1
+		child.SetPhase(transfer.PhaseTransferring)
+		group.UpdateGroup(groupProgress())
+
+		firstProgress := true
+		progress := func(done, total int64) {
+			if total > 0 && total != childTotals[index] {
+				childTotals[index] = total
+			}
+			childDone[index] = max(int64(0), done)
+			if firstProgress {
+				firstProgress = false
+				child.Baseline(done, total)
+			} else {
+				child.Progress(done, total)
+			}
+			group.UpdateGroup(groupProgress())
+		}
+
+		target := filepath.Join(rootPath, filepath.FromSlash(file.RelativePath))
+		err := downloadAgentCloudFileIntoPath(ctx, cli, file.Node.ID, target, progress)
+		running = 0
+		processed++
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				_ = child.Finish(transfer.StateCancelled, err)
+				for next := index + 1; next < len(childHandles); next++ {
+					_ = childHandles[next].Finish(transfer.StateCancelled, nil)
+				}
+				group.UpdateGroup(groupProgress())
+				_ = group.Finish(transfer.StateCancelled, err)
+				return result, err
+			}
+			failed++
+			result.Failed++
+			if firstFailure == nil {
+				firstFailure = err
+			}
+			_ = child.Finish(transfer.StateFailed, err)
+			group.UpdateGroup(groupProgress())
+			continue
+		}
+
+		childDone[index] = childTotals[index]
+		completed++
+		result.Downloaded++
+		child.Complete()
+		group.UpdateGroup(groupProgress())
+	}
+
+	switch {
+	case failed == 0:
+		_ = group.Finish(transfer.StateCompleted, nil)
+	case completed == 0:
+		_ = group.Finish(transfer.StateFailed, firstFailure)
+		return result, firstFailure
+	default:
+		_ = group.Finish(transfer.StatePartial, firstFailure)
+	}
+	return result, nil
 }
 
 func (c *agentController) CloudDownloadArchive(

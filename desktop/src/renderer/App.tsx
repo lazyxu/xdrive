@@ -1798,6 +1798,7 @@ export default function App({
                 agent.hello?.capabilities.includes('upload-conflict-policy')
               ),
               archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
+              folderTreeDownloadSupported: agent.hello?.capabilities.includes('folder-download-tree') ?? false,
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               quickAccessSupported: fileQuickAccessSupported,
