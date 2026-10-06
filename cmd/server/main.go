@@ -162,8 +162,8 @@ func main() {
 	}
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
-	srv.StartMediaIndexer(serverCtx)
 	srv.StartPhotoIntelligence(serverCtx)
+	srv.StartMediaIndexer(serverCtx)
 	srv.StartFileOperationWorker(serverCtx)
 	slog.Info("server_listening", "address", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {

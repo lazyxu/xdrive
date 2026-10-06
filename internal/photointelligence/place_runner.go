@@ -28,6 +28,65 @@ type placeCandidate struct {
 }
 
 func (r *PlaceRunner) RunBatch(ctx context.Context, limit int) (int, error) {
+	return r.runBatch(ctx, 0, limit)
+}
+
+func (r *PlaceRunner) RunOwnerBatch(
+	ctx context.Context,
+	ownerID uint64,
+	limit int,
+) (int, error) {
+	if ownerID == 0 {
+		return 0, fmt.Errorf("photo place owner id is required")
+	}
+	return r.runBatch(ctx, ownerID, limit)
+}
+
+func (r *PlaceRunner) CandidateOwnerIDs(
+	ctx context.Context,
+	limit int,
+) ([]uint64, error) {
+	if r == nil || r.DB == nil || r.Resolver == nil {
+		return nil, fmt.Errorf("photo place runner is not configured")
+	}
+	if limit <= 0 {
+		limit = 64
+	}
+	now := time.Now().UTC()
+	if r.Now != nil {
+		now = r.Now().UTC()
+	}
+	analyzerVersion := r.Resolver.Name() + "@" + r.Resolver.Version()
+	type ownerRow struct {
+		OwnerID uint64 `gorm:"column:owner_id"`
+	}
+	var rows []ownerRow
+	err := r.placeCandidateQuery(ctx, analyzerVersion, now).
+		Select("pa.owner_id AS owner_id").
+		Group("pa.owner_id").
+		Order(
+			"MIN(COALESCE(pas.updated_at, TIMESTAMP '1970-01-01')) ASC, " +
+				"pa.owner_id ASC",
+		).
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		if row.OwnerID != 0 {
+			owners = append(owners, row.OwnerID)
+		}
+	}
+	return owners, nil
+}
+
+func (r *PlaceRunner) runBatch(
+	ctx context.Context,
+	ownerID uint64,
+	limit int,
+) (int, error) {
 	if r == nil || r.DB == nil || r.Resolver == nil {
 		return 0, fmt.Errorf("photo place runner is not configured")
 	}
@@ -40,40 +99,13 @@ func (r *PlaceRunner) RunBatch(ctx context.Context, limit int) (int, error) {
 	}
 	analyzerVersion := r.Resolver.Name() + "@" + r.Resolver.Version()
 
+	query := r.placeCandidateQuery(ctx, analyzerVersion, now)
+	if ownerID != 0 {
+		query = query.Where("pa.owner_id = ?", ownerID)
+	}
 	var candidates []placeCandidate
-	if err := r.DB.WithContext(ctx).
-		Table("xd_photo_assets AS pa").
+	if err := query.
 		Select("pa.id AS asset_id, pm.latitude, pm.longitude").
-		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
-		Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL").
-		Joins(
-			"LEFT JOIN xd_photo_analysis_states AS pas ON pas.asset_id = pa.id AND pas.kind = ?",
-			meta.PhotoAnalysisKindPlaceLabel,
-		).
-		Joins("LEFT JOIN xd_photo_place_labels AS ppl ON ppl.asset_id = pa.id").
-		Where(
-			"pm.latitude IS NOT NULL AND pm.longitude IS NOT NULL AND "+
-				"pm.latitude BETWEEN -90 AND 90 AND pm.longitude BETWEEN -180 AND 180",
-		).
-		Where(
-			"pas.id IS NULL OR pas.analyzer_version <> ? OR "+
-				"pas.state IN (?, ?) OR "+
-				"(pas.state = ? AND pas.updated_at <= ?) OR "+
-				"(pas.state = ? AND pas.updated_at <= ?) OR "+
-				"ppl.asset_id IS NULL OR "+
-				"(ppl.asset_id IS NOT NULL AND ("+
-				"ppl.resolver <> ? OR ppl.resolver_version <> ? OR "+
-				"ppl.latitude <> pm.latitude OR ppl.longitude <> pm.longitude))",
-			analyzerVersion,
-			meta.PhotoAnalysisStatePending,
-			meta.PhotoAnalysisStateStale,
-			meta.PhotoAnalysisStateFailed,
-			now.Add(-placeAnalysisRetryInterval),
-			meta.PhotoAnalysisStateRunning,
-			now.Add(-placeAnalysisRunningTimeout),
-			r.Resolver.Name(),
-			r.Resolver.Version(),
-		).
 		Order("COALESCE(pas.updated_at, TIMESTAMP '1970-01-01') ASC, pa.id ASC").
 		Limit(limit).
 		Scan(&candidates).Error; err != nil {
@@ -126,6 +158,45 @@ func (r *PlaceRunner) RunBatch(ctx context.Context, limit int) (int, error) {
 		processed++
 	}
 	return processed, firstError
+}
+
+func (r *PlaceRunner) placeCandidateQuery(
+	ctx context.Context,
+	analyzerVersion string,
+	now time.Time,
+) *gorm.DB {
+	return r.DB.WithContext(ctx).
+		Table("xd_photo_assets AS pa").
+		Joins("JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
+		Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL").
+		Joins(
+			"LEFT JOIN xd_photo_analysis_states AS pas ON pas.asset_id = pa.id AND pas.kind = ?",
+			meta.PhotoAnalysisKindPlaceLabel,
+		).
+		Joins("LEFT JOIN xd_photo_place_labels AS ppl ON ppl.asset_id = pa.id").
+		Where(
+			"pm.latitude IS NOT NULL AND pm.longitude IS NOT NULL AND "+
+				"pm.latitude BETWEEN -90 AND 90 AND pm.longitude BETWEEN -180 AND 180",
+		).
+		Where(
+			"pas.id IS NULL OR pas.analyzer_version <> ? OR "+
+				"pas.state IN (?, ?) OR "+
+				"(pas.state = ? AND pas.updated_at <= ?) OR "+
+				"(pas.state = ? AND pas.updated_at <= ?) OR "+
+				"ppl.asset_id IS NULL OR "+
+				"(ppl.asset_id IS NOT NULL AND ("+
+				"ppl.resolver <> ? OR ppl.resolver_version <> ? OR "+
+				"ppl.latitude <> pm.latitude OR ppl.longitude <> pm.longitude))",
+			analyzerVersion,
+			meta.PhotoAnalysisStatePending,
+			meta.PhotoAnalysisStateStale,
+			meta.PhotoAnalysisStateFailed,
+			now.Add(-placeAnalysisRetryInterval),
+			meta.PhotoAnalysisStateRunning,
+			now.Add(-placeAnalysisRunningTimeout),
+			r.Resolver.Name(),
+			r.Resolver.Version(),
+		)
 }
 
 func (r *PlaceRunner) markPlaceAnalysisRunning(

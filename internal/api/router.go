@@ -45,6 +45,11 @@ type Server struct {
 	archiveProgress           map[string]*archiveDownloadProgressState
 	mediaIndexMu              sync.Mutex
 	mediaIndexOwners          map[uint64]*mediaIndexOwnerState
+	photoIntelligenceMu       sync.Mutex
+	photoIntelligenceOwners   map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
+	photoFaceRunner           photoFaceOwnerRunner
+	photoPlaceRunner          photoPlaceOwnerRunner
+	photoPersonRunner         photoPersonOwnerRunner
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -82,6 +87,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/file-quick-access/:id", s.unpinFileQuickAccess)
 	authed.GET("/file-recent", s.listFileRecent)
 	authed.GET("/background-tasks", s.listBackgroundTasks)
+	authed.POST("/photo-intelligence/reanalyze", s.reanalyzePhotoIntelligence)
 	authed.POST("/file-recent/:id", s.touchFileRecent)
 	authed.DELETE("/file-recent", s.clearFileRecent)
 	authed.POST("/nodes/:id/directories", s.createDirectory)
@@ -204,6 +210,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.DELETE("/users/:id", s.adminDeleteUser)
 	admin.POST("/users/:id/reset-password", s.adminResetPassword)
 	admin.POST("/users/:id/revoke-sessions", s.adminRevokeSessions)
+	admin.POST("/users/:id/photo-intelligence/reanalyze", s.adminReanalyzePhotoIntelligence)
 	return r
 }
 

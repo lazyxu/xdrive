@@ -113,8 +113,10 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    existing task is promoted to P1; if it is already running, P1 is retained for the next generation.
    Full batches continue immediately only when indexing made progress; a full batch with zero progress stops
    instead of hot-looping and waits for the next 30-second P2 fallback reconciliation.
-4. Photo Intelligence: `Media ready -> face/place`, then `Face ready -> person-cluster(owner)` with owner-level
-   coalescing.
+4. Photo Intelligence: **current**. Media-index progress emits owner-scoped face/place work; face completion
+   emits person-cluster(owner). Face uses P2 `ml_cpu`; place/person clustering use P3 `background_cpu`.
+   Bursts coalesce by owner+kind and candidate-owner scans remain a 30-second fallback reconciliation path.
+   User/admin reanalysis is explicit `user_action/admin_action` work and never becomes P0.
 5. FileOperation: PostgreSQL `NOTIFY` wakeup plus a fallback poll; retain `FileOperation` as the durable queue.
 6. Source worker: retain `SyncRun`; integrate only resource budget, priority, and unified health/status.
 7. Janitor/storage sampler: remain timer-driven; add PostgreSQL advisory-lock leader election for multi-server
@@ -222,3 +224,30 @@ The server exposes background work as a read model without introducing a generic
 Scheduler runtime tasks expose `kind`, state, owner attribution, trigger/initiator, priority/resource,
 timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. Runtime entries
 are removed after completion; history belongs to the durable domain models, not to the scheduler.
+
+
+## Photo Intelligence consumer
+
+Photo Intelligence no longer runs independent busy/idle polling loops. Each owner/kind is scheduled through
+the shared Background Scheduler:
+
+- `photo.face`: P2 / `ml_cpu`;
+- `photo.place`: P3 / `background_cpu`;
+- `photo.person_cluster`: P3 / `background_cpu`.
+
+A media-index owner batch that produces new/updated PhotoAssets requests face/place work. A face batch that
+processes candidates requests a person-cluster rebuild for the same owner. Repeated events coalesce while a
+generation is queued/running. Candidate-owner scans every 30 seconds remain the correctness fallback for
+lost events, process restarts, analyzer-version changes, and retry eligibility.
+
+Users may explicitly request reanalysis with `POST /api/v1/photo-intelligence/reanalyze`. Administrators may
+request the same derived-state rebuild for a specific active user with
+`POST /api/v1/admin/users/:id/photo-intelligence/reanalyze`. Manual reanalysis is implemented as a
+generation-level `force` flag: if another generation is already active, invalidation is deferred until the
+next generation actually starts so an older task cannot overwrite the user's request by writing `ready`
+after an early `stale` update.
+
+Photo Intelligence exposes safe `reanalyze` control capability in the background-task read model for the
+owner and for administrators. Mid-flight cancel is intentionally not exposed yet because face/place runners
+persist `running` analysis state; cancellation requires an explicit durable rollback/stale contract rather
+than merely killing an in-process task.
