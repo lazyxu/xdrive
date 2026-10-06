@@ -108,6 +108,22 @@ type ChildrenPage struct {
 	Order      string `json:"order"`
 }
 
+type ChildrenRangeOptions struct {
+	Limit  int
+	Offset int
+	Sort   string
+	Order  string
+}
+
+type ChildrenRange struct {
+	Items      []Node `json:"items"`
+	TotalCount int64  `json:"total_count"`
+	Offset     int    `json:"offset"`
+	Limit      int    `json:"limit"`
+	Sort       string `json:"sort"`
+	Order      string `json:"order"`
+}
+
 type BatchNodeRef struct {
 	ID       uint64 `json:"id"`
 	Revision uint64 `json:"revision"`
@@ -350,6 +366,29 @@ func (c *Client) ListPage(ctx context.Context, parentID uint64, options Children
 		values.Set("limit", strconv.Itoa(childrenDefaultPageLimit))
 	}
 	var out ChildrenPage
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)
+	return out, err
+}
+
+func (c *Client) ListRange(ctx context.Context, parentID uint64, options ChildrenRangeOptions) (ChildrenRange, error) {
+	if options.Offset < 0 {
+		return ChildrenRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	if options.Limit > 0 {
+		values.Set("limit", strconv.Itoa(options.Limit))
+	}
+	if values.Get("limit") == "" {
+		values.Set("limit", strconv.Itoa(childrenDefaultPageLimit))
+	}
+	values.Set("offset", strconv.Itoa(options.Offset))
+	if strings.TrimSpace(options.Sort) != "" {
+		values.Set("sort", strings.TrimSpace(options.Sort))
+	}
+	if strings.TrimSpace(options.Order) != "" {
+		values.Set("order", strings.TrimSpace(options.Order))
+	}
+	var out ChildrenRange
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)
 	return out, err
 }

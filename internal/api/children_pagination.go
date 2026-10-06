@@ -26,9 +26,19 @@ type childrenPageDTO struct {
 	Order      string    `json:"order"`
 }
 
+type childrenRangeDTO struct {
+	Items      []nodeDTO `json:"items"`
+	TotalCount int64     `json:"total_count"`
+	Offset     int       `json:"offset"`
+	Limit      int       `json:"limit"`
+	Sort       string    `json:"sort"`
+	Order      string    `json:"order"`
+}
+
 type childrenPageOptions struct {
 	Limit  int
 	Cursor string
+	Offset *int
 	Sort   string
 	Order  string
 	Name   string
@@ -65,7 +75,7 @@ type childrenCursor struct {
 
 func childrenPaginationRequested(c *gin.Context) bool {
 	query := c.Request.URL.Query()
-	for _, key := range []string{"limit", "cursor", "sort", "order", "name"} {
+	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name"} {
 		if _, ok := query[key]; ok {
 			return true
 		}
@@ -100,8 +110,28 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 		fail(c, http.StatusBadRequest, "order must be asc or desc")
 		return childrenPageOptions{}, false
 	}
+	if rawValues, exists := c.Request.URL.Query()["offset"]; exists {
+		raw := ""
+		if len(rawValues) > 0 {
+			raw = strings.TrimSpace(rawValues[0])
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			fail(c, http.StatusBadRequest, "offset must be zero or greater")
+			return childrenPageOptions{}, false
+		}
+		options.Offset = &value
+	}
 	if options.Name != "" && options.Cursor != "" {
 		fail(c, http.StatusBadRequest, "name filter does not accept cursor")
+		return childrenPageOptions{}, false
+	}
+	if options.Offset != nil && options.Cursor != "" {
+		fail(c, http.StatusBadRequest, "offset does not accept cursor")
+		return childrenPageOptions{}, false
+	}
+	if options.Offset != nil && options.Name != "" {
+		fail(c, http.StatusBadRequest, "name filter does not accept offset")
 		return childrenPageOptions{}, false
 	}
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
@@ -198,6 +228,52 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		direction = "DESC"
 	}
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
+
+	if options.Offset != nil {
+		var totalCount int64
+		countQuery := s.DB.
+			Table("xd_nodes").
+			Joins(`JOIN xd_nodes AS parent_node
+				ON parent_node.id = ?
+				AND parent_node.owner_id = ?
+				AND parent_node.type = ?
+				AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
+			Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
+		if err := countQuery.Count(&totalCount).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "count children failed")
+			return
+		}
+		if totalCount == 0 {
+			if _, err := s.ownedDirectory(uid, parentID); err != nil {
+				fail(c, statusForLookup(err), "directory not found")
+				return
+			}
+		}
+
+		var rows []childrenPageRow
+		if err := query.
+			Order(orderBy).
+			Offset(*options.Offset).
+			Limit(options.Limit).
+			Scan(&rows).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "list failed")
+			return
+		}
+		out := make([]nodeDTO, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, row.dto())
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, childrenRangeDTO{
+			Items:      out,
+			TotalCount: totalCount,
+			Offset:     *options.Offset,
+			Limit:      options.Limit,
+			Sort:       options.Sort,
+			Order:      options.Order,
+		})
+		return
+	}
 
 	var rows []childrenPageRow
 	if err := query.Order(orderBy).Limit(options.Limit + 1).Scan(&rows).Error; err != nil {
