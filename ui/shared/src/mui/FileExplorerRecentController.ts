@@ -45,32 +45,38 @@ export function useXDriveFileExplorerRecent<
   const touchItemRef = useRef(touchItem)
   const clearItemsRef = useRef(clearItems)
   const rawItemsRef = useRef(new Map<number, XDriveFileRecentItem<TNode>>())
+  const loadRequestRef = useRef(0)
 
   loadItemsRef.current = loadItems
   touchItemRef.current = touchItem
   clearItemsRef.current = clearItems
 
-  const loadFresh = useCallback(async () => {
+  const loadFresh = useCallback(async (requestID: number) => {
     const raw = await loadItemsRef.current()
-    rawItemsRef.current = new Map(raw.map((item) => [item.node.id, item]))
-    const next = raw.map(projectRecentItem)
-    setItems(next)
+    if (requestID === loadRequestRef.current) {
+      rawItemsRef.current = new Map(raw.map((item) => [item.node.id, item]))
+      setItems(raw.map(projectRecentItem))
+    }
     return raw
   }, [])
 
   const refresh = useCallback(async () => {
     if (!enabled) {
+      loadRequestRef.current += 1
       rawItemsRef.current.clear()
       setItems([])
+      setLoading(false)
       return []
     }
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      return await loadFresh()
+      return await loadFresh(requestID)
     } catch {
       return []
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [enabled, loadFresh])
 
@@ -82,6 +88,8 @@ export function useXDriveFileExplorerRecent<
     if (!enabled || nodeID <= 0) return false
     try {
       const raw = await touchItemRef.current(nodeID)
+      loadRequestRef.current += 1
+      setLoading(false)
       rawItemsRef.current.set(nodeID, raw)
       const projected = projectRecentItem(raw)
       setItems((current) => [
@@ -98,6 +106,8 @@ export function useXDriveFileExplorerRecent<
     if (!enabled) return false
     try {
       await clearItemsRef.current()
+      loadRequestRef.current += 1
+      setLoading(false)
       rawItemsRef.current.clear()
       setItems([])
       return true
@@ -114,9 +124,12 @@ export function useXDriveFileExplorerRecent<
     },
   ) => {
     if (!enabled || nodeID <= 0) return false
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      const latest = await loadFresh()
+      const latest = await loadFresh(requestID)
+      if (requestID !== loadRequestRef.current) return false
       const target = latest.find((item) => item.node.id === nodeID)
       if (!target) return false
       if (target.node.type === 'dir') {
@@ -129,7 +142,7 @@ export function useXDriveFileExplorerRecent<
     } catch {
       return false
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [enabled, loadFresh, record])
 
