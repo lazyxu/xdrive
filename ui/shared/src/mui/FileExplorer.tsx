@@ -826,27 +826,38 @@ export function XDriveFileExplorer({
     return result
   }, [externallySorted, items, sort.direction, sort.key])
 
+  const visibleItemIndexByKey = useMemo(
+    () => new Map(visibleItems.map((item, index) => [explorerIDKey(item.id), index] as const)),
+    [visibleItems],
+  )
+  const visibleItemNames = useMemo(
+    () => visibleItems.map((item) => item.name),
+    [visibleItems],
+  )
   const selectedItems = useMemo(
-    () => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id))),
-    [selectedKeySet, visibleItems],
+    () => selectedIDs
+      .map((id) => {
+        const index = visibleItemIndexByKey.get(explorerIDKey(id))
+        return index === undefined ? undefined : visibleItems[index]
+      })
+      .filter((item): item is XDriveFileExplorerItem => Boolean(item)),
+    [selectedIDs, visibleItemIndexByKey, visibleItems],
   )
-  const activeIndex = useMemo(
-    () => activeItemID === null
-      ? -1
-      : visibleItems.findIndex((item) => explorerIDKey(item.id) === explorerIDKey(activeItemID)),
-    [activeItemID, visibleItems],
-  )
+  const activeIndex = activeItemID === null
+    ? -1
+    : (visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1)
   const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : visibleItems[0]
   const quickLookFiles = useMemo(
     () => visibleItems.filter((item) => item.kind === 'file'),
     [visibleItems],
   )
-  const quickLookIndex = useMemo(
-    () => quickLookItemID === null
-      ? -1
-      : quickLookFiles.findIndex((item) => explorerIDKey(item.id) === explorerIDKey(quickLookItemID)),
-    [quickLookFiles, quickLookItemID],
+  const quickLookIndexByKey = useMemo(
+    () => new Map(quickLookFiles.map((item, index) => [explorerIDKey(item.id), index] as const)),
+    [quickLookFiles],
   )
+  const quickLookIndex = quickLookItemID === null
+    ? -1
+    : (quickLookIndexByKey.get(explorerIDKey(quickLookItemID)) ?? -1)
   const quickLookItem = quickLookIndex >= 0 ? quickLookFiles[quickLookIndex] : null
 
   useEffect(() => {
@@ -859,9 +870,8 @@ export function XDriveFileExplorer({
       return
     }
     if (activeIndex >= 0) return
-    const selected = visibleItems.find((item) => selectedKeySet.has(explorerIDKey(item.id)))
-    setActiveItemID((selected ?? visibleItems[0]).id)
-  }, [activeIndex, activeItemID, selectedKeySet, visibleItems])
+    setActiveItemID((selectedItems[0] ?? visibleItems[0]).id)
+  }, [activeIndex, activeItemID, selectedItems, visibleItems])
 
   const commitSelection = (ids: XDriveFileExplorerID[]) => {
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
@@ -1226,7 +1236,7 @@ export function XDriveFileExplorer({
 
     if (event.shiftKey && selectionAnchorID !== null) {
       const anchorKey = explorerIDKey(selectionAnchorID)
-      const anchorIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === anchorKey)
+      const anchorIndex = visibleItemIndexByKey.get(anchorKey) ?? -1
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, index)
         const end = Math.max(anchorIndex, index)
@@ -1794,7 +1804,7 @@ export function XDriveFileExplorer({
     event: KeyboardEvent<HTMLElement>,
     item: XDriveFileExplorerItem,
   ) => {
-    const currentIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === explorerIDKey(item.id))
+    const currentIndex = visibleItemIndexByKey.get(explorerIDKey(item.id)) ?? -1
     if (currentIndex < 0) return false
     const columns = gridColumnCount()
     const visibleRows = Math.max(
@@ -1823,7 +1833,7 @@ export function XDriveFileExplorer({
     if (event.shiftKey) {
       const anchorID = selectionAnchorID ?? item.id
       if (selectionAnchorID === null) setSelectionAnchorID(anchorID)
-      const anchorIndex = visibleItems.findIndex((candidate) => explorerIDKey(candidate.id) === explorerIDKey(anchorID))
+      const anchorIndex = visibleItemIndexByKey.get(explorerIDKey(anchorID)) ?? -1
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, targetIndex)
         const end = Math.max(anchorIndex, targetIndex)
@@ -1901,7 +1911,7 @@ export function XDriveFileExplorer({
     typeSelectRef.current = { query, updatedAt: now }
 
     const targetIndex = xDriveFileExplorerTypeSelectTargetIndex({
-      names: visibleItems.map((item) => item.name),
+      names: visibleItemNames,
       currentIndex: activeIndex,
       query,
       cycle: repeatedSingleKey,
@@ -2107,12 +2117,10 @@ export function XDriveFileExplorer({
       : undefined
 
   const selectedSize = useMemo(
-    () => items.reduce((total, item) => (
-      selectedKeySet.has(explorerIDKey(item.id)) && item.kind === 'file'
-        ? total + (item.size ?? 0)
-        : total
+    () => selectedItems.reduce((total, item) => (
+      item.kind === 'file' ? total + (item.size ?? 0) : total
     ), 0),
-    [items, selectedKeySet],
+    [selectedItems],
   )
 
   const virtualizeDetails = viewMode === 'details' && visibleItems.length >= detailsVirtualizationThreshold

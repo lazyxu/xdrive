@@ -85,3 +85,17 @@ test('FileExplorer pagination rejects duplicate and stale page requests', () => 
   assert.ok(searchController.includes('const loadMoreRequestRef = useRef<Record<string, boolean>>({})'), 'search pagination lock is missing')
   assert.ok(searchController.includes('if (loadMoreRequestRef.current[key]) return'), 'search pagination must synchronously reject duplicate load-more calls')
 })
+
+
+test('FileExplorer selection and keyboard lookup avoid repeated whole-directory scans', () => {
+  assert.ok(shared.includes('const visibleItemIndexByKey = useMemo('), 'visible-item index is missing')
+  assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(id))'), 'selected items must use indexed lookup')
+  assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1'), 'active item lookup must be indexed')
+  assert.ok(shared.includes('visibleItemIndexByKey.get(anchorKey) ?? -1'), 'mouse Shift anchor lookup must be indexed')
+  assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(item.id)) ?? -1'), 'keyboard current-item lookup must be indexed')
+  assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(anchorID)) ?? -1'), 'keyboard Shift anchor lookup must be indexed')
+  assert.ok(shared.includes('names: visibleItemNames'), 'type-select names should be memoized')
+  assert.ok(shared.includes('() => selectedItems.reduce((total, item) => ('), 'selected-size aggregation must scale with the selection')
+  assert.equal(shared.includes('visibleItems.findIndex((candidate)'), false, 'keyboard/selection paths must not rescan visibleItems')
+  assert.equal(shared.includes('() => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id)))'), false, 'selectedItems must not scan the whole directory')
+})

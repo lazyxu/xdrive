@@ -60,7 +60,7 @@ test('shared FileExplorer supports Windows-style type-to-select', () => {
     'Array.from(event.key).length !== 1',
     'XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS',
     'const repeatedSingleKey =',
-    'names: visibleItems.map((item) => item.name)',
+    'names: visibleItemNames',
     'cycle: repeatedSingleKey',
     'commitSelection([target.id])',
     'focusItemAtIndex(targetIndex)',
