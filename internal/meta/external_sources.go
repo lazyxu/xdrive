@@ -124,6 +124,8 @@ type SyncRun struct {
 	CheckpointAfter        string     `gorm:"type:text"`
 	ScannedItems           int64      `gorm:"not null;default:0"`
 	ScannedBytes           int64      `gorm:"not null;default:0"`
+	ScannedFileItems       int64      `gorm:"not null;default:0"`
+	ScannedDirectoryItems  int64      `gorm:"not null;default:0"`
 	IgnoredItems           int64      `gorm:"not null;default:0"`
 	IgnoredBytes           int64      `gorm:"not null;default:0"`
 	NewItems               int64      `gorm:"not null;default:0"`
@@ -139,6 +141,9 @@ type SyncRun struct {
 	PlannedTransferBytes   int64      `gorm:"not null;default:0"`
 	ProcessedTransferItems int64      `gorm:"not null;default:0"`
 	ProcessedTransferBytes int64      `gorm:"not null;default:0"`
+	SyncedFileItems        int64      `gorm:"not null;default:0"`
+	SyncedDirectoryItems   int64      `gorm:"not null;default:0"`
+	SyncedBytes            int64      `gorm:"not null;default:0"`
 	CreatedItems           int64      `gorm:"not null;default:0"`
 	UpdatedItems           int64      `gorm:"not null;default:0"`
 	SkippedItems           int64      `gorm:"not null;default:0"`

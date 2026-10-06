@@ -36,22 +36,24 @@ type PlanResult struct {
 }
 
 type Summary struct {
-	ScannedItems         int64 `json:"scanned_items"`
-	ScannedBytes         int64 `json:"scanned_bytes"`
-	IgnoredItems         int64 `json:"ignored_items"`
-	IgnoredBytes         int64 `json:"ignored_bytes"`
-	NewItems             int64 `json:"new_items"`
-	NewBytes             int64 `json:"new_bytes"`
-	ChangedItems         int64 `json:"changed_items"`
-	ChangedBytes         int64 `json:"changed_bytes"`
-	MovedItems           int64 `json:"moved_items"`
-	UnchangedItems       int64 `json:"unchanged_items"`
-	UnchangedBytes       int64 `json:"unchanged_bytes"`
-	MissingItems         int64 `json:"missing_items"`
-	MissingBytes         int64 `json:"missing_bytes"`
-	PlannedTransferItems int64 `json:"planned_transfer_items"`
-	PlannedTransferBytes int64 `json:"planned_transfer_bytes"`
-	FailedItems          int64 `json:"failed_items"`
+	ScannedItems          int64 `json:"scanned_items"`
+	ScannedBytes          int64 `json:"scanned_bytes"`
+	ScannedFileItems      int64 `json:"scanned_file_items"`
+	ScannedDirectoryItems int64 `json:"scanned_directory_items"`
+	IgnoredItems          int64 `json:"ignored_items"`
+	IgnoredBytes          int64 `json:"ignored_bytes"`
+	NewItems              int64 `json:"new_items"`
+	NewBytes              int64 `json:"new_bytes"`
+	ChangedItems          int64 `json:"changed_items"`
+	ChangedBytes          int64 `json:"changed_bytes"`
+	MovedItems            int64 `json:"moved_items"`
+	UnchangedItems        int64 `json:"unchanged_items"`
+	UnchangedBytes        int64 `json:"unchanged_bytes"`
+	MissingItems          int64 `json:"missing_items"`
+	MissingBytes          int64 `json:"missing_bytes"`
+	PlannedTransferItems  int64 `json:"planned_transfer_items"`
+	PlannedTransferBytes  int64 `json:"planned_transfer_bytes"`
+	FailedItems           int64 `json:"failed_items"`
 }
 
 func Plan(current *meta.SourceItem, item DiscoveredItem, matcher *IgnoreMatcher) (PlanResult, error) {
@@ -149,6 +151,12 @@ func sameOptionalTime(a, b *time.Time) bool {
 func (s *Summary) Add(result PlanResult) {
 	s.ScannedItems++
 	s.ScannedBytes += result.Item.Size
+	switch result.Item.Kind {
+	case meta.SourceItemKindFile:
+		s.ScannedFileItems++
+	case meta.SourceItemKindDirectory:
+		s.ScannedDirectoryItems++
+	}
 	switch result.Action {
 	case ActionIgnore:
 		s.IgnoredItems++
@@ -197,6 +205,8 @@ func (s Summary) ApplyToSyncRun(run *meta.SyncRun) {
 	}
 	run.ScannedItems = s.ScannedItems
 	run.ScannedBytes = s.ScannedBytes
+	run.ScannedFileItems = s.ScannedFileItems
+	run.ScannedDirectoryItems = s.ScannedDirectoryItems
 	run.IgnoredItems = s.IgnoredItems
 	run.IgnoredBytes = s.IgnoredBytes
 	run.NewItems = s.NewItems

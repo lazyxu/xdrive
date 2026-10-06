@@ -109,21 +109,23 @@ func sourceRunContinueError(run meta.SyncRun) error {
 
 func sourceRunSummaryUpdates(summary sourcepkg.Summary) map[string]any {
 	return map[string]any{
-		"scanned_items":          summary.ScannedItems,
-		"scanned_bytes":          summary.ScannedBytes,
-		"ignored_items":          summary.IgnoredItems,
-		"ignored_bytes":          summary.IgnoredBytes,
-		"new_items":              summary.NewItems,
-		"new_bytes":              summary.NewBytes,
-		"changed_items":          summary.ChangedItems,
-		"changed_bytes":          summary.ChangedBytes,
-		"moved_items":            summary.MovedItems,
-		"unchanged_items":        summary.UnchangedItems,
-		"unchanged_bytes":        summary.UnchangedBytes,
-		"planned_transfer_items": summary.PlannedTransferItems,
-		"planned_transfer_bytes": summary.PlannedTransferBytes,
-		"skipped_items":          summary.IgnoredItems + summary.UnchangedItems,
-		"failed_items":           gorm.Expr("GREATEST(failed_items, ?)", summary.FailedItems),
+		"scanned_items":           summary.ScannedItems,
+		"scanned_bytes":           summary.ScannedBytes,
+		"scanned_file_items":      summary.ScannedFileItems,
+		"scanned_directory_items": summary.ScannedDirectoryItems,
+		"ignored_items":           summary.IgnoredItems,
+		"ignored_bytes":           summary.IgnoredBytes,
+		"new_items":               summary.NewItems,
+		"new_bytes":               summary.NewBytes,
+		"changed_items":           summary.ChangedItems,
+		"changed_bytes":           summary.ChangedBytes,
+		"moved_items":             summary.MovedItems,
+		"unchanged_items":         summary.UnchangedItems,
+		"unchanged_bytes":         summary.UnchangedBytes,
+		"planned_transfer_items":  summary.PlannedTransferItems,
+		"planned_transfer_bytes":  summary.PlannedTransferBytes,
+		"skipped_items":           summary.IgnoredItems + summary.UnchangedItems,
+		"failed_items":            gorm.Expr("GREATEST(failed_items, ?)", summary.FailedItems),
 	}
 }
 
@@ -518,6 +520,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		}
 
 		var created, updated, processedTransferItems, processedTransferBytes, transferredItems, transferredBytes int64
+		var syncedFileItems, syncedDirectoryItems, syncedBytes int64
 		for _, commit := range commits {
 			item := commit.item
 			raw := commit.raw
@@ -611,6 +614,13 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			} else {
 				updated++
 			}
+			switch item.Kind {
+			case meta.SourceItemKindFile:
+				syncedFileItems++
+				syncedBytes += item.Size
+			case meta.SourceItemKindDirectory:
+				syncedDirectoryItems++
+			}
 			if item.Kind == meta.SourceItemKindFile && action != sourcepkg.ActionMove {
 				processedTransferItems++
 				processedTransferBytes += item.Size
@@ -626,6 +636,9 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			"updated_items":            gorm.Expr("updated_items + ?", updated),
 			"processed_transfer_items": gorm.Expr("processed_transfer_items + ?", processedTransferItems),
 			"processed_transfer_bytes": gorm.Expr("processed_transfer_bytes + ?", processedTransferBytes),
+			"synced_file_items":        gorm.Expr("synced_file_items + ?", syncedFileItems),
+			"synced_directory_items":   gorm.Expr("synced_directory_items + ?", syncedDirectoryItems),
+			"synced_bytes":             gorm.Expr("synced_bytes + ?", syncedBytes),
 			"transferred_items":        gorm.Expr("transferred_items + ?", transferredItems),
 			"transferred_bytes":        gorm.Expr("transferred_bytes + ?", transferredBytes),
 			"active_transfer_path":     "",
@@ -1274,7 +1287,8 @@ func sourceNodePathWithinTarget(tx *gorm.DB, ownerID, nodeID, targetID uint64) (
 
 func validateSourceSummary(summary sourcepkg.Summary) error {
 	values := []int64{
-		summary.ScannedItems, summary.ScannedBytes, summary.IgnoredItems, summary.IgnoredBytes,
+		summary.ScannedItems, summary.ScannedBytes, summary.ScannedFileItems, summary.ScannedDirectoryItems,
+		summary.IgnoredItems, summary.IgnoredBytes,
 		summary.NewItems, summary.NewBytes, summary.ChangedItems, summary.ChangedBytes,
 		summary.MovedItems, summary.UnchangedItems, summary.UnchangedBytes,
 		summary.MissingItems, summary.MissingBytes, summary.PlannedTransferItems,
