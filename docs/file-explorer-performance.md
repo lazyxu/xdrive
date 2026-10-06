@@ -20,6 +20,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
+- Navigation-tree expansion loads one 200-item folder page at a time; further sibling folders require explicit load-more, while the active path child stays injected even when it lies outside the loaded page.
 
 ## Performance scenarios
 

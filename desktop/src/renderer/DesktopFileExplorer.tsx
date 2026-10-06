@@ -3,7 +3,7 @@ import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerArchiveDownloadPlan,
   xDriveFileExplorerDesktopArchiveDownloadFeedback,
-  xDriveFileExplorerLoadChildDirectories,
+  xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerDesktopDownloadFeedback,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDownloadPlan,
@@ -188,9 +188,10 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
-  const loadTreeDirectories = useCallback(
-    (parentID: number) => xDriveFileExplorerLoadChildDirectories({
+  const loadTreeDirectoryPage = useCallback(
+    (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
       parentID,
+      cursor,
       loadPage: async (id, options) => {
         const result = await window.xdriveDesktop.agent.cloudChildrenPage(id, options)
         if (!result.ok) throw new Error(result.error.message)
@@ -743,7 +744,7 @@ export default function DesktopFileExplorer({
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}
-            loadDirectories={loadTreeDirectories}
+            loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
             quickAccessEnabled={quickAccessSupported}
             quickAccessItems={quickAccess.items}

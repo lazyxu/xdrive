@@ -20,7 +20,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
-  xDriveFileExplorerLoadChildDirectories,
+  xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerNodesForItems,
@@ -168,9 +168,10 @@ export default function WebFileExplorer({
     onError,
   })
 
-  const loadTreeDirectories = useCallback(
-    (parentID: number) => xDriveFileExplorerLoadChildDirectories({
+  const loadTreeDirectoryPage = useCallback(
+    (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
       parentID,
+      cursor,
       loadPage: (id, options) => api.listPage(id, options),
     }),
     [api],
@@ -429,7 +430,7 @@ export default function WebFileExplorer({
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}
-            loadDirectories={loadTreeDirectories}
+            loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
             quickAccessEnabled
             quickAccessItems={quickAccess.items}
