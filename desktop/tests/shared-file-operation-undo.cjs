@@ -129,18 +129,18 @@ test('shared Task Center exposes undo without duplicating Web/Desktop action sta
   assert.ok(taskPage.includes('onUndoOperation'), 'Task Center page undo callback is missing')
 })
 
-test('FileExplorer exposes visible Undo and Ctrl/Cmd+Z without stealing text editing undo', () => {
+test('FileExplorer exposes visible Undo through the shared keyboard command resolver without stealing text editing undo', () => {
   for (const token of [
     'onUndo?: () => void',
     'canUndo?: boolean',
     '<UndoRoundedIcon',
     '撤销',
-    "modifier && !event.shiftKey && key === 'z' && canUndo && onUndo",
+    "command === 'undo' && canUndo && onUndo",
   ]) assert.ok(explorer.includes(token), 'FileExplorer undo affordance missing: ' + token)
 
   const editable = explorer.indexOf('if (isEditableTarget(event.target)) return')
-  const shortcut = explorer.indexOf("modifier && !event.shiftKey && key === 'z' && canUndo && onUndo")
-  assert.ok(editable >= 0 && shortcut > editable, 'Ctrl/Cmd+Z must not override native text-input undo')
+  const shortcut = explorer.indexOf("command === 'undo' && canUndo && onUndo")
+  assert.ok(editable >= 0 && shortcut > editable, 'Undo command must not override native text-input undo')
 
   for (const [label, app, adapter] of [
     ['Web', webApp, webExplorer],

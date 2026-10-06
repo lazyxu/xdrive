@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  type XDriveFileExplorerKeyboardProfile,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerCaseInsensitiveNameLookupPageOptions,
   xDriveFileExplorerArchiveDownloadPlan,
@@ -69,6 +70,7 @@ export default function DesktopFileExplorer({
   quickAccessSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
+  keyboardProfile = 'web',
   onError,
   onFeedback,
 }: {
@@ -99,6 +101,7 @@ export default function DesktopFileExplorer({
   quickAccessSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
+  keyboardProfile?: XDriveFileExplorerKeyboardProfile
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -827,6 +830,7 @@ export default function DesktopFileExplorer({
 
       <XDriveFileExplorer
         presentation="workspace"
+        keyboardProfile={keyboardProfile}
         items={explorerItems}
         crumbs={explorerCrumbs}
         virtualCollection={explorerVirtualCollection}

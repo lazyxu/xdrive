@@ -77,6 +77,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+  xDriveFileExplorerKeyboardProfileFromPlatform,
   xDriveLatestRedoableFileOperation,
   xDriveLatestUndoableFileOperation,
   xDriveLoginCredentialsReady,
@@ -395,6 +396,7 @@ export default function App({
     agent.hello?.capabilities.includes('file-quick-access') ?? false
   const fileRecentSupported =
     agent.hello?.capabilities.includes('file-recent') ?? false
+  const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -1806,6 +1808,7 @@ export default function App({
               quickAccessSupported: fileQuickAccessSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
+              keyboardProfile: fileExplorerKeyboardProfile,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}

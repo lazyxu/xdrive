@@ -140,19 +140,19 @@ test('Task Center exposes Redo through the shared action controller', () => {
   assert.ok(taskPage.includes('onRedoOperation'), 'Task Center page redo callback is missing')
 })
 
-test('FileExplorer supports Windows and macOS redo shortcuts without stealing editor redo', () => {
+test('FileExplorer supports Redo through the shared keyboard command resolver without stealing editor redo', () => {
   for (const token of [
     'onRedo?: () => void',
     'canRedo?: boolean',
     '<RedoRoundedIcon',
     '重做',
-    "key === 'y' || (event.shiftKey && key === 'z')",
-    "modifier && !event.shiftKey && key === 'z' && canUndo && onUndo",
+    "command === 'redo' && canRedo && onRedo",
+    "command === 'undo' && canUndo && onUndo",
   ]) assert.ok(explorer.includes(token), 'FileExplorer redo affordance missing: ' + token)
 
   const editable = explorer.indexOf('if (isEditableTarget(event.target)) return')
-  const redoShortcut = explorer.indexOf("key === 'y' || (event.shiftKey && key === 'z')")
-  assert.ok(editable >= 0 && redoShortcut > editable, 'Ctrl/Cmd+Y and Cmd/Ctrl+Shift+Z must not override native text editing redo')
+  const redoShortcut = explorer.indexOf("command === 'redo' && canRedo && onRedo")
+  assert.ok(editable >= 0 && redoShortcut > editable, 'Redo command must not override native text editing redo')
 
   for (const [label, app, adapter] of [
     ['Web', webApp, webExplorer],
