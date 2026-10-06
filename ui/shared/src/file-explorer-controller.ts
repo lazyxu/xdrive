@@ -14,27 +14,37 @@ export function xDriveFileExplorerPathParts(rawPath: string, rootName: string) {
   return parts
 }
 
+export function xDriveFileExplorerPathLookupPageOptions(name: string) {
+  return {
+    limit: 1,
+    sort: 'name' as const,
+    order: 'asc' as const,
+    name,
+  }
+}
+
 export async function xDriveResolveFileExplorerPath<
   TNode extends XDriveFileExplorerPathNode,
 >({
   rawPath,
   rootID,
   rootName,
-  listChildren,
+  findChildDirectory,
 }: {
   rawPath: string
   rootID: number
   rootName: string
-  listChildren: (parentID: number) => Promise<TNode[]>
+  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
 }): Promise<XDriveFileExplorerPathCrumb[]> {
   const parts = xDriveFileExplorerPathParts(rawPath, rootName)
   let parentID = rootID
   const crumbs: XDriveFileExplorerPathCrumb[] = [{ id: rootID, name: rootName }]
 
   for (const part of parts) {
-    const children = await listChildren(parentID)
-    const next = children.find((node) => node.type === 'dir' && node.name === part)
-    if (!next) throw new Error(`找不到文件夹：${part}`)
+    const next = await findChildDirectory(parentID, part)
+    if (!next || next.type !== 'dir' || next.name !== part) {
+      throw new Error(`找不到文件夹：${part}`)
+    }
     parentID = next.id
     crumbs.push({ id: next.id, name: next.name })
   }
@@ -50,13 +60,13 @@ export async function xDriveFileExplorerSubmitPath<
   rawPath,
   currentCrumbs,
   loadRoot,
-  listChildren,
+  findChildDirectory,
   navigate,
 }: {
   rawPath: string
   currentCrumbs: readonly XDriveFileExplorerPathCrumb[]
   loadRoot: () => Promise<XDriveFileExplorerPathRoot>
-  listChildren: (parentID: number) => Promise<TNode[]>
+  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
   navigate: (crumbs: XDriveFileExplorerPathCrumb[]) => Promise<void>
 }) {
   const root = await loadRoot()
@@ -65,7 +75,7 @@ export async function xDriveFileExplorerSubmitPath<
     rawPath,
     rootID: root.id,
     rootName,
-    listChildren,
+    findChildDirectory,
   })
   await navigate(nextCrumbs)
   return nextCrumbs

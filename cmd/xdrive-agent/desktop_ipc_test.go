@@ -73,6 +73,7 @@ type fakeDesktopIPCController struct {
 	cacheRelease               mount.CacheReleaseResult
 	cloudRoot                  client.Node
 	cloudChildren              []client.Node
+	cloudChildrenOptions       client.ChildrenOptions
 	cloudCreatedDir            client.Node
 	cloudCreateParent          uint64
 	cloudCreateName            string
@@ -290,6 +291,7 @@ func (f *fakeDesktopIPCController) CloudList(context.Context, uint64) ([]client.
 }
 
 func (f *fakeDesktopIPCController) CloudListPage(_ context.Context, _ uint64, options client.ChildrenOptions) (client.ChildrenPage, error) {
+	f.cloudChildrenOptions = options
 	items := append([]client.Node(nil), f.cloudChildren...)
 	return client.ChildrenPage{
 		Items:      items,
@@ -1336,7 +1338,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}{
 		{http.MethodGet, "/v1/cloud/root", "", "\"id\":1"},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
-		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=200&sort=name&order=asc", "", "\"next_cursor\":\"next-page\""},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name=Projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
@@ -1376,6 +1378,10 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		if res.Code < 200 || res.Code >= 300 || !strings.Contains(res.Body.String(), tc.want) {
 			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
 		}
+	}
+	if ctrl.cloudChildrenOptions.Limit != 1 || ctrl.cloudChildrenOptions.Sort != "name" ||
+		ctrl.cloudChildrenOptions.Order != "asc" || ctrl.cloudChildrenOptions.Name != "Projects" {
+		t.Fatalf("cloud children options not forwarded: %+v", ctrl.cloudChildrenOptions)
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)

@@ -65,6 +65,7 @@ test('shared cloud files controller owns directory paging, quota and initial loa
 test('Web API consumes the shared cloud files page contract', () => {
   assert.ok(webApi.includes('XDriveCloudFilesPage,'))
   assert.ok(webApi.includes('XDriveCloudFilesPageOptions,'))
+  assert.ok(contract.includes('name?: string'), 'shared Cloud Files page options must expose exact-name lookup')
   assert.ok(webApi.includes('listPage(parentID: number, options: XDriveCloudFilesPageOptions = {})'))
   assert.ok(webApi.includes('this.request<XDriveCloudFilesPage<Node>>'))
   assert.equal(webApi.includes('export interface ChildrenPage'), false, 'Web must not redefine cloud page results')

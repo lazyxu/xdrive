@@ -31,6 +31,7 @@ type childrenPageOptions struct {
 	Cursor string
 	Sort   string
 	Order  string
+	Name   string
 }
 
 type childrenPageRow struct {
@@ -64,7 +65,7 @@ type childrenCursor struct {
 
 func childrenPaginationRequested(c *gin.Context) bool {
 	query := c.Request.URL.Query()
-	for _, key := range []string{"limit", "cursor", "sort", "order"} {
+	for _, key := range []string{"limit", "cursor", "sort", "order", "name"} {
 		if _, ok := query[key]; ok {
 			return true
 		}
@@ -78,6 +79,7 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 		Cursor: strings.TrimSpace(c.Query("cursor")),
 		Sort:   strings.TrimSpace(strings.ToLower(c.Query("sort"))),
 		Order:  strings.TrimSpace(strings.ToLower(c.Query("order"))),
+		Name:   c.Query("name"),
 	}
 	if options.Sort == "" {
 		options.Sort = "name"
@@ -96,6 +98,10 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 	}
 	if options.Order != "asc" && options.Order != "desc" {
 		fail(c, http.StatusBadRequest, "order must be asc or desc")
+		return childrenPageOptions{}, false
+	}
+	if options.Name != "" && options.Cursor != "" {
+		fail(c, http.StatusBadRequest, "name filter does not accept cursor")
 		return childrenPageOptions{}, false
 	}
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
@@ -141,6 +147,14 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			AND parent_node.type = ?
 			AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
 		Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
+
+	if options.Name != "" {
+		query = query.Where(
+			"lower(xd_nodes.name) = lower(?) AND xd_nodes.name = ?",
+			options.Name,
+			options.Name,
+		)
+	}
 
 	if options.Cursor != "" {
 		cursor, err := decodeChildrenCursor(options.Cursor)

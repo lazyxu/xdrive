@@ -12,6 +12,7 @@ export type XDriveCloudFilesPageOptions = {
   cursor?: string
   sort?: XDriveCloudFilesSortKey
   order?: XDriveCloudFilesSortDirection
+  name?: string
 }
 
 export type XDriveCloudFilesPage<TNode extends { id: number }> = {

@@ -131,6 +131,21 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		return page
 	}
 
+	exactPage := readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&sort=name&order=asc&name=%s",
+		rootA.ID, url.QueryEscape("AlphaDir"),
+	), http.StatusOK)
+	if len(exactPage.Items) != 1 || exactPage.Items[0].Name != "AlphaDir" || exactPage.HasMore || exactPage.NextCursor != "" {
+		t.Fatalf("exact-name page=%+v", exactPage)
+	}
+	caseMismatch := readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&name=%s",
+		rootA.ID, url.QueryEscape("alphadir"),
+	), http.StatusOK)
+	if len(caseMismatch.Items) != 0 {
+		t.Fatalf("exact-name filter must remain case-sensitive: %+v", caseMismatch.Items)
+	}
+
 	page1 := readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&sort=name&order=asc", rootA.ID), http.StatusOK)
 	if got := []string{page1.Items[0].Name, page1.Items[1].Name, page1.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"AlphaDir", "EmptyDir", "ZuluDir"}) {
 		t.Fatalf("page1 order=%v", got)
@@ -187,6 +202,10 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	readPage(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?limit=3&sort=size&order=asc&cursor=%s",
 		rootA.ID, url.QueryEscape(page1.NextCursor),
+	), http.StatusBadRequest)
+	readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&name=%s&cursor=%s",
+		rootA.ID, url.QueryEscape("AlphaDir"), url.QueryEscape(page1.NextCursor),
 	), http.StatusBadRequest)
 	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=0", rootA.ID), http.StatusBadRequest)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)

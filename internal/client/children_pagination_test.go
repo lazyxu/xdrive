@@ -13,7 +13,7 @@ func TestListPageEncodesChildrenOptions(t *testing.T) {
 			t.Fatalf("path=%q", r.URL.Path)
 		}
 		query := r.URL.Query()
-		if query.Get("limit") != "25" || query.Get("cursor") != "next" || query.Get("sort") != "size" || query.Get("order") != "desc" {
+		if query.Get("limit") != "25" || query.Get("cursor") != "next" || query.Get("sort") != "size" || query.Get("order") != "desc" || query.Get("name") != "Exact Name" {
 			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -24,7 +24,7 @@ func TestListPageEncodesChildrenOptions(t *testing.T) {
 	cli := New(server.URL, "")
 	cli.HTTP = server.Client()
 	page, err := cli.ListPage(context.Background(), 42, ChildrenOptions{
-		Limit: 25, Cursor: "next", Sort: "size", Order: "desc",
+		Limit: 25, Cursor: "next", Sort: "size", Order: "desc", Name: "Exact Name",
 	})
 	if err != nil {
 		t.Fatal(err)

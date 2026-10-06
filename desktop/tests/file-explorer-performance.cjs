@@ -182,3 +182,15 @@ test('FileExplorer reuses server-sorted arrays and derives item indexes in one p
   assert.equal(shared.includes('visibleItems.map((item) => item.name)'), false, 'type-select names must not trigger a second map')
   assert.equal(shared.includes("visibleItems.filter((item) => item.kind === 'file')"), false, 'Quick Look files must not trigger a second pass')
 })
+
+
+test('FileExplorer typed paths use indexed exact-child lookups instead of loading whole directories', () => {
+  assert.ok(explorerController.includes('xDriveFileExplorerPathLookupPageOptions'), 'typed-path exact page helper is missing')
+  assert.ok(explorerController.includes('limit: 1'), 'typed-path lookup must request at most one child')
+  assert.ok(explorerController.includes('findChildDirectory(parentID, part)'), 'typed-path traversal must resolve one child per segment')
+  const resolverStart = explorerController.indexOf('export async function xDriveResolveFileExplorerPath')
+  const resolverEnd = explorerController.indexOf('export type XDriveFileExplorerPathRoot', resolverStart)
+  const resolverSource = explorerController.slice(resolverStart, resolverEnd)
+  assert.equal(resolverSource.includes('listChildren'), false, 'typed-path traversal must not load a whole directory per segment')
+  assert.ok(childrenPagination.includes('"lower(xd_nodes.name) = lower(?) AND xd_nodes.name = ?"'), 'server exact-name filter must use the indexed lower(name) key while preserving exact case')
+})

@@ -872,7 +872,7 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		return
 	}
 	query := r.URL.Query()
-	paged := query.Get("limit") != "" || query.Get("cursor") != "" || query.Get("sort") != "" || query.Get("order") != ""
+	paged := query.Get("limit") != "" || query.Get("cursor") != "" || query.Get("sort") != "" || query.Get("order") != "" || query.Get("name") != ""
 	if !paged {
 		items, err := h.ctrl.CloudList(r.Context(), parentID)
 		if err != nil {
@@ -886,6 +886,7 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		Cursor: strings.TrimSpace(query.Get("cursor")),
 		Sort:   strings.TrimSpace(query.Get("sort")),
 		Order:  strings.TrimSpace(query.Get("order")),
+		Name:   query.Get("name"),
 	}
 	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
