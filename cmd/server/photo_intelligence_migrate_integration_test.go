@@ -51,6 +51,8 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_person_clusters",
 		"xd_photo_person_cluster_faces",
 		"xd_photo_person_cluster_states",
+		"xd_photo_people",
+		"xd_photo_person_assets",
 		"xd_photo_place_labels",
 	} {
 		if !db.Migrator().HasTable(table) {
@@ -162,6 +164,33 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	duplicateClusterState := clusterState
 	if err := db.Create(&duplicateClusterState).Error; err == nil {
 		t.Fatal("multiple person cluster states were accepted for one owner")
+	}
+
+	person := meta.PhotoPerson{
+		OwnerID:   user.ID,
+		PersonKey: "person:v1:11111111-1111-1111-1111-111111111111",
+		Name:      "Alice",
+		Revision:  1,
+	}
+	if err := db.Create(&person).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicatePerson := person
+	duplicatePerson.ID = 0
+	if err := db.Create(&duplicatePerson).Error; err == nil {
+		t.Fatal("duplicate durable person key was accepted")
+	}
+	if err := db.Create(&meta.PhotoPersonAsset{
+		PersonID: person.ID,
+		AssetID:  asset.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoPersonAsset{
+		PersonID: person.ID,
+		AssetID:  asset.ID,
+	}).Error; err == nil {
+		t.Fatal("duplicate durable person asset membership was accepted")
 	}
 
 	place := meta.PhotoPlaceLabel{

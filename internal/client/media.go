@@ -117,6 +117,27 @@ type MediaSuggestedPerson struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
+type MediaPersonIdentity struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Hidden      bool       `json:"hidden"`
+	Revision    uint64     `json:"revision"`
+	ItemCount   int64      `json:"item_count"`
+	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type MediaPersonSplit struct {
+	Source  MediaPersonIdentity `json:"source"`
+	Created MediaPersonIdentity `json:"created"`
+}
+
+type UpdateMediaPersonIdentityInput struct {
+	Name        *string
+	Hidden      *bool
+	CoverNodeID *uint64
+}
+
 type MediaQuery struct {
 	MediaKind    string
 	Search       string
@@ -268,6 +289,138 @@ func (c *Client) MediaSuggestedPersonItemsQuery(
 	}
 	var out []MediaItem
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaPersonIdentities(
+	ctx context.Context,
+	includeHidden bool,
+	limit, offset int,
+) ([]MediaPersonIdentity, error) {
+	values := url.Values{}
+	if includeHidden {
+		values.Set("include_hidden", "true")
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := "/api/v1/media/people/identities"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaPersonIdentity
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaPersonIdentityItemsQuery(
+	ctx context.Context,
+	personID string,
+	query MediaQuery,
+	limit, offset int,
+) ([]MediaItem, error) {
+	values := url.Values{}
+	query.add(values)
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := "/api/v1/media/people/identities/" +
+		url.PathEscape(strings.TrimSpace(personID)) + "/items"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaItem
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) AdoptMediaSuggestedPerson(
+	ctx context.Context,
+	clusterID, name string,
+) (MediaPersonIdentity, error) {
+	var out MediaPersonIdentity
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/people/suggestions/"+
+			url.PathEscape(strings.TrimSpace(clusterID))+"/adopt",
+		map[string]string{"name": name},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) UpdateMediaPersonIdentity(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	input UpdateMediaPersonIdentityInput,
+) (MediaPersonIdentity, error) {
+	body := map[string]any{}
+	if input.Name != nil {
+		body["name"] = *input.Name
+	}
+	if input.Hidden != nil {
+		body["hidden"] = *input.Hidden
+	}
+	if input.CoverNodeID != nil {
+		body["cover_node_id"] = *input.CoverNodeID
+	}
+	var out MediaPersonIdentity
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPatch,
+		"/api/v1/media/people/identities/"+
+			url.PathEscape(strings.TrimSpace(personID)),
+		revision,
+		body,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) MergeMediaPersonIdentities(
+	ctx context.Context,
+	targetID string,
+	revision uint64,
+	sourceIDs []string,
+) (MediaPersonIdentity, error) {
+	var out MediaPersonIdentity
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/people/identities/"+
+			url.PathEscape(strings.TrimSpace(targetID))+"/merge",
+		revision,
+		map[string][]string{"source_ids": sourceIDs},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) SplitMediaPersonIdentity(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	nodeIDs []uint64,
+	name string,
+) (MediaPersonSplit, error) {
+	var out MediaPersonSplit
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/people/identities/"+
+			url.PathEscape(strings.TrimSpace(personID))+"/split",
+		revision,
+		map[string]any{"node_ids": nodeIDs, "name": name},
+		&out,
+	)
 	return out, err
 }
 
