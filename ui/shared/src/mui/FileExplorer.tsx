@@ -265,6 +265,12 @@ export type XDriveFileExplorerFileKind =
 
 export type XDriveFileExplorerProperty = XDriveFilePropertiesDialogProperty
 
+export type XDriveFileExplorerAvailability = {
+  label: string
+  title?: string
+  icon?: ReactNode
+}
+
 export type XDriveFileExplorerItem = {
   id: XDriveFileExplorerID
   name: string
@@ -280,6 +286,7 @@ export type XDriveFileExplorerItem = {
   path?: string
   revision?: string | number
   properties?: XDriveFileExplorerProperty[]
+  availability?: XDriveFileExplorerAvailability
 }
 
 export type XDriveFileExplorerVirtualCollection = {
@@ -793,6 +800,7 @@ export function XDriveFileExplorer({
   loadTextPreview,
   loadPreviewURL,
   loadPropertiesStats,
+  getItemAvailability,
   externallySorted = false,
   virtualCollection,
 }: {
@@ -868,6 +876,9 @@ export function XDriveFileExplorer({
     kind: 'image' | 'video' | 'audio' | 'pdf',
   ) => Promise<string | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
+  getItemAvailability?: (
+    item: XDriveFileExplorerItem,
+  ) => XDriveFileExplorerAvailability | undefined
   externallySorted?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
@@ -2065,6 +2076,48 @@ export function XDriveFileExplorer({
     setDetailsColumnsAnchor(null)
   }
 
+  const availabilityForItem = (item: XDriveFileExplorerItem) => (
+    item.availability ?? getItemAvailability?.(item)
+  )
+
+  const availabilityIndicator = (
+    item: XDriveFileExplorerItem,
+    overlay = false,
+  ) => {
+    const availability = availabilityForItem(item)
+    if (!availability?.icon) return null
+    const title = availability.title || availability.label
+    return (
+      <Box
+        component="span"
+        aria-label={availability.label}
+        title={title}
+        sx={overlay ? {
+          position: 'absolute',
+          right: 2,
+          bottom: 2,
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          bgcolor: 'background.paper',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 16,
+          boxShadow: 1,
+        } : {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: '0 0 auto',
+          fontSize: 17,
+        }}
+      >
+        {availability.icon}
+      </Box>
+    )
+  }
+
   const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => {
     if (item.icon) return item.icon
     const fontSize = large ? gridMetrics.iconSize : 21
@@ -2415,15 +2468,19 @@ export function XDriveFileExplorer({
     if (event.key === 'Escape') clearSelection()
   }
 
-  const propertiesForItem = (item: XDriveFileExplorerItem) => [
-    { label: '类型', value: defaultTypeLabel(item) },
-    { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0) },
-    { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—' },
-    { label: '位置', value: item.path || item.secondaryLabel || derivedPath },
-    ...(item.properties ?? []),
+  const propertiesForItem = (item: XDriveFileExplorerItem) => {
+    const availability = availabilityForItem(item)
+    return [
+      { label: '类型', value: defaultTypeLabel(item) },
+      { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0) },
+      { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—' },
+      { label: '位置', value: item.path || item.secondaryLabel || derivedPath },
+      ...(availability ? [{ label: '可用性', value: availability.label }] : []),
+      ...(item.properties ?? []),
     { label: 'Revision', value: item.revision ?? '—', technical: true },
-    { label: 'ID', value: String(item.id), technical: true },
-  ] satisfies XDriveFileExplorerProperty[]
+      { label: 'ID', value: String(item.id), technical: true },
+    ] satisfies XDriveFileExplorerProperty[]
+  }
 
   const inspectorItem = selectedItems.length === 1 ? selectedItems[0] : null
   const inspectorFileCount = selectedItems.filter((item) => item.kind === 'file').length
@@ -2431,6 +2488,9 @@ export function XDriveFileExplorer({
   const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
 
   const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
+  const propertiesDialogAvailability = propertiesDialogItem
+    ? availabilityForItem(propertiesDialogItem)
+    : undefined
   const propertiesDialogFileCount = propertiesItems.filter((item) => item.kind === 'file').length
   const propertiesDialogFolderCount = propertiesItems.length - propertiesDialogFileCount
   const propertiesDialogHasFolder = propertiesDialogFolderCount > 0
@@ -2459,6 +2519,9 @@ export function XDriveFileExplorer({
           { label: '内容', value: propertiesDialogRecursiveContent },
           { label: '修改时间', value: propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—' },
           { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath },
+          ...(propertiesDialogAvailability
+            ? [{ label: '可用性', value: propertiesDialogAvailability.label }]
+            : []),
           ...(propertiesDialogItem.properties ?? []),
           { label: 'Revision', value: propertiesDialogItem.revision ?? '—', technical: true },
           { label: 'ID', value: String(propertiesDialogItem.id), technical: true },
@@ -3347,6 +3410,7 @@ export function XDriveFileExplorer({
                             </Typography>
                           ) : null}
                         </Box>
+                        {availabilityIndicator(item)}
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary" noWrap>
@@ -3476,9 +3540,11 @@ export function XDriveFileExplorer({
                     justifyContent: 'center',
                     overflow: 'hidden',
                     borderRadius: 1,
+                    position: 'relative',
                   }}
                 >
                   {thumbnailForItem(item)}
+                  {availabilityIndicator(item, true)}
                 </Box>
                 {renderItemName(item, true)}
               </ButtonBase>

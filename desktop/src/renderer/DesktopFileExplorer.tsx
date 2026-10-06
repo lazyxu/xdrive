@@ -1,4 +1,8 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import { Box } from '@mui/material'
 import {
   type XDriveFileExplorerKeyboardProfile,
@@ -38,6 +42,7 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
+  XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
@@ -50,6 +55,49 @@ let desktopFilePropertiesRequestSequence = 0
 function nextDesktopFilePropertiesRequestID() {
   desktopFilePropertiesRequestSequence += 1
   return `file-properties-${Date.now()}-${desktopFilePropertiesRequestSequence}`
+}
+
+type DesktopFileAvailabilityEntry = {
+  path: string
+  state: AgentFileAvailability
+}
+
+function desktopFileAvailabilityVisual(
+  state: AgentFileAvailability,
+): NonNullable<XDriveFileExplorerItem['availability']> {
+  if (state.Syncing || state.Mode === 'syncing') {
+    return {
+      label: '正在同步',
+      title: '正在与云端同步',
+      icon: <SyncRoundedIcon fontSize="inherit" sx={{ color: 'primary.main' }} />,
+    }
+  }
+  if (state.Pinned || state.Mode === 'always-local') {
+    return {
+      label: '始终保留在此设备上',
+      title: '始终保留在此设备上',
+      icon: <CheckCircleRoundedIcon fontSize="inherit" sx={{ color: 'success.main' }} />,
+    }
+  }
+  if (state.OnlineOnly || state.Mode === 'online-only') {
+    return {
+      label: '仅联机',
+      title: '仅联机，需要时从云端下载',
+      icon: <CloudOutlinedIcon fontSize="inherit" sx={{ color: 'primary.main' }} />,
+    }
+  }
+  if (state.Mode === 'cloud' || !state.AvailableOffline) {
+    return {
+      label: '云端',
+      title: '当前仅在云端完整可用',
+      icon: <CloudOutlinedIcon fontSize="inherit" sx={{ color: 'primary.main' }} />,
+    }
+  }
+  return {
+    label: '本地可用',
+    title: '当前设备可离线使用',
+    icon: <CheckCircleOutlineRoundedIcon fontSize="inherit" sx={{ color: 'success.main' }} />,
+  }
 }
 
 export default function DesktopFileExplorer({
@@ -75,6 +123,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported = false,
   previewStreamSupported = false,
   propertiesStatsSupported = false,
+  fileAvailabilitySupported = false,
   quickAccessSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
@@ -104,6 +153,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
   propertiesStatsSupported?: boolean
+  fileAvailabilitySupported?: boolean
   quickAccessSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
@@ -114,6 +164,11 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+  const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
+    () => new Map(),
+  )
+  const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0)
+  const availabilityRequestRef = useRef(0)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const recent = useXDriveFileExplorerRecent<AgentCloudNode>({
@@ -492,6 +547,114 @@ export default function DesktopFileExplorer({
     return [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
   }
 
+  const availabilityRequests = useMemo(() => (
+    [...nodeByID.values()]
+      .map((node) => {
+        const searchResult = searchByID.get(node.id)
+        const path = searchResult?.path ||
+          [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
+        return { nodeID: node.id, path }
+      })
+      .filter((item) => Boolean(item.path))
+  ), [crumbs, nodeByID, searchByID])
+
+  useEffect(() => {
+    const requestID = ++availabilityRequestRef.current
+    if (!fileAvailabilitySupported) {
+      setAvailabilityByID(new Map())
+      return
+    }
+
+    const requests = availabilityRequests
+    if (requests.length === 0) {
+      setAvailabilityByID(new Map())
+      return
+    }
+
+    const paths = [...new Set(requests.map((item) => item.path))]
+    let cancelled = false
+    void window.xdriveDesktop.agent.getFileAvailabilityBatch(paths)
+      .then((result) => {
+        if (cancelled || requestID !== availabilityRequestRef.current || !result.ok) return
+        const byPath = new Map(
+          result.data.items
+            .filter((item) => item.availability)
+            .map((item) => [item.path, item.availability!] as const),
+        )
+        const next = new Map<number, DesktopFileAvailabilityEntry>()
+        for (const request of requests) {
+          const state = byPath.get(request.path)
+          if (state) next.set(request.nodeID, { path: request.path, state })
+        }
+        setAvailabilityByID(next)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    availabilityRefreshToken,
+    availabilityRequests,
+    fileAvailabilitySupported,
+  ])
+
+  useEffect(() => {
+    if (
+      !fileAvailabilitySupported ||
+      ![...availabilityByID.values()].some((entry) => entry.state.Syncing)
+    ) return
+    const timer = window.setTimeout(
+      () => setAvailabilityRefreshToken((value) => value + 1),
+      1500,
+    )
+    return () => window.clearTimeout(timer)
+  }, [availabilityByID, fileAvailabilitySupported])
+
+  const getItemAvailability = useCallback((item: XDriveFileExplorerItem) => {
+    const entry = availabilityByID.get(Number(item.id))
+    return entry ? desktopFileAvailabilityVisual(entry.state) : undefined
+  }, [availabilityByID])
+
+  const setNodeAvailability = useCallback(async (
+    node: AgentCloudNode,
+    action: 'keep' | 'release',
+  ) => {
+    const relativePath = relativePathForNode(node)
+    if (!relativePath) {
+      onError('无法确定本地同步路径。')
+      return
+    }
+    setActionBusy(`availability-${node.id}`)
+    try {
+      const result = await window.xdriveDesktop.agent.setFileAvailability(
+        relativePath,
+        action,
+      )
+      if (!result.ok) {
+        onError(result.error.message)
+        return
+      }
+      const availability = result.data
+      if ('Mode' in availability) {
+        setAvailabilityByID((current) => {
+          const next = new Map(current)
+          next.set(node.id, { path: relativePath, state: availability })
+          return next
+        })
+      } else {
+        setAvailabilityRefreshToken((value) => value + 1)
+      }
+      onFeedback(
+        'good',
+        action === 'keep'
+          ? '已设置为始终保留在此设备上。'
+          : '已释放本地空间。',
+      )
+    } finally {
+      setActionBusy('')
+    }
+  }, [crumbs, onError, onFeedback, searchByID])
+
   const openLocalNode = async (node: AgentCloudNode, reveal = false) => {
     const relativePath = relativePathForNode(node)
     if (!relativePath) {
@@ -689,7 +852,7 @@ export default function DesktopFileExplorer({
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
 
-    return xDriveFileExplorerStandardItemMenuItems({
+    const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
       onOpen: () => { void openWorkspaceItem(item, openPreviewNode) },
@@ -717,6 +880,39 @@ export default function DesktopFileExplorer({
         : undefined,
       onDelete: () => onDelete(node),
     })
+    if (!fileAvailabilitySupported) return standardItems
+
+    const state = availabilityByID.get(node.id)?.state
+    if (!state) return standardItems
+
+    const availabilityItems: XDriveFileExplorerMenuItem[] = []
+    if (!state.Syncing && !state.Pinned && state.Mode !== 'always-local') {
+      availabilityItems.push({
+        id: 'availability-keep',
+        label: '始终保留在此设备上',
+        icon: <CheckCircleRoundedIcon fontSize="small" sx={{ color: 'success.main' }} />,
+        dividerBefore: true,
+        disabled: explorerActionBusy,
+        onSelect: () => { void setNodeAvailability(node, 'keep') },
+      })
+    }
+    if (
+      !state.Syncing &&
+      state.Placeholder &&
+      state.InSync &&
+      !state.OnlineOnly &&
+      state.Mode !== 'cloud'
+    ) {
+      availabilityItems.push({
+        id: 'availability-release',
+        label: '释放空间',
+        icon: <CloudOutlinedIcon fontSize="small" sx={{ color: 'primary.main' }} />,
+        dividerBefore: availabilityItems.length === 0,
+        disabled: explorerActionBusy,
+        onSelect: () => { void setNodeAvailability(node, 'release') },
+      })
+    }
+    return [...standardItems, ...availabilityItems]
   }
 
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {
@@ -919,6 +1115,7 @@ export default function DesktopFileExplorer({
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
+        getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={pathValue}
         onPathSubmit={(path) => { void submitPath(path) }}
         searchValue={searchValue}

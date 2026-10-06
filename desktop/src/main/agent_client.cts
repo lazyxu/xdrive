@@ -99,6 +99,16 @@ export type AgentFileAvailability = {
   Syncing: boolean
 }
 
+export type AgentFileAvailabilityBatchItem = {
+  path: string
+  availability?: AgentFileAvailability
+  error?: string
+}
+
+export type AgentFileAvailabilityBatch = {
+  items: AgentFileAvailabilityBatchItem[]
+}
+
 export type AgentConflict = {
   id: string
   server?: string
@@ -1797,6 +1807,15 @@ export class AgentIPCClient {
   fileAvailability(path: string) {
     const query = new URLSearchParams({ path })
     return this.request<AgentFileAvailability>('GET', `/v1/file-availability?${query.toString()}`)
+  }
+
+  fileAvailabilityBatch(paths: string[]) {
+    return this.request<AgentFileAvailabilityBatch>(
+      'POST',
+      '/v1/file-availability/batch',
+      { paths },
+      30_000,
+    )
   }
 
   setFileAvailability(path: string, action: 'keep' | 'release' | 'online' | 'sync') {

@@ -116,6 +116,7 @@ import {
   type AgentSourceConnectorConfig,
   type AgentSourceBrowsePage,
   type AgentFileAvailability,
+  type AgentFileAvailabilityBatch,
   type AgentSettings,
   type AgentUpdateMode,
   type AgentUpdateSource,
@@ -3635,6 +3636,22 @@ function registerIPCHandlers() {
       return { ok: false, error: { code: 'invalid_input', message: 'A file or directory path is required.' } }
     }
     return runAgentAction<AgentFileAvailability>(() => requireAgentClient().fileAvailability(path), false)
+  })
+  ipcMain.handle('agent:get-file-availability-batch', (_event, value: unknown) => {
+    if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
+      return { ok: false, error: { code: 'invalid_input', message: '1 to 2048 file paths are required.' } }
+    }
+    const paths = [...new Set(value.map((item) => (
+      typeof item === 'string' ? item.trim() : ''
+    )).filter(Boolean))]
+    if (paths.length === 0) {
+      return { ok: false, error: { code: 'invalid_input', message: 'At least one file path is required.' } }
+    }
+    return runAgentAction<AgentFileAvailabilityBatch>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-availability-batch')
+      return requireAgentClient().fileAvailabilityBatch(paths)
+    }, false)
   })
   ipcMain.handle('agent:set-file-availability', (_event, path: unknown, action: unknown) => {
     if (

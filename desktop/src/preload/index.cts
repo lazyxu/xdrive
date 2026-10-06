@@ -395,6 +395,7 @@ const agent = Object.freeze({
   cancelUpdate: () => ipcRenderer.invoke('agent:cancel-update'),
   setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => ipcRenderer.invoke('agent:set-sync-rule', path, mode),
   getFileAvailability: (path: string) => ipcRenderer.invoke('agent:get-file-availability', path),
+  getFileAvailabilityBatch: (paths: string[]) => ipcRenderer.invoke('agent:get-file-availability-batch', paths),
   setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') =>
     ipcRenderer.invoke('agent:set-file-availability', path, action),
   getConflicts: () => ipcRenderer.invoke('agent:get-conflicts'),

@@ -68,6 +68,7 @@ var desktopIPCCapabilities = []string{
 	"client-update-cancel",
 	"selective-sync",
 	"file-availability",
+	"file-availability-batch",
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
@@ -139,6 +140,16 @@ type desktopIPCSettings struct {
 	MountPath       string                `json:"mount_path"`
 	CacheLimitBytes int64                 `json:"cache_limit_bytes"`
 	SyncRules       []userconfig.SyncRule `json:"sync_rules"`
+}
+
+type desktopIPCFileAvailabilityBatchItem struct {
+	Path         string                  `json:"path"`
+	Availability *mount.FileAvailability `json:"availability,omitempty"`
+	Error        string                  `json:"error,omitempty"`
+}
+
+type desktopIPCFileAvailabilityBatch struct {
+	Items []desktopIPCFileAvailabilityBatchItem `json:"items"`
 }
 
 type desktopIPCController interface {
@@ -554,6 +565,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/sources/connector-config", h.putSourceConnectorConfig)
 	mux.HandleFunc("GET /v1/file-availability", h.fileAvailability)
 	mux.HandleFunc("POST /v1/file-availability", h.setFileAvailability)
+	mux.HandleFunc("POST /v1/file-availability/batch", h.fileAvailabilityBatch)
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
@@ -3210,6 +3222,49 @@ func (h *desktopIPCHandler) fileAvailability(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, state)
+}
+
+func (h *desktopIPCHandler) fileAvailabilityBatch(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Paths []string `json:"paths"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if len(input.Paths) == 0 || len(input.Paths) > 2048 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_paths", "paths must contain 1 to 2048 items")
+		return
+	}
+	seen := make(map[string]struct{}, len(input.Paths))
+	items := make([]desktopIPCFileAvailabilityBatchItem, 0, len(input.Paths))
+	for _, rawPath := range input.Paths {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		state, err := h.ctrl.FileAvailability(path)
+		if err != nil {
+			items = append(items, desktopIPCFileAvailabilityBatchItem{
+				Path:  path,
+				Error: err.Error(),
+			})
+			continue
+		}
+		stateCopy := state
+		items = append(items, desktopIPCFileAvailabilityBatchItem{
+			Path:         path,
+			Availability: &stateCopy,
+		})
+	}
+	if len(items) == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_paths", "paths must contain at least one non-empty item")
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCFileAvailabilityBatch{Items: items})
 }
 
 func (h *desktopIPCHandler) setFileAvailability(w http.ResponseWriter, r *http.Request) {
