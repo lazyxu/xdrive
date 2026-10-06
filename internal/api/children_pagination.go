@@ -33,6 +33,26 @@ type childrenPageOptions struct {
 	Order  string
 }
 
+type childrenPageRow struct {
+	ID         uint64    `gorm:"column:id"`
+	ParentID   *uint64   `gorm:"column:parent_id"`
+	Name       string    `gorm:"column:name"`
+	Type       string    `gorm:"column:type"`
+	Revision   uint64    `gorm:"column:revision"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at"`
+	FileSize   int64     `gorm:"column:file_size"`
+	FileSHA256 string    `gorm:"column:file_sha256"`
+}
+
+func (row childrenPageRow) dto() nodeDTO {
+	return nodeDTO{
+		ID: row.ID, ParentID: row.ParentID, Name: row.Name, Type: row.Type,
+		Size: row.FileSize, Revision: row.Revision, SHA256: row.FileSHA256,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
 type childrenCursor struct {
 	Sort  string `json:"sort"`
 	Order string `json:"order"`
@@ -107,12 +127,20 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		sortExpr = "(CASE WHEN xd_nodes.type = 'dir' THEN '' WHEN strpos(xd_nodes.name, '.') > 1 AND right(xd_nodes.name, 1) <> '.' THEN lower(regexp_replace(xd_nodes.name, '^.*\\.', '')) ELSE '' END)"
 	}
 
+	uid := userID(c)
 	query := s.DB.
-		Model(&meta.Node{}).
-		Select("xd_nodes.*").
+		Table("xd_nodes").
+		Select(`xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
+			xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
+			COALESCE(child_file.size, 0) AS file_size,
+			COALESCE(child_file.sha256, '') AS file_sha256`).
 		Joins("LEFT JOIN xd_files AS child_file ON child_file.node_id = xd_nodes.id").
-		Preload("File").
-		Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", userID(c), parentID)
+		Joins(`JOIN xd_nodes AS parent_node
+			ON parent_node.id = ?
+			AND parent_node.owner_id = ?
+			AND parent_node.type = ?
+			AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
+		Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
 
 	if options.Cursor != "" {
 		cursor, err := decodeChildrenCursor(options.Cursor)
@@ -157,24 +185,30 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 	}
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
 
-	var nodes []meta.Node
-	if err := query.Order(orderBy).Limit(options.Limit + 1).Find(&nodes).Error; err != nil {
+	var rows []childrenPageRow
+	if err := query.Order(orderBy).Limit(options.Limit + 1).Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list failed")
 		return
 	}
-
-	hasMore := len(nodes) > options.Limit
-	if hasMore {
-		nodes = nodes[:options.Limit]
+	if len(rows) == 0 {
+		if _, err := s.ownedDirectory(uid, parentID); err != nil {
+			fail(c, statusForLookup(err), "directory not found")
+			return
+		}
 	}
-	out := make([]nodeDTO, 0, len(nodes))
-	for _, node := range nodes {
-		out = append(out, toNodeDTO(node))
+
+	hasMore := len(rows) > options.Limit
+	if hasMore {
+		rows = rows[:options.Limit]
+	}
+	out := make([]nodeDTO, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.dto())
 	}
 
 	nextCursor := ""
-	if hasMore && len(nodes) > 0 {
-		last := nodes[len(nodes)-1]
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
 		cursor, err := encodeChildrenCursor(childrenCursor{
 			Sort:  options.Sort,
 			Order: options.Order,
@@ -200,22 +234,19 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 	})
 }
 
-func childrenNodeRank(node meta.Node) int {
+func childrenNodeRank(node childrenPageRow) int {
 	if node.Type == meta.NodeTypeDir {
 		return 0
 	}
 	return 1
 }
 
-func childrenNodeCursorValue(node meta.Node, sortKey string) string {
+func childrenNodeCursorValue(node childrenPageRow, sortKey string) string {
 	switch sortKey {
 	case "updated":
 		return node.UpdatedAt.UTC().Format(time.RFC3339Nano)
 	case "size":
-		if node.File == nil {
-			return "0"
-		}
-		return strconv.FormatInt(node.File.Size, 10)
+		return strconv.FormatInt(node.FileSize, 10)
 	case "type":
 		if node.Type == meta.NodeTypeDir {
 			return ""

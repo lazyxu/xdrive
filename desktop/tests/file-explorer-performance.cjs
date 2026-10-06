@@ -9,6 +9,8 @@ const web = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.t
 const desktop = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const cloudFilesController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'), 'utf8')
 const searchController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'), 'utf8')
+const childrenPagination = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'children_pagination.go'), 'utf8')
+const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'handlers.go'), 'utf8')
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
   assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
@@ -98,4 +100,20 @@ test('FileExplorer selection and keyboard lookup avoid repeated whole-directory 
   assert.ok(shared.includes('() => selectedItems.reduce((total, item) => ('), 'selected-size aggregation must scale with the selection')
   assert.equal(shared.includes('visibleItems.findIndex((candidate)'), false, 'keyboard/selection paths must not rescan visibleItems')
   assert.equal(shared.includes('() => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id)))'), false, 'selectedItems must not scan the whole directory')
+})
+
+
+test('FileExplorer paged directory reads avoid redundant parent and File preload queries', () => {
+  const childrenStart = apiHandlers.indexOf('func (s *Server) children(c *gin.Context)')
+  const childrenEnd = apiHandlers.indexOf('func (s *Server) createDirectory', childrenStart)
+  const childrenHandler = apiHandlers.slice(childrenStart, childrenEnd)
+  assert.ok(
+    childrenHandler.indexOf('if childrenPaginationRequested(c)') < childrenHandler.indexOf('s.ownedDirectory'),
+    'paged FileExplorer requests should enter childrenPage before the legacy parent lookup',
+  )
+  assert.equal(childrenPagination.includes('Preload("File")'), false, 'paged children must not issue a separate File preload')
+  assert.ok(childrenPagination.includes('COALESCE(child_file.size, 0) AS file_size'), 'paged children should project file size in the main query')
+  assert.ok(childrenPagination.includes("COALESCE(child_file.sha256, '') AS file_sha256"), 'paged children should project file digest in the main query')
+  assert.ok(childrenPagination.includes('if len(rows) == 0 {'), 'empty pages must retain parent validation')
+  assert.ok(childrenPagination.includes('s.ownedDirectory(uid, parentID)'), 'empty pages must distinguish a valid empty directory from 404')
 })

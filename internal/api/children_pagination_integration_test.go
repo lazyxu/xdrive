@@ -97,6 +97,13 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 
 	createDir("AlphaDir", 1)
 	createDir("ZuluDir", 2)
+	emptyDir := meta.Node{
+		ParentID: &rootA.ID, Name: "EmptyDir", Type: meta.NodeTypeDir, OwnerID: alice.ID,
+		CreatedAt: baseTime.Add(8 * time.Minute), UpdatedAt: baseTime.Add(8 * time.Minute),
+	}
+	if err := db.Create(&emptyDir).Error; err != nil {
+		t.Fatal(err)
+	}
 	createFile("a.txt", 10, 3)
 	createFile("b.txt", 50, 4)
 	createFile("c.pdf", 30, 5)
@@ -108,8 +115,8 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyItems); err != nil {
 		t.Fatalf("legacy children must remain an array: %v body=%s", err, legacy.Body.String())
 	}
-	if len(legacyItems) != 7 {
-		t.Fatalf("legacy children len=%d want=7", len(legacyItems))
+	if len(legacyItems) != 8 {
+		t.Fatalf("legacy children len=%d want=8", len(legacyItems))
 	}
 
 	readPage := func(path string, wantStatus int) childrenPageDTO {
@@ -125,7 +132,7 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	}
 
 	page1 := readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&sort=name&order=asc", rootA.ID), http.StatusOK)
-	if got := []string{page1.Items[0].Name, page1.Items[1].Name, page1.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"AlphaDir", "ZuluDir", "a.txt"}) {
+	if got := []string{page1.Items[0].Name, page1.Items[1].Name, page1.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"AlphaDir", "EmptyDir", "ZuluDir"}) {
 		t.Fatalf("page1 order=%v", got)
 	}
 	if !page1.HasMore || page1.NextCursor == "" || page1.Sort != "name" || page1.Order != "asc" {
@@ -141,7 +148,7 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		rootA.ID, url.QueryEscape(page2.NextCursor),
 	), http.StatusOK)
 
-	names := make([]string, 0, 7)
+	names := make([]string, 0, 8)
 	seen := map[uint64]bool{}
 	for _, page := range []childrenPageDTO{page1, page2, page3} {
 		for _, item := range page.Items {
@@ -152,7 +159,7 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 			names = append(names, item.Name)
 		}
 	}
-	wantNames := []string{"AlphaDir", "ZuluDir", "a.txt", "b.txt", "c.pdf", "d.log", "e.zip"}
+	wantNames := []string{"AlphaDir", "EmptyDir", "ZuluDir", "a.txt", "b.txt", "c.pdf", "d.log", "e.zip"}
 	if fmt.Sprint(names) != fmt.Sprint(wantNames) {
 		t.Fatalf("paged names=%v want=%v", names, wantNames)
 	}
@@ -160,14 +167,21 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		t.Fatalf("last page should be terminal: %+v", page3)
 	}
 
-	sizePage := readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=7&sort=size&order=desc", rootA.ID), http.StatusOK)
+	sizePage := readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=8&sort=size&order=desc", rootA.ID), http.StatusOK)
 	sizeNames := make([]string, 0, len(sizePage.Items))
 	for _, item := range sizePage.Items {
 		sizeNames = append(sizeNames, item.Name)
 	}
-	wantSize := []string{"ZuluDir", "AlphaDir", "b.txt", "e.zip", "c.pdf", "d.log", "a.txt"}
+	wantSize := []string{"ZuluDir", "EmptyDir", "AlphaDir", "b.txt", "e.zip", "c.pdf", "d.log", "a.txt"}
 	if fmt.Sprint(sizeNames) != fmt.Sprint(wantSize) {
 		t.Fatalf("size desc names=%v want=%v", sizeNames, wantSize)
+	}
+
+	emptyPage := readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=3&sort=name&order=asc", emptyDir.ID,
+	), http.StatusOK)
+	if len(emptyPage.Items) != 0 || emptyPage.HasMore || emptyPage.NextCursor != "" {
+		t.Fatalf("empty directory page should be empty and terminal: %+v", emptyPage)
 	}
 
 	readPage(fmt.Sprintf(
