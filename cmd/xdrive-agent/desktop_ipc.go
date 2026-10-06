@@ -71,6 +71,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"background-tasks",
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
@@ -102,6 +103,7 @@ type desktopIPCStatus struct {
 	Revision           uint64              `json:"revision"`
 	Configured         bool                `json:"configured"`
 	Username           string              `json:"username,omitempty"`
+	Role               string              `json:"role,omitempty"`
 	Server             string              `json:"server,omitempty"`
 	MountPath          string              `json:"mount_path,omitempty"`
 	AuthStatus         string              `json:"auth_status"`
@@ -178,6 +180,7 @@ type desktopIPCController interface {
 	CloudBatchMove(context.Context, []client.BatchNodeRef, uint64) (client.BatchNodesResult, error)
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
+	CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error)
 	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
 	CloudClearFileOperationHistory(context.Context) error
 	CloudFileOperation(context.Context, string) (client.FileOperation, error)
@@ -464,6 +467,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/batch/move", h.cloudBatchMove)
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
+	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
 	mux.HandleFunc("DELETE /v1/cloud/file-operations", h.cloudClearFileOperationHistory)
 	mux.HandleFunc("GET /v1/cloud/file-operation", h.cloudFileOperation)
@@ -1216,6 +1220,25 @@ func (h *desktopIPCHandler) cloudCreateFileOperation(w http.ResponseWriter, r *h
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudBackgroundTasks(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_background_task_limit", "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	global := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("global")), "true")
+	tasks, err := h.ctrl.CloudBackgroundTasks(r.Context(), global, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, tasks)
 }
 
 func (h *desktopIPCHandler) cloudFileOperations(w http.ResponseWriter, r *http.Request) {
@@ -3415,6 +3438,7 @@ func makeDesktopIPCStatus(snapshot agentSnapshot, revision uint64) desktopIPCSta
 		Revision:           revision,
 		Configured:         snapshot.Configured,
 		Username:           snapshot.Username,
+		Role:               snapshot.Role,
 		Server:             snapshot.Server,
 		MountPath:          snapshot.MountPath,
 		AuthStatus:         snapshot.AuthStatus,

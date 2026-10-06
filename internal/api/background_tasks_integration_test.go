@@ -240,6 +240,9 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		if task.OwnerID != userA.ID {
 			t.Fatalf("user saw foreign task: %+v", task)
 		}
+		if task.OwnerUsername != userA.Username {
+			t.Fatalf("user task owner username=%q want=%q: %+v", task.OwnerUsername, userA.Username, task)
+		}
 	}
 	if !backgroundTaskHasControl(userTasks, "file-operation:"+opA.ID, "cancel") {
 		t.Fatal("owner file operation did not expose cancel")
@@ -287,6 +290,9 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		}
 		if task.OwnerID == userB.ID {
 			seenB = true
+			if task.OwnerUsername != userB.Username {
+				t.Fatalf("admin task owner username=%q want=%q: %+v", task.OwnerUsername, userB.Username, task)
+			}
 			if len(task.ControlActions) != 0 {
 				t.Fatalf("admin unexpectedly received cross-user controls: %+v", task)
 			}

@@ -27,6 +27,7 @@ import (
 type agentSnapshot struct {
 	Configured         bool
 	Username           string
+	Role               string
 	Server             string
 	MountPath          string
 	AuthStatus         string
@@ -218,6 +219,7 @@ func (c *agentController) Run() {
 		c.setSnapshot(func(s *agentSnapshot) {
 			s.Configured = false
 			s.Username = d.cfg.Username
+			s.Role = d.cfg.Role
 			s.Server = d.cfg.Server
 			s.MountPath = d.root
 			s.AuthStatus = "需要重新登录"
@@ -298,6 +300,7 @@ func (c *agentController) Run() {
 					*s = agentSnapshot{
 						Configured: false,
 						Username:   d.cfg.Username,
+						Role:       d.cfg.Role,
 						Server:     d.cfg.Server,
 						MountPath:  d.root,
 						AuthStatus: "需要重新登录",
@@ -336,6 +339,7 @@ func (c *agentController) Run() {
 		c.setSnapshot(func(s *agentSnapshot) {
 			s.Configured = true
 			s.Username = d.cfg.Username
+			s.Role = d.cfg.Role
 			s.Server = d.cfg.Server
 			s.MountPath = d.root
 			s.Paused = d.cfg.Paused
@@ -649,6 +653,7 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 	c.setSnapshot(func(s *agentSnapshot) {
 		s.Configured = true
 		s.Username = resp.Username
+		s.Role = resp.Role
 		s.Server = server
 		s.MustChangePassword = resp.MustChangePassword
 		if resp.MustChangePassword {
@@ -695,6 +700,7 @@ func (c *agentController) ChangePassword(currentPassword, newPassword string) er
 		return err
 	}
 	c.setSnapshot(func(s *agentSnapshot) {
+		s.Role = resp.Role
 		s.MustChangePassword = false
 		s.AuthStatus = "已登录"
 		s.SyncStatus = "正在启动同步"

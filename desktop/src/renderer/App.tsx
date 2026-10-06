@@ -397,6 +397,8 @@ export default function App({
   const fileRecentSupported =
     agent.hello?.capabilities.includes('file-recent') ?? false
   const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
+  const backgroundTasksSupported =
+    agent.hello?.capabilities.includes('background-tasks') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -476,12 +478,31 @@ export default function App({
     ),
   })
 
+  const backgroundTaskPort = useMemo(() => backgroundTasksSupported ? ({
+    loadMine: async (limit: number) => {
+      const result = await window.xdriveDesktop.agent.cloudBackgroundTasks(false, limit)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadGlobal: status?.role === 'admin'
+      ? async (limit: number) => {
+          const result = await window.xdriveDesktop.agent.cloudBackgroundTasks(true, limit)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
+  }) : undefined, [backgroundTasksSupported, status?.role])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
     operations: cloudFileOperations,
     operationActions: fileOperationActions,
     externalBusy: Boolean(busy) || deleteToTrashBusy,
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
+    backgroundTaskPort,
+    backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
+    backgroundTasksVisible: view === 'transfers',
+    globalTasksEnabled: status?.role === 'admin',
   })
 
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
@@ -1844,7 +1865,7 @@ export default function App({
         {view === 'transfers' && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
-            subtitle="统一查看文件操作、上传、下载、本地可用性与历史状态。"
+            subtitle="统一查看文件操作、上传下载、同步文件夹和后台处理状态。"
             transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
             transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
             onRetryTransfer={(id) => { void retryTransfer(id) }}

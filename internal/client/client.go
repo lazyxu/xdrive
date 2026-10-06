@@ -154,6 +154,41 @@ type BatchNodesResult struct {
 	DeletedIDs  []uint64 `json:"deleted_ids,omitempty"`
 }
 
+type BackgroundTaskProgress struct {
+	Phase       string   `json:"phase,omitempty"`
+	Current     int64    `json:"current,omitempty"`
+	Total       int64    `json:"total,omitempty"`
+	Unit        string   `json:"unit,omitempty"`
+	Percent     *float64 `json:"percent,omitempty"`
+	CurrentItem string   `json:"current_item,omitempty"`
+}
+
+type BackgroundTask struct {
+	ID             string                 `json:"id"`
+	Kind           string                 `json:"kind"`
+	Domain         string                 `json:"domain"`
+	Scope          string                 `json:"scope"`
+	OwnerID        uint64                 `json:"owner_id,omitempty"`
+	OwnerUsername  string                 `json:"owner_username,omitempty"`
+	State          string                 `json:"state"`
+	Trigger        string                 `json:"trigger,omitempty"`
+	Initiator      string                 `json:"initiator,omitempty"`
+	Priority       *uint8                 `json:"priority,omitempty"`
+	Resource       string                 `json:"resource,omitempty"`
+	SourceID       uint64                 `json:"source_id,omitempty"`
+	SourceName     string                 `json:"source_name,omitempty"`
+	SourceKind     string                 `json:"source_kind,omitempty"`
+	Progress       BackgroundTaskProgress `json:"progress"`
+	ActiveCount    int                    `json:"active_count,omitempty"`
+	QueuedCount    int                    `json:"queued_count,omitempty"`
+	RunningCount   int                    `json:"running_count,omitempty"`
+	ControlActions []string               `json:"control_actions,omitempty"`
+	StartedAt      *time.Time             `json:"started_at,omitempty"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	FinishedAt     *time.Time             `json:"finished_at,omitempty"`
+	Error          string                 `json:"error,omitempty"`
+}
+
 type FileOperation struct {
 	ID                string     `json:"id"`
 	Type              string     `json:"type"`
@@ -591,6 +626,30 @@ func (c *Client) ResolveFileOperationConflict(ctx context.Context, id, conflictP
 		map[string]any{"conflict_policy": conflictPolicy},
 		&out,
 	)
+	return out, err
+}
+
+func (c *Client) ListBackgroundTasks(ctx context.Context, limit int) ([]BackgroundTask, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var out []BackgroundTask
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/background-tasks?limit=%d", limit), nil, &out)
+	return out, err
+}
+
+func (c *Client) ListAdminBackgroundTasks(ctx context.Context, limit int) ([]BackgroundTask, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var out []BackgroundTask
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/background-tasks?limit=%d", limit), nil, &out)
 	return out, err
 }
 

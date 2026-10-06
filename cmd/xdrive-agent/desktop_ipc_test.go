@@ -410,6 +410,14 @@ func (f *fakeDesktopIPCController) CloudCreateFileOperation(_ context.Context, o
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error) {
+	return []client.BackgroundTask{{
+		ID: "runtime:user:1:media.index", Kind: "media.index", Domain: "scheduler",
+		Scope: "user", OwnerID: 1, OwnerUsername: "alice", State: "running",
+		Resource: "media_cpu", UpdatedAt: time.Now().UTC(),
+	}}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileOperations(context.Context, int) ([]client.FileOperation, error) {
 	return []client.FileOperation{{ID: "file-op", Type: "copy", Status: "running", TotalItems: 2, ProcessedItems: 1, TotalBytes: 7, ProcessedBytes: 3}}, f.err
 }

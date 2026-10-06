@@ -67,6 +67,7 @@ import {
   type AgentCloudNode,
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
+  type AgentBackgroundTask,
   type AgentCloudFileOperation,
   type AgentCloudUploadConflictPreflight,
   type AgentCloudUploadResult,
@@ -2579,6 +2580,14 @@ function registerIPCHandlers() {
       refs,
       typeof targetParent === 'number' ? targetParent : 0,
     )
+  }, false))
+  ipcMain.handle('agent:cloud-background-tasks', (_event, global: unknown, limit: unknown) => runAgentAction<AgentBackgroundTask[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'background-tasks')
+    const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
+      ? Math.min(200, Math.max(1, limit))
+      : 100
+    return requireAgentClient().cloudBackgroundTasks(global === true, parsedLimit)
   }, false))
   ipcMain.handle('agent:cloud-file-operations', (_event, limit: unknown) => runAgentAction<AgentCloudFileOperation[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
