@@ -304,3 +304,5 @@ The FileExplorer surface can separate the logical directory item count from load
 
 
 Before sparse runtime is enabled, item interactions must also be logical-index aware. Active item, rename recovery, marquee hit-testing, and keyboard targets resolve against loaded sparse logical indexes. Shift ranges are committed only when every logical item in the requested range is loaded; otherwise FileExplorer requests that range instead of silently selecting a partial loaded subset. Full Ctrl+A / cross-unloaded-range bulk selection remains a separate selection-model problem and must not be faked by selecting only loaded items.
+
+- Desktop thumbnail transport baseline is measured with 200 unique thumbnails across three passes. Agent warm caching targets 200 upstream requests / 13.1 MiB payload versus the 600 requests / 39.3 MiB uncached baseline, and expired entries revalidate with ETag.

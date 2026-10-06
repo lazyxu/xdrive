@@ -58,6 +58,7 @@ type agentController struct {
 	snapshotChanged  chan struct{}
 	transfers        *transfer.Manager
 	updates          *clientUpdateManager
+	thumbnailCache   *agentMediaThumbnailCache
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
@@ -70,6 +71,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		snapshotChanged:  make(chan struct{}),
 		transfers:        transfer.NewManager(transfer.DefaultHistoryLimit),
 		updates:          newClientUpdateManager(ctx),
+		thumbnailCache:   newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
