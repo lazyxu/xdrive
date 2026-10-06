@@ -352,6 +352,7 @@ func openPhotoIntelligenceAPITestDB(
 		&meta.FileOperation{},
 		&meta.Source{},
 		&meta.SyncRun{},
+		&meta.SystemMaintenanceRun{},
 	); err != nil {
 		t.Fatal(err)
 	}

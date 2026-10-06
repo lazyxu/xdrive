@@ -82,16 +82,53 @@ func (s *Server) runStorageSamplingLeaderPass(
 		ctx,
 		maintenanceLeaderStorageSampler,
 		func() {
-			s.runStorageSamplingPass(ctx, now)
+			runID := s.beginSystemMaintenanceRun(
+				ctx,
+				meta.SystemMaintenanceKindStorageSampler,
+				1,
+			)
+			result := s.runStorageSamplingTrackedPass(
+				ctx,
+				now,
+				runID,
+			)
+			s.finishSystemMaintenanceRun(
+				ctx,
+				runID,
+				result,
+			)
 		},
 	)
 }
 
-func (s *Server) runStorageSamplingPass(ctx context.Context, now time.Time) {
+func (s *Server) runStorageSamplingPass(
+	ctx context.Context,
+	now time.Time,
+) {
+	_ = s.runStorageSamplingTrackedPass(ctx, now, 0)
+}
+
+func (s *Server) runStorageSamplingTrackedPass(
+	ctx context.Context,
+	now time.Time,
+	runID uint64,
+) systemMaintenancePassResult {
+	result := newSystemMaintenancePassResult(1)
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseStorageSample,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
 	if err := s.captureStorageSampleIfDue(ctx, now); err != nil {
 		s.ensureObservability()
 		s.obs.logger.Warn("storage_sampling_failed", "error", err)
+		result.addIssue(meta.SystemMaintenancePhaseStorageSample, err)
+		return result
 	}
+	result.CompletedSteps++
+	return result
 }
 
 func (s *Server) captureStorageSampleIfDue(ctx context.Context, now time.Time) error {

@@ -117,6 +117,42 @@ type StorageSample struct {
 
 func (StorageSample) TableName() string { return "xd_storage_samples" }
 
+const (
+	SystemMaintenanceKindJanitor        = "janitor"
+	SystemMaintenanceKindStorageSampler = "storage_sampler"
+
+	SystemMaintenanceStatusRunning = "running"
+	SystemMaintenanceStatusSuccess = "success"
+	SystemMaintenanceStatusPartial = "partial"
+	SystemMaintenanceStatusFailed  = "failed"
+
+	SystemMaintenancePhaseStarting                = "starting"
+	SystemMaintenancePhaseStagingCleanup          = "staging_cleanup"
+	SystemMaintenancePhaseContentBlobGC           = "content_blob_gc"
+	SystemMaintenancePhaseSourceRunRetention      = "source_run_retention"
+	SystemMaintenancePhaseCleanupHistoryRetention = "cleanup_history_retention"
+	SystemMaintenancePhaseStorageSample           = "storage_sample"
+	SystemMaintenancePhaseFinished                = "finished"
+)
+
+type SystemMaintenanceRun struct {
+	ID             uint64     `gorm:"primaryKey"`
+	Kind           string     `gorm:"size:32;not null;index"`
+	Status         string     `gorm:"size:16;not null;index"`
+	Phase          string     `gorm:"size:64;not null"`
+	CompletedSteps int        `gorm:"not null;default:0"`
+	TotalSteps     int        `gorm:"not null;default:0"`
+	Error          string     `gorm:"type:text"`
+	StartedAt      time.Time  `gorm:"not null;index"`
+	FinishedAt     *time.Time `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (SystemMaintenanceRun) TableName() string {
+	return "xd_system_maintenance_runs"
+}
+
 type Share struct {
 	ID            uint64     `gorm:"primaryKey"`
 	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
