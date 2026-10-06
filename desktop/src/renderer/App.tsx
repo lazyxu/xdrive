@@ -343,14 +343,12 @@ export default function App({
     quota: cloudQuota,
     items: cloudItems,
     crumbs: cloudCrumbs,
-    pageState: cloudPage,
+    sort: cloudSort,
     loading: cloudLoading,
-    loadingMore: cloudLoadingMore,
     virtualDirectory: cloudVirtualDirectory,
     applyQuota: applyCloudQuota,
     refreshQuota: refreshCloudQuota,
     loadDirectory: loadCloudDirectory,
-    loadMoreDirectory: loadMoreCloudDirectory,
   } = useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: agent.connected && configured,
@@ -381,7 +379,7 @@ export default function App({
       void loadCloudDirectory(
         cloudCrumbs.at(-1)!.id,
         cloudCrumbs,
-        cloudPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+        cloudSort,
       )
     },
   })
@@ -1811,10 +1809,7 @@ export default function App({
               crumbs: cloudCrumbs,
               virtualDirectory: cloudVirtualDirectory,
               loading: cloudLoading,
-              loadingMore: cloudLoadingMore,
-              hasMore: cloudPage?.hasMore ?? false,
               onLoadDirectory: loadCloudDirectory,
-              onLoadMore: loadMoreCloudDirectory,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,
               onOpenShares: openCloudShares,

@@ -42,7 +42,6 @@ test('shared cloud files controller owns sparse range loading, quota and initial
     'const [quota, setQuota]',
     'const [items, setItems]',
     'const [crumbs, setCrumbs]',
-    'const [pageState, setPageState]',
     'port.getRoot()',
     'port.getRange(',
     'XDRIVE_FILE_EXPLORER_PAGE_SIZE',
@@ -59,12 +58,13 @@ test('shared cloud files controller owns sparse range loading, quota and initial
     'setQuota(null)',
     'setItems([])',
     'setCrumbs([])',
-    'setPageState(null)',
   ]) {
     assert.ok(controller.includes(token), `shared cloud files controller missing: ${token}`)
   }
-  assert.equal(controller.includes('xDriveFileExplorerCanLoadMore('), false, 'directory browsing must not retain cursor load-more logic')
-  assert.equal(controller.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'directory browsing must not append cursor pages')
+  assert.ok(controller.includes('sort: virtualTarget?.sort ?? defaultSort'), 'controller must expose the active range sort without cursor page state')
+  assert.equal(controller.includes('pageState'), false, 'directory browsing must not retain cursor page state')
+  assert.equal(controller.includes('loadingMore'), false, 'directory browsing must not retain loading-more state')
+  assert.equal(controller.includes('loadMoreDirectory'), false, 'directory browsing must not retain a no-op load-more callback')
   assert.ok(sharedMuiIndex.includes("export * from './CloudFilesController'"), 'shared cloud files controller must be exported')
 })
 
@@ -86,7 +86,7 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
     'getRoot: () => api.root()',
     'getPage: (parentID, options) => api.listPage(parentID, options)',
     'getQuota: () => api.quota()',
-    'pageState: directoryPage',
+    'sort: directorySort',
     'enabled: Boolean(profile && !profile.must_change_password)',
     'applyQuota',
   ]) {
@@ -117,13 +117,11 @@ test('Desktop delegates cloud read state and lifecycle to the shared controller'
     'quota: cloudQuota',
     'items: cloudItems',
     'crumbs: cloudCrumbs',
-    'pageState: cloudPage',
+    'sort: cloudSort',
     'loading: cloudLoading',
-    'loadingMore: cloudLoadingMore',
     'applyQuota: applyCloudQuota',
     'refreshQuota: refreshCloudQuota',
     'loadDirectory: loadCloudDirectory',
-    'loadMoreDirectory: loadMoreCloudDirectory',
     'enabled: agent.connected && configured',
     'onError: handleCloudFilesError',
   ]) {

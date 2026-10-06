@@ -45,8 +45,10 @@ test('shared navigation pane owns lazy tree state and current-path projection', 
     'pathChildByParent',
     'for (const node of ancestors) void loadChildren(node)',
     'loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)',
-    'data-xdrive-file-explorer-tree-load-more',
-    "loading ? '正在加载…' : '加载更多'",
+    'XDriveAutoLoadSentinel',
+    'data-xdrive-file-explorer-tree-auto-load',
+    'onLoad={() => loadChildren(node, true)}',
+    '正在加载更多文件夹…',
     'currentID === node.id',
     'aria-current={selected',
     'role="tree"',
@@ -57,6 +59,7 @@ test('shared navigation pane owns lazy tree state and current-path projection', 
   ]) {
     assert.ok(pane.includes(token), 'shared navigation tree behavior missing: ' + token)
   }
+  assert.equal(pane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more row')
 })
 
 test('shared FileExplorer shell accepts one reusable left navigation pane', () => {

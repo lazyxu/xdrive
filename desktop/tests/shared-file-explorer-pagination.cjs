@@ -11,43 +11,21 @@ const cloudController = read('ui', 'shared', 'src', 'mui', 'CloudFilesController
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 
-test('shared FileExplorer controller owns pagination eligibility and page merging', () => {
-  for (const token of [
+test('FileExplorer main directory removes legacy cursor-append state after range activation', () => {
+  assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'shared range page size must remain')
+  assert.ok(controller.includes('XDriveFileExplorerPageRequestOptions'), 'cursor page options must remain for auxiliary tree/path reads')
+  for (const legacy of [
     'XDriveFileExplorerPageState',
-    'XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200',
-    'XDriveFileExplorerPageRequestOptions',
-    'xDriveFileExplorerPageRequestOptions',
-    'limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE',
-    '...(cursor ? { cursor } : {})',
-    'sort: sort.key',
-    'order: sort.direction',
+    'xDriveFileExplorerCanLoadMore',
+    'xDriveFileExplorerMergePageItems',
     'XDriveFileExplorerPageResult',
     'xDriveFileExplorerPageStateFromResult',
-    "cursor: page.next_cursor ?? ''",
-    'hasMore: page.has_more',
-    'xDriveFileExplorerCanLoadMore',
-    'pageState.parentID === parentID',
-    'pageState.hasMore',
-    'pageState.cursor',
-    'pageState.sort.key === sort.key',
-    'pageState.sort.direction === sort.direction',
-    '!loadingMore',
-    'xDriveFileExplorerMergePageItems',
-    'knownIDs?: Set<number>',
-    'const pageIDs = new Set<number>()',
-    'if (knownIDs.has(item.id) || pageIDs.has(item.id))',
-    'return [...currentItems, ...pageItems]',
     'XDriveFileExplorerDirectoryPage',
     'xDriveFileExplorerDirectoryPageTransition',
-    'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
-    'applyItems: (currentItems: readonly TItem[])',
-    'knownIDs.clear()',
-    'for (const item of page.items) knownIDs.add(item.id)',
-    'new Map(currentItems.map((item) => [item.id, item] as const))',
-    'for (const item of pageItems) merged.set(item.id, item)',
-    'return [...merged.values()]',
+    'xDriveFileExplorerPaginationController',
+    "mode: 'directory' as const",
   ]) {
-    assert.ok(controller.includes(token), `shared FileExplorer pagination controller missing: ${token}`)
+    assert.equal(controller.includes(legacy), false, `dead main-directory pagination state remains: ${legacy}`)
   }
 })
 
@@ -66,25 +44,24 @@ test('Web and Desktop delegate directory range rules while keeping transport ada
   assert.ok(cloudController.includes('virtualCollection.primePage({'), 'first range must seed the sparse cache')
   assert.ok(cloudController.includes('loadedItems: virtualCollection.loadedItems'), 'shared controller must expose bounded loaded metadata')
   assert.ok(cloudController.includes('ensureViewport: virtualCollection.ensureViewport'), 'shared controller must expose viewport range loading')
-  assert.equal(cloudController.includes('xDriveFileExplorerCanLoadMore('), false, 'directory browsing must not retain cursor load-more eligibility')
+  assert.equal(cloudController.includes('pageState'), false, 'range-driven directory browsing must not fabricate cursor page state')
+  assert.equal(cloudController.includes('loadingMore'), false, 'range-driven directory browsing must not expose loading-more state')
+  assert.equal(cloudController.includes('loadMoreDirectory'), false, 'range-driven directory browsing must not expose a no-op load-more callback')
   assert.equal(cloudController.includes('directoryItemIDsRef'), false, 'directory browsing must not retain a whole-directory ID cache')
 
   assert.ok(web.includes('getRange: (parentID, offset, limit, sort) => api.listRange('), 'Web must keep REST range transport local behind the shared port')
   assert.ok(desktop.includes('cloudChildrenRange('), 'Desktop must keep Agent range transport local behind the shared port')
-  assert.equal(web.includes('setLoadingMore(true)'), false, 'Web App must not own directory loading-more state')
-  assert.equal(desktop.includes('setCloudLoadingMore(true)'), false, 'Desktop App must not own directory loading-more state')
+  assert.equal(web.includes('loadMoreDirectory'), false, 'Web App must not retain directory load-more compatibility')
+  assert.equal(desktop.includes('loadMoreCloudDirectory'), false, 'Desktop App must not retain directory load-more compatibility')
 })
 
-
-test('shared Explorer pagination is directory-only after Search VirtualCollection migration', () => {
-  for (const legacy of [
-    'searchActive:',
-    'searchCursor:',
-    'searchLoadingMore:',
-    'loadMoreSearch:',
+test('folder tree keeps cursor paging only as an internal bounded transport', () => {
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 200',
+    'xDriveFileExplorerLoadChildDirectoryPage',
+    'nextCursor',
+    'hasMore',
   ]) {
-    assert.equal(controller.includes(legacy), false, `pagination controller must not know Search load-more state: ${legacy}`)
+    assert.ok(controller.includes(token), `tree cursor contract missing: ${token}`)
   }
-  assert.ok(controller.includes("mode: 'directory' as const"), 'pagination presentation must remain directory-only compatibility')
-  assert.ok(controller.includes('void loadMoreDirectory(currentID, sort)'), 'directory compatibility load-more must remain intact')
 })

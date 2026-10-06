@@ -74,7 +74,8 @@ test('shared FileExplorer controller owns search normalization and validation de
   assert.ok(workspaceController.includes('useXDriveFileExplorerNavigation({'), 'shared workspace must compose navigation')
   assert.ok(workspaceController.includes('xDriveFileExplorerSubmitPath({'), 'shared workspace must own typed-path submission')
   assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'shared workspace must own open-item dispatch')
-  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own pagination dispatch')
+  assert.ok(workspaceController.includes('explorerVirtualCollection'), 'shared workspace must own sparse collection selection')
+  assert.equal(workspaceController.includes('xDriveFileExplorerPaginationController'), false, 'shared workspace must not retain main-directory append dispatch')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must consume the shared workspace controller`)
     assert.equal(source.includes('xDriveFileExplorerSearchDecision(query)'), false, `${label} must not duplicate search-decision handling`)
@@ -126,14 +127,9 @@ test('shared FileExplorer controller owns sparse Search range state', () => {
   assert.equal(workspaceController.includes('searchCursor'), false, 'workspace must not consume a Search cursor')
   assert.equal(workspaceController.includes('searchLoadingMore'), false, 'workspace must not expose Search loading-more state')
   assert.equal(workspaceController.includes('loadMoreSearch'), false, 'workspace must not dispatch Search load-more')
-  assert.ok(
-    workspaceController.includes('directoryHasMore: search.searchResults === null && directoryHasMore'),
-    'Search mode must suppress directory load-more presentation',
-  )
-  assert.ok(
-    workspaceController.includes('directoryLoadingMore: search.searchResults === null && directoryLoadingMore'),
-    'Search mode must suppress directory loading-more presentation',
-  )
+  assert.equal(workspaceController.includes('directoryHasMore'), false, 'workspace must not retain directory append state')
+  assert.equal(workspaceController.includes('directoryLoadingMore'), false, 'workspace must not retain directory loading-more state')
+  assert.equal(workspaceController.includes('onLoadMoreDirectory'), false, 'workspace must not retain directory append callbacks')
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must use the shared workspace controller`)
@@ -342,17 +338,23 @@ test('Web and Desktop keep Search ranges bound to the submitted active query', (
   assert.ok(workspaceController.includes('search.searchResults === null || search.searchSortMatches'), 'Search projection must remain externally sorted after server range sort is current')
 })
 
-test('shared FileExplorer controller owns directory page replace/append transitions', () => {
-  for (const token of [
+test('shared FileExplorer controller keeps cursor paging only for bounded tree reads', () => {
+  for (const legacy of [
     'XDriveFileExplorerDirectoryPage',
     'xDriveFileExplorerDirectoryPageTransition',
-    'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
-    'applyItems: (currentItems: readonly TItem[])',
-    'xDriveFileExplorerMergePageItems(currentItems, page.items, knownIDs)',
-    'knownIDs?: Set<number>',
-    'return [...page.items]',
+    'xDriveFileExplorerPageStateFromResult',
+    'xDriveFileExplorerMergePageItems',
+    'xDriveFileExplorerCanLoadMore',
   ]) {
-    assert.ok(shared.includes(token), `shared directory page transition missing: ${token}`)
+    assert.equal(shared.includes(legacy), false, `dead main-directory append helper remains: ${legacy}`)
+  }
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 200',
+    'xDriveFileExplorerLoadChildDirectoryPage',
+    'page.next_cursor?.trim()',
+    'const hasMore = !reachedFile && page.has_more && Boolean(nextCursor)',
+  ]) {
+    assert.ok(shared.includes(token), `bounded tree cursor helper missing: ${token}`)
   }
 })
 

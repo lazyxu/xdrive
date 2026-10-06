@@ -139,49 +139,6 @@ export type XDriveFileExplorerSearchResultLike = {
   node: { id: number }
 }
 
-export function xDriveFileExplorerPaginationPresentation({
-  directoryHasMore,
-  directoryLoadingMore,
-}: {
-  directoryHasMore: boolean
-  directoryLoadingMore: boolean
-}) {
-  return {
-    mode: 'directory' as const,
-    hasMore: directoryHasMore,
-    loadingMore: directoryLoadingMore,
-  }
-}
-
-export function xDriveFileExplorerPaginationController<TID, TSort>({
-  directoryHasMore,
-  directoryLoadingMore,
-  currentID,
-  sort,
-  loadMoreDirectory,
-}: {
-  directoryHasMore: boolean
-  directoryLoadingMore: boolean
-  currentID: TID | null | undefined
-  sort: TSort
-  loadMoreDirectory: (id: TID, sort: TSort) => void | Promise<void>
-}) {
-  const presentation = xDriveFileExplorerPaginationPresentation({
-    directoryHasMore,
-    directoryLoadingMore,
-  })
-
-  const onLoadMore = () => {
-    if (currentID === null || currentID === undefined) return
-    void loadMoreDirectory(currentID, sort)
-  }
-
-  return {
-    ...presentation,
-    onLoadMore,
-  }
-}
-
 export type XDriveFileExplorerSelectionItem = { id: string | number }
 export type XDriveFileExplorerOperationNode = Pick<Node, 'id' | 'revision' | 'parent_id'>
 export type XDriveFileExplorerOperationRef = { id: number; revision: number }
@@ -702,66 +659,6 @@ export const XDRIVE_FILE_EXPLORER_DEFAULT_SORT = {
   direction: 'asc',
 } as const satisfies XDriveFileExplorerPageSort
 
-export type XDriveFileExplorerPageState<
-  TSort extends XDriveFileExplorerPageSort,
-> = {
-  parentID: number
-  cursor: string
-  hasMore: boolean
-  sort: TSort
-}
-
-export function xDriveFileExplorerCanLoadMore<
-  TSort extends XDriveFileExplorerPageSort,
->(
-  pageState: XDriveFileExplorerPageState<TSort> | null | undefined,
-  parentID: number,
-  sort: TSort,
-  loadingMore: boolean,
-): pageState is XDriveFileExplorerPageState<TSort> {
-  return Boolean(
-    pageState &&
-    pageState.parentID === parentID &&
-    pageState.hasMore &&
-    pageState.cursor &&
-    pageState.sort.key === sort.key &&
-    pageState.sort.direction === sort.direction &&
-    !loadingMore
-  )
-}
-
-export function xDriveFileExplorerMergePageItems<
-  TItem extends { id: number },
->(
-  currentItems: readonly TItem[],
-  pageItems: readonly TItem[],
-  knownIDs?: Set<number>,
-): TItem[] {
-  if (knownIDs) {
-    const pageIDs = new Set<number>()
-    let hasDuplicate = false
-    for (const item of pageItems) {
-      if (knownIDs.has(item.id) || pageIDs.has(item.id)) {
-        hasDuplicate = true
-        break
-      }
-      pageIDs.add(item.id)
-    }
-    if (!hasDuplicate) {
-      for (const id of pageIDs) knownIDs.add(id)
-      return [...currentItems, ...pageItems]
-    }
-  }
-
-  const merged = new Map(currentItems.map((item) => [item.id, item] as const))
-  for (const item of pageItems) merged.set(item.id, item)
-  if (knownIDs) {
-    knownIDs.clear()
-    for (const item of merged.values()) knownIDs.add(item.id)
-  }
-  return [...merged.values()]
-}
-
 export const XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200
 
 export type XDriveFileExplorerPageRequestOptions<
@@ -784,53 +681,6 @@ export function xDriveFileExplorerPageRequestOptions<
     ...(cursor ? { cursor } : {}),
     sort: sort.key,
     order: sort.direction,
-  }
-}
-
-export type XDriveFileExplorerPageResult = {
-  next_cursor?: string
-  has_more: boolean
-}
-
-export function xDriveFileExplorerPageStateFromResult<
-  TSort extends XDriveFileExplorerPageSort,
->(
-  parentID: number,
-  page: XDriveFileExplorerPageResult,
-  sort: TSort,
-): XDriveFileExplorerPageState<TSort> {
-  return {
-    parentID,
-    cursor: page.next_cursor ?? '',
-    hasMore: page.has_more,
-    sort,
-  }
-}
-
-export type XDriveFileExplorerDirectoryPage<TItem> = XDriveFileExplorerPageResult & {
-  items: readonly TItem[]
-}
-
-export function xDriveFileExplorerDirectoryPageTransition<
-  TItem extends { id: number },
-  TSort extends XDriveFileExplorerPageSort,
->(
-  parentID: number,
-  page: XDriveFileExplorerDirectoryPage<TItem>,
-  sort: TSort,
-  append: boolean,
-  knownIDs?: Set<number>,
-) {
-  return {
-    pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort),
-    applyItems: (currentItems: readonly TItem[]) => {
-      if (append) return xDriveFileExplorerMergePageItems(currentItems, page.items, knownIDs)
-      if (knownIDs) {
-        knownIDs.clear()
-        for (const item of page.items) knownIDs.add(item.id)
-      }
-      return [...page.items]
-    },
   }
 }
 

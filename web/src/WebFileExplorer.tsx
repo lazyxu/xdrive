@@ -57,11 +57,8 @@ export default function WebFileExplorer({
   crumbs,
   virtualDirectory,
   loading,
-  loadingMore,
-  hasMore,
   uploadProgress,
   onLoadDirectory,
-  onLoadMore,
   onUploadFiles,
   onUploadFolderFiles,
   onUploadDroppedFiles,
@@ -85,11 +82,8 @@ export default function WebFileExplorer({
   crumbs: Crumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
-  loadingMore: boolean
-  hasMore: boolean
   uploadProgress: number | null
   onLoadDirectory: (id: number, crumbs: Crumb[], sort: XDriveFileExplorerSort) => Promise<void>
-  onLoadMore: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadFolderFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
@@ -153,7 +147,6 @@ export default function WebFileExplorer({
     submitPath,
     openItem,
     openItemInNewTab,
-    explorerPagination,
     explorerVirtualCollection,
     externallySorted,
     searchStatusText,
@@ -171,10 +164,7 @@ export default function WebFileExplorer({
     crumbs,
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
-    directoryHasMore: hasMore,
-    directoryLoadingMore: loadingMore,
     onLoadDirectory,
-    onLoadMoreDirectory: onLoadMore,
     loadSearchRange: async (query, searchSort, offset, limit) => {
       const page = await api.searchRange(
         query,
@@ -454,9 +444,6 @@ export default function WebFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={externallySorted}
-        hasMore={explorerPagination.hasMore}
-        loadingMore={explorerPagination.loadingMore}
-        onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}

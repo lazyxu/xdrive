@@ -39,6 +39,7 @@ import {
   synologyFileRootsValidationError,
   synologyPhotoSpaceOptions,
 } from '../external-sources'
+import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
 
 function photoSpaceLabel(value: SynologyPhotoSpace) {
   return synologyPhotoSpaceOptions.find((option) => option.value === value)?.label ?? value
@@ -306,20 +307,21 @@ export function XDriveSynologyFileRootsField({
                 </Typography>
               ) : null}
 
-              {browseNextOffset !== undefined ? (
-                <Box>
-                  <Button
-                    size="small"
-                    disabled={browseLoading}
-                    onClick={() => void loadBrowsePath(browsePath, browseNextOffset, true)}
-                  >
-                    加载更多
-                  </Button>
-                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                    远端共返回 {browseTotal.toLocaleString()} 项
-                  </Typography>
-                </Box>
+              {browseTotal > 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  已显示 {browseItems.length.toLocaleString()} / {browseTotal.toLocaleString()} 项
+                </Typography>
               ) : null}
+              <XDriveAutoLoadSentinel
+                enabled={browseNextOffset !== undefined}
+                loading={browseLoading}
+                label="正在加载更多目录…"
+                onLoad={() => (
+                  browseNextOffset === undefined
+                    ? undefined
+                    : loadBrowsePath(browsePath, browseNextOffset, true)
+                )}
+              />
 
               <Box>
                 <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
