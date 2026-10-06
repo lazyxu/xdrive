@@ -26,12 +26,8 @@ import (
 )
 
 const (
-	mediaIndexBatchSize       = 64
-	mediaRequestIndexBatch    = 16
-	mediaThumbnailEdge        = mediapkg.DefaultThumbnailEdge
-	mediaIndexerIdleInterval  = 30 * time.Second
-	mediaIndexerBusyInterval  = 100 * time.Millisecond
-	mediaIndexerErrorInterval = time.Minute
+	mediaRequestIndexBatch = 16
+	mediaThumbnailEdge     = mediapkg.DefaultThumbnailEdge
 )
 
 type mediaMetadataDTO struct {
@@ -1233,12 +1229,21 @@ func (s *Server) refreshMediaIndexForOwner(
 	uid uint64,
 	limit int,
 ) error {
+	_, _, err := s.refreshMediaIndexOwnerBatch(ctx, uid, limit)
+	return err
+}
+
+func (s *Server) refreshMediaIndexOwnerBatch(
+	ctx context.Context,
+	uid uint64,
+	limit int,
+) (seen, indexed int, err error) {
 	if limit <= 0 {
 		limit = mediaRequestIndexBatch
 	}
 	nodes, err := s.staleMediaNodes(ctx, &uid, limit)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	for index := range nodes {
 		if err := s.DB.WithContext(ctx).
@@ -1246,55 +1251,24 @@ func (s *Server) refreshMediaIndexForOwner(
 			First(&nodes[index].File).Error; err != nil {
 			continue
 		}
-		_, _ = s.indexMediaNode(ctx, nodes[index])
+		if _, err := s.indexMediaNode(ctx, nodes[index]); err == nil {
+			indexed++
+		}
 	}
 	if err := mediagroup.ReconcileLocalEvidenceGroups(ctx, s.DB, uid); err != nil {
-		return err
+		return len(nodes), indexed, err
 	}
-	_, err = photoasset.ReconcileOwner(ctx, s.DB, uid)
-	return err
+	if _, err := photoasset.ReconcileOwner(ctx, s.DB, uid); err != nil {
+		return len(nodes), indexed, err
+	}
+	return len(nodes), indexed, nil
 }
 
-func (s *Server) refreshMediaIndexBatch(
+func (s *Server) staleMediaQuery(
 	ctx context.Context,
-	limit int,
-) (int, error) {
-	if limit <= 0 {
-		limit = mediaIndexBatchSize
-	}
-	nodes, err := s.staleMediaNodes(ctx, nil, limit)
-	if err != nil {
-		return 0, err
-	}
-	owners := make(map[uint64]struct{})
-	for index := range nodes {
-		owners[nodes[index].OwnerID] = struct{}{}
-		if err := s.DB.WithContext(ctx).
-			Where("node_id = ?", nodes[index].ID).
-			First(&nodes[index].File).Error; err != nil {
-			continue
-		}
-		_, _ = s.indexMediaNode(ctx, nodes[index])
-	}
-	for ownerID := range owners {
-		if err := mediagroup.ReconcileLocalEvidenceGroups(ctx, s.DB, ownerID); err != nil {
-			return len(nodes), err
-		}
-		if _, err := photoasset.ReconcileOwner(ctx, s.DB, ownerID); err != nil {
-			return len(nodes), err
-		}
-	}
-	return len(nodes), nil
-}
-
-func (s *Server) staleMediaNodes(
-	ctx context.Context,
-	uid *uint64,
-	limit int,
-) ([]meta.Node, error) {
-	query := s.DB.WithContext(ctx).
+) *gorm.DB {
+	return s.DB.WithContext(ctx).
 		Table("xd_nodes AS n").
-		Select("n.*").
 		Joins("JOIN xd_files AS f ON f.node_id = n.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = n.id").
 		Where(
@@ -1305,6 +1279,15 @@ func (s *Server) staleMediaNodes(
 			meta.NodeTypeFile,
 			mediapkg.RelationEvidenceVersion,
 		)
+}
+
+func (s *Server) staleMediaNodes(
+	ctx context.Context,
+	uid *uint64,
+	limit int,
+) ([]meta.Node, error) {
+	query := s.staleMediaQuery(ctx).
+		Select("n.*")
 	if uid != nil {
 		query = query.Where("n.owner_id = ?", *uid)
 	}
@@ -1647,35 +1630,4 @@ func (s *Server) mediaDerivedResourceContent(c *gin.Context) {
 		metadata.UpdatedAt,
 		io.NewSectionReader(file, resource.ByteOffset, resource.ByteSize),
 	)
-}
-
-func (s *Server) StartMediaIndexer(ctx context.Context) {
-	go func() {
-		delay := time.Duration(0)
-		for {
-			if delay > 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(delay):
-				}
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			count, err := s.refreshMediaIndexBatch(
-				ctx,
-				mediaIndexBatchSize,
-			)
-			switch {
-			case err != nil:
-				slog.Warn("media_index_batch_failed", "error", err)
-				delay = mediaIndexerErrorInterval
-			case count > 0:
-				delay = mediaIndexerBusyInterval
-			default:
-				delay = mediaIndexerIdleInterval
-			}
-		}
-	}()
 }

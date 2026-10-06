@@ -15,6 +15,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	"github.com/lazyxu/xdrive/internal/mediawake"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -138,6 +139,11 @@ func main() {
 		background.DefaultConfig(),
 	)
 	defer backgroundScheduler.Close()
+	mediaIndexListener := mediawake.Listen(
+		serverCtx,
+		cfg.DatabaseURL,
+		slog.Default(),
+	)
 
 	srv := &api.Server{
 		DB: db, Store: store,
@@ -152,6 +158,7 @@ func main() {
 		PhotoFacePreviewBaseURL:   cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 		BackgroundScheduler:       backgroundScheduler,
+		MediaIndexWakeups:         mediaIndexListener.Events,
 	}
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
@@ -313,7 +320,10 @@ func migrate(db *gorm.DB) error {
 	if err := migrateLegacyYikeTargets(db); err != nil {
 		return fmt.Errorf("migrate legacy Yike targets: %w", err)
 	}
-	return meta.InstallNodeChangeJournal(db)
+	if err := meta.InstallNodeChangeJournal(db); err != nil {
+		return err
+	}
+	return mediawake.InstallPostgreSQLTrigger(db)
 }
 
 func runHealthcheck(args []string) error {
