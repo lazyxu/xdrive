@@ -38,7 +38,7 @@ test('Space opens Quick Look while Ctrl/Cmd+Space retains keyboard selection', (
 
 test('Quick Look navigates the current file result set and reuses Inspector preview loaders', () => {
   for (const token of [
-    "visibleItems.filter((item) => item.kind === 'file')",
+    'const quickLookFiles = visibleItemProjection.files',
     'const moveQuickLook = (delta: -1 | 1) =>',
     'setQuickLookItemID(target.id)',
     'canPrevious={quickLookIndex > 0}',
