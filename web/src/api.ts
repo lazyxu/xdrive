@@ -1,6 +1,7 @@
 import type {
   AdminUser,
   AuditEvent,
+  AuditEventRange,
   CreateExternalSourceInput,
   CreatedFileShare,
   ExternalSource,
@@ -505,6 +506,27 @@ export class XDriveApi {
     if (params.actor) query.set('actor', params.actor)
     const suffix = query.toString()
     return this.request<AuditEvent[]>(`/api/v1/admin/audit${suffix ? `?${suffix}` : ''}`)
+  }
+
+  adminAuditRange(params: {
+    limit: number
+    offset: number
+    snapshot_max_id?: number
+    action?: string
+    result?: 'success' | 'failure'
+    actor?: string
+  }, signal?: AbortSignal) {
+    const query = new URLSearchParams()
+    query.set('range', 'true')
+    query.set('limit', String(params.limit))
+    query.set('offset', String(params.offset))
+    if (params.snapshot_max_id !== undefined) {
+      query.set('snapshot_max_id', String(params.snapshot_max_id))
+    }
+    if (params.action) query.set('action', params.action)
+    if (params.result) query.set('result', params.result)
+    if (params.actor) query.set('actor', params.actor)
+    return this.request<AuditEventRange>(`/api/v1/admin/audit?${query.toString()}`, { signal })
   }
 
   adminCreateUser(input: { username: string; password: string; role: 'user' | 'admin'; must_change_password: boolean; quota_bytes: number }) {

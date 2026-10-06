@@ -251,6 +251,14 @@ export interface AuditEvent {
   created_at: string
 }
 
+export interface AuditEventRange {
+  items: AuditEvent[]
+  total_count: number
+  offset: number
+  limit: number
+  snapshot_max_id: number
+}
+
 
 export interface BuildInfo {
   version: string

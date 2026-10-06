@@ -142,6 +142,38 @@ test('VirtualCollection aligns viewport requests to stable pages with bounded ov
   )
 })
 
+test('VirtualCollection fixed-row window maps scroll position to bounded logical indexes', () => {
+  const {
+    xDriveVirtualCollectionFixedRowWindow,
+  } = loadVirtualCollection()
+
+  assert.deepEqual(
+    xDriveVirtualCollectionFixedRowWindow({
+      itemCount: 100_000,
+      scrollTop: 40 + 50_000 * 64,
+      viewportHeight: 640,
+      rowHeight: 64,
+      headerHeight: 40,
+      overscanRows: 8,
+    }),
+    {
+      start: 49_992,
+      end: 50_018,
+      before: 49_992 * 64,
+      after: (100_000 - 50_018) * 64,
+    },
+  )
+  assert.deepEqual(
+    xDriveVirtualCollectionFixedRowWindow({
+      itemCount: 0,
+      scrollTop: 0,
+      viewportHeight: 0,
+      rowHeight: 64,
+    }),
+    { start: 0, end: 0, before: 0, after: 0 },
+  )
+})
+
 test('VirtualCollection can evict metadata outside retained page ranges', () => {
   const {
     xDriveCreateVirtualCollectionSnapshot,

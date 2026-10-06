@@ -133,3 +133,9 @@ Gallery Grid thumbnail work is scheduled independently from metadata range loadi
 - blob URL lifetime is owned by the scheduler; virtual tile unmount does not revoke scheduler-cached URLs
 
 Both virtual Grid and virtual Timeline feed viewport/overscan priorities into the same thumbnail scheduler, so changing Gallery view mode does not introduce an unbounded thumbnail pipeline. Details, preview, and person-cover surfaces retain their existing direct loaders. Video poster capture remains its own bounded pipeline because it consumes preview URLs and browser video decoding rather than thumbnail resources.
+
+## Admin audit VirtualCollection activation
+
+The Web admin audit log uses the same sparse range model as Files/Search/Gallery instead of append pagination. The first `range=true` request establishes a stable `snapshot_max_id` and returns `total_count`; subsequent viewport ranges reuse that snapshot with `offset/limit`. New audit rows created while an administrator is scrolling therefore do not shift logical indexes, duplicate rows, or hide rows inside the active browsing session. Reapplying filters starts a fresh snapshot.
+
+The audit table uses a fixed-height virtual row window and bounded metadata retention through `VirtualCollection`. Visible rows plus overscan are rendered, unloaded logical indexes are placeholders, and the old user-facing “加载更早记录” control is removed. The legacy `before_id` array endpoint remains available for compatibility, while the Web admin page uses only the snapshot-bound range contract.

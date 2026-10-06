@@ -100,7 +100,7 @@ if (files.metricCards.includes('XDriveSectionHeading')) throw new Error('共享�
 if (/from ['"]antd['"]/.test(files.storageStats) || files.storageStats.includes('@ant-design/icons')) throw new Error('存储统计仍依赖 Ant Design')
 if (/<Alert\b/.test(files.storageStats)) throw new Error('存储统计仍在直接渲染 AntD Alert')
 if ((files.storageStats.match(/<XDriveStatusAlert/g) || []).length < 10) throw new Error('存储统计状态提示没有全部复用共享 Alert')
-requireText(files.audit, ['审计日志', '操作者用户名', '加载更早记录', '审计事件详情', '来源 IP', 'Request ID', 'Metadata', '登录成功', '变更用户角色', '系统更新', 'getOptionLabel={actionLabel}', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', 'XDriveDescriptionGrid', 'XDriveDescriptionItem', 'fullWidth', 'presentation="page"', 'XDriveTableSurface'], '审计日志')
+requireText(files.audit, ['审计日志', '操作者用户名', '正在加载审计日志', '未找到审计事件', '共 {totalCount.toLocaleString', '审计事件详情', '来源 IP', 'Request ID', 'Metadata', '登录成功', '变更用户角色', '系统更新', 'getOptionLabel={actionLabel}', 'XDriveStatusBadge', 'XDriveStatusAlert', 'XDriveWorkspaceSurface', 'XDriveDescriptionGrid', 'XDriveDescriptionItem', 'fullWidth', 'presentation="page"', 'XDriveTableSurface'], '审计日志')
 if ((files.audit.match(/<XDriveDescriptionItem\b/g) || []).length !== 8) throw new Error('审计事件详情没有完整复用共享描述网格')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareList', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
