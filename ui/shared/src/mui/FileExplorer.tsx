@@ -499,6 +499,9 @@ const detailsCompactRowHeight = 30
 const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
+const gridVirtualizationThreshold = 400
+const gridOverscanRows = 3
+const muiSpacingPixel = 8
 
 type XDriveFileExplorerMarqueeRect = {
   left: number
@@ -715,6 +718,7 @@ export function XDriveFileExplorer({
   const [renameError, setRenameError] = useState('')
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [viewportWidth, setViewportWidth] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
   const [quickLookItemID, setQuickLookItemID] = useState<XDriveFileExplorerID | null>(null)
@@ -729,6 +733,17 @@ export function XDriveFileExplorer({
     ? detailsCompactRowHeight
     : detailsNormalRowHeight
   const gridMetrics = fileExplorerGridMetrics[viewPreferences.gridSize]
+  const gridGapPx = gridMetrics.gap * muiSpacingPixel
+  const gridPaddingPx = gridMetrics.padding * muiSpacingPixel
+  const gridColumns = useMemo(() => {
+    const available = Math.max(0, viewportWidth - gridPaddingPx * 2)
+    if (available <= 0) return 1
+    return Math.max(
+      1,
+      Math.floor((available + gridGapPx) / (gridMetrics.minColumnWidth + gridGapPx)),
+    )
+  }, [gridGapPx, gridMetrics.minColumnWidth, gridPaddingPx, viewportWidth])
+  const gridRowStep = gridMetrics.estimatedRowHeight + gridGapPx
   const visibleDetailsColumns = useMemo(
     () => detailsLayout.order.filter((key) => detailsLayout.visible.includes(key)),
     [detailsLayout.order, detailsLayout.visible],
@@ -772,7 +787,10 @@ export function XDriveFileExplorer({
   useEffect(() => {
     const host = scrollHostRef.current
     if (!host) return
-    const update = () => setViewportHeight(host.clientHeight)
+    const update = () => {
+      setViewportHeight(host.clientHeight)
+      setViewportWidth(host.clientWidth)
+    }
     update()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
@@ -862,8 +880,7 @@ export function XDriveFileExplorer({
 
   const marqueeSelectionIDs = (
     session: XDriveFileExplorerMarqueeSession,
-    currentClientX: number,
-    currentClientY: number,
+    currentContentX: number,
     currentContentY: number,
   ) => {
     const selected = new Map(session.baseIDs.map((id) => [explorerIDKey(id), id]))
@@ -888,16 +905,35 @@ export function XDriveFileExplorer({
       return [...selected.values()]
     }
 
-    const left = Math.min(session.startClientX, currentClientX)
-    const right = Math.max(session.startClientX, currentClientX)
-    const top = Math.min(session.startClientY, currentClientY)
-    const bottom = Math.max(session.startClientY, currentClientY)
-    for (const item of visibleItems) {
-      const element = itemElementRefs.current.get(explorerIDKey(item.id))
-      if (!element) continue
-      const rect = element.getBoundingClientRect()
-      if (rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom) {
-        selected.set(explorerIDKey(item.id), item.id)
+    const left = Math.min(session.startContentX, currentContentX)
+    const right = Math.max(session.startContentX, currentContentX)
+    const top = Math.min(session.startContentY, currentContentY)
+    const bottom = Math.max(session.startContentY, currentContentY)
+    const available = Math.max(0, viewportWidth - gridPaddingPx * 2)
+    const cellWidth = gridColumns > 0
+      ? Math.max(gridMetrics.minColumnWidth, (available - gridGapPx * (gridColumns - 1)) / gridColumns)
+      : gridMetrics.minColumnWidth
+    const itemWidth = Math.min(cellWidth, gridMetrics.maxItemWidth)
+    const firstRow = Math.max(0, Math.floor((top - gridPaddingPx) / gridRowStep))
+    const lastRow = Math.min(
+      Math.max(0, Math.ceil(visibleItems.length / gridColumns) - 1),
+      Math.floor((Math.max(top, bottom - 0.001) - gridPaddingPx) / gridRowStep),
+    )
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      for (let column = 0; column < gridColumns; column += 1) {
+        const index = row * gridColumns + column
+        const item = visibleItems[index]
+        if (!item) break
+        const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
+        const itemTop = gridPaddingPx + row * gridRowStep
+        if (
+          itemLeft + itemWidth >= left &&
+          itemLeft <= right &&
+          itemTop + gridMetrics.estimatedRowHeight >= top &&
+          itemTop <= bottom
+        ) {
+          selected.set(explorerIDKey(item.id), item.id)
+        }
       }
     }
     return [...selected.values()]
@@ -954,8 +990,7 @@ export function XDriveFileExplorer({
     })
     commitSelection(marqueeSelectionIDs(
       session,
-      pending.clientX,
-      pending.clientY,
+      currentContentX,
       currentContentY,
     ))
   }
@@ -1031,6 +1066,15 @@ export function XDriveFileExplorer({
         host.scrollTop = Math.max(0, top - detailsHeaderHeight)
       } else if (bottom > host.scrollTop + host.clientHeight) {
         host.scrollTop = Math.max(0, bottom - host.clientHeight)
+      }
+    } else if (host && viewMode === 'grid') {
+      const row = Math.floor(index / gridColumns)
+      const top = gridPaddingPx + row * gridRowStep
+      const bottom = top + gridMetrics.estimatedRowHeight
+      if (top < host.scrollTop) {
+        host.scrollTop = Math.max(0, top - gridPaddingPx)
+      } else if (bottom > host.scrollTop + host.clientHeight) {
+        host.scrollTop = Math.max(0, bottom - host.clientHeight + gridPaddingPx)
       }
     }
     scheduleItemFocus(item.id)
@@ -1744,20 +1788,7 @@ export function XDriveFileExplorer({
     )
   }
 
-  const gridColumnCount = () => {
-    if (viewMode !== 'grid') return 1
-    const elements = visibleItems
-      .map((item) => itemElementRefs.current.get(explorerIDKey(item.id)))
-      .filter((element): element is HTMLElement => Boolean(element))
-    if (elements.length < 2) return 1
-    const firstTop = elements[0].offsetTop
-    let columns = 0
-    for (const element of elements) {
-      if (Math.abs(element.offsetTop - firstTop) > 2) break
-      columns += 1
-    }
-    return Math.max(1, columns)
-  }
+  const gridColumnCount = () => viewMode === 'grid' ? gridColumns : 1
 
   const moveKeyboardFocus = (
     event: KeyboardEvent<HTMLElement>,
@@ -2105,6 +2136,58 @@ export function XDriveFileExplorer({
     ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
     : visibleItems
 
+  const virtualizeGrid = (
+    viewMode === 'grid' &&
+    viewportWidth > 0 &&
+    visibleItems.length >= gridVirtualizationThreshold
+  )
+  const gridWindow = useMemo(() => {
+    const totalRows = Math.ceil(visibleItems.length / gridColumns)
+    if (!virtualizeGrid) {
+      return {
+        start: 0,
+        end: visibleItems.length,
+        startRow: 0,
+        totalRows,
+        totalHeight: 0,
+      }
+    }
+    const firstVisibleRow = Math.max(
+      0,
+      Math.floor(Math.max(0, scrollTop - gridPaddingPx) / gridRowStep),
+    )
+    const visibleRows = Math.max(
+      1,
+      Math.ceil(Math.max(viewportHeight, gridMetrics.estimatedRowHeight) / gridRowStep),
+    )
+    const startRow = Math.max(0, firstVisibleRow - gridOverscanRows)
+    const endRow = Math.min(totalRows, firstVisibleRow + visibleRows + gridOverscanRows)
+    return {
+      start: startRow * gridColumns,
+      end: Math.min(visibleItems.length, endRow * gridColumns),
+      startRow,
+      totalRows,
+      totalHeight: (
+        gridPaddingPx * 2 +
+        totalRows * gridMetrics.estimatedRowHeight +
+        Math.max(0, totalRows - 1) * gridGapPx
+      ),
+    }
+  }, [
+    gridColumns,
+    gridGapPx,
+    gridMetrics.estimatedRowHeight,
+    gridPaddingPx,
+    gridRowStep,
+    scrollTop,
+    viewportHeight,
+    virtualizeGrid,
+    visibleItems.length,
+  ])
+  const gridItems = virtualizeGrid
+    ? visibleItems.slice(gridWindow.start, gridWindow.end)
+    : visibleItems
+
   useEffect(() => {
     const host = scrollHostRef.current
     if (!host) return
@@ -2115,14 +2198,16 @@ export function XDriveFileExplorer({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
-    if (virtualizeDetails) {
+    if (virtualizeDetails || virtualizeGrid) {
       pendingScrollTopRef.current = host.scrollTop
       const updateVirtualWindow = () => {
         scrollFrameRef.current = null
         const raw = pendingScrollTopRef.current
-        const snapped = raw <= detailsHeaderHeight
-          ? 0
-          : detailsHeaderHeight + Math.floor((raw - detailsHeaderHeight) / detailsRowHeight) * detailsRowHeight
+        const snapped = virtualizeDetails
+          ? raw <= detailsHeaderHeight
+            ? 0
+            : detailsHeaderHeight + Math.floor((raw - detailsHeaderHeight) / detailsRowHeight) * detailsRowHeight
+          : Math.floor(Math.max(0, raw - gridPaddingPx) / gridRowStep) * gridRowStep + gridPaddingPx
         setScrollTop((current) => current === snapped ? current : snapped)
       }
       if (typeof window === 'undefined') updateVirtualWindow()
@@ -2832,14 +2917,29 @@ export function XDriveFileExplorer({
             role="list"
             aria-label="文件图标"
             sx={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`,
-              gap: gridMetrics.gap,
-              p: gridMetrics.padding,
-              alignContent: 'start',
+              position: 'relative',
+              height: virtualizeGrid ? gridWindow.totalHeight : undefined,
+              p: virtualizeGrid ? 0 : gridMetrics.padding,
             }}
           >
-            {visibleItems.map((item, index) => {
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`,
+                gridAutoRows: virtualizeGrid ? `${gridMetrics.estimatedRowHeight}px` : undefined,
+                gap: gridMetrics.gap,
+                p: virtualizeGrid ? 0 : undefined,
+                position: virtualizeGrid ? 'absolute' : undefined,
+                left: virtualizeGrid ? gridPaddingPx : undefined,
+                right: virtualizeGrid ? gridPaddingPx : undefined,
+                top: virtualizeGrid
+                  ? gridPaddingPx + gridWindow.startRow * gridRowStep
+                  : undefined,
+                alignContent: 'start',
+              }}
+            >
+            {gridItems.map((item, windowIndex) => {
+              const index = virtualizeGrid ? gridWindow.start + windowIndex : windowIndex
               const selected = selectedKeySet.has(explorerIDKey(item.id))
               const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
               const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
@@ -2915,6 +3015,7 @@ export function XDriveFileExplorer({
               </ButtonBase>
               )
             })}
+            </Box>
           </Box>
         )}
 

@@ -44,15 +44,20 @@ test('FileExplorer loads media thumbnails only when grid items approach the view
   assert.ok(desktop.includes('data:${contentType};base64,${result.data.data_base64}'), 'Desktop thumbnail data URL mapping is missing')
 })
 
-test('large Details directories use bounded rendering and Grid uses browser render containment', () => {
+test('large Details and Grid directories use bounded rendering', () => {
   assert.ok(shared.includes('const detailsVirtualizationThreshold = 240'), 'Details virtualization threshold is missing')
   assert.ok(shared.includes('const detailsOverscan = 10'), 'Details virtualization overscan is missing')
   assert.ok(shared.includes('visibleItems.slice(detailsWindow.start, detailsWindow.end)'), 'Details view does not window large directories')
   assert.ok(shared.includes('detailsWindow.before'), 'Details virtual list top spacer is missing')
   assert.ok(shared.includes('detailsWindow.after'), 'Details virtual list bottom spacer is missing')
   assert.ok(shared.includes('ResizeObserver'), 'virtual list does not track viewport height')
-  assert.ok(shared.includes("contentVisibility: 'auto'"), 'Grid items should use content-visibility for large directories')
-  assert.ok(shared.includes('containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`'), 'Grid render containment needs dynamic stable intrinsic sizing')
+  assert.ok(shared.includes('const gridVirtualizationThreshold = 400'), 'Grid virtualization threshold is missing')
+  assert.ok(shared.includes('const gridOverscanRows = 3'), 'Grid virtualization overscan is missing')
+  assert.ok(shared.includes('visibleItems.slice(gridWindow.start, gridWindow.end)'), 'Grid view does not window large directories')
+  assert.ok(shared.includes("gridAutoRows: virtualizeGrid ? `${gridMetrics.estimatedRowHeight}px` : undefined"), 'Grid rows must stay deterministic only while windowing')
+  assert.ok(shared.includes('height: virtualizeGrid ? gridWindow.totalHeight : undefined'), 'Grid window must preserve full scroll height')
+  assert.ok(shared.includes('gridPaddingPx + gridWindow.startRow * gridRowStep'), 'Grid window must position the mounted row range')
+  assert.ok(shared.includes("contentVisibility: 'auto'"), 'Grid items should retain browser render containment')
 })
 
 test('type sorting uses the same labels users see', () => {
@@ -68,6 +73,8 @@ test('FileExplorer bounds thumbnail and pointer/scroll work under large director
   assert.ok(shared.includes('Math.floor((raw - detailsHeaderHeight) / detailsRowHeight)'), 'virtual-list scroll updates should advance by row boundaries')
   assert.ok(shared.includes('marqueeFrameRef.current = window.requestAnimationFrame(flushMarqueeSelection)'), 'marquee selection must be frame bounded')
   assert.ok(shared.includes('if (!cancelled && marqueePointerRef.current) flushMarqueeSelection()'), 'marquee selection must flush its final pointer position')
+  assert.ok(shared.includes('const gridColumnCount = () => viewMode === \'grid\' ? gridColumns : 1'), 'Grid keyboard navigation must not scan mounted DOM')
+  assert.ok(shared.includes('const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)'), 'Grid marquee selection must use virtual geometry')
 })
 
 test('FileExplorer pagination rejects duplicate and stale page requests', () => {
