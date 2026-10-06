@@ -915,7 +915,7 @@ export function xDriveFileExplorerDirectoryPageTransition<
   }
 }
 
-export const XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 500
+export const XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 200
 
 export type XDriveFileExplorerTreePage<TItem> = {
   items: readonly TItem[]
@@ -930,45 +930,57 @@ export type XDriveFileExplorerTreePageOptions = {
   order: 'asc'
 }
 
-export async function xDriveFileExplorerLoadChildDirectories<
+export type XDriveFileExplorerTreeDirectoryPage<TItem> = {
+  items: TItem[]
+  nextCursor: string
+  hasMore: boolean
+}
+
+export async function xDriveFileExplorerLoadChildDirectoryPage<
   TItem extends { id: number; name: string; type: string },
 >({
   parentID,
+  cursor = '',
   loadPage,
 }: {
   parentID: number
+  cursor?: string
   loadPage: (
     parentID: number,
     options: XDriveFileExplorerTreePageOptions,
   ) => Promise<XDriveFileExplorerTreePage<TItem>>
-}): Promise<TItem[]> {
+}): Promise<XDriveFileExplorerTreeDirectoryPage<TItem>> {
+  const page = await loadPage(parentID, {
+    limit: XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE,
+    ...(cursor ? { cursor } : {}),
+    sort: 'name',
+    order: 'asc',
+  })
+
   const directories: TItem[] = []
-  const seenCursors = new Set<string>()
-  let cursor = ''
-
-  while (true) {
-    const page = await loadPage(parentID, {
-      limit: XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE,
-      ...(cursor ? { cursor } : {}),
-      sort: 'name',
-      order: 'asc',
-    })
-
-    for (const item of page.items) {
-      if (item.type !== 'dir') return directories
-      directories.push(item)
+  let reachedFile = false
+  for (const item of page.items) {
+    if (item.type !== 'dir') {
+      reachedFile = true
+      break
     }
+    directories.push(item)
+  }
 
-    const nextCursor = page.next_cursor?.trim() ?? ''
-    if (!page.has_more || !nextCursor) return directories
-    if (seenCursors.has(nextCursor)) {
-      throw new Error('文件夹树分页游标重复。')
-    }
-    seenCursors.add(nextCursor)
-    cursor = nextCursor
+  const nextCursor = page.next_cursor?.trim() ?? ''
+  if (!reachedFile && page.has_more && !nextCursor) {
+    throw new Error('文件夹树分页缺少下一页游标。')
+  }
+  if (!reachedFile && page.has_more && cursor && nextCursor === cursor) {
+    throw new Error('文件夹树分页游标重复。')
+  }
+  const hasMore = !reachedFile && page.has_more && Boolean(nextCursor)
+  return {
+    items: directories,
+    nextCursor: hasMore ? nextCursor : '',
+    hasMore,
   }
 }
-
 
 export type XDriveFileExplorerFolderUploadEntry<TFile> = {
   file: TFile

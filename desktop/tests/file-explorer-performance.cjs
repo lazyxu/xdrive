@@ -13,6 +13,8 @@ const childrenPagination = fs.readFileSync(path.join(repoRoot, 'internal', 'api'
 const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'handlers.go'), 'utf8')
 const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const serverSearch = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'search.go'), 'utf8')
+const navigationPane = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'), 'utf8')
+const explorerController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
   assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
@@ -151,4 +153,16 @@ test('FileExplorer search avoids full-tree path materialization for component qu
   assert.ok(serverSearch.includes('WHERE candidate_paths.rooted'), 'unrooted/deleted-ancestor candidates must be excluded')
   assert.ok(serverSearch.includes('const recursivePathSearch = `WITH RECURSIVE tree AS ('), 'full-path fallback must remain available')
   assert.ok(serverSearch.includes('if !strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
+})
+
+
+test('FileExplorer navigation tree expands with bounded pages instead of draining all folders', () => {
+  assert.ok(explorerController.includes('XDRIVE_FILE_EXPLORER_TREE_PAGE_SIZE = 200'), 'tree page size should stay bounded')
+  assert.ok(explorerController.includes('xDriveFileExplorerLoadChildDirectoryPage'), 'one-page tree loader is missing')
+  const loaderStart = explorerController.indexOf('export async function xDriveFileExplorerLoadChildDirectoryPage')
+  const loaderEnd = explorerController.indexOf('export type XDriveFileExplorerFolderUploadEntry', loaderStart)
+  assert.equal(explorerController.slice(loaderStart, loaderEnd).includes('while (true)'), false, 'tree expansion must not drain every server page')
+  assert.ok(navigationPane.includes('loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)'), 'tree load-more must advance one cursor page')
+  assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), 'tree must expose an explicit load-more affordance')
+  assert.ok(navigationPane.includes('const pathChild = pathChildByParent.get(node.id)'), 'current path child must remain visible outside the loaded page')
 })

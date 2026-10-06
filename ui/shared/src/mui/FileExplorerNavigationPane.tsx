@@ -31,6 +31,12 @@ export type XDriveFileExplorerNavigationTreeDirectory = {
   type: string
 }
 
+export type XDriveFileExplorerNavigationTreePage = {
+  items: readonly XDriveFileExplorerNavigationTreeDirectory[]
+  nextCursor: string
+  hasMore: boolean
+}
+
 type XDriveFileExplorerNavigationTreeNode = {
   id: number
   name: string
@@ -39,7 +45,7 @@ type XDriveFileExplorerNavigationTreeNode = {
 
 export function XDriveFileExplorerNavigationPane({
   currentCrumbs,
-  loadDirectories,
+  loadDirectoryPage,
   onNavigate,
   quickAccessEnabled = false,
   quickAccessItems = [],
@@ -57,9 +63,10 @@ export function XDriveFileExplorerNavigationPane({
   onError,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
-  loadDirectories: (
+  loadDirectoryPage: (
     parentID: number,
-  ) => Promise<readonly XDriveFileExplorerNavigationTreeDirectory[]>
+    cursor?: string,
+  ) => Promise<XDriveFileExplorerNavigationTreePage>
   onNavigate: (crumbs: XDriveFileExplorerNavigationTreeCrumb[]) => void | Promise<void>
   quickAccessEnabled?: boolean
   quickAccessItems?: readonly XDriveFileExplorerQuickAccessEntry[]
@@ -76,10 +83,15 @@ export function XDriveFileExplorerNavigationPane({
   onClearRecent?: () => void | Promise<void>
   onError?: (error: unknown) => void
 }) {
-  const [childrenByParent, setChildrenByParent] = useState<Record<string, XDriveFileExplorerNavigationTreeNode[]>>({})
+  const [pageByParent, setPageByParent] = useState<Record<string, {
+    children: XDriveFileExplorerNavigationTreeNode[]
+    nextCursor: string
+    hasMore: boolean
+    loaded: boolean
+  }>>({})
+  const pageByParentRef = useRef(pageByParent)
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
   const [loadingIDs, setLoadingIDs] = useState<Set<number>>(() => new Set())
-  const loadedIDsRef = useRef(new Set<number>())
   const loadingIDsRef = useRef(new Set<number>())
 
   const pathNodes = useMemo(
@@ -102,7 +114,7 @@ export function XDriveFileExplorerNavigationPane({
   }, [pathNodes])
 
   const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => {
-    const loaded = childrenByParent[String(node.id)] ?? []
+    const loaded = pageByParent[String(node.id)]?.children ?? []
     const pathChild = pathChildByParent.get(node.id)
     if (!pathChild) return loaded
 
@@ -116,35 +128,69 @@ export function XDriveFileExplorerNavigationPane({
     return merged.sort((left, right) => (
       left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' })
     ))
-  }, [childrenByParent, pathChildByParent])
+  }, [pageByParent, pathChildByParent])
 
-  const loadChildren = useCallback(async (node: XDriveFileExplorerNavigationTreeNode) => {
-    if (loadedIDsRef.current.has(node.id) || loadingIDsRef.current.has(node.id)) return
+  const commitParentPage = useCallback((
+    parentID: number,
+    value: {
+      children: XDriveFileExplorerNavigationTreeNode[]
+      nextCursor: string
+      hasMore: boolean
+      loaded: boolean
+    },
+  ) => {
+    const next = {
+      ...pageByParentRef.current,
+      [String(parentID)]: value,
+    }
+    pageByParentRef.current = next
+    setPageByParent(next)
+  }, [])
+
+  const loadChildren = useCallback(async (
+    node: XDriveFileExplorerNavigationTreeNode,
+    append = false,
+  ) => {
+    const current = pageByParentRef.current[String(node.id)]
+    if (!append && current?.loaded) return
+    if (append && (!current?.hasMore || !current.nextCursor)) return
+    if (loadingIDsRef.current.has(node.id)) return
 
     loadingIDsRef.current.add(node.id)
-    setLoadingIDs((current) => new Set(current).add(node.id))
+    setLoadingIDs((currentIDs) => new Set(currentIDs).add(node.id))
     try {
-      const directories = await loadDirectories(node.id)
-      setChildrenByParent((current) => ({
-        ...current,
-        [String(node.id)]: directories.map((directory) => ({
+      const page = await loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)
+      if (append && current?.nextCursor && page.hasMore && page.nextCursor === current.nextCursor) {
+        throw new Error('文件夹树分页游标重复。')
+      }
+      const merged = new Map<number, XDriveFileExplorerNavigationTreeNode>()
+      if (append && current) {
+        for (const child of current.children) merged.set(child.id, child)
+      }
+      for (const directory of page.items) {
+        merged.set(directory.id, {
           id: directory.id,
           name: directory.name,
           crumbs: [...node.crumbs, { id: directory.id, name: directory.name }],
-        })),
-      }))
-      loadedIDsRef.current.add(node.id)
+        })
+      }
+      commitParentPage(node.id, {
+        children: [...merged.values()],
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        loaded: true,
+      })
     } catch (error) {
       onError?.(error)
     } finally {
       loadingIDsRef.current.delete(node.id)
-      setLoadingIDs((current) => {
-        const next = new Set(current)
+      setLoadingIDs((currentIDs) => {
+        const next = new Set(currentIDs)
         next.delete(node.id)
         return next
       })
     }
-  }, [loadDirectories, onError])
+  }, [commitParentPage, loadDirectoryPage, onError])
 
   useEffect(() => {
     if (!rootNode) return
@@ -170,10 +216,12 @@ export function XDriveFileExplorerNavigationPane({
 
   const renderNode = (node: XDriveFileExplorerNavigationTreeNode, depth: number) => {
     const children = childrenFor(node)
-    const loaded = loadedIDsRef.current.has(node.id)
+    const page = pageByParent[String(node.id)]
+    const loaded = Boolean(page?.loaded)
+    const hasMore = Boolean(page?.hasMore)
     const loading = loadingIDs.has(node.id)
     const expanded = expandedIDs.has(node.id)
-    const expandable = !loaded || children.length > 0
+    const expandable = !loaded || children.length > 0 || hasMore
     const selected = currentID === node.id
 
     return (
@@ -193,7 +241,7 @@ export function XDriveFileExplorerNavigationPane({
             minHeight: 32,
           }}
         >
-          {loading ? (
+          {loading && !loaded ? (
             <Box sx={{ width: 26, height: 30, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={13} />
             </Box>
@@ -240,6 +288,29 @@ export function XDriveFileExplorerNavigationPane({
         <Collapse in={expanded} timeout="auto" unmountOnExit>
           <Box role="group">
             {children.map((child) => renderNode(child, depth + 1))}
+            {hasMore ? (
+              <ListItemButton
+                data-xdrive-file-explorer-tree-load-more
+                disabled={loading}
+                onClick={() => { void loadChildren(node, true) }}
+                sx={{
+                  minHeight: 30,
+                  ml: 0.5 + (depth + 1) * 1.75,
+                  mr: 0.5,
+                  px: 0.75,
+                  borderRadius: 1,
+                  gap: 0.75,
+                  color: 'text.secondary',
+                }}
+              >
+                <Box sx={{ width: 26, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                  {loading ? <CircularProgress size={13} /> : null}
+                </Box>
+                <Typography variant="body2" noWrap>
+                  {loading ? '正在加载…' : '加载更多'}
+                </Typography>
+              </ListItemButton>
+            ) : null}
           </Box>
         </Collapse>
       </Box>
