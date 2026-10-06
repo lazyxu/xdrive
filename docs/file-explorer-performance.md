@@ -1,0 +1,37 @@
+# FileExplorer performance roadmap
+
+## Scope
+
+This performance track is intentionally limited to FileExplorer across shared UI, Web, Desktop, and the server APIs it consumes. It does not include Gallery, Source synchronization, or general server tuning.
+
+## Current performance contract
+
+- Directory listing uses cursor pagination with 200 items per page.
+- Details view windows large directories once 240 items are loaded.
+- Details scroll-window state is updated at most once per animation frame and only when the effective row boundary changes.
+- Grid thumbnails are viewport-proximate and share a global concurrency budget of 6 requests.
+- Directory and search pagination reject duplicate in-flight load-more requests synchronously.
+- Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
+- Grid marquee selection coalesces pointer-move work to one animation-frame update.
+
+## Performance scenarios
+
+The FileExplorer performance suite should keep these workloads stable:
+
+| Scenario | Scale | Primary budget |
+| --- | ---: | --- |
+| Open directory | 200 / 10k / 100k children | first-page latency and time-to-interactive |
+| Details scroll | 10k loaded items | frame stability and bounded mounted rows |
+| Grid scroll | 10k loaded items | DOM count, thumbnail request concurrency, frame stability |
+| Marquee select | 10k loaded items | pointer-frame CPU and selection latency |
+| Pagination | 50 consecutive pages | no duplicate requests, no stale-page overwrite |
+| Search | 100k namespace | first-page latency and next-page latency |
+
+## Next work
+
+1. Add true Grid windowing instead of relying only on browser content visibility.
+2. Add an indexed server search strategy so FileExplorer search does not recursively materialize the complete namespace for every query.
+3. Benchmark server sorting by size/type on very large directories and add expression/covering indexes only when EXPLAIN shows a measurable benefit.
+4. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
+
+Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.

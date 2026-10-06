@@ -378,6 +378,26 @@ function setFileExplorerDragImage(
   window.setTimeout(() => ghost.remove(), 0)
 }
 
+const fileThumbnailConcurrency = 6
+let fileThumbnailActive = 0
+const fileThumbnailQueue: Array<() => void> = []
+
+function scheduleFileThumbnail<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      fileThumbnailActive += 1
+      void task()
+        .then(resolve, reject)
+        .finally(() => {
+          fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
+          fileThumbnailQueue.shift()?.()
+        })
+    }
+    if (fileThumbnailActive < fileThumbnailConcurrency) run()
+    else fileThumbnailQueue.push(run)
+  })
+}
+
 function XDriveLazyFileThumbnail({
   item,
   loadThumbnail,
@@ -417,7 +437,7 @@ function XDriveLazyFileThumbnail({
   useEffect(() => {
     if (!visible || failed) return
     let active = true
-    void loadThumbnail(item)
+    void scheduleFileThumbnail(() => loadThumbnail(item))
       .then((value) => {
         if (!active) {
           if (value?.startsWith('blob:')) URL.revokeObjectURL(value)
@@ -495,6 +515,13 @@ type XDriveFileExplorerMarqueeSession = {
   startContentY: number
   baseIDs: XDriveFileExplorerID[]
   moved: boolean
+}
+
+type XDriveFileExplorerMarqueePointer = {
+  pointerId: number
+  clientX: number
+  clientY: number
+  host: HTMLDivElement
 }
 
 export function XDriveFileExplorer({
@@ -668,6 +695,8 @@ export function XDriveFileExplorer({
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
+  const pendingScrollTopRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const renameSubmittingRef = useRef(false)
@@ -676,6 +705,8 @@ export function XDriveFileExplorer({
   const dragAutoScrollFrameRef = useRef<number | null>(null)
   const dragPointerYRef = useRef<number | null>(null)
   const marqueeSessionRef = useRef<XDriveFileExplorerMarqueeSession | null>(null)
+  const marqueePointerRef = useRef<XDriveFileExplorerMarqueePointer | null>(null)
+  const marqueeFrameRef = useRef<number | null>(null)
   const suppressBackgroundClickRef = useRef(false)
   const typeSelectRef = useRef({ query: '', updatedAt: 0 })
   const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
@@ -747,6 +778,12 @@ export function XDriveFileExplorer({
     const observer = new ResizeObserver(update)
     observer.observe(host)
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => {
+    if (typeof window === 'undefined') return
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
+    if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
   }, [])
 
   const visibleItems = useMemo(() => {
@@ -899,20 +936,16 @@ export function XDriveFileExplorer({
     event.preventDefault()
   }
 
-  const updateMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const flushMarqueeSelection = () => {
+    marqueeFrameRef.current = null
+    const pending = marqueePointerRef.current
+    marqueePointerRef.current = null
     const session = marqueeSessionRef.current
-    if (!session || session.pointerId !== event.pointerId) return
-    const host = event.currentTarget
+    if (!pending || !session || session.pointerId !== pending.pointerId) return
+    const host = pending.host
     const rect = host.getBoundingClientRect()
-    const currentContentX = event.clientX - rect.left + host.scrollLeft
-    const currentContentY = event.clientY - rect.top + host.scrollTop
-    const moved = Math.max(
-      Math.abs(event.clientX - session.startClientX),
-      Math.abs(event.clientY - session.startClientY),
-    ) >= 3
-    if (!session.moved && !moved) return
-    session.moved = true
-    event.preventDefault()
+    const currentContentX = pending.clientX - rect.left + host.scrollLeft
+    const currentContentY = pending.clientY - rect.top + host.scrollTop
     setMarqueeRect({
       left: Math.min(session.startContentX, currentContentX),
       top: Math.min(session.startContentY, currentContentY),
@@ -921,10 +954,33 @@ export function XDriveFileExplorer({
     })
     commitSelection(marqueeSelectionIDs(
       session,
-      event.clientX,
-      event.clientY,
+      pending.clientX,
+      pending.clientY,
       currentContentY,
     ))
+  }
+
+  const updateMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = marqueeSessionRef.current
+    if (!session || session.pointerId !== event.pointerId) return
+    const moved = Math.max(
+      Math.abs(event.clientX - session.startClientX),
+      Math.abs(event.clientY - session.startClientY),
+    ) >= 3
+    if (!session.moved && !moved) return
+    session.moved = true
+    event.preventDefault()
+    marqueePointerRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      host: event.currentTarget,
+    }
+    if (typeof window === 'undefined') {
+      flushMarqueeSelection()
+    } else if (marqueeFrameRef.current === null) {
+      marqueeFrameRef.current = window.requestAnimationFrame(flushMarqueeSelection)
+    }
   }
 
   const finishMarqueeSelection = (
@@ -933,6 +989,12 @@ export function XDriveFileExplorer({
   ) => {
     const session = marqueeSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
+    if (typeof window !== 'undefined' && marqueeFrameRef.current !== null) {
+      window.cancelAnimationFrame(marqueeFrameRef.current)
+      marqueeFrameRef.current = null
+    }
+    if (!cancelled && marqueePointerRef.current) flushMarqueeSelection()
+    else marqueePointerRef.current = null
     if (cancelled) commitSelection(session.baseIDs)
     if (session.moved && !cancelled) suppressBackgroundClickRef.current = true
     marqueeSessionRef.current = null
@@ -2043,9 +2105,31 @@ export function XDriveFileExplorer({
     ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
     : visibleItems
 
+  useEffect(() => {
+    const host = scrollHostRef.current
+    if (!host) return
+    host.scrollTop = 0
+    pendingScrollTopRef.current = 0
+    setScrollTop(0)
+  }, [derivedPath, sort.key, sort.direction, viewMode])
+
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
-    if (virtualizeDetails) setScrollTop(host.scrollTop)
+    if (virtualizeDetails) {
+      pendingScrollTopRef.current = host.scrollTop
+      const updateVirtualWindow = () => {
+        scrollFrameRef.current = null
+        const raw = pendingScrollTopRef.current
+        const snapped = raw <= detailsHeaderHeight
+          ? 0
+          : detailsHeaderHeight + Math.floor((raw - detailsHeaderHeight) / detailsRowHeight) * detailsRowHeight
+        setScrollTop((current) => current === snapped ? current : snapped)
+      }
+      if (typeof window === 'undefined') updateVirtualWindow()
+      else if (scrollFrameRef.current === null) {
+        scrollFrameRef.current = window.requestAnimationFrame(updateVirtualWindow)
+      }
+    }
     if (
       hasMore &&
       !loadingMore &&

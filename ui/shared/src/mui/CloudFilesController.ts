@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { QuotaUsage } from '../models'
 import type {
   XDriveCloudFilesCrumb,
@@ -45,6 +45,8 @@ export function useXDriveCloudFilesController<
   const [pageState, setPageState] = useState<XDriveFileExplorerPageState<TSort> | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const directoryRequestRef = useRef(0)
+  const loadMoreRequestRef = useRef(false)
 
   const current = crumbs.at(-1)
 
@@ -66,12 +68,17 @@ export function useXDriveCloudFilesController<
     sort?: TSort,
   ) => {
     const effectiveSort = sort ?? pageState?.sort ?? defaultSort
+    const requestID = directoryRequestRef.current + 1
+    directoryRequestRef.current = requestID
+    loadMoreRequestRef.current = false
+    setLoadingMore(false)
     setLoading(true)
     try {
       const page = await port.getPage(
         id,
         xDriveFileExplorerPageRequestOptions(effectiveSort),
       )
+      if (requestID !== directoryRequestRef.current) return
       const transition = xDriveFileExplorerDirectoryPageTransition(
         id,
         page,
@@ -82,22 +89,28 @@ export function useXDriveCloudFilesController<
       setPageState(transition.pageState)
       if (nextCrumbs) setCrumbs([...nextCrumbs])
     } catch (error) {
-      onError(error)
+      if (requestID === directoryRequestRef.current) onError(error)
     } finally {
-      setLoading(false)
+      if (requestID === directoryRequestRef.current) setLoading(false)
     }
   }, [defaultSort, onError, pageState?.sort, port])
 
   const loadMoreDirectory = useCallback(async (id: number, sort: TSort) => {
     const currentPage = pageState
-    if (!xDriveFileExplorerCanLoadMore(currentPage, id, sort, loadingMore)) return
+    if (
+      loadMoreRequestRef.current ||
+      !xDriveFileExplorerCanLoadMore(currentPage, id, sort, loadingMore)
+    ) return
 
+    const requestID = directoryRequestRef.current
+    loadMoreRequestRef.current = true
     setLoadingMore(true)
     try {
       const page = await port.getPage(
         id,
         xDriveFileExplorerPageRequestOptions(sort, currentPage.cursor),
       )
+      if (requestID !== directoryRequestRef.current) return
       const transition = xDriveFileExplorerDirectoryPageTransition(
         id,
         page,
@@ -107,13 +120,18 @@ export function useXDriveCloudFilesController<
       setItems(transition.applyItems)
       setPageState(transition.pageState)
     } catch (error) {
-      onError(error)
+      if (requestID === directoryRequestRef.current) onError(error)
     } finally {
-      setLoadingMore(false)
+      loadMoreRequestRef.current = false
+      if (requestID === directoryRequestRef.current) setLoadingMore(false)
     }
   }, [loadingMore, onError, pageState, port])
 
   const loadInitial = useCallback(async () => {
+    const requestID = directoryRequestRef.current + 1
+    directoryRequestRef.current = requestID
+    loadMoreRequestRef.current = false
+    setLoadingMore(false)
     setLoading(true)
     try {
       const [quotaValue, root] = await Promise.all([
@@ -124,6 +142,7 @@ export function useXDriveCloudFilesController<
         root.id,
         xDriveFileExplorerPageRequestOptions(defaultSort),
       )
+      if (requestID !== directoryRequestRef.current) return
       const transition = xDriveFileExplorerDirectoryPageTransition(
         root.id,
         page,
@@ -135,14 +154,16 @@ export function useXDriveCloudFilesController<
       setItems(transition.applyItems)
       setPageState(transition.pageState)
     } catch (error) {
-      onError(error)
+      if (requestID === directoryRequestRef.current) onError(error)
     } finally {
-      setLoading(false)
+      if (requestID === directoryRequestRef.current) setLoading(false)
     }
   }, [defaultSort, onError, port, rootLabel])
 
   useEffect(() => {
     if (!enabled) {
+      directoryRequestRef.current += 1
+      loadMoreRequestRef.current = false
       setQuota(null)
       setItems([])
       setCrumbs([])

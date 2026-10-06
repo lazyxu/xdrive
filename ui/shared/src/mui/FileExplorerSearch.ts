@@ -45,6 +45,7 @@ export function useXDriveFileExplorerSearch<
   workspaceKey?: string
 }) {
   const requestRef = useRef<Record<string, number>>({})
+  const loadMoreRequestRef = useRef<Record<string, boolean>>({})
   const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry<TResult>>>({})
 
   const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry<TResult>()
@@ -66,6 +67,7 @@ export function useXDriveFileExplorerSearch<
   const nextRequestID = (key: string) => {
     const next = (requestRef.current[key] ?? 0) + 1
     requestRef.current[key] = next
+    loadMoreRequestRef.current[key] = false
     return next
   }
 
@@ -127,6 +129,8 @@ export function useXDriveFileExplorerSearch<
     if (!searchState.query) return
 
     const key = workspaceKey
+    if (loadMoreRequestRef.current[key]) return
+    loadMoreRequestRef.current[key] = true
     const requestID = requestRef.current[key] ?? 0
     updateEntry(key, (current) => ({
       ...current,
@@ -142,6 +146,7 @@ export function useXDriveFileExplorerSearch<
     } catch (error) {
       if (requestID === requestRef.current[key]) onError(error)
     } finally {
+      loadMoreRequestRef.current[key] = false
       if (requestID === requestRef.current[key]) {
         updateEntry(key, (current) => ({
           ...current,
