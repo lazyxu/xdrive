@@ -12,6 +12,7 @@ const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPre
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
+const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
 const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
@@ -128,7 +129,8 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
 
 test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /export interface MediaItem \{\s*node: Node\s*metadata: MediaMetadata/s)
-  assert.match(sharedModels, /export interface MediaItemRange \{[\s\S]*total_count: number[\s\S]*offset: number[\s\S]*limit: number/)
+  assert.match(sharedModels, /export interface MediaTimelineGroupIndex \{[\s\S]*item_count: number[\s\S]*start_index: number/)
+  assert.match(sharedModels, /export interface MediaItemRange \{[\s\S]*total_count: number[\s\S]*offset: number[\s\S]*limit: number[\s\S]*timeline_groups\?: MediaTimelineGroupIndex\[\]/)
   assert.match(sharedModels, /rotation_degrees\?: number/)
   assert.match(sharedModels, /latitude\?: number/)
   assert.match(sharedModels, /longitude\?: number/)
@@ -513,17 +515,16 @@ test('Gallery grid uses VirtualCollection with stable logical height and bounded
     'onRangeChange: virtualCollection.ensureViewport',
     'virtualCollection.updateLoadedItems',
     '<MediaVirtualTileGrid',
-    'viewMode === \'timeline\' && hasMore && onLoadMore',
+    '<MediaVirtualTimeline',
+    'timelineGroups={timelineGroups}',
     'positionLabel={previewIndex >= 0 ?',
   ]) {
     assert.ok(sharedGalleryMain.includes(token), `Gallery VirtualCollection contract missing: ${token}`)
   }
 
-  assert.equal(
-    sharedGalleryMain.includes("viewMode === 'grid' && hasMore && onLoadMore"),
-    false,
-    'Gallery Grid must never expose append/load-more UI',
-  )
+  assert.equal(sharedGalleryMain.includes('hasMore'), false, 'Gallery must not retain append pagination state')
+  assert.equal(sharedGalleryMain.includes('onLoadMore'), false, 'Gallery must not retain append pagination callbacks')
+  assert.equal(sharedGalleryMain.includes('加载更多'), false, 'Gallery must not expose load-more UI')
   assert.ok(
     sharedVirtualCollectionController.includes('updateLoadedItems'),
     'VirtualCollection must allow bounded in-place metadata updates',
@@ -563,11 +564,33 @@ test('Gallery virtual grid uses the existing workspace scroll host without mater
   )
 })
 
-test('Gallery keeps timeline dense compatibility isolated from the virtual Grid', () => {
-  assert.ok(sharedGalleryMain.includes("viewMode === 'timeline' ? ("), 'timeline view must remain explicit')
-  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items)'), 'timeline grouping must keep its dense compatibility source')
-  assert.ok(sharedGalleryMain.includes("viewMode === 'timeline' && hasMore && onLoadMore"), 'timeline is the only remaining Gallery load-more path')
-  assert.ok(sharedGalleryMain.includes('virtualCollection ? ('), 'Grid must prefer the sparse virtual collection')
+test('Gallery Timeline maps month groups onto the shared sparse VirtualCollection', () => {
+  for (const token of [
+    'timelineGroups={timelineGroups}',
+    'setTimelineGroups(range.timeline_groups ?? [])',
+    'function MediaVirtualTimeline({',
+    'xDriveMediaGalleryTimelineLayout',
+    'xDriveMediaGalleryTimelineWindow',
+    'data-xdrive-media-gallery-virtual-timeline',
+    'collection.itemAt(index)',
+    'collection.onRangeChange(',
+    'data-xdrive-media-gallery-timeline-placeholder',
+    'xDriveMediaGalleryTimelineIndexVisible',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery Timeline virtualization missing: ${token}`)
+  }
+  for (const token of [
+    'XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_HEIGHT = 32',
+    'XDRIVE_MEDIA_GALLERY_TIMELINE_GROUP_GAP = 20',
+    'XDRIVE_MEDIA_GALLERY_TIMELINE_OVERSCAN_ROWS = 2',
+    'export function xDriveMediaGalleryTimelineGroupLabel',
+    'export function xDriveMediaGalleryTimelineLayout',
+    'export function xDriveMediaGalleryTimelineWindow',
+  ]) {
+    assert.ok(sharedGalleryVirtualTimeline.includes(token), `Gallery Timeline helper missing: ${token}`)
+  }
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items)'), 'standalone dense fallback remains available')
+  assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
 })
 
 

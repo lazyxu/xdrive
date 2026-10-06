@@ -335,11 +335,18 @@ export interface MediaItem {
   live_photo?: boolean
 }
 
+export interface MediaTimelineGroupIndex {
+  key: string
+  item_count: number
+  start_index: number
+}
+
 export interface MediaItemRange {
   items: MediaItem[]
   total_count: number
   offset: number
   limit: number
+  timeline_groups?: MediaTimelineGroupIndex[]
 }
 
 export interface MediaAlbum {

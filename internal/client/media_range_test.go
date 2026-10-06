@@ -74,6 +74,10 @@ func TestMediaItemRangeQueries(t *testing.T) {
 					TotalCount: 640,
 					Offset:     0,
 					Limit:      200,
+					TimelineGroups: []MediaTimelineGroupIndex{
+						{Key: "2026-10", ItemCount: 600, StartIndex: 0},
+						{Key: "unknown", ItemCount: 40, StartIndex: 600},
+					},
 				})
 			}))
 			defer server.Close()
@@ -84,7 +88,10 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				t.Fatal(err)
 			}
 			if page.TotalCount != 640 || page.Offset != 0 || page.Limit != 200 ||
-				len(page.Items) != 1 || page.Items[0].Node.ID != 7 {
+				len(page.Items) != 1 || page.Items[0].Node.ID != 7 ||
+				len(page.TimelineGroups) != 2 ||
+				page.TimelineGroups[0].Key != "2026-10" ||
+				page.TimelineGroups[1].StartIndex != 600 {
 				t.Fatalf("unexpected page: %+v", page)
 			}
 		})

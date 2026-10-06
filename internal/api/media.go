@@ -92,11 +92,18 @@ type mediaItemDTO struct {
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
 }
 
+type mediaTimelineGroupDTO struct {
+	Key        string `json:"key"`
+	ItemCount  int64  `json:"item_count"`
+	StartIndex int64  `json:"start_index"`
+}
+
 type mediaItemRangeDTO struct {
-	Items      []mediaItemDTO `json:"items"`
-	TotalCount int64          `json:"total_count"`
-	Offset     int            `json:"offset"`
-	Limit      int            `json:"limit"`
+	Items          []mediaItemDTO          `json:"items"`
+	TotalCount     int64                   `json:"total_count"`
+	Offset         int                     `json:"offset"`
+	Limit          int                     `json:"limit"`
+	TimelineGroups []mediaTimelineGroupDTO `json:"timeline_groups,omitempty"`
 }
 
 type mediaAlbumDTO struct {
@@ -553,7 +560,9 @@ func (s *Server) materializeMediaItems(
 ) ([]mediaItemDTO, error) {
 	var metadata []meta.MediaMetadata
 	if err := query.
-		Order("COALESCE(xd_media_metadata.captured_at, n.created_at) DESC, n.id DESC").
+		Order("CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC").
+		Order("xd_media_metadata.captured_at DESC").
+		Order("n.created_at DESC, n.id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&metadata).Error; err != nil {
@@ -622,6 +631,46 @@ func (s *Server) queryMediaItems(
 	return s.materializeMediaItems(ctx, uid, query, limit, offset)
 }
 
+const mediaTimelineGroupExpression = "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 'unknown' ELSE TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM') END"
+
+func queryMediaTimelineGroups(query *gorm.DB) ([]mediaTimelineGroupDTO, error) {
+	type groupRow struct {
+		Key         string `gorm:"column:group_key"`
+		ItemCount   int64  `gorm:"column:item_count"`
+		UnknownRank int    `gorm:"column:unknown_rank"`
+	}
+
+	var rows []groupRow
+	if err := query.
+		Session(&gorm.Session{}).
+		Select(
+			mediaTimelineGroupExpression +
+				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
+				"MAX(CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END) AS unknown_rank",
+		).
+		Group(mediaTimelineGroupExpression).
+		Order("unknown_rank ASC").
+		Order("group_key DESC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	groups := make([]mediaTimelineGroupDTO, 0, len(rows))
+	var startIndex int64
+	for _, row := range rows {
+		if row.ItemCount <= 0 {
+			continue
+		}
+		groups = append(groups, mediaTimelineGroupDTO{
+			Key:        row.Key,
+			ItemCount:  row.ItemCount,
+			StartIndex: startIndex,
+		})
+		startIndex += row.ItemCount
+	}
+	return groups, nil
+}
+
 func (s *Server) queryMediaItemRange(
 	ctx context.Context,
 	uid uint64,
@@ -640,15 +689,25 @@ func (s *Server) queryMediaItemRange(
 		Count(&totalCount).Error; err != nil {
 		return mediaItemRangeDTO{}, err
 	}
+
+	var timelineGroups []mediaTimelineGroupDTO
+	if offset == 0 {
+		timelineGroups, err = queryMediaTimelineGroups(query)
+		if err != nil {
+			return mediaItemRangeDTO{}, err
+		}
+	}
+
 	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset)
 	if err != nil {
 		return mediaItemRangeDTO{}, err
 	}
 	return mediaItemRangeDTO{
-		Items:      items,
-		TotalCount: totalCount,
-		Offset:     offset,
-		Limit:      limit,
+		Items:          items,
+		TotalCount:     totalCount,
+		Offset:         offset,
+		Limit:          limit,
+		TimelineGroups: timelineGroups,
 	}, nil
 }
 
