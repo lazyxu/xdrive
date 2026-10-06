@@ -747,3 +747,81 @@ func TestSchedulerQueueFullDoesNotSupersedeAcceptedTask(t *testing.T) {
 	}
 	close(blockMedia)
 }
+
+func TestSchedulerRuntimeTaskSnapshotsAndProgress(t *testing.T) {
+	s := testScheduler(t, map[ResourceClass]int{ResourceMediaCPU: 2})
+	release := make(chan struct{})
+	started := make(chan uint64, 2)
+
+	submit := func(ownerID uint64) *Handle {
+		t.Helper()
+		h, err := s.Submit(Task{
+			Key:       "media-index",
+			Kind:      "media.index",
+			GroupKey:  "media.index",
+			Scope:     ScopeUser,
+			OwnerID:   ownerID,
+			Trigger:   TriggerSystemEvent,
+			Initiator: InitiatorSystem,
+			Priority:  PriorityP1,
+			Resource:  ResourceMediaCPU,
+			Run: func(ctx context.Context) error {
+				ReportProgress(ctx, TaskProgress{
+					Phase:   "indexing",
+					Current: 3,
+					Total:   10,
+					Unit:    "item",
+					Message: "IMG_0003.JPG",
+				})
+				started <- ownerID
+				<-release
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+
+	a := submit(11)
+	b := submit(22)
+	<-started
+	<-started
+
+	ownerID := uint64(11)
+	snapshots := s.TaskSnapshots(&ownerID)
+	if len(snapshots) != 1 {
+		t.Fatalf("owner snapshots=%d want=1: %+v", len(snapshots), snapshots)
+	}
+	got := snapshots[0]
+	if got.Identity.OwnerID != ownerID ||
+		got.Kind != "media.index" ||
+		got.GroupKey != "media.index" ||
+		got.State != "running" ||
+		got.Progress.Phase != "indexing" ||
+		got.Progress.Current != 3 ||
+		got.Progress.Total != 10 ||
+		got.Progress.Unit != "item" ||
+		got.StartedAt == nil ||
+		got.SubmittedAt.IsZero() ||
+		got.UpdatedAt.IsZero() {
+		t.Fatalf("snapshot=%+v", got)
+	}
+
+	all := s.TaskSnapshots(nil)
+	if len(all) != 2 {
+		t.Fatalf("all snapshots=%d want=2: %+v", len(all), all)
+	}
+
+	close(release)
+	if err := a.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if remaining := s.TaskSnapshots(nil); len(remaining) != 0 {
+		t.Fatalf("completed tasks remained in runtime snapshot: %+v", remaining)
+	}
+}

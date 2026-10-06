@@ -1245,6 +1245,11 @@ func (s *Server) refreshMediaIndexOwnerBatch(
 	if err != nil {
 		return 0, 0, err
 	}
+	background.ReportProgress(ctx, background.TaskProgress{
+		Phase: "indexing",
+		Total: int64(len(nodes)),
+		Unit:  "item",
+	})
 	for index := range nodes {
 		if err := s.DB.WithContext(ctx).
 			Where("node_id = ?", nodes[index].ID).
@@ -1254,6 +1259,12 @@ func (s *Server) refreshMediaIndexOwnerBatch(
 		if _, err := s.indexMediaNode(ctx, nodes[index]); err == nil {
 			indexed++
 		}
+		background.ReportProgress(ctx, background.TaskProgress{
+			Phase:   "indexing",
+			Current: int64(index + 1),
+			Total:   int64(len(nodes)),
+			Unit:    "item",
+		})
 	}
 	if err := mediagroup.ReconcileLocalEvidenceGroups(ctx, s.DB, uid); err != nil {
 		return len(nodes), indexed, err

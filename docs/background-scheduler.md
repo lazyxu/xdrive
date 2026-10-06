@@ -202,3 +202,23 @@ pool.
 PostgreSQL `NOTIFY` is deliberately only a wakeup hint, not durable job storage. Lost notifications, listener
 reconnects, server restarts, rename-only node revisions, and old analyzer/index versions are recovered by the
 same stale-state query every 30 seconds. Existing media/domain tables remain the source of truth.
+
+
+## Background task status/control read model
+
+The server exposes background work as a read model without introducing a generic persisted task table.
+
+- Scheduler-owned work contributes only its current in-process queued/running snapshot.
+- Durable `FileOperation` and `SyncRun` rows remain their own sources of truth and contribute recent
+  instance-level progress/history.
+- High-frequency scheduler work is grouped by `owner + kind` so thumbnail, preview, media-index and future
+  face/place micro-jobs do not create thousands of Task Center rows.
+- `GET /api/v1/background-tasks` returns only the authenticated user's work.
+- `GET /api/v1/admin/background-tasks` returns the global user/system view and requires the admin role.
+- Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
+  kind. Cross-user admin controls are deliberately empty until the corresponding domain explicitly defines
+  and authorizes them.
+
+Scheduler runtime tasks expose `kind`, state, owner attribution, trigger/initiator, priority/resource,
+timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. Runtime entries
+are removed after completion; history belongs to the durable domain models, not to the scheduler.
