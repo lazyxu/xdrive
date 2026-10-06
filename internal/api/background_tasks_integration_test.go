@@ -302,6 +302,10 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	if !backgroundTaskHasControl(userTasks, "sync-run:"+runA.ID, "cancel") {
 		t.Fatal("owner sync run did not expose cancel")
 	}
+	runtimeAID := fmt.Sprintf("runtime:user:%d:media.index", userA.ID)
+	if !backgroundTaskHasControl(userTasks, runtimeAID, "cancel") {
+		t.Fatal("owner runtime scheduler task did not expose cancel")
+	}
 	reanalyzeTaskID := fmt.Sprintf(
 		"runtime:user:%d:photo.face",
 		userA.ID,
@@ -313,6 +317,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		reanalyzeTask.Priority == nil ||
 		*reanalyzeTask.Priority != uint8(background.PriorityP2) ||
 		reanalyzeTask.Resource != string(background.ResourceMLCPU) ||
+		!backgroundTaskHasControl(userTasks, reanalyzeTaskID, "cancel") ||
 		!backgroundTaskHasControl(userTasks, reanalyzeTaskID, "reanalyze") {
 		t.Fatalf("unexpected durable reanalyze task: %+v", reanalyzeTask)
 	}
@@ -473,6 +478,81 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	}
 	if cancelledRun.CancelRequestedAt == nil {
 		t.Fatal("controlled sync run did not persist cancel_requested_at")
+	}
+
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userBToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"runtime:user:%d:media.index","action":"cancel"}`,
+			userA.ID,
+		)),
+		http.StatusConflict,
+	)
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userAToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"runtime:user:%d:media.index","action":"cancel"}`,
+			userA.ID,
+		)),
+		http.StatusAccepted,
+	)
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		userASnapshots := scheduler.TaskSnapshots(&userA.ID)
+		activeMediaIndex := false
+		for _, snapshot := range userASnapshots {
+			if snapshot.Kind == "media.index" {
+				activeMediaIndex = true
+				break
+			}
+		}
+		if !activeMediaIndex {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cancelled runtime task did not drain: %+v", userASnapshots)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	userBSnapshots := scheduler.TaskSnapshots(&userB.ID)
+	if len(userBSnapshots) == 0 {
+		t.Fatal("cancelling user A runtime task also cancelled user B work")
+	}
+
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userAToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"%s","action":"cancel"}`,
+			reanalyzeTaskID,
+		)),
+		http.StatusAccepted,
+	)
+	var cancelledIntent meta.PhotoIntelligenceReanalyzeIntent
+	if err := db.Where(
+		"owner_id = ? AND kind = ?",
+		userA.ID,
+		string(photoIntelligenceFace),
+	).First(&cancelledIntent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelledIntent.AppliedEpoch != cancelledIntent.RequestedEpoch {
+		t.Fatalf(
+			"cancelled durable reanalyze intent remained pending: %+v",
+			cancelledIntent,
+		)
 	}
 
 	_ = admin

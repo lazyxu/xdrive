@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/background"
@@ -98,16 +99,28 @@ func backgroundRuntimeControlActions(
 	ownerID, viewerID uint64,
 	admin bool,
 ) []string {
-	if scope != background.ScopeUser ||
-		(ownerID != viewerID && !admin) {
+	if scope != background.ScopeUser {
 		return nil
+	}
+	actions := make([]string, 0, 2)
+	if ownerID == viewerID {
+		switch kind {
+		case "media.thumbnail",
+			"media.analysis_preview",
+			"media.index",
+			"photo.face",
+			"photo.place",
+			"photo.person_cluster":
+			actions = append(actions, backgroundTaskActionCancel)
+		}
 	}
 	switch kind {
 	case "photo.face", "photo.place", "photo.person_cluster":
-		return []string{backgroundTaskActionReanalyze}
-	default:
-		return nil
+		if ownerID == viewerID || admin {
+			actions = append(actions, backgroundTaskActionReanalyze)
+		}
 	}
+	return actions
 }
 
 func parseBackgroundTaskRef(raw string) (backgroundTaskRef, bool) {
@@ -351,6 +364,131 @@ func photoIntelligenceKindFromBackgroundKind(
 	}
 }
 
+func runtimeBackgroundTaskID(ref backgroundTaskRef) string {
+	return "runtime:" + string(ref.scope) + ":" +
+		strconv.FormatUint(ref.ownerID, 10) + ":" + ref.kind
+}
+
+func (s *Server) acknowledgeCancelledPhotoIntelligenceIntent(
+	ctx context.Context,
+	kind photoIntelligenceTaskKind,
+	ownerID uint64,
+) (bool, error) {
+	if s == nil || s.DB == nil || ownerID == 0 {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	result := s.DB.WithContext(ctx).
+		Model(&meta.PhotoIntelligenceReanalyzeIntent{}).
+		Where(
+			"owner_id = ? AND kind = ? AND requested_epoch > applied_epoch",
+			ownerID,
+			string(kind),
+		).
+		Updates(map[string]any{
+			"applied_epoch": gorm.Expr("requested_epoch"),
+			"applied_at":    now,
+			"updated_at":    now,
+		})
+	return result.RowsAffected > 0, result.Error
+}
+
+func (s *Server) invalidateRuntimeOwnerStateForCancel(
+	ref backgroundTaskRef,
+	keys map[string]struct{},
+) bool {
+	switch ref.kind {
+	case "media.index":
+		s.mediaIndexMu.Lock()
+		defer s.mediaIndexMu.Unlock()
+		state := s.mediaIndexOwners[ref.ownerID]
+		if state == nil {
+			return false
+		}
+		if _, ok := keys[state.currentKey]; !ok {
+			return false
+		}
+		state.running = false
+		state.pending = false
+		state.currentKey = ""
+		state.generation++
+		return true
+	case "photo.face", "photo.place", "photo.person_cluster":
+		kind, ok := photoIntelligenceKindFromBackgroundKind(ref.kind)
+		if !ok {
+			return false
+		}
+		key := photoIntelligenceOwnerKey{OwnerID: ref.ownerID, Kind: kind}
+		s.photoIntelligenceMu.Lock()
+		defer s.photoIntelligenceMu.Unlock()
+		state := s.photoIntelligenceOwners[key]
+		if state == nil {
+			return false
+		}
+		if _, ok := keys[state.currentKey]; !ok {
+			return false
+		}
+		state.running = false
+		state.pending = false
+		state.currentKey = ""
+		state.nextInitiator = ""
+		state.nextInitiatorID = 0
+		state.generation++
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) cancelBackgroundRuntimeTaskGroup(
+	ctx context.Context,
+	ref backgroundTaskRef,
+) (bool, error) {
+	if s == nil ||
+		ref.scope != background.ScopeUser ||
+		ref.ownerID == 0 ||
+		strings.TrimSpace(ref.kind) == "" {
+		return false, nil
+	}
+
+	cancelledIntent := false
+	if kind, ok := photoIntelligenceKindFromBackgroundKind(ref.kind); ok {
+		var err error
+		cancelledIntent, err = s.acknowledgeCancelledPhotoIntelligenceIntent(
+			ctx,
+			kind,
+			ref.ownerID,
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	identities := make([]background.Identity, 0)
+	keys := make(map[string]struct{})
+	if s.BackgroundScheduler != nil {
+		ownerID := ref.ownerID
+		for _, snapshot := range s.BackgroundScheduler.TaskSnapshots(&ownerID) {
+			if snapshot.Identity.Scope != ref.scope ||
+				snapshot.Identity.OwnerID != ref.ownerID ||
+				snapshot.Kind != ref.kind {
+				continue
+			}
+			identities = append(identities, snapshot.Identity)
+			keys[snapshot.Identity.Key] = struct{}{}
+		}
+	}
+
+	invalidatedOwnerState := s.invalidateRuntimeOwnerStateForCancel(ref, keys)
+	cancelledScheduler := false
+	for _, identity := range identities {
+		if s.BackgroundScheduler.Cancel(identity) {
+			cancelledScheduler = true
+		}
+	}
+	return cancelledIntent || invalidatedOwnerState || cancelledScheduler, nil
+}
+
 func (s *Server) controlBackgroundRuntimeTask(
 	ctx context.Context,
 	ref backgroundTaskRef,
@@ -365,8 +503,20 @@ func (s *Server) controlBackgroundRuntimeTask(
 		viewerID,
 		admin,
 	)
-	if !backgroundTaskActionAllowed(actions, action) ||
-		action != backgroundTaskActionReanalyze {
+	if !backgroundTaskActionAllowed(actions, action) {
+		return "", errBackgroundTaskControlUnavailable
+	}
+	if action == backgroundTaskActionCancel {
+		cancelled, err := s.cancelBackgroundRuntimeTaskGroup(ctx, ref)
+		if err != nil {
+			return "", err
+		}
+		if !cancelled {
+			return "", errBackgroundTaskControlUnavailable
+		}
+		return runtimeBackgroundTaskID(ref), nil
+	}
+	if action != backgroundTaskActionReanalyze {
 		return "", errBackgroundTaskControlUnavailable
 	}
 	kind, ok := photoIntelligenceKindFromBackgroundKind(ref.kind)
@@ -401,8 +551,7 @@ func (s *Server) controlBackgroundRuntimeTask(
 	); err != nil {
 		return "", err
 	}
-	return "runtime:" + string(ref.scope) + ":" +
-		strconv.FormatUint(ref.ownerID, 10) + ":" + ref.kind, nil
+	return runtimeBackgroundTaskID(ref), nil
 }
 
 func writeBackgroundTaskControlError(c *gin.Context, err error) {
