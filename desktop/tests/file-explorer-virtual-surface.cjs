@@ -7,6 +7,10 @@ const ts = require('typescript')
 const repo = path.join(__dirname, '..', '..')
 const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerVirtualSurface.ts')
 const source = fs.readFileSync(filename, 'utf8')
+const explorerSource = fs.readFileSync(
+  path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'),
+  'utf8',
+)
 const output = ts.transpileModule(source, {
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
@@ -97,4 +101,34 @@ test('empty logical collection produces no virtual slots', () => {
   assert.equal(grid.start, 0)
   assert.equal(grid.end, 0)
   assert.equal(grid.totalRows, 0)
+})
+
+
+test('sparse FileExplorer interactions use logical indexes and never commit partial Shift ranges', () => {
+  for (const token of [
+    'const logicalItemAt = (index: number) =>',
+    'const logicalIndexOf = (id: XDriveFileExplorerID) =>',
+    'const logicalItemByID = (id: XDriveFileExplorerID) =>',
+    'const loadedRangeIDs = (start: number, end: number) =>',
+    'if (!item) return null',
+    'const currentIndex = logicalIndexOf(item.id) ?? -1',
+    'const anchorIndex = logicalIndexOf(anchorID) ?? -1',
+    'const anchorIndex = logicalIndexOf(selectionAnchorID) ?? -1',
+    'virtualCollection?.onRangeChange?.(start, end)',
+  ]) {
+    assert.ok(explorerSource.includes(token), 'missing sparse interaction contract: ' + token)
+  }
+  assert.ok(
+    explorerSource.includes('const item = logicalItemAt(index)'),
+    'marquee/range interaction must read sparse items by logical index',
+  )
+  assert.ok(
+    explorerSource.includes('const item = logicalItemByID(renamingID)'),
+    'rename recovery must use the loaded sparse ID index',
+  )
+  assert.equal(
+    explorerSource.includes('visibleItems.slice(start, end + 1)'),
+    false,
+    'Shift selection must not silently collapse sparse logical ranges to the dense compatibility list',
+  )
 })

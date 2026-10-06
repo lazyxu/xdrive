@@ -1027,25 +1027,30 @@ export function XDriveFileExplorer({
   }, [virtualLoadedItems])
 
   const interactionProjection = virtualLoadedProjection ?? visibleItemProjection
-  const visibleItemIndexByKey = interactionProjection.indexByKey
   const visibleItemNames = visibleItemProjection.names
   const quickLookFiles = interactionProjection.files
   const quickLookIndexByKey = interactionProjection.fileIndexByKey
-  const itemAtLogicalIndex = (index: number) => (
+  const logicalItemAt = (index: number) => (
     virtualCollection?.itemAt(index) ?? visibleItems[index]
+  )
+  const logicalIndexOf = (id: XDriveFileExplorerID) => (
+    interactionProjection.indexByKey.get(explorerIDKey(id))
+  )
+  const logicalItemByID = (id: XDriveFileExplorerID) => (
+    interactionProjection.itemByKey.get(explorerIDKey(id))
   )
   const selectedItems = useMemo(
     () => selectedIDs
-      .map((id) => interactionProjection.itemByKey.get(explorerIDKey(id)))
+      .map((id) => logicalItemByID(id))
       .filter((item): item is XDriveFileExplorerItem => Boolean(item)),
     [interactionProjection.itemByKey, selectedIDs],
   )
   const activeIndex = activeItemID === null
     ? -1
-    : (visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1)
+    : (logicalIndexOf(activeItemID) ?? -1)
   const activeItem = activeItemID === null
     ? interactionProjection.orderedItems[0]
-    : interactionProjection.itemByKey.get(explorerIDKey(activeItemID))
+    : logicalItemByID(activeItemID)
       ?? interactionProjection.orderedItems[0]
   const quickLookIndex = quickLookItemID === null
     ? -1
@@ -1082,15 +1087,13 @@ export function XDriveFileExplorer({
   }
 
   const loadedRangeIDs = (start: number, end: number) => {
-    if (!virtualLoadedItems) {
-      return visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+    const ids: XDriveFileExplorerID[] = []
+    for (let index = start; index <= end; index += 1) {
+      const item = logicalItemAt(index)
+      if (!item) return null
+      ids.push(item.id)
     }
-    const entries: Array<[number, XDriveFileExplorerID]> = []
-    for (const [index, item] of virtualLoadedItems) {
-      if (index >= start && index <= end) entries.push([index, item.id])
-    }
-    entries.sort((left, right) => left[0] - right[0])
-    return entries.map((entry) => entry[1])
+    return ids
   }
 
   const marqueeSelectionIDs = (
@@ -1113,7 +1116,7 @@ export function XDriveFileExplorer({
           Math.floor((Math.max(detailsHeaderHeight, bottom - 0.001) - detailsHeaderHeight) / detailsRowHeight),
         )
         for (let index = first; index <= last; index += 1) {
-          const item = itemAtLogicalIndex(index)
+          const item = logicalItemAt(index)
           if (item) selected.set(explorerIDKey(item.id), item.id)
         }
       }
@@ -1138,7 +1141,7 @@ export function XDriveFileExplorer({
       for (let column = 0; column < gridColumns; column += 1) {
         const index = row * gridColumns + column
         if (index >= logicalItemCount) break
-        const item = itemAtLogicalIndex(index)
+        const item = logicalItemAt(index)
         if (!item) continue
         const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
         const itemTop = gridPaddingPx + row * gridRowStep
@@ -1290,7 +1293,7 @@ export function XDriveFileExplorer({
         host.scrollTop = Math.max(0, bottom - host.clientHeight + gridPaddingPx)
       }
     }
-    const item = itemAtLogicalIndex(index)
+    const item = logicalItemAt(index)
     if (!item) {
       virtualCollection?.onRangeChange?.(index, index)
       return
@@ -1366,7 +1369,7 @@ export function XDriveFileExplorer({
 
   useEffect(() => {
     if (renamingID === null || typeof window === 'undefined') return
-    const item = interactionProjection.itemByKey.get(explorerIDKey(renamingID))
+    const item = logicalItemByID(renamingID)
     if (!item) return
     window.requestAnimationFrame(() => {
       const input = renameInputRef.current
@@ -1444,21 +1447,24 @@ export function XDriveFileExplorer({
     setActiveItemID(item.id)
 
     if (event.shiftKey && selectionAnchorID !== null) {
-      const anchorKey = explorerIDKey(selectionAnchorID)
-      const anchorIndex = visibleItemIndexByKey.get(anchorKey) ?? -1
+      const anchorIndex = logicalIndexOf(selectionAnchorID) ?? -1
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, index)
         const end = Math.max(anchorIndex, index)
         const range = loadedRangeIDs(start, end)
-        if (additive) {
+        if (!range) {
+          virtualCollection?.onRangeChange?.(start, end)
+        } else if (additive) {
           const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
           for (const id of range) merged.set(explorerIDKey(id), id)
           commitSelection([...merged.values()])
         } else {
           commitSelection(range)
         }
-        onItemClick?.(item)
-        return
+        if (range) {
+          onItemClick?.(item)
+          return
+        }
       }
     }
 
@@ -2014,7 +2020,7 @@ export function XDriveFileExplorer({
     event: KeyboardEvent<HTMLElement>,
     item: XDriveFileExplorerItem,
   ) => {
-    const currentIndex = visibleItemIndexByKey.get(explorerIDKey(item.id)) ?? -1
+    const currentIndex = logicalIndexOf(item.id) ?? -1
     if (currentIndex < 0) return false
     const columns = gridColumnCount()
     const visibleRows = Math.max(
@@ -2038,7 +2044,7 @@ export function XDriveFileExplorer({
     resetTypeSelect()
     if (targetIndex === currentIndex) return true
 
-    const target = itemAtLogicalIndex(targetIndex)
+    const target = logicalItemAt(targetIndex)
     if (!target) {
       focusItemAtIndex(targetIndex)
       return true
@@ -2048,12 +2054,14 @@ export function XDriveFileExplorer({
     if (event.shiftKey) {
       const anchorID = selectionAnchorID ?? item.id
       if (selectionAnchorID === null) setSelectionAnchorID(anchorID)
-      const anchorIndex = visibleItemIndexByKey.get(explorerIDKey(anchorID)) ?? -1
+      const anchorIndex = logicalIndexOf(anchorID) ?? -1
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, targetIndex)
         const end = Math.max(anchorIndex, targetIndex)
         const range = loadedRangeIDs(start, end)
-        if (modifier) {
+        if (!range) {
+          virtualCollection?.onRangeChange?.(start, end)
+        } else if (modifier) {
           const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
           for (const id of range) merged.set(explorerIDKey(id), id)
           commitSelection([...merged.values()])
