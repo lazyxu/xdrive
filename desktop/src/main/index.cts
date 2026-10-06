@@ -83,6 +83,7 @@ import {
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentMediaItem,
+  type AgentMediaItemRange,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaSuggestedPerson,
@@ -1277,6 +1278,28 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
   return out
 }
 
+
+function normalizeMediaRangeWindow(limit: unknown, offset: unknown) {
+  const requestedLimit = limit === undefined ? 200 : limit
+  const requestedOffset = offset === undefined ? 0 : offset
+  if (
+    typeof requestedLimit !== 'number' ||
+    !Number.isSafeInteger(requestedLimit) ||
+    requestedLimit < 1 ||
+    requestedLimit > 500
+  ) {
+    throw new AgentIPCError('invalid_input', 0, 'Media range limit must be between 1 and 500.')
+  }
+  if (
+    typeof requestedOffset !== 'number' ||
+    !Number.isSafeInteger(requestedOffset) ||
+    requestedOffset < 0
+  ) {
+    throw new AgentIPCError('invalid_input', 0, 'Media range offset must be zero or greater.')
+  }
+  return { limit: requestedLimit, offset: requestedOffset }
+}
+
 function requireAgentCapability(hello: AgentHello, capability: string) {
   if (!hello.capabilities.includes(capability)) {
     throw new AgentIPCError(
@@ -1652,6 +1675,30 @@ function registerIPCHandlers() {
     )
   }, false))
 
+  ipcMain.handle('agent:get-media-item-range', (
+    _event,
+    kind: unknown = '',
+    limit: unknown = 200,
+    offset: unknown = 0,
+    query: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof kind !== 'string' ||
+      (kind.trim() && !['image', 'video'].includes(kind.trim()))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
+    }
+    const window = normalizeMediaRangeWindow(limit, offset)
+    return requireAgentClient().mediaItemRange(
+      kind.trim(),
+      window.limit,
+      window.offset,
+      normalizeMediaGalleryQuery(query),
+    )
+  }, false))
+
   ipcMain.handle('agent:get-media-albums', () => runAgentAction<AgentMediaAlbum[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
@@ -1731,6 +1778,34 @@ function registerIPCHandlers() {
     }, false),
   )
 
+
+  ipcMain.handle(
+    'agent:get-media-suggested-person-item-range',
+    (
+      _event,
+      personID: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+      query: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof personID !== 'string' ||
+        !/^auto:v1:[0-9a-f]{64}$/.test(personID.trim())
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Suggested person id is invalid.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaSuggestedPersonItemRange(
+        personID.trim(),
+        window.limit,
+        window.offset,
+        normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
+
   ipcMain.handle(
     'agent:get-media-people',
     (
@@ -1783,6 +1858,34 @@ function registerIPCHandlers() {
         personID.trim(),
         limit,
         offset,
+        normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
+
+
+  ipcMain.handle(
+    'agent:get-media-person-item-range',
+    (
+      _event,
+      personID: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+      query: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof personID !== 'string' ||
+        !/^person:v1:[0-9a-f-]{36}$/.test(personID.trim())
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Durable person id is invalid.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaPersonItemRange(
+        personID.trim(),
+        window.limit,
+        window.offset,
         normalizeMediaGalleryQuery(query),
       )
     }, false),
@@ -2068,6 +2171,31 @@ function registerIPCHandlers() {
       normalizeMediaGalleryQuery(query),
     )
   }, false))
+
+  ipcMain.handle('agent:get-media-album-item-range', (
+    _event,
+    albumID: unknown,
+    limit: unknown = 200,
+    offset: unknown = 0,
+    query: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' ||
+      (!albumID.startsWith('folder:') && !albumID.startsWith('source:'))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
+    }
+    const window = normalizeMediaRangeWindow(limit, offset)
+    return requireAgentClient().mediaAlbumItemRange(
+      albumID,
+      window.limit,
+      window.offset,
+      normalizeMediaGalleryQuery(query),
+    )
+  }, false))
+
 
   ipcMain.handle('agent:set-media-favorite', (_event, nodeID: unknown, favorite: unknown) => runAgentAction<AgentMediaFavorite>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

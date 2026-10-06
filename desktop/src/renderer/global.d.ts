@@ -17,6 +17,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaItemRange,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -231,6 +232,7 @@ declare global {
   type AgentSourceConnectorConfig = ExternalSourceConnectorConfig
 
   type AgentMediaItem = MediaItem
+  type AgentMediaItemRange = MediaItemRange
   type AgentMediaAlbum = MediaAlbum
   type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
@@ -359,6 +361,12 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaItemRange: (
+          kind?: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaSuggestedPeople: (limit?: number) => Promise<DesktopResult<MediaSuggestedPerson[]>>
@@ -368,6 +376,12 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaSuggestedPersonItemRange: (
+          personID: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaPeople: (
           includeHidden?: boolean,
           limit?: number,
@@ -379,6 +393,12 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaPersonItemRange: (
+          personID: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         adoptMediaSuggestedPerson: (
           suggestionID: string,
           name?: string,
@@ -417,6 +437,12 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItem[]>>
+        getMediaAlbumItemRange: (
+          albumID: string,
+          limit?: number,
+          offset?: number,
+          query?: MediaGalleryQuery,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         setMediaFavorite: (nodeID: number, favorite: boolean) => Promise<DesktopResult<{ favorite: boolean }>>
         setMediaTags: (nodeID: number, tags: string[]) => Promise<DesktopResult<{ tags: string[] }>>
         setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>

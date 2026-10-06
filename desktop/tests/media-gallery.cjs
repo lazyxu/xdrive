@@ -30,6 +30,7 @@ const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const desktopAdapter = read('desktop', 'src', 'renderer', 'mediaGalleryAdapter.ts')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+const desktopMain = read('desktop', 'src', 'main', 'index.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 const desktopIndexHTML = read('desktop', 'src', 'renderer', 'index.html')
 
@@ -124,6 +125,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
 
 test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /export interface MediaItem \{\s*node: Node\s*metadata: MediaMetadata/s)
+  assert.match(sharedModels, /export interface MediaItemRange \{[\s\S]*total_count: number[\s\S]*offset: number[\s\S]*limit: number/)
   assert.match(sharedModels, /rotation_degrees\?: number/)
   assert.match(sharedModels, /latitude\?: number/)
   assert.match(sharedModels, /longitude\?: number/)
@@ -206,6 +208,16 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
   assert.ok(desktopApp.includes('createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent)'), 'Desktop App must consume its thin Gallery transport adapter')
   assert.equal(webApp.includes('listItems: (limit, offset, query)'), false, 'Web App must not compose Gallery data source methods inline')
   assert.equal(desktopApp.includes('listItems: async (limit, offset, query)'), false, 'Desktop App must not compose Gallery data source methods inline')
+  for (const token of [
+    'listItemRange:',
+    'listSuggestedPersonItemRange:',
+    'listPersonItemRange:',
+    'listAlbumItemRange:',
+  ]) {
+    assert.ok(sharedGalleryAdapter.includes(token), `shared Gallery range adapter missing: ${token}`)
+    assert.ok(webAdapter.includes(token), `Web Gallery range adapter missing: ${token}`)
+    assert.ok(desktopAdapter.includes(token), `Desktop Gallery range adapter missing: ${token}`)
+  }
 })
 
 test('Web and Desktop expose the same Gallery data operations', () => {
@@ -213,23 +225,27 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /person_identity/)
   assert.match(desktopIPC, /person_identity/)
 
-  for (const token of ['mediaItems(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaPeople(', 'mediaPersonItems(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
   for (const token of [
     'api.mediaItems(',
+    'api.mediaItemRange(',
     'api.mediaAlbums()',
     'api.mediaPlaces(',
     'api.mediaSuggestedPeople(',
     'api.mediaSuggestedPersonItems(',
+    'api.mediaSuggestedPersonItemRange(',
     'api.mediaPeople(',
     'api.mediaPersonItems(',
+    'api.mediaPersonItemRange(',
     'api.adoptMediaSuggestedPerson(',
     'api.updateMediaPerson(',
     'api.mergeMediaPeople(',
     'api.splitMediaPerson(',
     'api.mediaAlbumItems(',
+    'api.mediaAlbumItemRange(',
     'api.createMediaAlbum(',
     'api.createSmartMediaAlbum(',
     'api.updateSmartMediaAlbum(',
@@ -251,17 +267,21 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 
   for (const token of [
     'getMediaItems:',
+    'getMediaItemRange:',
     'getMediaAlbums:',
     'getMediaPlaces:',
     'getMediaSuggestedPeople:',
     'getMediaSuggestedPersonItems:',
+    'getMediaSuggestedPersonItemRange:',
     'getMediaPeople:',
     'getMediaPersonItems:',
+    'getMediaPersonItemRange:',
     'adoptMediaSuggestedPerson:',
     'updateMediaPerson:',
     'mergeMediaPeople:',
     'splitMediaPerson:',
     'getMediaAlbumItems:',
+    'getMediaAlbumItemRange:',
     'createMediaAlbum:',
     'renameMediaAlbum:',
     'deleteMediaAlbum:',
@@ -283,17 +303,21 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 
   for (const token of [
     'mediaItems(',
+    'mediaItemRange(',
     'mediaAlbums()',
     'mediaPlaces(',
     'mediaSuggestedPeople(',
     'mediaSuggestedPersonItems(',
+    'mediaSuggestedPersonItemRange(',
     'mediaPeople(',
     'mediaPersonItems(',
+    'mediaPersonItemRange(',
     'adoptMediaSuggestedPerson(',
     'updateMediaPerson(',
     'mergeMediaPeople(',
     'splitMediaPerson(',
     'mediaAlbumItems(',
+    'mediaAlbumItemRange(',
     'createMediaAlbum(name:',
     'renameMediaAlbum(albumID:',
     'deleteMediaAlbum(albumID:',
@@ -366,6 +390,17 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.equal(desktopIPC.includes('/v1/media/video'), false, 'Agent must not keep the legacy media video stream route')
   assert.equal(preload.includes('getMediaVideoURL'), false, 'Desktop preload must not expose the legacy media video URL bridge')
   assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
+  assert.match(preload, /agent:get-media-item-range', kind, limit, offset, query/)
+  assert.match(preload, /agent:get-media-suggested-person-item-range/)
+  assert.match(preload, /agent:get-media-person-item-range/)
+  assert.match(preload, /agent:get-media-album-item-range/)
+  assert.match(desktopMain, /agent:get-media-item-range/)
+  assert.match(desktopMain, /agent:get-media-suggested-person-item-range/)
+  assert.match(desktopMain, /agent:get-media-person-item-range/)
+  assert.match(desktopMain, /agent:get-media-album-item-range/)
+  assert.match(desktopIPC, /desktopIPCMediaRangeRequested/)
+  assert.match(desktopIPC, /CloudMediaItemsRange/)
+  assert.match(desktopIPC, /CloudMediaAlbumItemsRange/)
   assert.match(agentClient, /appendAgentMediaQuery\(query, filters\)/)
   assert.match(agentClient, /query\.set\('tag', filters\.tag\.trim\(\)\)/)
   assert.match(agentClient, /query\.set\('person', filters\.person\.trim\(\)\)/)

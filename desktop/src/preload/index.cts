@@ -23,6 +23,23 @@ const agent = Object.freeze({
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-items', kind, limit, offset, query),
+  getMediaItemRange: (
+    kind = '',
+    limit = 200,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+    favorite?: boolean
+    tag?: string
+    person?: string
+    person_identity?: string
+    place?: string
+  } = {},
+  ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaSuggestedPeople: (limit = 24) =>
@@ -50,6 +67,29 @@ const agent = Object.freeze({
     offset,
     query,
   ),
+  getMediaSuggestedPersonItemRange: (
+    personID: string,
+    limit = 200,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+    favorite?: boolean
+    tag?: string
+    person?: string
+    person_identity?: string
+    place?: string
+  } = {},
+  ) => ipcRenderer.invoke(
+    'agent:get-media-suggested-person-item-range',
+    personID,
+    limit,
+    offset,
+    query,
+  ),
   getMediaPeople: (includeHidden = false, limit = 100, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-people', includeHidden, limit, offset),
   getMediaPersonItems: (
@@ -69,6 +109,23 @@ const agent = Object.freeze({
       place?: string
     } = {},
   ) => ipcRenderer.invoke('agent:get-media-person-items', personID, limit, offset, query),
+  getMediaPersonItemRange: (
+    personID: string,
+    limit = 200,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+    favorite?: boolean
+    tag?: string
+    person?: string
+    person_identity?: string
+    place?: string
+  } = {},
+  ) => ipcRenderer.invoke('agent:get-media-person-item-range', personID, limit, offset, query),
   adoptMediaSuggestedPerson: (suggestionID: string, name = '') =>
     ipcRenderer.invoke('agent:adopt-media-suggested-person', suggestionID, name),
   updateMediaPerson: (
@@ -142,6 +199,23 @@ const agent = Object.freeze({
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-album-items', albumID, limit, offset, query),
+  getMediaAlbumItemRange: (
+    albumID: string,
+    limit = 200,
+    offset = 0,
+    query: {
+    search?: string
+    asset_kind?: string
+    captured_from?: string
+    captured_to?: string
+    has_location?: boolean
+    favorite?: boolean
+    tag?: string
+    person?: string
+    person_identity?: string
+    place?: string
+  } = {},
+  ) => ipcRenderer.invoke('agent:get-media-album-item-range', albumID, limit, offset, query),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   setMediaTags: (nodeID: number, tags: string[]) => ipcRenderer.invoke('agent:set-media-tags', nodeID, tags),
   setMediaPeople: (nodeID: number, people: string[]) => ipcRenderer.invoke('agent:set-media-people', nodeID, people),

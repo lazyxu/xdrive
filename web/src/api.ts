@@ -22,6 +22,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaItemRange,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -547,6 +548,23 @@ export class XDriveApi {
     appendMediaGalleryQuery(query, filters)
     return this.request<MediaItem[]>(`/api/v1/media/items?${query.toString()}`)
   }
+  mediaItemRange(
+    kind = '',
+    limit = 200,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    if (kind) query.set('kind', kind)
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItemRange>(`/api/v1/media/items?${query.toString()}`)
+  }
+
+
 
   mediaAlbums() {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')
@@ -583,6 +601,24 @@ export class XDriveApi {
       `/api/v1/media/people/suggestions/${encodeURIComponent(personID)}/items?${query.toString()}`,
     )
   }
+  mediaSuggestedPersonItemRange(
+    personID: string,
+    limit = 200,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItemRange>(
+      `/api/v1/media/people/suggestions/${encodeURIComponent(personID)}/items?${query.toString()}`,
+    )
+  }
+
+
 
   mediaPeople(includeHidden = false, limit = 100, offset = 0) {
     const query = new URLSearchParams({
@@ -610,6 +646,24 @@ export class XDriveApi {
       `/api/v1/media/people/identities/${encodeURIComponent(personID)}/items?${query.toString()}`,
     )
   }
+  mediaPersonItemRange(
+    personID: string,
+    limit = 200,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItemRange>(
+      `/api/v1/media/people/identities/${encodeURIComponent(personID)}/items?${query.toString()}`,
+    )
+  }
+
+
 
   adoptMediaSuggestedPerson(suggestionID: string, name: string) {
     return this.request<MediaPersonIdentity>(
@@ -759,6 +813,24 @@ export class XDriveApi {
       `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
     )
   }
+  mediaAlbumItemRange(
+    albumID: string,
+    limit = 200,
+    offset = 0,
+    filters: MediaGalleryQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    appendMediaGalleryQuery(query, filters)
+    return this.request<MediaItemRange>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/items?${query.toString()}`,
+    )
+  }
+
+
 
   setMediaFavorite(nodeID: number, favorite: boolean) {
     return this.request<{ favorite: boolean }>(
