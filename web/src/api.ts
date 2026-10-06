@@ -46,6 +46,7 @@ import type {
   XDriveFileTextPreview,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
+  XDriveCloudFilesRange,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
@@ -965,6 +966,24 @@ export class XDriveApi {
     if (options.name) query.set('name', options.name)
     if (options.nameInsensitive) query.set('name_ci', options.nameInsensitive)
     return this.request<XDriveCloudFilesPage<Node>>(`/api/v1/nodes/${parentID}/children?${query.toString()}`)
+  }
+
+  listRange(
+    parentID: number,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
+    const query = new URLSearchParams({
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+    })
+    return this.request<XDriveCloudFilesRange<Node>>(
+      `/api/v1/nodes/${parentID}/children?${query.toString()}`,
+    )
   }
 
   fileQuickAccess() {

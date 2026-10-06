@@ -451,6 +451,15 @@ export type AgentCloudChildrenPage = {
   order: 'asc' | 'desc'
 }
 
+export type AgentCloudChildrenRange = {
+  items: AgentCloudNode[]
+  total_count: number
+  offset: number
+  limit: number
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+}
+
 export type AgentMediaMetadata = {
   media_kind: 'image' | 'video'
   mime_type?: string
@@ -1310,6 +1319,23 @@ export class AgentIPCClient {
     if (options.name) query.set('name', options.name)
     if (options.nameInsensitive) query.set('name_ci', options.nameInsensitive)
     return this.request<AgentCloudChildrenPage>('GET', `/v1/cloud/children?${query.toString()}`)
+  }
+
+  cloudChildrenRange(
+    parentID: number,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
+    const query = new URLSearchParams({
+      parent_id: String(parentID),
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+    })
+    return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 
   cloudFileQuickAccess() {

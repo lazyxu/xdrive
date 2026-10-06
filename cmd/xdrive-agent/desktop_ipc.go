@@ -161,6 +161,7 @@ type desktopIPCController interface {
 	CloudRoot(context.Context) (client.Node, error)
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudListPage(context.Context, uint64, client.ChildrenOptions) (client.ChildrenPage, error)
+	CloudListRange(context.Context, uint64, client.ChildrenRangeOptions) (client.ChildrenRange, error)
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
 	CloudUnpinFileQuickAccess(context.Context, uint64) error
@@ -881,6 +882,42 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		return
 	}
 	query := r.URL.Query()
+	if rawValues, rangeRequested := query["offset"]; rangeRequested {
+		rawOffset := ""
+		if len(rawValues) > 0 {
+			rawOffset = strings.TrimSpace(rawValues[0])
+		}
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil || offset < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_offset", "offset must be zero or greater")
+			return
+		}
+		if strings.TrimSpace(query.Get("cursor")) != "" || query.Get("name") != "" || query.Get("name_ci") != "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_range", "range requests do not accept cursor or name filters")
+			return
+		}
+		options := client.ChildrenRangeOptions{
+			Offset: offset,
+			Sort:   strings.TrimSpace(query.Get("sort")),
+			Order:  strings.TrimSpace(query.Get("order")),
+		}
+		if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+			limit, err := strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 500 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_limit", "limit must be between 1 and 500")
+				return
+			}
+			options.Limit = limit
+		}
+		page, err := h.ctrl.CloudListRange(r.Context(), parentID, options)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
+
 	paged := query.Get("limit") != "" || query.Get("cursor") != "" || query.Get("sort") != "" || query.Get("order") != "" || query.Get("name") != "" || query.Get("name_ci") != ""
 	if !paged {
 		items, err := h.ctrl.CloudList(r.Context(), parentID)

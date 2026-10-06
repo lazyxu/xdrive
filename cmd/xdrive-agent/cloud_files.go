@@ -146,6 +146,17 @@ func (c *agentController) CloudListPage(ctx context.Context, parentID uint64, op
 	return cli.ListPage(ctx, parentID, options)
 }
 
+func (c *agentController) CloudListRange(ctx context.Context, parentID uint64, options client.ChildrenRangeOptions) (client.ChildrenRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ChildrenRange{}, err
+	}
+	if parentID == 0 {
+		return client.ChildrenRange{}, fmt.Errorf("parent id is required")
+	}
+	return cli.ListRange(ctx, parentID, options)
+}
+
 func (c *agentController) CloudFileQuickAccess(ctx context.Context) ([]client.FileQuickAccessItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

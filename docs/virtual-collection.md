@@ -39,3 +39,8 @@ Cursor pagination may remain for compatibility while range APIs are introduced, 
 ## FileExplorer directory range transport
 
 The children endpoint supports an explicit range mode when `offset` is present. Range responses return `items`, `total_count`, the requested `offset` and `limit`, plus the stable server sort. The requested limit remains the logical page width even on the final partial page so cache keys do not change after `total_count` becomes known. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.
+
+
+## FileExplorer range transport
+
+The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort)` while retaining `getPage` for cursor pagination and exact-name path traversal.

@@ -71,6 +71,7 @@ import {
   type AgentCloudUploadConflictPreflight,
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
+  type AgentCloudChildrenRange,
   type AgentCloudQuickAccessItem,
   type AgentCloudRecentItem,
   type AgentCloudQuota,
@@ -2399,13 +2400,53 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid directory sort options.')
     }
     const cursor = typeof input.cursor === 'string' ? input.cursor : ''
+    const name = typeof input.name === 'string' ? input.name : ''
+    const nameInsensitive = typeof input.nameInsensitive === 'string' ? input.nameInsensitive : ''
     return requireAgentClient().cloudChildrenPage(parentID, {
       limit,
       cursor,
       sort: sort as 'name' | 'updated' | 'size' | 'type',
       order: order as 'asc' | 'desc',
+      ...(name ? { name } : {}),
+      ...(nameInsensitive ? { nameInsensitive } : {}),
     })
   }, false))
+  ipcMain.handle('agent:cloud-children-range', (
+    _event,
+    parentID: unknown,
+    offset: unknown,
+    limit: unknown,
+    sort: unknown,
+    order: unknown,
+  ) => runAgentAction<AgentCloudChildrenRange>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Parent node id is required.')
+    }
+    if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Directory range offset must be zero or greater.')
+    }
+    const normalizedLimit = limit === undefined ? 200 : limit
+    if (typeof normalizedLimit !== 'number' || !Number.isSafeInteger(normalizedLimit) ||
+        normalizedLimit < 1 || normalizedLimit > 500) {
+      throw new AgentIPCError('invalid_input', 0, 'Directory range limit must be between 1 and 500.')
+    }
+    const normalizedSort = sort === undefined ? 'name' : sort
+    const normalizedOrder = order === undefined ? 'asc' : order
+    if (!['name', 'updated', 'size', 'type'].includes(String(normalizedSort)) ||
+        !['asc', 'desc'].includes(String(normalizedOrder))) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid directory range sort options.')
+    }
+    return requireAgentClient().cloudChildrenRange(
+      parentID,
+      offset,
+      normalizedLimit,
+      normalizedSort as 'name' | 'updated' | 'size' | 'type',
+      normalizedOrder as 'asc' | 'desc',
+    )
+  }, false))
+
   ipcMain.handle('agent:cloud-quick-access', () => runAgentAction<AgentCloudQuickAccessItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-quick-access')

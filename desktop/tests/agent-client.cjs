@@ -95,6 +95,32 @@ test('cloud children page forwards case-insensitive indexed name lookups', async
   assert.equal(page.items[0].name, 'Folder')
 })
 
+test('cloud children range preserves offset zero and total count', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/children')
+    assert.equal(url.searchParams.get('parent_id'), '42')
+    assert.equal(url.searchParams.get('offset'), '0')
+    assert.equal(url.searchParams.get('limit'), '200')
+    assert.equal(url.searchParams.get('sort'), 'name')
+    assert.equal(url.searchParams.get('order'), 'asc')
+    assert.equal(url.searchParams.get('cursor'), null)
+    json(res, 200, {
+      items: [{ id: 9, name: 'first.bin', type: 'file', size: 99, revision: 1 }],
+      total_count: 640,
+      offset: 0,
+      limit: 200,
+      sort: 'name',
+      order: 'asc',
+    })
+  })
+  const range = await client.cloudChildrenRange(42, 0, 200, 'name', 'asc')
+  assert.equal(range.total_count, 640)
+  assert.equal(range.offset, 0)
+  assert.equal(range.limit, 200)
+  assert.equal(range.items[0].id, 9)
+})
+
 test('cloud search forwards server sort and cursor options', async (t) => {
   const { client } = await fixture(t, (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
