@@ -62,13 +62,25 @@ func runMediaVerify(args []string) error {
 		fmt.Printf("media group items: %d\n", report.GroupItems)
 		fmt.Printf("derived resources: %d\n", report.DerivedResources)
 		fmt.Printf("thumbnails:        %d\n", report.Thumbnails)
+		fmt.Printf("durable people:    %d\n", report.PhotoPeople)
+		fmt.Printf("person memberships:%d\n", report.PhotoPersonMemberships)
+		fmt.Printf("smart albums:      %d\n", report.SmartAlbums)
+		fmt.Printf("person clusters:   %d\n", report.PhotoPersonClusters)
+		fmt.Printf("cluster faces:     %d\n", report.PhotoPersonClusterFaces)
+		fmt.Printf("cluster states:    %d\n", report.PhotoPersonClusterStates)
 		fmt.Printf("issues:            %d\n", len(report.Issues))
 		for _, issue := range report.Issues {
 			fmt.Printf(
-				"MEDIA_INTEGRITY owner=%d node=%d group=%d role=%q storage_key=%q reason=%s",
+				"MEDIA_INTEGRITY owner=%d node=%d group=%d asset=%d person_row=%d person=%q cluster=%d face=%d collection=%d role=%q storage_key=%q reason=%s",
 				issue.OwnerID,
 				issue.NodeID,
 				issue.GroupID,
+				issue.AssetID,
+				issue.PersonRowID,
+				issue.PersonID,
+				issue.ClusterID,
+				issue.FaceID,
+				issue.CollectionID,
 				issue.Role,
 				issue.StorageKey,
 				issue.Reason,
@@ -94,11 +106,16 @@ func runMediaRepair(args []string) error {
 		false,
 		"remove unreferenced thumbnail-cache files older than 24 hours",
 	)
+	gcIntelligence := fs.Bool(
+		"gc-intelligence",
+		false,
+		"remove old non-authoritative automatic person clusters",
+	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails]")
+		return fmt.Errorf("usage: xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails] [--gc-intelligence]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -129,6 +146,17 @@ func runMediaRepair(args []string) error {
 		}
 		report.ThumbnailGC = &gcReport
 	}
+	if *gcIntelligence {
+		gcReport, gcErr := maintenance.GarbageCollectPhotoIntelligence(
+			context.Background(),
+			db,
+			*dryRun,
+		)
+		if gcErr != nil {
+			return gcErr
+		}
+		report.IntelligenceGC = &gcReport
+	}
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -137,11 +165,14 @@ func runMediaRepair(args []string) error {
 		}
 	} else {
 		fmt.Printf(
-			"media repair: dry_run=%t thumbnail_actions=%d relation_actions=%d derived_actions=%d skipped=%d before_issues=%d after_issues=%d\n",
+			"media repair: dry_run=%t thumbnail_actions=%d relation_actions=%d derived_actions=%d person_membership_actions=%d person_cover_actions=%d person_cluster_actions=%d skipped=%d before_issues=%d after_issues=%d\n",
 			report.DryRun,
 			len(report.Actions),
 			len(report.RelationActions),
 			len(report.DerivedActions),
+			len(report.PersonMembershipActions),
+			len(report.PersonCoverActions),
+			len(report.PersonClusterActions),
 			len(report.Skipped),
 			len(report.Before.Issues),
 			len(report.After.Issues),
@@ -163,6 +194,27 @@ func runMediaRepair(args []string) error {
 					action.StorageKey,
 					action.Size,
 					action.ModifiedAt.UTC().Format(time.RFC3339),
+					action.Applied,
+					action.SkippedReason,
+				)
+			}
+		}
+		if report.IntelligenceGC != nil {
+			fmt.Printf(
+				"photo intelligence gc: min_age=%ds scanned=%d candidates=%d deleted=%d\n",
+				report.IntelligenceGC.MinAgeSeconds,
+				report.IntelligenceGC.ScannedClusters,
+				report.IntelligenceGC.CandidateClusters,
+				report.IntelligenceGC.DeletedClusters,
+			)
+			for _, action := range report.IntelligenceGC.Actions {
+				fmt.Printf(
+					"GC_PERSON_CLUSTER owner=%d cluster=%d key=%q reason=%s updated_at=%s applied=%t skipped=%q\n",
+					action.OwnerID,
+					action.ClusterID,
+					action.ClusterKey,
+					action.Reason,
+					action.UpdatedAt.UTC().Format(time.RFC3339),
 					action.Applied,
 					action.SkippedReason,
 				)
@@ -197,12 +249,48 @@ func runMediaRepair(args []string) error {
 				action.Applied,
 			)
 		}
+		for _, action := range report.PersonMembershipActions {
+			fmt.Printf(
+				"REPAIR_PERSON_MEMBERSHIP owner=%d person_row=%d person=%q asset=%d reason=%s applied=%t\n",
+				action.OwnerID,
+				action.PersonRowID,
+				action.PersonID,
+				action.AssetID,
+				action.Reason,
+				action.Applied,
+			)
+		}
+		for _, action := range report.PersonCoverActions {
+			fmt.Printf(
+				"REPAIR_PERSON_COVER owner=%d person_row=%d person=%q previous_asset=%d reasons=%q applied=%t\n",
+				action.OwnerID,
+				action.PersonRowID,
+				action.PersonID,
+				action.PreviousAssetID,
+				strings.Join(action.Reasons, ","),
+				action.Applied,
+			)
+		}
+		for _, action := range report.PersonClusterActions {
+			fmt.Printf(
+				"REPAIR_PERSON_CLUSTER owner=%d clusters=%v reset=%t reasons=%q applied=%t\n",
+				action.OwnerID,
+				action.ClusterIDs,
+				action.ResetProjection,
+				strings.Join(action.Reasons, ","),
+				action.Applied,
+			)
+		}
 		for _, issue := range report.Skipped {
 			fmt.Printf(
-				"SKIP_MEDIA_REPAIR owner=%d node=%d group=%d role=%q reason=%s\n",
+				"SKIP_MEDIA_REPAIR owner=%d node=%d group=%d asset=%d person=%q cluster=%d collection=%d role=%q reason=%s\n",
 				issue.OwnerID,
 				issue.NodeID,
 				issue.GroupID,
+				issue.AssetID,
+				issue.PersonID,
+				issue.ClusterID,
+				issue.CollectionID,
 				issue.Role,
 				issue.Reason,
 			)

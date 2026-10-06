@@ -17,23 +17,35 @@ import (
 )
 
 type MediaIntegrityIssue struct {
-	OwnerID    uint64 `json:"owner_id,omitempty"`
-	NodeID     uint64 `json:"node_id,omitempty"`
-	GroupID    uint64 `json:"group_id,omitempty"`
-	Role       string `json:"role,omitempty"`
-	StorageKey string `json:"storage_key,omitempty"`
-	Reason     string `json:"reason"`
-	Expected   string `json:"expected,omitempty"`
-	Actual     string `json:"actual,omitempty"`
+	OwnerID      uint64 `json:"owner_id,omitempty"`
+	NodeID       uint64 `json:"node_id,omitempty"`
+	GroupID      uint64 `json:"group_id,omitempty"`
+	AssetID      uint64 `json:"asset_id,omitempty"`
+	PersonRowID  uint64 `json:"person_row_id,omitempty"`
+	PersonID     string `json:"person_id,omitempty"`
+	ClusterID    uint64 `json:"cluster_id,omitempty"`
+	FaceID       uint64 `json:"face_id,omitempty"`
+	CollectionID uint64 `json:"collection_id,omitempty"`
+	Role         string `json:"role,omitempty"`
+	StorageKey   string `json:"storage_key,omitempty"`
+	Reason       string `json:"reason"`
+	Expected     string `json:"expected,omitempty"`
+	Actual       string `json:"actual,omitempty"`
 }
 
 type MediaVerifyReport struct {
-	Metadata         int                   `json:"metadata"`
-	Groups           int                   `json:"groups"`
-	GroupItems       int                   `json:"group_items"`
-	DerivedResources int                   `json:"derived_resources"`
-	Thumbnails       int                   `json:"thumbnails"`
-	Issues           []MediaIntegrityIssue `json:"issues"`
+	Metadata                 int                   `json:"metadata"`
+	Groups                   int                   `json:"groups"`
+	GroupItems               int                   `json:"group_items"`
+	DerivedResources         int                   `json:"derived_resources"`
+	Thumbnails               int                   `json:"thumbnails"`
+	PhotoPeople              int                   `json:"photo_people"`
+	PhotoPersonMemberships   int                   `json:"photo_person_memberships"`
+	SmartAlbums              int                   `json:"smart_albums"`
+	PhotoPersonClusters      int                   `json:"photo_person_clusters"`
+	PhotoPersonClusterFaces  int                   `json:"photo_person_cluster_faces"`
+	PhotoPersonClusterStates int                   `json:"photo_person_cluster_states"`
+	Issues                   []MediaIntegrityIssue `json:"issues"`
 }
 
 func (r MediaVerifyReport) OK() bool { return len(r.Issues) == 0 }
@@ -128,6 +140,18 @@ func verifyMedia(db *gorm.DB, storageRoot string) (MediaVerifyReport, error) {
 	if db.Statement != nil && db.Statement.Context != nil {
 		ctx = db.Statement.Context
 	}
+	personStats, personIssues, err := verifyPhotoPersonIntegrity(ctx, db)
+	if err != nil {
+		return report, err
+	}
+	report.PhotoPeople = personStats.People
+	report.PhotoPersonMemberships = personStats.Memberships
+	report.SmartAlbums = personStats.SmartAlbums
+	report.PhotoPersonClusters = personStats.PersonClusters
+	report.PhotoPersonClusterFaces = personStats.PersonClusterFaces
+	report.PhotoPersonClusterStates = personStats.PersonClusterStates
+	report.Issues = append(report.Issues, personIssues...)
+
 	ownerIDs := make(map[uint64]struct{})
 	for _, row := range metadata {
 		if row.OwnerID != 0 {
@@ -306,11 +330,29 @@ func sortMediaIntegrityIssues(issues []MediaIntegrityIssue) {
 		if a.OwnerID != b.OwnerID {
 			return a.OwnerID < b.OwnerID
 		}
+		if a.CollectionID != b.CollectionID {
+			return a.CollectionID < b.CollectionID
+		}
+		if a.PersonRowID != b.PersonRowID {
+			return a.PersonRowID < b.PersonRowID
+		}
+		if a.ClusterID != b.ClusterID {
+			return a.ClusterID < b.ClusterID
+		}
+		if a.FaceID != b.FaceID {
+			return a.FaceID < b.FaceID
+		}
 		if a.GroupID != b.GroupID {
 			return a.GroupID < b.GroupID
 		}
+		if a.AssetID != b.AssetID {
+			return a.AssetID < b.AssetID
+		}
 		if a.NodeID != b.NodeID {
 			return a.NodeID < b.NodeID
+		}
+		if a.PersonID != b.PersonID {
+			return a.PersonID < b.PersonID
 		}
 		if a.Role != b.Role {
 			return a.Role < b.Role
