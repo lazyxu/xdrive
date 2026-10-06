@@ -18,6 +18,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Grid thumbnails are viewport-proximate through one shared IntersectionObserver, share a global concurrency budget of 6 requests, cancel queued work when tiles unmount, and reuse a bounded 96-entry per-Explorer thumbnail cache.
 - Directory and search pagination reject duplicate in-flight load-more requests synchronously.
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
+- Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
 
 ## Performance scenarios
@@ -35,7 +36,7 @@ The FileExplorer performance suite should keep these workloads stable:
 
 ## Next work
 
-1. Add an indexed server search strategy so FileExplorer search does not recursively materialize the complete namespace for every query.
+1. Benchmark candidate-first search on 100k-node namespaces and add substring-name acceleration only if the initial component scan remains hot.
 2. Benchmark server sorting by size/type on very large directories and add expression/covering indexes only when EXPLAIN shows a measurable benefit.
 3. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
 4. Add measured render/interaction budgets to CI once trace fixtures are stable enough to avoid noisy failures.

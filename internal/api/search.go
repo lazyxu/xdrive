@@ -112,7 +112,7 @@ func (s *Server) searchNodes(c *gin.Context) {
 }
 
 func (s *Server) searchNodePage(ctx context.Context, ownerID uint64, query, nodeType string, limit int, cursor searchCursor) (searchPageDTO, error) {
-	const recursiveTree = `WITH RECURSIVE tree AS (
+	const recursivePathSearch = `WITH RECURSIVE tree AS (
   SELECT
     n.id, n.parent_id, n.name, n.type, n.revision, n.created_at, n.updated_at,
     ''::text AS path,
@@ -131,38 +131,124 @@ func (s *Server) searchNodePage(ctx context.Context, ownerID uint64, query, node
   FROM xd_nodes n
   JOIN tree ON n.parent_id = tree.id
   WHERE n.owner_id = ? AND n.deleted_at IS NULL
+),
+search_rows AS (
+  SELECT
+    tree.id,
+    tree.parent_id,
+    tree.name,
+    tree.type,
+    tree.revision,
+    tree.created_at,
+    tree.updated_at,
+    COALESCE(f.size, 0) AS size,
+    COALESCE(f.sha256, '') AS sha256,
+    tree.path,
+    tree.breadcrumbs::text AS breadcrumbs_json
+  FROM tree
+  LEFT JOIN xd_files f ON f.node_id = tree.id
+  WHERE tree.parent_id IS NOT NULL
+    AND strpos(lower(tree.path), lower(?)) > 0
 )
-SELECT
-  tree.id,
-  tree.parent_id,
-  tree.name,
-  tree.type,
-  tree.revision,
-  tree.created_at,
-  tree.updated_at,
-  COALESCE(f.size, 0) AS size,
-  COALESCE(f.sha256, '') AS sha256,
-  tree.path,
-  tree.breadcrumbs::text AS breadcrumbs_json
-FROM tree
-LEFT JOIN xd_files f ON f.node_id = tree.id
-WHERE tree.parent_id IS NOT NULL
-  AND strpos(lower(tree.path), lower(?)) > 0
-  AND (? = '' OR tree.type = ?)
+SELECT *
+FROM search_rows
+WHERE (? = '' OR search_rows.type = ?)
 `
 
-	sqlText := recursiveTree
+	const componentSearch = `WITH RECURSIVE candidate_tree AS (
+  SELECT n.id
+  FROM xd_nodes n
+  WHERE n.owner_id = ?
+    AND n.parent_id IS NOT NULL
+    AND n.deleted_at IS NULL
+    AND strpos(lower(n.name), lower(?)) > 0
+  UNION
+  SELECT n.id
+  FROM xd_nodes n
+  JOIN candidate_tree candidate ON n.parent_id = candidate.id
+  WHERE n.owner_id = ? AND n.deleted_at IS NULL
+),
+ancestry AS (
+  SELECT
+    candidate.id AS candidate_id,
+    n.id AS node_id,
+    n.parent_id,
+    n.name,
+    n.type,
+    0 AS depth
+  FROM candidate_tree candidate
+  JOIN xd_nodes n ON n.id = candidate.id
+  WHERE n.owner_id = ? AND n.deleted_at IS NULL
+  UNION ALL
+  SELECT
+    ancestry.candidate_id,
+    parent.id,
+    parent.parent_id,
+    parent.name,
+    parent.type,
+    ancestry.depth + 1
+  FROM ancestry
+  JOIN xd_nodes parent ON parent.id = ancestry.parent_id
+  WHERE parent.owner_id = ?
+    AND parent.deleted_at IS NULL
+    AND ancestry.depth < 10000
+),
+candidate_paths AS (
+  SELECT
+    ancestry.candidate_id,
+    string_agg(ancestry.name, '/' ORDER BY ancestry.depth DESC)
+      FILTER (WHERE ancestry.parent_id IS NOT NULL) AS path,
+    jsonb_agg(
+      jsonb_build_object('id', ancestry.node_id, 'name', ancestry.name)
+      ORDER BY ancestry.depth DESC
+    ) FILTER (WHERE ancestry.type = 'dir') AS breadcrumbs,
+    bool_or(ancestry.parent_id IS NULL) AS rooted
+  FROM ancestry
+  GROUP BY ancestry.candidate_id
+),
+search_rows AS (
+  SELECT
+    n.id,
+    n.parent_id,
+    n.name,
+    n.type,
+    n.revision,
+    n.created_at,
+    n.updated_at,
+    COALESCE(f.size, 0) AS size,
+    COALESCE(f.sha256, '') AS sha256,
+    candidate_paths.path,
+    candidate_paths.breadcrumbs::text AS breadcrumbs_json
+  FROM candidate_paths
+  JOIN xd_nodes n
+    ON n.id = candidate_paths.candidate_id
+    AND n.owner_id = ?
+    AND n.deleted_at IS NULL
+  LEFT JOIN xd_files f ON f.node_id = n.id
+  WHERE candidate_paths.rooted
+    AND candidate_paths.path IS NOT NULL
+)
+SELECT *
+FROM search_rows
+WHERE (? = '' OR search_rows.type = ?)
+`
+
+	sqlText := recursivePathSearch
 	args := []any{ownerID, ownerID, query, nodeType, nodeType}
+	if !strings.Contains(query, "/") {
+		sqlText = componentSearch
+		args = []any{ownerID, query, ownerID, ownerID, ownerID, ownerID, nodeType, nodeType}
+	}
 	if cursor.ID != 0 {
 		sqlText += `  AND (
-    (CASE WHEN tree.type = 'dir' THEN 0 ELSE 1 END) > ?
-    OR ((CASE WHEN tree.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(tree.path) > lower(?))
-    OR ((CASE WHEN tree.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(tree.path) = lower(?) AND tree.id > ?)
+    (CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) > ?
+    OR ((CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(search_rows.path) > lower(?))
+    OR ((CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(search_rows.path) = lower(?) AND search_rows.id > ?)
   )
 `
 		args = append(args, cursor.Rank, cursor.Rank, cursor.Path, cursor.Rank, cursor.Path, cursor.ID)
 	}
-	sqlText += "ORDER BY (CASE WHEN tree.type = 'dir' THEN 0 ELSE 1 END) ASC, lower(tree.path) ASC, tree.id ASC\nLIMIT ?"
+	sqlText += "ORDER BY (CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) ASC, lower(search_rows.path) ASC, search_rows.id ASC\nLIMIT ?"
 	args = append(args, limit+1)
 
 	var rows []searchRow

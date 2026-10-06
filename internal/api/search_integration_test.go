@@ -78,6 +78,12 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	projects := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID), tokenA, strings.NewReader(`{"name":"Projects"}`), http.StatusCreated)
 	reports := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", projects.ID), tokenA, strings.NewReader(`{"name":"Reports"}`), http.StatusCreated)
 	archive := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID), tokenA, strings.NewReader(`{"name":"Archive"}`), http.StatusCreated)
+	hiddenParent := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", rootA.ID), tokenA, strings.NewReader(`{"name":"HiddenParent"}`), http.StatusCreated)
+	createSearchFile(t, db, hiddenParent.ID, "Detached Needle.txt", 50)
+	hiddenAt := time.Now().UTC()
+	if err := db.Model(&meta.Node{}).Where("id = ?", hiddenParent.ID).Update("deleted_at", hiddenAt).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	alpha := createSearchFile(t, db, reports.ID, "Alpha Report.pdf", 10)
 	beta := createSearchFile(t, db, reports.ID, "Beta Report.pdf", 20)
@@ -173,6 +179,31 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 			item.Breadcrumbs[2].ID != reports.ID {
 			t.Fatalf("unexpected file breadcrumbs for %q: %+v", item.Path, item.Breadcrumbs)
 		}
+	}
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q="+url.QueryEscape("projects/reports")+"&type=file&limit=200",
+		tokenA, nil, http.StatusOK)
+	var pathSpanning searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &pathSpanning); err != nil {
+		t.Fatal(err)
+	}
+	if len(pathSpanning.Items) != 2 {
+		t.Fatalf("slash path search should retain full-path semantics: %+v", pathSpanning)
+	}
+	for _, item := range pathSpanning.Items {
+		if !strings.HasPrefix(strings.ToLower(item.Path), "projects/reports/") {
+			t.Fatalf("unexpected slash path result %q", item.Path)
+		}
+	}
+
+	res = request(t, router, http.MethodGet, "/api/v1/search?q=needle&type=file&limit=200", tokenA, nil, http.StatusOK)
+	var detached searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &detached); err != nil {
+		t.Fatal(err)
+	}
+	if len(detached.Items) != 0 {
+		t.Fatalf("active child below deleted ancestor must stay unreachable: %+v", detached.Items)
 	}
 
 	request(t, router, http.MethodGet, "/api/v1/search?q=x", tokenA, nil, http.StatusBadRequest)
