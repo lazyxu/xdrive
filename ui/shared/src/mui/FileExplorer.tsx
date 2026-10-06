@@ -56,6 +56,11 @@ import { formatBytes } from '../format'
 import type { XDriveFileTextPreview } from '../file-preview'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
+import {
+  xDriveFileExplorerKeyboardCommand,
+  xDriveFileExplorerPrimaryModifierActive,
+} from '../file-explorer-keyboard'
+import type { XDriveFileExplorerKeyboardProfile } from '../file-explorer-keyboard'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
@@ -660,6 +665,7 @@ export function XDriveFileExplorer({
   crumbs,
   loading = false,
   presentation = 'card',
+  keyboardProfile = 'web',
   emptyMessage = '此文件夹为空',
   tabBar,
   onNewTab,
@@ -732,6 +738,7 @@ export function XDriveFileExplorer({
   crumbs: XDriveFileExplorerCrumb[]
   loading?: boolean
   presentation?: XDriveFileExplorerPresentation
+  keyboardProfile?: XDriveFileExplorerKeyboardProfile
   emptyMessage?: string
   tabBar?: ReactNode
   onNewTab?: () => void
@@ -2050,7 +2057,7 @@ export function XDriveFileExplorer({
       return true
     }
 
-    const modifier = event.ctrlKey || event.metaKey
+    const modifier = xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)
     if (event.shiftKey) {
       const anchorID = selectionAnchorID ?? item.id
       if (selectionAnchorID === null) setSelectionAnchorID(anchorID)
@@ -2081,27 +2088,38 @@ export function XDriveFileExplorer({
   }
 
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
-    if (event.altKey && event.key === 'Enter') {
+    const command = xDriveFileExplorerKeyboardCommand(event, keyboardProfile)
+
+    if (command === 'properties') {
       event.preventDefault()
       event.stopPropagation()
       setPropertiesItems([item])
       return
     }
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
-      if (moveKeyboardFocus(event, item)) return
-    }
-    if (event.key === 'Enter') {
+    if (command === 'open') {
       event.preventDefault()
       event.stopPropagation()
       onOpenItem?.(item)
       return
     }
+    if (command === 'quick-look') {
+      event.preventDefault()
+      event.stopPropagation()
+      if (item.kind === 'dir') toggleKeyboardSelection(item)
+      else openQuickLook(item)
+      return
+    }
+    if (command) return
+
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+      if (moveKeyboardFocus(event, item)) return
+    }
     if (event.key === ' ') {
       event.preventDefault()
       event.stopPropagation()
-      if (event.ctrlKey || event.metaKey || item.kind === 'dir') toggleKeyboardSelection(item)
-      else openQuickLook(item)
-      return
+      if (xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile) || item.kind === 'dir') {
+        toggleKeyboardSelection(item)
+      }
     }
   }
 
@@ -2154,113 +2172,102 @@ export function XDriveFileExplorer({
   }
 
   const handleExplorerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    const modifier = event.ctrlKey || event.metaKey
-    const key = event.key.toLowerCase()
+    const command = xDriveFileExplorerKeyboardCommand(event, keyboardProfile)
 
-    if (modifier && key === 't' && onNewTab) {
+    if (command === 'new-tab' && onNewTab) {
       event.preventDefault()
       onNewTab()
       return
     }
-    if (modifier && key === 'w' && onCloseTab) {
+    if (command === 'close-tab' && onCloseTab) {
       event.preventDefault()
       onCloseTab()
       return
     }
-    if (modifier && event.key === 'Tab' && (onNextTab || onPreviousTab)) {
+    if ((command === 'next-tab' || command === 'previous-tab') && (onNextTab || onPreviousTab)) {
       event.preventDefault()
-      if (event.shiftKey) onPreviousTab?.()
+      if (command === 'previous-tab') onPreviousTab?.()
       else onNextTab?.()
       return
     }
-    if (event.altKey && event.key === 'ArrowLeft' && canGoBack && onBack) {
+    if (command === 'back' && canGoBack && onBack) {
       event.preventDefault()
       onBack()
       return
     }
-    if (event.altKey && event.key === 'ArrowRight' && canGoForward && onForward) {
+    if (command === 'forward' && canGoForward && onForward) {
       event.preventDefault()
       onForward()
       return
     }
-    if (event.altKey && event.key === 'ArrowUp' && canGoUp && onUp) {
+    if (command === 'up' && canGoUp && onUp) {
       event.preventDefault()
       onUp()
       return
     }
-    if ((modifier && key === 'l') || (event.altKey && key === 'd') || event.key === 'F4') {
+    if (command === 'focus-path') {
       if (!onPathSubmit) return
       event.preventDefault()
       setPathDraft(derivedPath)
       setEditingPath(true)
       return
     }
-    if ((modifier && (key === 'f' || key === 'e')) || event.key === 'F3') {
+    if (command === 'focus-search') {
       event.preventDefault()
       searchInputRef.current?.focus()
       searchInputRef.current?.select()
       return
     }
-    if ((event.key === 'F5' || (modifier && key === 'r')) && onRefresh) {
+    if (command === 'refresh' && onRefresh) {
       event.preventDefault()
       onRefresh()
       return
     }
-    if (modifier && event.shiftKey && key === 'n' && onCreateFolder) {
+    if (command === 'new-folder' && onCreateFolder) {
       event.preventDefault()
       onCreateFolder()
       return
     }
-    if (event.altKey && key === 'p') {
+    if (command === 'toggle-inspector') {
       event.preventDefault()
       setInspectorOpen((open) => !open)
       return
     }
 
     if (isEditableTarget(event.target)) return
-    if (
-      modifier &&
-      (key === 'y' || (event.shiftKey && key === 'z')) &&
-      canRedo &&
-      onRedo
-    ) {
+
+    if (command === 'redo' && canRedo && onRedo) {
       event.preventDefault()
       onRedo()
       return
     }
-    if (modifier && !event.shiftKey && key === 'z' && canUndo && onUndo) {
+    if (command === 'undo' && canUndo && onUndo) {
       event.preventDefault()
       onUndo()
       return
     }
-    if (typeSelectFromKeyboard(event)) return
-
-    const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
-      'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown',
-      ...(viewMode === 'grid' ? ['ArrowLeft', 'ArrowRight'] as const : []),
-    ]
-    if (activeItem && navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)) {
-      if (moveKeyboardFocus(event, activeItem)) return
-    }
-
-    if (event.key === ' ' && activeItem) {
+    if (command === 'properties' && activeItem) {
       event.preventDefault()
-      if (modifier || activeItem.kind === 'dir') toggleKeyboardSelection(activeItem)
+      setPropertiesItems([activeItem])
+      return
+    }
+    if (command === 'open' && activeItem) {
+      event.preventDefault()
+      onOpenItem?.(activeItem)
+      return
+    }
+    if (command === 'quick-look' && activeItem) {
+      event.preventDefault()
+      if (activeItem.kind === 'dir') toggleKeyboardSelection(activeItem)
       else openQuickLook(activeItem)
       return
     }
-
-    if (event.key === 'Backspace' && canGoBack && onBack) {
-      event.preventDefault()
-      onBack()
-      return
-    }
-    if (event.key === 'F2' && activeItem && onRenameItem && !renameDisabled) {
+    if (command === 'rename' && activeItem && onRenameItem && !renameDisabled) {
       event.preventDefault()
       beginRename(activeItem)
       return
     }
-    if (event.shiftKey && event.key === 'F10' && activeItem) {
+    if (command === 'context-menu' && activeItem) {
       event.preventDefault()
       const element = itemElementRefs.current.get(explorerIDKey(activeItem.id))
       const rect = element?.getBoundingClientRect()
@@ -2271,33 +2278,54 @@ export function XDriveFileExplorer({
       )
       return
     }
-    if (modifier && key === 'a') {
+    if (command === 'select-all') {
       event.preventDefault()
       const selectableItems = interactionProjection.orderedItems
       commitSelection(selectableItems.map((candidate) => candidate.id))
       if (activeItemID === null && selectableItems[0]) setActiveItemID(selectableItems[0].id)
       return
     }
-    if (modifier && key === 'c' && onCopyItems && selectedItems.length > 0) {
+    if (command === 'copy' && onCopyItems && selectedItems.length > 0) {
       event.preventDefault()
       onCopyItems(selectedItems)
       return
     }
-    if (modifier && key === 'x' && onCutItems && selectedItems.length > 0) {
+    if (command === 'cut' && onCutItems && selectedItems.length > 0) {
       event.preventDefault()
       onCutItems(selectedItems)
       return
     }
-    if (modifier && key === 'v' && onPaste && canPaste) {
+    if (command === 'paste' && onPaste && canPaste) {
       event.preventDefault()
       onPaste()
       return
     }
-    if (event.key === 'Delete' && onDeleteItems && selectedItems.length > 0) {
+    if (command === 'delete' && onDeleteItems && selectedItems.length > 0) {
       event.preventDefault()
       onDeleteItems(selectedItems)
       return
     }
+
+    if (typeSelectFromKeyboard(event)) return
+
+    const navigationKeys: XDriveFileExplorerKeyboardNavigationKey[] = [
+      'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown',
+      ...(viewMode === 'grid' ? ['ArrowLeft', 'ArrowRight'] as const : []),
+    ]
+    if (activeItem && navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)) {
+      if (moveKeyboardFocus(event, activeItem)) return
+    }
+
+    if (
+      event.key === ' ' &&
+      activeItem &&
+      xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)
+    ) {
+      event.preventDefault()
+      toggleKeyboardSelection(activeItem)
+      return
+    }
+
     if (event.key === 'Escape') clearSelection()
   }
 

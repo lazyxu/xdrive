@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
 const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
+const keyboard = read('ui', 'shared', 'src', 'file-explorer-keyboard.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -37,7 +38,7 @@ test('shared FileExplorer owns Windows-style keyboard navigation semantics', () 
     'moveKeyboardFocus(event, item)',
     'if (targetIndex === currentIndex) return true',
     'event.shiftKey',
-    'const modifier = event.ctrlKey || event.metaKey',
+    'const modifier = xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)',
     'focusItemAtIndex(targetIndex)',
     'navigationKeys.includes(event.key as XDriveFileExplorerKeyboardNavigationKey)',
   ]) assert.ok(explorer.includes(token), 'shared Explorer roving-focus behavior missing: ' + token)
@@ -68,27 +69,31 @@ test('shared FileExplorer supports Windows-style type-to-select', () => {
   ]) assert.ok(explorer.includes(token), 'shared Explorer type-select behavior missing: ' + token)
 })
 
-test('shared FileExplorer owns Windows-style Explorer shortcuts without stealing text editing keys', () => {
+test('shared FileExplorer uses the keyboard command resolver without stealing text editing keys', () => {
   for (const token of [
-    "event.altKey && event.key === 'ArrowLeft'",
-    "event.altKey && event.key === 'ArrowRight'",
-    "event.altKey && event.key === 'ArrowUp'",
-    "modifier && key === 'l'",
-    "event.altKey && key === 'd'",
-    "event.key === 'F4'",
-    "modifier && (key === 'f' || key === 'e')",
-    "event.key === 'F3'",
-    "event.key === 'F5'",
-    "modifier && key === 'r'",
-    "modifier && event.shiftKey && key === 'n'",
-    "event.altKey && key === 'p'",
-    "event.key === 'Backspace'",
-    "event.key === 'F2'",
-    "event.shiftKey && event.key === 'F10'",
+    'xDriveFileExplorerKeyboardCommand',
+    "command === 'back'",
+    "command === 'forward'",
+    "command === 'up'",
+    "command === 'focus-path'",
+    "command === 'focus-search'",
+    "command === 'refresh'",
+    "command === 'new-folder'",
+    "command === 'toggle-inspector'",
+    "command === 'rename'",
+    "command === 'context-menu'",
     'isEditableTarget(event.target)',
     'inputRef={searchInputRef}',
     'onFocus={(event) => event.currentTarget.select()}',
-  ]) assert.ok(explorer.includes(token), 'shared Explorer shortcut missing: ' + token)
+  ]) assert.ok(explorer.includes(token), 'shared Explorer command dispatch missing: ' + token)
+
+  for (const token of [
+    "XDriveFileExplorerKeyboardProfile = 'windows' | 'macos' | 'web'",
+    "if (key === 'f2') return 'rename'",
+    "if (key === 'enter') return 'rename'",
+    "if (key === 'arrowdown' || key === 'o') return 'open'",
+    "if (key === 'backspace') return 'delete'",
+  ]) assert.ok(keyboard.includes(token), 'shared keyboard profile binding missing: ' + token)
 })
 
 test('shared FileExplorer owns inline rename and extension-aware selection', () => {

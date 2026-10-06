@@ -25,9 +25,9 @@ test('Space opens Quick Look while Ctrl/Cmd+Space retains keyboard selection', (
   for (const token of [
     'const [quickLookItemID, setQuickLookItemID]',
     "if (item.kind !== 'file') return",
-    "event.key === ' '",
-    'event.ctrlKey || event.metaKey || item.kind ===',
-    'if (modifier || activeItem.kind ===',
+    "command === 'quick-look'",
+    "if (item.kind === 'dir') toggleKeyboardSelection(item)",
+    'xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)',
     'else openQuickLook(item)',
     'else openQuickLook(activeItem)',
     '<XDriveFileQuickLookDialog',

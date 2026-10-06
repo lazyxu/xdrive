@@ -21,6 +21,7 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+  xDriveFileExplorerKeyboardProfileFromPlatform,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
   xDriveFileExplorerNodeForItem,
@@ -37,6 +38,11 @@ import type { SearchResult, XDriveApi } from './api'
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 const FILE_VIEW_PREFERENCES_KEY = 'xdrive.files.view_preferences'
+const FILE_KEYBOARD_PROFILE = xDriveFileExplorerKeyboardProfileFromPlatform(
+  typeof navigator === 'undefined'
+    ? ''
+    : `${navigator.platform} ${navigator.userAgent}`,
+)
 
 type Crumb = { id: number; name: string }
 
@@ -369,6 +375,7 @@ export default function WebFileExplorer({
       ) : null}
       <XDriveFileExplorer
         presentation="workspace"
+        keyboardProfile={FILE_KEYBOARD_PROFILE}
         items={explorerItems}
         crumbs={explorerCrumbs}
         virtualCollection={explorerVirtualCollection}

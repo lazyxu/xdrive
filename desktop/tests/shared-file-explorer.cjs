@@ -95,7 +95,7 @@ test('shared FileExplorer supports Explorer-style selection semantics', () => {
   assert.ok(explorer.includes('defaultSelectedIDs = []'), 'uncontrolled selection contract is missing')
   assert.ok(explorer.includes('event.ctrlKey || event.metaKey'), 'Ctrl/Cmd additive selection is missing')
   assert.ok(explorer.includes('event.shiftKey && selectionAnchorID !== null'), 'Shift range selection is missing')
-  assert.ok(explorer.includes("modifier && key === 'a'"), 'Ctrl/Cmd+A select-all is missing')
+  assert.ok(explorer.includes("command === 'select-all'"), 'shared select-all command is missing')
   assert.ok(explorer.includes("event.key === 'Escape'"), 'Escape selection clearing is missing')
   assert.ok(explorer.includes("event.key === ' '"), 'keyboard Space selection is missing')
   assert.ok(explorer.includes('aria-selected={selected}'), 'selected rows/items need accessible selected state')
@@ -122,9 +122,9 @@ test('shared FileExplorer supports clipboard keyboard, command-bar and context-m
     'onCopyItems?: (items: XDriveFileExplorerItem[]) => void',
     'onCutItems?: (items: XDriveFileExplorerItem[]) => void',
     'onPaste?: () => void',
-    "modifier && key === 'c'",
-    "modifier && key === 'x'",
-    "modifier && key === 'v'",
+    "command === 'copy'",
+    "command === 'cut'",
+    "command === 'paste'",
     "label: '复制'",
     "label: '剪切'",
     "label: '粘贴'",
@@ -144,7 +144,7 @@ test('shared FileExplorer supports selection bulk actions', () => {
     "label: folderDownloadSupported ? '下载所选项目' : '下载所选文件'",
     "candidate.kind === 'file' || folderDownloadSupported",
     "label: '删除所选项目'",
-    "event.key === 'Delete'",
+    "command === 'delete'",
     '<DownloadRoundedIcon',
     '<DeleteOutlineRoundedIcon',
   ]) {
@@ -207,7 +207,7 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
     'data-xdrive-file-explorer-preview',
     "label: '属性'",
     'onSelect: () => setPropertiesItems(selection)',
-    "event.altKey && event.key === 'Enter'",
+    "command === 'properties'",
     '<XDriveFilePropertiesDialog',
     '选择一个项目以查看预览和属性。',
     '已选择 {selectedItems.length} 个项目',

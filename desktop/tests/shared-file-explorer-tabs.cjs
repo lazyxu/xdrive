@@ -73,12 +73,12 @@ test('shared FileExplorer renders a reusable tab bar and keyboard tab commands',
     'onCloseTab?: () => void',
     'onNextTab?: () => void',
     'onPreviousTab?: () => void',
-    "modifier && key === 't'",
-    "modifier && key === 'w'",
-    "modifier && event.key === 'Tab'",
+    "command === 'new-tab'",
+    "command === 'close-tab'",
+    "command === 'next-tab' || command === 'previous-tab'",
     'data-xdrive-file-explorer-tab-bar',
   ]) {
-    assert.ok(explorer.includes(token), 'FileExplorer tab shell/shortcut missing: ' + token)
+    assert.ok(explorer.includes(token), 'FileExplorer tab shell/command missing: ' + token)
   }
 })
 
