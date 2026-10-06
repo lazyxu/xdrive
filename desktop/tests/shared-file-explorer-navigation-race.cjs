@@ -52,6 +52,18 @@ function createHookRuntime() {
       }
       return slots[index].value
     },
+    useCallback(callback, deps) {
+      const index = cursor++
+      const current = slots[index]
+      if (!current || !sameDeps(current.deps, deps)) {
+        slots[index] = {
+          kind: 'callback',
+          deps: deps ? [...deps] : undefined,
+          value: callback,
+        }
+      }
+      return slots[index].value
+    },
     useEffect(effect, deps) {
       const index = cursor++
       const current = slots[index]
@@ -116,6 +128,65 @@ function loadNavigationHook(react) {
   const execute = new Function('exports', 'module', 'require', output)
   execute(mod.exports, mod, localRequire)
   return mod.exports.useXDriveFileExplorerNavigation
+}
+
+function loadTypeScriptModule(relativePath, react, extraModules = {}) {
+  const filename = path.join(repo, ...relativePath)
+  const source = fs.readFileSync(filename, 'utf8')
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+
+  const mod = { exports: {} }
+  const localRequire = (request) => {
+    if (request === 'react' && react) return react
+    if (Object.prototype.hasOwnProperty.call(extraModules, request)) {
+      return extraModules[request]
+    }
+    return require(request)
+  }
+  const execute = new Function('exports', 'module', 'require', output)
+  execute(mod.exports, mod, localRequire)
+  return mod.exports
+}
+
+function loadFileExplorerController() {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'file-explorer-controller.ts'],
+    null,
+  )
+}
+
+function loadQuickAccessHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerQuickAccessController.ts'],
+    react,
+  ).useXDriveFileExplorerQuickAccess
+}
+
+function loadRecentHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerRecentController.ts'],
+    react,
+  ).useXDriveFileExplorerRecent
+}
+
+function loadSearchHook(react) {
+  const controller = loadFileExplorerController()
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'],
+    react,
+    { '../file-explorer-controller': controller },
+  ).useXDriveFileExplorerSearch
+}
+
+async function flushAsync() {
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 function cloneCrumbs(crumbs) {
@@ -335,4 +406,275 @@ test('closing a tab while its activation is pending cannot resurrect the closed 
   assert.equal(driver.visibleDirectoryID, root.id)
   assert.equal(finalNavigation.current.id, root.id)
   assert.equal(finalNavigation.pathValue, '我的文件')
+})
+
+
+test('rapid back navigation cannot overwrite a newer direct folder navigation', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderB = { id: 2, name: 'B' }
+  const folderC = { id: 3, name: 'C' }
+  const folderD = { id: 4, name: 'D' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+  await navigation.navigateTo([root, folderB])
+  navigation = harness.render()
+  await navigation.navigateTo([root, folderC])
+  navigation = harness.render()
+
+  driver.controlRequests()
+  const backToB = navigation.goBack()
+  const directToD = navigation.navigateTo([root, folderD])
+
+  driver.resolveDirectory(folderD.id)
+  await directToD
+  driver.resolveDirectory(folderB.id)
+  await backToB
+
+  const finalNavigation = harness.render()
+  const activeTab = finalNavigation.tabs.find(
+    (tab) => tab.id === finalNavigation.activeTabID,
+  )
+  assert.equal(driver.visibleDirectoryID, folderD.id)
+  assert.equal(finalNavigation.pathValue, '我的文件/D')
+  assert.equal(activeTab.label, folderD.name)
+})
+
+test('sort refresh supersedes an older pending folder navigation without corrupting history', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderB = { id: 2, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  const navigation = harness.render()
+  driver.controlRequests()
+
+  const toB = navigation.navigateTo([root, folderB])
+  navigation.changeSort({ key: 'updated', direction: 'desc' })
+
+  driver.resolveDirectory(root.id)
+  await flushAsync()
+  driver.resolveDirectory(folderB.id)
+  await toB
+
+  const finalNavigation = harness.render()
+  const activeTab = finalNavigation.tabs.find(
+    (tab) => tab.id === finalNavigation.activeTabID,
+  )
+  assert.equal(driver.visibleDirectoryID, root.id)
+  assert.equal(finalNavigation.pathValue, '我的文件')
+  assert.equal(activeTab.label, root.name)
+  assert.deepEqual(finalNavigation.sort, { key: 'updated', direction: 'desc' })
+})
+
+test('stale typed-path resolution cannot override a newer direct folder click', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A', type: 'dir' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+  const { xDriveFileExplorerSubmitPath } = loadFileExplorerController()
+
+  harness.render()
+  let navigation = harness.render()
+
+  let releaseChildLookup
+  let markChildLookupRequested
+  const childLookupRequested = new Promise((resolve) => {
+    markChildLookupRequested = resolve
+  })
+  const findChildDirectory = () => new Promise((resolve) => {
+    releaseChildLookup = resolve
+    markChildLookupRequested()
+  })
+
+  const navigationIntentID = navigation.beginNavigationIntent()
+  const typedPath = xDriveFileExplorerSubmitPath({
+    rawPath: '我的文件/A',
+    currentCrumbs: [root],
+    loadRoot: async () => root,
+    findChildDirectory,
+    navigate: (nextCrumbs) => (
+      navigation.navigateTo(nextCrumbs, true, navigationIntentID)
+    ),
+  })
+
+  await childLookupRequested
+  await navigation.navigateTo([root, folderB])
+  navigation = harness.render()
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  releaseChildLookup(folderA)
+  await typedPath
+
+  const finalNavigation = harness.render()
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderB.id,
+    'an older typed-path intent must not steal navigation after a newer folder click',
+  )
+  assert.equal(finalNavigation.pathValue, '我的文件/B')
+})
+
+test('stale Quick Access lookup cannot override a newer direct folder click', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+  const quickItem = {
+    node: { id: folderA.id, name: folderA.name },
+    path: '/A',
+    crumbs: [root, folderA],
+    pinned_at: '2026-10-06T00:00:00Z',
+  }
+
+  const driver = createDirectoryDriver([root])
+  const navigationHarness = createNavigationHarness(driver)
+  const quickRuntime = createHookRuntime()
+  const useQuickAccess = loadQuickAccessHook(quickRuntime.react)
+  let controlled = false
+  let releaseLookup
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([quickItem])
+    return new Promise((resolve) => {
+      releaseLookup = () => resolve([quickItem])
+    })
+  }
+  const renderQuick = () => quickRuntime.render(() => useQuickAccess({
+    loadItems,
+    pinItem: async () => quickItem,
+    unpinItem: async () => undefined,
+    onError: (error) => { throw error },
+  }))
+
+  navigationHarness.render()
+  let navigation = navigationHarness.render()
+  renderQuick()
+  await flushAsync()
+  const quick = renderQuick()
+
+  controlled = true
+  const navigationIntentID = navigation.beginNavigationIntent()
+  const staleQuick = quick.navigate(
+    folderA.id,
+    (nextCrumbs) => navigation.navigateTo(nextCrumbs, true, navigationIntentID),
+  )
+  await flushAsync()
+
+  await navigation.navigateTo([root, folderB])
+  navigation = navigationHarness.render()
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  releaseLookup()
+  await staleQuick
+
+  const finalNavigation = navigationHarness.render()
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderB.id,
+    'an older Quick Access lookup must not steal navigation after a newer folder click',
+  )
+  assert.equal(finalNavigation.pathValue, '我的文件/B')
+})
+
+test('stale Recent lookup cannot override a newer direct folder click', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+  const recentItem = {
+    node: { id: folderA.id, name: folderA.name, type: 'dir' },
+    path: '/A',
+    crumbs: [root, folderA],
+    accessed_at: '2026-10-06T00:00:00Z',
+  }
+
+  const driver = createDirectoryDriver([root])
+  const navigationHarness = createNavigationHarness(driver)
+  const recentRuntime = createHookRuntime()
+  const useRecent = loadRecentHook(recentRuntime.react)
+  let controlled = false
+  let releaseLookup
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([recentItem])
+    return new Promise((resolve) => {
+      releaseLookup = () => resolve([recentItem])
+    })
+  }
+  const renderRecent = () => recentRuntime.render(() => useRecent({
+    loadItems,
+    touchItem: async () => recentItem,
+    clearItems: async () => undefined,
+  }))
+
+  navigationHarness.render()
+  let navigation = navigationHarness.render()
+  renderRecent()
+  await flushAsync()
+  const recent = renderRecent()
+
+  controlled = true
+  const navigationIntentID = navigation.beginNavigationIntent()
+  const staleRecent = recent.activate(folderA.id, {
+    onDirectory: (nextCrumbs) => (
+      navigation.navigateTo(nextCrumbs, true, navigationIntentID)
+    ),
+    onFile: async () => undefined,
+  })
+  await flushAsync()
+
+  await navigation.navigateTo([root, folderB])
+  navigation = navigationHarness.render()
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  releaseLookup()
+  await staleRecent
+
+  const finalNavigation = navigationHarness.render()
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderB.id,
+    'an older Recent lookup must not steal navigation after a newer folder click',
+  )
+  assert.equal(finalNavigation.pathValue, '我的文件/B')
+})
+
+test('newer search submission wins when search responses complete out of order', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const pending = new Map()
+  const loadPage = (query) => new Promise((resolve) => {
+    pending.set(query, resolve)
+  })
+  const errors = []
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadPage,
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  const oldSearch = search.submitSearch('old')
+  search = renderSearch()
+  const newSearch = search.submitSearch('new')
+
+  pending.get('new')({
+    items: [{ node: { id: 20 }, path: '/new' }],
+    next_cursor: '',
+  })
+  await newSearch
+
+  pending.get('old')({
+    items: [{ node: { id: 10 }, path: '/old' }],
+    next_cursor: '',
+  })
+  await oldSearch
+
+  search = renderSearch()
+  assert.equal(errors.length, 0)
+  assert.equal(search.searchState.query, 'new')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
 })

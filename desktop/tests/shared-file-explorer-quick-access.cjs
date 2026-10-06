@@ -94,7 +94,7 @@ test('Web and Desktop use the same Quick Access controller with transport-only a
     'pinItem: (nodeID) => api.pinFileQuickAccess(nodeID)',
     'unpinItem: (nodeID) => api.unpinFileQuickAccess(nodeID)',
     'quickAccessItems={quickAccess.items}',
-    'quickAccess.navigate(nodeID',
+    'quickAccess.navigate(',
   ]) assert.ok(webExplorer.includes(token), 'Web Quick Access adapter missing: ' + token)
 
   for (const token of [
@@ -104,7 +104,7 @@ test('Web and Desktop use the same Quick Access controller with transport-only a
     'cloudPinFileQuickAccess(nodeID)',
     'cloudUnpinFileQuickAccess(nodeID)',
     'quickAccessItems={quickAccess.items}',
-    'quickAccess.navigate(nodeID',
+    'quickAccess.navigate(',
   ]) assert.ok(desktopExplorer.includes(token), 'Desktop Quick Access adapter missing: ' + token)
 
   assert.ok(desktopApp.includes("capabilities.includes('file-quick-access')"), 'Desktop must capability-gate Quick Access')

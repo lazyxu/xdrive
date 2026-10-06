@@ -116,16 +116,19 @@ export function useXDriveFileExplorerWorkspace<
   })
 
   const submitPath = async (rawPath: string) => {
+    const navigationIntentID = navigation.beginNavigationIntent()
     try {
       await xDriveFileExplorerSubmitPath({
         rawPath,
         currentCrumbs: crumbs,
         loadRoot,
         findChildDirectory,
-        navigate: navigation.navigateTo,
+        navigate: async (nextCrumbs) => {
+          await navigation.navigateTo(nextCrumbs, true, navigationIntentID)
+        },
       })
     } catch (error) {
-      onError(error)
+      if (navigation.isNavigationIntentCurrent(navigationIntentID)) onError(error)
     }
   }
 

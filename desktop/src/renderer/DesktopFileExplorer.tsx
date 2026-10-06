@@ -138,6 +138,8 @@ export default function DesktopFileExplorer({
     sort,
     changeSort,
     refresh,
+    beginNavigationIntent,
+    isNavigationIntentCurrent,
     navigateTo,
     navigateToCrumb,
     goBack,
@@ -757,7 +759,11 @@ export default function DesktopFileExplorer({
             quickAccessBusyID={quickAccess.busyID}
             currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
             onNavigateQuickAccess={(nodeID) => {
-              void quickAccess.navigate(nodeID, (nextCrumbs) => navigateTo(nextCrumbs))
+              const navigationIntentID = beginNavigationIntent()
+              void quickAccess.navigate(
+                nodeID,
+                (nextCrumbs) => navigateTo(nextCrumbs, true, navigationIntentID),
+              )
             }}
             onToggleCurrentQuickAccess={() => {
               if (current) void quickAccess.toggle(current.id)
@@ -767,9 +773,16 @@ export default function DesktopFileExplorer({
             recentItems={recent.items}
             recentLoading={recent.loading}
             onActivateRecent={(nodeID) => {
+              const navigationIntentID = beginNavigationIntent()
               void recent.activate(nodeID, {
-                onDirectory: (nextCrumbs) => navigateTo(nextCrumbs),
-                onFile: (item) => openLocalNode(item.node),
+                onDirectory: (nextCrumbs) => (
+                  navigateTo(nextCrumbs, true, navigationIntentID)
+                ),
+                onFile: (item) => (
+                  isNavigationIntentCurrent(navigationIntentID)
+                    ? openLocalNode(item.node)
+                    : undefined
+                ),
               })
             }}
             onClearRecent={() => { void recent.clear() }}

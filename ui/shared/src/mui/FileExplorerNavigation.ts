@@ -92,6 +92,12 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     navigationRequestRef.current.id === requestID
   )
 
+  const beginNavigationIntent = () => beginNavigation(activeTabID)
+
+  const isNavigationIntentCurrent = (requestID: number) => (
+    isNavigationCurrent(requestID)
+  )
+
   const updateActiveTab = (
     updater: (
       tab: XDriveFileExplorerNavigationTab<TCrumb>,
@@ -154,10 +160,15 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     onAfterNavigate?.(nextCrumbs)
   }
 
-  const navigateTo = async (nextCrumbs: TCrumb[], record = true) => {
+  const navigateTo = async (
+    nextCrumbs: TCrumb[],
+    record = true,
+    navigationIntentID?: number,
+  ) => {
     const target = nextCrumbs.at(-1)
     if (!target) return
-    const requestID = beginNavigation(activeTabID)
+    const requestID = navigationIntentID ?? beginNavigation(activeTabID)
+    if (!isNavigationCurrent(requestID)) return
     await onLoadDirectory(target.id, nextCrumbs, sort)
     if (!isNavigationCurrent(requestID)) return
     if (record) recordHistory(nextCrumbs)
@@ -279,6 +290,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     sort,
     changeSort,
     refresh,
+    beginNavigationIntent,
+    isNavigationIntentCurrent,
     navigateTo,
     navigateToCrumb,
     goBack,
