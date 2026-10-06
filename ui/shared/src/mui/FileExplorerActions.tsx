@@ -6,6 +6,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
+import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
@@ -20,6 +21,9 @@ export function xDriveFileExplorerStandardItemMenuItems({
   primaryDisabled = false,
   onOpen,
   onOpenInNewTab,
+  onToggleQuickAccess,
+  quickAccessPinned = false,
+  quickAccessDisabled = false,
   onSystemOpen,
   systemOpenLabel = '使用系统打开',
   onDownload,
@@ -35,6 +39,9 @@ export function xDriveFileExplorerStandardItemMenuItems({
   primaryDisabled?: boolean
   onOpen?: () => void
   onOpenInNewTab?: () => void
+  onToggleQuickAccess?: () => void
+  quickAccessPinned?: boolean
+  quickAccessDisabled?: boolean
   onSystemOpen?: () => void
   systemOpenLabel?: string
   onDownload?: () => void
@@ -65,6 +72,15 @@ export function xDriveFileExplorerStandardItemMenuItems({
         icon: <TabRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
         onSelect: onOpenInNewTab,
+      })
+    }
+    if (onToggleQuickAccess) {
+      items.push({
+        id: 'toggle-quick-access',
+        label: quickAccessPinned ? '从快速访问取消固定' : '固定到快速访问',
+        icon: <PushPinRoundedIcon fontSize="small" />,
+        disabled: primaryDisabled || quickAccessDisabled,
+        onSelect: onToggleQuickAccess,
       })
     }
     if (onReveal) {

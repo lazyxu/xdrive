@@ -665,6 +665,11 @@ export default function DesktopFileExplorer({
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
         : undefined,
+      onToggleQuickAccess: node.type === 'dir' && quickAccessSupported
+        ? () => { void quickAccess.toggle(node.id) }
+        : undefined,
+      quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
+      quickAccessDisabled: quickAccess.busyID !== null,
       onSystemOpen: node.type === 'file'
         ? () => { void openLocalNode(node) }
         : undefined,
