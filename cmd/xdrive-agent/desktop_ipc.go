@@ -32,8 +32,8 @@ import (
 
 const (
 	desktopIPCAPIVersion       = 1
-	desktopIPCProtocolMin      = 1
-	desktopIPCProtocolMax      = 1
+	desktopIPCProtocolMin      = 2
+	desktopIPCProtocolMax      = 2
 	desktopIPCDiscoveryName    = "desktop-ipc.json"
 	desktopIPCMaxBodyBytes     = 64 << 10
 	desktopIPCDefaultEventWait = 25 * time.Second
@@ -2322,7 +2322,14 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	writeDesktopIPCJSON(w, http.StatusOK, thumbnail)
+	contentType := strings.TrimSpace(thumbnail.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(thumbnail.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(thumbnail.Data)
 }
 
 func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.Request) {

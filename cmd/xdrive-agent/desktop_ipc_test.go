@@ -1483,7 +1483,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		}},
 		cloudMediaThumbnail: agentMediaThumbnail{
 			ContentType: "image/jpeg",
-			DataBase64:  "ZmFrZS1qcGVn",
+			Data:        []byte("fake-jpeg"),
 		},
 		cloudMediaMotion: agentMediaMotion{
 			ContentType: "video/quicktime",
@@ -1702,9 +1702,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
 	if res.Code != http.StatusOK ||
-		!strings.Contains(res.Body.String(), "\"content_type\":\"image/jpeg\"") ||
-		!strings.Contains(res.Body.String(), "\"data_base64\":\"ZmFrZS1qcGVn\"") {
-		t.Fatalf("media thumbnail status=%d body=%s", res.Code, res.Body.String())
+		res.Header().Get("Content-Type") != "image/jpeg" ||
+		res.Body.String() != "fake-jpeg" {
+		t.Fatalf("media thumbnail status=%d content_type=%q body=%q", res.Code, res.Header().Get("Content-Type"), res.Body.String())
 	}
 	if ctrl.cloudMediaThumbnailID != 31 {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)

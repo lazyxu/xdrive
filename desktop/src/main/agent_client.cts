@@ -596,7 +596,7 @@ export type AgentMediaDescription = {
 
 export type AgentMediaThumbnail = {
   content_type: string
-  data_base64: string
+  data: ArrayBuffer
 }
 
 export type AgentMediaMotion = {
@@ -757,8 +757,8 @@ export class AgentIPCError extends Error {
 }
 
 export class AgentIPCClient {
-  static readonly protocolMin = 1
-  static readonly protocolMax = 1
+  static readonly protocolMin = 2
+  static readonly protocolMax = 2
 
   private readonly discoveryPath: string
   private discovery: AgentDiscovery | null = null
@@ -1116,10 +1116,8 @@ export class AgentIPCClient {
 
   mediaThumbnail(nodeID: number) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
-    return this.request<AgentMediaThumbnail>(
-      'GET',
+    return this.requestBinary(
       `/v1/media/thumbnail?${query.toString()}`,
-      undefined,
       45_000,
     )
   }
@@ -1621,6 +1619,81 @@ export class AgentIPCClient {
     const discovery = validateDiscovery(value)
     this.discovery = discovery
     return discovery
+  }
+
+  private async requestBinary(
+    endpoint: string,
+    timeoutMs = 10_000,
+    externalSignal?: AbortSignal,
+  ): Promise<AgentMediaThumbnail> {
+    let lastError: unknown
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const discovery = await this.loadDiscovery(attempt > 0)
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      const abort = () => controller.abort()
+      externalSignal?.addEventListener('abort', abort, { once: true })
+
+      try {
+        const response = await fetch(new URL(endpoint, discovery.base_url), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${discovery.token}`,
+            Accept: 'image/*, application/octet-stream',
+          },
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          const text = await response.text()
+          let payload: unknown = {}
+          if (text) {
+            try {
+              payload = JSON.parse(text)
+            } catch {
+              payload = {}
+            }
+          }
+          const errorPayload = payload as { error?: unknown; message?: unknown; detail?: unknown }
+          const code = typeof errorPayload.error === 'string' ? errorPayload.error : 'agent_error'
+          const message = typeof errorPayload.message === 'string'
+            ? errorPayload.message
+            : `xdrive-agent request failed with HTTP ${response.status}.`
+          const detail = typeof errorPayload.detail === 'string' ? errorPayload.detail : undefined
+          const apiError = new AgentIPCError(code, response.status, message, detail)
+          if (response.status === 401 && attempt === 0) {
+            this.invalidate()
+            lastError = apiError
+            continue
+          }
+          throw apiError
+        }
+
+        const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim() || 'application/octet-stream'
+        return {
+          content_type: contentType,
+          data: await response.arrayBuffer(),
+        }
+      } catch (error) {
+        if (externalSignal?.aborted) {
+          throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
+        }
+        if (error instanceof AgentIPCError) throw error
+        lastError = error
+        this.invalidate()
+        if (attempt === 0) continue
+      } finally {
+        clearTimeout(timer)
+        externalSignal?.removeEventListener('abort', abort)
+      }
+    }
+
+    throw new AgentIPCError(
+      'agent_unavailable',
+      0,
+      lastError instanceof Error ? `xdrive-agent is not reachable: ${lastError.message}` : 'xdrive-agent is not reachable.',
+    )
   }
 
   private async request<T>(

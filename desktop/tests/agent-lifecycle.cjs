@@ -7,8 +7,8 @@ const { AgentIPCError } = require('../dist/main/agent_client.cjs')
 function hello(version = 'test') {
   return {
     discovery_version: 1,
-    protocol_min: 1,
-    protocol_max: 1,
+    protocol_min: 2,
+    protocol_max: 2,
     agent_version: version,
     pid: 42,
     platform: 'linux',

@@ -54,7 +54,9 @@ test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(web.includes('api.mediaThumbnail(Number(item.id))'), 'Web Explorer is not wired to the real media thumbnail API')
   assert.ok(web.includes('URL.createObjectURL(blob)'), 'Web Explorer should avoid base64 inflation for thumbnail blobs')
   assert.ok(desktop.includes('getMediaThumbnail(Number(item.id))'), 'Desktop Explorer is not wired to the Agent thumbnail API')
-  assert.ok(desktop.includes('data:${contentType};base64,${result.data.data_base64}'), 'Desktop thumbnail data URL mapping is missing')
+  assert.ok(desktop.includes('new Blob([result.data.data], { type: contentType })'), 'Desktop thumbnail binary Blob mapping is missing')
+  assert.ok(desktop.includes('URL.createObjectURL(blob)'), 'Desktop thumbnail should expose binary data through a Blob URL')
+  assert.equal(desktop.includes('data_base64'), false, 'Desktop FileExplorer thumbnail transport must not use base64')
 })
 
 test('large Details and Grid directories use bounded rendering', () => {

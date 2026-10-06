@@ -17,6 +17,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Selected-size aggregation scales with the selected set rather than the complete loaded directory.
 - Paged node projection builds the node index and Explorer item view models in one pass, while breadcrumb path prefixes are computed once per directory instead of once per item.
 - Grid thumbnails are viewport-proximate through one shared IntersectionObserver, share a global concurrency budget of 6 requests, cancel queued work when tiles unmount, and reuse a bounded 96-entry per-Explorer thumbnail cache.
+- Desktop thumbnail transport stays binary from xdrive-agent to Electron: Agent IPC returns raw bytes, Desktop carries them as ArrayBuffer, and renderer surfaces create Blob URLs instead of base64 JSON/data URLs.
 - Directory and search pagination reject duplicate in-flight load-more requests synchronously.
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.

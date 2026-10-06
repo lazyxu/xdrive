@@ -102,6 +102,25 @@ test('media places use the scoped Agent API', async (t) => {
   assert.equal(places[0].item_count, 4)
 })
 
+test('media thumbnail stays binary over Agent IPC', async (t) => {
+  const { client, token } = await fixture(t, (req, res) => {
+    assert.equal(req.headers.authorization, `Bearer ${token}`)
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/media/thumbnail')
+    assert.equal(url.searchParams.get('node_id'), '31')
+    res.statusCode = 200
+    res.setHeader('Content-Type', 'image/jpeg')
+    res.end(Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+  })
+
+  const result = await client.mediaThumbnail(31)
+  assert.equal(result.content_type, 'image/jpeg')
+  assert.deepEqual(
+    Array.from(new Uint8Array(result.data)),
+    [0xff, 0xd8, 0xff, 0xd9],
+  )
+})
+
 test('media favorite uses the scoped Agent API', async (t) => {
   const { client } = await fixture(t, async (req, res) => {
     assert.equal(req.method, 'PATCH')
@@ -800,8 +819,8 @@ test('hello validates protocol compatibility and shutdown endpoint', async (t) =
     if (req.url === '/v1/hello') {
       json(res, 200, {
         discovery_version: 1,
-        protocol_min: 1,
-        protocol_max: 1,
+        protocol_min: 2,
+        protocol_max: 2,
         agent_version: 'snapshot-test',
         pid: 42,
         platform: 'linux',
@@ -818,8 +837,8 @@ test('hello validates protocol compatibility and shutdown endpoint', async (t) =
   })
 
   const hello = await client.hello()
-  assert.equal(hello.protocol_min, 1)
-  assert.equal(hello.protocol_max, 1)
+  assert.equal(hello.protocol_min, 2)
+  assert.equal(hello.protocol_max, 2)
   assert.equal(hello.agent_version, 'snapshot-test')
   assert.deepEqual(await client.shutdown(), { ok: true })
 })
@@ -828,8 +847,8 @@ test('hello rejects an incompatible agent protocol', async (t) => {
   const { client } = await fixture(t, (_req, res) => {
     json(res, 200, {
       discovery_version: 1,
-      protocol_min: 2,
-      protocol_max: 3,
+      protocol_min: 3,
+      protocol_max: 4,
       agent_version: 'future',
       pid: 42,
       platform: 'linux',

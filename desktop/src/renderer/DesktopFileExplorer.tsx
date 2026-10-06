@@ -302,7 +302,8 @@ export default function DesktopFileExplorer({
     const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
     if (!result.ok) return null
     const contentType = result.data.content_type || 'image/jpeg'
-    return `data:${contentType};base64,${result.data.data_base64}`
+    const blob = new Blob([result.data.data], { type: contentType })
+    return URL.createObjectURL(blob)
   }, [])
 
   const relativePathForNode = (node: AgentCloudNode) => {
