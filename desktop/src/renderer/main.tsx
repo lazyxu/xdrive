@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { XDriveAppearanceThemeProvider } from '@xdrive/ui/mui'
 import type { XDriveAppearance } from '@xdrive/shared'
+import type { XDriveFileExplorerMediaTraceScenario } from '@xdrive/ui/mui/perf'
 import App from './App'
 import './styles.css'
 
@@ -29,8 +30,32 @@ function Root() {
   )
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>,
-)
+const root = ReactDOM.createRoot(document.getElementById('root')!)
+const perfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1'
+  ? new URLSearchParams(window.location.search).get('xdriveFileExplorerPerf')
+  : null
+const perfWindow = window as Window & {
+  __xdriveFileExplorerPerfBoot?: string | null
+  __xdriveFileExplorerPerfBootError?: string
+}
+perfWindow.__xdriveFileExplorerPerfBoot = perfScenario
+
+if (perfScenario) {
+  void import('@xdrive/ui/mui/perf').then((module) => {
+    root.render(
+      <XDriveAppearanceThemeProvider appearance="light">
+        <module.XDriveFileExplorerPerformanceHarness scenario={perfScenario as XDriveFileExplorerMediaTraceScenario} />
+      </XDriveAppearanceThemeProvider>,
+    )
+  }).catch((error) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    perfWindow.__xdriveFileExplorerPerfBootError = message
+    console.error('__XDRIVE_FILE_EXPLORER_PERF_BOOT_ERROR__' + message)
+  })
+} else {
+  root.render(
+    <React.StrictMode>
+      <Root />
+    </React.StrictMode>,
+  )
+}

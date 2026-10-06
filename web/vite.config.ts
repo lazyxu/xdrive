@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react'
 const webRoot = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  base: process.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ? './' : '/',
   plugins: [react()],
   publicDir: '../assets/icon/web',
   resolve: {

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./mui": "./src/mui/index.tsx"
+    "./mui": "./src/mui/index.tsx",
+    "./mui/perf": "./src/mui/FileExplorerPerformanceHarness.tsx"
   },
   "peerDependencies": {
     "@emotion/react": "^11.14.0",

@@ -359,6 +359,51 @@ jobs:
         working-directory: desktop
         run: node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
 
+  file-explorer-media-renderer-trace:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-media-renderer-trace'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Web and Desktop performance dependencies
+        run: |
+          (cd desktop && npm install --no-audit --no-fund)
+          (cd web && npm install --no-audit --no-fund)
+      - name: Build FileExplorer performance renderers
+        env:
+          VITE_XDRIVE_FILE_EXPLORER_PERF: "1"
+        run: |
+          (cd desktop && npm run build:renderer)
+          (cd web && npm run build)
+      - name: Run 100k media renderer traces
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          for surface in desktop web; do
+            for scenario in image-cold image-warm video-icons; do
+              xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-media-trace-main.cjs "$surface" "$scenario"
+            done
+          done
+          echo "=== FileExplorer media renderer metrics ==="
+          for file in perf-results/*.json; do
+            case "$file" in
+              *-trace.json) continue ;;
+            esac
+            echo "--- $file"
+            cat "$file"
+          done
+          gzip -f perf-results/*-trace.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: file-explorer-media-renderer-traces
+          path: desktop/perf-results
+          if-no-files-found: error
+          retention-days: 7
+
   build-source-agent:
     runs-on: ubuntu-latest
     steps:

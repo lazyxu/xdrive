@@ -18,6 +18,12 @@ const serverSearch = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'sea
 const navigationPane = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'), 'utf8')
 const autoLoadSentinel = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AutoLoadSentinel.tsx'), 'utf8')
 const explorerController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
+const mediaTraceHarness = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerPerformanceHarness.tsx'), 'utf8')
+const desktopRendererMain = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'main.tsx'), 'utf8')
+const webRendererMain = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'main.tsx'), 'utf8')
+const mediaTraceRunner = fs.readFileSync(path.join(repoRoot, 'desktop', 'scripts', 'file-explorer-media-trace-main.cjs'), 'utf8')
+const ciWorkflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+const webViteConfig = fs.readFileSync(path.join(repoRoot, 'web', 'vite.config.ts'), 'utf8')
 
 function loadPerformanceTypeScriptModule(relativePath) {
   const filename = path.join(repoRoot, ...relativePath)
@@ -377,4 +383,44 @@ test('FileExplorer Search VirtualCollection reduces retained metadata by at leas
   assert.equal(retentionOverscanPages, 2, 'Search performance workload assumes two retention overscan pages')
   assert.equal(afterRetained, 1_000, 'VirtualCollection should retain five 200-item pages around the middle viewport')
   assert.ok(reduction >= 0.9, `retained metadata reduction ${(reduction * 100).toFixed(1)}% is below 90%`)
+})
+
+
+test('FileExplorer 100k media renderer trace uses real Web/Desktop Chromium surfaces', () => {
+  assert.ok(mediaTraceHarness.includes('const itemCount = 100_000'), 'media trace namespace must stay at 100k logical items')
+  assert.ok(mediaTraceHarness.includes("'image-cold'"), 'cold-image renderer trace scenario is missing')
+  assert.ok(mediaTraceHarness.includes("'image-warm'"), 'warm-image renderer trace scenario is missing')
+  assert.ok(mediaTraceHarness.includes("'video-icons'"), 'video icon-fallback renderer trace scenario is missing')
+  assert.ok(mediaTraceHarness.includes("longTaskObserver.observe({ type: 'longtask'"), 'renderer trace must observe long tasks')
+  assert.ok(mediaTraceHarness.includes("document.querySelectorAll('[data-xdrive-file-explorer-item]').length"), 'renderer trace must record mounted DOM items')
+  assert.ok(mediaTraceHarness.includes("return grid?.parentElement as HTMLElement | null"), 'renderer trace must bind directly to the FileExplorer scroll host')
+  assert.ok(mediaTraceHarness.includes('window.__xdriveFileExplorerPerfError = message'), 'renderer trace must expose harness failures without waiting for timeout')
+  assert.ok(mediaTraceHarness.includes('peakThumbnailInFlightRef.current'), 'renderer trace must record thumbnail concurrency')
+  assert.ok(mediaTraceHarness.includes('peakRetainedItemsRef.current'), 'renderer trace must record retained sparse metadata')
+  assert.ok(mediaTraceHarness.includes('for (const ratio of [0.5, 1, 0])'), 'renderer trace must cover midpoint/end/top jumps')
+  assert.ok(mediaTraceHarness.includes('for (let step = 1; step <= 36; step += 1)'), 'renderer trace must cover continuous scrolling')
+
+  for (const [label, source] of [['Desktop', desktopRendererMain], ['Web', webRendererMain]]) {
+    assert.ok(source.includes("VITE_XDRIVE_FILE_EXPLORER_PERF === '1'"), `${label} perf mode must be build-time gated`)
+    assert.ok(source.includes('xdriveFileExplorerPerf'), `${label} perf mode must require the explicit query`)
+    assert.ok(source.includes("@xdrive/ui/mui/perf"), `${label} must load the trace harness through the shared package boundary`)
+    assert.ok(source.includes('__xdriveFileExplorerPerfBoot'), `${label} perf mode must expose boot state for trace diagnostics`)
+    assert.ok(source.includes('__xdriveFileExplorerPerfBootError'), `${label} perf mode must expose dynamic-import failures`)
+    assert.ok(source.includes('FileExplorerPerformanceHarness'), `${label} must load the shared trace harness`)
+  }
+
+  assert.ok(mediaTraceRunner.includes('contentTracing.startRecording'), 'Electron trace runner must capture Chromium trace data')
+  assert.ok(mediaTraceRunner.includes('window.__xdriveFileExplorerPerfError || null'), 'Electron trace runner must fail fast on renderer harness errors')
+  assert.ok(mediaTraceRunner.includes('window.__xdriveFileExplorerPerfBootError || null'), 'Electron trace runner must fail fast on perf boot/import errors')
+  assert.ok(mediaTraceRunner.includes("hasExplorer: Boolean(document.querySelector('[data-xdrive-file-explorer]'))"), 'Electron trace timeout diagnostics must report whether the FileExplorer mounted')
+  assert.ok(mediaTraceRunner.includes("win.webContents.on('did-fail-load'"), 'Electron trace runner must expose load failures')
+  assert.ok(mediaTraceRunner.includes('app.getAppMetrics()'), 'Electron trace runner must capture renderer process memory')
+  assert.ok(mediaTraceRunner.includes('combined.maxMountedItems >= 1000'), 'trace runner must enforce a bounded mounted-item budget')
+  assert.ok(mediaTraceRunner.includes('combined.peakRetainedItems > 1200'), 'trace runner must enforce a bounded sparse-metadata budget')
+  assert.ok(mediaTraceRunner.includes('combined.peakThumbnailInFlight > 6'), 'trace runner must enforce thumbnail concurrency <= 6')
+  assert.ok(mediaTraceRunner.includes("scenario === 'video-icons' && combined.thumbnailRequests !== 0"), 'video fallback trace must enforce zero thumbnail requests')
+  assert.ok(ciWorkflow.includes('file-explorer-media-renderer-trace:'), 'dedicated media renderer trace CI job is missing')
+  assert.ok(ciWorkflow.includes("github.head_ref == 'perf/file-explorer-media-renderer-trace'"), 'media trace CI must stay opt-in to the dedicated performance branch')
+  assert.ok(ciWorkflow.includes('xvfb-run -a ./node_modules/.bin/electron --no-sandbox'), 'media trace CI must execute the real Electron/Chromium renderer with hosted-runner sandbox disabled')
+  assert.ok(webViteConfig.includes("VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ? './' : '/'"), 'Web perf build must use relative assets so Electron loadFile can execute the real renderer')
 })
