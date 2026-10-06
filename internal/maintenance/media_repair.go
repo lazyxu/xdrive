@@ -29,14 +29,18 @@ type MediaRelationRepairAction struct {
 }
 
 type MediaRepairReport struct {
-	DryRun          bool                        `json:"dry_run"`
-	Before          MediaVerifyReport           `json:"before"`
-	After           MediaVerifyReport           `json:"after"`
-	Actions         []MediaRepairAction         `json:"actions"`
-	RelationActions []MediaRelationRepairAction `json:"relation_actions,omitempty"`
-	DerivedActions  []MediaDerivedRepairAction  `json:"derived_actions,omitempty"`
-	ThumbnailGC     *MediaThumbnailGCReport     `json:"thumbnail_gc,omitempty"`
-	Skipped         []MediaIntegrityIssue       `json:"skipped,omitempty"`
+	DryRun                  bool                                `json:"dry_run"`
+	Before                  MediaVerifyReport                   `json:"before"`
+	After                   MediaVerifyReport                   `json:"after"`
+	Actions                 []MediaRepairAction                 `json:"actions"`
+	RelationActions         []MediaRelationRepairAction         `json:"relation_actions,omitempty"`
+	DerivedActions          []MediaDerivedRepairAction          `json:"derived_actions,omitempty"`
+	PersonMembershipActions []MediaPersonMembershipRepairAction `json:"person_membership_actions,omitempty"`
+	PersonCoverActions      []MediaPersonCoverRepairAction      `json:"person_cover_actions,omitempty"`
+	PersonClusterActions    []MediaPersonClusterRepairAction    `json:"person_cluster_actions,omitempty"`
+	ThumbnailGC             *MediaThumbnailGCReport             `json:"thumbnail_gc,omitempty"`
+	IntelligenceGC          *MediaPhotoIntelligenceGCReport     `json:"intelligence_gc,omitempty"`
+	Skipped                 []MediaIntegrityIssue               `json:"skipped,omitempty"`
 }
 
 const mediaRepairBatchSize = 1000
@@ -114,10 +118,17 @@ func RepairMedia(
 	if err != nil {
 		return report, err
 	}
+	report.PersonMembershipActions,
+		report.PersonCoverActions,
+		report.PersonClusterActions,
+		report.Skipped = planMediaPhotoPersonRepairs(report.Skipped)
 	if dryRun ||
 		(len(report.Actions) == 0 &&
 			len(report.RelationActions) == 0 &&
-			len(report.DerivedActions) == 0) {
+			len(report.DerivedActions) == 0 &&
+			len(report.PersonMembershipActions) == 0 &&
+			len(report.PersonCoverActions) == 0 &&
+			len(report.PersonClusterActions) == 0) {
 		report.After = before
 		return report, nil
 	}
@@ -194,6 +205,38 @@ func RepairMedia(
 			return report, fmt.Errorf(
 				"rebuild photo assets after derived-resource repair for owner %d: %w",
 				ownerID,
+				err,
+			)
+		}
+	}
+
+	for index := range report.PersonMembershipActions {
+		action := &report.PersonMembershipActions[index]
+		if err := applyMediaPersonMembershipRepair(ctx, db, action); err != nil {
+			return report, fmt.Errorf(
+				"repair durable person membership person=%d asset=%d: %w",
+				action.PersonRowID,
+				action.AssetID,
+				err,
+			)
+		}
+	}
+	for index := range report.PersonCoverActions {
+		action := &report.PersonCoverActions[index]
+		if err := applyMediaPersonCoverRepair(ctx, db, action); err != nil {
+			return report, fmt.Errorf(
+				"repair durable person cover person=%d: %w",
+				action.PersonRowID,
+				err,
+			)
+		}
+	}
+	for index := range report.PersonClusterActions {
+		action := &report.PersonClusterActions[index]
+		if err := applyMediaPersonClusterRepair(ctx, db, action); err != nil {
+			return report, fmt.Errorf(
+				"repair automatic person cluster projection owner=%d: %w",
+				action.OwnerID,
 				err,
 			)
 		}

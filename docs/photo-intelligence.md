@@ -343,7 +343,9 @@ input/model changes
 
 Failures are isolated per asset and analysis kind. Retry/backoff must be bounded; a failing model must not create an endless hot loop.
 
-Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place label, and cluster memberships. Owner-scoped automatic clusters with no members are derived garbage and may be garbage-collected.
+Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place label, and cluster memberships. Durable person membership is checked separately because its owner and cover invariants represent user intent. Smart-album `person_identity` references are verified but never guessed or silently removed when they are broken.
+
+Automatic person clusters remain rebuildable derived state. `xdrive-server media repair` may remove corrupt memberships, clear a cover that no longer points at one of the durable person's own assets, or reset an inconsistent automatic cluster projection. `--gc-intelligence` additionally removes automatic clusters older than 24 hours when they are empty or no longer authoritative because their owner cluster state is missing, non-ready, stale, or version-mismatched. It never deletes a durable `PhotoPerson`, manual `PeopleJSON`, originals, or smart-album rules.
 
 ## Product/API rules
 
@@ -405,8 +407,11 @@ When automatic facets are exposed later:
    - Web/Desktop shared Gallery can save a durable-person view as a smart album without exposing raw ids;
    - smart-album edits preserve/remove the durable-person rule explicitly;
    - merge rewrites persisted source-person filters to the preserved target identity transactionally.
-8. **Integrity lifecycle — remaining**
-   - integrity verify/repair for durable person membership, cover, and saved-filter references;
-   - derived-state GC for orphan/stale person-analysis rows and owner-scoped empty derived clusters.
+8. **Integrity lifecycle — current**
+   - `media verify` checks durable person keys, membership ownership, cover membership/ownership, and smart-album `person_identity` references;
+   - `media repair` deterministically removes invalid cross-owner/orphan memberships and clears invalid covers while incrementing the durable-person revision;
+   - corrupt ready automatic-person projections are reset as rebuildable derived state; user-authored durable people are never inferred or deleted;
+   - `media repair --gc-intelligence` conservatively removes automatic clusters older than 24 hours when empty or non-authoritative;
+   - broken smart-album person references are reported and intentionally left for explicit user repair rather than silently dropping a saved rule.
 
 The model/runtime choice is intentionally deferred until representative accuracy, memory, CPU/GPU cost, package size, and platform support are measured. The schema must not force xDrive to one ML runtime.
