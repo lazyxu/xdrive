@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -51,6 +52,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_person_clusters",
 		"xd_photo_person_cluster_faces",
 		"xd_photo_person_cluster_states",
+		"xd_photo_intelligence_reanalyze_intents",
 		"xd_photo_people",
 		"xd_photo_person_assets",
 		"xd_photo_place_labels",
@@ -70,6 +72,24 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
+	}
+	intent := meta.PhotoIntelligenceReanalyzeIntent{
+		OwnerID:        user.ID,
+		Kind:           "face",
+		RequestedEpoch: 1,
+		AppliedEpoch:   0,
+		Trigger:        "user_action",
+		Initiator:      "user",
+		InitiatorID:    user.ID,
+		RequestedAt:    time.Now().UTC(),
+	}
+	if err := db.Create(&intent).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateIntent := intent
+	duplicateIntent.RequestedEpoch = 2
+	if err := db.Create(&duplicateIntent).Error; err == nil {
+		t.Fatal("duplicate owner+kind reanalyze intent was accepted")
 	}
 	root := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: user.ID, Revision: 1}
 	if err := db.Create(&root).Error; err != nil {

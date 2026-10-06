@@ -46,12 +46,10 @@ type photoIntelligenceOwnerState struct {
 	currentTrigger     background.Trigger
 	currentInitiator   background.Initiator
 	currentInitiatorID uint64
-	currentForce       bool
 	nextPriority       background.Priority
 	nextTrigger        background.Trigger
 	nextInitiator      background.Initiator
 	nextInitiatorID    uint64
-	nextForce          bool
 }
 
 type photoFaceOwnerRunner interface {
@@ -142,6 +140,8 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	s.schedulePendingPhotoIntelligenceReanalyzeIntents(ctx)
+
 	type candidateSource struct {
 		kind     photoIntelligenceTaskKind
 		priority background.Priority
@@ -187,7 +187,6 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 				background.TriggerReconcile,
 				background.InitiatorSystem,
 				0,
-				false,
 			)
 		}
 	}
@@ -205,7 +204,6 @@ func (s *Server) requestPhotoIntelligenceForMedia(ownerID uint64) {
 			background.TriggerSystemEvent,
 			background.InitiatorSystem,
 			0,
-			false,
 		)
 	}
 	if s.photoPlaceRunner != nil {
@@ -216,7 +214,6 @@ func (s *Server) requestPhotoIntelligenceForMedia(ownerID uint64) {
 			background.TriggerSystemEvent,
 			background.InitiatorSystem,
 			0,
-			false,
 		)
 	}
 }
@@ -228,7 +225,6 @@ func (s *Server) requestPhotoIntelligenceOwner(
 	trigger background.Trigger,
 	initiator background.Initiator,
 	initiatorID uint64,
-	force bool,
 ) error {
 	if ownerID == 0 || s.BackgroundScheduler == nil {
 		return errPhotoIntelligenceUnavailable
@@ -254,11 +250,9 @@ func (s *Server) requestPhotoIntelligenceOwner(
 			trigger,
 			initiator,
 			initiatorID,
-			force,
 		)
 		taskKey := state.currentKey
 		generation := state.generation
-		currentForce := state.currentForce
 		promote := priority < state.currentPriority
 		if promote {
 			state.currentPriority = priority
@@ -276,7 +270,6 @@ func (s *Server) requestPhotoIntelligenceOwner(
 				trigger,
 				initiator,
 				initiatorID,
-				currentForce,
 			)
 		}
 		return nil
@@ -296,7 +289,6 @@ func (s *Server) requestPhotoIntelligenceOwner(
 	state.currentTrigger = trigger
 	state.currentInitiator = initiator
 	state.currentInitiatorID = initiatorID
-	state.currentForce = force
 	s.photoIntelligenceMu.Unlock()
 
 	err := s.submitPhotoIntelligenceOwnerTask(
@@ -307,7 +299,6 @@ func (s *Server) requestPhotoIntelligenceOwner(
 		trigger,
 		initiator,
 		initiatorID,
-		force,
 	)
 	if err == nil {
 		return nil
@@ -330,13 +321,9 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 	trigger background.Trigger,
 	initiator background.Initiator,
 	initiatorID uint64,
-	force bool,
 ) error {
 	kindName := "photo." + string(key.Kind)
-	resource := background.ResourceBackgroundCPU
-	if key.Kind == photoIntelligenceFace {
-		resource = background.ResourceMLCPU
-	}
+	resource := photoIntelligenceTaskResource(key.Kind)
 
 	_, err := s.BackgroundScheduler.Submit(background.Task{
 		Key:               taskKey,
@@ -352,15 +339,18 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 		Lease:             s.backgroundOwnerLeaseProvider(kindName),
 		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
-			if force {
-				if err := s.invalidatePhotoIntelligenceOwner(
-					taskCtx,
-					key.Kind,
-					key.OwnerID,
-				); err != nil {
-					s.finishPhotoIntelligenceOwner(key, generation, 0, err)
-					return err
-				}
+			if _, err := s.consumePhotoIntelligenceReanalyzeIntent(
+				taskCtx,
+				key.Kind,
+				key.OwnerID,
+			); err != nil {
+				s.finishPhotoIntelligenceOwner(
+					key,
+					generation,
+					0,
+					err,
+				)
+				return err
 			}
 
 			background.ReportProgress(taskCtx, background.TaskProgress{
@@ -393,7 +383,6 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 					background.TriggerSystemEvent,
 					background.InitiatorSystem,
 					0,
-					false,
 				)
 			}
 			return runErr
@@ -464,7 +453,6 @@ func (s *Server) finishPhotoIntelligenceOwner(
 		trigger := state.nextTrigger
 		initiator := state.nextInitiator
 		initiatorID := state.nextInitiatorID
-		force := state.nextForce
 		state.pending = false
 		s.photoIntelligenceMu.Unlock()
 		if !errors.Is(runErr, context.Canceled) {
@@ -482,7 +470,6 @@ func (s *Server) finishPhotoIntelligenceOwner(
 			trigger,
 			initiator,
 			initiatorID,
-			force,
 		)
 		return
 	}
@@ -501,7 +488,6 @@ func (s *Server) finishPhotoIntelligenceOwner(
 			state.currentTrigger,
 			state.currentInitiator,
 			state.currentInitiatorID,
-			false,
 		)
 	}
 
@@ -514,7 +500,6 @@ func (s *Server) finishPhotoIntelligenceOwner(
 	trigger := state.nextTrigger
 	initiator := state.nextInitiator
 	initiatorID := state.nextInitiatorID
-	force := state.nextForce
 	state.pending = false
 	s.photoIntelligenceMu.Unlock()
 
@@ -525,7 +510,6 @@ func (s *Server) finishPhotoIntelligenceOwner(
 		trigger,
 		initiator,
 		initiatorID,
-		force,
 	)
 }
 
@@ -535,7 +519,6 @@ func (s *Server) mergePendingPhotoIntelligenceRequest(
 	trigger background.Trigger,
 	initiator background.Initiator,
 	initiatorID uint64,
-	force bool,
 ) {
 	if state == nil {
 		return
@@ -546,10 +529,8 @@ func (s *Server) mergePendingPhotoIntelligenceRequest(
 		state.nextTrigger = trigger
 		state.nextInitiator = initiator
 		state.nextInitiatorID = initiatorID
-		state.nextForce = force
 		return
 	}
-	state.nextForce = state.nextForce || force
 	if priority < state.nextPriority ||
 		(priority == state.nextPriority &&
 			photoIntelligenceTriggerRank(trigger) >
@@ -701,29 +682,28 @@ func (s *Server) reanalyzePhotoIntelligenceOwner(
 		return
 	}
 	initiatorID := userID(c)
+	trigger := background.TriggerUserAction
+	if initiator == background.InitiatorAdmin {
+		trigger = background.TriggerAdminAction
+	}
+	if err := s.enqueuePhotoIntelligenceReanalysis(
+		c.Request.Context(),
+		ownerID,
+		kinds,
+		trigger,
+		initiator,
+		initiatorID,
+	); err != nil {
+		if errors.Is(err, errPhotoIntelligenceUnavailable) {
+			fail(c, http.StatusConflict, err.Error())
+		} else {
+			fail(c, http.StatusInternalServerError, "record photo intelligence reanalysis failed")
+		}
+		return
+	}
+
 	accepted := make([]string, 0, len(kinds))
 	for _, kind := range kinds {
-		priority := background.PriorityP2
-		trigger := background.TriggerUserAction
-		if initiator == background.InitiatorAdmin {
-			trigger = background.TriggerAdminAction
-		}
-		if err := s.requestPhotoIntelligenceOwner(
-			kind,
-			ownerID,
-			priority,
-			trigger,
-			initiator,
-			initiatorID,
-			true,
-		); err != nil {
-			if errors.Is(err, background.ErrQueueFull) {
-				fail(c, http.StatusServiceUnavailable, "photo intelligence queue is full")
-			} else {
-				fail(c, http.StatusInternalServerError, "schedule photo intelligence failed")
-			}
-			return
-		}
 		accepted = append(accepted, string(kind))
 	}
 	c.JSON(http.StatusAccepted, photoIntelligenceReanalyzeResponse{

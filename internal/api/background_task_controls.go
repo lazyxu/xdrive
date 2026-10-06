@@ -391,14 +391,13 @@ func (s *Server) controlBackgroundRuntimeTask(
 		trigger = background.TriggerAdminAction
 		initiator = background.InitiatorAdmin
 	}
-	if err := s.requestPhotoIntelligenceOwner(
-		kind,
+	if err := s.enqueuePhotoIntelligenceReanalysis(
+		ctx,
 		ref.ownerID,
-		background.PriorityP2,
+		[]photoIntelligenceTaskKind{kind},
 		trigger,
 		initiator,
 		viewerID,
-		true,
 	); err != nil {
 		return "", err
 	}
