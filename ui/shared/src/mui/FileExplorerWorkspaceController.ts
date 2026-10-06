@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import type { Node } from '../models'
 import {
+  xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerPaginationController,
   xDriveFileExplorerSubmitPath,
@@ -173,6 +174,13 @@ export function useXDriveFileExplorerWorkspace<
     }
   }
 
+  const searchCrumbsForNode = (node: TNode) => {
+    const result = projection.searchByID.get(node.id)
+    return result && searchCrumbsForResult
+      ? searchCrumbsForResult(result)
+      : undefined
+  }
+
   const openItem = async (
     item: XDriveFileExplorerItem,
     openFile: (node: TNode) => void | Promise<void>,
@@ -181,16 +189,24 @@ export function useXDriveFileExplorerWorkspace<
       item,
       nodeByID: projection.nodeByID,
       currentCrumbs: crumbs,
-      searchCrumbsForNode: (node) => {
-        const result = projection.searchByID.get(node.id)
-        return result && searchCrumbsForResult
-          ? searchCrumbsForResult(result)
-          : undefined
-      },
+      searchCrumbsForNode,
       openFile,
       navigate: navigation.navigateTo,
     })
     if (item.kind === 'file') void onFileAccess?.(Number(item.id))
+  }
+
+  const openItemInNewTab = async (item: XDriveFileExplorerItem) => {
+    const node = projection.nodeByID.get(Number(item.id))
+    if (!node || node.type !== 'dir') return false
+    const nextCrumbs = xDriveFileExplorerDirectoryCrumbs(
+      node,
+      crumbs,
+      searchCrumbsForNode(node),
+    )
+    const opened = await navigation.openTab(nextCrumbs)
+    if (opened) void onDirectoryAccess?.(node.id)
+    return opened
   }
 
   const explorerPagination = xDriveFileExplorerPaginationController({
@@ -208,6 +224,7 @@ export function useXDriveFileExplorerWorkspace<
     ...navigation,
     submitPath,
     openItem,
+    openItemInNewTab,
     explorerPagination,
     explorerVirtualCollection,
     externallySorted: search.searchResults === null || search.searchSortMatches,

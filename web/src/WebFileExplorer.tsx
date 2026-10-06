@@ -152,6 +152,7 @@ export default function WebFileExplorer({
     canGoUp,
     submitPath,
     openItem,
+    openItemInNewTab,
     explorerPagination,
     explorerVirtualCollection,
     externallySorted,
@@ -334,6 +335,9 @@ export default function WebFileExplorer({
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       onOpen: () => { void openItem(item, openWebNode) },
+      onOpenInNewTab: node.type === 'dir' && canNewTab
+        ? () => { void openItemInNewTab(item) }
+        : undefined,
       onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,

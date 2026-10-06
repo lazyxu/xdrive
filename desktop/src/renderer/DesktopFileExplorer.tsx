@@ -166,6 +166,7 @@ export default function DesktopFileExplorer({
     canGoUp,
     submitPath,
     openItem: openWorkspaceItem,
+    openItemInNewTab,
     explorerPagination,
     explorerVirtualCollection,
     externallySorted,
@@ -661,6 +662,9 @@ export default function DesktopFileExplorer({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
       onOpen: () => { void openWorkspaceItem(item, openPreviewNode) },
+      onOpenInNewTab: node.type === 'dir' && canNewTab
+        ? () => { void openItemInNewTab(item) }
+        : undefined,
       onSystemOpen: node.type === 'file'
         ? () => { void openLocalNode(node) }
         : undefined,

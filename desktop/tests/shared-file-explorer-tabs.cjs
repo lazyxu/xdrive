@@ -11,6 +11,7 @@ const search = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const workspace = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const tabs = read('ui', 'shared', 'src', 'mui', 'FileExplorerTabs.tsx')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -24,6 +25,8 @@ test('shared navigation controller owns independent tab workspaces', () => {
     'viewMode: XDriveFileExplorerViewMode',
     'const [tabs, setTabs]',
     'const [activeTabID, setActiveTabID]',
+    'const openTab = async (nextCrumbs: TCrumb[]) =>',
+    'return openTab([root])',
     'const newTab = async () =>',
     'const activateTab = async (id: string) =>',
     'const closeTab = async (id = activeTabID) =>',
@@ -99,5 +102,39 @@ test('Web and Desktop consume the same shared tab controller and tab bar', () =>
       assert.ok(source.includes(token), label + ' tab adapter missing: ' + token)
     }
     assert.equal(source.includes('useState<FileExplorerTab'), false, label + ' must not own a duplicate tab state machine')
+  }
+})
+
+
+test('folders can open in a new shared FileExplorer tab from Web and Desktop', () => {
+  for (const token of [
+    'xDriveFileExplorerDirectoryCrumbs',
+    'const openItemInNewTab = async (item: XDriveFileExplorerItem) =>',
+    'const opened = await navigation.openTab(nextCrumbs)',
+    'openItemInNewTab,',
+  ]) {
+    assert.ok(workspace.includes(token), 'workspace new-tab folder contract missing: ' + token)
+  }
+
+  for (const token of [
+    'onOpenInNewTab,',
+    'onOpenInNewTab?: () => void',
+    "id: 'open-new-tab'",
+    "label: '在新标签页中打开'",
+    'onSelect: onOpenInNewTab',
+  ]) {
+    assert.ok(actions.includes(token), 'shared folder menu new-tab action missing: ' + token)
+  }
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('openItemInNewTab,'), label + ' must consume shared openItemInNewTab')
+    assert.ok(
+      source.includes("onOpenInNewTab: node.type === 'dir' && canNewTab"),
+      label + ' must expose Open in New Tab only for folders while capacity remains',
+    )
+    assert.ok(
+      source.includes('void openItemInNewTab(item)'),
+      label + ' must delegate folder new-tab navigation to the shared workspace',
+    )
   }
 })
