@@ -47,6 +47,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	}
 
 	for _, table := range []string{
+		"xd_background_owner_cancellations",
 		"xd_photo_analysis_states",
 		"xd_photo_faces",
 		"xd_photo_person_clusters",
@@ -64,6 +65,20 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 
 	if !db.Migrator().HasColumn("xd_photo_faces", "landmarks_json") {
 		t.Fatal("photo face landmarks_json column was not created")
+	}
+	if !db.Migrator().HasColumn(
+		"xd_photo_intelligence_reanalyze_intents",
+		"cancelled_epoch",
+	) {
+		t.Fatal("photo reanalyze cancelled_epoch column was not created")
+	}
+	for _, column := range []string{"applied_epoch", "applied_at"} {
+		if !db.Migrator().HasColumn(
+			"xd_background_owner_cancellations",
+			column,
+		) {
+			t.Fatalf("background owner cancellation %s column was not created", column)
+		}
 	}
 
 	user := meta.User{

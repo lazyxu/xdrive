@@ -194,3 +194,25 @@ test('shared Task Center owns durable reanalyze intent wording', () => {
   assert.equal(web.includes('reanalyze_queued'), false, 'Web must not duplicate durable reanalyze phase logic')
   assert.equal(desktop.includes('reanalyze_queued'), false, 'Desktop must not duplicate durable reanalyze phase logic')
 })
+
+
+test('shared Task Center owns durable runtime cancellation wording', () => {
+  assert.ok(
+    backgroundModel.includes("case 'cancel_requested': return '正在取消'"),
+    'shared model must label durable cancellation phase',
+  )
+  assert.ok(
+    backgroundModel.includes("case 'cancelled': return '已取消'"),
+    'shared model must label terminal cancellation state',
+  )
+  assert.equal(
+    web.includes('cancel_requested'),
+    false,
+    'Web must not duplicate durable cancellation wording',
+  )
+  assert.equal(
+    desktop.includes('cancel_requested'),
+    false,
+    'Desktop must not duplicate durable cancellation wording',
+  )
+})

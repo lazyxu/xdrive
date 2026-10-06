@@ -362,6 +362,7 @@ func openPhotoIntelligenceAPITestDB(
 		&meta.PhotoAsset{},
 		&meta.PhotoAnalysisState{},
 		&meta.PhotoPersonClusterState{},
+		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.FileOperation{},
 		&meta.Source{},

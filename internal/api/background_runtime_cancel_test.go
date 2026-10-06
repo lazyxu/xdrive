@@ -88,6 +88,8 @@ func TestCancelBackgroundRuntimeMediaIndexInvalidatesOwnerGeneration(t *testing.
 			ownerID: ownerID,
 			kind:    "media.index",
 		},
+		background.InitiatorUser,
+		ownerID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +142,8 @@ func TestCancelBackgroundRuntimeMediaIndexInvalidatesOwnerGeneration(t *testing.
 			ownerID: ownerID,
 			kind:    "media.index",
 		},
+		background.InitiatorUser,
+		ownerID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +212,8 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 			ownerID: ownerID,
 			kind:    "photo.face",
 		},
+		background.InitiatorUser,
+		ownerID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +271,8 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 			ownerID: ownerID,
 			kind:    "photo.face",
 		},
+		background.InitiatorUser,
+		ownerID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -281,8 +289,6 @@ func TestCancelBackgroundRuntimePhotoIntelligenceClearsPendingGeneration(t *test
 func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 	const ownerID = uint64(42)
 	for _, kind := range []string{
-		"media.thumbnail",
-		"media.analysis_preview",
 		"media.index",
 		"photo.face",
 		"photo.place",
@@ -309,8 +315,20 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 	if !backgroundTaskActionAllowed(photoActions, backgroundTaskActionReanalyze) {
 		t.Fatalf("photo actions=%v missing reanalyze", photoActions)
 	}
+	for _, kind := range []string{"media.thumbnail", "media.analysis_preview"} {
+		actions := backgroundRuntimeControlActions(
+			kind,
+			background.ScopeUser,
+			ownerID,
+			ownerID,
+			false,
+		)
+		if backgroundTaskActionAllowed(actions, backgroundTaskActionCancel) {
+			t.Fatalf("shared derivative %s unexpectedly exposed coarse cancel: %v", kind, actions)
+		}
+	}
 	adminActions := backgroundRuntimeControlActions(
-		"media.thumbnail",
+		"media.index",
 		background.ScopeUser,
 		ownerID,
 		999,

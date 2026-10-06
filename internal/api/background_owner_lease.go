@@ -22,7 +22,12 @@ func backgroundOwnerLeaseKey(kind string, ownerID uint64) string {
 
 func (s *Server) backgroundOwnerLeaseProvider(
 	kind string,
+	expectedCancelEpoch ...uint64,
 ) background.LeaseProvider {
+	baseline := uint64(0)
+	if len(expectedCancelEpoch) != 0 {
+		baseline = expectedCancelEpoch[0]
+	}
 	kind = strings.TrimSpace(kind)
 	return func(
 		ctx context.Context,
@@ -43,6 +48,18 @@ func (s *Server) backgroundOwnerLeaseProvider(
 		if s.DB == nil {
 			return background.Lease{}, true, nil
 		}
+		cancelled, _, err := s.backgroundOwnerCancelledSince(
+			ctx,
+			kind,
+			descriptor.OwnerID,
+			baseline,
+		)
+		if err != nil {
+			return background.Lease{}, false, err
+		}
+		if cancelled {
+			return background.Lease{}, false, context.Canceled
+		}
 		lease, acquired, err := sourceaccount.TryAcquire(
 			ctx,
 			s.DB,
@@ -54,8 +71,39 @@ func (s *Server) backgroundOwnerLeaseProvider(
 		if !acquired {
 			return background.Lease{}, false, nil
 		}
+		cancelled, _, err = s.backgroundOwnerCancelledSince(
+			ctx,
+			kind,
+			descriptor.OwnerID,
+			baseline,
+		)
+		if err != nil {
+			lease.Close()
+			return background.Lease{}, false, err
+		}
+		if cancelled {
+			lease.Close()
+			return background.Lease{}, false, context.Canceled
+		}
 		return background.Lease{
-			Heartbeat: lease.Heartbeat,
+			Heartbeat: func(heartbeatCtx context.Context) error {
+				if err := lease.Heartbeat(heartbeatCtx); err != nil {
+					return err
+				}
+				cancelled, _, err := s.backgroundOwnerCancelledSince(
+					heartbeatCtx,
+					kind,
+					descriptor.OwnerID,
+					baseline,
+				)
+				if err != nil {
+					return err
+				}
+				if cancelled {
+					return context.Canceled
+				}
+				return nil
+			},
 			Release: func(context.Context, error) error {
 				lease.Close()
 				return nil

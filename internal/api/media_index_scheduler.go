@@ -81,6 +81,10 @@ func (s *Server) scheduleStaleMediaOwners(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	s.reconcileBackgroundOwnerCancellations(
+		ctx,
+		[]string{"media.index"},
+	)
 	owners, err := s.staleMediaOwnerIDs(
 		ctx,
 		mediaIndexReconcileOwnerLimit,
@@ -194,17 +198,27 @@ func (s *Server) submitMediaIndexOwnerTask(
 	priority background.Priority,
 	trigger background.Trigger,
 ) error {
-	_, err := s.BackgroundScheduler.Submit(background.Task{
-		Key:               taskKey,
-		Kind:              "media.index",
-		GroupKey:          "media.index",
-		Scope:             background.ScopeUser,
-		OwnerID:           ownerID,
-		Trigger:           trigger,
-		Initiator:         background.InitiatorSystem,
-		Priority:          priority,
-		Resource:          background.ResourceMediaCPU,
-		Lease:             s.backgroundOwnerLeaseProvider("media.index"),
+	cancelEpoch, err := s.captureBackgroundOwnerCancelEpoch(
+		"media.index",
+		ownerID,
+	)
+	if err != nil {
+		return err
+	}
+	handle, err := s.BackgroundScheduler.Submit(background.Task{
+		Key:       taskKey,
+		Kind:      "media.index",
+		GroupKey:  "media.index",
+		Scope:     background.ScopeUser,
+		OwnerID:   ownerID,
+		Trigger:   trigger,
+		Initiator: background.InitiatorSystem,
+		Priority:  priority,
+		Resource:  background.ResourceMediaCPU,
+		Lease: s.backgroundOwnerLeaseProvider(
+			"media.index",
+			cancelEpoch,
+		),
 		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
 			seen, indexed, runErr := s.refreshMediaIndexOwnerBatch(
@@ -212,7 +226,26 @@ func (s *Server) submitMediaIndexOwnerTask(
 				ownerID,
 				mediaIndexOwnerBatchSize,
 			)
-			if indexed > 0 {
+			cancelled, observedCancelEpoch, cancelErr := s.backgroundOwnerCancelledSinceIndependent(
+				"media.index",
+				ownerID,
+				cancelEpoch,
+			)
+			if cancelErr != nil && runErr == nil {
+				runErr = cancelErr
+			}
+			if cancelled {
+				if finalizeErr := s.finalizeBackgroundOwnerCancellationIndependent(
+					"media.index",
+					ownerID,
+					observedCancelEpoch,
+				); finalizeErr != nil {
+					runErr = errors.Join(context.Canceled, finalizeErr)
+				} else {
+					runErr = context.Canceled
+				}
+			}
+			if !cancelled && indexed > 0 {
 				s.requestPhotoIntelligenceForMedia(ownerID)
 			}
 			s.finishMediaIndexOwner(
@@ -225,6 +258,29 @@ func (s *Server) submitMediaIndexOwnerTask(
 			return runErr
 		},
 	})
+	if err == nil && handle != nil {
+		go func() {
+			waitErr := handle.Wait(context.Background())
+			if waitErr == nil {
+				return
+			}
+			s.mediaIndexMu.Lock()
+			state := s.mediaIndexOwners[ownerID]
+			stillCurrent := state != nil &&
+				state.generation == generation &&
+				state.currentKey == taskKey
+			s.mediaIndexMu.Unlock()
+			if stillCurrent {
+				s.finishMediaIndexOwner(
+					ownerID,
+					generation,
+					0,
+					0,
+					waitErr,
+				)
+			}
+		}()
+	}
 	return err
 }
 

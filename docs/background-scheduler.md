@@ -303,6 +303,24 @@ and then advances `applied_epoch`. A newer request arriving during invalidation 
 the next generation instead of being lost or overwritten by an older task.
 
 Photo Intelligence exposes safe `reanalyze` control capability in the background-task read model for the
-owner and for administrators. Mid-flight cancel is intentionally not exposed yet because face/place runners
-persist `running` analysis state; cancellation requires an explicit durable rollback/stale contract rather
-than merely killing an in-process task.
+owner and for administrators. Owner cancellation for `media.index` and Photo Intelligence is durable and
+cross-Server: every owner+kind generation captures the current cancel epoch, lease acquisition and heartbeat
+fence older generations, and Photo Intelligence rolls any cancelled `running` analysis state back to
+`stale` before the generation completes.
+
+Cancellation uses its own durable owner+kind lifecycle in `xd_background_owner_cancellations`.
+`requested_epoch` advances before the control API returns 202; `applied_epoch` advances only after the old
+generation is fenced and any required Photo Intelligence rollback has completed. Task Center therefore keeps
+the same stable runtime row visible as `cancel_requested` while requested > applied and as terminal
+`cancelled` after the cancellation is finalized, even if the original Server process is gone. A newer
+post-cancel generation captures the newer epoch and may run normally; an older terminal cancellation row must
+not overwrite that newer active runtime state.
+
+Cancelling a Photo Intelligence task also advances `cancelled_epoch` on the durable reanalysis intent instead
+of pretending that the reanalysis request was applied. A newer reanalysis request remains pending because
+`cancelled_epoch` only fences requests that existed when cancellation was requested.
+
+Thumbnail and analysis-preview cancellation remains intentionally absent from this coarse owner-group
+control path. Those derivatives use shared singleflight and must gain consumer-aware cancellation together
+with the planned cross-Server derivative singleflight work so one consumer cannot cancel work still needed
+by another.

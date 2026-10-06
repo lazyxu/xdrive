@@ -1338,7 +1338,11 @@ func (s *Scheduler) execute(ctx context.Context, cancel context.CancelCauseFunc,
 					return
 				case <-ticker.C:
 					if err := lease.Heartbeat(ctx); err != nil {
-						cancel(fmt.Errorf("%w: %v", ErrLeaseLost, err))
+						if errors.Is(err, context.Canceled) {
+							cancel(context.Canceled)
+						} else {
+							cancel(fmt.Errorf("%w: %v", ErrLeaseLost, err))
+						}
 						return
 					}
 				}
