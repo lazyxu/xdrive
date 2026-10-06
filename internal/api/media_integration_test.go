@@ -211,8 +211,37 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if itemRange.TotalCount != 1 || itemRange.Offset != 0 || itemRange.Limit != 1 ||
-		len(itemRange.Items) != 1 || itemRange.Items[0].Node.ID != file.ID {
+		len(itemRange.Items) != 1 || itemRange.Items[0].Node.ID != file.ID ||
+		len(itemRange.TimelineGroups) != 1 ||
+		itemRange.TimelineGroups[0].Key != "unknown" ||
+		itemRange.TimelineGroups[0].ItemCount != 1 ||
+		itemRange.TimelineGroups[0].StartIndex != 0 {
 		t.Fatalf("media item range=%+v", itemRange)
+	}
+
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("node_id = ?", file.ID).
+		Update("captured_at", time.Date(2026, 10, 5, 8, 30, 0, 0, time.UTC)).Error; err != nil {
+		t.Fatal(err)
+	}
+	capturedRangeResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/items?range=true&limit=1&offset=0",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	itemRange = mediaItemRangeDTO{}
+	if err := json.Unmarshal(capturedRangeResponse.Body.Bytes(), &itemRange); err != nil {
+		t.Fatal(err)
+	}
+	if len(itemRange.TimelineGroups) != 1 ||
+		itemRange.TimelineGroups[0].Key != "2026-10" ||
+		itemRange.TimelineGroups[0].ItemCount != 1 ||
+		itemRange.TimelineGroups[0].StartIndex != 0 {
+		t.Fatalf("captured media timeline groups=%+v", itemRange.TimelineGroups)
 	}
 
 	emptyRangeResponse := request(
@@ -229,7 +258,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	if itemRange.TotalCount != 1 || itemRange.Offset != 99 || itemRange.Limit != 1 ||
-		len(itemRange.Items) != 0 {
+		len(itemRange.Items) != 0 || len(itemRange.TimelineGroups) != 0 {
 		t.Fatalf("empty media item range=%+v", itemRange)
 	}
 

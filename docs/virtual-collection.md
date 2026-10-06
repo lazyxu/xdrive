@@ -93,7 +93,7 @@ The range contract is shared by:
 - durable-person items
 - suggested-person items
 
-Each range response contains `items`, `total_count`, `offset`, and `limit`. Count and item reads are built from the same media base query so filters, smart-album membership, people/place filters, and collection membership cannot drift. The count uses distinct media node IDs to remain stable if future joins introduce multiplicity.
+Each range response contains `items`, `total_count`, `offset`, and `limit`. The `offset=0` response additionally carries `timeline_groups[]`, where each entry is `{ key, item_count, start_index }`. The group index is computed from the same filtered media query as the count and item range; canonical month keys use UTC `YYYY-MM`, and items without `captured_at` form one trailing `unknown` group. Count and item reads use distinct media node IDs so filters, smart-album membership, people/place filters, and collection membership cannot drift.
 
 Gallery VirtualCollection consumers must use this range contract from the first request so scrollbar geometry is based on the complete logical collection instead of the number of items loaded so far.
 
@@ -109,7 +109,9 @@ Gallery Grid now consumes the same shared VirtualCollection controller as FileEx
 
 Gallery mutations such as favorite, tags, people, and description patch only retained loaded metadata and never expand the sparse cache. Preview navigation uses logical indexes; if the adjacent asset is not retained, Gallery requests that logical range before opening it.
 
-The existing Timeline view remains on its dense grouped compatibility path for now because month grouping requires a separate group index/height model. Its explicit load-more control is isolated to Timeline; Grid no longer exposes append pagination.
+Gallery Timeline now uses the same sparse VirtualCollection as Grid. The first range response supplies the month/group index without materializing the media rows. The Timeline layout maps each group to a logical start index, item count, deterministic header height, row count, and full scroll height; the viewport then converts visible group rows back into one bounded logical item range. Only visible rows plus bounded overscan are rendered, and unloaded slots remain placeholders until their VirtualCollection ranges arrive.
+
+The user-facing Timeline no longer exposes `loadMore`. The old dense month grouper remains only as a standalone compatibility fallback when a caller renders `XDriveMediaGallery` without the virtual collection contract; the normal Web/Desktop Gallery path is range-driven for both Grid and Timeline.
 
 
 ## Gallery thumbnail scheduler
@@ -124,4 +126,4 @@ Gallery Grid thumbnail work is scheduled independently from metadata range loadi
 - completed thumbnail URLs are retained in a 512-entry LRU cache so scrolling back reuses decoded/downloaded thumbnails
 - blob URL lifetime is owned by the scheduler; virtual tile unmount does not revoke scheduler-cached URLs
 
-Timeline, details, preview, and person-cover surfaces retain their existing direct loaders. Video poster capture remains its own bounded pipeline because it consumes preview URLs and browser video decoding rather than thumbnail resources.
+Both virtual Grid and virtual Timeline feed viewport/overscan priorities into the same thumbnail scheduler, so changing Gallery view mode does not introduce an unbounded thumbnail pipeline. Details, preview, and person-cover surfaces retain their existing direct loaders. Video poster capture remains its own bounded pipeline because it consumes preview URLs and browser video decoding rather than thumbnail resources.

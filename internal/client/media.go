@@ -73,11 +73,18 @@ type MediaItem struct {
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
 }
 
+type MediaTimelineGroupIndex struct {
+	Key        string `json:"key"`
+	ItemCount  int64  `json:"item_count"`
+	StartIndex int64  `json:"start_index"`
+}
+
 type MediaItemRange struct {
-	Items      []MediaItem `json:"items"`
-	TotalCount int64       `json:"total_count"`
-	Offset     int         `json:"offset"`
-	Limit      int         `json:"limit"`
+	Items          []MediaItem               `json:"items"`
+	TotalCount     int64                     `json:"total_count"`
+	Offset         int                       `json:"offset"`
+	Limit          int                       `json:"limit"`
+	TimelineGroups []MediaTimelineGroupIndex `json:"timeline_groups,omitempty"`
 }
 
 type MediaSmartAlbumQuery struct {

@@ -574,11 +574,18 @@ export type AgentMediaItem = {
   live_photo?: boolean
 }
 
+export type AgentMediaTimelineGroupIndex = {
+  key: string
+  item_count: number
+  start_index: number
+}
+
 export type AgentMediaItemRange = {
   items: AgentMediaItem[]
   total_count: number
   offset: number
   limit: number
+  timeline_groups?: AgentMediaTimelineGroupIndex[]
 }
 
 export type AgentMediaQuery = {
