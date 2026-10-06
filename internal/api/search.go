@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,7 +41,10 @@ type searchPageDTO struct {
 type searchCursor struct {
 	Query string `json:"q"`
 	Type  string `json:"type,omitempty"`
+	Sort  string `json:"sort"`
+	Order string `json:"order"`
 	Rank  int    `json:"rank"`
+	Value string `json:"value"`
 	Path  string `json:"path"`
 	ID    uint64 `json:"id"`
 }
@@ -75,6 +79,28 @@ func (s *Server) searchNodes(c *gin.Context) {
 		return
 	}
 
+	sortKey := strings.TrimSpace(strings.ToLower(c.Query("sort")))
+	if sortKey == "" {
+		sortKey = "name"
+	}
+	if sortKey == "updated_at" {
+		sortKey = "updated"
+	}
+	switch sortKey {
+	case "name", "updated", "size", "type":
+	default:
+		fail(c, http.StatusBadRequest, "sort must be name, updated, size, or type")
+		return
+	}
+	order := strings.TrimSpace(strings.ToLower(c.Query("order")))
+	if order == "" {
+		order = "asc"
+	}
+	if order != "asc" && order != "desc" {
+		fail(c, http.StatusBadRequest, "order must be asc or desc")
+		return
+	}
+
 	limit := defaultSearchLimit
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -92,8 +118,9 @@ func (s *Server) searchNodes(c *gin.Context) {
 			fail(c, http.StatusBadRequest, "invalid cursor")
 			return
 		}
-		if decoded.Query != query || decoded.Type != nodeType {
-			fail(c, http.StatusBadRequest, "cursor does not match q/type")
+		if decoded.Query != query || decoded.Type != nodeType ||
+			decoded.Sort != sortKey || decoded.Order != order {
+			fail(c, http.StatusBadRequest, "cursor does not match q/type/sort/order")
 			return
 		}
 		cursor = decoded
@@ -102,7 +129,7 @@ func (s *Server) searchNodes(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 
-	page, err := s.searchNodePage(ctx, userID(c), query, nodeType, limit, cursor)
+	page, err := s.searchNodePage(ctx, userID(c), query, nodeType, limit, sortKey, order, cursor)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "search failed")
 		return
@@ -111,7 +138,14 @@ func (s *Server) searchNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, page)
 }
 
-func (s *Server) searchNodePage(ctx context.Context, ownerID uint64, query, nodeType string, limit int, cursor searchCursor) (searchPageDTO, error) {
+func (s *Server) searchNodePage(
+	ctx context.Context,
+	ownerID uint64,
+	query, nodeType string,
+	limit int,
+	sortKey, order string,
+	cursor searchCursor,
+) (searchPageDTO, error) {
 	const recursivePathSearch = `WITH RECURSIVE tree AS (
   SELECT
     n.id, n.parent_id, n.name, n.type, n.revision, n.created_at, n.updated_at,
@@ -239,16 +273,60 @@ WHERE (? = '' OR search_rows.type = ?)
 		sqlText = componentSearch
 		args = []any{ownerID, query, ownerID, ownerID, ownerID, ownerID, nodeType, nodeType}
 	}
-	if cursor.ID != 0 {
-		sqlText += `  AND (
-    (CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) > ?
-    OR ((CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(search_rows.path) > lower(?))
-    OR ((CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) = ? AND lower(search_rows.path) = lower(?) AND search_rows.id > ?)
-  )
-`
-		args = append(args, cursor.Rank, cursor.Rank, cursor.Path, cursor.Rank, cursor.Path, cursor.ID)
+
+	rankExpr := "(CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END)"
+	pathExpr := "lower(search_rows.path)"
+	sortExpr := "lower(search_rows.name)"
+	switch sortKey {
+	case "updated":
+		sortExpr = "search_rows.updated_at"
+	case "size":
+		sortExpr = "search_rows.size"
+	case "type":
+		sortExpr = "(CASE WHEN search_rows.type = 'dir' THEN '' WHEN strpos(search_rows.name, '.') > 1 AND right(search_rows.name, 1) <> '.' THEN lower(regexp_replace(search_rows.name, '^.*\\.', '')) ELSE '' END)"
 	}
-	sqlText += "ORDER BY (CASE WHEN search_rows.type = 'dir' THEN 0 ELSE 1 END) ASC, lower(search_rows.path) ASC, search_rows.id ASC\nLIMIT ?"
+
+	if cursor.ID != 0 {
+		value, err := searchCursorQueryValue(cursor, sortKey)
+		if err != nil {
+			return searchPageDTO{}, err
+		}
+		compare := ">"
+		if order == "desc" {
+			compare = "<"
+		}
+		sqlText += fmt.Sprintf(`  AND (
+    %s > ?
+    OR (%s = ? AND (
+      %s %s ?
+      OR (%s = ? AND (
+        %s > lower(?)
+        OR (%s = lower(?) AND search_rows.id > ?)
+      ))
+    ))
+  )
+`, rankExpr, rankExpr, sortExpr, compare, sortExpr, pathExpr, pathExpr)
+		args = append(args,
+			cursor.Rank,
+			cursor.Rank,
+			value,
+			value,
+			cursor.Path,
+			cursor.Path,
+			cursor.ID,
+		)
+	}
+	direction := "ASC"
+	if order == "desc" {
+		direction = "DESC"
+	}
+	sqlText += fmt.Sprintf(
+		"ORDER BY %s ASC, %s %s, %s ASC, search_rows.id ASC\nLIMIT ?",
+		rankExpr,
+		sortExpr,
+		direction,
+		pathExpr,
+	)
 	args = append(args, limit+1)
 
 	var rows []searchRow
@@ -284,9 +362,46 @@ WHERE (? = '' OR search_rows.type = ?)
 		if last.Type == meta.NodeTypeDir {
 			rank = 0
 		}
-		page.NextCursor = encodeSearchCursor(searchCursor{Query: query, Type: nodeType, Rank: rank, Path: last.Path, ID: last.ID})
+		page.NextCursor = encodeSearchCursor(searchCursor{
+			Query: query,
+			Type:  nodeType,
+			Sort:  sortKey,
+			Order: order,
+			Rank:  rank,
+			Value: searchRowCursorValue(last, sortKey),
+			Path:  last.Path,
+			ID:    last.ID,
+		})
 	}
 	return page, nil
+}
+
+func searchRowCursorValue(row searchRow, sortKey string) string {
+	switch sortKey {
+	case "updated":
+		return row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	case "size":
+		return strconv.FormatInt(row.Size, 10)
+	case "type":
+		dot := strings.LastIndex(row.Name, ".")
+		if row.Type == meta.NodeTypeDir || dot <= 0 || dot == len(row.Name)-1 {
+			return ""
+		}
+		return strings.ToLower(row.Name[dot+1:])
+	default:
+		return strings.ToLower(row.Name)
+	}
+}
+
+func searchCursorQueryValue(cursor searchCursor, sortKey string) (any, error) {
+	switch sortKey {
+	case "updated":
+		return time.Parse(time.RFC3339Nano, cursor.Value)
+	case "size":
+		return strconv.ParseInt(cursor.Value, 10, 64)
+	default:
+		return cursor.Value, nil
+	}
 }
 
 func encodeSearchCursor(cursor searchCursor) string {
@@ -304,7 +419,12 @@ func decodeSearchCursor(raw string) (searchCursor, error) {
 		return searchCursor{}, err
 	}
 	if cursor.ID == 0 || (cursor.Rank != 0 && cursor.Rank != 1) ||
-		strings.TrimSpace(cursor.Query) == "" || strings.TrimSpace(cursor.Path) == "" {
+		strings.TrimSpace(cursor.Query) == "" || strings.TrimSpace(cursor.Path) == "" ||
+		(cursor.Sort != "name" && cursor.Sort != "updated" && cursor.Sort != "size" && cursor.Sort != "type") ||
+		(cursor.Order != "asc" && cursor.Order != "desc") {
+		return searchCursor{}, errors.New("invalid search cursor")
+	}
+	if _, err := searchCursorQueryValue(cursor, cursor.Sort); err != nil {
 		return searchCursor{}, errors.New("invalid search cursor")
 	}
 	return cursor, nil

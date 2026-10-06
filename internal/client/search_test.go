@@ -27,6 +27,12 @@ func TestSearchUsesServerPaginationAndFilters(t *testing.T) {
 		if got := r.URL.Query().Get("cursor"); got != "next-token" {
 			t.Fatalf("cursor=%q", got)
 		}
+		if got := r.URL.Query().Get("sort"); got != "size" {
+			t.Fatalf("sort=%q", got)
+		}
+		if got := r.URL.Query().Get("order"); got != "desc" {
+			t.Fatalf("order=%q", got)
+		}
 		seenAuthorization = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SearchPage{
@@ -46,7 +52,7 @@ func TestSearchUsesServerPaginationAndFilters(t *testing.T) {
 
 	cli := New(server.URL, "token")
 	page, err := cli.Search(context.Background(), SearchOptions{
-		Query: "report 2026", Type: "file", Limit: 25, Cursor: "next-token",
+		Query: "report 2026", Type: "file", Limit: 25, Cursor: "next-token", Sort: "size", Order: "desc",
 	})
 	if err != nil {
 		t.Fatal(err)

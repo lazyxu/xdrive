@@ -106,6 +106,8 @@ type fakeDesktopIPCController struct {
 	cloudResolvePolicy         string
 	cloudSearchPage            agentCloudSearchPage
 	cloudSearchCursor          string
+	cloudSearchSort            string
+	cloudSearchOrder           string
 	cloudQuota                 client.QuotaUsage
 	cloudServerUpdate          client.ServerUpdateState
 	cloudServerUpdateSource    string
@@ -502,8 +504,10 @@ func (f *fakeDesktopIPCController) CloudDownloadArchive(
 	return agentCloudArchiveDownloadResult{Downloaded: []string{"Projects"}}, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudSearch(_ context.Context, _ string, cursor string) (agentCloudSearchPage, error) {
+func (f *fakeDesktopIPCController) CloudSearch(_ context.Context, _ string, cursor, sortKey, order string) (agentCloudSearchPage, error) {
 	f.cloudSearchCursor = cursor
+	f.cloudSearchSort = sortKey
+	f.cloudSearchOrder = order
 	return f.cloudSearchPage, f.err
 }
 
@@ -1449,7 +1453,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/file-preview-ticket?node_id=3", "", "\"kind\":\"pdf\""},
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
-		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor", "", "\"next_cursor\":\"search-next\""},
+		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor&sort=size&order=desc", "", "\"next_cursor\":\"search-next\""},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
@@ -1470,6 +1474,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	if ctrl.cloudChildrenOptions.Limit != 1 || ctrl.cloudChildrenOptions.Sort != "name" ||
 		ctrl.cloudChildrenOptions.Order != "asc" || ctrl.cloudChildrenOptions.Name != "Projects" {
 		t.Fatalf("cloud children options not forwarded: %+v", ctrl.cloudChildrenOptions)
+	}
+	if ctrl.cloudSearchCursor != "search-cursor" || ctrl.cloudSearchSort != "size" || ctrl.cloudSearchOrder != "desc" {
+		t.Fatalf("cloud search options not forwarded: cursor=%q sort=%q order=%q", ctrl.cloudSearchCursor, ctrl.cloudSearchSort, ctrl.cloudSearchOrder)
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)

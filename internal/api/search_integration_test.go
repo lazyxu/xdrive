@@ -88,9 +88,23 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	alpha := createSearchFile(t, db, reports.ID, "Alpha Report.pdf", 10)
 	beta := createSearchFile(t, db, reports.ID, "Beta Report.pdf", 20)
 	gamma := createSearchFile(t, db, archive.ID, "Gamma Report.pdf", 30)
-	_ = alpha
-	_ = beta
-	_ = gamma
+	formatPDF := createSearchFile(t, db, archive.ID, "Format A.pdf", 15)
+	formatTXT := createSearchFile(t, db, archive.ID, "Format B.txt", 25)
+	sortBase := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, item := range []struct {
+		node meta.Node
+		at   time.Time
+	}{
+		{alpha, sortBase.Add(time.Minute)},
+		{gamma, sortBase.Add(2 * time.Minute)},
+		{beta, sortBase.Add(3 * time.Minute)},
+	} {
+		if err := db.Model(&meta.Node{}).Where("id = ?", item.node.ID).Update("updated_at", item.at).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = formatPDF
+	_ = formatTXT
 
 	deletedAt := time.Now().UTC()
 	deleted := createSearchFile(t, db, projects.ID, "Deleted Report.pdf", 40)
@@ -146,8 +160,63 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 		t.Fatalf("unique search results=%d want=3", len(seen))
 	}
 
+	res = request(t, router, http.MethodGet, "/api/v1/search?q=report&type=file&sort=size&order=desc&limit=1", tokenA, nil, http.StatusOK)
+	var sizeFirst searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &sizeFirst); err != nil {
+		t.Fatal(err)
+	}
+	if len(sizeFirst.Items) != 1 || sizeFirst.Items[0].Node.ID != gamma.ID || sizeFirst.NextCursor == "" {
+		t.Fatalf("size-desc first page=%+v", sizeFirst)
+	}
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&sort=size&order=desc&limit=1&cursor="+url.QueryEscape(sizeFirst.NextCursor),
+		tokenA, nil, http.StatusOK)
+	var sizeSecond searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &sizeSecond); err != nil {
+		t.Fatal(err)
+	}
+	if len(sizeSecond.Items) != 1 || sizeSecond.Items[0].Node.ID != beta.ID {
+		t.Fatalf("size-desc second page=%+v", sizeSecond)
+	}
+
+	res = request(t, router, http.MethodGet, "/api/v1/search?q=report&type=file&sort=updated&order=desc&limit=3", tokenA, nil, http.StatusOK)
+	var updated searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Items) != 3 {
+		t.Fatalf("updated-desc results=%+v", updated.Items)
+	}
+	if got := []uint64{updated.Items[0].Node.ID, updated.Items[1].Node.ID, updated.Items[2].Node.ID}; fmt.Sprint(got) != fmt.Sprint([]uint64{beta.ID, gamma.ID, alpha.ID}) {
+		t.Fatalf("updated-desc ids=%v", got)
+	}
+
+	res = request(t, router, http.MethodGet, "/api/v1/search?q=report&type=file&sort=name&order=desc&limit=3", tokenA, nil, http.StatusOK)
+	var namesDesc searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &namesDesc); err != nil {
+		t.Fatal(err)
+	}
+	if len(namesDesc.Items) != 3 {
+		t.Fatalf("name-desc results=%+v", namesDesc.Items)
+	}
+	if got := []string{namesDesc.Items[0].Node.Name, namesDesc.Items[1].Node.Name, namesDesc.Items[2].Node.Name}; fmt.Sprint(got) != fmt.Sprint([]string{"Gamma Report.pdf", "Beta Report.pdf", "Alpha Report.pdf"}) {
+		t.Fatalf("name-desc names=%v", got)
+	}
+
+	res = request(t, router, http.MethodGet, "/api/v1/search?q=format&type=file&sort=type&order=asc&limit=10", tokenA, nil, http.StatusOK)
+	var typesAsc searchPageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &typesAsc); err != nil {
+		t.Fatal(err)
+	}
+	if len(typesAsc.Items) != 2 || typesAsc.Items[0].Node.ID != formatPDF.ID || typesAsc.Items[1].Node.ID != formatTXT.ID {
+		t.Fatalf("type-asc results=%+v", typesAsc.Items)
+	}
+
 	request(t, router, http.MethodGet,
 		"/api/v1/search?q=other&type=file&limit=2&cursor="+url.QueryEscape(first.NextCursor),
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&sort=size&order=asc&limit=2&cursor="+url.QueryEscape(first.NextCursor),
 		tokenA, nil, http.StatusBadRequest)
 
 	res = request(t, router, http.MethodGet, "/api/v1/search?q=projects&type=dir", tokenA, nil, http.StatusOK)
@@ -209,6 +278,8 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	request(t, router, http.MethodGet, "/api/v1/search?q=x", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&type=other", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&limit=201", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?q=report&sort=other", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?q=report&order=sideways", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&cursor=bad", tokenA, nil, http.StatusBadRequest)
 }
 

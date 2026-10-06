@@ -81,8 +81,8 @@ test('shared FileExplorer controller owns search normalization and validation de
     assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
     assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
   }
-  assert.ok(web.includes('loadSearchPage: (query, cursor) => api.search('), 'Web must keep REST search execution local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must keep Agent search execution local')
+  assert.ok(web.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web must keep REST search execution local')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch('), 'Desktop must keep Agent search execution local')
 })
 test('shared FileExplorer controller owns search pagination state', () => {
   for (const token of [
@@ -122,6 +122,7 @@ test('shared FileExplorer controller owns search pagination state', () => {
   for (const token of [
     'useRef<Record<string, number>>({})',
     'useRef<Record<string, Set<number>>>({})',
+    'const sortSignatureRef = useRef<Record<string, string>>({})',
     "workspaceKey = 'default'",
     'const [entries, setEntries]',
     'const entry = entries[workspaceKey]',
@@ -130,14 +131,18 @@ test('shared FileExplorer controller owns search pagination state', () => {
     'if (!value.trim()) {',
     'const requestID = nextRequestID(key)',
     'requestID !== requestRef.current[key]',
-    'xDriveFileExplorerStartSearchState<TResult>(decision.query)',
+    'xDriveFileExplorerStartSearchState<TResult>(query)',
     'xDriveFileExplorerStartSearchLoadMoreState(current.state)',
     'xDriveFileExplorerApplySearchPageState(current.state, page, false, resultIDs)',
     'xDriveFileExplorerApplySearchPageState(current.state, page, true, resultIDs)',
     'xDriveFileExplorerSettleSearchState(current.state, false)',
     'xDriveFileExplorerSettleSearchState(current.state, true)',
     'xDriveFileExplorerCanLoadMoreSearch(',
-    'loadPage(searchState.query, searchState.cursor)',
+    'sort: XDriveFileExplorerSort',
+    'sortSignatureRef.current[key] = searchSortSignature(targetSort)',
+    'void executeSearch(workspaceKey, searchState.query, sort)',
+    'loadPage(searchState.query, sort, searchState.cursor)',
+    'searchSortMatches:',
   ]) {
     assert.ok(searchController.includes(token), `shared React search controller missing: ${token}`)
   }
@@ -326,15 +331,17 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
 
 test('Web and Desktop keep search pagination bound to the submitted active query', () => {
   assert.ok(shared.includes('(query: string): XDriveFileExplorerSearchState<TResult>'), 'shared search start state must capture the submitted query')
-  assert.ok(searchController.includes('loadPage(searchState.query, searchState.cursor)'), 'shared React search controller must paginate the submitted active query')
+  assert.ok(searchController.includes('loadPage(searchState.query, sort, searchState.cursor)'), 'shared React search controller must paginate the submitted active query')
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal(source.includes('xDriveFileExplorerSearchDecision(searchValue)'), false, `${label} load-more must not reinterpret the editable search draft`)
     assert.ok(source.includes('searchStatusText'), `${label} status must consume the shared workspace search status`)
     assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must get active-query lifecycle from the shared workspace controller`)
   }
-  assert.ok(web.includes('loadSearchPage: (query, cursor) => api.search('), 'Web must inject REST search loading into the shared workspace controller')
+  assert.ok(web.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web must inject REST search loading into the shared workspace controller')
   assert.ok(web.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search loader must preserve the shared page size')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop must inject Agent cursor search into the shared controller')
+  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearch('), 'Desktop must inject Agent cursor search into the shared controller')
+  assert.ok(workspaceController.includes('sort: navigation.sort'), 'shared workspace must bind search requests to the active tab sort')
+  assert.ok(workspaceController.includes('search.searchResults === null || search.searchSortMatches'), 'search results should become externally sorted after the server sort is current')
 })
 test('shared FileExplorer controller owns directory page replace/append transitions', () => {
   for (const token of [

@@ -245,7 +245,12 @@ const agent = Object.freeze({
   cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => ipcRenderer.invoke('agent:cloud-download-files', files),
   cloudDownloadArchive: (ids: number[]) => ipcRenderer.invoke('agent:cloud-download-archive', ids),
   openPath: (relativePath: string, reveal = false) => ipcRenderer.invoke('agent:open-path', relativePath, reveal),
-  cloudSearch: (query: string, cursor = '') => ipcRenderer.invoke('agent:cloud-search', query, cursor),
+  cloudSearch: (
+    query: string,
+    cursor = '',
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) => ipcRenderer.invoke('agent:cloud-search', query, cursor, sort, order),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>

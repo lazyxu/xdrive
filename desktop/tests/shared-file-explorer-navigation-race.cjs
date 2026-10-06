@@ -653,6 +653,7 @@ test('newer search submission wins when search responses complete out of order',
   const errors = []
   const renderSearch = () => runtime.render(() => useSearch({
     loadPage,
+    sort: { key: 'name', direction: 'asc' },
     onError: (error) => errors.push(error),
   }))
 

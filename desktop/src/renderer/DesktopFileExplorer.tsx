@@ -173,8 +173,13 @@ export default function DesktopFileExplorer({
     directoryLoadingMore: loadingMore,
     onLoadDirectory,
     onLoadMoreDirectory: onLoadMore,
-    loadSearchPage: async (query, cursor) => {
-      const result = await window.xdriveDesktop.agent.cloudSearch(query, cursor)
+    loadSearchPage: async (query, searchSort, cursor) => {
+      const result = await window.xdriveDesktop.agent.cloudSearch(
+        query,
+        cursor,
+        searchSort.key,
+        searchSort.direction,
+      )
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

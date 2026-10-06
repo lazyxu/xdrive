@@ -158,10 +158,12 @@ export default function WebFileExplorer({
     directoryLoadingMore: loadingMore,
     onLoadDirectory,
     onLoadMoreDirectory: onLoadMore,
-    loadSearchPage: (query, cursor) => api.search(
+    loadSearchPage: (query, searchSort, cursor) => api.search(
       query,
       XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
       cursor,
+      searchSort.key,
+      searchSort.direction,
     ),
     loadRoot: () => api.root(),
     findChildDirectory: async (parentID, name) => {

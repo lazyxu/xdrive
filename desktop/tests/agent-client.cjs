@@ -70,6 +70,28 @@ test('cloud children page forwards exact-name lookup options', async (t) => {
   assert.equal(page.items[0].name, 'Exact Folder')
 })
 
+test('cloud search forwards server sort and cursor options', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/search')
+    assert.equal(url.searchParams.get('q'), 'report')
+    assert.equal(url.searchParams.get('cursor'), 'next-token')
+    assert.equal(url.searchParams.get('sort'), 'size')
+    assert.equal(url.searchParams.get('order'), 'desc')
+    json(res, 200, {
+      items: [{
+        node: { id: 3, name: 'report.pdf', type: 'file', size: 12, revision: 1 },
+        path: 'Projects/report.pdf',
+        crumbs: [{ id: 1, name: 'My files' }, { id: 2, name: 'Projects' }],
+      }],
+      next_cursor: 'after',
+    })
+  })
+  const page = await client.cloudSearch('report', 'next-token', 'size', 'desc')
+  assert.equal(page.items[0].path, 'Projects/report.pdf')
+  assert.equal(page.next_cursor, 'after')
+})
+
 test('media Gallery filters are serialized for items and album items', async (t) => {
   const seen = []
   const { client } = await fixture(t, (req, res) => {
@@ -546,7 +568,7 @@ test('cloud management uses dedicated agent endpoints', async (t) => {
     ['POST', '/v1/cloud/shares/revoke'],
   ])
   assert.equal(seen[1].query, '?parent_id=1')
-  assert.equal(seen[2].query, '?q=report')
+  assert.equal(seen[2].query, '?q=report&sort=name&order=asc')
   assert.deepEqual(seen[6].body, { id: 4, revision: 3 })
 })
 

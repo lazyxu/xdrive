@@ -54,7 +54,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'loadSearchPage: async (query, cursor) =>',
+    'loadSearchPage: async (query, searchSort, cursor) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
@@ -83,7 +83,9 @@ test('Desktop FileExplorer paginates server search results through Agent cursors
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared React controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
   assert.equal(explorer.includes("setSearchValue('')"), false, 'Desktop navigation must not clear search draft separately')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch(query, cursor)'), 'Desktop search controller must keep Agent cursor execution local')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearch('), 'Desktop search controller must keep Agent cursor execution local')
+  assert.ok(explorer.includes('searchSort.key'), 'Desktop search must forward the shared sort key')
+  assert.ok(explorer.includes('searchSort.direction'), 'Desktop search must forward the shared sort direction')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Desktop Explorer hasMore must use shared pagination presentation')
   assert.ok(explorer.includes('loadingMore={explorerPagination.loadingMore}'), 'Desktop Explorer loadingMore must use shared pagination presentation')
   assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own search/directory pagination dispatch')

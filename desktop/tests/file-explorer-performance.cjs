@@ -216,3 +216,15 @@ test('FileExplorer search pagination appends unique cursor pages without rebuild
   assert.ok(searchController.includes('delete resultIDsRef.current[workspaceKey]'), 'search result ID cache must clear with search state')
   assert.ok(searchController.includes('resultIDs = new Set(currentResults.map((item) => item.node.id))'), 'restored search state must lazily rebuild its ID cache')
 })
+
+
+test('FileExplorer search sorting stays server-paged instead of re-sorting the loaded subset', () => {
+  assert.ok(serverSearch.includes('sort must be name, updated, size, or type'), 'Search API sort validation is missing')
+  assert.ok(serverSearch.includes('cursor does not match q/type/sort/order'), 'Search cursor must bind sort/order')
+  assert.ok(serverSearch.includes('ORDER BY %s ASC, %s %s, %s ASC, search_rows.id ASC'), 'Search keyset order must include server sort and stable path tie-breaker')
+  assert.ok(searchController.includes('const sortSignatureRef = useRef<Record<string, string>>({})'), 'search sort signature cache is missing')
+  assert.ok(searchController.includes('void executeSearch(workspaceKey, searchState.query, sort)'), 'sort changes must reload the active search')
+  assert.ok(searchController.includes('loadPage(searchState.query, sort, searchState.cursor)'), 'search load-more must keep the same server sort')
+  assert.ok(web.includes('searchSort.key'), 'Web search adapter must forward sort key')
+  assert.ok(desktop.includes('searchSort.direction'), 'Desktop search adapter must forward sort direction')
+})
