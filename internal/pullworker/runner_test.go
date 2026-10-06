@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
@@ -28,8 +29,8 @@ func TestRunnerDispatchesOnlyRegisteredPullKinds(t *testing.T) {
 	yike := &fakeHandler{}
 	runner := &Runner{Handlers: map[string]SourceHandler{"yike_photos": yike}}
 	report, err := runner.runSources(context.Background(), []meta.Source{
-		{ID: 1, Name: "Yike", Kind: "yike_photos"},
-		{ID: 2, Name: "Future", Kind: "future_pull"},
+		{ID: 1, OwnerID: 1, Name: "Yike", Kind: "yike_photos"},
+		{ID: 2, OwnerID: 1, Name: "Future", Kind: "future_pull"},
 	}, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,7 @@ func TestRunnerStopsOnContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	runner := &Runner{Handlers: map[string]SourceHandler{"yike_photos": handler}}
-	report, err := runner.runSources(ctx, []meta.Source{{ID: 1, Kind: "yike_photos"}}, time.Now().UTC())
+	report, err := runner.runSources(ctx, []meta.Source{{ID: 1, OwnerID: 1, Kind: "yike_photos"}}, time.Now().UTC())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err=%v want context.Canceled", err)
 	}
@@ -91,10 +92,10 @@ func TestRunnerBoundsSourceConcurrency(t *testing.T) {
 		MaxConcurrency: 2,
 	}
 	sources := []meta.Source{
-		{ID: 1, Kind: "yike_photos"},
-		{ID: 2, Kind: "yike_photos"},
-		{ID: 3, Kind: "yike_photos"},
-		{ID: 4, Kind: "yike_photos"},
+		{ID: 1, OwnerID: 1, Kind: "yike_photos"},
+		{ID: 2, OwnerID: 1, Kind: "yike_photos"},
+		{ID: 3, OwnerID: 1, Kind: "yike_photos"},
+		{ID: 4, OwnerID: 1, Kind: "yike_photos"},
 	}
 	type outcome struct {
 		report RunAllReport
@@ -156,6 +157,95 @@ func TestPrioritizeDueSourcesManualRetryThenMostOverdue(t *testing.T) {
 	}
 }
 
+func TestSourceBackgroundAttribution(t *testing.T) {
+	now := time.Now().UTC()
+	manualPriority, manualTrigger, manualInitiator, manualInitiatorID := sourceBackgroundAttribution(meta.Source{
+		OwnerID:        42,
+		RunRequestedAt: &now,
+	})
+	if manualPriority != background.PriorityP0 ||
+		manualTrigger != background.TriggerUserAction ||
+		manualInitiator != background.InitiatorUser ||
+		manualInitiatorID != 42 {
+		t.Fatalf(
+			"manual attribution=(%v,%v,%v,%d) want P0/user_action/user/42",
+			manualPriority, manualTrigger, manualInitiator, manualInitiatorID,
+		)
+	}
+
+	scheduledPriority, scheduledTrigger, scheduledInitiator, scheduledInitiatorID := sourceBackgroundAttribution(meta.Source{
+		OwnerID: 42,
+	})
+	if scheduledPriority != background.PriorityP2 ||
+		scheduledTrigger != background.TriggerSchedule ||
+		scheduledInitiator != background.InitiatorSystem ||
+		scheduledInitiatorID != 0 {
+		t.Fatalf(
+			"scheduled attribution=(%v,%v,%v,%d) want P2/schedule/system/0",
+			scheduledPriority, scheduledTrigger, scheduledInitiator, scheduledInitiatorID,
+		)
+	}
+}
+
+func TestRunnerSubmitsSourceToBackgroundNetworkScheduler(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduler := background.NewScheduler(ctx, background.Config{
+		Capacity: map[background.ResourceClass]int{
+			background.ResourceNetwork: 1,
+		},
+		QueueCapacity: map[background.ResourceClass]int{
+			background.ResourceNetwork: 4,
+		},
+	})
+	defer scheduler.Close()
+
+	handler := &blockingHandler{
+		started: make(chan uint64, 1),
+		release: make(chan struct{}, 1),
+	}
+	runner := &Runner{
+		Handlers:       map[string]SourceHandler{"yike_photos": handler},
+		Scheduler:      scheduler,
+		MaxConcurrency: 1,
+	}
+	requested := time.Now().UTC()
+	done := make(chan error, 1)
+	go func() {
+		_, err := runner.runSources(context.Background(), []meta.Source{{
+			ID:             7,
+			OwnerID:        42,
+			Kind:           "yike_photos",
+			RunRequestedAt: &requested,
+		}}, requested)
+		done <- err
+	}()
+
+	if id := <-handler.started; id != 7 {
+		t.Fatalf("started source=%d want=7", id)
+	}
+	ownerID := uint64(42)
+	snapshots := scheduler.TaskSnapshots(&ownerID)
+	if len(snapshots) != 1 {
+		t.Fatalf("snapshots=%+v want one active Source task", snapshots)
+	}
+	snapshot := snapshots[0]
+	if snapshot.Kind != "source.sync" ||
+		snapshot.Identity.Scope != background.ScopeUser ||
+		snapshot.Identity.OwnerID != ownerID ||
+		snapshot.Trigger != background.TriggerUserAction ||
+		snapshot.Initiator != background.InitiatorUser ||
+		snapshot.Priority != background.PriorityP0 ||
+		snapshot.Resource != background.ResourceNetwork {
+		t.Fatalf("unexpected Source scheduler snapshot: %+v", snapshot)
+	}
+
+	handler.release <- struct{}{}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunnerConcurrencyDefaultsAndCaps(t *testing.T) {
 	runner := &Runner{}
 	if got := runner.effectiveConcurrency(10); got != DefaultMaxConcurrency {
@@ -193,9 +283,9 @@ func TestRunnerSerializesSharedAccountWithoutBlockingOtherAccounts(t *testing.T)
 		MaxConcurrency: 2,
 	}
 	sources := []meta.Source{
-		{ID: 1, Kind: "yike_photos"},
-		{ID: 2, Kind: "yike_photos"},
-		{ID: 3, Kind: "yike_photos"},
+		{ID: 1, OwnerID: 1, Kind: "yike_photos"},
+		{ID: 2, OwnerID: 1, Kind: "yike_photos"},
+		{ID: 3, OwnerID: 1, Kind: "yike_photos"},
 	}
 	type outcome struct {
 		report RunAllReport

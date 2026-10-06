@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/pullworker"
@@ -87,6 +88,19 @@ func runWorker(args []string) error {
 		return err
 	}
 
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	schedulerConfig := background.DefaultConfig()
+	networkQueueCapacity := schedulerConfig.QueueCapacity[background.ResourceNetwork]
+	schedulerConfig.Capacity = map[background.ResourceClass]int{
+		background.ResourceNetwork: concurrency,
+	}
+	schedulerConfig.QueueCapacity = map[background.ResourceClass]int{
+		background.ResourceNetwork: networkQueueCapacity,
+	}
+	backgroundScheduler := background.NewScheduler(ctx, schedulerConfig)
+	defer backgroundScheduler.Close()
+
 	yikeRunner := &yikeworker.Runner{
 		DB:        db,
 		Keyring:   keyring,
@@ -116,6 +130,7 @@ func runWorker(args []string) error {
 			synologyfilesync.SourceKind: synologyFilesRunner,
 		},
 		Logger:         slog.Default(),
+		Scheduler:      backgroundScheduler,
 		MaxConcurrency: concurrency,
 	}
 
@@ -143,11 +158,9 @@ func runWorker(args []string) error {
 	}
 
 	if *once {
-		return runImmediate(context.Background())
+		return runImmediate(ctx)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	wakeups := sourceRunWakeups(ctx, cfg.DatabaseURL)
 
 	slog.Info("source_pull_worker_started",
@@ -155,6 +168,7 @@ func runWorker(args []string) error {
 		"scan_interval", interval.String(),
 		"poll_interval", pollInterval.String(),
 		"max_source_concurrency", concurrency,
+		"background_resource", background.ResourceNetwork,
 	)
 	if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("source_pull_cycle_failed", "error", err)

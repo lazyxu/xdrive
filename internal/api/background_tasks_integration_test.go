@@ -247,6 +247,15 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	if !backgroundTaskHasControl(userTasks, "sync-run:"+runA.ID, "cancel") {
 		t.Fatal("owner sync run did not expose cancel")
 	}
+	syncTask := backgroundTaskByID(userTasks, "sync-run:"+runA.ID)
+	if syncTask == nil {
+		t.Fatal("owner sync run task is missing")
+	}
+	if syncTask.Priority == nil ||
+		*syncTask.Priority != uint8(background.PriorityP0) ||
+		syncTask.Resource != string(background.ResourceNetwork) {
+		t.Fatalf("sync run scheduling metadata=%+v want P0/network", syncTask)
+	}
 
 	request(
 		t,
@@ -289,6 +298,15 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 
 	_ = userBToken
 	_ = admin
+}
+
+func backgroundTaskByID(tasks []backgroundTaskDTO, id string) *backgroundTaskDTO {
+	for index := range tasks {
+		if tasks[index].ID == id {
+			return &tasks[index]
+		}
+	}
+	return nil
 }
 
 func backgroundTaskHasControl(
