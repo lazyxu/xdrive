@@ -715,6 +715,15 @@ export type AgentCloudSearchPage = {
   next_cursor?: string
 }
 
+export type AgentCloudSearchRange = {
+  items: AgentCloudSearchResult[]
+  total_count: number
+  offset: number
+  limit: number
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+}
+
 export type AgentCloudQuickAccessItem = {
   node: AgentCloudNode
   path: string
@@ -1522,6 +1531,28 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ q: queryText, sort, order })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<AgentCloudSearchPage>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
+  }
+
+  cloudSearchRange(
+    queryText: string,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
+    const query = new URLSearchParams({
+      q: queryText,
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+    })
+    return this.request<AgentCloudSearchRange>(
+      'GET',
+      `/v1/cloud/search?${query.toString()}`,
+      undefined,
+      45_000,
+    )
   }
 
   cloudQuota() {

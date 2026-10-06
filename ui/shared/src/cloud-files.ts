@@ -49,6 +49,15 @@ export type XDriveCloudFilesSearchPage<TNode extends { id: number }> = {
   next_cursor?: string
 }
 
+export type XDriveCloudFilesSearchRange<TNode extends { id: number }> = {
+  items: XDriveCloudFilesSearchResult<TNode>[]
+  total_count: number
+  offset: number
+  limit: number
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+}
+
 export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
   node: TNode
   path: string

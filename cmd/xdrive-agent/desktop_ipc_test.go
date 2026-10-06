@@ -106,7 +106,10 @@ type fakeDesktopIPCController struct {
 	cloudResolveID             string
 	cloudResolvePolicy         string
 	cloudSearchPage            agentCloudSearchPage
+	cloudSearchRange           agentCloudSearchRange
 	cloudSearchCursor          string
+	cloudSearchOffset          int
+	cloudSearchLimit           int
 	cloudSearchSort            string
 	cloudSearchOrder           string
 	cloudQuota                 client.QuotaUsage
@@ -531,6 +534,19 @@ func (f *fakeDesktopIPCController) CloudSearch(_ context.Context, _ string, curs
 	f.cloudSearchSort = sortKey
 	f.cloudSearchOrder = order
 	return f.cloudSearchPage, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSearchRange(
+	_ context.Context,
+	_ string,
+	offset, limit int,
+	sortKey, order string,
+) (agentCloudSearchRange, error) {
+	f.cloudSearchOffset = offset
+	f.cloudSearchLimit = limit
+	f.cloudSearchSort = sortKey
+	f.cloudSearchOrder = order
+	return f.cloudSearchRange, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudQuota(context.Context) (client.QuotaUsage, error) {
@@ -1425,6 +1441,18 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			}},
 			NextCursor: "search-next",
 		},
+		cloudSearchRange: agentCloudSearchRange{
+			Items: []agentCloudSearchResult{{
+				Node:   client.Node{ID: 3, Name: "report.pdf", Type: "file", Revision: 2},
+				Path:   "Projects/report.pdf",
+				Crumbs: []agentCloudCrumb{{ID: 1, Name: "My files"}, {ID: 2, Name: "Projects"}},
+			}},
+			TotalCount: 640,
+			Offset:     200,
+			Limit:      100,
+			Sort:       "updated",
+			Order:      "asc",
+		},
 		cloudCreatedDir: client.Node{ID: 8, ParentID: ptrUint64(1), Name: "New Folder", Type: "dir", Revision: 1},
 		cloudRenamed:    client.Node{ID: 3, ParentID: ptrUint64(2), Name: "renamed.pdf", Type: "file", Revision: 3},
 		cloudCopied:     client.Node{ID: 10, ParentID: ptrUint64(8), Name: "report.pdf", Type: "file", Revision: 1},
@@ -1478,6 +1506,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor&sort=size&order=desc", "", "\"next_cursor\":\"search-next\""},
+		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc", "", "\"total_count\":640"},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
@@ -1503,8 +1532,13 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		ctrl.cloudChildrenRangeOptions.Sort != "updated" || ctrl.cloudChildrenRangeOptions.Order != "desc" {
 		t.Fatalf("cloud children range options not forwarded: %+v", ctrl.cloudChildrenRangeOptions)
 	}
-	if ctrl.cloudSearchCursor != "search-cursor" || ctrl.cloudSearchSort != "size" || ctrl.cloudSearchOrder != "desc" {
-		t.Fatalf("cloud search options not forwarded: cursor=%q sort=%q order=%q", ctrl.cloudSearchCursor, ctrl.cloudSearchSort, ctrl.cloudSearchOrder)
+	if ctrl.cloudSearchCursor != "search-cursor" {
+		t.Fatalf("cloud search cursor not forwarded: %q", ctrl.cloudSearchCursor)
+	}
+	if ctrl.cloudSearchOffset != 200 || ctrl.cloudSearchLimit != 100 ||
+		ctrl.cloudSearchSort != "updated" || ctrl.cloudSearchOrder != "asc" {
+		t.Fatalf("cloud search range not forwarded: offset=%d limit=%d sort=%q order=%q",
+			ctrl.cloudSearchOffset, ctrl.cloudSearchLimit, ctrl.cloudSearchSort, ctrl.cloudSearchOrder)
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)

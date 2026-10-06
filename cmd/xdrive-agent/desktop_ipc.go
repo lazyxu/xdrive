@@ -196,6 +196,7 @@ type desktopIPCController interface {
 	CloudDownloadFolder(context.Context, uint64, uint64, string) (agentCloudFolderDownloadResult, error)
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
 	CloudSearch(context.Context, string, string, string, string) (agentCloudSearchPage, error)
+	CloudSearchRange(context.Context, string, int, int, string, string) (agentCloudSearchRange, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
@@ -1597,12 +1598,51 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_query", "q must contain at least 2 characters")
 		return
 	}
+	values := r.URL.Query()
+	if rawValues, rangeRequested := values["offset"]; rangeRequested {
+		rawOffset := ""
+		if len(rawValues) > 0 {
+			rawOffset = strings.TrimSpace(rawValues[0])
+		}
+		offset, err := strconv.Atoi(rawOffset)
+		if rawOffset == "" || err != nil || offset < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_offset", "offset must be zero or greater")
+			return
+		}
+		if strings.TrimSpace(values.Get("cursor")) != "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_range", "range requests do not accept cursor")
+			return
+		}
+		limit := cloudSearchLimit
+		if raw := strings.TrimSpace(values.Get("limit")); raw != "" {
+			value, err := strconv.Atoi(raw)
+			if err != nil || value < 1 || value > cloudSearchLimit {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_limit", "limit must be between 1 and 200")
+				return
+			}
+			limit = value
+		}
+		page, err := h.ctrl.CloudSearchRange(
+			r.Context(),
+			query,
+			offset,
+			limit,
+			strings.TrimSpace(values.Get("sort")),
+			strings.TrimSpace(values.Get("order")),
+		)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
 	page, err := h.ctrl.CloudSearch(
 		r.Context(),
 		query,
-		strings.TrimSpace(r.URL.Query().Get("cursor")),
-		strings.TrimSpace(r.URL.Query().Get("sort")),
-		strings.TrimSpace(r.URL.Query().Get("order")),
+		strings.TrimSpace(values.Get("cursor")),
+		strings.TrimSpace(values.Get("sort")),
+		strings.TrimSpace(values.Get("order")),
 	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)

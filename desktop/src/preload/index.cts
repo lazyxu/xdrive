@@ -259,6 +259,13 @@ const agent = Object.freeze({
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
   ) => ipcRenderer.invoke('agent:cloud-search', query, cursor, sort, order),
+  cloudSearchRange: (
+    query: string,
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) => ipcRenderer.invoke('agent:cloud-search-range', query, offset, limit, sort, order),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>

@@ -32,6 +32,7 @@ import type {
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
   XDriveCloudFilesSearchPage,
+  XDriveCloudFilesSearchRange,
   XDriveCloudFilesSearchResult,
   XDriveFileOperation,
   XDriveFileQuickAccessItem,
@@ -258,6 +259,7 @@ declare global {
   type AgentCloudCrumb = XDriveCloudFilesCrumb
   type AgentCloudSearchResult = XDriveCloudFilesSearchResult<AgentCloudNode>
   type AgentCloudSearchPage = XDriveCloudFilesSearchPage<AgentCloudNode>
+  type AgentCloudSearchRange = XDriveCloudFilesSearchRange<AgentCloudNode>
   type AgentCloudUploadResult = {
     node: AgentCloudNode
     skipped: boolean
@@ -496,6 +498,13 @@ declare global {
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
         ) => Promise<DesktopResult<AgentCloudSearchPage>>
+        cloudSearchRange: (
+          query: string,
+          offset: number,
+          limit?: number,
+          sort?: 'name' | 'updated' | 'size' | 'type',
+          order?: 'asc' | 'desc',
+        ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
