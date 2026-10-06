@@ -702,7 +702,7 @@ func TestFileOperationConflictPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaultCopy.ConflictPolicy != meta.FileOperationConflictPolicyKeepBoth {
+	if defaultCopy.ConflictPolicy != meta.FileOperationConflictPolicyFail {
 		t.Fatalf("default copy conflict policy=%q", defaultCopy.ConflictPolicy)
 	}
 }

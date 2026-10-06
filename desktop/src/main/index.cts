@@ -1201,12 +1201,12 @@ function normalizeCloudFileOperationID(value: unknown) {
   return value.trim()
 }
 
-function normalizeCloudFileOperationConflictPolicy(value: unknown): 'skip' | 'keep_both' {
-  if (value === 'skip' || value === 'keep_both') return value
+function normalizeCloudFileOperationConflictPolicy(value: unknown): 'skip' | 'keep_both' | 'replace' {
+  if (value === 'skip' || value === 'keep_both' || value === 'replace') return value
   throw new AgentIPCError(
     'invalid_input',
     0,
-    'File operation conflict policy must be skip or keep_both.',
+    'File operation conflict policy must be skip, keep_both, or replace.',
   )
 }
 

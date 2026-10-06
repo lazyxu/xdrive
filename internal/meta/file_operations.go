@@ -19,6 +19,7 @@ const (
 	FileOperationConflictPolicyFail     = "fail"
 	FileOperationConflictPolicySkip     = "skip"
 	FileOperationConflictPolicyKeepBoth = "keep_both"
+	FileOperationConflictPolicyReplace  = "replace"
 )
 
 type FileOperation struct {
@@ -74,15 +75,12 @@ func FileOperationTerminal(status string) bool {
 }
 
 func DefaultFileOperationConflictPolicy(operationType string) string {
-	if operationType == FileOperationTypeCopy {
-		return FileOperationConflictPolicyKeepBoth
-	}
 	return FileOperationConflictPolicyFail
 }
 
 func ValidFileOperationConflictPolicy(value string) bool {
 	switch value {
-	case FileOperationConflictPolicyFail, FileOperationConflictPolicySkip, FileOperationConflictPolicyKeepBoth:
+	case FileOperationConflictPolicyFail, FileOperationConflictPolicySkip, FileOperationConflictPolicyKeepBoth, FileOperationConflictPolicyReplace:
 		return true
 	default:
 		return false

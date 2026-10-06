@@ -1582,7 +1582,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/file-operation?id=file-op", "", "\"processed_items\":1"},
 		{http.MethodPost, "/v1/cloud/file-operation/cancel", `{"id":"file-op"}`, "\"status\":\"cancel_requested\""},
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
-		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"keep_both"}`, "\"id\":\"file-op-resolved\""},
+		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"replace"}`, "\"id\":\"file-op-resolved\""},
 		{http.MethodPost, "/v1/cloud/upload/preflight", `{"parent_id":2,"name":"upload.txt"}`, "\"conflict\":true"},
 		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
@@ -1666,7 +1666,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		ctrl.cloudArchiveDestination != archiveDestination {
 		t.Fatalf("cloud archive download not forwarded: ids=%v destination=%q", ctrl.cloudArchiveIDs, ctrl.cloudArchiveDestination)
 	}
-	if ctrl.cloudResolveID != "file-op" || ctrl.cloudResolvePolicy != "keep_both" {
+	if ctrl.cloudResolveID != "file-op" || ctrl.cloudResolvePolicy != "replace" {
 		t.Fatalf(
 			"file operation conflict resolution not forwarded: id=%q policy=%q",
 			ctrl.cloudResolveID,
