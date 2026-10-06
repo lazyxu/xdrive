@@ -420,6 +420,13 @@ export type AgentCloudFolderDownloadResult = {
   failed: number
 }
 
+export type AgentBackgroundTaskControlResult = {
+  task_id: string
+  action: string
+  result_task_id?: string
+  accepted: boolean
+}
+
 export type AgentBackgroundTask = {
   id: string
   kind: string
@@ -1458,6 +1465,15 @@ export class AgentIPCClient {
       ...(global ? { global: 'true' } : {}),
     })
     return this.request<AgentBackgroundTask[]>('GET', `/v1/cloud/background-tasks?${query.toString()}`)
+  }
+
+  cloudBackgroundTaskControl(id: string, action: string, global = false) {
+    return this.request<AgentBackgroundTaskControlResult>(
+      'POST',
+      '/v1/cloud/background-task-control',
+      { id, action, global },
+      45_000,
+    )
   }
 
   cloudFileOperations(limit = 100) {

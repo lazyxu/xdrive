@@ -227,7 +227,36 @@ func TestPhotoIntelligenceReanalyzeUserAndAdminControls(t *testing.T) {
 		t.Fatalf("admin photo.face task missing reanalyze capability: %+v", adminTasks)
 	}
 
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"runtime:user:%d:photo.face","action":"reanalyze"}`,
+			user.ID,
+		)),
+		http.StatusAccepted,
+	)
+
 	close(faceRelease)
+	waitForPhotoFaceOwnerStart(t, face.started, user.ID, "user background control")
+	waitForNoOwnerPhotoIntelligenceTasks(t, scheduler, user.ID)
+
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/admin/background-tasks/control",
+		adminToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"runtime:user:%d:photo.face","action":"reanalyze"}`,
+			user.ID,
+		)),
+		http.StatusAccepted,
+	)
+	waitForPhotoFaceOwnerStart(t, face.started, user.ID, "admin background control")
 	waitForNoOwnerPhotoIntelligenceTasks(t, scheduler, user.ID)
 
 	request(
@@ -388,6 +417,23 @@ func waitForPersonClusterState(
 		row.State,
 		want,
 	)
+}
+
+func waitForPhotoFaceOwnerStart(
+	t *testing.T,
+	started <-chan uint64,
+	ownerID uint64,
+	label string,
+) {
+	t.Helper()
+	select {
+	case got := <-started:
+		if got != ownerID {
+			t.Fatalf("%s face owner=%d want=%d", label, got, ownerID)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("%s face reanalysis did not start", label)
+	}
 }
 
 func waitForNoOwnerPhotoIntelligenceTasks(

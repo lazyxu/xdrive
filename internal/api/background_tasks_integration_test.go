@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,8 +242,8 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		if task.OwnerID != userA.ID {
 			t.Fatalf("user saw foreign task: %+v", task)
 		}
-		if task.OwnerUsername != userA.Username {
-			t.Fatalf("user task owner username=%q want=%q: %+v", task.OwnerUsername, userA.Username, task)
+		if task.OwnerUsername != "" {
+			t.Fatalf("user task unexpectedly included admin-only owner username: %+v", task)
 		}
 	}
 	if !backgroundTaskHasControl(userTasks, "file-operation:"+opA.ID, "cancel") {
@@ -302,7 +304,87 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		t.Fatalf("admin visibility missing owners: seenA=%v seenB=%v tasks=%+v", seenA, seenB, adminTasks)
 	}
 
-	_ = userBToken
+	userBResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/background-tasks?limit=50",
+		userBToken,
+		nil,
+		http.StatusOK,
+	)
+	var userBTasks []backgroundTaskDTO
+	if err := json.Unmarshal(userBResponse.Body.Bytes(), &userBTasks); err != nil {
+		t.Fatal(err)
+	}
+	if !backgroundTaskHasControl(userBTasks, "file-operation:"+opB.ID, "retry") {
+		t.Fatal("failed owner file operation did not expose retry")
+	}
+
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userBToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"file-operation:%s","action":"cancel"}`,
+			opA.ID,
+		)),
+		http.StatusNotFound,
+	)
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/admin/background-tasks/control",
+		adminToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"file-operation:%s","action":"cancel"}`,
+			opA.ID,
+		)),
+		http.StatusConflict,
+	)
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userAToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"file-operation:%s","action":"cancel"}`,
+			opA.ID,
+		)),
+		http.StatusAccepted,
+	)
+	var cancelledOperation meta.FileOperation
+	if err := db.Where("id = ?", opA.ID).First(&cancelledOperation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelledOperation.Status != meta.FileOperationStatusCancelRequested {
+		t.Fatalf("controlled file operation status=%q want cancel_requested", cancelledOperation.Status)
+	}
+
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userAToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"sync-run:%s","action":"cancel"}`,
+			runA.ID,
+		)),
+		http.StatusAccepted,
+	)
+	var cancelledRun meta.SyncRun
+	if err := db.Where("id = ?", runA.ID).First(&cancelledRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelledRun.CancelRequestedAt == nil {
+		t.Fatal("controlled sync run did not persist cancel_requested_at")
+	}
+
 	_ = admin
 }
 
@@ -330,4 +412,31 @@ func backgroundTaskHasControl(
 		}
 	}
 	return false
+}
+
+func TestBackgroundFileOperationControlActionsIncludeUndoRedo(t *testing.T) {
+	viewerID := uint64(42)
+	undoable := meta.FileOperation{
+		OwnerID:      viewerID,
+		Type:         meta.FileOperationTypeCopy,
+		Status:       meta.FileOperationStatusCompleted,
+		UndoPlanJSON: `{"kind":"copy","copy_roots":[{"root":{"id":1,"revision":1},"name":"x","nodes":[{"id":1,"revision":1}]}]}`,
+	}
+	actions := backgroundFileOperationControlActions(undoable, viewerID, false)
+	if !backgroundTaskActionAllowed(actions, backgroundTaskActionUndo) {
+		t.Fatalf("undoable actions=%v missing undo", actions)
+	}
+
+	undoOf := "original"
+	redoable := meta.FileOperation{
+		OwnerID:      viewerID,
+		Type:         meta.FileOperationTypeUndo,
+		Status:       meta.FileOperationStatusCompleted,
+		UndoOfID:     &undoOf,
+		RedoPlanJSON: `{"kind":"copy","copy_roots":[{"root":{"id":1,"revision":2},"parent_id":2,"name":"x","nodes":[{"id":1,"revision":2}]}]}`,
+	}
+	actions = backgroundFileOperationControlActions(redoable, viewerID, false)
+	if !backgroundTaskActionAllowed(actions, backgroundTaskActionRedo) {
+		t.Fatalf("redoable actions=%v missing redo", actions)
+	}
 }

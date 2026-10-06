@@ -136,3 +136,32 @@ test('Web and Desktop use adapters for the same background-task contract', () =>
   assert.ok(desktop.includes('backgroundTasksSupported'))
   assert.ok(desktop.includes("globalTasksEnabled: status?.role === 'admin'"))
 })
+
+
+test('background task controls use server capabilities and scope-aware polling', () => {
+  for (const token of [
+    "control?: (",
+    "backgroundScope",
+    "backgroundControlKey",
+    "backgroundTaskPort.control(task.id, action, global)",
+    "effectiveScope === 'global'",
+    "port.loadGlobal(XDRIVE_BACKGROUND_TASK_LIMIT)",
+    "port.loadMine(XDRIVE_BACKGROUND_TASK_LIMIT)",
+  ]) assert.ok(controller.includes(token), 'background control controller missing: ' + token)
+
+  for (const token of [
+    'onBackgroundScopeChange',
+    'onBackgroundTaskControl',
+    'backgroundControlKey',
+  ]) assert.ok(page.includes(token), 'background control page wiring missing: ' + token)
+
+  for (const token of [
+    '<XDriveActionButton',
+    'task.control_actions',
+    'xDriveBackgroundTaskControlLabel',
+    'onControl(task, action)',
+  ]) assert.ok(backgroundCenter.includes(token), 'background control surface missing: ' + token)
+
+  assert.ok(webApi.includes('controlBackgroundTask('), 'Web unified background control API missing')
+  assert.ok(web.includes('api.controlBackgroundTask(id, action, global)'), 'Web background control adapter missing')
+})

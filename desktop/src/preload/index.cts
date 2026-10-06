@@ -217,6 +217,8 @@ const agent = Object.freeze({
   cloudBatchDelete: (items: Array<{ id: number; revision: number }>) => ipcRenderer.invoke('agent:cloud-batch-delete', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudBackgroundTasks: (global = false, limit = 100) => ipcRenderer.invoke('agent:cloud-background-tasks', global, limit),
+  cloudBackgroundTaskControl: (id: string, action: string, global = false) =>
+    ipcRenderer.invoke('agent:cloud-background-task-control', id, action, global),
   cloudFileOperations: (limit = 100) => ipcRenderer.invoke('agent:cloud-file-operations', limit),
   cloudClearFileOperationHistory: () => ipcRenderer.invoke('agent:cloud-file-operations-clear'),
   cloudFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation', id),

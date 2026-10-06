@@ -163,6 +163,13 @@ type BackgroundTaskProgress struct {
 	CurrentItem string   `json:"current_item,omitempty"`
 }
 
+type BackgroundTaskControlResult struct {
+	TaskID       string `json:"task_id"`
+	Action       string `json:"action"`
+	ResultTaskID string `json:"result_task_id,omitempty"`
+	Accepted     bool   `json:"accepted"`
+}
+
 type BackgroundTask struct {
 	ID             string                 `json:"id"`
 	Kind           string                 `json:"kind"`
@@ -650,6 +657,26 @@ func (c *Client) ListAdminBackgroundTasks(ctx context.Context, limit int) ([]Bac
 	}
 	var out []BackgroundTask
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/background-tasks?limit=%d", limit), nil, &out)
+	return out, err
+}
+
+func (c *Client) ControlBackgroundTask(
+	ctx context.Context,
+	id, action string,
+	global bool,
+) (BackgroundTaskControlResult, error) {
+	var out BackgroundTaskControlResult
+	endpoint := "/api/v1/background-tasks/control"
+	if global {
+		endpoint = "/api/v1/admin/background-tasks/control"
+	}
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		endpoint,
+		map[string]any{"id": id, "action": action},
+		&out,
+	)
 	return out, err
 }
 

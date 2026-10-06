@@ -1,0 +1,27 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const repo = path.join(__dirname, '..', '..')
+const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
+
+const client = read('internal', 'client', 'client.go')
+const agentCloud = read('cmd', 'xdrive-agent', 'cloud_files.go')
+const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+const main = read('desktop', 'src', 'main', 'index.cts')
+const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+const preload = read('desktop', 'src', 'preload', 'index.cts')
+const renderer = read('desktop', 'src', 'renderer', 'App.tsx')
+
+test('Desktop background task controls remain a transport adapter', () => {
+  assert.ok(client.includes('ControlBackgroundTask('))
+  assert.ok(agentCloud.includes('CloudControlBackgroundTask('))
+  assert.ok(agentIPC.includes('POST /v1/cloud/background-task-control'))
+  assert.ok(agentIPC.includes('CloudControlBackgroundTask('))
+  assert.ok(agentClient.includes('cloudBackgroundTaskControl(id: string, action: string, global = false)'))
+  assert.ok(main.includes("agent:cloud-background-task-control"))
+  assert.ok(preload.includes('cloudBackgroundTaskControl: (id: string, action: string, global = false)'))
+  assert.ok(renderer.includes('window.xdriveDesktop.agent.cloudBackgroundTaskControl('))
+  assert.equal(renderer.includes("task.kind === 'source.sync' ?"), false, 'Desktop renderer must not dispatch controls by task kind')
+})

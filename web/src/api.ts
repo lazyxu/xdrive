@@ -43,6 +43,8 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveBackgroundTask,
+  XDriveBackgroundTaskControlAction,
+  XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
   XDriveFileTextPreview,
   XDriveCloudFilesPage,
@@ -1345,6 +1347,20 @@ export class XDriveApi {
   adminBackgroundTasks(limit = 100) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     return this.request<XDriveBackgroundTask[]>(`/api/v1/admin/background-tasks?limit=${bounded}`)
+  }
+
+  controlBackgroundTask(
+    id: string,
+    action: XDriveBackgroundTaskControlAction,
+    global = false,
+  ) {
+    const endpoint = global
+      ? '/api/v1/admin/background-tasks/control'
+      : '/api/v1/background-tasks/control'
+    return this.request<XDriveBackgroundTaskControlResult>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ id, action }),
+    })
   }
 
   fileOperations(limit = 100) {
