@@ -266,12 +266,12 @@ func (s *Server) children(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid node id")
 		return
 	}
-	if _, err := s.ownedDirectory(userID(c), parentID); err != nil {
-		fail(c, statusForLookup(err), "directory not found")
-		return
-	}
 	if childrenPaginationRequested(c) {
 		s.childrenPage(c, parentID)
+		return
+	}
+	if _, err := s.ownedDirectory(userID(c), parentID); err != nil {
+		fail(c, statusForLookup(err), "directory not found")
 		return
 	}
 	var nodes []meta.Node
