@@ -14,17 +14,18 @@ import (
 const mediaSearchMaxRunes = 200
 
 type mediaQueryOptions struct {
-	MediaKind     string
-	Search        string
-	AssetKind     string
-	CapturedFrom  *time.Time
-	CapturedTo    *time.Time
-	HasLocation   *bool
-	Favorite      *bool
-	Tag           string
-	Person        string
-	Place         *mediaPlaceCell
-	PersonCluster string
+	MediaKind      string
+	Search         string
+	AssetKind      string
+	CapturedFrom   *time.Time
+	CapturedTo     *time.Time
+	HasLocation    *bool
+	Favorite       *bool
+	Tag            string
+	Person         string
+	Place          *mediaPlaceCell
+	PersonCluster  string
+	PersonIdentity string
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -184,6 +185,19 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 				")",
 			meta.PhotoAnalysisStateReady,
 			options.PersonCluster,
+		)
+	}
+	if options.PersonIdentity != "" {
+		query = query.Where(
+			"EXISTS ("+
+				"SELECT 1 FROM xd_photo_people AS durable_person "+
+				"JOIN xd_photo_person_assets AS durable_membership "+
+				"ON durable_membership.person_id = durable_person.id "+
+				"WHERE durable_person.owner_id = pa.owner_id "+
+				"AND durable_person.person_key = ? "+
+				"AND durable_membership.asset_id = pa.id"+
+				")",
+			options.PersonIdentity,
 		)
 	}
 	return query

@@ -104,6 +104,35 @@ func (PhotoPersonClusterState) TableName() string {
 	return "xd_photo_person_cluster_states"
 }
 
+type PhotoPerson struct {
+	ID           uint64  `gorm:"primaryKey"`
+	OwnerID      uint64  `gorm:"not null;index"`
+	PersonKey    string  `gorm:"size:64;not null;uniqueIndex"`
+	Name         string  `gorm:"size:128;not null;default:'';index"`
+	Hidden       bool    `gorm:"not null;default:false;index"`
+	CoverAssetID *uint64 `gorm:"index"`
+	Revision     uint64  `gorm:"not null;default:1"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+
+	Owner      User       `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	CoverAsset PhotoAsset `gorm:"foreignKey:CoverAssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+}
+
+func (PhotoPerson) TableName() string { return "xd_photo_people" }
+
+type PhotoPersonAsset struct {
+	PersonID  uint64 `gorm:"primaryKey;autoIncrement:false;index"`
+	AssetID   uint64 `gorm:"primaryKey;autoIncrement:false;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Person PhotoPerson `gorm:"foreignKey:PersonID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Asset  PhotoAsset  `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoPersonAsset) TableName() string { return "xd_photo_person_assets" }
+
 type PhotoPlaceLabel struct {
 	AssetID         uint64  `gorm:"primaryKey;autoIncrement:false"`
 	Resolver        string  `gorm:"size:64;not null;index"`

@@ -18,6 +18,12 @@ func TestPhotoIntelligenceModelContracts(t *testing.T) {
 	if (PhotoPersonClusterState{}).TableName() != "xd_photo_person_cluster_states" {
 		t.Fatal("unexpected photo person cluster state table name")
 	}
+	if (PhotoPerson{}).TableName() != "xd_photo_people" {
+		t.Fatal("unexpected photo person table name")
+	}
+	if (PhotoPersonAsset{}).TableName() != "xd_photo_person_assets" {
+		t.Fatal("unexpected photo person asset table name")
+	}
 	if (PhotoPlaceLabel{}).TableName() != "xd_photo_place_labels" {
 		t.Fatal("unexpected photo place label table name")
 	}

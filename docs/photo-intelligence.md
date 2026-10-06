@@ -247,6 +247,45 @@ The complete owner projection is replaced in one database transaction. A cluster
 
 Gallery consumes the automatic projection through separate Suggested People APIs. Only `ready` clusters are listed or filterable. The API exposes cluster id, face/item counts, cover node, and update time; embeddings and cohesion internals remain server-side. Opening a suggestion is a transient view over the current automatic cluster plus ordinary temporary Gallery filters. The cluster id is never serialized into `MediaGalleryQuery`, a smart album, or `PhotoMetadata.PeopleJSON`.
 
+## Durable person identity policy
+
+Automatic clusters are rebuildable suggestions; user-authored person identity is durable intent. xDrive therefore persists named/managed people in a separate model:
+
+```text
+PhotoPerson
+  -> stable person:v1:<uuid> public id
+  -> owner
+  -> optional user name
+  -> hidden flag
+  -> optional cover PhotoAsset
+  -> revision
+
+PhotoPersonAsset
+  -> durable many-to-many membership between PhotoPerson and PhotoAsset
+```
+
+Durable membership is asset-scoped rather than face-row-scoped. `PhotoFace.ID`, detector ordering, embedding model versions, and automatic `PhotoPersonCluster.ClusterKey` may all change during re-analysis; none of those identifiers may be used as the permanent user person id.
+
+The initial durable-person Server contract supports:
+
+- adopt a current ready Suggested People cluster into a new durable person by snapshotting its distinct `PhotoAsset` memberships;
+- rename or unname the durable person;
+- hide/unhide the durable person;
+- choose a cover from one of that person's current member assets;
+- merge one or more durable people into a chosen target while preserving the target person id;
+- split selected member media nodes into a newly created durable person while keeping the source person id;
+- browse durable-person items with ordinary temporary Gallery filters.
+
+All mutations are transactional and revisioned. Rename/hide/cover/merge/split use the same `If-Match` optimistic-concurrency contract as manual/smart albums. Merge preserves the target identity and deletes only the source person records after copying memberships. Split must leave at least one member in the source identity.
+
+Adoption is intentionally a **snapshot** of the current automatic cluster. A later cluster rebuild does not mutate the durable person and cannot silently add/remove assets. If a future suggestion contains new photos of the same real person, the user may explicitly adopt/merge it; automatic similarity is never allowed to rewrite durable intent.
+
+A current suggestion whose asset set exactly matches an existing durable person cannot be adopted a second time. This prevents accidental duplicate identities from repeated UI actions while still allowing a later changed cluster snapshot to be handled explicitly.
+
+`PhotoMetadata.PeopleJSON` remains the existing manual per-photo label list. Durable `PhotoPerson` operations do not rewrite, infer, rename, or delete `PeopleJSON`. The two surfaces remain distinct until an explicit migration/product contract is designed.
+
+Durable person ids are suitable for future saved filters because they survive face/cluster rebuilds, but this foundation does **not** yet extend `MediaGalleryQuery` or smart-album JSON. The first PR deliberately locks the storage/mutation semantics before adding shared Web/Desktop person-management UI and saved-person filters.
+
 ## Place-name analysis policy
 
 The current Gallery GPS facet keeps its stable `place:<latitude-cell>:<longitude-cell>` identity and filter contract. Human-readable names are an optional derived label layered on top; canonical GPS remains `PhotoMetadata.Latitude/Longitude`.
@@ -347,11 +386,17 @@ When automatic facets are exposed later:
    - never mix embedding versions; model transition keeps automatic suggestions hidden until vectors converge and a complete rebuild succeeds;
    - derived cluster centroid/membership confidence persisted transactionally;
    - shared Web/Desktop Gallery exposes ready automatic clusters as read-only **人物建议** cards and a transient cluster-items view;
-   - rebuildable cluster ids never enter manual `PeopleJSON` or smart-album query contracts;
-   - next: design explicit durable user actions for naming, adopt/merge/split, hide, and cover selection.
-6. **Gallery integration**
-   - shared Web/Desktop People/Places facets;
-   - smart-album filters;
+   - rebuildable cluster ids never enter manual `PeopleJSON` or smart-album query contracts.
+6. **Durable Person Identity — backend foundation current**
+   - stable owner-scoped user person identities independent from face/cluster ids;
+   - asset-based durable membership and cover;
+   - adopt, rename/unname, hide/unhide, merge, split, and item browsing;
+   - optimistic revision control and transactional mutations;
+   - automatic clustering never rewrites durable memberships or manual `PeopleJSON`;
+   - next: shared Web/Desktop person-management actions and durable-person saved filters.
+7. **Gallery integration**
+   - shared Web/Desktop durable People management;
+   - durable-person smart-album filters;
    - integrity verify/repair and derived-state GC.
 
 The model/runtime choice is intentionally deferred until representative accuracy, memory, CPU/GPU cost, package size, and platform support are measured. The schema must not force xDrive to one ML runtime.
