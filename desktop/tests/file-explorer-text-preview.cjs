@@ -152,7 +152,9 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
     assert.ok(previewProxy.includes(token), 'Desktop local preview proxy missing: ' + token)
   }
   assert.ok(desktopIndexHTML.includes("frame-src http://127.0.0.1:*"), 'Desktop CSP must allow only the loopback PDF preview frame')
-  assert.ok(desktopIndexHTML.includes("img-src 'self' data: http://127.0.0.1:*"), 'Desktop CSP must allow loopback original-image preview without arbitrary remote images')
+  assert.ok(desktopIndexHTML.includes("img-src 'self' data: blob: http://127.0.0.1:*"), 'Desktop CSP must allow local Blob thumbnails plus loopback original-image preview without arbitrary remote images')
+  assert.equal(desktopIndexHTML.includes("img-src *"), false, 'Desktop CSP must not allow arbitrary image origins')
+  assert.equal(desktopIndexHTML.includes("img-src https:"), false, 'Desktop CSP must not allow arbitrary remote HTTPS images')
   assert.ok(previewSurface.includes('onError={loadImageFallback}'), 'Image renderer must fall back to the thumbnail loader on decode failure')
   assert.ok(previewSurface.includes('setUsingImageFallback(true)'), 'Image renderer must track the thumbnail fallback state')
 
