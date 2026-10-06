@@ -301,8 +301,11 @@ file-explorer-thumbnail-transport-performance:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-thumbnail-warm-baseline"'
     - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-thumbnail-warm-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-thumbnail-warm-cache"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-thumbnail-warm-cache"'
   script:
     - go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline$' -count=1 -v ./internal/client
+    - go test -run '^TestFileExplorerDesktopThumbnailWarmAgentCachePerformance$' -count=1 -v ./cmd/xdrive-agent
 
 file-explorer-virtual-collection-performance:
   image: $XDRIVE_CI_NODE_IMAGE

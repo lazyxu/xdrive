@@ -794,10 +794,35 @@ func (c *Client) SetMediaDescription(
 	return out, err
 }
 
-func (c *Client) MediaThumbnail(
+type MediaThumbnailResponse struct {
+	Data        []byte
+	ContentType string
+	ETag        string
+	MaxAge      time.Duration
+	NotModified bool
+}
+
+func mediaResponseMaxAge(cacheControl string) time.Duration {
+	for _, part := range strings.Split(cacheControl, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.HasPrefix(strings.ToLower(part), "max-age=") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(part), "max-age="))
+		seconds, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || seconds < 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	return 0
+}
+
+func (c *Client) MediaThumbnailConditional(
 	ctx context.Context,
 	nodeID uint64,
-) ([]byte, string, error) {
+	etag string,
+) (MediaThumbnailResponse, error) {
 	req, err := c.request(
 		ctx,
 		http.MethodGet,
@@ -805,21 +830,49 @@ func (c *Client) MediaThumbnail(
 		nil,
 	)
 	if err != nil {
-		return nil, "", err
+		return MediaThumbnailResponse{}, err
+	}
+	if value := strings.TrimSpace(etag); value != "" {
+		req.Header.Set("If-None-Match", value)
 	}
 	resp, err := c.do(req)
 	if err != nil {
-		return nil, "", err
+		return MediaThumbnailResponse{}, err
 	}
 	defer resp.Body.Close()
+
+	out := MediaThumbnailResponse{
+		ContentType: strings.TrimSpace(resp.Header.Get("Content-Type")),
+		ETag:        strings.TrimSpace(resp.Header.Get("ETag")),
+		MaxAge:      mediaResponseMaxAge(resp.Header.Get("Cache-Control")),
+	}
+	if resp.StatusCode == http.StatusNotModified {
+		out.NotModified = true
+		return out, nil
+	}
 	if resp.StatusCode/100 != 2 {
-		return nil, "", responseError(resp)
+		return MediaThumbnailResponse{}, responseError(resp)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
+		return MediaThumbnailResponse{}, err
+	}
+	out.Data = data
+	return out, nil
+}
+
+func (c *Client) MediaThumbnail(
+	ctx context.Context,
+	nodeID uint64,
+) ([]byte, string, error) {
+	response, err := c.MediaThumbnailConditional(ctx, nodeID, "")
+	if err != nil {
 		return nil, "", err
 	}
-	return data, resp.Header.Get("Content-Type"), nil
+	if response.NotModified {
+		return nil, "", fmt.Errorf("unexpected thumbnail not-modified response")
+	}
+	return response.Data, response.ContentType, nil
 }
 
 func (c *Client) MediaAnalysisPreview(

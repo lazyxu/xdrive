@@ -1994,18 +1994,30 @@ func (c *agentController) CloudSetMediaDescription(
 }
 
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
-	cli, _, err := c.cloudClient()
+	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return agentMediaThumbnail{}, err
 	}
-	data, contentType, err := cli.MediaThumbnail(ctx, nodeID)
-	if err != nil {
-		return agentMediaThumbnail{}, err
+	cache := c.thumbnailCache
+	if cache == nil {
+		cache = newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes)
 	}
-	return agentMediaThumbnail{
-		ContentType: contentType,
-		Data:        data,
-	}, nil
+	key := agentMediaThumbnailCacheKey(cfg, nodeID)
+	return cache.Load(ctx, key, func(etag string) (agentMediaThumbnailFetch, error) {
+		response, err := cli.MediaThumbnailConditional(ctx, nodeID, etag)
+		if err != nil {
+			return agentMediaThumbnailFetch{}, err
+		}
+		return agentMediaThumbnailFetch{
+			Thumbnail: agentMediaThumbnail{
+				ContentType: response.ContentType,
+				Data:        response.Data,
+			},
+			ETag:        response.ETag,
+			MaxAge:      response.MaxAge,
+			NotModified: response.NotModified,
+		}, nil
+	})
 }
 
 func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID uint64) (agentMediaMotion, error) {
