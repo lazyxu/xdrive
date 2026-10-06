@@ -21,7 +21,10 @@ var (
 	errFileOperationTerminal  = errors.New("file operation is already terminal")
 )
 
-const fileOperationTerminalHistoryLimit = 200
+const (
+	fileOperationTerminalHistoryLimit = 200
+	fileOperationFallbackInterval     = 5 * time.Second
+)
 
 var fileOperationTerminalStatuses = []string{
 	meta.FileOperationStatusCancelled,
@@ -610,20 +613,27 @@ func (s *Server) StartFileOperationWorker(ctx context.Context) {
 		slog.Error("file_operation_recovery_failed", "error", err)
 	}
 	go func() {
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
+		fallback := time.NewTicker(fileOperationFallbackInterval)
+		defer fallback.Stop()
+		wakeups := s.FileOperationWakeups
 		for {
-			processed, err := s.processNextFileOperation(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("file_operation_worker_failed", "error", err)
-			}
-			if processed {
-				continue
+			for {
+				processed, err := s.processNextFileOperation(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("file_operation_worker_failed", "error", err)
+				}
+				if !processed {
+					break
+				}
 			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case _, ok := <-wakeups:
+				if !ok {
+					wakeups = nil
+				}
+			case <-fallback.C:
 			}
 		}
 	}()
