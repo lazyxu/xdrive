@@ -507,6 +507,15 @@ func (f *fakeDesktopIPCController) CloudDownload(_ context.Context, id uint64, d
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudDownloadFolder(
+	_ context.Context,
+	id uint64,
+	parentID uint64,
+	destination string,
+) (agentCloudFolderDownloadResult, error) {
+	return agentCloudFolderDownloadResult{Root: "Projects", Downloaded: 2}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudDownloadArchive(
 	_ context.Context,
 	ids []uint64,

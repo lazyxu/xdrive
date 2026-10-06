@@ -277,6 +277,12 @@ declare global {
     canceled: boolean
     downloaded: string[]
   }
+  type AgentCloudFolderDownloadResult = {
+    canceled: boolean
+    root: string
+    downloaded: number
+    failed: number
+  }
 
   type AgentDiagnosticCheck = {
     name: string
@@ -480,6 +486,7 @@ declare global {
         cloudTextPreview: (id: number) => Promise<DesktopResult<AgentCloudFileTextPreview>>
         cloudFilePreviewURL: (id: number) => Promise<DesktopResult<string>>
         cloudDownload: (id: number, name: string) => Promise<DesktopResult<{ saved: boolean }>>
+        cloudDownloadFolder: (id: number, parentID: number) => Promise<DesktopResult<AgentCloudFolderDownloadResult>>
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         cloudDownloadArchive: (ids: number[]) => Promise<DesktopResult<AgentCloudArchiveDownloadResult>>
         openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>

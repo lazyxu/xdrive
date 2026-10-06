@@ -61,6 +61,7 @@ export default function DesktopFileExplorer({
   onQuotaChanged,
   uploadConflictSupported = false,
   archiveDownloadSupported = false,
+  folderTreeDownloadSupported = false,
   textPreviewSupported = false,
   previewStreamSupported = false,
   quickAccessSupported = false,
@@ -89,6 +90,7 @@ export default function DesktopFileExplorer({
   onQuotaChanged: () => Promise<unknown>
   uploadConflictSupported?: boolean
   archiveDownloadSupported?: boolean
+  folderTreeDownloadSupported?: boolean
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
   quickAccessSupported?: boolean
@@ -616,7 +618,7 @@ export default function DesktopFileExplorer({
         : () => { void openLocalNode(node) },
       onDownload: node.type === 'file'
         ? () => { void downloadNode(node) }
-        : archiveDownloadSupported
+        : (folderTreeDownloadSupported || archiveDownloadSupported)
           ? () => { void downloadSelected([item]) }
           : undefined,
       downloadLabel: node.type === 'file' ? '另存为…' : '下载到…',
@@ -632,6 +634,38 @@ export default function DesktopFileExplorer({
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
     if (nodes.length === 0 || explorerActionBusy) return
+
+    if (
+      folderTreeDownloadSupported &&
+      nodes.length === 1 &&
+      nodes[0].type === 'dir'
+    ) {
+      const folder = nodes[0]
+      if (!folder.parent_id) {
+        onError('无法确定文件夹父目录。')
+        return
+      }
+      setActionBusy('download-folder')
+      try {
+        const result = await window.xdriveDesktop.agent.cloudDownloadFolder(
+          folder.id,
+          folder.parent_id,
+        )
+        if (!result.ok) {
+          onError(result.error.message)
+          return
+        }
+        if (result.data.canceled) return
+        if (result.data.failed > 0) {
+          onFeedback('warning', `已下载 ${result.data.downloaded} 个文件，${result.data.failed} 个失败。`)
+        } else {
+          onFeedback('good', `${result.data.root || folder.name} 下载完成，共 ${result.data.downloaded} 个文件。`)
+        }
+      } finally {
+        setActionBusy('')
+      }
+      return
+    }
 
     if (archiveDownloadSupported) {
       const archivePlan = xDriveFileExplorerArchiveDownloadPlan(nodes)
@@ -833,7 +867,7 @@ export default function DesktopFileExplorer({
         canRedo={canRedo}
         onRedo={onRedo}
         onDownloadItems={(selected) => { void downloadSelected(selected) }}
-        folderDownloadSupported={archiveDownloadSupported}
+        folderDownloadSupported={folderTreeDownloadSupported || archiveDownloadSupported}
         onDeleteItems={(selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
@@ -916,8 +950,10 @@ export default function DesktopFileExplorer({
               ? '正在粘贴…'
               : actionBusy === 'download-many'
                 ? '正在批量下载…'
-                : actionBusy === 'download-archive'
+                : actionBusy === 'download-folder'
                   ? '正在下载文件夹…'
+                : actionBusy === 'download-archive'
+                  ? '正在下载归档…'
                 : fileOperationBusyAction === 'drop-items'
                   ? '正在处理拖拽项目…'
                   : uploadBusyAction === 'drop-upload'

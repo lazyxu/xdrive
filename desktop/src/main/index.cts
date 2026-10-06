@@ -2868,6 +2868,40 @@ function registerIPCHandlers() {
     }
   })
 
+  ipcMain.handle('agent:cloud-download-folder', async (_event, idValue: unknown, parentIDValue: unknown) => {
+    if (
+      typeof idValue !== 'number' ||
+      !Number.isSafeInteger(idValue) ||
+      idValue <= 0 ||
+      typeof parentIDValue !== 'number' ||
+      !Number.isSafeInteger(parentIDValue) ||
+      parentIDValue <= 0
+    ) {
+      return { ok: false, error: { code: 'invalid_input', message: 'A valid folder id and parent id are required.' } }
+    }
+    try {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      requireAgentCapability(hello, 'folder-download-tree')
+      const options: OpenDialogOptions = {
+        properties: ['openDirectory', 'createDirectory'],
+        title: '选择文件夹下载目录',
+        defaultPath: app.getPath('downloads'),
+      }
+      const selected = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
+      const directory = selected.filePaths[0]
+      if (selected.canceled || !directory) {
+        return { ok: true, data: { canceled: true, root: '', downloaded: 0, failed: 0 } }
+      }
+      const result = await requireAgentClient().cloudDownloadFolder(idValue, parentIDValue, directory)
+      return { ok: true, data: { canceled: false, ...result } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+
   ipcMain.handle('agent:cloud-download-archive', async (_event, input: unknown) => {
     if (
       !Array.isArray(input) ||

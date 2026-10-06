@@ -74,6 +74,7 @@ var desktopIPCCapabilities = []string{
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
+	"folder-download-tree",
 	"file-operation-conflict-resolution",
 	"file-operation-undo",
 	"file-operation-redo",
@@ -192,6 +193,7 @@ type desktopIPCController interface {
 	CloudFileTextPreview(context.Context, uint64) (client.FileTextPreview, error)
 	CloudFilePreviewTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudDownload(context.Context, uint64, string) error
+	CloudDownloadFolder(context.Context, uint64, uint64, string) (agentCloudFolderDownloadResult, error)
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
 	CloudSearch(context.Context, string, string, string, string) (agentCloudSearchPage, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
@@ -475,6 +477,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/text-preview", h.cloudFileTextPreview)
 	mux.HandleFunc("GET /v1/cloud/file-preview-ticket", h.cloudFilePreviewTicket)
 	mux.HandleFunc("POST /v1/cloud/download", h.cloudDownload)
+	mux.HandleFunc("POST /v1/cloud/download/folder", h.cloudDownloadFolder)
 	mux.HandleFunc("POST /v1/cloud/download/archive", h.cloudDownloadArchive)
 	mux.HandleFunc("GET /v1/cloud/search", h.cloudSearch)
 	mux.HandleFunc("GET /v1/cloud/quota", h.cloudQuota)
@@ -1522,6 +1525,33 @@ func (h *desktopIPCHandler) cloudDownload(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudDownloadFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID          uint64 `json:"id"`
+		ParentID    uint64 `json:"parent_id"`
+		Destination string `json:"destination"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Destination = filepath.Clean(strings.TrimSpace(input.Destination))
+	if input.ID == 0 || input.ParentID == 0 || input.Destination == "." || !filepath.IsAbs(input.Destination) {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_cloud_folder_download",
+			"id, parent_id and an absolute destination directory are required",
+		)
+		return
+	}
+	result, err := h.ctrl.CloudDownloadFolder(r.Context(), input.ID, input.ParentID, input.Destination)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudDownloadArchive(w http.ResponseWriter, r *http.Request) {
