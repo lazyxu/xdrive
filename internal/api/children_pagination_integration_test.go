@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +18,36 @@ import (
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+type childrenRangeQueryCounter struct {
+	logger.Interface
+	count atomic.Int64
+}
+
+func newChildrenRangeQueryCounter() *childrenRangeQueryCounter {
+	return &childrenRangeQueryCounter{
+		Interface: logger.Default.LogMode(logger.Silent),
+	}
+}
+
+func (counter *childrenRangeQueryCounter) Trace(
+	_ context.Context,
+	_ time.Time,
+	_ func() (string, int64),
+	_ error,
+) {
+	counter.count.Add(1)
+}
+
+func (counter *childrenRangeQueryCounter) reset() {
+	counter.count.Store(0)
+}
+
+func (counter *childrenRangeQueryCounter) value() int64 {
+	return counter.count.Load()
+}
 
 func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -23,7 +55,8 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		t.Skip("XD_TEST_DATABASE_URL is not set")
 	}
 	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	queryCounter := newChildrenRangeQueryCounter()
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: queryCounter})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,10 +85,11 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := (&Server{
+	server := &Server{
 		DB: db, Store: store, Auth: auth.New("children-pagination-secret", time.Hour),
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
-	}).Router()
+	}
+	router := server.Router()
 
 	tokenA := createTestUser(t, db, router, "page-alice", "password-a")
 	tokenB := createTestUser(t, db, router, "page-bob", "password-b")
@@ -109,6 +143,24 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	createFile("c.pdf", 30, 5)
 	createFile("d.log", 20, 6)
 	createFile("e.zip", 40, 7)
+
+	queryCounter.reset()
+	rangeRecorder := httptest.NewRecorder()
+	rangeContext, _ := gin.CreateTestContext(rangeRecorder)
+	rangeContext.Request = httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&sort=name&order=asc", rootA.ID),
+		nil,
+	)
+	rangeContext.Set("userID", alice.ID)
+	server.childrenPage(rangeContext, rootA.ID)
+	if rangeRecorder.Code != http.StatusOK {
+		t.Fatalf("range performance probe status=%d body=%s", rangeRecorder.Code, rangeRecorder.Body.String())
+	}
+	if got := queryCounter.value(); got != 1 {
+		t.Fatalf("range performance optimized SQL queries=%d want=1", got)
+	}
+	t.Logf("PERF children_range_nonempty_sql_queries=%d", queryCounter.value())
 
 	legacy := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", rootA.ID), tokenA, nil, http.StatusOK)
 	var legacyItems []nodeDTO
