@@ -335,6 +335,13 @@ export interface MediaItem {
   live_photo?: boolean
 }
 
+export interface MediaItemRange {
+  items: MediaItem[]
+  total_count: number
+  offset: number
+  limit: number
+}
+
 export interface MediaAlbum {
   id: string
   kind: 'folder' | 'imported' | 'manual' | 'smart' | string

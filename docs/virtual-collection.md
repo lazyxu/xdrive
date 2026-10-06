@@ -96,3 +96,8 @@ The range contract is shared by:
 Each range response contains `items`, `total_count`, `offset`, and `limit`. Count and item reads are built from the same media base query so filters, smart-album membership, people/place filters, and collection membership cannot drift. The count uses distinct media node IDs to remain stable if future joins introduce multiplicity.
 
 Gallery VirtualCollection consumers must use this range contract from the first request so scrollbar geometry is based on the complete logical collection instead of the number of items loaded so far.
+
+
+### Gallery range transport
+
+Web and Desktop now expose the same explicit Gallery range transport for all media, album items, durable-person items, and suggested-person items. The shared transport shape is `MediaItemRange { items, total_count, offset, limit }`. Legacy array methods remain available during migration, while Gallery VirtualCollection consumers use only the range methods so the UI can establish stable scrollbar geometry from the first response.

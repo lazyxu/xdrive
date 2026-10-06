@@ -621,6 +621,21 @@ func (f *fakeDesktopIPCController) CloudMediaItems(
 	return append([]client.MediaItem(nil), f.cloudMediaItems...), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudMediaItemsRange(
+	_ context.Context,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudMediaKind = query.MediaKind
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: 640, Offset: offset, Limit: limit,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error) {
 	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
 }
@@ -655,6 +670,22 @@ func (f *fakeDesktopIPCController) CloudMediaSuggestedPersonItems(
 	), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudMediaSuggestedPersonItemsRange(
+	_ context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudSuggestedID = personID
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudSuggestedItems...),
+		TotalCount: 320, Offset: offset, Limit: limit,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaPeople(
 	_ context.Context,
 	_ bool,
@@ -676,6 +707,22 @@ func (f *fakeDesktopIPCController) CloudMediaPersonItems(
 	f.cloudMediaLimit = limit
 	f.cloudMediaOffset = offset
 	return append([]client.MediaItem(nil), f.cloudPersonItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPersonItemsRange(
+	_ context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudPersonID = personID
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudPersonItems...),
+		TotalCount: 160, Offset: offset, Limit: limit,
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudAdoptMediaSuggestedPerson(
@@ -836,6 +883,22 @@ func (f *fakeDesktopIPCController) CloudMediaAlbumItems(
 	f.cloudMediaLimit = limit
 	f.cloudMediaOffset = offset
 	return append([]client.MediaItem(nil), f.cloudMediaAlbumItems...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaAlbumItemsRange(
+	_ context.Context,
+	albumID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudMediaAlbumID = albumID
+	f.cloudMediaQuery = query
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaAlbumItems...),
+		TotalCount: 80, Offset: offset, Limit: limit,
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSetMediaFavorite(
@@ -1695,6 +1758,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	res = desktopIPCRequest(
+		t, handler, http.MethodGet,
+		"/v1/media/items?range=true&kind=image&limit=25&offset=200&q=iPhone",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"total_count\":640") ||
+		!strings.Contains(res.Body.String(), "\"offset\":200") ||
+		!strings.Contains(res.Body.String(), "\"limit\":25") {
+		t.Fatalf("media item range status=%d body=%s", res.Code, res.Body.String())
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums", "")
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Camera Uploads\"") {
 		t.Fatalf("media albums status=%d body=%s", res.Code, res.Body.String())
@@ -1745,6 +1820,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	res = desktopIPCRequest(
+		t, handler, http.MethodGet,
+		"/v1/media/people/suggestion-items?range=true&person_id="+url.QueryEscape(personID)+
+			"&limit=20&offset=200&q=portrait",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"total_count\":320") ||
+		!strings.Contains(res.Body.String(), "\"offset\":200") {
+		t.Fatalf("suggested person range status=%d body=%s", res.Code, res.Body.String())
+	}
+
 	durableID := "person:v1:11111111-1111-1111-1111-111111111111"
 	res = desktopIPCRequest(
 		t,
@@ -1772,6 +1859,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	}
 	if ctrl.cloudPersonID != durableID || ctrl.cloudMediaQuery.Search != "portrait" {
 		t.Fatalf("durable person query not forwarded: id=%q query=%+v", ctrl.cloudPersonID, ctrl.cloudMediaQuery)
+	}
+
+	res = desktopIPCRequest(
+		t, handler, http.MethodGet,
+		"/v1/media/people/identity-items?range=true&person_id="+url.QueryEscape(durableID)+
+			"&limit=20&offset=200&q=portrait",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"total_count\":160") ||
+		!strings.Contains(res.Body.String(), "\"offset\":200") {
+		t.Fatalf("durable person range status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	res = desktopIPCRequest(
@@ -1849,6 +1948,17 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	}
 
 	res = desktopIPCRequest(
+		t, handler, http.MethodGet,
+		"/v1/media/albums/items?range=true&album_id=folder%3A8&limit=40&offset=200&q=Sony",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"total_count\":80") ||
+		!strings.Contains(res.Body.String(), "\"offset\":200") {
+		t.Fatalf("media album range status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
 		t,
 		handler,
 		http.MethodPatch,
@@ -1905,6 +2015,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/people/identity-items?person_id=invalid",
 		"/v1/media/people/identities?limit=0",
 		"/v1/media/items?limit=0",
+		"/v1/media/items?range=maybe",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
 		"/v1/media/live-photo-motion?node_id=0",

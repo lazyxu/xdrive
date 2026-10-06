@@ -213,12 +213,15 @@ type desktopIPCController interface {
 	CloudCreateShare(context.Context, uint64, client.CreateShareInput) (agentCreatedShare, error)
 	CloudRevokeShare(context.Context, uint64) error
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudMediaItemsRange(context.Context, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
 	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudMediaSuggestedPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudMediaPeople(context.Context, bool, int, int) ([]client.MediaPersonIdentity, error)
 	CloudMediaPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudMediaPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudAdoptMediaSuggestedPerson(context.Context, string, string) (client.MediaPersonIdentity, error)
 	CloudUpdateMediaPerson(context.Context, string, uint64, client.UpdateMediaPersonIdentityInput) (client.MediaPersonIdentity, error)
 	CloudMergeMediaPeople(context.Context, string, uint64, []string) (client.MediaPersonIdentity, error)
@@ -232,6 +235,7 @@ type desktopIPCController interface {
 	CloudAddMediaAlbumItems(context.Context, string, uint64, []uint64) (client.MediaAlbum, error)
 	CloudRemoveMediaAlbumItem(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
+	CloudMediaAlbumItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
 	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
 	CloudSetMediaPeople(context.Context, uint64, []string) (client.MediaPeople, error)
@@ -1880,6 +1884,19 @@ func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	rangeRequested, ok := desktopIPCMediaRangeRequested(w, r)
+	if !ok {
+		return
+	}
+	if rangeRequested {
+		page, err := h.ctrl.CloudMediaItemsRange(r.Context(), query, limit, offset)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
 	items, err := h.ctrl.CloudMediaItems(r.Context(), query, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
@@ -1958,12 +1975,7 @@ func (h *desktopIPCHandler) mediaSuggestedPersonItems(
 ) {
 	personID := strings.TrimSpace(r.URL.Query().Get("person_id"))
 	if !desktopIPCValidSuggestedPersonID(personID) {
-		writeDesktopIPCError(
-			w,
-			http.StatusBadRequest,
-			"invalid_media_suggested_person",
-			"valid person_id is required",
-		)
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_suggested_person", "valid person_id is required")
 		return
 	}
 	query, ok := desktopIPCMediaQuery(w, r)
@@ -1974,20 +1986,26 @@ func (h *desktopIPCHandler) mediaSuggestedPersonItems(
 	if !ok {
 		return
 	}
-	items, err := h.ctrl.CloudMediaSuggestedPersonItems(
-		r.Context(),
-		personID,
-		query,
-		limit,
-		offset,
-	)
+	rangeRequested, ok := desktopIPCMediaRangeRequested(w, r)
+	if !ok {
+		return
+	}
+	if rangeRequested {
+		page, err := h.ctrl.CloudMediaSuggestedPersonItemsRange(r.Context(), personID, query, limit, offset)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
+	items, err := h.ctrl.CloudMediaSuggestedPersonItems(r.Context(), personID, query, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
-
 func desktopIPCValidPersonIdentityID(value string) bool {
 	value = strings.TrimSpace(value)
 	const prefix = "person:v1:"
@@ -2036,6 +2054,19 @@ func (h *desktopIPCHandler) mediaPersonItems(w http.ResponseWriter, r *http.Requ
 	}
 	limit, offset, ok := desktopIPCMediaWindow(w, r)
 	if !ok {
+		return
+	}
+	rangeRequested, ok := desktopIPCMediaRangeRequested(w, r)
+	if !ok {
+		return
+	}
+	if rangeRequested {
+		page, err := h.ctrl.CloudMediaPersonItemsRange(r.Context(), personID, query, limit, offset)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
 		return
 	}
 	items, err := h.ctrl.CloudMediaPersonItems(r.Context(), personID, query, limit, offset)
@@ -2382,6 +2413,19 @@ func (h *desktopIPCHandler) mediaAlbumItems(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	rangeRequested, ok := desktopIPCMediaRangeRequested(w, r)
+	if !ok {
+		return
+	}
+	if rangeRequested {
+		page, err := h.ctrl.CloudMediaAlbumItemsRange(r.Context(), albumID, query, limit, offset)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
 	items, err := h.ctrl.CloudMediaAlbumItems(r.Context(), albumID, query, limit, offset)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
@@ -2625,6 +2669,23 @@ func desktopIPCMediaWindow(w http.ResponseWriter, r *http.Request) (int, int, bo
 		offset = value
 	}
 	return limit, offset, true
+}
+
+func desktopIPCMediaRangeRequested(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	raw, exists := r.URL.Query()["range"]
+	if !exists {
+		return false, true
+	}
+	value := ""
+	if len(raw) > 0 {
+		value = strings.TrimSpace(raw[0])
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_range", "range must be true or false")
+		return false, false
+	}
+	return parsed, true
 }
 
 func desktopIPCUint64Query(w http.ResponseWriter, r *http.Request, name string) (uint64, bool) {

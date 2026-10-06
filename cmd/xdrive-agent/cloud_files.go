@@ -1642,6 +1642,18 @@ func (c *agentController) CloudMediaItems(
 	return cli.MediaItemsQuery(ctx, query, limit, offset)
 }
 
+func (c *agentController) CloudMediaItemsRange(
+	ctx context.Context,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaItemsRangeQuery(ctx, query, limit, offset)
+}
+
 func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaAlbum, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
@@ -1688,6 +1700,25 @@ func (c *agentController) CloudMediaSuggestedPersonItems(
 	)
 }
 
+func (c *agentController) CloudMediaSuggestedPersonItemsRange(
+	ctx context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaSuggestedPersonItemsRangeQuery(
+		ctx,
+		personID,
+		query,
+		limit,
+		offset,
+	)
+}
+
 func (c *agentController) CloudMediaPeople(
 	ctx context.Context,
 	includeHidden bool,
@@ -1711,6 +1742,19 @@ func (c *agentController) CloudMediaPersonItems(
 		return nil, err
 	}
 	return cli.MediaPersonIdentityItemsQuery(ctx, personID, query, limit, offset)
+}
+
+func (c *agentController) CloudMediaPersonItemsRange(
+	ctx context.Context,
+	personID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaPersonIdentityItemsRangeQuery(ctx, personID, query, limit, offset)
 }
 
 func (c *agentController) CloudAdoptMediaSuggestedPerson(
@@ -1874,6 +1918,19 @@ func (c *agentController) CloudMediaAlbumItems(
 		return nil, err
 	}
 	return cli.MediaAlbumItemsQuery(ctx, albumID, query, limit, offset)
+}
+
+func (c *agentController) CloudMediaAlbumItemsRange(
+	ctx context.Context,
+	albumID string,
+	query client.MediaQuery,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaAlbumItemsRangeQuery(ctx, albumID, query, limit, offset)
 }
 
 func (c *agentController) CloudSetMediaFavorite(

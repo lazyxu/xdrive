@@ -562,6 +562,13 @@ export type AgentMediaItem = {
   live_photo?: boolean
 }
 
+export type AgentMediaItemRange = {
+  items: AgentMediaItem[]
+  total_count: number
+  offset: number
+  limit: number
+}
+
 export type AgentMediaQuery = {
   search?: string
   asset_kind?: string
@@ -982,6 +989,23 @@ export class AgentIPCClient {
     appendAgentMediaQuery(query, filters)
     return this.request<AgentMediaItem[]>('GET', `/v1/media/items?${query.toString()}`)
   }
+  mediaItemRange(
+    kind = '',
+    limit = 200,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (kind) query.set('kind', kind)
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItemRange>('GET', `/v1/media/items?${query.toString()}`)
+  }
+
+
 
   mediaAlbums() {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
@@ -1017,6 +1041,26 @@ export class AgentIPCClient {
       `/v1/media/people/suggestion-items?${query.toString()}`,
     )
   }
+  mediaSuggestedPersonItemRange(
+    personID: string,
+    limit = 200,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      person_id: personID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/people/suggestion-items?${query.toString()}`,
+    )
+  }
+
+
 
   mediaPeople(includeHidden = false, limit = 100, offset = 0) {
     const query = new URLSearchParams({
@@ -1047,6 +1091,26 @@ export class AgentIPCClient {
       `/v1/media/people/identity-items?${query.toString()}`,
     )
   }
+  mediaPersonItemRange(
+    personID: string,
+    limit = 200,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      person_id: personID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/people/identity-items?${query.toString()}`,
+    )
+  }
+
+
 
   adoptMediaSuggestedPerson(suggestionID: string, name: string) {
     return this.request<AgentMediaPersonIdentity>(
@@ -1161,6 +1225,26 @@ export class AgentIPCClient {
     appendAgentMediaQuery(query, filters)
     return this.request<AgentMediaItem[]>('GET', `/v1/media/albums/items?${query.toString()}`)
   }
+  mediaAlbumItemRange(
+    albumID: string,
+    limit = 200,
+    offset = 0,
+    filters: AgentMediaQuery = {},
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      album_id: albumID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    appendAgentMediaQuery(query, filters)
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/albums/items?${query.toString()}`,
+    )
+  }
+
+
 
   setMediaFavorite(nodeID: number, favorite: boolean) {
     return this.request<AgentMediaFavorite>(

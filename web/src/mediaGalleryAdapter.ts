@@ -4,15 +4,20 @@ import type { XDriveApi } from './api'
 export function createWebMediaGalleryDataSource(api: XDriveApi) {
   return createXDriveMediaGalleryDataSource({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
+    listItemRange: (limit, offset, query) => api.mediaItemRange('', limit, offset, query),
     listAlbums: () => api.mediaAlbums(),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
     listSuggestedPeople: (limit = 24) => api.mediaSuggestedPeople(limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       api.mediaSuggestedPersonItems(personID, limit, offset, query),
+    listSuggestedPersonItemRange: (personID, limit, offset, query) =>
+      api.mediaSuggestedPersonItemRange(personID, limit, offset, query),
     listPeople: (includeHidden = false, limit = 100, offset = 0) =>
       api.mediaPeople(includeHidden, limit, offset),
     listPersonItems: (personID, limit, offset, query) =>
       api.mediaPersonItems(personID, limit, offset, query),
+    listPersonItemRange: (personID, limit, offset, query) =>
+      api.mediaPersonItemRange(personID, limit, offset, query),
     adoptSuggestedPerson: (suggestionID, name) =>
       api.adoptMediaSuggestedPerson(suggestionID, name),
     updatePerson: (personID, revision, input) =>
@@ -23,6 +28,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
       api.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       api.mediaAlbumItems(albumID, limit, offset, query),
+    listAlbumItemRange: (albumID, limit, offset, query) =>
+      api.mediaAlbumItemRange(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => api.mediaThumbnail(nodeID),
     loadLivePhotoMotion: (nodeID) => api.mediaLivePhotoMotion(nodeID),
     loadPreviewURL: (nodeID, _kind) => api.filePreviewURL(nodeID),

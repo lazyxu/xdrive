@@ -32,6 +32,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaItemRange,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -81,6 +82,11 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItem[]>
+  listItemRange: (
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItemRange>
   listAlbums: () => Promise<MediaAlbum[]>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listSuggestedPeople?: (limit?: number) => Promise<MediaSuggestedPerson[]>
@@ -90,6 +96,12 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItem[]>
+  listSuggestedPersonItemRange?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItemRange>
   listPeople?: (
     includeHidden?: boolean,
     limit?: number,
@@ -101,6 +113,12 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItem[]>
+  listPersonItemRange?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItemRange>
   adoptSuggestedPerson?: (
     suggestionID: string,
     name: string,
@@ -127,6 +145,12 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItem[]>
+  listAlbumItemRange: (
+    albumID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<MediaItemRange>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader

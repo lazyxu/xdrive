@@ -2,6 +2,7 @@ import type {
   MediaAlbum,
   MediaGalleryQuery,
   MediaItem,
+  MediaItemRange,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -38,6 +39,11 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  listItemRange: (
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listAlbums: () => Promise<XDriveMediaGalleryTransportResult<MediaAlbum[]>>
   listPlaces?: (
     limit?: number,
@@ -51,6 +57,12 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  listSuggestedPersonItemRange?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listPeople?: (
     includeHidden?: boolean,
     limit?: number,
@@ -62,6 +74,12 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  listPersonItemRange?: (
+    personID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   adoptSuggestedPerson?: (
     suggestionID: string,
     name: string,
@@ -88,6 +106,12 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItem[]>>
+  listAlbumItemRange: (
+    albumID: string,
+    limit: number,
+    offset: number,
+    query?: MediaGalleryQuery,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   loadThumbnail: (
     nodeID: number,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
@@ -175,6 +199,9 @@ export function createXDriveMediaGalleryDataSource(
     listItems: (limit, offset, query) => resolveXDriveTransport(
       port.listItems(limit, offset, query),
     ),
+    listItemRange: (limit, offset, query) => resolveXDriveTransport(
+      port.listItemRange(limit, offset, query),
+    ),
     listAlbums: () => resolveXDriveTransport(port.listAlbums()),
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
@@ -187,6 +214,11 @@ export function createXDriveMediaGalleryDataSource(
           port.listSuggestedPersonItems!(personID, limit, offset, query),
         )
       : undefined,
+    listSuggestedPersonItemRange: port.listSuggestedPersonItemRange
+      ? (personID, limit, offset, query) => resolveXDriveTransport(
+          port.listSuggestedPersonItemRange!(personID, limit, offset, query),
+        )
+      : undefined,
     listPeople: port.listPeople
       ? (includeHidden, limit, offset) => resolveXDriveTransport(
           port.listPeople!(includeHidden, limit, offset),
@@ -195,6 +227,11 @@ export function createXDriveMediaGalleryDataSource(
     listPersonItems: port.listPersonItems
       ? (personID, limit, offset, query) => resolveXDriveTransport(
           port.listPersonItems!(personID, limit, offset, query),
+        )
+      : undefined,
+    listPersonItemRange: port.listPersonItemRange
+      ? (personID, limit, offset, query) => resolveXDriveTransport(
+          port.listPersonItemRange!(personID, limit, offset, query),
         )
       : undefined,
     adoptSuggestedPerson: port.adoptSuggestedPerson
@@ -219,6 +256,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listAlbumItems: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItems(albumID, limit, offset, query),
+    ),
+    listAlbumItemRange: (albumID, limit, offset, query) => resolveXDriveTransport(
+      port.listAlbumItemRange(albumID, limit, offset, query),
     ),
     loadThumbnail: async (nodeID) => mediaResourceURL(
       await resolveXDriveTransport(port.loadThumbnail(nodeID)),

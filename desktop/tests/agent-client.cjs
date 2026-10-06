@@ -173,6 +173,41 @@ test('cloud search range preserves offset zero and total count', async (t) => {
   assert.equal(range.items[0].path, 'Projects/report.pdf')
 })
 
+test('media Gallery range clients preserve total count and offset zero', async (t) => {
+  const seen = []
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    seen.push(url)
+    json(res, 200, {
+      items: [],
+      total_count: 640,
+      offset: Number(url.searchParams.get('offset') || 0),
+      limit: Number(url.searchParams.get('limit') || 0),
+    })
+  })
+
+  const filters = { search: 'iPhone', favorite: true }
+  const main = await client.mediaItemRange('', 200, 0, filters)
+  const suggested = await client.mediaSuggestedPersonItemRange('auto:v1:' + 'a'.repeat(64), 200, 0, filters)
+  const person = await client.mediaPersonItemRange('person:v1:11111111-1111-1111-1111-111111111111', 200, 0, filters)
+  const album = await client.mediaAlbumItemRange('folder:9', 200, 0, filters)
+
+  for (const url of seen) {
+    assert.equal(url.searchParams.get('range'), 'true')
+    assert.equal(url.searchParams.get('offset'), '0')
+    assert.equal(url.searchParams.get('limit'), '200')
+    assert.equal(url.searchParams.get('q'), 'iPhone')
+    assert.equal(url.searchParams.get('favorite'), 'true')
+  }
+  assert.equal(main.total_count, 640)
+  assert.equal(suggested.total_count, 640)
+  assert.equal(person.total_count, 640)
+  assert.equal(album.total_count, 640)
+  assert.equal(seen[1].searchParams.get('person_id'), 'auto:v1:' + 'a'.repeat(64))
+  assert.equal(seen[2].searchParams.get('person_id'), 'person:v1:11111111-1111-1111-1111-111111111111')
+  assert.equal(seen[3].searchParams.get('album_id'), 'folder:9')
+})
+
 test('media Gallery filters are serialized for items and album items', async (t) => {
   const seen = []
   const { client } = await fixture(t, (req, res) => {
