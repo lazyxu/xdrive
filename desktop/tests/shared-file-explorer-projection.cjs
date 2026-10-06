@@ -53,7 +53,7 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
 
 test('FileExplorer projection indexes bounded virtual nodes without logical-array materialization', () => {
   assert.ok(shared.includes('virtualItems?: ReadonlyMap<number, TNode>'), 'projection must accept sparse node indexes')
-  assert.ok(shared.includes('const virtualSearchActive = virtualSearchItems !== undefined'), 'projection must keep Search sparse by logical index')
+  assert.ok(shared.includes('const virtualSearchActive = searchResults != null && virtualSearchItems !== undefined'), 'projection must enter sparse Search only when Search is actually active')
   assert.ok(shared.includes('for (const [index, node] of virtualItems)'), 'projection must iterate only loaded sparse metadata')
   assert.ok(shared.includes('nodeByID.set(node.id, node)'), 'loaded remote nodes must participate in operation lookup')
   assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(virtualItems.size)'), false, 'sparse projection must not create a second loaded array')
@@ -108,4 +108,57 @@ test('sparse Search projection preserves logical indexes without dense aliases',
   assert.equal(projected.virtualExplorerItems.get(400).secondaryLabel, 'Search/result-400.jpg')
   assert.equal(projected.nodeByID.get(401).name, 'result-400.jpg')
   assert.equal(projected.searchByID.get(402).path, 'Search/result-401.jpg')
+})
+
+
+test('inactive Search sparse metadata cannot mask loaded directory items', () => {
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts')
+  const output = ts.transpileModule(shared, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+  const mod = { exports: {} }
+  const react = { useMemo: (factory) => factory() }
+  const execute = new Function('exports', 'module', 'require', output)
+  execute(mod.exports, mod, (request) => request === 'react' ? react : require(request))
+
+  const directoryItems = Array.from({ length: 6 }, (_, index) => ({
+    id: index + 10,
+    name: index < 5 ? `folder-${index + 1}` : 'file.txt',
+    type: index < 5 ? 'dir' : 'file',
+    size: index < 5 ? 0 : 12,
+    revision: 1,
+    updated_at: '2026-10-06T00:00:00Z',
+  }))
+  const virtualItems = new Map(directoryItems.map((node, index) => [index, node]))
+
+  const projected = mod.exports.useXDriveFileExplorerProjection({
+    items: directoryItems,
+    crumbs: [{ id: 1, name: '我的文件' }],
+    searchResults: null,
+    virtualItems,
+    // Search controller intentionally exposes an empty sparse map while idle.
+    // This must never shadow the active directory VirtualCollection.
+    virtualSearchItems: new Map(),
+  })
+
+  assert.equal(projected.explorerItems.length, 6, 'dense first directory range must remain projected')
+  assert.equal(projected.virtualExplorerItems.size, 6, 'directory sparse cache must retain all loaded first-range items')
+  assert.deepEqual(
+    [...projected.virtualExplorerItems.values()].map((item) => item.name),
+    ['folder-1', 'folder-2', 'folder-3', 'folder-4', 'folder-5', 'file.txt'],
+  )
+  assert.equal(projected.nodeByID.size, 6, 'loaded directory items must remain interactive by node id')
+  assert.equal(projected.virtualExplorerItems.get(0).kind, 'dir')
+  assert.equal(projected.virtualExplorerItems.get(5).kind, 'file')
+})
+
+test('workspace only forwards sparse Search metadata while Search is active', () => {
+  assert.ok(
+    workspace.includes('virtualSearchItems: search.searchResults !== null'),
+    'idle Search must not shadow the active directory VirtualCollection',
+  )
 })

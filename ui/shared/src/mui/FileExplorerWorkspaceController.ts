@@ -126,7 +126,9 @@ export function useXDriveFileExplorerWorkspace<
     crumbs,
     searchResults: search.searchResults,
     virtualItems: directoryVirtualItems,
-    virtualSearchItems: search.searchVirtualItems,
+    virtualSearchItems: search.searchResults !== null
+      ? search.searchVirtualItems
+      : undefined,
   })
 
   const explorerVirtualCollection = useMemo<XDriveFileExplorerVirtualCollection | undefined>(() => {

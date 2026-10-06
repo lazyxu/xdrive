@@ -59,7 +59,7 @@ export function useXDriveFileExplorerProjection<
   }, [crumbs])
 
   const projection = useMemo(() => {
-    const virtualSearchActive = virtualSearchItems !== undefined
+    const virtualSearchActive = searchResults != null && virtualSearchItems !== undefined
     const results = virtualSearchActive ? undefined : searchResults ?? undefined
     const sourceLength = virtualSearchActive
       ? 0
@@ -75,7 +75,7 @@ export function useXDriveFileExplorerProjection<
     const searchByID = new Map<number, TSearch>()
     const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)
     const virtualExplorerItems = (
-      virtualSearchItems ||
+      (virtualSearchActive ? virtualSearchItems : undefined) ||
       (!results && virtualItems)
     )
       ? new Map<number, XDriveFileExplorerItem>()
@@ -97,7 +97,7 @@ export function useXDriveFileExplorerProjection<
       virtualExplorerItems?.set(index, explorerItem)
     }
 
-    if (virtualExplorerItems && virtualSearchItems) {
+    if (virtualExplorerItems && virtualSearchActive && virtualSearchItems) {
       for (const [index, result] of virtualSearchItems) {
         const node = result.node
         nodeByID.set(node.id, node)
