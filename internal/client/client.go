@@ -98,6 +98,7 @@ type ChildrenOptions struct {
 	Sort   string
 	Order  string
 	Name   string
+	NameCI string
 }
 
 type ChildrenPage struct {
@@ -361,6 +362,9 @@ func (c *Client) ListPage(ctx context.Context, parentID uint64, options Children
 	}
 	if options.Name != "" {
 		values.Set("name", options.Name)
+	}
+	if options.NameCI != "" {
+		values.Set("name_ci", options.NameCI)
 	}
 	if values.Get("limit") == "" {
 		values.Set("limit", strconv.Itoa(childrenDefaultPageLimit))

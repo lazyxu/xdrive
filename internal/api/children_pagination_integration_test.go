@@ -145,6 +145,13 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	if len(caseMismatch.Items) != 0 {
 		t.Fatalf("exact-name filter must remain case-sensitive: %+v", caseMismatch.Items)
 	}
+	foldedPage := readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&name_ci=%s",
+		rootA.ID, url.QueryEscape("alphadir"),
+	), http.StatusOK)
+	if len(foldedPage.Items) != 1 || foldedPage.Items[0].Name != "AlphaDir" || foldedPage.HasMore || foldedPage.NextCursor != "" {
+		t.Fatalf("case-insensitive-name page=%+v", foldedPage)
+	}
 
 	page1 := readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&sort=name&order=asc", rootA.ID), http.StatusOK)
 	if got := []string{page1.Items[0].Name, page1.Items[1].Name, page1.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"AlphaDir", "EmptyDir", "ZuluDir"}) {
@@ -267,6 +274,14 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		"/api/v1/nodes/%d/children?limit=1&name=%s&cursor=%s",
 		rootA.ID, url.QueryEscape("AlphaDir"), url.QueryEscape(page1.NextCursor),
 	), http.StatusBadRequest)
+	readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&name_ci=%s&cursor=%s",
+		rootA.ID, url.QueryEscape("alphadir"), url.QueryEscape(page1.NextCursor),
+	), http.StatusBadRequest)
+	readPage(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?limit=1&name=%s&name_ci=%s",
+		rootA.ID, url.QueryEscape("AlphaDir"), url.QueryEscape("alphadir"),
+	), http.StatusBadRequest)
 	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=0", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=-1&limit=3", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf(
@@ -276,6 +291,10 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	readRange(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?offset=0&limit=1&name=%s",
 		rootA.ID, url.QueryEscape("AlphaDir"),
+	), http.StatusBadRequest)
+	readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=1&name_ci=%s",
+		rootA.ID, url.QueryEscape("alphadir"),
 	), http.StatusBadRequest)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)

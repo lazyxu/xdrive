@@ -70,6 +70,31 @@ test('cloud children page forwards exact-name lookup options', async (t) => {
   assert.equal(page.items[0].name, 'Exact Folder')
 })
 
+test('cloud children page forwards case-insensitive indexed name lookups', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/children')
+    assert.equal(url.searchParams.get('parent_id'), '42')
+    assert.equal(url.searchParams.get('limit'), '1')
+    assert.equal(url.searchParams.get('sort'), 'name')
+    assert.equal(url.searchParams.get('order'), 'asc')
+    assert.equal(url.searchParams.get('name_ci'), 'folder')
+    json(res, 200, {
+      items: [{ id: 9, name: 'Folder', type: 'dir', size: 0, revision: 1 }],
+      has_more: false,
+      sort: 'name',
+      order: 'asc',
+    })
+  })
+  const page = await client.cloudChildrenPage(42, {
+    limit: 1,
+    sort: 'name',
+    order: 'asc',
+    nameInsensitive: 'folder',
+  })
+  assert.equal(page.items[0].name, 'Folder')
+})
+
 test('cloud search forwards server sort and cursor options', async (t) => {
   const { client } = await fixture(t, (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')

@@ -293,7 +293,9 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     'xDriveFileExplorerEnsureUploadDirectory({',
     'relativePath: file.webkitRelativePath || file.name',
     'createDirectory: (id, directoryName) => api.createDirectory(id, directoryName)',
-    'listChildren: (id) => api.list(id)',
+    'xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName)',
+    'findExistingDirectory: async (id, directoryName) =>',
+    'api.listPage(',
     'fileUploads.runGroup({',
     'itemsTotal: entries.length',
     'bytesTotal: entries.reduce',
@@ -302,6 +304,7 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
   ]) {
     assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)
   }
+  assert.equal(app.includes('listChildren: (id) => api.list(id)'), false, 'Web folder-upload conflict reuse must not list the whole parent directory')
 })
 
 

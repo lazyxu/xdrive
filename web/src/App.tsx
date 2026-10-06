@@ -73,7 +73,7 @@ import type {
   XDriveFileOperation,
   XDriveCloudFilesPort,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -751,7 +751,13 @@ function FileManager({
             parentID: directoryParentID,
             name,
             createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
-            listChildren: (id) => api.list(id),
+            findExistingDirectory: async (id, directoryName) => {
+              const page = await api.listPage(
+                id,
+                xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName),
+              )
+              return page.items[0] ?? null
+            },
           }),
         })
         return targets.map(({ parentID: targetParentID, file, relativePath }) => ({

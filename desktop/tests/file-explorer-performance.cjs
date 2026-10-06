@@ -228,3 +228,17 @@ test('FileExplorer search sorting stays server-paged instead of re-sorting the l
   assert.ok(web.includes('searchSort.key'), 'Web search adapter must forward sort key')
   assert.ok(desktop.includes('searchSort.direction'), 'Desktop search adapter must forward sort direction')
 })
+
+
+test('FileExplorer folder uploads reuse existing directories with indexed name lookups', () => {
+  assert.ok(explorerController.includes('xDriveFileExplorerCaseInsensitiveNameLookupPageOptions'), 'case-insensitive upload lookup helper is missing')
+  assert.ok(explorerController.includes('nameInsensitive: name'), 'upload fallback must request the indexed folded sibling name')
+  const ensureStart = explorerController.indexOf('export async function xDriveFileExplorerEnsureUploadDirectory')
+  const ensureEnd = explorerController.indexOf('export async function xDriveFileExplorerResolveFolderUploadTargets', ensureStart)
+  const ensureSource = explorerController.slice(ensureStart, ensureEnd)
+  assert.ok(ensureSource.includes('findExistingDirectory(parentID, name)'), 'upload conflict fallback must query one existing directory')
+  assert.equal(ensureSource.includes('listChildren'), false, 'upload conflict fallback must not load every sibling')
+  assert.ok(desktop.includes('xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName)'), 'Desktop folder upload must use indexed sibling lookup')
+  assert.equal(desktop.includes('listChildren: async (id) =>'), false, 'Desktop folder upload must not use the legacy full children list')
+  assert.ok(childrenPagination.includes('lower(xd_nodes.name) = lower(?)'), 'server folded-name lookup must use the sibling-name index expression')
+})

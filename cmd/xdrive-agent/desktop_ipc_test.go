@@ -1431,6 +1431,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/root", "", "\"id\":1"},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1", "", "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name=Projects", "", "\"next_cursor\":\"next-page\""},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name_ci=projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
@@ -1472,7 +1473,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		}
 	}
 	if ctrl.cloudChildrenOptions.Limit != 1 || ctrl.cloudChildrenOptions.Sort != "name" ||
-		ctrl.cloudChildrenOptions.Order != "asc" || ctrl.cloudChildrenOptions.Name != "Projects" {
+		ctrl.cloudChildrenOptions.Order != "asc" || ctrl.cloudChildrenOptions.NameCI != "projects" {
 		t.Fatalf("cloud children options not forwarded: %+v", ctrl.cloudChildrenOptions)
 	}
 	if ctrl.cloudSearchCursor != "search-cursor" || ctrl.cloudSearchSort != "size" || ctrl.cloudSearchOrder != "desc" {

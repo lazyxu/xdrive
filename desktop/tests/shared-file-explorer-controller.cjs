@@ -400,8 +400,9 @@ test('shared FileExplorer controller owns folder-upload path planning and direct
     "part === '.' || part === '..'",
     'directories: [...directories.values()].sort',
     'xDriveFileExplorerEnsureUploadDirectory',
-    "node.type === 'dir'",
-    "sensitivity: 'accent'",
+    'xDriveFileExplorerCaseInsensitiveNameLookupPageOptions',
+    'findExistingDirectory',
+    "existing?.type === 'dir'",
     'xDriveFileExplorerResolveFolderUploadTargets',
     "new Map<string, number>([['', rootParentID]])",
     'await ensureDirectory(parentID, directory.name)',
@@ -412,6 +413,7 @@ test('shared FileExplorer controller owns folder-upload path planning and direct
   for (const [label, source] of [['Web', webApp], ['Desktop', desktop]]) {
     assert.ok(source.includes('xDriveFileExplorerResolveFolderUploadTargets({'), `${label} must use shared folder tree resolution`)
     assert.ok(source.includes('xDriveFileExplorerEnsureUploadDirectory({'), `${label} must use shared idempotent directory reuse`)
+    assert.ok(source.includes('xDriveFileExplorerCaseInsensitiveNameLookupPageOptions('), `${label} must use indexed conflict lookup`)
     assert.equal(source.includes(".split('/').slice(0, -1)"), false, `${label} must not duplicate relative-path tree planning`)
   }
 })
