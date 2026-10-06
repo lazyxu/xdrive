@@ -22,11 +22,13 @@ export function XDriveMediaAsyncThumbnail({
   alt,
   loadThumbnail,
   fallback,
+  revokeOnDispose = true,
 }: {
   nodeID?: number
   alt: string
   loadThumbnail: MediaThumbnailLoader
   fallback: ReactNode
+  revokeOnDispose?: boolean
 }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
@@ -46,7 +48,7 @@ export function XDriveMediaAsyncThumbnail({
         }
         resolved = value
         if (active) setSrc(value)
-        else revokeIfBlob(value)
+        else if (revokeOnDispose) revokeIfBlob(value)
       })
       .catch(() => {
         if (active) setFailed(true)
@@ -54,9 +56,9 @@ export function XDriveMediaAsyncThumbnail({
 
     return () => {
       active = false
-      if (resolved) revokeIfBlob(resolved)
+      if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID])
+  }, [loadThumbnail, nodeID, revokeOnDispose])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {

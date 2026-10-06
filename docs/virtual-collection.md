@@ -110,3 +110,18 @@ Gallery Grid now consumes the same shared VirtualCollection controller as FileEx
 Gallery mutations such as favorite, tags, people, and description patch only retained loaded metadata and never expand the sparse cache. Preview navigation uses logical indexes; if the adjacent asset is not retained, Gallery requests that logical range before opening it.
 
 The existing Timeline view remains on its dense grouped compatibility path for now because month grouping requires a separate group index/height model. Its explicit load-more control is isolated to Timeline; Grid no longer exposes append pagination.
+
+
+## Gallery thumbnail scheduler
+
+Gallery Grid thumbnail work is scheduled independently from metadata range loading. The shared scheduler owns one bounded queue across the active virtual Grid:
+
+- visible tiles use the highest priority
+- the Grid's two overscan rows are lower-priority prefetch work
+- concurrency is capped at 6 thumbnail loads
+- requests for the same media node share one queued/in-flight promise
+- leaving the VirtualCollection retention window cancels queued work and logically cancels stale in-flight work; stale blob results are revoked instead of entering cache
+- completed thumbnail URLs are retained in a 512-entry LRU cache so scrolling back reuses decoded/downloaded thumbnails
+- blob URL lifetime is owned by the scheduler; virtual tile unmount does not revoke scheduler-cached URLs
+
+Timeline, details, preview, and person-cover surfaces retain their existing direct loaders. Video poster capture remains its own bounded pipeline because it consumes preview URLs and browser video decoding rather than thumbnail resources.

@@ -77,3 +77,31 @@ test('Gallery virtual grid is empty for an empty collection', () => {
   assert.equal(metrics.totalHeight, 0)
   assert.deepEqual(window, { start: 0, end: 0, startRow: 0, endRow: 0 })
 })
+
+
+test('Gallery thumbnail priorities distinguish visible rows from overscan rows', () => {
+  const metrics = xDriveMediaGalleryGridMetrics({
+    width: 1000,
+    itemCount: 10_000,
+  })
+  const visible = xDriveMediaGalleryGridWindow({
+    itemCount: 10_000,
+    columns: metrics.columns,
+    rowStep: metrics.rowStep,
+    visibleTop: metrics.rowStep * 20,
+    visibleBottom: metrics.rowStep * 24,
+    overscanRows: 0,
+  })
+  const retained = xDriveMediaGalleryGridWindow({
+    itemCount: 10_000,
+    columns: metrics.columns,
+    rowStep: metrics.rowStep,
+    visibleTop: metrics.rowStep * 20,
+    visibleBottom: metrics.rowStep * 24,
+  })
+
+  assert.ok(retained.start < visible.start)
+  assert.ok(retained.end > visible.end)
+  assert.equal(visible.start % metrics.columns, 0)
+  assert.equal(retained.start % metrics.columns, 0)
+})

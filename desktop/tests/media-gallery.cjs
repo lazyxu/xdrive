@@ -12,6 +12,7 @@ const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPre
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
+const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
 const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
   sharedGalleryMain,
@@ -567,4 +568,52 @@ test('Gallery keeps timeline dense compatibility isolated from the virtual Grid'
   assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items)'), 'timeline grouping must keep its dense compatibility source')
   assert.ok(sharedGalleryMain.includes("viewMode === 'timeline' && hasMore && onLoadMore"), 'timeline is the only remaining Gallery load-more path')
   assert.ok(sharedGalleryMain.includes('virtualCollection ? ('), 'Grid must prefer the sparse virtual collection')
+})
+
+
+test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler-owned URL lifetime', () => {
+  for (const token of [
+    'XDriveMediaThumbnailScheduler',
+    'thumbnailScheduler = useMemo(',
+    'thumbnailScheduler.load(nodeID, thumbnailPriority)',
+    'revokeOnDispose={!thumbnailScheduler}',
+    'overscanRows: 0',
+    'thumbnailPriority: XDriveMediaThumbnailPriority',
+    'thumbnailScheduler.setRetention(retainedNodeIDs)',
+    'thumbnailScheduler.setRetention([])',
+    'thumbnailScheduler={thumbnailScheduler}',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery thumbnail scheduler wiring missing: ${token}`)
+  }
+
+  for (const token of [
+    'XDRIVE_MEDIA_THUMBNAIL_CONCURRENCY = 6',
+    'XDRIVE_MEDIA_THUMBNAIL_CACHE_SIZE = 512',
+    'class XDriveMediaThumbnailScheduler',
+    'private readonly queued = new Map<number, ThumbnailTask>()',
+    'private readonly inFlight = new Map<number, ThumbnailTask>()',
+    'private readonly cache = new Map<number, string>()',
+    'left.priority - right.priority',
+    'queueMicrotask(() => {',
+    'setRetention(nodeIDs: Iterable<number>)',
+    'this.cancelTask(task)',
+    'this.cacheURL(task.nodeID, url)',
+    'this.revokeURL(url)',
+  ]) {
+    assert.ok(sharedGalleryThumbnailScheduler.includes(token), `Gallery scheduler missing: ${token}`)
+  }
+
+  assert.ok(
+    sharedGalleryPreview.includes('revokeOnDispose = true'),
+    'async thumbnail must preserve legacy ownership by default',
+  )
+  assert.ok(
+    sharedGalleryPreview.includes('if (resolved && revokeOnDispose) revokeIfBlob(resolved)'),
+    'scheduler-managed URLs must not be revoked by tile unmount',
+  )
+  assert.equal(
+    sharedGalleryMain.includes('new XDriveMediaThumbnailScheduler(loadPreviewURL'),
+    false,
+    'video poster scheduling remains a separate bounded pipeline',
+  )
 })
