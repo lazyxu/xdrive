@@ -73,6 +73,8 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'photo.face': return '人脸识别'
     case 'photo.place': return '地点识别'
     case 'photo.person_cluster': return '人物聚类'
+    case 'system.maintenance.janitor': return 'Janitor'
+    case 'system.maintenance.storage_sampler': return 'Storage sampler'
     case 'file_operation.copy': return '文件操作 · 复制'
     case 'file_operation.move': return '文件操作 · 移动'
     case 'file_operation.delete': return '文件操作 · 删除'
@@ -89,6 +91,7 @@ export function xDriveBackgroundTaskStateLabel(state: string) {
     case 'cancelling':
     case 'cancel_requested': return '正在取消'
     case 'completed': return '已完成'
+    case 'partial': return '部分完成'
     case 'cancelled': return '已取消'
     case 'failed': return '失败'
     default: return state || '未知'
@@ -135,6 +138,19 @@ export function xDriveBackgroundTaskControlCapabilityLabel(action: string) {
   return label ? `可${label}` : action
 }
 
+export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
+  switch (phase) {
+    case 'starting': return '准备中'
+    case 'staging_cleanup': return '清理暂存区'
+    case 'content_blob_gc': return '内容对象 GC'
+    case 'source_run_retention': return '同步历史清理'
+    case 'cleanup_history_retention': return '清理历史保留'
+    case 'storage_sample': return '存储采样'
+    case 'finished': return '完成'
+    default: return phase || ''
+  }
+}
+
 export function xDriveBackgroundTaskPercent(task: XDriveBackgroundTask) {
   const explicit = task.progress?.percent
   if (typeof explicit === 'number' && Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit))
@@ -148,13 +164,23 @@ export function xDriveBackgroundTaskProgressLabel(task: XDriveBackgroundTask) {
   const current = task.progress?.current ?? 0
   const total = task.progress?.total ?? 0
   const unit = task.progress?.unit ?? ''
+  const phase = xDriveBackgroundTaskPhaseLabel(task.progress?.phase)
+  if (task.domain === 'system_maintenance') {
+    if (total > 0) {
+      return `${phase || xDriveBackgroundTaskStateLabel(task.state)} · ${current.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 个阶段`
+    }
+    return phase || xDriveBackgroundTaskStateLabel(task.state)
+  }
   const value = (amount: number) => unit === 'byte' ? formatBytes(amount) : amount.toLocaleString('zh-CN')
   if (total > 0) {
-    const suffix = unit === 'byte' ? '' : unit === 'task' ? ' 个任务' : ' 项'
+    const suffix = unit === 'byte' ? '' : unit === 'task' ? ' 个任务' : unit === 'step' ? ' 个阶段' : ' 项'
     return `${value(current)} / ${value(total)}${suffix}`
   }
-  if (current > 0) return unit === 'byte' ? value(current) : `${value(current)}${unit === 'task' ? ' 个任务' : ' 项'}`
-  return task.progress?.phase || xDriveBackgroundTaskStateLabel(task.state)
+  if (current > 0) {
+    const suffix = unit === 'task' ? ' 个任务' : unit === 'step' ? ' 个阶段' : ' 项'
+    return unit === 'byte' ? value(current) : `${value(current)}${suffix}`
+  }
+  return phase || xDriveBackgroundTaskStateLabel(task.state)
 }
 
 function backgroundTaskTimestamp(value?: string) {

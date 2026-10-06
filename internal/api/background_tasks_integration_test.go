@@ -44,6 +44,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.SyncRun{},
 		&meta.FileOperation{},
+		&meta.SystemMaintenanceRun{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -180,6 +181,34 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	janitorFinished := now.Add(-10 * time.Second)
+	janitorRun := meta.SystemMaintenanceRun{
+		Kind:           meta.SystemMaintenanceKindJanitor,
+		Status:         meta.SystemMaintenanceStatusPartial,
+		Phase:          meta.SystemMaintenancePhaseFinished,
+		CompletedSteps: 3,
+		TotalSteps:     4,
+		Error:          "content_blob_gc: test failure",
+		StartedAt:      now.Add(-30 * time.Second),
+		FinishedAt:     &janitorFinished,
+	}
+	if err := db.Create(&janitorRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	samplerFinished := now.Add(-time.Minute)
+	samplerRun := meta.SystemMaintenanceRun{
+		Kind:           meta.SystemMaintenanceKindStorageSampler,
+		Status:         meta.SystemMaintenanceStatusSuccess,
+		Phase:          meta.SystemMaintenancePhaseFinished,
+		CompletedSteps: 1,
+		TotalSteps:     1,
+		StartedAt:      now.Add(-time.Minute - time.Second),
+		FinishedAt:     &samplerFinished,
+	}
+	if err := db.Create(&samplerRun).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	release := make(chan struct{})
 	t.Cleanup(func() {
 		select {
@@ -246,6 +275,12 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 			t.Fatalf("user task unexpectedly included admin-only owner username: %+v", task)
 		}
 	}
+	if backgroundTaskByID(
+		userTasks,
+		"system-maintenance:"+meta.SystemMaintenanceKindJanitor,
+	) != nil {
+		t.Fatal("ordinary user unexpectedly saw system maintenance")
+	}
 	if !backgroundTaskHasControl(userTasks, "file-operation:"+opA.ID, "cancel") {
 		t.Fatal("owner file operation did not expose cancel")
 	}
@@ -302,6 +337,32 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	}
 	if !seenA || !seenB {
 		t.Fatalf("admin visibility missing owners: seenA=%v seenB=%v tasks=%+v", seenA, seenB, adminTasks)
+	}
+	janitorTask := backgroundTaskByID(
+		adminTasks,
+		"system-maintenance:"+meta.SystemMaintenanceKindJanitor,
+	)
+	if janitorTask == nil {
+		t.Fatalf("admin global tasks missing Janitor: %+v", adminTasks)
+	}
+	if janitorTask.Domain != "system_maintenance" ||
+		janitorTask.Scope != string(background.ScopeSystem) ||
+		janitorTask.State != "partial" ||
+		janitorTask.Resource != string(background.ResourceMaintenanceIO) ||
+		janitorTask.Priority == nil ||
+		*janitorTask.Priority != uint8(background.PriorityP4) ||
+		janitorTask.Progress.Phase != meta.SystemMaintenancePhaseFinished ||
+		janitorTask.Progress.Current != 3 ||
+		janitorTask.Progress.Total != 4 ||
+		len(janitorTask.ControlActions) != 0 {
+		t.Fatalf("unexpected Janitor task projection: %+v", janitorTask)
+	}
+	samplerTask := backgroundTaskByID(
+		adminTasks,
+		"system-maintenance:"+meta.SystemMaintenanceKindStorageSampler,
+	)
+	if samplerTask == nil || samplerTask.State != "completed" {
+		t.Fatalf("unexpected Storage sampler task projection: %+v", samplerTask)
 	}
 
 	userBResponse := request(

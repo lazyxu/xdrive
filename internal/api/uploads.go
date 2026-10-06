@@ -1149,28 +1149,121 @@ func (s *Server) runStorageJanitorLeaderPass(ctx context.Context) {
 		ctx,
 		maintenanceLeaderJanitor,
 		func() {
-			s.runStorageJanitorPass(ctx)
+			runID := s.beginSystemMaintenanceRun(
+				ctx,
+				meta.SystemMaintenanceKindJanitor,
+				4,
+			)
+			result := s.runStorageJanitorTrackedPass(ctx, runID)
+			s.finishSystemMaintenanceRun(
+				ctx,
+				runID,
+				result,
+			)
 		},
 	)
 }
 
 func (s *Server) runStorageJanitorPass(ctx context.Context) {
-	if _, err := s.cleanupUploadStaging(ctx, meta.StagingCleanupTriggerJanitor); err != nil {
+	_ = s.runStorageJanitorTrackedPass(ctx, 0)
+}
+
+func (s *Server) runStorageJanitorTrackedPass(
+	ctx context.Context,
+	runID uint64,
+) systemMaintenancePassResult {
+	result := newSystemMaintenancePassResult(4)
+
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseStagingCleanup,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
+	cleanup, err := s.cleanupUploadStaging(
+		ctx,
+		meta.StagingCleanupTriggerJanitor,
+	)
+	if err != nil {
 		s.ensureObservability()
 		s.obs.logger.Warn("upload_staging_cleanup_failed", "error", err)
+		result.addIssue(
+			meta.SystemMaintenancePhaseStagingCleanup,
+			err,
+		)
+	} else {
+		result.CompletedSteps++
+		if cleanup.FailedFiles > 0 {
+			result.addIssue(
+				meta.SystemMaintenancePhaseStagingCleanup,
+				fmt.Errorf(
+					"%d staging files failed to delete",
+					cleanup.FailedFiles,
+				),
+			)
+		}
 	}
+
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseContentBlobGC,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
 	if err := s.reapDeletingContentBlobs(ctx); err != nil {
 		s.ensureObservability()
 		s.obs.logger.Warn("content_blob_gc_failed", "error", err)
+		result.addIssue(meta.SystemMaintenancePhaseContentBlobGC, err)
+	} else {
+		result.CompletedSteps++
 	}
+
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseSourceRunRetention,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
 	if err := s.cleanupSourceRunFailureHistory(ctx); err != nil {
 		s.ensureObservability()
-		s.obs.logger.Warn("source_run_failure_retention_failed", "error", err)
+		s.obs.logger.Warn(
+			"source_run_failure_retention_failed",
+			"error",
+			err,
+		)
+		result.addIssue(
+			meta.SystemMaintenancePhaseSourceRunRetention,
+			err,
+		)
+	} else {
+		result.CompletedSteps++
 	}
+
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseCleanupHistoryRetention,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
 	if err := s.cleanupStagingCleanupHistory(ctx); err != nil {
 		s.ensureObservability()
-		s.obs.logger.Warn("staging_cleanup_history_retention_failed", "error", err)
+		s.obs.logger.Warn(
+			"staging_cleanup_history_retention_failed",
+			"error",
+			err,
+		)
+		result.addIssue(
+			meta.SystemMaintenancePhaseCleanupHistoryRetention,
+			err,
+		)
+	} else {
+		result.CompletedSteps++
 	}
+	return result
 }
 
 const (

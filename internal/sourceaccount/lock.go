@@ -70,6 +70,35 @@ func TryAcquire(ctx context.Context, db *gorm.DB, accountKey string) (*Lease, bo
 	return &Lease{conn: conn, key: key}, true, nil
 }
 
+func IsHeld(
+	ctx context.Context,
+	db *gorm.DB,
+	accountKey string,
+) (bool, error) {
+	if db == nil || strings.TrimSpace(accountKey) == "" {
+		return false, fmt.Errorf("source account lock is not configured")
+	}
+	key := uint64(lockID(accountKey))
+	classID := int64(uint32(key >> 32))
+	objectID := int64(uint32(key))
+
+	var held bool
+	err := db.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_locks
+			WHERE locktype = 'advisory'
+			  AND granted
+			  AND objsubid = 1
+			  AND classid::bigint = ?
+			  AND objid::bigint = ?
+		)`,
+		classID,
+		objectID,
+	).Scan(&held).Error
+	return held, err
+}
+
 func (l *Lease) Close() {
 	if l == nil || l.conn == nil {
 		return

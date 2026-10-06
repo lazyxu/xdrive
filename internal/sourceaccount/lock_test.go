@@ -22,11 +22,26 @@ func TestAccountAdvisoryLockCoordinatesConnections(t *testing.T) {
 	ctx := context.Background()
 	key := "source-account-test:" + uuid.NewString()
 
+	held, err := IsHeld(ctx, db, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held {
+		t.Fatal("unacquired account lock unexpectedly reported held")
+	}
+
 	first, err := Acquire(ctx, db, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
+	held, err = IsHeld(ctx, db, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !held {
+		t.Fatal("acquired account lock was not visible through pg_locks")
+	}
 
 	if second, acquired, err := TryAcquire(ctx, db, key); err != nil {
 		t.Fatal(err)
@@ -44,6 +59,13 @@ func TestAccountAdvisoryLockCoordinatesConnections(t *testing.T) {
 	other.Close()
 
 	first.Close()
+	held, err = IsHeld(ctx, db, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held {
+		t.Fatal("released account lock still reported held")
+	}
 	third, acquired, err := TryAcquire(ctx, db, key)
 	if err != nil || !acquired || third == nil {
 		t.Fatalf("released account lock acquired=%t lease=%v err=%v", acquired, third, err)

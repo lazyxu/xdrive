@@ -154,6 +154,11 @@ func (s *Server) backgroundTasks(
 	out = append(out, sourceRuns...)
 
 	if admin {
+		maintenanceTasks, err := s.backgroundSystemMaintenanceTasks(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, maintenanceTasks...)
 		if err := s.populateBackgroundTaskOwnerUsernames(ctx, out); err != nil {
 			return nil, err
 		}

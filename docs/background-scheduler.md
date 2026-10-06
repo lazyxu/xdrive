@@ -133,7 +133,10 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    PostgreSQL session advisory lease before running: one lease key for the upload/storage Janitor and one for the
    storage sampler. A non-leader Server skips only that pass and competes again on the next timer tick; the lease
    is released as soon as the pass finishes and is never held across timer intervals. Existing cleanup/GC/sample
-   implementations and manual admin staging cleanup remain unchanged.
+   implementations and manual admin staging cleanup remain unchanged. The elected leader also records a durable
+   maintenance-domain run with phase/progress/outcome in `xd_system_maintenance_runs`. Admin global Task Center
+   projects only the latest Janitor and Storage sampler runs from this shared table; ordinary users never query or
+   receive system-maintenance rows. This is cluster-aware status, not a second generic task table.
 
 ## Fairness and priority policy
 
