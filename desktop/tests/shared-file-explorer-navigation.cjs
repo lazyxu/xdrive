@@ -27,6 +27,10 @@ test('shared FileExplorer navigation controller owns cross-client per-tab view a
     "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
     'const refresh = () =>',
     'onLoadDirectory(current.id, crumbs, sort)',
+    'const beginNavigationIntent = () => beginNavigation(activeTabID)',
+    'const isNavigationIntentCurrent = (requestID: number)',
+    'navigationIntentID?: number',
+    'const requestID = navigationIntentID ?? beginNavigation(activeTabID)',
     'const navigateTo = async',
     'const navigateToCrumb = async (index: number)',
     'index < 0 || index >= crumbs.length',
@@ -71,4 +75,12 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.equal(source.includes('navigateTo(crumbs.slice(0, index + 1))'), false, `${label} must not slice breadcrumb navigation locally`)
   }
   assert.ok(workspace.includes('useXDriveFileExplorerNavigation({'), 'workspace controller must compose shared navigation')
+  assert.ok(workspace.includes('const navigationIntentID = navigation.beginNavigationIntent()'), 'typed-path resolution must reserve a navigation intent before async traversal')
+  assert.ok(workspace.includes('navigation.navigateTo(nextCrumbs, true, navigationIntentID)'), 'typed-path navigation must consume its original intent')
+  assert.ok(workspace.includes('navigation.isNavigationIntentCurrent(navigationIntentID)'), 'stale typed-path errors must be ignored')
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(source.includes('const navigationIntentID = beginNavigationIntent()'), `${label} pre-resolved navigation must reserve an intent`)
+    assert.ok(source.includes('navigateTo(nextCrumbs, true, navigationIntentID)'), `${label} Quick Access/Recent navigation must consume its reserved intent`)
+    assert.ok(source.includes('isNavigationIntentCurrent(navigationIntentID)'), `${label} stale Recent file activation must be ignored`)
+  }
 })
