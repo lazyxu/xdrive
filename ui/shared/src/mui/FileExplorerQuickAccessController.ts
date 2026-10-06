@@ -46,31 +46,36 @@ export function useXDriveFileExplorerQuickAccess<
   const pinItemRef = useRef(pinItem)
   const unpinItemRef = useRef(unpinItem)
   const onErrorRef = useRef(onError)
+  const loadRequestRef = useRef(0)
 
   loadItemsRef.current = loadItems
   pinItemRef.current = pinItem
   unpinItemRef.current = unpinItem
   onErrorRef.current = onError
 
-  const loadFresh = useCallback(async () => {
+  const loadFresh = useCallback(async (requestID: number) => {
     const next = (await loadItemsRef.current()).map(projectQuickAccessItem)
-    setItems(next)
+    if (requestID === loadRequestRef.current) setItems(next)
     return next
   }, [])
 
   const refresh = useCallback(async () => {
     if (!enabled) {
+      loadRequestRef.current += 1
       setItems([])
+      setLoading(false)
       return []
     }
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      return await loadFresh()
+      return await loadFresh(requestID)
     } catch (error) {
-      onErrorRef.current(error)
+      if (requestID === loadRequestRef.current) onErrorRef.current(error)
       return []
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [enabled, loadFresh])
 
@@ -85,6 +90,8 @@ export function useXDriveFileExplorerQuickAccess<
 
   const pin = useCallback(async (nodeID: number) => {
     if (!enabled || busyID !== null || nodeID <= 0) return false
+    loadRequestRef.current += 1
+    setLoading(false)
     setBusyID(nodeID)
     try {
       const pinned = projectQuickAccessItem(await pinItemRef.current(nodeID))
@@ -104,6 +111,8 @@ export function useXDriveFileExplorerQuickAccess<
 
   const unpin = useCallback(async (nodeID: number) => {
     if (!enabled || busyID !== null || nodeID <= 0) return false
+    loadRequestRef.current += 1
+    setLoading(false)
     setBusyID(nodeID)
     try {
       await unpinItemRef.current(nodeID)
@@ -127,18 +136,21 @@ export function useXDriveFileExplorerQuickAccess<
     onNavigate: (crumbs: XDriveCloudFilesCrumb[]) => void | Promise<void>,
   ) => {
     if (!enabled || nodeID <= 0) return false
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      const latest = await loadFresh()
+      const latest = await loadFresh(requestID)
+      if (requestID !== loadRequestRef.current) return false
       const target = latest.find((item) => item.id === nodeID)
       if (!target) return false
       await onNavigate(target.crumbs)
       return true
     } catch (error) {
-      onErrorRef.current(error)
+      if (requestID === loadRequestRef.current) onErrorRef.current(error)
       return false
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [enabled, loadFresh])
 
