@@ -75,6 +75,11 @@ export function useXDriveCloudFilesController<
   const [loading, setLoading] = useState(true)
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+  const reportError = useCallback((error: unknown) => {
+    onErrorRef.current(error)
+  }, [])
 
   const current = crumbs.at(-1)
   const virtualQueryKey = xDriveCloudFilesVirtualQueryKey(virtualTarget)
@@ -108,7 +113,7 @@ export function useXDriveCloudFilesController<
   const virtualCollection = useXDriveVirtualCollection<TNode>({
     queryKey: virtualQueryKey,
     loadRange: loadVirtualRange,
-    onError,
+    onError: reportError,
   })
 
   const activateVirtualDirectory = useCallback((
@@ -159,9 +164,9 @@ export function useXDriveCloudFilesController<
     try {
       setQuota(await port.getQuota())
     } catch (error) {
-      onError(error)
+      reportError(error)
     }
-  }, [onError, port])
+  }, [port, reportError])
 
   const loadDirectory = useCallback(async (
     id: number,
@@ -190,11 +195,11 @@ export function useXDriveCloudFilesController<
       if (nextCrumbs) setCrumbs([...nextCrumbs])
       activateVirtualDirectory(id, effectiveSort, requestID, range)
     } catch (error) {
-      if (requestID === directoryRequestRef.current) onError(error)
+      if (requestID === directoryRequestRef.current) reportError(error)
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, onError, pageState?.sort, port])
+  }, [activateVirtualDirectory, defaultSort, pageState?.sort, port, reportError])
 
   const loadMoreDirectory = useCallback(async (
     _id: number,
@@ -231,11 +236,11 @@ export function useXDriveCloudFilesController<
       })
       activateVirtualDirectory(root.id, defaultSort, requestID, range)
     } catch (error) {
-      if (requestID === directoryRequestRef.current) onError(error)
+      if (requestID === directoryRequestRef.current) reportError(error)
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, onError, port, rootLabel])
+  }, [activateVirtualDirectory, defaultSort, port, reportError, rootLabel])
 
   useEffect(() => {
     if (!enabled) {

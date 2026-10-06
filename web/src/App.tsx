@@ -303,7 +303,7 @@ function App({
       serverBuild={serverBuild}
       appearance={appearance}
       onAppearanceChange={onAppearanceChange}
-      onAuthExpired={(notice) => clearSession(notice)}
+      onAuthExpired={clearSession}
       onLogout={signOut}
     />
   )
