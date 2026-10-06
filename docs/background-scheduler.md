@@ -135,9 +135,23 @@ consumer is migrated so the scheduler remains reusable outside the API process.
 ## Fairness and priority policy
 
 `OwnerID` is scheduler attribution and the basis for per-owner fair scheduling; it is not a reason to create
-per-user worker pools. Resource capacity remains system-wide. Before high-fanout user-owned consumers are
-migrated, equal-priority work should gain owner fairness so one user's backlog cannot monopolize a resource
-class.
+per-user worker pools. Resource capacity remains system-wide.
+
+Fair scheduling is now enforced inside each resource queue in this order:
+
+```text
+ready / eligible
+  -> priority
+  -> owner round-robin
+  -> FIFO within that owner
+```
+
+At a given priority, queued work is grouped by `Scope + OwnerID`. Active owner buckets are visited with a
+work-conserving round-robin; a user with a large backlog therefore cannot monopolize equal-priority capacity
+ahead of another ready owner. System-scoped work forms one system bucket and preserves FIFO inside that bucket.
+Priority remains strict: owner fairness never lets P2 work jump ahead of ready P1 work. Delayed retry/lease work
+does not consume a turn while it is not ready; once its delay expires it immediately re-enters normal
+priority/fairness selection instead of remaining behind later-arriving ready tasks.
 
 A user trigger does not automatically mean P0. Visible/interactive work may use P0, while expensive manual
 bulk rebuilds remain bounded background work. Priority, resource class, and owner fairness are separate policy

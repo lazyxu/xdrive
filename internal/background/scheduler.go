@@ -482,21 +482,121 @@ func (h *taskHeap) Pop() any {
 	return entry
 }
 
+type fairnessOwner struct {
+	scope   Scope
+	ownerID uint64
+}
+
+type fairnessBucket struct {
+	priority Priority
+	owner    fairnessOwner
+}
+
 type resourceQueue struct {
-	mu       sync.Mutex
-	items    taskHeap
-	notify   chan struct{}
-	stopped  bool
-	capacity int
+	mu             sync.Mutex
+	items          taskHeap
+	notify         chan struct{}
+	stopped        bool
+	capacity       int
+	nextOwnerOrder uint64
+	ownerOrder     map[fairnessBucket]uint64
+	lastOwnerOrder map[Priority]uint64
 }
 
 func newResourceQueue(capacity int) *resourceQueue {
 	q := &resourceQueue{
-		notify:   make(chan struct{}),
-		capacity: capacity,
+		notify:         make(chan struct{}),
+		capacity:       capacity,
+		ownerOrder:     make(map[fairnessBucket]uint64),
+		lastOwnerOrder: make(map[Priority]uint64),
 	}
 	heap.Init(&q.items)
 	return q
+}
+
+func fairnessBucketFor(entry *taskEntry) fairnessBucket {
+	return fairnessBucket{
+		priority: entry.task.Priority,
+		owner: fairnessOwner{
+			scope:   entry.identity.Scope,
+			ownerID: entry.identity.OwnerID,
+		},
+	}
+}
+
+func (q *resourceQueue) ensureOwnerOrderLocked(bucket fairnessBucket) uint64 {
+	if order, ok := q.ownerOrder[bucket]; ok {
+		return order
+	}
+	q.nextOwnerOrder++
+	q.ownerOrder[bucket] = q.nextOwnerOrder
+	return q.nextOwnerOrder
+}
+
+func (q *resourceQueue) dropOwnerOrderIfEmptyLocked(bucket fairnessBucket) {
+	for _, entry := range q.items {
+		if fairnessBucketFor(entry) == bucket {
+			return
+		}
+	}
+	delete(q.ownerOrder, bucket)
+}
+
+func (q *resourceQueue) nextReadyIndexLocked(now time.Time) (int, time.Time) {
+	bestPriority := PriorityP4
+	foundPriority := false
+	candidateByOwner := make(map[fairnessBucket]int)
+	var earliestReadyAt time.Time
+
+	for index, entry := range q.items {
+		if !entry.readyAt.IsZero() && entry.readyAt.After(now) {
+			if earliestReadyAt.IsZero() || entry.readyAt.Before(earliestReadyAt) {
+				earliestReadyAt = entry.readyAt
+			}
+			continue
+		}
+
+		priority := entry.task.Priority
+		if !foundPriority || priority < bestPriority {
+			bestPriority = priority
+			foundPriority = true
+			clear(candidateByOwner)
+		} else if priority > bestPriority {
+			continue
+		}
+
+		bucket := fairnessBucketFor(entry)
+		if currentIndex, ok := candidateByOwner[bucket]; !ok ||
+			entry.sequence < q.items[currentIndex].sequence {
+			candidateByOwner[bucket] = index
+		}
+	}
+
+	if !foundPriority {
+		return -1, earliestReadyAt
+	}
+
+	lastOrder := q.lastOwnerOrder[bestPriority]
+	selectedIndex := -1
+	selectedOrder := uint64(0)
+	wrapIndex := -1
+	wrapOrder := uint64(0)
+
+	for bucket, index := range candidateByOwner {
+		order := q.ensureOwnerOrderLocked(bucket)
+		if wrapIndex < 0 || order < wrapOrder {
+			wrapIndex = index
+			wrapOrder = order
+		}
+		if order > lastOrder && (selectedIndex < 0 || order < selectedOrder) {
+			selectedIndex = index
+			selectedOrder = order
+		}
+	}
+	if selectedIndex < 0 {
+		selectedIndex = wrapIndex
+	}
+	return selectedIndex, earliestReadyAt
 }
 
 func (q *resourceQueue) signalLocked() {
@@ -514,6 +614,7 @@ func (q *resourceQueue) push(entry *taskEntry, enforceCapacity bool) bool {
 		return false
 	}
 	heap.Push(&q.items, entry)
+	q.ensureOwnerOrderLocked(fairnessBucketFor(entry))
 	q.signalLocked()
 	return true
 }
@@ -537,12 +638,15 @@ func (q *resourceQueue) promote(entry *taskEntry, task Task) bool {
 	if entry.state != itemQueued || task.Priority >= entry.task.Priority || entry.index < 0 {
 		return false
 	}
+	oldBucket := fairnessBucketFor(entry)
 	entry.task.Priority = task.Priority
 	entry.task.Trigger = task.Trigger
 	entry.task.Initiator = task.Initiator
 	entry.task.InitiatorID = task.InitiatorID
 	entry.task.ParentKey = task.ParentKey
 	entry.task.TraceID = task.TraceID
+	q.ensureOwnerOrderLocked(fairnessBucketFor(entry))
+	q.dropOwnerOrderIfEmptyLocked(oldBucket)
 	heap.Fix(&q.items, entry.index)
 	q.signalLocked()
 	return true
@@ -554,7 +658,9 @@ func (q *resourceQueue) remove(entry *taskEntry) bool {
 	if entry.state != itemQueued || entry.index < 0 || entry.index >= len(q.items) {
 		return false
 	}
+	bucket := fairnessBucketFor(entry)
 	heap.Remove(&q.items, entry.index)
+	q.dropOwnerOrderIfEmptyLocked(bucket)
 	q.signalLocked()
 	return true
 }
@@ -585,38 +691,49 @@ func (q *resourceQueue) next(ctx context.Context) (*taskEntry, bool) {
 				continue
 			}
 		}
-		entry := q.items[0]
-		if !entry.readyAt.IsZero() {
-			now := time.Now()
-			if !entry.readyAt.After(now) {
-				entry.readyAt = time.Time{}
-				heap.Fix(&q.items, 0)
-				q.signalLocked()
-				q.mu.Unlock()
-				continue
-			}
-			wait := time.Until(entry.readyAt)
-			notify := q.notify
+
+		now := time.Now()
+		index, earliestReadyAt := q.nextReadyIndexLocked(now)
+		if index >= 0 {
+			entry := q.items[index]
+			bucket := fairnessBucketFor(entry)
+			order := q.ensureOwnerOrderLocked(bucket)
+			heap.Remove(&q.items, index)
+			q.lastOwnerOrder[entry.task.Priority] = order
+			q.dropOwnerOrderIfEmptyLocked(bucket)
 			q.mu.Unlock()
-			timer := time.NewTimer(wait)
+			return entry, true
+		}
+
+		notify := q.notify
+		q.mu.Unlock()
+		if earliestReadyAt.IsZero() {
 			select {
 			case <-ctx.Done():
-				if !timer.Stop() {
-					<-timer.C
-				}
 				return nil, false
 			case <-notify:
-				if !timer.Stop() {
-					<-timer.C
-				}
-				continue
-			case <-timer.C:
 				continue
 			}
 		}
-		heap.Pop(&q.items)
-		q.mu.Unlock()
-		return entry, true
+		wait := time.Until(earliestReadyAt)
+		if wait < 0 {
+			wait = 0
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, false
+		case <-notify:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			continue
+		case <-timer.C:
+			continue
+		}
 	}
 }
 
