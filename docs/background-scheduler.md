@@ -109,13 +109,18 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    derivative task continues for other waiters.
 3. MediaIndexer: **current**. Committed `xd_files` content writes emit a PostgreSQL owner wakeup, which
    submits an owner-scoped P1 media-index batch. Bursts coalesce per owner and every generation handles one
-   bounded batch before yielding. If a P2 reconcile batch is still queued when a real file event arrives, the
+   bounded batch before yielding. Each owner batch acquires a PostgreSQL session advisory lease keyed by
+   `media.index + owner`, so multiple Server processes cannot index the same owner concurrently. Lease
+   unavailability defers through the scheduler without occupying a worker; heartbeat loss cancels the current
+   batch rather than continuing after distributed ownership is lost. If a P2 reconcile batch is still queued when a real file event arrives, the
    existing task is promoted to P1; if it is already running, P1 is retained for the next generation.
    Full batches continue immediately only when indexing made progress; a full batch with zero progress stops
    instead of hot-looping and waits for the next 30-second P2 fallback reconciliation.
 4. Photo Intelligence: **current**. Media-index progress emits owner-scoped face/place work; face completion
    emits person-cluster(owner). Face uses P2 `ml_cpu`; place/person clustering use P3 `background_cpu`.
    Bursts coalesce by owner+kind and candidate-owner scans remain a 30-second fallback reconciliation path.
+   Each `photo.<kind> + owner` generation acquires an independent PostgreSQL session advisory lease before
+   entering its runner, preventing duplicate owner/kind processing across Server processes.
    User/admin reanalysis is explicit `user_action/admin_action` work and never becomes P0.
 5. FileOperation: **current**. Entering durable `queued` state emits a transactional PostgreSQL
    wakeup; the worker drains with the existing `FOR UPDATE SKIP LOCKED` claim path and falls back to a
@@ -252,7 +257,9 @@ The server exposes background work as a read model without introducing a generic
   and authorizes them.
 
 Scheduler runtime tasks expose `kind`, state, owner attribution, trigger/initiator, priority/resource,
-timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. Runtime entries
+timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. A queued task
+that is deferred because another Server owns its distributed domain lease exposes phase
+`waiting_for_cluster_lease`; the Web/Desktop shared Task Center renders this as “等待其他服务器”. Runtime entries
 are removed after completion; history belongs to the durable domain models, not to the scheduler.
 
 

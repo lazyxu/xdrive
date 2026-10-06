@@ -763,7 +763,7 @@ func TestSchedulerLeaseUnavailableDefersWithoutConsumingAttempt(t *testing.T) {
 	s := NewScheduler(context.Background(), Config{
 		Capacity:        map[ResourceClass]int{ResourceNetwork: 1},
 		QueueCapacity:   map[ResourceClass]int{ResourceNetwork: 4},
-		LeaseRetryDelay: time.Millisecond,
+		LeaseRetryDelay: 50 * time.Millisecond,
 	})
 	t.Cleanup(s.Close)
 
@@ -786,6 +786,28 @@ func TestSchedulerLeaseUnavailableDefersWithoutConsumingAttempt(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	var deferred RuntimeTaskSnapshot
+	foundDeferred := false
+	for time.Now().Before(deadline) {
+		for _, snapshot := range s.TaskSnapshots(nil) {
+			if snapshot.Identity.Key == "lease-defer" &&
+				snapshot.LeaseDeferred {
+				deferred = snapshot
+				foundDeferred = true
+				break
+			}
+		}
+		if foundDeferred {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !foundDeferred ||
+		deferred.State != "queued" ||
+		deferred.ReadyAt == nil {
+		t.Fatalf("lease-deferred snapshot=%+v", deferred)
 	}
 	if err := h.Wait(context.Background()); err != nil {
 		t.Fatal(err)

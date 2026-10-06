@@ -339,16 +339,18 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 	}
 
 	_, err := s.BackgroundScheduler.Submit(background.Task{
-		Key:         taskKey,
-		Kind:        kindName,
-		GroupKey:    kindName,
-		Scope:       background.ScopeUser,
-		OwnerID:     key.OwnerID,
-		Trigger:     trigger,
-		Initiator:   initiator,
-		InitiatorID: initiatorID,
-		Priority:    priority,
-		Resource:    resource,
+		Key:               taskKey,
+		Kind:              kindName,
+		GroupKey:          kindName,
+		Scope:             background.ScopeUser,
+		OwnerID:           key.OwnerID,
+		Trigger:           trigger,
+		Initiator:         initiator,
+		InitiatorID:       initiatorID,
+		Priority:          priority,
+		Resource:          resource,
+		Lease:             s.backgroundOwnerLeaseProvider(kindName),
+		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
 			if force {
 				if err := s.invalidatePhotoIntelligenceOwner(

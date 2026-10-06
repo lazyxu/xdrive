@@ -195,15 +195,17 @@ func (s *Server) submitMediaIndexOwnerTask(
 	trigger background.Trigger,
 ) error {
 	_, err := s.BackgroundScheduler.Submit(background.Task{
-		Key:       taskKey,
-		Kind:      "media.index",
-		GroupKey:  "media.index",
-		Scope:     background.ScopeUser,
-		OwnerID:   ownerID,
-		Trigger:   trigger,
-		Initiator: background.InitiatorSystem,
-		Priority:  priority,
-		Resource:  background.ResourceMediaCPU,
+		Key:               taskKey,
+		Kind:              "media.index",
+		GroupKey:          "media.index",
+		Scope:             background.ScopeUser,
+		OwnerID:           ownerID,
+		Trigger:           trigger,
+		Initiator:         background.InitiatorSystem,
+		Priority:          priority,
+		Resource:          background.ResourceMediaCPU,
+		Lease:             s.backgroundOwnerLeaseProvider("media.index"),
+		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
 			seen, indexed, runErr := s.refreshMediaIndexOwnerBatch(
 				taskCtx,

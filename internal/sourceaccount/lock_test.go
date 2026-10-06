@@ -42,6 +42,9 @@ func TestAccountAdvisoryLockCoordinatesConnections(t *testing.T) {
 	if !held {
 		t.Fatal("acquired account lock was not visible through pg_locks")
 	}
+	if err := first.Heartbeat(ctx); err != nil {
+		t.Fatalf("lease heartbeat: %v", err)
+	}
 
 	if second, acquired, err := TryAcquire(ctx, db, key); err != nil {
 		t.Fatal(err)

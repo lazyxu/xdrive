@@ -146,6 +146,7 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'source_run_retention': return '同步历史清理'
     case 'cleanup_history_retention': return '清理历史保留'
     case 'storage_sample': return '存储采样'
+    case 'waiting_for_cluster_lease': return '等待其他服务器'
     case 'finished': return '完成'
     default: return phase || ''
   }

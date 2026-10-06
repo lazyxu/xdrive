@@ -165,3 +165,21 @@ test('background task controls use server capabilities and scope-aware polling',
   assert.ok(webApi.includes('controlBackgroundTask('), 'Web unified background control API missing')
   assert.ok(web.includes('api.controlBackgroundTask(id, action, global)'), 'Web background control adapter missing')
 })
+
+
+test('shared Task Center renders distributed lease deferral consistently', () => {
+  assert.ok(
+    backgroundModel.includes("case 'waiting_for_cluster_lease': return '等待其他服务器'"),
+    'shared background model must label cluster lease deferral',
+  )
+  assert.equal(
+    web.includes('waiting_for_cluster_lease'),
+    false,
+    'Web must not duplicate cluster lease wording',
+  )
+  assert.equal(
+    desktop.includes('waiting_for_cluster_lease'),
+    false,
+    'Desktop must not duplicate cluster lease wording',
+  )
+})
