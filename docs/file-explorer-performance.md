@@ -31,6 +31,38 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
 - Navigation-tree expansion loads one 200-item folder page at a time; further sibling folders require explicit load-more, while the active path child stays injected even when it lies outside the loaded page.
 
+## Measured baselines and accepted/rejected changes
+
+Only measurements produced from a stable, repeatable workload belong in this table. Complexity-only improvements without an equivalent BEFORE/AFTER timing are documented separately and must not be presented as measured speedups.
+
+| Workload | BEFORE | AFTER / Current | Result |
+| --- | ---: | ---: | --- |
+| Non-empty sparse range SQL | 2 SQL round-trips | 1 SQL round-trip | **-50% DB round-trips** |
+| Search VirtualCollection metadata, 10k logical results | 10,000 retained items | 1,000 retained items | **-90% retained metadata** |
+| Search 100k, range offset 0 | 1.586692183 s | 451.180732 ms | **-71.6% / 3.52x faster** |
+| Search 100k, range offset 50k | 1.647826274 s | 674.156893 ms | **-59.1% / 2.44x faster** |
+| Search 100k, cursor first page | 977.251868 ms | 411.109089 ms | **-57.9% / 2.38x faster** |
+| Search 100k, cursor around item 50k | 2.168573513 s | 382.454648 ms | **-82.4% / 5.67x faster** |
+| Directory 100k simple name-only fixture, first/middle | n/a | 73.981118 ms / 92.281482 ms | Healthy baseline; no production optimization |
+| Directory-sort 100k mixed-file fixture, name first/middle | n/a | 158.775298 ms / 193.732604 ms | Baseline |
+| Directory-sort 100k mixed-file fixture, updated first/middle | n/a | 150.115920 ms / 275.943830 ms | Baseline |
+| Directory-sort 100k mixed-file fixture, size first/middle | n/a | 150.348111 ms / 273.407850 ms | Baseline |
+| Directory-sort 100k mixed-file fixture, type first/middle | n/a | 273.676411 ms / 422.931606 ms | Slowest current directory sort baseline |
+
+### Rejected measured attempt: type expression index
+
+A candidate type-sort expression index was evaluated on the exact same 100k mixed-file workload before adding any production index:
+
+- index build on 100k nodes: **120.588962 ms**
+- type first range: **273.676411 ms -> 274.482786 ms** (**0.3% slower**)
+- type middle range: **422.931606 ms -> 420.332119 ms** (**0.6% faster**)
+
+This is noise-level improvement with permanent write/storage maintenance cost, so the index was **rejected** and is not part of the production schema.
+
+### Existing optimizations without comparable wall-clock BEFORE/AFTER
+
+Thumbnail queue/cache changes, Desktop binary thumbnail transport, adaptive prefetch, indexed typed-path lookup, indexed folder-upload conflict lookup, navigation-tree pagination, and several controller/projection refactors have correctness/complexity/resource regression coverage but do **not** have an equivalent wall-clock BEFORE/AFTER workload. Do not quote a timing speedup for these changes until a stable benchmark exists.
+
 ## Performance scenarios
 
 The FileExplorer performance suite should keep these workloads stable:
@@ -46,10 +78,10 @@ The FileExplorer performance suite should keep these workloads stable:
 
 ## Next work
 
-1. Benchmark candidate-first search on 100k-node namespaces and add substring-name acceleration only if the initial component scan remains hot.
-2. Benchmark server sorting by size/type on very large directories and add expression/covering indexes only when EXPLAIN shows a measurable benefit.
-3. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
-4. Add measured render/interaction budgets to CI once trace fixtures are stable enough to avoid noisy failures.
+1. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
+2. Establish a deterministic front-end CPU baseline for sparse FileExplorer projection / interaction work before attempting further renderer micro-optimizations.
+3. Add measured render/interaction budgets to CI once trace fixtures are stable enough to avoid noisy failures.
+4. Revisit directory sort indexing only if a future measured workload materially exceeds the baselines above; the first type-expression-index attempt was rejected.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
 
