@@ -112,6 +112,7 @@ import {
   type AgentUpdateState,
   type AgentServerUpdateState,
   type AgentStatus,
+  type AgentTransferLifecycleInput,
   type AgentTransfers,
 } from './agent_client.cjs'
 
@@ -2606,7 +2607,7 @@ function registerIPCHandlers() {
 
   ipcMain.handle(
     'agent:cloud-upload-file',
-    (_event, parentID: unknown, localPath: unknown, name: unknown, policy: unknown) =>
+    (_event, parentID: unknown, localPath: unknown, name: unknown, policy: unknown, transferID: unknown) =>
       runAgentAction<AgentCloudUploadResult>(async () => {
         const hello = await requireAgentLifecycle().ensureRunning()
         requireAgentCapability(hello, 'cloud-files')
@@ -2620,15 +2621,20 @@ function registerIPCHandlers() {
           !path.isAbsolute(localPath) ||
           typeof name !== 'string' ||
           !name.trim() ||
-          (policy !== 'fail' && policy !== 'skip' && policy !== 'keep_both' && policy !== 'overwrite')
+          (policy !== 'fail' && policy !== 'skip' && policy !== 'keep_both' && policy !== 'overwrite') ||
+          (transferID !== undefined && typeof transferID !== 'string')
         ) {
           throw new AgentIPCError('invalid_input', 0, 'Valid upload path, name, and conflict policy are required.')
+        }
+        if (typeof transferID === 'string' && transferID.trim()) {
+          requireAgentCapability(hello, 'transfer-lifecycle')
         }
         return requireAgentClient().cloudUploadWithConflictPolicy(
           parentID,
           path.resolve(localPath),
           name.trim(),
           policy,
+          typeof transferID === 'string' ? transferID.trim() : '',
         )
       }, false),
   )
@@ -3246,6 +3252,27 @@ function registerIPCHandlers() {
       return next
     }, false)
   })
+  ipcMain.handle('agent:transfer-lifecycle', (_event, input: unknown) =>
+    runAgentAction<{ id?: string; ok?: boolean }>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'transfer-lifecycle')
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Transfer lifecycle input is required.')
+      }
+      const action = (input as { action?: unknown }).action
+      if (
+        action !== 'start_group' &&
+        action !== 'start_child' &&
+        action !== 'begin' &&
+        action !== 'progress' &&
+        action !== 'update_group' &&
+        action !== 'finish'
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid transfer lifecycle action.')
+      }
+      return requireAgentClient().transferLifecycle(input as AgentTransferLifecycleInput)
+    }, false),
+  )
   ipcMain.handle('agent:clear-transfer-history', () => runAgentAction<AgentTransfers>(async () => {
     const next = await requireAgentClient().clearTransferHistory()
     publishAgentTransfers(next)

@@ -152,6 +152,28 @@ export type AgentTransfers = {
   transfers: AgentTransfer[]
 }
 
+export type AgentTransferLifecycleInput = {
+  action: 'start_group' | 'start_child' | 'begin' | 'progress' | 'update_group' | 'finish'
+  id?: string
+  parent_id?: string
+  file_name?: string
+  path?: string
+  relative_path?: string
+  kind?: string
+  direction?: string
+  bytes_done?: number
+  bytes_total?: number
+  items_total?: number
+  items_completed?: number
+  items_failed?: number
+  items_running?: number
+  items_queued?: number
+  scan_complete?: boolean
+  state?: 'completed' | 'partial' | 'failed' | 'cancelled'
+  error?: string
+  skipped?: boolean
+}
+
 export type AgentTransferEvent = {
   type: 'transfers.changed'
   revision: number
@@ -1402,12 +1424,14 @@ export class AgentIPCClient {
     localPath: string,
     name: string,
     conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
+    transferID = '',
   ) {
     return this.request<AgentCloudUploadResult>('POST', '/v1/cloud/upload/conflict', {
       parent_id: parentID,
       local_path: localPath,
       name,
       conflict_policy: conflictPolicy,
+      ...(transferID ? { transfer_id: transferID } : {}),
     }, 6 * 60 * 60 * 1000)
   }
 
@@ -1545,6 +1569,10 @@ export class AgentIPCClient {
 
   retryTransfer(id: string) {
     return this.request<AgentTransfers>('POST', '/v1/transfers/retry', { id }, 130_000)
+  }
+
+  transferLifecycle(input: AgentTransferLifecycleInput) {
+    return this.request<{ id?: string; ok?: boolean }>('POST', '/v1/transfers/lifecycle', input)
   }
 
   clearTransferHistory() {

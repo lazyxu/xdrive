@@ -716,6 +716,68 @@ func (c *agentController) RetryTransfer(ctx context.Context, id string) error {
 	return c.transfers.Retry(ctx, id)
 }
 
+func (c *agentController) StartTransferGroup(spec transfer.Spec) (string, error) {
+	handle := c.transfers.StartGroup(spec)
+	if handle == nil {
+		return "", errors.New("transfer manager is unavailable")
+	}
+	return handle.ID(), nil
+}
+
+func (c *agentController) StartTransferChild(parentID string, spec transfer.Spec) (string, error) {
+	handle := c.transfers.StartChildByID(parentID, spec)
+	if handle == nil {
+		return "", errors.New("transfer parent not found")
+	}
+	return handle.ID(), nil
+}
+
+func (c *agentController) BeginTransfer(id string, progress *transfer.GroupProgress) error {
+	handle := c.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	if progress != nil {
+		handle.UpdateGroup(*progress)
+	}
+	handle.SetPhase(transfer.PhaseTransferring)
+	return nil
+}
+
+func (c *agentController) ProgressTransfer(id string, done, total int64) error {
+	handle := c.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	handle.Progress(done, total)
+	return nil
+}
+
+func (c *agentController) UpdateTransferGroup(id string, progress transfer.GroupProgress) error {
+	handle := c.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	handle.UpdateGroup(progress)
+	return nil
+}
+
+func (c *agentController) FinishTransfer(id, state, message string, skipped bool) error {
+	handle := c.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	if skipped {
+		handle.CompleteSkipped()
+		return nil
+	}
+	var finishErr error
+	if strings.TrimSpace(message) != "" {
+		finishErr = errors.New(strings.TrimSpace(message))
+	}
+	return handle.Finish(state, finishErr)
+}
+
 func (c *agentController) ClearTransferHistory() (uint64, []transfer.Task) {
 	c.transfers.ClearHistory()
 	return c.transfers.Snapshot()

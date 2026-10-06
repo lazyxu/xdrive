@@ -233,6 +233,22 @@ func (m *Manager) StartGroup(spec Spec) *Handle {
 	return m.Start(spec)
 }
 
+func (m *Manager) Handle(id string) *Handle {
+	if m == nil || id == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.entries[id] == nil {
+		return nil
+	}
+	return &Handle{manager: m, id: id}
+}
+
+func (m *Manager) StartChildByID(parentID string, spec Spec) *Handle {
+	return m.StartChild(m.Handle(parentID), spec)
+}
+
 func (m *Manager) StartChild(parent *Handle, spec Spec) *Handle {
 	if m == nil || parent == nil || parent.manager != m {
 		return nil
@@ -318,6 +334,13 @@ func (h *Handle) CompleteSkipped() {
 	h.manager.finishSkipped(h.id)
 }
 
+func (h *Handle) Finish(state string, err error) error {
+	if h == nil || h.manager == nil {
+		return errors.New("transfer handle is unavailable")
+	}
+	return h.manager.finishState(h.id, state, err)
+}
+
 func (h *Handle) Fail(err error) {
 	if h == nil || h.manager == nil {
 		return
@@ -352,6 +375,28 @@ func (m *Manager) ClearHistory() {
 		return
 	}
 
+	removeRoots := make(map[string]bool)
+	activeRoots := make(map[string]bool)
+	for _, id := range m.order {
+		e := m.entries[id]
+		if e == nil {
+			continue
+		}
+		rootID := transferRootID(e.task)
+		if activeState(e.task.State) {
+			activeRoots[rootID] = true
+		}
+	}
+	for _, id := range m.order {
+		e := m.entries[id]
+		if e == nil || e.task.ID != transferRootID(e.task) {
+			continue
+		}
+		if terminalState(e.task.State) && !activeRoots[e.task.ID] {
+			removeRoots[e.task.ID] = true
+		}
+	}
+
 	kept := m.order[:0]
 	changed := false
 	for _, id := range m.order {
@@ -360,7 +405,7 @@ func (m *Manager) ClearHistory() {
 			changed = true
 			continue
 		}
-		if terminalState(e.task.State) {
+		if removeRoots[transferRootID(e.task)] {
 			delete(m.entries, id)
 			changed = true
 			continue
@@ -636,6 +681,59 @@ func (m *Manager) finishSkipped(id string) {
 	m.touchLocked()
 }
 
+func (m *Manager) finishState(id, state string, err error) error {
+	switch state {
+	case StateCompleted, StatePartial, StateFailed, StateCancelled:
+	default:
+		return fmt.Errorf("invalid terminal transfer state %q", state)
+	}
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[id]
+	if e == nil {
+		return errors.New("transfer not found")
+	}
+	e.task.State = state
+	e.task.Phase = PhaseFinalizing
+	e.task.ItemsRunning = 0
+	e.task.ItemsQueued = 0
+	if err != nil {
+		e.task.Error = err.Error()
+	} else if state == StateCompleted {
+		e.task.Error = ""
+	}
+	if e.task.Scope == ScopeItem {
+		switch state {
+		case StateCompleted:
+			e.task.ItemsCompleted = 1
+			e.task.ItemsFailed = 0
+			if e.task.BytesTotal > 0 {
+				e.task.BytesDone = e.task.BytesTotal
+				e.task.Percent = 100
+			}
+		case StateFailed:
+			e.task.ItemsCompleted = 0
+			e.task.ItemsFailed = 1
+		}
+	}
+	rateElapsed := now.Sub(e.rateStartedAt)
+	if rateElapsed > 0 {
+		rateBytes := e.task.BytesDone - e.rateBaseBytes
+		if rateBytes < 0 {
+			rateBytes = 0
+		}
+		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
+	}
+	e.task.InstantBytesPerSecond = 0
+	e.task.UpdatedAt = now
+	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
+	e.task.CompletedAt = &now
+	m.trimLocked()
+	m.touchLocked()
+	return nil
+}
+
 func (m *Manager) finish(id string, err error) {
 	now := time.Now()
 	m.mu.Lock()
@@ -695,25 +793,65 @@ func (m *Manager) snapshotLocked() []Task {
 }
 
 func (m *Manager) trimLocked() {
-	if m.limit <= 0 || len(m.order) <= m.limit {
+	if m.limit <= 0 || len(m.order) == 0 {
 		return
 	}
-	for len(m.order) > m.limit {
-		remove := -1
-		for i, id := range m.order {
+	for {
+		rootOrder := make([]string, 0, len(m.order))
+		seen := make(map[string]bool)
+		activeRoots := make(map[string]bool)
+		for _, id := range m.order {
 			e := m.entries[id]
-			if e == nil || !activeState(e.task.State) {
-				remove = i
+			if e == nil {
+				continue
+			}
+			rootID := transferRootID(e.task)
+			if !seen[rootID] {
+				seen[rootID] = true
+				rootOrder = append(rootOrder, rootID)
+			}
+			if activeState(e.task.State) {
+				activeRoots[rootID] = true
+			}
+		}
+		if len(rootOrder) <= m.limit {
+			return
+		}
+
+		removeRoot := ""
+		for _, rootID := range rootOrder {
+			root := m.entries[rootID]
+			if root == nil {
+				removeRoot = rootID
+				break
+			}
+			if terminalState(root.task.State) && !activeRoots[rootID] {
+				removeRoot = rootID
 				break
 			}
 		}
-		if remove < 0 {
+		if removeRoot == "" {
 			return
 		}
-		id := m.order[remove]
-		delete(m.entries, id)
-		m.order = append(m.order[:remove], m.order[remove+1:]...)
+
+		kept := m.order[:0]
+		for _, id := range m.order {
+			e := m.entries[id]
+			if e == nil || transferRootID(e.task) == removeRoot {
+				delete(m.entries, id)
+				continue
+			}
+			kept = append(kept, id)
+		}
+		m.order = kept
 	}
+}
+
+func transferRootID(task Task) string {
+	if task.RootID != "" {
+		return task.RootID
+	}
+	return task.ID
 }
 
 func (m *Manager) touchLocked() {

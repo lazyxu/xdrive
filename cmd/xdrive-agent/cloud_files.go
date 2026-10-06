@@ -410,6 +410,26 @@ func (c *agentController) CloudUploadWithConflictPolicy(
 	parentID uint64,
 	localPath, name, conflictPolicy string,
 ) (agentCloudUploadResult, error) {
+	return c.cloudUploadWithConflictPolicyTracked(
+		ctx, parentID, localPath, name, conflictPolicy, "",
+	)
+}
+
+func (c *agentController) CloudUploadWithConflictPolicyTracked(
+	ctx context.Context,
+	parentID uint64,
+	localPath, name, conflictPolicy, transferID string,
+) (agentCloudUploadResult, error) {
+	return c.cloudUploadWithConflictPolicyTracked(
+		ctx, parentID, localPath, name, conflictPolicy, strings.TrimSpace(transferID),
+	)
+}
+
+func (c *agentController) cloudUploadWithConflictPolicyTracked(
+	ctx context.Context,
+	parentID uint64,
+	localPath, name, conflictPolicy, transferID string,
+) (agentCloudUploadResult, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return agentCloudUploadResult{}, err
@@ -435,25 +455,52 @@ func (c *agentController) CloudUploadWithConflictPolicy(
 	default:
 		return agentCloudUploadResult{}, fmt.Errorf("invalid upload conflict policy %q", conflictPolicy)
 	}
-	handle, progress := startAgentCloudTransfer(
-		c.transfers,
-		transfer.KindUpload,
-		"upload",
-		name,
-		localPath,
-		info.Size(),
-	)
+
+	var handle *transfer.Handle
+	var progress func(done, total int64)
+	managedExternally := transferID != ""
+	if managedExternally {
+		handle = c.transfers.Handle(transferID)
+		if handle == nil {
+			return agentCloudUploadResult{}, fmt.Errorf("transfer child not found")
+		}
+		first := true
+		progress = func(done, total int64) {
+			if first {
+				first = false
+				handle.Baseline(done, total)
+				return
+			}
+			handle.Progress(done, total)
+		}
+	} else {
+		handle, progress = startAgentCloudTransfer(
+			c.transfers,
+			transfer.KindUpload,
+			"upload",
+			name,
+			localPath,
+			info.Size(),
+		)
+	}
+
 	result, err := cli.UploadFileResumableWithConflictPolicyResult(
 		ctx, parentID, localPath, name, policy, progress,
 	)
 	if err != nil {
-		finishAgentCloudTransfer(handle, err)
+		if !managedExternally {
+			finishAgentCloudTransfer(handle, err)
+		}
 		return agentCloudUploadResult{}, err
 	}
-	if result.Skipped {
-		handle.CompleteSkipped()
-	} else {
-		finishAgentCloudTransfer(handle, nil)
+	if !managedExternally {
+		if result.Skipped {
+			handle.CompleteSkipped()
+		} else {
+			finishAgentCloudTransfer(handle, nil)
+		}
+	}
+	if !result.Skipped {
 		c.requestCloudSync(cfg)
 	}
 	return agentCloudUploadResult{

@@ -162,6 +162,28 @@ declare global {
     transfers: AgentTransfer[]
   }
 
+  type AgentTransferLifecycleInput = {
+    action: 'start_group' | 'start_child' | 'begin' | 'progress' | 'update_group' | 'finish'
+    id?: string
+    parent_id?: string
+    file_name?: string
+    path?: string
+    relative_path?: string
+    kind?: string
+    direction?: string
+    bytes_done?: number
+    bytes_total?: number
+    items_total?: number
+    items_completed?: number
+    items_failed?: number
+    items_running?: number
+    items_queued?: number
+    scan_complete?: boolean
+    state?: 'completed' | 'partial' | 'failed' | 'cancelled'
+    error?: string
+    skipped?: boolean
+  }
+
   type AgentStorageTreeNode = {
     path: string
     name: string
@@ -442,6 +464,7 @@ declare global {
           parentID: number,
           file: File,
           conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
+          transferID?: string,
         ) => Promise<DesktopResult<AgentCloudUploadResult>>
         cloudUploadFiles: (parentID: number) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
         cloudUploadDroppedFiles: (parentID: number, files: File[]) => Promise<DesktopResult<AgentCloudUploadBatchResult>>
@@ -500,6 +523,7 @@ declare global {
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>
         retryTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
+        transferLifecycle: (input: AgentTransferLifecycleInput) => Promise<DesktopResult<{ id?: string; ok?: boolean }>>
         clearTransferHistory: () => Promise<DesktopResult<AgentTransfers>>
         openFolder: () => Promise<DesktopResult<{ ok: boolean }>>
         onState: (callback: (state: AgentConnectionState) => void) => () => void

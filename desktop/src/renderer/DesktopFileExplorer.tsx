@@ -26,6 +26,7 @@ import {
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
+  xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
 } from '@xdrive/ui/mui'
 import type {
@@ -63,6 +64,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported = false,
   quickAccessSupported = false,
   recentSupported = false,
+  transferLifecycleSupported = false,
   onError,
   onFeedback,
 }: {
@@ -90,6 +92,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported?: boolean
   quickAccessSupported?: boolean
   recentSupported?: boolean
+  transferLifecycleSupported?: boolean
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
@@ -231,25 +234,109 @@ export default function DesktopFileExplorer({
     busy: uploadBusy,
     busyAction: uploadBusyAction,
     runTargets: runUploadTargets,
+    runGroup: runUploadGroup,
     dialogProps: uploadConflictDialogProps,
   } = useXDriveFileExplorerUploadController<File>({
     disabled: Boolean(actionBusy),
     continueOnUploadError: true,
     fileName: (file) => file.name,
+    fileSize: (file) => file.size,
     preflight: async (parentID, file) => {
       const result = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    upload: async (parentID, file, conflictPolicy) => {
+    upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
       const result = await window.xdriveDesktop.agent.cloudUploadFile(
         parentID,
         file,
         conflictPolicy,
+        transferID,
       )
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    transferLifecycle: transferLifecycleSupported ? {
+      startGroup: async (input) => {
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'start_group',
+          file_name: input.fileName,
+          path: input.path,
+          kind: 'upload',
+          direction: 'upload',
+          bytes_total: input.bytesTotal,
+          items_total: input.itemsTotal,
+        })
+        if (!result.ok || !result.data.id) throw new Error(result.ok ? '未创建传输父任务。' : result.error.message)
+        return result.data.id
+      },
+      startChild: async (groupID, input) => {
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'start_child',
+          parent_id: groupID,
+          file_name: input.fileName,
+          relative_path: input.relativePath,
+          kind: 'upload',
+          direction: 'upload',
+          bytes_total: input.bytesTotal,
+          items_total: 1,
+        })
+        if (!result.ok || !result.data.id) throw new Error(result.ok ? '未创建传输子任务。' : result.error.message)
+        return result.data.id
+      },
+      begin: async (id, input) => {
+        const group = input?.group
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'begin',
+          id,
+          ...(group ? {
+            scan_complete: group.scanComplete,
+            bytes_done: group.bytesDone,
+            bytes_total: group.bytesTotal,
+            items_total: group.itemsTotal,
+            items_completed: group.itemsCompleted,
+            items_failed: group.itemsFailed,
+            items_running: group.itemsRunning,
+            items_queued: group.itemsQueued,
+          } : {}),
+        })
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      progress: async (id, done, total) => {
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'progress',
+          id,
+          bytes_done: done,
+          bytes_total: total,
+        })
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      updateGroup: async (id, group) => {
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'update_group',
+          id,
+          scan_complete: group.scanComplete,
+          bytes_done: group.bytesDone,
+          bytes_total: group.bytesTotal,
+          items_total: group.itemsTotal,
+          items_completed: group.itemsCompleted,
+          items_failed: group.itemsFailed,
+          items_running: group.itemsRunning,
+          items_queued: group.itemsQueued,
+        })
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      finish: async (id, input) => {
+        const result = await window.xdriveDesktop.agent.transferLifecycle({
+          action: 'finish',
+          id,
+          state: input.state,
+          error: input.error,
+          skipped: input.skipped,
+        })
+        if (!result.ok) throw new Error(result.error.message)
+      },
+    } : undefined,
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
     onFeedback,
   })
@@ -349,7 +436,7 @@ export default function DesktopFileExplorer({
     }
   }
 
-  type DesktopUploadTarget = { parentID: number; file: File }
+  type DesktopUploadTarget = { parentID: number; file: File; relativePath?: string }
 
   const uploadConflictAwareTargets = async (
     resolveTargets: () => Promise<readonly DesktopUploadTarget[]>,
@@ -414,20 +501,33 @@ export default function DesktopFileExplorer({
 
   const uploadFolderFiles = async (files: File[]) => {
     if (!current || files.length === 0 || !uploadConflictSupported) return
-    await uploadConflictAwareTargets(
-      async () => {
-        const targets = await resolveFolderUploadTargets(
-          current.id,
-          files.map((file) => ({
-            file,
-            relativePath: file.webkitRelativePath || file.name,
-          })),
-        )
-        return targets.map(({ parentID, file }) => ({ parentID, file }))
-      },
-      'upload-folder',
-      true,
+    const entries = files.map((file) => ({
+      file,
+      relativePath: file.webkitRelativePath || file.name,
+    }))
+    const label = xDriveFileExplorerUploadGroupLabel(
+      entries,
+      (file) => file.name,
     )
+    const result = await runUploadGroup({
+      label,
+      path: label,
+      action: 'upload-folder',
+      itemsTotal: entries.length,
+      bytesTotal: entries.reduce((sum, entry) => sum + Math.max(0, entry.file.size), 0),
+      resolveTargets: async () => {
+        const targets = await resolveFolderUploadTargets(current.id, entries)
+        return targets.map(({ parentID, file, relativePath }) => ({
+          parentID,
+          file,
+          relativePath,
+        }))
+      },
+    })
+    if ((result.uploaded > 0 || result.skipped > 0) && current) {
+      await onLoadDirectory(current.id, crumbs, sort)
+    }
+    if (result.uploaded > 0) await onQuotaChanged()
   }
 
   const uploadFiles = async () => {
@@ -606,22 +706,33 @@ export default function DesktopFileExplorer({
         setActionBusy('')
       }
     },
-    uploadFolderEntriesToParent: (parentID, payload) => uploadConflictAwareTargets(
-      async () => {
-        const targets = await resolveFolderUploadTargets(
-          parentID,
-          payload.files,
-          payload.directories,
-        )
-        return targets.map(({ parentID: targetParentID, file }) => ({
-          parentID: targetParentID,
-          file,
-        }))
-      },
-      'drop-upload',
-      true,
-      false,
-    ),
+    uploadFolderEntriesToParent: async (parentID, payload) => {
+      const label = xDriveFileExplorerUploadGroupLabel(
+        payload.files,
+        (file) => file.name,
+      )
+      const result = await runUploadGroup({
+        label,
+        path: label,
+        action: 'drop-upload',
+        itemsTotal: payload.files.length,
+        bytesTotal: payload.files.reduce((sum, entry) => sum + Math.max(0, entry.file.size), 0),
+        resolveTargets: async () => {
+          const targets = await resolveFolderUploadTargets(
+            parentID,
+            payload.files,
+            payload.directories,
+          )
+          return targets.map(({ parentID: targetParentID, file, relativePath }) => ({
+            parentID: targetParentID,
+            file,
+            relativePath,
+          }))
+        },
+      })
+      if (result.uploaded > 0) await onQuotaChanged()
+      return result.uploaded > 0 || result.skipped > 0
+    },
     refreshDirectory: onLoadDirectory,
   })
 

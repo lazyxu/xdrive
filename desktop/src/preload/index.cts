@@ -224,12 +224,14 @@ const agent = Object.freeze({
     parentID: number,
     file: unknown,
     conflictPolicy: 'fail' | 'skip' | 'keep_both' | 'overwrite',
+    transferID = '',
   ) => ipcRenderer.invoke(
     'agent:cloud-upload-file',
     parentID,
     webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),
     (file as { name?: string }).name || '',
     conflictPolicy,
+    transferID,
   ),
   cloudUploadFiles: (parentID: number) => ipcRenderer.invoke('agent:cloud-upload-files', parentID),
   cloudUploadDroppedFiles: (parentID: number, files: unknown[]) => ipcRenderer.invoke(
@@ -296,6 +298,7 @@ const agent = Object.freeze({
   openConflict: (id: string, both = false) => ipcRenderer.invoke('agent:open-conflict', id, both),
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),
   retryTransfer: (id: string) => ipcRenderer.invoke('agent:retry-transfer', id),
+  transferLifecycle: (input: unknown) => ipcRenderer.invoke('agent:transfer-lifecycle', input),
   clearTransferHistory: () => ipcRenderer.invoke('agent:clear-transfer-history'),
   openFolder: () => ipcRenderer.invoke('agent:open-folder'),
   onState: (callback: (state: unknown) => void) => {

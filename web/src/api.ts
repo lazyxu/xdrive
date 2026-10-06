@@ -217,6 +217,52 @@ export class XDriveApi {
     webTransferStore.clearHistory()
   }
 
+  startTransferGroup(input: {
+    fileName: string
+    path?: string
+    bytesTotal: number
+    itemsTotal: number
+  }) {
+    return webTransferStore.startGroup(input)
+  }
+
+  startTransferChild(groupID: string, input: {
+    fileName: string
+    relativePath: string
+    bytesTotal: number
+  }) {
+    return webTransferStore.startChild(groupID, input)
+  }
+
+  beginTransfer(id: string) {
+    webTransferStore.begin(id)
+  }
+
+  progressTransfer(id: string, bytesDone: number, bytesTotal: number) {
+    webTransferStore.progress(id, bytesDone, bytesTotal)
+  }
+
+  updateTransferGroup(id: string, progress: {
+    scanComplete: boolean
+    bytesDone: number
+    bytesTotal: number
+    itemsTotal: number
+    itemsCompleted: number
+    itemsFailed: number
+    itemsRunning: number
+    itemsQueued: number
+  }) {
+    webTransferStore.updateGroup(id, progress)
+  }
+
+  finishTransfer(id: string, input: {
+    state: 'completed' | 'partial' | 'failed' | 'cancelled'
+    error?: string
+    skipped?: boolean
+  }) {
+    webTransferStore.finishLifecycle(id, input)
+  }
+
   clearFileOperationHistory() {
     return this.request<void>('/api/v1/file-operations', {
       method: 'DELETE',
@@ -985,15 +1031,17 @@ export class XDriveApi {
     file: File,
     conflictPolicy: XDriveUploadConflictPolicy,
     onProgress?: (percent: number) => void,
+    transferID = '',
   ): Promise<XDriveUploadResult> {
-    const transferID = webTransferStore.create({
+    const managedExternally = Boolean(transferID)
+    const activeTransferID = transferID || webTransferStore.create({
       fileName: file.name,
       path: file.name,
       kind: 'upload',
       bytesTotal: file.size,
     })
     const reportProgress = (completed: number) => {
-      webTransferStore.progress(transferID, completed, file.size)
+      if (!managedExternally) webTransferStore.progress(activeTransferID, completed, file.size)
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
     }
 
@@ -1026,12 +1074,12 @@ export class XDriveApi {
         }),
       })
       if (session.status === 'skipped' && session.result) {
-        webTransferStore.completeSkipped(transferID, file.size)
+        if (!managedExternally) webTransferStore.completeSkipped(activeTransferID, file.size)
         return { node: session.result, skipped: true, transferred_bytes: 0 }
       }
       if (session.status === 'finalized' && session.result) {
         reportProgress(file.size)
-        webTransferStore.complete(transferID, file.size, file.size)
+        if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
         return { node: session.result, skipped: false, transferred_bytes: 0 }
       }
 
@@ -1066,14 +1114,14 @@ export class XDriveApi {
       })
       if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
       reportProgress(file.size)
-      webTransferStore.complete(transferID, file.size, file.size)
+      if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
       return {
         node: finalized.result,
         skipped: finalized.status === 'skipped',
         transferred_bytes: transferredBytes,
       }
     } catch (error) {
-      webTransferStore.fail(transferID, error)
+      if (!managedExternally) webTransferStore.fail(activeTransferID, error)
       throw error
     }
   }

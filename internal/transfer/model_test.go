@@ -3,6 +3,7 @@ package transfer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -288,5 +289,157 @@ func TestHierarchicalTransferHistoryTreatsQueuedAndCancellingAsActive(t *testing
 		if terminalState(task.State) {
 			t.Fatalf("terminal transfer survived history clear: %+v", task)
 		}
+	}
+}
+
+func TestManagerLifecycleByIDAndGroupTerminalStates(t *testing.T) {
+	m := NewManager(20)
+	group := m.StartGroup(Spec{
+		FileName:   "Photos",
+		Kind:       KindUpload,
+		Direction:  "upload",
+		TotalBytes: 300,
+		TotalItems: 2,
+	})
+	if group == nil {
+		t.Fatal("group handle is nil")
+	}
+	child := m.StartChildByID(group.ID(), Spec{
+		FileName:     "a.jpg",
+		RelativePath: "Photos/a.jpg",
+		Kind:         KindUpload,
+		Direction:    "upload",
+		Phase:        PhaseQueued,
+		TotalBytes:   100,
+	})
+	if child == nil {
+		t.Fatal("child by id is nil")
+	}
+	recovered := m.Handle(child.ID())
+	if recovered == nil || recovered.ID() != child.ID() {
+		t.Fatalf("manager did not recover handle by id: %+v", recovered)
+	}
+	recovered.SetPhase(PhaseTransferring)
+	recovered.Progress(40, 100)
+	if err := recovered.Finish(StateCompleted, nil); err != nil {
+		t.Fatal(err)
+	}
+	group.UpdateGroup(GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      40,
+		BytesTotal:     300,
+		TotalItems:     2,
+		CompletedItems: 1,
+		FailedItems:    1,
+	})
+	if err := group.Finish(StatePartial, errors.New("one child failed")); err != nil {
+		t.Fatal(err)
+	}
+	_, tasks := m.Snapshot()
+	byID := map[string]Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	if got := byID[group.ID()]; got.State != StatePartial || got.CompletedAt == nil || got.Error != "one child failed" {
+		t.Fatalf("unexpected partial group: %+v", got)
+	}
+	if got := byID[child.ID()]; got.State != StateCompleted || got.BytesDone != 100 || got.ItemsCompleted != 1 {
+		t.Fatalf("unexpected completed child: %+v", got)
+	}
+
+	cancelled := m.StartGroup(Spec{FileName: "Cancelled", Kind: KindUpload, Direction: "upload"})
+	if err := cancelled.Finish(StateCancelled, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, tasks = m.Snapshot()
+	byID = map[string]Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	if got := byID[cancelled.ID()]; got.State != StateCancelled || got.CompletedAt == nil {
+		t.Fatalf("unexpected cancelled group: %+v", got)
+	}
+	if err := group.Finish(StateRunning, nil); err == nil {
+		t.Fatal("expected invalid non-terminal finish state to fail")
+	}
+}
+
+func TestManagerHistoryLimitCountsRootTransfersNotChildren(t *testing.T) {
+	m := NewManager(2)
+	group := m.StartGroup(Spec{FileName: "folder", Kind: KindUpload, Direction: "upload"})
+	for i := 0; i < 250; i++ {
+		child := m.StartChildByID(group.ID(), Spec{
+			FileName:     fmt.Sprintf("file-%03d.bin", i),
+			RelativePath: fmt.Sprintf("folder/file-%03d.bin", i),
+			Kind:         KindUpload,
+			Direction:    "upload",
+			Phase:        PhaseQueued,
+			TotalBytes:   1,
+		})
+		if child == nil {
+			t.Fatalf("child %d is nil", i)
+		}
+		child.SetPhase(PhaseTransferring)
+		child.Complete()
+	}
+	other := m.Start(Spec{FileName: "other", Kind: KindUpload, Direction: "upload"})
+	other.Complete()
+
+	_, tasks := m.Snapshot()
+	if len(tasks) != 252 {
+		t.Fatalf("active group children must not be trimmed by flat task count: got=%d", len(tasks))
+	}
+
+	group.UpdateGroup(GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      250,
+		BytesTotal:     250,
+		TotalItems:     250,
+		CompletedItems: 250,
+	})
+	if err := group.Finish(StateCompleted, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	third := m.Start(Spec{FileName: "third", Kind: KindUpload, Direction: "upload"})
+	third.Complete()
+	_, tasks = m.Snapshot()
+	rootIDs := map[string]bool{}
+	for _, task := range tasks {
+		rootIDs[transferRootID(task)] = true
+	}
+	if len(rootIDs) != 2 || !rootIDs[other.ID()] || !rootIDs[third.ID()] {
+		t.Fatalf("history limit must evict one whole oldest root tree: roots=%v tasks=%d", rootIDs, len(tasks))
+	}
+}
+
+func TestManagerClearHistoryKeepsCompletedChildrenOfActiveGroup(t *testing.T) {
+	m := NewManager(10)
+	group := m.StartGroup(Spec{FileName: "folder", Kind: KindUpload, Direction: "upload"})
+	child := m.StartChildByID(group.ID(), Spec{
+		FileName: "done.bin", Kind: KindUpload, Direction: "upload", Phase: PhaseQueued,
+	})
+	child.SetPhase(PhaseTransferring)
+	child.Complete()
+
+	m.ClearHistory()
+	_, tasks := m.Snapshot()
+	byID := map[string]Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	if byID[group.ID()].ID == "" || byID[child.ID()].ID == "" {
+		t.Fatalf("active group tree was fragmented by clear history: %+v", tasks)
+	}
+
+	if err := group.Finish(StateCompleted, nil); err != nil {
+		t.Fatal(err)
+	}
+	m.ClearHistory()
+	_, tasks = m.Snapshot()
+	if len(tasks) != 0 {
+		t.Fatalf("completed group tree survived history clear: %+v", tasks)
 	}
 }

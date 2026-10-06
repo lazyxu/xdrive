@@ -215,7 +215,14 @@ export function xDriveTransferAggregateBytes(
       total: Math.max(0, task.bytes_total || 0),
     }
   }
-  const done = children.reduce((sum, child) => sum + Math.max(0, child.bytes_done || 0), 0)
+  const done = children.reduce((sum, child) => {
+    const childTotal = Math.max(0, child.bytes_total || 0)
+    const childDone = Math.max(0, child.bytes_done || 0)
+    const processedDone = child.state === 'completed' && child.percent >= 100
+      ? Math.max(childDone, childTotal)
+      : childDone
+    return sum + processedDone
+  }, 0)
   const total = children.reduce((sum, child) => sum + Math.max(0, child.bytes_total || 0), 0)
   return {
     done: Math.max(done, task.bytes_done || 0),

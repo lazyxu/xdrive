@@ -457,6 +457,14 @@ func (f *fakeDesktopIPCController) CloudUploadWithConflictPolicy(
 	return agentCloudUploadResult{Node: f.cloudUploaded, TransferredBytes: 12}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudUploadWithConflictPolicyTracked(
+	_ context.Context,
+	parentID uint64,
+	localPath, name, policy, _ string,
+) (agentCloudUploadResult, error) {
+	return f.CloudUploadWithConflictPolicy(context.Background(), parentID, localPath, name, policy)
+}
+
 func (f *fakeDesktopIPCController) CloudUpload(_ context.Context, parentID uint64, localPath, name string) (client.Node, error) {
 	f.cloudUploadParent, f.cloudUploadPath, f.cloudUploadName = parentID, localPath, name
 	return f.cloudUploaded, f.err
@@ -959,6 +967,86 @@ func (f *fakeDesktopIPCController) RetryTransfer(ctx context.Context, id string)
 		return errors.New("transfer manager unavailable")
 	}
 	return f.transfers.Retry(ctx, id)
+}
+
+func (f *fakeDesktopIPCController) StartTransferGroup(spec transfer.Spec) (string, error) {
+	if f.transfers == nil {
+		return "", errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.StartGroup(spec)
+	if handle == nil {
+		return "", errors.New("transfer manager unavailable")
+	}
+	return handle.ID(), nil
+}
+
+func (f *fakeDesktopIPCController) StartTransferChild(parentID string, spec transfer.Spec) (string, error) {
+	if f.transfers == nil {
+		return "", errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.StartChildByID(parentID, spec)
+	if handle == nil {
+		return "", errors.New("transfer parent not found")
+	}
+	return handle.ID(), nil
+}
+
+func (f *fakeDesktopIPCController) BeginTransfer(id string, progress *transfer.GroupProgress) error {
+	if f.transfers == nil {
+		return errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	if progress != nil {
+		handle.UpdateGroup(*progress)
+	}
+	handle.SetPhase(transfer.PhaseTransferring)
+	return nil
+}
+
+func (f *fakeDesktopIPCController) ProgressTransfer(id string, done, total int64) error {
+	if f.transfers == nil {
+		return errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	handle.Progress(done, total)
+	return nil
+}
+
+func (f *fakeDesktopIPCController) UpdateTransferGroup(id string, progress transfer.GroupProgress) error {
+	if f.transfers == nil {
+		return errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	handle.UpdateGroup(progress)
+	return nil
+}
+
+func (f *fakeDesktopIPCController) FinishTransfer(id, state, message string, skipped bool) error {
+	if f.transfers == nil {
+		return errors.New("transfer manager unavailable")
+	}
+	handle := f.transfers.Handle(id)
+	if handle == nil {
+		return errors.New("transfer not found")
+	}
+	if skipped {
+		handle.CompleteSkipped()
+		return nil
+	}
+	var err error
+	if message != "" {
+		err = errors.New(message)
+	}
+	return handle.Finish(state, err)
 }
 
 func (f *fakeDesktopIPCController) ClearTransferHistory() (uint64, []transfer.Task) {
