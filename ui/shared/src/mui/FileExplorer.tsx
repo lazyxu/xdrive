@@ -340,6 +340,13 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
   }
 }
 
+export function xDriveFileExplorerLoadMorePrefetchDistance(viewportHeight: number) {
+  return Math.max(
+    fileExplorerLoadMorePrefetchMinimum,
+    Math.ceil(Math.max(0, viewportHeight) * fileExplorerLoadMorePrefetchViewportMultiplier),
+  )
+}
+
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
   const fileKind = xDriveFileKind(name, kind)
   return fileKind === 'image' || fileKind === 'video'
@@ -606,6 +613,8 @@ const detailsCompactRowHeight = 30
 const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
+const fileExplorerLoadMorePrefetchViewportMultiplier = 1.5
+const fileExplorerLoadMorePrefetchMinimum = 500
 const gridVirtualizationThreshold = 400
 const gridOverscanRows = 3
 const muiSpacingPixel = 8
@@ -2350,11 +2359,12 @@ export function XDriveFileExplorer({
         scrollFrameRef.current = window.requestAnimationFrame(updateVirtualWindow)
       }
     }
+    const loadMorePrefetchDistance = xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)
     if (
       hasMore &&
       !loadingMore &&
       onLoadMore &&
-      host.scrollHeight - host.scrollTop - host.clientHeight <= 500
+      host.scrollHeight - host.scrollTop - host.clientHeight <= loadMorePrefetchDistance
     ) {
       onLoadMore()
     }

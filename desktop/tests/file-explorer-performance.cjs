@@ -242,3 +242,13 @@ test('FileExplorer folder uploads reuse existing directories with indexed name l
   assert.equal(desktop.includes('listChildren: async (id) =>'), false, 'Desktop folder upload must not use the legacy full children list')
   assert.ok(childrenPagination.includes('lower(xd_nodes.name) = lower(?)'), 'server folded-name lookup must use the sibling-name index expression')
 })
+
+
+test('FileExplorer prefetches the next page before fast scrolling reaches the bottom', () => {
+  assert.ok(shared.includes('const fileExplorerLoadMorePrefetchViewportMultiplier = 1.5'), 'viewport prefetch multiplier is missing')
+  assert.ok(shared.includes('const fileExplorerLoadMorePrefetchMinimum = 500'), 'minimum prefetch distance is missing')
+  assert.ok(shared.includes('export function xDriveFileExplorerLoadMorePrefetchDistance(viewportHeight: number)'), 'prefetch distance helper is missing')
+  assert.ok(shared.includes('Math.ceil(Math.max(0, viewportHeight) * fileExplorerLoadMorePrefetchViewportMultiplier)'), 'prefetch distance must scale with viewport height')
+  assert.ok(shared.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'), 'scroll pagination must use the adaptive prefetch distance')
+  assert.equal(shared.includes('host.scrollHeight - host.scrollTop - host.clientHeight <= 500'), false, 'scroll pagination must not keep the fixed 500px threshold')
+})
