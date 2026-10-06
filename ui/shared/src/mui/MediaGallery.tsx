@@ -49,6 +49,13 @@ import {
 import type { MediaGalleryFilterDraft } from './MediaGalleryFilters'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsDialog } from './MediaGalleryDetails'
+import { XDriveFilePreviewSurface } from './FilePreviewSurface'
+import type {
+  XDriveFilePreviewImageLoader,
+  XDriveFilePreviewURLLoader,
+} from './FilePreviewSurface'
+import { XDriveLivePhotoSurface } from './LivePhotoSurface'
+import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
 import {
   XDriveMediaAsyncThumbnail,
   XDriveMediaAsyncVideoPoster,
@@ -1042,6 +1049,7 @@ type MediaTileProps = {
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
+  onPreview: (item: MediaItem) => void
   onToggleFavorite: (item: MediaItem) => void
 }
 
@@ -1052,16 +1060,43 @@ function MediaTile({
   onSetFavorite,
   onSetCover,
   onOpen,
+  onPreview,
   onToggleFavorite,
 }: MediaTileProps) {
   const video = item.metadata.media_kind === 'video'
   const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+  const clickTimerRef = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
+  }, [])
+
+  const openDetails = () => {
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null
+      onOpen(item)
+    }, 350)
+  }
+
+  const openPreview = () => {
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    onPreview(item)
+  }
+
   return (
     <Paper
       variant="outlined"
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(item)}
+      onClick={openDetails}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        openPreview()
+      }}
       onKeyDown={(event) => keyboardActivate(event, () => onOpen(item))}
       sx={{
         position: 'relative',
@@ -1101,6 +1136,7 @@ function MediaTile({
               event.stopPropagation()
               onToggleFavorite(item)
             }}
+            onDoubleClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
             sx={{
               position: 'absolute',
@@ -1136,6 +1172,7 @@ function MediaTile({
             event.stopPropagation()
             onSetCover(item)
           }}
+          onDoubleClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
           sx={{
             position: 'absolute',
@@ -1181,6 +1218,7 @@ function MediaTileGrid({
   onSetFavorite,
   onSetCover,
   onOpen,
+  onPreview,
   onToggleFavorite,
 }: {
   items: MediaItem[]
@@ -1189,6 +1227,7 @@ function MediaTileGrid({
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
+  onPreview: (item: MediaItem) => void
   onToggleFavorite: (item: MediaItem) => void
 }) {
   return (
@@ -1208,6 +1247,7 @@ function MediaTileGrid({
           onSetFavorite={onSetFavorite}
           onSetCover={onSetCover}
           onOpen={onOpen}
+          onPreview={onPreview}
           onToggleFavorite={onToggleFavorite}
         />
       ))}
@@ -1256,6 +1296,7 @@ export function XDriveMediaGallery({
   onRefresh,
 }: XDriveMediaGalleryProps) {
   const [selected, setSelected] = useState<MediaItem | null>(null)
+  const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [viewMode, setViewMode] = useState<MediaGalleryViewMode>('grid')
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
@@ -1297,6 +1338,42 @@ export function XDriveMediaGallery({
 
   const timelineGroups = useMemo(() => mediaTimelineGroups(items), [items])
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
+  const openMediaPreview = useCallback((item: MediaItem) => setPreviewItem(item), [])
+  const previewIndex = previewItem
+    ? items.findIndex((item) => item.node.id === previewItem.node.id)
+    : -1
+  const previewLivePhoto = Boolean(previewItem?.live_photo || previewItem?.asset_kind === 'live_photo')
+  const previewTarget = useMemo(() => (
+    previewItem
+      ? {
+          id: previewItem.node.id,
+          name: previewItem.node.name,
+          kind: 'file' as const,
+          mimeType: previewItem.metadata.mime_type,
+          size: previewItem.node.size,
+          revision: previewItem.node.revision,
+        }
+      : null
+  ), [
+    previewItem?.node.id,
+    previewItem?.node.name,
+    previewItem?.node.revision,
+    previewItem?.node.size,
+    previewItem?.metadata.mime_type,
+  ])
+  const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
+    if (!previewItem || !loadPreviewURL || (kind !== 'image' && kind !== 'video')) return null
+    return loadPreviewURL(previewItem.node.id, kind)
+  }, [loadPreviewURL, previewItem?.node.id])
+  const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
+    if (!previewItem?.metadata.has_thumbnail) return null
+    return loadThumbnail(previewItem.node.id)
+  }, [loadThumbnail, previewItem?.metadata.has_thumbnail, previewItem?.node.id])
+  const loadOpenLivePhotoMotion = useCallback(async () => {
+    if (!previewItem || !loadLivePhotoMotion) return null
+    return loadLivePhotoMotion(previewItem.node.id)
+  }, [loadLivePhotoMotion, previewItem?.node.id])
+
   const toggleMediaFavorite = useCallback((item: MediaItem) => {
     void toggleFavorite(item).catch(() => undefined)
   }, [toggleFavorite])
@@ -1851,6 +1928,7 @@ export function XDriveMediaGallery({
                       : undefined
                   }
                   onOpen={openMediaItem}
+                  onPreview={openMediaPreview}
                   onToggleFavorite={toggleMediaFavorite}
                 />
               </Box>
@@ -1868,6 +1946,7 @@ export function XDriveMediaGallery({
                 : undefined
             }
             onOpen={openMediaItem}
+            onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}
           />
         )}
@@ -1880,6 +1959,52 @@ export function XDriveMediaGallery({
           </Button>
         </Box>
       ) : null}
+
+      <XDriveOpenPreviewDialog
+        open={Boolean(previewItem)}
+        title={previewItem?.node.name ?? ''}
+        positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${items.length}` : undefined}
+        canPrevious={previewIndex > 0}
+        canNext={previewIndex >= 0 && previewIndex < items.length - 1}
+        onPrevious={() => {
+          if (previewIndex > 0) setPreviewItem(items[previewIndex - 1])
+        }}
+        onNext={() => {
+          if (previewIndex >= 0 && previewIndex < items.length - 1) {
+            setPreviewItem(items[previewIndex + 1])
+          }
+        }}
+        onClose={() => setPreviewItem(null)}
+      >
+        {previewItem ? (
+          previewLivePhoto && loadLivePhotoMotion ? (
+            <XDriveLivePhotoSurface
+              key={previewItem.node.id}
+              label={previewItem.node.name}
+              loadMotion={loadOpenLivePhotoMotion}
+              still={(
+                <XDriveFilePreviewSurface
+                  target={previewTarget}
+                  loadPreviewURL={loadOpenPreview}
+                  loadImagePreview={loadOpenThumbnail}
+                  fallback={xDriveMediaFallback(previewItem.metadata.media_kind)}
+                  minHeight={320}
+                  maxHeight={760}
+                />
+              )}
+            />
+          ) : (
+            <XDriveFilePreviewSurface
+              target={previewTarget}
+              loadPreviewURL={loadOpenPreview}
+              loadImagePreview={loadOpenThumbnail}
+              fallback={xDriveMediaFallback(previewItem.metadata.media_kind)}
+              minHeight={320}
+              maxHeight={760}
+            />
+          )
+        ) : null}
+      </XDriveOpenPreviewDialog>
 
       <XDriveMediaDetailsDialog
         item={selected}

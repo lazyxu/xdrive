@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { Box } from '@mui/material'
 import {
   type XDriveFileExplorerKeyboardProfile,
   xDriveFileExplorerPathLookupPageOptions,
@@ -16,6 +17,8 @@ import {
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
+  XDriveFilePreviewSurface,
+  XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashCommandButton,
@@ -106,6 +109,7 @@ export default function DesktopFileExplorer({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
+  const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const recent = useXDriveFileExplorerRecent<AgentCloudNode>({
@@ -420,6 +424,17 @@ export default function DesktopFileExplorer({
     return URL.createObjectURL(blob)
   }, [])
 
+  const openPreviewNode = (node: AgentCloudNode) => {
+    setOpenPreviewItem({
+      id: node.id,
+      name: node.name,
+      kind: node.type,
+      size: node.size,
+      updatedAt: node.updated_at,
+      revision: node.revision,
+    })
+  }
+
   const relativePathForNode = (node: AgentCloudNode) => {
     const searchResult = searchByID.get(node.id)
     if (searchResult?.path) return searchResult.path
@@ -626,9 +641,10 @@ export default function DesktopFileExplorer({
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
-      onOpen: node.type === 'dir'
-        ? () => { void openWorkspaceItem(item, openLocalNode) }
-        : () => { void openLocalNode(node) },
+      onOpen: () => { void openWorkspaceItem(item, openPreviewNode) },
+      onSystemOpen: node.type === 'file'
+        ? () => { void openLocalNode(node) }
+        : undefined,
       onDownload: node.type === 'file'
         ? () => { void downloadNode(node) }
         : (folderTreeDownloadSupported || archiveDownloadSupported)
@@ -861,7 +877,7 @@ export default function DesktopFileExplorer({
         onUploadFolder={uploadConflictSupported
           ? () => folderUploadInputRef.current?.click()
           : undefined}
-        onOpenItem={(item) => { void openWorkspaceItem(item, openLocalNode) }}
+        onOpenItem={(item) => { void openWorkspaceItem(item, openPreviewNode) }}
         onPreviewItem={(item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -986,6 +1002,26 @@ export default function DesktopFileExplorer({
                   : undefined
         )}
       />
+
+      <XDriveOpenPreviewDialog
+        open={Boolean(openPreviewItem)}
+        title={openPreviewItem?.name ?? ''}
+        onClose={() => setOpenPreviewItem(null)}
+      >
+        <XDriveFilePreviewSurface
+          target={openPreviewItem}
+          loadTextPreview={loadTextPreview}
+          loadImagePreview={loadThumbnail}
+          loadPreviewURL={loadPreviewURL}
+          fallback={(
+            <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
+              此文件暂无可用预览
+            </Box>
+          )}
+          minHeight={320}
+          maxHeight={760}
+        />
+      </XDriveOpenPreviewDialog>
 
       <XDriveUploadConflictDialog {...uploadConflictDialogProps} />
 

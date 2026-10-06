@@ -242,6 +242,24 @@ timestamps, size, operations, and properties.
 It may embed `FilePreviewSurface`, but must not acquire Gallery-only media semantics
 to make preview work.
 
+### Open Preview dialog
+
+Ordinary file opening in Web/Desktop FileExplorer and ordinary image/video opening in Gallery
+must use the shared `XDriveOpenPreviewDialog` presentation shell.
+
+The shell owns common preview chrome and navigation only. Its content must remain:
+
+- `FilePreviewSurface` for ordinary text/PDF/image/video/audio preview;
+- `LivePhotoSurface` wrapping a `FilePreviewSurface` still image for Gallery Live Photo.
+
+Explicit Download remains a separate file-management action. Web/Desktop FileExplorer must
+not treat double-click/Enter/open as an implicit download. Desktop may additionally expose
+an explicit system-shell Open action, but it must not replace the shared preview semantics.
+
+Gallery keeps media information, EXIF/GPS, Favorite/Tags/People/albums, and Live Photo
+motion semantics outside the ordinary Preview Engine. Double-clicking a Gallery media
+tile opens the media preview; opening MediaDetails remains a separate interaction.
+
 ### Quick Look
 
 FileExplorer may expose a Finder-style Quick Look overlay, but the overlay is only

@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const quickLook = read('ui', 'shared', 'src', 'mui', 'FileQuickLookDialog.tsx')
+const openPreview = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.tsx')
 const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const docs = read('docs', 'preview-engine.md')
@@ -15,6 +16,8 @@ const docs = read('docs', 'preview-engine.md')
 test('shared FileExplorer exposes Quick Look without creating another preview engine', () => {
   assert.ok(index.includes("export * from './FileQuickLookDialog'"), 'shared MUI index must export Quick Look')
   assert.ok(quickLook.includes('export function XDriveFileQuickLookDialog'), 'shared Quick Look dialog is missing')
+  assert.ok(index.includes("export * from './FileOpenPreviewDialog'"), 'shared MUI index must export the canonical open-preview dialog')
+  assert.ok(quickLook.includes('<XDriveOpenPreviewDialog'), 'Quick Look must reuse the shared open-preview shell')
   assert.ok(quickLook.includes('<XDriveFilePreviewSurface'), 'Quick Look must reuse the shared Preview Engine surface')
   assert.ok(preview.includes('xDriveClassifyFilePreview'), 'Quick Look must inherit the canonical preview classifier through FilePreviewSurface')
   assert.equal(quickLook.includes('fetch('), false, 'Quick Look must not create a second preview transport')
@@ -54,9 +57,11 @@ test('Quick Look navigates the current file result set and reuses Inspector prev
     "event.key === 'ArrowLeft'",
     "event.key === 'ArrowRight'",
     'Space / Esc 关闭',
+    'data-xdrive-open-preview-dialog',
   ]) {
-    assert.ok(quickLook.includes(token), 'Quick Look dialog keyboard affordance missing: ' + token)
+    assert.ok(openPreview.includes(token), 'shared open-preview keyboard affordance missing: ' + token)
   }
+  assert.ok(quickLook.includes('quickLook'), 'Quick Look must opt into Space-to-close behavior on the shared shell')
   assert.ok(docs.includes('### Quick Look'), 'Preview Engine design must document Quick Look')
   assert.ok(docs.includes('must reuse `FilePreviewSurface`'), 'Preview Engine design must prohibit a parallel Quick Look renderer')
 })
