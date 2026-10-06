@@ -69,6 +69,15 @@ type SearchPage struct {
 	NextCursor string         `json:"next_cursor,omitempty"`
 }
 
+type SearchRange struct {
+	Items      []SearchResult `json:"items"`
+	TotalCount int64          `json:"total_count"`
+	Offset     int            `json:"offset"`
+	Limit      int            `json:"limit"`
+	Sort       string         `json:"sort"`
+	Order      string         `json:"order"`
+}
+
 type FileQuickAccessItem struct {
 	Node     Node               `json:"node"`
 	Path     string             `json:"path"`
@@ -88,6 +97,15 @@ type SearchOptions struct {
 	Type   string
 	Limit  int
 	Cursor string
+	Sort   string
+	Order  string
+}
+
+type SearchRangeOptions struct {
+	Query  string
+	Type   string
+	Limit  int
+	Offset int
 	Sort   string
 	Order  string
 }
@@ -416,6 +434,30 @@ func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage,
 		values.Set("order", strings.TrimSpace(options.Order))
 	}
 	var out SearchPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)
+	return out, err
+}
+
+func (c *Client) SearchRange(ctx context.Context, options SearchRangeOptions) (SearchRange, error) {
+	if options.Offset < 0 {
+		return SearchRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	values.Set("q", options.Query)
+	if strings.TrimSpace(options.Type) != "" {
+		values.Set("type", options.Type)
+	}
+	if options.Limit > 0 {
+		values.Set("limit", strconv.Itoa(options.Limit))
+	}
+	values.Set("offset", strconv.Itoa(options.Offset))
+	if strings.TrimSpace(options.Sort) != "" {
+		values.Set("sort", strings.TrimSpace(options.Sort))
+	}
+	if strings.TrimSpace(options.Order) != "" {
+		values.Set("order", strings.TrimSpace(options.Order))
+	}
+	var out SearchRange
 	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)
 	return out, err
 }

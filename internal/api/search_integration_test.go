@@ -140,6 +140,39 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 		}
 	}
 
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=1&limit=1&sort=name&order=asc",
+		tokenA, nil, http.StatusOK)
+	var rangePage searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &rangePage); err != nil {
+		t.Fatal(err)
+	}
+	if rangePage.TotalCount != 3 || rangePage.Offset != 1 || rangePage.Limit != 1 ||
+		rangePage.Sort != "name" || rangePage.Order != "asc" {
+		t.Fatalf("unexpected search range metadata: %+v", rangePage)
+	}
+	if len(rangePage.Items) != 1 || rangePage.Items[0].Node.ID != beta.ID {
+		t.Fatalf("unexpected search range items: %+v", rangePage.Items)
+	}
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=99&limit=1&sort=name&order=asc",
+		tokenA, nil, http.StatusOK)
+	var emptyRange searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &emptyRange); err != nil {
+		t.Fatal(err)
+	}
+	if len(emptyRange.Items) != 0 || emptyRange.TotalCount != 3 || emptyRange.Offset != 99 {
+		t.Fatalf("unexpected empty search range: %+v", emptyRange)
+	}
+
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=-1&limit=1",
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=0&limit=1&cursor="+url.QueryEscape(first.NextCursor),
+		tokenA, nil, http.StatusBadRequest)
+
 	secondURL := "/api/v1/search?q=report&type=file&limit=2&cursor=" + url.QueryEscape(first.NextCursor)
 	res = request(t, router, http.MethodGet, secondURL, tokenA, nil, http.StatusOK)
 	var second searchPageDTO

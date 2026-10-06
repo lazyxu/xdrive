@@ -71,4 +71,63 @@ func TestSearchUsesServerPaginationAndFilters(t *testing.T) {
 	}
 }
 
+func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/search" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != "report 2026" {
+			t.Fatalf("q=%q", got)
+		}
+		if got := r.URL.Query().Get("offset"); got != "200" {
+			t.Fatalf("offset=%q", got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "100" {
+			t.Fatalf("limit=%q", got)
+		}
+		if got := r.URL.Query().Get("sort"); got != "updated" {
+			t.Fatalf("sort=%q", got)
+		}
+		if got := r.URL.Query().Get("order"); got != "asc" {
+			t.Fatalf("order=%q", got)
+		}
+		if got := r.URL.Query().Get("cursor"); got != "" {
+			t.Fatalf("cursor must be absent, got=%q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(SearchRange{
+			Items:      []SearchResult{},
+			TotalCount: 250,
+			Offset:     200,
+			Limit:      100,
+			Sort:       "updated",
+			Order:      "asc",
+		})
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	rangePage, err := cli.SearchRange(context.Background(), SearchRangeOptions{
+		Query:  "report 2026",
+		Type:   "file",
+		Limit:  100,
+		Offset: 200,
+		Sort:   "updated",
+		Order:  "asc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rangePage.TotalCount != 250 || rangePage.Offset != 200 || rangePage.Limit != 100 {
+		t.Fatalf("unexpected search range: %+v", rangePage)
+	}
+
+	if _, err := cli.SearchRange(context.Background(), SearchRangeOptions{
+		Query:  "report",
+		Offset: -1,
+	}); err == nil {
+		t.Fatal("negative search offset unexpectedly succeeded")
+	}
+}
+
 func ptrClientUint64(value uint64) *uint64 { return &value }
