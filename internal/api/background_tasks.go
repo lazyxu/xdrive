@@ -423,6 +423,7 @@ func (s *Server) backgroundSourceRunTasks(
 			run.CancelRequestedAt != nil {
 			state = "cancelling"
 		}
+		priority := uint8(backgroundSyncRunPriority(run.Trigger))
 		task := backgroundTaskDTO{
 			ID:         "sync-run:" + run.ID,
 			Kind:       "source.sync",
@@ -432,6 +433,8 @@ func (s *Server) backgroundSourceRunTasks(
 			State:      state,
 			Trigger:    backgroundSyncRunTrigger(run.Trigger),
 			Initiator:  backgroundSyncRunInitiator(run.Trigger),
+			Priority:   &priority,
+			Resource:   string(background.ResourceNetwork),
 			SourceID:   source.ID,
 			SourceName: source.Name,
 			SourceKind: source.Kind,
@@ -473,6 +476,13 @@ func backgroundSyncRunInitiator(trigger string) string {
 		return string(background.InitiatorUser)
 	}
 	return string(background.InitiatorSystem)
+}
+
+func backgroundSyncRunPriority(trigger string) background.Priority {
+	if trigger == meta.SyncRunTriggerManual {
+		return background.PriorityP0
+	}
+	return background.PriorityP2
 }
 
 func sourceRunBackgroundProgress(

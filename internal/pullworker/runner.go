@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceaccount"
@@ -44,6 +46,7 @@ type Runner struct {
 	DB             *gorm.DB
 	Handlers       map[string]SourceHandler
 	Logger         *slog.Logger
+	Scheduler      *background.Scheduler
 	MaxConcurrency int
 }
 
@@ -193,89 +196,155 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 	}
 
 	concurrency := r.effectiveConcurrency(len(jobs))
-	results := make(chan sourceResult, len(jobs))
-	ordered := make([]sourceResult, len(jobs))
-	received := make([]bool, len(jobs))
-	pending := make([]int, len(jobs))
+	scheduler := r.Scheduler
+	ownsScheduler := false
+	if scheduler == nil {
+		config := background.DefaultConfig()
+		queueCapacity := len(jobs)
+		if queueCapacity < concurrency {
+			queueCapacity = concurrency
+		}
+		config.Capacity = map[background.ResourceClass]int{
+			background.ResourceNetwork: concurrency,
+		}
+		config.QueueCapacity = map[background.ResourceClass]int{
+			background.ResourceNetwork: queueCapacity,
+		}
+		scheduler = background.NewScheduler(ctx, config)
+		ownsScheduler = true
+	}
+	if ownsScheduler {
+		defer scheduler.Close()
+	}
+
+	type scheduledSourceJob struct {
+		task      background.Task
+		handle    *background.Handle
+		run       client.SyncRun
+		submitErr error
+	}
+	scheduled := make([]scheduledSourceJob, len(jobs))
+
+	var accountMu sync.Mutex
+	activeAccountKeys := make(map[string]struct{})
 	for index := range jobs {
-		pending[index] = index
-	}
-	activeKeys := make(map[string]struct{})
-	active := 0
-	stopLaunching := false
-	ctxDone := ctx.Done()
-
-	firstRunnable := func() int {
-		for pendingIndex, jobIndex := range pending {
-			key := jobs[jobIndex].concurrencyKey
-			if key == "" {
-				return pendingIndex
-			}
-			if _, busy := activeKeys[key]; !busy {
-				return pendingIndex
-			}
-		}
-		return -1
-	}
-
-	launch := func(index int) {
-		job := jobs[index]
-		if job.concurrencyKey != "" {
-			activeKeys[job.concurrencyKey] = struct{}{}
-		}
-		active++
-		go func() {
-			if err := ctx.Err(); err != nil {
-				results <- sourceResult{index: index, err: err, concurrencyKey: job.concurrencyKey}
-				return
-			}
-			var lease *sourceaccount.Lease
-			if job.concurrencyKey != "" && r.DB != nil {
-				var err error
-				lease, err = sourceaccount.Acquire(ctx, r.DB, job.concurrencyKey)
-				if err != nil {
-					results <- sourceResult{index: index, err: fmt.Errorf("coordinate provider account: %w", err), concurrencyKey: job.concurrencyKey}
-					return
-				}
-				defer lease.Close()
-			}
-			run, err := job.handler.RunPullSource(ctx, job.source)
-			results <- sourceResult{index: index, run: run, err: err, concurrencyKey: job.concurrencyKey}
-		}()
-	}
-
-	for active > 0 || (!stopLaunching && len(pending) > 0) {
-		if !stopLaunching {
-			for active < concurrency {
-				if err := ctx.Err(); err != nil {
-					stopLaunching = true
-					ctxDone = nil
-					break
-				}
-				pendingIndex := firstRunnable()
-				if pendingIndex < 0 {
-					break
-				}
-				jobIndex := pending[pendingIndex]
-				pending = append(pending[:pendingIndex], pending[pendingIndex+1:]...)
-				launch(jobIndex)
-			}
-		}
-		if active == 0 {
+		if err := ctx.Err(); err != nil {
 			break
 		}
-		select {
-		case result := <-results:
-			active--
-			if result.concurrencyKey != "" {
-				delete(activeKeys, result.concurrencyKey)
-			}
-			ordered[result.index] = result
-			received[result.index] = true
-		case <-ctxDone:
-			stopLaunching = true
-			ctxDone = nil
+		jobIndex := index
+		job := jobs[jobIndex]
+		priority, trigger, initiator, initiatorID := sourceBackgroundAttribution(job.source)
+		task := background.Task{
+			Key:         fmt.Sprintf("source.sync:%d:%d:%d", job.source.ID, now.UnixNano(), jobIndex),
+			Kind:        "source.sync",
+			GroupKey:    "source.sync",
+			Scope:       background.ScopeUser,
+			OwnerID:     job.source.OwnerID,
+			Trigger:     trigger,
+			Initiator:   initiator,
+			InitiatorID: initiatorID,
+			Priority:    priority,
+			Resource:    background.ResourceNetwork,
 		}
+
+		if job.concurrencyKey != "" {
+			accountKey := job.concurrencyKey
+			task.Lease = func(leaseCtx context.Context, _ background.Descriptor) (background.Lease, bool, error) {
+				accountMu.Lock()
+				if _, busy := activeAccountKeys[accountKey]; busy {
+					accountMu.Unlock()
+					return background.Lease{}, false, nil
+				}
+				activeAccountKeys[accountKey] = struct{}{}
+				accountMu.Unlock()
+
+				releaseLocal := func() {
+					accountMu.Lock()
+					delete(activeAccountKeys, accountKey)
+					accountMu.Unlock()
+				}
+
+				var accountLease *sourceaccount.Lease
+				if r.DB != nil {
+					var acquired bool
+					var err error
+					accountLease, acquired, err = sourceaccount.TryAcquire(leaseCtx, r.DB, accountKey)
+					if err != nil {
+						releaseLocal()
+						return background.Lease{}, false, fmt.Errorf("coordinate provider account: %w", err)
+					}
+					if !acquired {
+						releaseLocal()
+						return background.Lease{}, false, nil
+					}
+				}
+
+				return background.Lease{
+					Release: func(context.Context, error) error {
+						if accountLease != nil {
+							accountLease.Close()
+						}
+						releaseLocal()
+						return nil
+					},
+				}, true, nil
+			}
+		}
+
+		task.Run = func(taskCtx context.Context) error {
+			run, err := job.handler.RunPullSource(taskCtx, job.source)
+			scheduled[jobIndex].run = run
+			return err
+		}
+		scheduled[jobIndex].task = task
+		handle, err := scheduler.Submit(task)
+		scheduled[jobIndex].handle = handle
+		scheduled[jobIndex].submitErr = err
+	}
+
+	ordered := make([]sourceResult, len(jobs))
+	received := make([]bool, len(jobs))
+	cancelled := false
+	for index := range scheduled {
+		entry := &scheduled[index]
+		if entry.submitErr != nil {
+			ordered[index] = sourceResult{index: index, err: entry.submitErr, concurrencyKey: jobs[index].concurrencyKey}
+			received[index] = true
+			continue
+		}
+		if entry.handle == nil {
+			continue
+		}
+
+		waitCtx := ctx
+		if cancelled {
+			waitCtx = context.Background()
+		}
+		err := entry.handle.Wait(waitCtx)
+		if ctx.Err() != nil && !cancelled {
+			cancelled = true
+			for cancelIndex := range scheduled {
+				candidate := &scheduled[cancelIndex]
+				if candidate.handle == nil {
+					continue
+				}
+				scheduler.Cancel(background.Identity{
+					Scope:   candidate.task.Scope,
+					OwnerID: candidate.task.OwnerID,
+					Key:     candidate.task.Key,
+				})
+			}
+			err = entry.handle.Wait(context.Background())
+		} else if cancelled {
+			err = entry.handle.Wait(context.Background())
+		}
+		ordered[index] = sourceResult{
+			index:          index,
+			run:            entry.run,
+			err:            err,
+			concurrencyKey: jobs[index].concurrencyKey,
+		}
+		received[index] = true
 	}
 
 	var errs []error
@@ -289,6 +358,12 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			if IsActiveRun(result.err) {
 				report.Skipped++
 				r.logger().Info("pull_source_skipped_active_run",
+					"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind)
+				continue
+			}
+			if errors.Is(result.err, background.ErrQueueFull) {
+				report.Skipped++
+				r.logger().Info("pull_source_deferred_scheduler_backpressure",
 					"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind)
 				continue
 			}
@@ -331,6 +406,13 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		errs = append(errs, ctx.Err())
 	}
 	return report, errors.Join(errs...)
+}
+
+func sourceBackgroundAttribution(source meta.Source) (background.Priority, background.Trigger, background.Initiator, uint64) {
+	if source.RunRequestedAt != nil {
+		return background.PriorityP0, background.TriggerUserAction, background.InitiatorUser, source.OwnerID
+	}
+	return background.PriorityP2, background.TriggerSchedule, background.InitiatorSystem, 0
 }
 
 func (r *Runner) effectiveConcurrency(total int) int {

@@ -120,7 +120,15 @@ consumer is migrated so the scheduler remains reusable outside the API process.
 5. FileOperation: **current**. Entering durable `queued` state emits a transactional PostgreSQL
    wakeup; the worker drains with the existing `FOR UPDATE SKIP LOCKED` claim path and falls back to a
    5-second reconciliation poll if notifications are lost or the listener reconnects.
-6. Source worker: retain `SyncRun`; integrate only resource budget, priority, and unified health/status.
+6. Source worker: **current**. `SyncRun` remains authoritative. The independent Source worker submits runnable
+   Sources through the shared `network` resource budget: manual requests are P0, while retry/overdue scheduled
+   work remains P2 and keeps the existing manual -> retry -> most-overdue ordering before submission.
+   `SourceConcurrencyKeyer` is preserved as a non-secret account lease key; same-account work is deferred through
+   the scheduler lease path and the existing PostgreSQL advisory lock, so it does not occupy a network worker while
+   unrelated accounts are runnable. Connector-local rate limits, persisted Source retry/backoff, and two-stage
+   `SyncRun` cancellation remain unchanged. Because the Source worker is a separate process, Server Task Center
+   health/status continues to come from durable `SyncRun` rows and derives the same P0/P2 + `network` metadata;
+   no cross-process generic task table or scheduler-snapshot relay is introduced.
 7. Janitor/storage sampler: remain timer-driven; add PostgreSQL advisory-lock leader election for multi-server
    deployments when needed.
 
