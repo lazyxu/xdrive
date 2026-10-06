@@ -678,3 +678,59 @@ test('newer search submission wins when search responses complete out of order',
   assert.equal(search.searchState.query, 'new')
   assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
 })
+
+test('newer Quick Access refresh wins when refresh responses complete out of order', async () => {
+  const runtime = createHookRuntime()
+  const useQuickAccess = loadQuickAccessHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const oldItem = {
+    node: { id: 2, name: 'Old' },
+    path: '/Old',
+    crumbs: [root, { id: 2, name: 'Old' }],
+    pinned_at: '2026-10-06T00:00:00Z',
+  }
+  const newItem = {
+    node: { id: 3, name: 'New' },
+    path: '/New',
+    crumbs: [root, { id: 3, name: 'New' }],
+    pinned_at: '2026-10-06T00:01:00Z',
+  }
+
+  let controlled = false
+  const pending = []
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([oldItem])
+    return new Promise((resolve) => {
+      pending.push(resolve)
+    })
+  }
+  const renderQuick = () => runtime.render(() => useQuickAccess({
+    loadItems,
+    pinItem: async () => newItem,
+    unpinItem: async () => undefined,
+    onError: (error) => { throw error },
+  }))
+
+  renderQuick()
+  await flushAsync()
+  let quick = renderQuick()
+  assert.deepEqual(quick.items.map((item) => item.id), [oldItem.node.id])
+
+  controlled = true
+  const oldRefresh = quick.refresh()
+  const newRefresh = quick.refresh()
+  assert.equal(pending.length, 2)
+
+  pending[1]([newItem])
+  await newRefresh
+
+  pending[0]([oldItem])
+  await oldRefresh
+
+  quick = renderQuick()
+  assert.deepEqual(
+    quick.items.map((item) => item.id),
+    [newItem.node.id],
+    'an older Quick Access refresh must not overwrite the newer refresh result',
+  )
+})

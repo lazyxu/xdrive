@@ -59,16 +59,24 @@ test('shared controller owns quick-access state and refreshes identity before na
   for (const token of [
     'useXDriveFileExplorerQuickAccess',
     'const loadItemsRef = useRef(loadItems)',
+    'const loadRequestRef = useRef(0)',
     'const loadFresh = useCallback',
     'const pinnedIDs = useMemo',
     'const pin = useCallback',
     'const unpin = useCallback',
     'const toggle = useCallback',
     'const navigate = useCallback',
-    'const latest = await loadFresh()',
+    'const latest = await loadFresh(requestID)',
+    'if (requestID !== loadRequestRef.current) return false',
     'const target = latest.find((item) => item.id === nodeID)',
     'await onNavigate(target.crumbs)',
   ]) assert.ok(controller.includes(token), 'shared quick-access controller missing: ' + token)
+
+  for (const token of [
+    'if (requestID === loadRequestRef.current) setItems(next)',
+    'if (requestID === loadRequestRef.current) setLoading(false)',
+    'loadRequestRef.current += 1',
+  ]) assert.ok(controller.includes(token), 'shared quick-access race guard missing: ' + token)
 
   assert.equal(controller.includes('localStorage'), false, 'Quick Access identity must stay server-side, not in localStorage')
 })
