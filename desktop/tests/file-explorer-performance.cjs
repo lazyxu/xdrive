@@ -11,6 +11,7 @@ const cloudFilesController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared',
 const searchController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'), 'utf8')
 const childrenPagination = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'children_pagination.go'), 'utf8')
 const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'handlers.go'), 'utf8')
+const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 
 test('FileExplorer derives system-style file types and icons from extensions', () => {
   assert.ok(shared.includes('export function xDriveFileKind'), 'shared file-kind classifier is missing')
@@ -123,4 +124,18 @@ test('FileExplorer paged directory reads avoid redundant parent and File preload
   assert.ok(childrenPagination.includes("COALESCE(child_file.sha256, '') AS file_sha256"), 'paged children should project file digest in the main query')
   assert.ok(childrenPagination.includes('if len(rows) == 0 {'), 'empty pages must retain parent validation')
   assert.ok(childrenPagination.includes('s.ownedDirectory(uid, parentID)'), 'empty pages must distinguish a valid empty directory from 404')
+})
+
+
+test('FileExplorer projection builds large paged view-models in one node pass', () => {
+  assert.ok(explorerProjection.includes('const crumbProjection = useMemo(() => {'), 'breadcrumb projection should be memoized once')
+  assert.ok(explorerProjection.includes("pathPrefix: crumbs.length > 0 ? `${names.join('/')}/` : ''"), 'directory path prefix must be computed once per breadcrumb set')
+  assert.ok(explorerProjection.includes('const projection = useMemo(() => {'), 'node projection should use one memoized pass')
+  assert.ok(explorerProjection.includes('const nodeByID = new Map<number, TNode>()'), 'node index must be built inside the projection pass')
+  assert.ok(explorerProjection.includes('const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)'), 'Explorer items should be allocated once at final size')
+  assert.ok(explorerProjection.includes('for (let index = 0; index < sourceLength; index += 1)'), 'projection should traverse active nodes once')
+  assert.ok(explorerProjection.includes('if (results) activeNodes[index] = node'), 'search active nodes should be populated in the same pass')
+  assert.ok(explorerProjection.includes('if (result) searchByID.set(node.id, result)'), 'search result index should be populated in the same pass')
+  assert.equal(explorerProjection.includes('activeNodes.map('), false, 'projection must not remap active nodes')
+  assert.equal(explorerProjection.includes('crumbs.map((crumb) => crumb.name)'), false, 'item projection must not rebuild breadcrumb names per item')
 })

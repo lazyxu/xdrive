@@ -17,13 +17,13 @@ test('shared FileExplorer projection owns node/search view-model derivation', ()
   for (const token of [
     'useXDriveFileExplorerProjection',
     'TSearch extends XDriveFileExplorerSearchProjection<TNode>',
-    'const activeNodes = useMemo',
-    'const nodeByID = useMemo',
-    'const searchByID = useMemo',
-    'const explorerItems = useMemo<XDriveFileExplorerItem[]>',
-    'const explorerCrumbs = useMemo<XDriveFileExplorerCrumb[]>',
-    'secondaryLabel: result?.path || undefined',
-    "path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')",
+    'const crumbProjection = useMemo',
+    'const projection = useMemo(() => {',
+    'const nodeByID = new Map<number, TNode>()',
+    'const searchByID = new Map<number, TSearch>()',
+    'const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)',
+    'const resultPath = result?.path || undefined',
+    'path: resultPath || \`${crumbProjection.pathPrefix}${node.name}\`',
     'revision: node.revision',
   ]) {
     assert.ok(shared.includes(token), `shared Explorer projection missing: ${token}`)

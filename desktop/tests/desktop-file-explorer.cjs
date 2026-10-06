@@ -201,7 +201,7 @@ test('Desktop uses a dedicated persistent FileExplorer details-column layout', (
 })
 
 test('Desktop FileExplorer supplies preview/properties metadata through existing protected thumbnail APIs', () => {
-  assert.ok(projection.includes("path: result?.path || [...crumbs.map((crumb) => crumb.name), node.name].join('/')"), 'shared Explorer projection path metadata is missing')
+  assert.ok(projection.includes('path: resultPath || `${crumbProjection.pathPrefix}${node.name}`'), 'shared Explorer projection path metadata is missing')
   assert.ok(projection.includes('revision: node.revision'), 'shared Explorer projection revision metadata is missing')
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Desktop inspector should reuse the protected media thumbnail bridge')
   assert.equal(explorer.includes('localPath:'), false, 'Desktop preview/properties must not expose managed local paths')
