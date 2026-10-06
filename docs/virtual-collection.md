@@ -46,3 +46,8 @@ The children endpoint supports an explicit range mode when `offset` is present. 
 ## FileExplorer range transport
 
 The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort)` while retaining `getPage` for cursor pagination and exact-name path traversal.
+
+
+## FileExplorer directory activation
+
+Cloud Files directory browsing now uses the range contract from the first read. The first `offset=0` response is primed into VirtualCollection so `total_count` establishes the stable scrollbar immediately and page zero is not fetched twice. Directory viewport changes request aligned ranges through the bounded cache; Search deliberately remains on its existing dense cursor contract until its separate range migration. FileExplorer interaction indexes are built only from retained metadata, so selection, context menus, rename/delete/copy, and raw-node lookup do not materialize the logical directory.

@@ -345,6 +345,7 @@ export default function App({
     pageState: cloudPage,
     loading: cloudLoading,
     loadingMore: cloudLoadingMore,
+    virtualDirectory: cloudVirtualDirectory,
     applyQuota: applyCloudQuota,
     refreshQuota: refreshCloudQuota,
     loadDirectory: loadCloudDirectory,
@@ -1773,6 +1774,7 @@ export default function App({
             explorer={{
               items: cloudItems,
               crumbs: cloudCrumbs,
+              virtualDirectory: cloudVirtualDirectory,
               loading: cloudLoading,
               loadingMore: cloudLoadingMore,
               hasMore: cloudPage?.hasMore ?? false,

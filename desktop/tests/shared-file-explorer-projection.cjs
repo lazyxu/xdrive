@@ -23,7 +23,7 @@ test('shared FileExplorer projection owns node/search view-model derivation', ()
     'const searchByID = new Map<number, TSearch>()',
     'const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)',
     'const resultPath = result?.path || undefined',
-    'path: resultPath || \`${crumbProjection.pathPrefix}${node.name}\`',
+    'path: resultPath || \`${pathPrefix}${node.name}\`',
     'revision: node.revision',
   ]) {
     assert.ok(shared.includes(token), `shared Explorer projection missing: ${token}`)
@@ -47,4 +47,13 @@ test('Web and Desktop consume shared FileExplorer projection without duplicating
   assert.ok(workspace.includes('xDriveFileExplorerDispatchOpenItem({'), 'workspace controller must compose shared open-item dispatch')
   assert.ok(web.includes('searchCrumbsForResult: (result) => result.breadcrumbs'), 'Web must adapt result.breadcrumbs into the shared workspace')
   assert.ok(desktop.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Desktop must adapt result.crumbs into the shared workspace')
+})
+
+
+test('FileExplorer projection indexes bounded virtual nodes without logical-array materialization', () => {
+  assert.ok(shared.includes('virtualItems?: ReadonlyMap<number, TNode>'), 'projection must accept sparse node indexes')
+  assert.ok(shared.includes('const virtualExplorerItems = !results && virtualItems'), 'projection must keep search dense and directory sparse')
+  assert.ok(shared.includes('for (const [index, node] of virtualItems)'), 'projection must iterate only loaded sparse metadata')
+  assert.ok(shared.includes('nodeByID.set(node.id, node)'), 'loaded remote nodes must participate in operation lookup')
+  assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(virtualItems.size)'), false, 'sparse projection must not create a second loaded array')
 })

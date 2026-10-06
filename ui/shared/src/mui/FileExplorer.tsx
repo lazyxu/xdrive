@@ -277,6 +277,7 @@ export type XDriveFileExplorerItem = {
 
 export type XDriveFileExplorerVirtualCollection = {
   itemCount: number
+  loadedItems: ReadonlyMap<number, XDriveFileExplorerItem>
   itemAt: (index: number) => XDriveFileExplorerItem | undefined
   onRangeChange?: (startIndex: number, endIndex: number) => void
 }
@@ -970,6 +971,7 @@ export function XDriveFileExplorer({
 
   const visibleItemProjection = useMemo(() => {
     const indexByKey = new Map<string, number>()
+    const itemByKey = new Map<string, XDriveFileExplorerItem>()
     const names = new Array<string>(visibleItems.length)
     const files: XDriveFileExplorerItem[] = []
     const fileIndexByKey = new Map<string, number>()
@@ -977,6 +979,7 @@ export function XDriveFileExplorer({
       const item = visibleItems[index]
       const key = explorerIDKey(item.id)
       indexByKey.set(key, index)
+      itemByKey.set(key, item)
       names[index] = item.name
       if (item.kind === 'file') {
         fileIndexByKey.set(key, files.length)
@@ -985,28 +988,65 @@ export function XDriveFileExplorer({
     }
     return {
       indexByKey,
+      itemByKey,
       names,
       files,
       fileIndexByKey,
+      orderedItems: visibleItems,
     }
   }, [visibleItems])
-  const visibleItemIndexByKey = visibleItemProjection.indexByKey
+
+  const virtualLoadedItems = virtualCollection?.loadedItems
+  const virtualLoadedProjection = useMemo(() => {
+    if (!virtualLoadedItems) return null
+    const entries = [...virtualLoadedItems.entries()].sort((left, right) => left[0] - right[0])
+    const indexByKey = new Map<string, number>()
+    const itemByKey = new Map<string, XDriveFileExplorerItem>()
+    const files: XDriveFileExplorerItem[] = []
+    const fileIndexByKey = new Map<string, number>()
+    const orderedItems = new Array<XDriveFileExplorerItem>(entries.length)
+    for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+      const [index, item] = entries[entryIndex]
+      const key = explorerIDKey(item.id)
+      indexByKey.set(key, index)
+      itemByKey.set(key, item)
+      orderedItems[entryIndex] = item
+      if (item.kind === 'file') {
+        fileIndexByKey.set(key, files.length)
+        files.push(item)
+      }
+    }
+    return {
+      indexByKey,
+      itemByKey,
+      names: [] as string[],
+      files,
+      fileIndexByKey,
+      orderedItems,
+    }
+  }, [virtualLoadedItems])
+
+  const interactionProjection = virtualLoadedProjection ?? visibleItemProjection
+  const visibleItemIndexByKey = interactionProjection.indexByKey
   const visibleItemNames = visibleItemProjection.names
-  const quickLookFiles = visibleItemProjection.files
-  const quickLookIndexByKey = visibleItemProjection.fileIndexByKey
+  const quickLookFiles = interactionProjection.files
+  const quickLookIndexByKey = interactionProjection.fileIndexByKey
+  const itemAtLogicalIndex = (index: number) => (
+    virtualCollection?.itemAt(index) ?? visibleItems[index]
+  )
   const selectedItems = useMemo(
     () => selectedIDs
-      .map((id) => {
-        const index = visibleItemIndexByKey.get(explorerIDKey(id))
-        return index === undefined ? undefined : visibleItems[index]
-      })
+      .map((id) => interactionProjection.itemByKey.get(explorerIDKey(id)))
       .filter((item): item is XDriveFileExplorerItem => Boolean(item)),
-    [selectedIDs, visibleItemIndexByKey, visibleItems],
+    [interactionProjection.itemByKey, selectedIDs],
   )
   const activeIndex = activeItemID === null
     ? -1
     : (visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1)
-  const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : visibleItems[0]
+  const activeItem = activeItemID === null
+    ? interactionProjection.orderedItems[0]
+    : interactionProjection.itemByKey.get(explorerIDKey(activeItemID))
+      ?? interactionProjection.orderedItems[0]
   const quickLookIndex = quickLookItemID === null
     ? -1
     : (quickLookIndexByKey.get(explorerIDKey(quickLookItemID)) ?? -1)
@@ -1017,13 +1057,14 @@ export function XDriveFileExplorer({
   }, [quickLookIndex, quickLookItemID])
 
   useEffect(() => {
-    if (visibleItems.length === 0) {
+    if (logicalItemCount === 0) {
       if (activeItemID !== null) setActiveItemID(null)
       return
     }
     if (activeIndex >= 0) return
-    setActiveItemID((selectedItems[0] ?? visibleItems[0]).id)
-  }, [activeIndex, activeItemID, selectedItems, visibleItems])
+    const fallback = selectedItems[0] ?? interactionProjection.orderedItems[0]
+    if (fallback) setActiveItemID(fallback.id)
+  }, [activeIndex, activeItemID, interactionProjection.orderedItems, logicalItemCount, selectedItems])
 
   const commitSelection = (ids: XDriveFileExplorerID[]) => {
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
@@ -1040,6 +1081,18 @@ export function XDriveFileExplorer({
     commitSelection([])
   }
 
+  const loadedRangeIDs = (start: number, end: number) => {
+    if (!virtualLoadedItems) {
+      return visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+    }
+    const entries: Array<[number, XDriveFileExplorerID]> = []
+    for (const [index, item] of virtualLoadedItems) {
+      if (index >= start && index <= end) entries.push([index, item.id])
+    }
+    entries.sort((left, right) => left[0] - right[0])
+    return entries.map((entry) => entry[1])
+  }
+
   const marqueeSelectionIDs = (
     session: XDriveFileExplorerMarqueeSession,
     currentContentX: number,
@@ -1050,17 +1103,17 @@ export function XDriveFileExplorer({
     if (viewMode === 'details') {
       const top = Math.min(session.startContentY, currentContentY)
       const bottom = Math.max(session.startContentY, currentContentY)
-      if (bottom > detailsHeaderHeight && visibleItems.length > 0) {
+      if (bottom > detailsHeaderHeight && logicalItemCount > 0) {
         const first = Math.max(
           0,
           Math.floor((Math.max(detailsHeaderHeight, top) - detailsHeaderHeight) / detailsRowHeight),
         )
         const last = Math.min(
-          visibleItems.length - 1,
+          logicalItemCount - 1,
           Math.floor((Math.max(detailsHeaderHeight, bottom - 0.001) - detailsHeaderHeight) / detailsRowHeight),
         )
         for (let index = first; index <= last; index += 1) {
-          const item = visibleItems[index]
+          const item = itemAtLogicalIndex(index)
           if (item) selected.set(explorerIDKey(item.id), item.id)
         }
       }
@@ -1078,14 +1131,15 @@ export function XDriveFileExplorer({
     const itemWidth = Math.min(cellWidth, gridMetrics.maxItemWidth)
     const firstRow = Math.max(0, Math.floor((top - gridPaddingPx) / gridRowStep))
     const lastRow = Math.min(
-      Math.max(0, Math.ceil(visibleItems.length / gridColumns) - 1),
+      Math.max(0, Math.ceil(logicalItemCount / gridColumns) - 1),
       Math.floor((Math.max(top, bottom - 0.001) - gridPaddingPx) / gridRowStep),
     )
     for (let row = firstRow; row <= lastRow; row += 1) {
       for (let column = 0; column < gridColumns; column += 1) {
         const index = row * gridColumns + column
-        const item = visibleItems[index]
-        if (!item) break
+        if (index >= logicalItemCount) break
+        const item = itemAtLogicalIndex(index)
+        if (!item) continue
         const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
         const itemTop = gridPaddingPx + row * gridRowStep
         if (
@@ -1217,9 +1271,6 @@ export function XDriveFileExplorer({
   }
 
   const focusItemAtIndex = (index: number) => {
-    const item = visibleItems[index]
-    if (!item) return
-    setActiveItemID(item.id)
     const host = scrollHostRef.current
     if (host && viewMode === 'details') {
       const top = detailsHeaderHeight + index * detailsRowHeight
@@ -1239,6 +1290,12 @@ export function XDriveFileExplorer({
         host.scrollTop = Math.max(0, bottom - host.clientHeight + gridPaddingPx)
       }
     }
+    const item = itemAtLogicalIndex(index)
+    if (!item) {
+      virtualCollection?.onRangeChange?.(index, index)
+      return
+    }
+    setActiveItemID(item.id)
     scheduleItemFocus(item.id)
   }
 
@@ -1309,7 +1366,7 @@ export function XDriveFileExplorer({
 
   useEffect(() => {
     if (renamingID === null || typeof window === 'undefined') return
-    const item = visibleItems.find((candidate) => explorerIDKey(candidate.id) === explorerIDKey(renamingID))
+    const item = interactionProjection.itemByKey.get(explorerIDKey(renamingID))
     if (!item) return
     window.requestAnimationFrame(() => {
       const input = renameInputRef.current
@@ -1317,7 +1374,7 @@ export function XDriveFileExplorer({
       input.focus()
       input.setSelectionRange(0, xDriveFileExplorerRenameSelectionEnd(item.name, item.kind))
     })
-  }, [renamingID, visibleItems])
+  }, [interactionProjection.itemByKey, renamingID])
 
   const renderItemName = (item: XDriveFileExplorerItem, grid: boolean) => {
     const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
@@ -1392,7 +1449,7 @@ export function XDriveFileExplorer({
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, index)
         const end = Math.max(anchorIndex, index)
-        const range = visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+        const range = loadedRangeIDs(start, end)
         if (additive) {
           const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
           for (const id of range) merged.set(explorerIDKey(id), id)
@@ -1970,7 +2027,7 @@ export function XDriveFileExplorer({
     const targetIndex = xDriveFileExplorerKeyboardTargetIndex({
       key: event.key as XDriveFileExplorerKeyboardNavigationKey,
       currentIndex,
-      itemCount: visibleItems.length,
+      itemCount: logicalItemCount,
       viewMode,
       gridColumns: columns,
       pageSize,
@@ -1980,7 +2037,12 @@ export function XDriveFileExplorer({
     event.stopPropagation()
     resetTypeSelect()
     if (targetIndex === currentIndex) return true
-    const target = visibleItems[targetIndex]
+
+    const target = itemAtLogicalIndex(targetIndex)
+    if (!target) {
+      focusItemAtIndex(targetIndex)
+      return true
+    }
 
     const modifier = event.ctrlKey || event.metaKey
     if (event.shiftKey) {
@@ -1990,7 +2052,7 @@ export function XDriveFileExplorer({
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, targetIndex)
         const end = Math.max(anchorIndex, targetIndex)
-        const range = visibleItems.slice(start, end + 1).map((candidate) => candidate.id)
+        const range = loadedRangeIDs(start, end)
         if (modifier) {
           const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
           for (const id of range) merged.set(explorerIDKey(id), id)
@@ -2041,6 +2103,7 @@ export function XDriveFileExplorer({
   }
 
   const typeSelectFromKeyboard = (event: KeyboardEvent<HTMLElement>) => {
+    if (virtualCollectionEnabled) return false
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -2202,8 +2265,9 @@ export function XDriveFileExplorer({
     }
     if (modifier && key === 'a') {
       event.preventDefault()
-      commitSelection(visibleItems.map((candidate) => candidate.id))
-      if (activeItemID === null && visibleItems[0]) setActiveItemID(visibleItems[0].id)
+      const selectableItems = interactionProjection.orderedItems
+      commitSelection(selectableItems.map((candidate) => candidate.id))
+      if (activeItemID === null && selectableItems[0]) setActiveItemID(selectableItems[0].id)
       return
     }
     if (modifier && key === 'c' && onCopyItems && selectedItems.length > 0) {

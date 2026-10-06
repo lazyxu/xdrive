@@ -17,6 +17,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
+  XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
@@ -43,6 +44,7 @@ export default function WebFileExplorer({
   api,
   items,
   crumbs,
+  virtualDirectory,
   loading,
   loadingMore,
   hasMore,
@@ -70,6 +72,7 @@ export default function WebFileExplorer({
   api: XDriveApi
   items: Node[]
   crumbs: Crumb[]
+  virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -139,6 +142,7 @@ export default function WebFileExplorer({
     submitPath,
     openItem,
     explorerPagination,
+    explorerVirtualCollection,
     externallySorted,
     searchStatusText,
     tabs,
@@ -153,6 +157,7 @@ export default function WebFileExplorer({
   } = useXDriveFileExplorerWorkspace<Node, SearchResult>({
     items,
     crumbs,
+    directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
     directoryHasMore: hasMore,
     directoryLoadingMore: loadingMore,
@@ -366,6 +371,7 @@ export default function WebFileExplorer({
         presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
+        virtualCollection={explorerVirtualCollection}
         loading={loading || searchLoading || fileOperationBusy}
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}

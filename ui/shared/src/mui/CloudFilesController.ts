@@ -1,18 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QuotaUsage } from '../models'
 import type {
   XDriveCloudFilesCrumb,
   XDriveCloudFilesPort,
 } from '../cloud-files'
 import {
-  xDriveFileExplorerCanLoadMore,
-  xDriveFileExplorerDirectoryPageTransition,
-  xDriveFileExplorerPageRequestOptions,
+  XDRIVE_FILE_EXPLORER_PAGE_SIZE,
 } from '../file-explorer-controller'
 import type {
   XDriveFileExplorerPageSort,
   XDriveFileExplorerPageState,
 } from '../file-explorer-controller'
+import { useXDriveVirtualCollection } from './VirtualCollectionController'
+
+export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
+  itemCount: number
+  loadedItems: ReadonlyMap<number, TNode>
+  itemAt: (index: number) => TNode | undefined
+  ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
+}
+
+type XDriveCloudFilesVirtualTarget<
+  TSort extends XDriveFileExplorerPageSort,
+> = {
+  parentID: number
+  sort: TSort
+  requestID: number
+}
 
 export type XDriveCloudFilesControllerOptions<
   TNode extends { id: number },
@@ -25,6 +39,21 @@ export type XDriveCloudFilesControllerOptions<
   rootLabel?: string
   quotaRefreshIntervalMs?: number
   onError: (error: unknown) => void
+}
+
+function xDriveCloudFilesVirtualQueryKey<
+  TSort extends XDriveFileExplorerPageSort,
+>(
+  target: XDriveCloudFilesVirtualTarget<TSort> | null,
+) {
+  if (!target) return 'cloud-files:virtual:disabled'
+  return [
+    'cloud-files:virtual',
+    target.parentID,
+    target.sort.key,
+    target.sort.direction,
+    target.requestID,
+  ].join(':')
 }
 
 export function useXDriveCloudFilesController<
@@ -44,12 +73,83 @@ export function useXDriveCloudFilesController<
   const [crumbs, setCrumbs] = useState<XDriveCloudFilesCrumb[]>([])
   const [pageState, setPageState] = useState<XDriveFileExplorerPageState<TSort> | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
-  const loadMoreRequestRef = useRef(false)
-  const directoryItemIDsRef = useRef(new Set<number>())
 
   const current = crumbs.at(-1)
+  const virtualQueryKey = xDriveCloudFilesVirtualQueryKey(virtualTarget)
+
+  const loadVirtualRange = useCallback(async (
+    range: { offset: number; limit: number },
+  ) => {
+    const target = virtualTarget
+    if (!target) {
+      return {
+        items: [] as TNode[],
+        offset: range.offset,
+        limit: range.limit,
+        totalCount: 0,
+      }
+    }
+    const page = await port.getRange(
+      target.parentID,
+      range.offset,
+      range.limit,
+      target.sort,
+    )
+    return {
+      items: page.items,
+      offset: page.offset,
+      limit: page.limit,
+      totalCount: page.total_count,
+    }
+  }, [port, virtualTarget])
+
+  const virtualCollection = useXDriveVirtualCollection<TNode>({
+    queryKey: virtualQueryKey,
+    loadRange: loadVirtualRange,
+    onError,
+  })
+
+  const activateVirtualDirectory = useCallback((
+    parentID: number,
+    sort: TSort,
+    requestID: number,
+    firstRange: {
+      items: readonly TNode[]
+      total_count: number
+      offset: number
+      limit: number
+    },
+  ) => {
+    const target = { parentID, sort, requestID }
+    const nextKey = xDriveCloudFilesVirtualQueryKey(target)
+    virtualCollection.reset(nextKey)
+    virtualCollection.primePage({
+      items: firstRange.items,
+      totalCount: firstRange.total_count,
+      offset: firstRange.offset,
+      limit: firstRange.limit,
+    })
+    setVirtualTarget(target)
+  }, [virtualCollection.primePage, virtualCollection.reset])
+
+  const virtualDirectory = useMemo<XDriveCloudFilesVirtualDirectory<TNode> | null>(() => {
+    if (!virtualTarget) return null
+    return {
+      itemCount: virtualCollection.totalCount ?? items.length,
+      loadedItems: virtualCollection.loadedItems,
+      itemAt: virtualCollection.itemAt,
+      ensureViewport: virtualCollection.ensureViewport,
+    }
+  }, [
+    items.length,
+    virtualCollection.ensureViewport,
+    virtualCollection.itemAt,
+    virtualCollection.loadedItems,
+    virtualCollection.totalCount,
+    virtualTarget,
+  ])
 
   const applyQuota = useCallback((value: TQuota) => {
     setQuota(value)
@@ -71,114 +171,86 @@ export function useXDriveCloudFilesController<
     const effectiveSort = sort ?? pageState?.sort ?? defaultSort
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
-    loadMoreRequestRef.current = false
-    setLoadingMore(false)
     setLoading(true)
     try {
-      const page = await port.getPage(
+      const range = await port.getRange(
         id,
-        xDriveFileExplorerPageRequestOptions(effectiveSort),
+        0,
+        XDRIVE_FILE_EXPLORER_PAGE_SIZE,
+        effectiveSort,
       )
       if (requestID !== directoryRequestRef.current) return
-      const transition = xDriveFileExplorerDirectoryPageTransition(
-        id,
-        page,
-        effectiveSort,
-        false,
-        directoryItemIDsRef.current,
-      )
-      setItems(transition.applyItems)
-      setPageState(transition.pageState)
+      setItems([...range.items])
+      setPageState({
+        parentID: id,
+        cursor: '',
+        hasMore: false,
+        sort: effectiveSort,
+      })
       if (nextCrumbs) setCrumbs([...nextCrumbs])
+      activateVirtualDirectory(id, effectiveSort, requestID, range)
     } catch (error) {
       if (requestID === directoryRequestRef.current) onError(error)
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [defaultSort, onError, pageState?.sort, port])
+  }, [activateVirtualDirectory, defaultSort, onError, pageState?.sort, port])
 
-  const loadMoreDirectory = useCallback(async (id: number, sort: TSort) => {
-    const currentPage = pageState
-    if (
-      loadMoreRequestRef.current ||
-      !xDriveFileExplorerCanLoadMore(currentPage, id, sort, loadingMore)
-    ) return
-
-    const requestID = directoryRequestRef.current
-    loadMoreRequestRef.current = true
-    setLoadingMore(true)
-    try {
-      const page = await port.getPage(
-        id,
-        xDriveFileExplorerPageRequestOptions(sort, currentPage.cursor),
-      )
-      if (requestID !== directoryRequestRef.current) return
-      const transition = xDriveFileExplorerDirectoryPageTransition(
-        id,
-        page,
-        sort,
-        true,
-        directoryItemIDsRef.current,
-      )
-      setItems(transition.applyItems)
-      setPageState(transition.pageState)
-    } catch (error) {
-      if (requestID === directoryRequestRef.current) onError(error)
-    } finally {
-      loadMoreRequestRef.current = false
-      if (requestID === directoryRequestRef.current) setLoadingMore(false)
-    }
-  }, [loadingMore, onError, pageState, port])
+  const loadMoreDirectory = useCallback(async (
+    _id: number,
+    _sort: TSort,
+  ) => {
+    // Directory browsing is range-driven. This compatibility callback remains
+    // for dense/search consumers that still share the workspace contract.
+  }, [])
 
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
-    loadMoreRequestRef.current = false
-    setLoadingMore(false)
     setLoading(true)
     try {
       const [quotaValue, root] = await Promise.all([
         port.getQuota(),
         port.getRoot(),
       ])
-      const page = await port.getPage(
+      const range = await port.getRange(
         root.id,
-        xDriveFileExplorerPageRequestOptions(defaultSort),
+        0,
+        XDRIVE_FILE_EXPLORER_PAGE_SIZE,
+        defaultSort,
       )
       if (requestID !== directoryRequestRef.current) return
-      const transition = xDriveFileExplorerDirectoryPageTransition(
-        root.id,
-        page,
-        defaultSort,
-        false,
-        directoryItemIDsRef.current,
-      )
       setQuota(quotaValue)
       setCrumbs([{ id: root.id, name: rootLabel }])
-      setItems(transition.applyItems)
-      setPageState(transition.pageState)
+      setItems([...range.items])
+      setPageState({
+        parentID: root.id,
+        cursor: '',
+        hasMore: false,
+        sort: defaultSort,
+      })
+      activateVirtualDirectory(root.id, defaultSort, requestID, range)
     } catch (error) {
       if (requestID === directoryRequestRef.current) onError(error)
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [defaultSort, onError, port, rootLabel])
+  }, [activateVirtualDirectory, defaultSort, onError, port, rootLabel])
 
   useEffect(() => {
     if (!enabled) {
       directoryRequestRef.current += 1
-      loadMoreRequestRef.current = false
-      directoryItemIDsRef.current.clear()
+      virtualCollection.reset('cloud-files:virtual:disabled')
+      setVirtualTarget(null)
       setQuota(null)
       setItems([])
       setCrumbs([])
       setPageState(null)
       setLoading(false)
-      setLoadingMore(false)
       return
     }
     void loadInitial()
-  }, [enabled, loadInitial])
+  }, [enabled, loadInitial, virtualCollection.reset])
 
   useEffect(() => {
     if (!enabled || quotaRefreshIntervalMs <= 0) return
@@ -195,7 +267,8 @@ export function useXDriveCloudFilesController<
     current,
     pageState,
     loading,
-    loadingMore,
+    loadingMore: false,
+    virtualDirectory,
     applyQuota,
     refreshQuota,
     loadInitial,

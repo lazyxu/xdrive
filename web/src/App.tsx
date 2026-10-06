@@ -516,6 +516,7 @@ function FileManager({
     pageState: directoryPage,
     loading,
     loadingMore,
+    virtualDirectory,
     applyQuota,
     refreshQuota,
     loadDirectory,
@@ -919,6 +920,7 @@ function FileManager({
                 api={api}
                 items={items}
                 crumbs={crumbs}
+                virtualDirectory={virtualDirectory}
                 loading={loading}
                 loadingMore={loadingMore}
                 hasMore={directoryPage?.hasMore ?? false}

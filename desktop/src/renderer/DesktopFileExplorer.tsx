@@ -34,6 +34,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
+  XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
@@ -43,6 +44,7 @@ const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences
 export default function DesktopFileExplorer({
   items,
   crumbs,
+  virtualDirectory,
   loading,
   loadingMore,
   hasMore,
@@ -72,6 +74,7 @@ export default function DesktopFileExplorer({
 }: {
   items: AgentCloudNode[]
   crumbs: AgentCloudCrumb[]
+  virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<AgentCloudNode> | null
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -157,6 +160,7 @@ export default function DesktopFileExplorer({
     submitPath,
     openItem: openWorkspaceItem,
     explorerPagination,
+    explorerVirtualCollection,
     externallySorted,
     searchStatusText,
     tabs,
@@ -171,6 +175,7 @@ export default function DesktopFileExplorer({
   } = useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({
     items,
     crumbs,
+    directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     directoryHasMore: hasMore,
     directoryLoadingMore: loadingMore,
@@ -824,6 +829,7 @@ export default function DesktopFileExplorer({
         presentation="workspace"
         items={explorerItems}
         crumbs={explorerCrumbs}
+        virtualCollection={explorerVirtualCollection}
         loading={loading || searchLoading || explorerActionBusy}
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
