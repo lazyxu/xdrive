@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/humanize"
 	xupdate "github.com/lazyxu/xdrive/internal/update"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 	"github.com/lazyxu/xdrive/internal/version"
@@ -361,14 +362,5 @@ func RedactDetail(s string) string {
 }
 
 func FormatBytes(v uint64) string {
-	const unit = 1024
-	if v < unit {
-		return fmt.Sprintf("%d B", v)
-	}
-	div, exp := uint64(unit), 0
-	for n := v / unit; n >= unit && exp < 3; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(v)/float64(div), "KMGT"[exp])
+	return humanize.Bytes(float64(v))
 }

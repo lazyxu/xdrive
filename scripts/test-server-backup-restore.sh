@@ -107,14 +107,20 @@ assert_runtime_services
 
 "$ROOT/scripts/server-verify.sh" --config-dir "$XDRIVE_HOME" >/dev/null
 BACKUP_PROGRESS_FILE="$TMP/backup-progress.env"
+BACKUP_LOG="$TMP/backup.log"
 backup_dir="$(
   XD_BACKUP_PROGRESS_FILE="$BACKUP_PROGRESS_FILE" \
   XD_BACKUP_PROGRESS_STAGE_CURRENT=5 \
   XD_BACKUP_PROGRESS_STAGE_TOTAL=9 \
   XD_BACKUP_PROGRESS_STAGE_NAME="创建升级前备份" \
   XD_BACKUP_PROGRESS_LOG_INTERVAL_SECONDS=1 \
-  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT"
+  bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$BACKUP_ROOT" 2>"$BACKUP_LOG"
 )"
+grep -Eq 'backup space preflight: source≈[0-9]+(\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB|EiB), required≈[0-9]+(\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB|EiB), available=[0-9]+(\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB|EiB)' "$BACKUP_LOG"
+if grep -Eq 'source≈[0-9]+ bytes|required≈[0-9]+ bytes|available=[0-9]+ bytes' "$BACKUP_LOG"; then
+  echo "backup preflight leaked raw byte counts" >&2
+  exit 1
+fi
 assert_runtime_services
 [[ -f "$backup_dir/database.dump" ]]
 [[ -f "$backup_dir/blobs.tar" ]]

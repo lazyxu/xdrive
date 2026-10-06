@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/humanize"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
@@ -1063,7 +1064,7 @@ func (s *Server) reusableUploadParts(ctx context.Context, session meta.UploadSes
 			return nil, err
 		}
 		if n != sourceSize {
-			return nil, fmt.Errorf("short read while hashing reusable chunk %d: got %d want %d", index, n, sourceSize)
+			return nil, fmt.Errorf("short read while hashing reusable chunk %d: got %s want %s", index, humanize.Bytes(float64(n)), humanize.Bytes(float64(sourceSize)))
 		}
 		actual := hex.EncodeToString(h.Sum(nil))
 		if !strings.EqualFold(actual, localHashes[index]) {
