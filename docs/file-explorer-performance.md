@@ -9,6 +9,8 @@ This performance track is intentionally limited to FileExplorer across shared UI
 - Directory listing uses cursor pagination with 200 items per page.
 - Details view windows large directories once 240 items are loaded.
 - Details scroll-window state is updated at most once per animation frame and only when the effective row boundary changes.
+- Grid view windows large directories once 400 items are loaded, with deterministic row geometry and three overscan rows.
+- Grid keyboard navigation and marquee selection use computed virtual geometry instead of scanning every mounted item.
 - Grid thumbnails are viewport-proximate and share a global concurrency budget of 6 requests.
 - Directory and search pagination reject duplicate in-flight load-more requests synchronously.
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
@@ -29,9 +31,9 @@ The FileExplorer performance suite should keep these workloads stable:
 
 ## Next work
 
-1. Add true Grid windowing instead of relying only on browser content visibility.
-2. Add an indexed server search strategy so FileExplorer search does not recursively materialize the complete namespace for every query.
-3. Benchmark server sorting by size/type on very large directories and add expression/covering indexes only when EXPLAIN shows a measurable benefit.
-4. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
+1. Add an indexed server search strategy so FileExplorer search does not recursively materialize the complete namespace for every query.
+2. Benchmark server sorting by size/type on very large directories and add expression/covering indexes only when EXPLAIN shows a measurable benefit.
+3. Add browser/Electron trace fixtures for directory open, continuous scroll, marquee selection, and thumbnail-heavy folders.
+4. Add measured render/interaction budgets to CI once trace fixtures are stable enough to avoid noisy failures.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
