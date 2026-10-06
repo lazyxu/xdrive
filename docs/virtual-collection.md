@@ -81,3 +81,18 @@ This is an allocation/residency metric rather than a wall-clock microbenchmark, 
 ### Search load-more cleanup
 
 After Search moved to VirtualCollection, the FileExplorer frontend no longer carries cursor, loading-more, append/merge, or Search pagination-dispatch state. Search viewport loading is exclusively range-driven through VirtualCollection. The server, Go client, Agent, and Web transport may continue to expose cursor Search for compatibility, but the FileExplorer UI does not consume it.
+
+
+## Gallery range contract
+
+Gallery item collections expose an additive range response when the caller sets `range=true`. The legacy array response remains unchanged when the flag is absent.
+
+The range contract is shared by:
+- all media items
+- album items
+- durable-person items
+- suggested-person items
+
+Each range response contains `items`, `total_count`, `offset`, and `limit`. Count and item reads are built from the same media base query so filters, smart-album membership, people/place filters, and collection membership cannot drift. The count uses distinct media node IDs to remain stable if future joins introduce multiplicity.
+
+Gallery VirtualCollection consumers must use this range contract from the first request so scrollbar geometry is based on the complete logical collection instead of the number of items loaded so far.

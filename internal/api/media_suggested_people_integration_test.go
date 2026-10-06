@@ -249,6 +249,22 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 		t.Fatalf("cluster item ids=%v", got)
 	}
 
+	rangePage, err := server.queryMediaItemRange(
+		context.Background(),
+		owner.ID,
+		mediaQueryOptions{PersonCluster: clusterKey},
+		"",
+		1,
+		1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rangePage.TotalCount != 2 || rangePage.Offset != 1 || rangePage.Limit != 1 ||
+		len(rangePage.Items) != 1 {
+		t.Fatalf("cluster range=%+v", rangePage)
+	}
+
 	filtered, err := server.queryMediaItems(
 		context.Background(),
 		owner.ID,

@@ -279,6 +279,10 @@ func (s *Server) listMediaPersonIdentityItems(c *gin.Context) {
 	if !ok {
 		return
 	}
+	rangeRequested, ok := mediaRangeRequested(c)
+	if !ok {
+		return
+	}
 	if err := ensureMediaPersonIdentity(
 		c.Request.Context(),
 		s.DB,
@@ -293,6 +297,23 @@ func (s *Server) listMediaPersonIdentityItems(c *gin.Context) {
 		return
 	}
 	options.PersonIdentity = personID
+	if rangeRequested {
+		page, err := s.queryMediaItemRange(
+			c.Request.Context(),
+			userID(c),
+			options,
+			"",
+			limit,
+			offset,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "list person items failed")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),

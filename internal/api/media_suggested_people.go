@@ -159,6 +159,10 @@ func (s *Server) listMediaSuggestedPersonItems(c *gin.Context) {
 	if !ok {
 		return
 	}
+	rangeRequested, ok := mediaRangeRequested(c)
+	if !ok {
+		return
+	}
 	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
@@ -181,6 +185,23 @@ func (s *Server) listMediaSuggestedPersonItems(c *gin.Context) {
 		return
 	}
 	options.PersonCluster = clusterID
+	if rangeRequested {
+		page, err := s.queryMediaItemRange(
+			c.Request.Context(),
+			userID(c),
+			options,
+			"",
+			limit,
+			offset,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "list suggested person items failed")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),

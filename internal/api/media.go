@@ -92,6 +92,13 @@ type mediaItemDTO struct {
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
 }
 
+type mediaItemRangeDTO struct {
+	Items      []mediaItemDTO `json:"items"`
+	TotalCount int64          `json:"total_count"`
+	Offset     int            `json:"offset"`
+	Limit      int            `json:"limit"`
+}
+
 type mediaAlbumDTO struct {
 	ID          string                `json:"id"`
 	Kind        string                `json:"kind"`
@@ -150,12 +157,33 @@ func (s *Server) listMediaItems(c *gin.Context) {
 	if !ok {
 		return
 	}
+	rangeRequested, ok := mediaRangeRequested(c)
+	if !ok {
+		return
+	}
 	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
 	); err != nil {
 		fail(c, http.StatusInternalServerError, "refresh media projection failed")
+		return
+	}
+	if rangeRequested {
+		page, err := s.queryMediaItemRange(
+			c.Request.Context(),
+			userID(c),
+			options,
+			"",
+			limit,
+			offset,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "list media failed")
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, page)
 		return
 	}
 	items, err := s.queryMediaItems(
@@ -366,6 +394,31 @@ func (s *Server) listMediaAlbumItems(c *gin.Context) {
 	if !ok {
 		return
 	}
+	rangeRequested, ok := mediaRangeRequested(c)
+	if !ok {
+		return
+	}
+	if rangeRequested {
+		page, err := s.queryMediaItemRange(
+			c.Request.Context(),
+			userID(c),
+			options,
+			raw,
+			limit,
+			offset,
+		)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				fail(c, http.StatusNotFound, "media album not found")
+			} else {
+				fail(c, http.StatusInternalServerError, "list media album items failed")
+			}
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	items, err := s.queryMediaItems(
 		c.Request.Context(),
 		userID(c),
@@ -423,13 +476,25 @@ func mediaListWindow(c *gin.Context) (int, int, bool) {
 	return limit, offset, true
 }
 
-func (s *Server) queryMediaItems(
+func mediaRangeRequested(c *gin.Context) (bool, bool) {
+	raw, exists := c.GetQuery("range")
+	if !exists {
+		return false, true
+	}
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		fail(c, http.StatusBadRequest, "range must be true or false")
+		return false, false
+	}
+	return value, true
+}
+
+func (s *Server) mediaItemsBaseQuery(
 	ctx context.Context,
 	uid uint64,
 	options mediaQueryOptions,
 	albumKey string,
-	limit, offset int,
-) ([]mediaItemDTO, error) {
+) (*gorm.DB, error) {
 	query := s.DB.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
 		Joins(
@@ -447,37 +512,45 @@ func (s *Server) queryMediaItems(
 		)
 	query = applyMediaQueryFilters(query, options)
 
-	if albumKey != "" {
-		if !validMediaAlbumKey(albumKey) {
-			return nil, gorm.ErrRecordNotFound
-		}
-		var collection meta.PhotoCollection
-		if err := s.DB.WithContext(ctx).
-			Where(
-				"owner_id = ? AND external_key = ? AND state = ?",
-				uid,
-				albumKey,
-				meta.PhotoCollectionStateActive,
-			).
-			First(&collection).Error; err != nil {
+	if albumKey == "" {
+		return query, nil
+	}
+	if !validMediaAlbumKey(albumKey) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var collection meta.PhotoCollection
+	if err := s.DB.WithContext(ctx).
+		Where(
+			"owner_id = ? AND external_key = ? AND state = ?",
+			uid,
+			albumKey,
+			meta.PhotoCollectionStateActive,
+		).
+		First(&collection).Error; err != nil {
+		return nil, err
+	}
+	if collection.Kind == meta.PhotoCollectionKindSmart {
+		saved, err := decodeMediaSmartAlbumQuery(collection.QueryJSON)
+		if err != nil {
 			return nil, err
 		}
-		if collection.Kind == meta.PhotoCollectionKindSmart {
-			saved, err := decodeMediaSmartAlbumQuery(collection.QueryJSON)
-			if err != nil {
-				return nil, err
-			}
-			query = applyMediaQueryFilters(query, saved.options())
-		} else {
-			membership := s.DB.WithContext(ctx).
-				Table("xd_photo_collection_assets AS pca_media").
-				Select("pa_media.primary_node_id").
-				Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
-				Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
-			query = query.Where("n.id IN (?)", membership)
-		}
+		return applyMediaQueryFilters(query, saved.options()), nil
 	}
 
+	membership := s.DB.WithContext(ctx).
+		Table("xd_photo_collection_assets AS pca_media").
+		Select("pa_media.primary_node_id").
+		Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
+		Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
+	return query.Where("n.id IN (?)", membership), nil
+}
+
+func (s *Server) materializeMediaItems(
+	ctx context.Context,
+	uid uint64,
+	query *gorm.DB,
+	limit, offset int,
+) ([]mediaItemDTO, error) {
 	var metadata []meta.MediaMetadata
 	if err := query.
 		Order("COALESCE(xd_media_metadata.captured_at, n.created_at) DESC, n.id DESC").
@@ -533,6 +606,50 @@ func (s *Server) queryMediaItems(
 		}
 	}
 	return out, nil
+}
+
+func (s *Server) queryMediaItems(
+	ctx context.Context,
+	uid uint64,
+	options mediaQueryOptions,
+	albumKey string,
+	limit, offset int,
+) ([]mediaItemDTO, error) {
+	query, err := s.mediaItemsBaseQuery(ctx, uid, options, albumKey)
+	if err != nil {
+		return nil, err
+	}
+	return s.materializeMediaItems(ctx, uid, query, limit, offset)
+}
+
+func (s *Server) queryMediaItemRange(
+	ctx context.Context,
+	uid uint64,
+	options mediaQueryOptions,
+	albumKey string,
+	limit, offset int,
+) (mediaItemRangeDTO, error) {
+	query, err := s.mediaItemsBaseQuery(ctx, uid, options, albumKey)
+	if err != nil {
+		return mediaItemRangeDTO{}, err
+	}
+	var totalCount int64
+	if err := query.
+		Session(&gorm.Session{}).
+		Distinct("xd_media_metadata.node_id").
+		Count(&totalCount).Error; err != nil {
+		return mediaItemRangeDTO{}, err
+	}
+	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset)
+	if err != nil {
+		return mediaItemRangeDTO{}, err
+	}
+	return mediaItemRangeDTO{
+		Items:      items,
+		TotalCount: totalCount,
+		Offset:     offset,
+		Limit:      limit,
+	}, nil
 }
 
 func mediaGalleryVisibleNodeSQL(nodeExpr string) string {

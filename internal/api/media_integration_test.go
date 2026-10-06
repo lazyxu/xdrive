@@ -196,6 +196,52 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if len(items) != 1 || items[0].Node.ID != file.ID {
 		t.Fatalf("media items=%+v", items)
 	}
+
+	rangeResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/items?range=true&limit=1&offset=0",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var itemRange mediaItemRangeDTO
+	if err := json.Unmarshal(rangeResponse.Body.Bytes(), &itemRange); err != nil {
+		t.Fatal(err)
+	}
+	if itemRange.TotalCount != 1 || itemRange.Offset != 0 || itemRange.Limit != 1 ||
+		len(itemRange.Items) != 1 || itemRange.Items[0].Node.ID != file.ID {
+		t.Fatalf("media item range=%+v", itemRange)
+	}
+
+	emptyRangeResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/items?range=true&limit=1&offset=99",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	itemRange = mediaItemRangeDTO{}
+	if err := json.Unmarshal(emptyRangeResponse.Body.Bytes(), &itemRange); err != nil {
+		t.Fatal(err)
+	}
+	if itemRange.TotalCount != 1 || itemRange.Offset != 99 || itemRange.Limit != 1 ||
+		len(itemRange.Items) != 0 {
+		t.Fatalf("empty media item range=%+v", itemRange)
+	}
+
+	request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/items?range=maybe&limit=1",
+		token,
+		nil,
+		http.StatusBadRequest,
+	)
 	if items[0].Metadata.MediaKind != meta.MediaKindImage ||
 		items[0].Metadata.Width != 3 ||
 		items[0].Metadata.Height != 2 ||
@@ -308,6 +354,26 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if len(albumItems) != 1 || albumItems[0].Node.ID != file.ID {
 		t.Fatalf("album items=%+v", albumItems)
+	}
+
+	albumRangeResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/albums/"+
+			url.PathEscape(folderAlbumID)+
+			"/items?range=true&limit=1&offset=0",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var albumRange mediaItemRangeDTO
+	if err := json.Unmarshal(albumRangeResponse.Body.Bytes(), &albumRange); err != nil {
+		t.Fatal(err)
+	}
+	if albumRange.TotalCount != 1 || albumRange.Offset != 0 || albumRange.Limit != 1 ||
+		len(albumRange.Items) != 1 || albumRange.Items[0].Node.ID != file.ID {
+		t.Fatalf("album range=%+v", albumRange)
 	}
 
 	thumbnailResponse := request(

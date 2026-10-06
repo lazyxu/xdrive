@@ -73,6 +73,13 @@ type MediaItem struct {
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
 }
 
+type MediaItemRange struct {
+	Items      []MediaItem `json:"items"`
+	TotalCount int64       `json:"total_count"`
+	Offset     int         `json:"offset"`
+	Limit      int         `json:"limit"`
+}
+
 type MediaSmartAlbumQuery struct {
 	MediaKind      string     `json:"media_kind,omitempty"`
 	Search         string     `json:"search,omitempty"`
@@ -224,6 +231,27 @@ func (c *Client) MediaItemsQuery(
 	return out, err
 }
 
+func (c *Client) MediaItemsRangeQuery(
+	ctx context.Context,
+	query MediaQuery,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	query.add(values)
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/items?" + values.Encode()
+	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 func (c *Client) MediaItem(ctx context.Context, nodeID uint64) (MediaItem, error) {
 	var out MediaItem
 	err := c.json(
@@ -297,6 +325,29 @@ func (c *Client) MediaSuggestedPersonItemsQuery(
 	return out, err
 }
 
+func (c *Client) MediaSuggestedPersonItemsRangeQuery(
+	ctx context.Context,
+	personID string,
+	query MediaQuery,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	query.add(values)
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/people/suggestions/" +
+		url.PathEscape(strings.TrimSpace(personID)) + "/items?" + values.Encode()
+	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 func (c *Client) MediaPersonIdentities(
 	ctx context.Context,
 	includeHidden bool,
@@ -341,6 +392,29 @@ func (c *Client) MediaPersonIdentityItemsQuery(
 		path += "?" + encoded
 	}
 	var out []MediaItem
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaPersonIdentityItemsRangeQuery(
+	ctx context.Context,
+	personID string,
+	query MediaQuery,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	query.add(values)
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/people/identities/" +
+		url.PathEscape(strings.TrimSpace(personID)) + "/items?" + values.Encode()
+	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
@@ -606,6 +680,29 @@ func (c *Client) MediaAlbumItemsQuery(
 		path += "?" + encoded
 	}
 	var out []MediaItem
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaAlbumItemsRangeQuery(
+	ctx context.Context,
+	albumID string,
+	query MediaQuery,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	query.add(values)
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/albums/" +
+		url.PathEscape(strings.TrimSpace(albumID)) + "/items?" + values.Encode()
+	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
