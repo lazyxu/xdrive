@@ -1429,6 +1429,7 @@ func TestDesktopIPCActions(t *testing.T) {
 		{http.MethodPost, "/v1/update/cancel", ""},
 		{http.MethodPut, "/v1/settings/sync-rule", `{"path":"Projects/Archive","mode":"exclude"}`},
 		{http.MethodGet, "/v1/file-availability?path=%2Ftmp%2Fxdrive%2Fa.txt", ""},
+		{http.MethodPost, "/v1/file-availability/batch", `{"paths":["Projects/a.txt","Projects/a.txt","Projects/b.txt"]}`},
 		{http.MethodPost, "/v1/file-availability", `{"path":"/tmp/xdrive/a.txt","action":"keep"}`},
 		{http.MethodGet, "/v1/conflicts", ""},
 		{http.MethodPost, "/v1/conflicts/open", `{"id":"c1","both":true}`},

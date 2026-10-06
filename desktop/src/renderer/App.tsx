@@ -396,6 +396,10 @@ export default function App({
     agent.hello?.capabilities.includes('file-recent') ?? false
   const filePropertiesStatsSupported =
     agent.hello?.capabilities.includes('file-properties-stats') ?? false
+  const fileAvailabilitySupported = Boolean(
+    agent.hello?.platform === 'windows' &&
+    agent.hello?.capabilities.includes('file-availability-batch'),
+  )
   const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
   const backgroundTasksSupported =
     agent.hello?.capabilities.includes('background-tasks') ?? false
@@ -1836,6 +1840,7 @@ export default function App({
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               propertiesStatsSupported: filePropertiesStatsSupported,
+              fileAvailabilitySupported,
               quickAccessSupported: fileQuickAccessSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,

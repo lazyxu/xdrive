@@ -122,6 +122,43 @@ test('cloud children range preserves offset zero and total count', async (t) => 
 })
 
 
+test('file availability batch posts one local Agent request', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(req.method, 'POST')
+    assert.equal(url.pathname, '/v1/file-availability/batch')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    assert.deepEqual(body, { paths: ['Projects/a.txt', 'Projects/b.txt'] })
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({
+      items: [
+        {
+          path: 'Projects/a.txt',
+          availability: {
+            Path: 'D:\\xDrive\\Projects\\a.txt',
+            Mode: 'always-local',
+            Placeholder: true,
+            Pinned: true,
+            OnlineOnly: false,
+            AvailableOffline: true,
+            InSync: true,
+            Syncing: false,
+          },
+        },
+      ],
+    }))
+  })
+
+  const result = await client.fileAvailabilityBatch([
+    'Projects/a.txt',
+    'Projects/b.txt',
+  ])
+  assert.equal(result.items[0].path, 'Projects/a.txt')
+  assert.equal(result.items[0].availability.Mode, 'always-local')
+})
+
 test('cloud File Properties cancellation aborts the Agent HTTP request', async (t) => {
   let resolveStarted
   let resolveClosed
