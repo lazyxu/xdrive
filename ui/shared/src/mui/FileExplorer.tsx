@@ -398,6 +398,8 @@ function setFileExplorerDragImage(
 
 const fileThumbnailConcurrency = 6
 const fileThumbnailCacheLimit = 96
+const fileThumbnailScrollSettleMs = 80
+const fileThumbnailPrefetchMarginPx = 240
 
 type FileThumbnailCache = {
   values: Map<string, string>
@@ -412,10 +414,16 @@ type FileThumbnailQueueEntry = {
   cancelled: boolean
 }
 
+type FileThumbnailVisibilityEntry = {
+  onVisible: () => void
+  timer: number | null
+}
+
 let fileThumbnailActive = 0
 const fileThumbnailQueue: FileThumbnailQueueEntry[] = []
 let fileThumbnailVisibilityObserver: IntersectionObserver | null = null
-const fileThumbnailVisibilityCallbacks = new Map<Element, () => void>()
+const fileThumbnailVisibilityCallbacks = new Map<Element, FileThumbnailVisibilityEntry>()
+const fileThumbnailScrollActivity = new WeakMap<Element, number>()
 
 function revokeFileThumbnailSource(value: string | null | undefined) {
   if (value?.startsWith('blob:') && typeof URL !== 'undefined') URL.revokeObjectURL(value)
@@ -496,6 +504,66 @@ function scheduleFileThumbnail(task: () => Promise<string | null | undefined>) {
   }
 }
 
+function fileThumbnailNow() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
+
+function markFileThumbnailScrollActivity(host: Element) {
+  fileThumbnailScrollActivity.set(host, fileThumbnailNow())
+}
+
+function fileThumbnailScrollRoot(host: Element) {
+  return host.closest('[data-xdrive-file-explorer-scroll-host]')
+}
+
+function fileThumbnailWithinPrefetchRange(host: Element) {
+  const root = fileThumbnailScrollRoot(host)
+  if (!(root instanceof HTMLElement)) return true
+  const hostRect = host.getBoundingClientRect()
+  const rootRect = root.getBoundingClientRect()
+  return (
+    hostRect.bottom >= rootRect.top - fileThumbnailPrefetchMarginPx &&
+    hostRect.top <= rootRect.bottom + fileThumbnailPrefetchMarginPx &&
+    hostRect.right >= rootRect.left - fileThumbnailPrefetchMarginPx &&
+    hostRect.left <= rootRect.right + fileThumbnailPrefetchMarginPx
+  )
+}
+
+function fileThumbnailAdmissionDelay(host: Element) {
+  const root = fileThumbnailScrollRoot(host)
+  if (!root) return 0
+  const lastScroll = fileThumbnailScrollActivity.get(root)
+  if (lastScroll === undefined) return 0
+  return Math.max(0, fileThumbnailScrollSettleMs - (fileThumbnailNow() - lastScroll))
+}
+
+function clearFileThumbnailVisibilityTimer(entry: FileThumbnailVisibilityEntry) {
+  if (entry.timer === null) return
+  window.clearTimeout(entry.timer)
+  entry.timer = null
+}
+
+function admitFileThumbnailVisibility(host: Element, observer: IntersectionObserver) {
+  const entry = fileThumbnailVisibilityCallbacks.get(host)
+  if (!entry) return
+  const delay = fileThumbnailAdmissionDelay(host)
+  if (delay > 0) {
+    if (entry.timer === null) {
+      entry.timer = window.setTimeout(() => {
+        entry.timer = null
+        if (!fileThumbnailVisibilityCallbacks.has(host)) return
+        if (!fileThumbnailWithinPrefetchRange(host)) return
+        admitFileThumbnailVisibility(host, observer)
+      }, Math.ceil(delay))
+    }
+    return
+  }
+  clearFileThumbnailVisibilityTimer(entry)
+  fileThumbnailVisibilityCallbacks.delete(host)
+  observer.unobserve(host)
+  entry.onVisible()
+}
+
 function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
   if (typeof IntersectionObserver === 'undefined') {
     onVisible()
@@ -503,25 +571,28 @@ function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
   }
   if (!fileThumbnailVisibilityObserver) {
     const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue
-        const callback = fileThumbnailVisibilityCallbacks.get(entry.target)
-        if (!callback) continue
-        fileThumbnailVisibilityCallbacks.delete(entry.target)
-        observer.unobserve(entry.target)
-        callback()
+      for (const observed of entries) {
+        const entry = fileThumbnailVisibilityCallbacks.get(observed.target)
+        if (!entry) continue
+        if (!observed.isIntersecting) {
+          clearFileThumbnailVisibilityTimer(entry)
+          continue
+        }
+        admitFileThumbnailVisibility(observed.target, observer)
       }
       if (fileThumbnailVisibilityCallbacks.size === 0) {
         observer.disconnect()
         if (fileThumbnailVisibilityObserver === observer) fileThumbnailVisibilityObserver = null
       }
-    }, { rootMargin: '240px' })
+    }, { rootMargin: `${fileThumbnailPrefetchMarginPx}px` })
     fileThumbnailVisibilityObserver = observer
   }
   const observer = fileThumbnailVisibilityObserver
-  fileThumbnailVisibilityCallbacks.set(host, onVisible)
+  fileThumbnailVisibilityCallbacks.set(host, { onVisible, timer: null })
   observer.observe(host)
   return () => {
+    const entry = fileThumbnailVisibilityCallbacks.get(host)
+    if (entry) clearFileThumbnailVisibilityTimer(entry)
     fileThumbnailVisibilityCallbacks.delete(host)
     observer.unobserve(host)
     if (fileThumbnailVisibilityCallbacks.size === 0) {
@@ -2564,6 +2635,7 @@ export function XDriveFileExplorer({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
+    markFileThumbnailScrollActivity(host)
     if (virtualizeDetails || virtualizeGrid) {
       pendingScrollTopRef.current = host.scrollTop
       const updateVirtualWindow = () => {
@@ -3040,6 +3112,7 @@ export function XDriveFileExplorer({
       ) : null}
       <Box
         ref={scrollHostRef}
+        data-xdrive-file-explorer-scroll-host
         sx={{
           position: 'relative',
           flex: 1,

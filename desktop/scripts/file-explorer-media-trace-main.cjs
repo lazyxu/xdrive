@@ -132,6 +132,9 @@ app.whenReady().then(async () => {
     if (scenario !== 'video-icons' && combined.thumbnailRequests === 0) {
       throw new Error('Image scenario did not request any thumbnails.')
     }
+    if (scenario === 'image-warm' && combined.thumbnailRequests > 600) {
+      throw new Error(`Warm thumbnail admission budget exceeded: ${combined.thumbnailRequests} requests.`)
+    }
 
     fs.writeFileSync(metricsPath, JSON.stringify(combined, null, 2) + '\n')
     console.log('__XDRIVE_FILE_EXPLORER_PERF_METRICS__' + JSON.stringify(combined))
