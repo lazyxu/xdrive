@@ -53,18 +53,30 @@ export function useXDriveVirtualCollection<TItem>({
     inFlightRef.current.clear()
   }, [])
 
-  const reset = useCallback((nextQueryKey = queryKey) => {
+  const reset = useCallback((nextQueryKey?: string) => {
+    const resolvedQueryKey = nextQueryKey ?? queryKeyRef.current
     abortInFlight()
     loadedRangeRef.current.clear()
     generationRef.current += 1
-    queryKeyRef.current = nextQueryKey
+    queryKeyRef.current = resolvedQueryKey
     setSnapshot(
       xDriveCreateVirtualCollectionSnapshot<TItem>(
-        nextQueryKey,
+        resolvedQueryKey,
         generationRef.current,
       ),
     )
-  }, [abortInFlight, queryKey])
+  }, [abortInFlight])
+
+  const primePage = useCallback((page: XDriveVirtualCollectionPage<TItem>) => {
+    const generation = generationRef.current
+    const range = { offset: page.offset, limit: page.limit }
+    loadedRangeRef.current.add(xDriveVirtualCollectionRangeKey(range))
+    setSnapshot((current) => (
+      current.generation === generation
+        ? xDriveVirtualCollectionApplyPage(current, generation, page)
+        : current
+    ))
+  }, [])
 
   useEffect(() => {
     if (queryKeyRef.current === queryKey) return
@@ -193,5 +205,6 @@ export function useXDriveVirtualCollection<TItem>({
     itemAt,
     ensureViewport,
     reset,
+    primePage,
   }
 }

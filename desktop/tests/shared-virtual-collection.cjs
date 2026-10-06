@@ -258,6 +258,48 @@ test('old range completion cannot release the new generation in-flight lock', as
   )
 })
 
+
+test('VirtualCollection reset stays stable and primed pages do not refetch', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const pending = []
+  const loadRange = (range, signal) => new Promise((resolve) => {
+    pending.push({ range, signal, resolve })
+  })
+  const onError = () => {}
+
+  let collection = runtime.render(() => useVirtualCollection({
+    queryKey: 'old',
+    loadRange,
+    onError,
+    pageSize: 2,
+    overscanPages: 0,
+  }))
+  const reset = collection.reset
+
+  collection.reset('new')
+  collection.primePage({
+    offset: 0,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+
+  collection = runtime.render(() => useVirtualCollection({
+    queryKey: 'new',
+    loadRange,
+    onError,
+    pageSize: 2,
+    overscanPages: 0,
+  }))
+
+  assert.equal(collection.reset, reset, 'reset callback must stay stable across query keys')
+  assert.equal(collection.totalCount, 6)
+  assert.deepEqual(collection.itemAt(0), { id: 1 })
+  await collection.ensureViewport(0, 1)
+  assert.equal(pending.length, 0, 'primed first page must not be fetched twice')
+})
+
 test('VirtualCollection cancels and evicts ranges that move outside retention', async () => {
   const runtime = createHookRuntime()
   const useVirtualCollection = loadVirtualCollectionHook(runtime.react)

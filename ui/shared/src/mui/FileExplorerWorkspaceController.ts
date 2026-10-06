@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import type { Node } from '../models'
 import {
   xDriveFileExplorerDispatchOpenItem,
@@ -9,6 +9,7 @@ import type { XDriveFileExplorerSearchResultLike } from '../file-explorer-contro
 import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
+  XDriveFileExplorerVirtualCollection,
 } from './FileExplorer'
 import {
   useXDriveFileExplorerClipboard,
@@ -34,6 +35,15 @@ export type XDriveFileExplorerWorkspaceCrumb = {
   name: string
 }
 
+export type XDriveFileExplorerWorkspaceVirtualDirectory<
+  TNode extends Node,
+> = {
+  itemCount: number
+  loadedItems: ReadonlyMap<number, TNode>
+  itemAt: (index: number) => TNode | undefined
+  ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
+}
+
 export type XDriveFileExplorerWorkspaceSearchResult<
   TNode extends Node,
 > = XDriveFileExplorerSearchProjection<TNode> & XDriveFileExplorerSearchResultLike
@@ -44,6 +54,7 @@ export function useXDriveFileExplorerWorkspace<
 >({
   items,
   crumbs,
+  directoryVirtualCollection,
   viewModeStorageKey,
   directoryHasMore,
   directoryLoadingMore,
@@ -59,6 +70,7 @@ export function useXDriveFileExplorerWorkspace<
 }: {
   items: TNode[]
   crumbs: XDriveFileExplorerWorkspaceCrumb[]
+  directoryVirtualCollection?: XDriveFileExplorerWorkspaceVirtualDirectory<TNode> | null
   viewModeStorageKey: string
   directoryHasMore: boolean
   directoryLoadingMore: boolean
@@ -102,6 +114,9 @@ export function useXDriveFileExplorerWorkspace<
   searchActiveRef.current = search.searchResults !== null
   clearSearchRef.current = search.clearSearch
 
+  const directoryVirtualItems = search.searchResults === null
+    ? directoryVirtualCollection?.loadedItems
+    : undefined
   const projection = useXDriveFileExplorerProjection<
     TNode,
     TSearch,
@@ -110,7 +125,29 @@ export function useXDriveFileExplorerWorkspace<
     items,
     crumbs,
     searchResults: search.searchResults,
+    virtualItems: directoryVirtualItems,
   })
+
+  const explorerVirtualCollection = useMemo<XDriveFileExplorerVirtualCollection | undefined>(() => {
+    if (
+      search.searchResults !== null ||
+      !directoryVirtualCollection ||
+      !projection.virtualExplorerItems
+    ) return undefined
+    const loadedItems = projection.virtualExplorerItems
+    return {
+      itemCount: directoryVirtualCollection.itemCount,
+      loadedItems,
+      itemAt: (index) => loadedItems.get(index),
+      onRangeChange: (startIndex, endIndex) => (
+        directoryVirtualCollection.ensureViewport(startIndex, endIndex)
+      ),
+    }
+  }, [
+    directoryVirtualCollection,
+    projection.virtualExplorerItems,
+    search.searchResults,
+  ])
 
   const clipboard = useXDriveFileExplorerClipboard<TNode>({
     nodeByID: projection.nodeByID,
@@ -173,6 +210,7 @@ export function useXDriveFileExplorerWorkspace<
     submitPath,
     openItem,
     explorerPagination,
+    explorerVirtualCollection,
     externallySorted: search.searchResults === null || search.searchSortMatches,
     searchStatusText: search.searchResults
       ? `搜索“${search.searchState.query}”`

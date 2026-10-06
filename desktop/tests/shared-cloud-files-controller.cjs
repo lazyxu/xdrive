@@ -35,25 +35,27 @@ test('shared cloud files port owns the transport-neutral read contract', () => {
   assert.ok(sharedIndex.includes("export * from './cloud-files'"), 'framework-neutral cloud files contract must be exported')
 })
 
-test('shared cloud files controller owns directory paging, quota and initial loading', () => {
+test('shared cloud files controller owns sparse range loading, quota and initial loading', () => {
   for (const token of [
     'useXDriveCloudFilesController',
+    'useXDriveVirtualCollection<TNode>',
     'const [quota, setQuota]',
     'const [items, setItems]',
     'const [crumbs, setCrumbs]',
     'const [pageState, setPageState]',
-    'xDriveFileExplorerCanLoadMore(',
-    'xDriveFileExplorerDirectoryPageTransition(',
-    'xDriveFileExplorerPageRequestOptions(',
     'port.getRoot()',
-    'port.getPage(',
-    'port.getQuota()',
+    'port.getRange(',
+    'XDRIVE_FILE_EXPLORER_PAGE_SIZE',
+    'virtualCollection.primePage({',
+    'virtualDirectory',
+    'loadedItems: virtualCollection.loadedItems',
+    'ensureViewport: virtualCollection.ensureViewport',
     'quotaRefreshIntervalMs = 60_000',
     'applyQuota',
     'refreshQuota',
     'loadDirectory',
-    'loadMoreDirectory',
     'if (!enabled) {',
+    "virtualCollection.reset('cloud-files:virtual:disabled')",
     'setQuota(null)',
     'setItems([])',
     'setCrumbs([])',
@@ -61,6 +63,8 @@ test('shared cloud files controller owns directory paging, quota and initial loa
   ]) {
     assert.ok(controller.includes(token), `shared cloud files controller missing: ${token}`)
   }
+  assert.equal(controller.includes('xDriveFileExplorerCanLoadMore('), false, 'directory browsing must not retain cursor load-more logic')
+  assert.equal(controller.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'directory browsing must not append cursor pages')
   assert.ok(sharedMuiIndex.includes("export * from './CloudFilesController'"), 'shared cloud files controller must be exported')
 })
 
@@ -178,4 +182,20 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
   assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort) =>'), 'Desktop shared port must wire range transport')
   assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
   assert.ok(desktopTypes.includes('type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>'), 'Desktop renderer must alias the shared range contract')
+})
+
+
+test('Web and Desktop pass sparse virtual directory state into FileExplorer', () => {
+  for (const token of [
+    'virtualDirectory,',
+    'virtualDirectory={virtualDirectory}',
+  ]) {
+    assert.ok(webApp.includes(token), `Web sparse directory wiring missing: ${token}`)
+  }
+  for (const token of [
+    'virtualDirectory: cloudVirtualDirectory',
+    'virtualDirectory: cloudVirtualDirectory,',
+  ]) {
+    assert.ok(desktopApp.includes(token), `Desktop sparse directory wiring missing: ${token}`)
+  }
 })

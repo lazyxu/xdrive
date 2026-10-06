@@ -9,6 +9,7 @@ const web = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.t
 const desktop = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const cloudFilesController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'), 'utf8')
 const searchController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'), 'utf8')
+const virtualCollectionController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts'), 'utf8')
 const childrenPagination = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'children_pagination.go'), 'utf8')
 const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'handlers.go'), 'utf8')
 const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
@@ -92,11 +93,12 @@ test('FileExplorer bounds thumbnail and pointer/scroll work under large director
   assert.ok(shared.includes('const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)'), 'Grid marquee selection must use virtual geometry')
 })
 
-test('FileExplorer pagination rejects duplicate and stale page requests', () => {
+test('FileExplorer range and search paging reject duplicate and stale requests', () => {
   assert.ok(cloudFilesController.includes('const directoryRequestRef = useRef(0)'), 'directory request generation guard is missing')
-  assert.ok(cloudFilesController.includes('const loadMoreRequestRef = useRef(false)'), 'directory load-more lock is missing')
   assert.ok(cloudFilesController.includes('if (requestID !== directoryRequestRef.current) return'), 'stale directory responses must be ignored')
-  assert.ok(cloudFilesController.includes('loadMoreRequestRef.current ||'), 'directory pagination must synchronously reject duplicate load-more calls')
+  assert.ok(cloudFilesController.includes('useXDriveVirtualCollection<TNode>'), 'directory range loading must delegate in-flight ownership to VirtualCollection')
+  assert.ok(virtualCollectionController.includes('const inFlightRef = useRef(new Map<string, InFlightRange>())'), 'VirtualCollection in-flight range map is missing')
+  assert.ok(virtualCollectionController.includes('existing && existing.generation === generation'), 'VirtualCollection must deduplicate same-generation range requests')
   assert.ok(searchController.includes('const loadMoreRequestRef = useRef<Record<string, boolean>>({})'), 'search pagination lock is missing')
   assert.ok(searchController.includes('if (loadMoreRequestRef.current[key]) return'), 'search pagination must synchronously reject duplicate load-more calls')
 })
@@ -104,12 +106,12 @@ test('FileExplorer pagination rejects duplicate and stale page requests', () => 
 
 test('FileExplorer selection and keyboard lookup avoid repeated whole-directory scans', () => {
   assert.ok(shared.includes('const visibleItemProjection = useMemo(() => {'), 'one-pass visible-item projection is missing')
-  assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(id))'), 'selected items must use indexed lookup')
+  assert.ok(shared.includes('interactionProjection.itemByKey.get(explorerIDKey(id))'), 'selected items must use bounded indexed lookup')
   assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(activeItemID)) ?? -1'), 'active item lookup must be indexed')
   assert.ok(shared.includes('visibleItemIndexByKey.get(anchorKey) ?? -1'), 'mouse Shift anchor lookup must be indexed')
   assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(item.id)) ?? -1'), 'keyboard current-item lookup must be indexed')
   assert.ok(shared.includes('visibleItemIndexByKey.get(explorerIDKey(anchorID)) ?? -1'), 'keyboard Shift anchor lookup must be indexed')
-  assert.ok(shared.includes('names: visibleItemNames'), 'type-select names should be memoized')
+  assert.ok(shared.includes('names: visibleItemNames'), 'dense type-select names should stay memoized')
   assert.ok(shared.includes('() => selectedItems.reduce((total, item) => ('), 'selected-size aggregation must scale with the selection')
   assert.equal(shared.includes('visibleItems.findIndex((candidate)'), false, 'keyboard/selection paths must not rescan visibleItems')
   assert.equal(shared.includes('() => visibleItems.filter((item) => selectedKeySet.has(explorerIDKey(item.id)))'), false, 'selectedItems must not scan the whole directory')
@@ -196,14 +198,12 @@ test('FileExplorer typed paths use indexed exact-child lookups instead of loadin
 })
 
 
-test('FileExplorer directory pagination avoids rebuilding a whole-directory ID Map on normal appends', () => {
-  assert.ok(explorerController.includes('knownIDs?: Set<number>'), 'page merge needs a retained ID-set fast path')
-  assert.ok(explorerController.includes('const pageIDs = new Set<number>()'), 'page merge should inspect only the incoming page for duplicate IDs')
-  assert.ok(explorerController.includes('if (knownIDs.has(item.id) || pageIDs.has(item.id))'), 'page merge must preserve duplicate detection')
-  assert.ok(explorerController.includes('return [...currentItems, ...pageItems]'), 'unique cursor pages should use the direct append path')
-  assert.ok(explorerController.includes('const merged = new Map(currentItems.map((item) => [item.id, item] as const))'), 'duplicate pages must retain the replacement fallback')
-  assert.ok(cloudFilesController.includes('const directoryItemIDsRef = useRef(new Set<number>())'), 'directory controller must retain seen IDs across page loads')
-  assert.ok(cloudFilesController.includes('directoryItemIDsRef.current.clear()'), 'directory ID cache must reset with the workspace')
+test('FileExplorer virtual directories avoid rebuilding a whole-directory ID Map', () => {
+  assert.ok(cloudFilesController.includes('loadedItems: virtualCollection.loadedItems'), 'directory controller must expose bounded sparse metadata')
+  assert.ok(cloudFilesController.includes('ensureViewport: virtualCollection.ensureViewport'), 'directory controller must delegate viewport range loading')
+  assert.ok(virtualCollectionController.includes('xDriveVirtualCollectionRetainRanges(current, retentionRanges)'), 'VirtualCollection must evict metadata outside retention')
+  assert.equal(cloudFilesController.includes('directoryItemIDsRef'), false, 'range-backed directory controller must not retain a whole-directory ID set')
+  assert.equal(cloudFilesController.includes('xDriveFileExplorerMergePageItems'), false, 'range-backed directory controller must not append cursor pages')
 })
 
 
@@ -287,4 +287,18 @@ test('FileExplorer sparse virtual surface keeps logical count separate from rend
     surface.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'),
     'dense mode must retain adaptive prefetch behavior',
   )
+})
+
+
+test('FileExplorer sparse interactions stay bounded to loaded metadata', () => {
+  assert.ok(shared.includes('loadedItems: ReadonlyMap<number, XDriveFileExplorerItem>'), 'virtual surface must receive bounded loaded metadata')
+  assert.ok(shared.includes('const virtualLoadedItems = virtualCollection?.loadedItems'), 'loaded virtual metadata projection is missing')
+  assert.ok(shared.includes('const interactionProjection = virtualLoadedProjection ?? visibleItemProjection'), 'interaction lookup must switch to bounded virtual metadata')
+  assert.ok(shared.includes('const loadedRangeIDs = (start: number, end: number) =>'), 'Shift selection needs a bounded loaded-range helper')
+  assert.ok(shared.includes('itemCount: logicalItemCount'), 'keyboard navigation must use the logical collection length')
+  assert.ok(shared.includes('const target = itemAtLogicalIndex(targetIndex)'), 'keyboard navigation must resolve sparse indexes lazily')
+  assert.ok(shared.includes('virtualCollection?.onRangeChange?.(index, index)'), 'unloaded keyboard targets must request their range')
+  assert.ok(shared.includes('if (virtualCollectionEnabled) return false'), 'dense type-select must not scan sparse logical indexes')
+  assert.ok(shared.includes('const selectableItems = interactionProjection.orderedItems'), 'Ctrl+A must stay bounded to loaded metadata')
+  assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(logicalItemCount)'), false, 'interaction lookup must not materialize the logical directory')
 })

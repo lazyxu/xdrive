@@ -207,7 +207,7 @@ test('Desktop uses a dedicated persistent FileExplorer details-column layout', (
 })
 
 test('Desktop FileExplorer supplies preview/properties metadata through existing protected thumbnail APIs', () => {
-  assert.ok(projection.includes('path: resultPath || `${crumbProjection.pathPrefix}${node.name}`'), 'shared Explorer projection path metadata is missing')
+  assert.ok(projection.includes('path: resultPath || `${pathPrefix}${node.name}`'), 'shared Explorer projection path metadata is missing')
   assert.ok(projection.includes('revision: node.revision'), 'shared Explorer projection revision metadata is missing')
   assert.ok(explorer.includes('loadThumbnail={loadThumbnail}'), 'Desktop inspector should reuse the protected media thumbnail bridge')
   assert.equal(explorer.includes('localPath:'), false, 'Desktop preview/properties must not expose managed local paths')
@@ -236,24 +236,22 @@ test('Desktop Files no longer inherits the legacy dashboard panel or dead pre-sh
   }
 })
 
-test('Desktop FileExplorer uses the shared Cloud Files controller for cursor-paged directory sorting', () => {
+test('Desktop FileExplorer uses shared range-backed directory sorting', () => {
   assert.equal(app.includes('DEFAULT_DESKTOP_FILE_SORT'), false, 'Desktop must not own a local default file sort')
   assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Desktop cloud controller must use the shared default sort')
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Desktop page-size contract must remain in the shared controller')
   assert.ok(app.includes('useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>'), 'Desktop directory lifecycle must use the shared Cloud Files controller')
-  assert.ok(app.includes('cloudChildrenPage(parentID, options)'), 'Desktop Cloud Files port must forward shared page options to Agent IPC')
+  assert.ok(app.includes('cloudChildrenRange('), 'Desktop Cloud Files port must expose the range transport')
+  assert.ok(app.includes('virtualDirectory: cloudVirtualDirectory'), 'Desktop must pass sparse directory state into the Explorer adapter')
   assert.equal(app.includes('xDriveFileExplorerPageRequestOptions('), false, 'Desktop App must not construct directory page requests locally')
-  assert.equal(app.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own pagination eligibility')
-  assert.equal(app.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'Desktop App must not own page transitions')
-  assert.ok(controller.includes('xDriveFileExplorerDirectoryPageTransition'), 'shared controller must own directory page transitions')
-  assert.equal(app.includes('xDriveFileExplorerMergePageItems(currentItems, result.data.items)'), false, 'Desktop must not duplicate page merge semantics')
-  assert.equal(app.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate directory page-state derivation')
-  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Desktop directory pages should consume shared workspace sorting state')
-  assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted pages')
-  assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Desktop Explorer pagination dispatch')
-  assert.ok(explorer.includes('onLoadMoreDirectory: onLoadMore'), 'Desktop Explorer must inject directory load-more into the shared workspace controller')
-  assert.ok(explorer.includes('onLoadMore={explorerPagination.onLoadMore}'), 'Desktop Explorer must wire shared pagination dispatch near the scroll boundary')
+  assert.equal(app.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own directory pagination eligibility')
+  assert.equal(app.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'Desktop App must not own directory page transitions')
+  assert.ok(explorer.includes('directoryVirtualCollection: virtualDirectory'), 'Desktop Explorer must delegate sparse directory state to the shared workspace')
+  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Explorer must activate the shared sparse surface')
+  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Desktop directory ranges should consume shared workspace sorting state')
+  assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted ranges')
 })
+
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
   assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop bulk delete must use one shared delete controller')
   assert.ok(deleteController.includes('xDriveFileExplorerDeleteOperationPlan(nodes)'), 'shared delete controller must queue one delete plan')
