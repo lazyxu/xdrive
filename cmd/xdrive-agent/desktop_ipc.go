@@ -89,6 +89,7 @@ var desktopIPCCapabilities = []string{
 	"transfers",
 	"transfer-events",
 	"transfer-retry",
+	"transfer-lifecycle",
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -185,6 +186,7 @@ type desktopIPCController interface {
 	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
 	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
 	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
+	CloudUploadWithConflictPolicyTracked(context.Context, uint64, string, string, string, string) (agentCloudUploadResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
 	CloudFileTextPreview(context.Context, uint64) (client.FileTextPreview, error)
 	CloudFilePreviewTicket(context.Context, uint64) (client.FilePreviewTicket, error)
@@ -254,6 +256,12 @@ type desktopIPCController interface {
 	Transfers() (uint64, []transfer.Task)
 	WaitTransfers(context.Context, uint64) (uint64, []transfer.Task, bool)
 	RetryTransfer(context.Context, string) error
+	StartTransferGroup(transfer.Spec) (string, error)
+	StartTransferChild(string, transfer.Spec) (string, error)
+	BeginTransfer(string, *transfer.GroupProgress) error
+	ProgressTransfer(string, int64, int64) error
+	UpdateTransferGroup(string, transfer.GroupProgress) error
+	FinishTransfer(string, string, string, bool) error
 	ClearTransferHistory() (uint64, []transfer.Task)
 	Diagnostics(context.Context) diagnostics.Report
 	Reconnect(context.Context) error
@@ -531,6 +539,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
+	mux.HandleFunc("POST /v1/transfers/lifecycle", h.transferLifecycle)
 	mux.HandleFunc("DELETE /v1/transfers", h.clearTransferHistory)
 	mux.HandleFunc("GET /v1/diagnostics", h.diagnostics)
 	mux.HandleFunc("GET /v1/diagnostics/report", h.diagnosticReport)
@@ -1354,6 +1363,7 @@ func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter,
 		LocalPath      string `json:"local_path"`
 		Name           string `json:"name"`
 		ConflictPolicy string `json:"conflict_policy"`
+		TransferID     string `json:"transfer_id,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -1361,6 +1371,7 @@ func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter,
 	input.LocalPath = strings.TrimSpace(input.LocalPath)
 	input.Name = strings.TrimSpace(input.Name)
 	input.ConflictPolicy = strings.TrimSpace(input.ConflictPolicy)
+	input.TransferID = strings.TrimSpace(input.TransferID)
 	if input.ParentID == 0 || input.LocalPath == "" {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_upload", "parent_id and local_path are required")
 		return
@@ -1377,13 +1388,26 @@ func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter,
 		)
 		return
 	}
-	result, err := h.ctrl.CloudUploadWithConflictPolicy(
-		r.Context(),
-		input.ParentID,
-		input.LocalPath,
-		input.Name,
-		input.ConflictPolicy,
-	)
+	var result agentCloudUploadResult
+	var err error
+	if input.TransferID != "" {
+		result, err = h.ctrl.CloudUploadWithConflictPolicyTracked(
+			r.Context(),
+			input.ParentID,
+			input.LocalPath,
+			input.Name,
+			input.ConflictPolicy,
+			input.TransferID,
+		)
+	} else {
+		result, err = h.ctrl.CloudUploadWithConflictPolicy(
+			r.Context(),
+			input.ParentID,
+			input.LocalPath,
+			input.Name,
+			input.ConflictPolicy,
+		)
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -3032,6 +3056,129 @@ func (h *desktopIPCHandler) retryTransfer(w http.ResponseWriter, r *http.Request
 	}
 	revision, items := h.ctrl.Transfers()
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Action       string `json:"action"`
+		ID           string `json:"id,omitempty"`
+		ParentID     string `json:"parent_id,omitempty"`
+		FileName     string `json:"file_name,omitempty"`
+		Path         string `json:"path,omitempty"`
+		RelativePath string `json:"relative_path,omitempty"`
+		Kind         string `json:"kind,omitempty"`
+		Direction    string `json:"direction,omitempty"`
+		BytesDone    int64  `json:"bytes_done,omitempty"`
+		BytesTotal   int64  `json:"bytes_total,omitempty"`
+		ItemsTotal   int64  `json:"items_total,omitempty"`
+		ItemsDone    int64  `json:"items_completed,omitempty"`
+		ItemsFailed  int64  `json:"items_failed,omitempty"`
+		ItemsRunning int64  `json:"items_running,omitempty"`
+		ItemsQueued  int64  `json:"items_queued,omitempty"`
+		ScanComplete bool   `json:"scan_complete,omitempty"`
+		State        string `json:"state,omitempty"`
+		Error        string `json:"error,omitempty"`
+		Skipped      bool   `json:"skipped,omitempty"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Action = strings.TrimSpace(input.Action)
+	input.ID = strings.TrimSpace(input.ID)
+	input.ParentID = strings.TrimSpace(input.ParentID)
+	if input.Action == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_lifecycle", "action is required")
+		return
+	}
+
+	spec := transfer.Spec{
+		FileName:     strings.TrimSpace(input.FileName),
+		Path:         strings.TrimSpace(input.Path),
+		RelativePath: strings.TrimSpace(input.RelativePath),
+		Kind:         strings.TrimSpace(input.Kind),
+		Direction:    strings.TrimSpace(input.Direction),
+		TotalBytes:   input.BytesTotal,
+		TotalItems:   input.ItemsTotal,
+	}
+	progress := transfer.GroupProgress{
+		Phase:          transfer.PhaseTransferring,
+		ScanComplete:   input.ScanComplete,
+		BytesDone:      input.BytesDone,
+		BytesTotal:     input.BytesTotal,
+		TotalItems:     input.ItemsTotal,
+		CompletedItems: input.ItemsDone,
+		FailedItems:    input.ItemsFailed,
+		RunningItems:   input.ItemsRunning,
+		QueuedItems:    input.ItemsQueued,
+	}
+
+	switch input.Action {
+	case "start_group":
+		id, err := h.ctrl.StartTransferGroup(spec)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]string{"id": id})
+	case "start_child":
+		if input.ParentID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_parent", "parent_id is required")
+			return
+		}
+		spec.Phase = transfer.PhaseQueued
+		id, err := h.ctrl.StartTransferChild(input.ParentID, spec)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]string{"id": id})
+	case "begin":
+		if input.ID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+			return
+		}
+		var group *transfer.GroupProgress
+		if input.ItemsTotal > 0 || input.BytesTotal > 0 || input.ScanComplete {
+			group = &progress
+		}
+		if err := h.ctrl.BeginTransfer(input.ID, group); err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case "progress":
+		if input.ID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+			return
+		}
+		if err := h.ctrl.ProgressTransfer(input.ID, input.BytesDone, input.BytesTotal); err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case "update_group":
+		if input.ID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+			return
+		}
+		if err := h.ctrl.UpdateTransferGroup(input.ID, progress); err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case "finish":
+		if input.ID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+			return
+		}
+		if err := h.ctrl.FinishTransfer(input.ID, strings.TrimSpace(input.State), input.Error, input.Skipped); err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	default:
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_lifecycle", "unsupported transfer lifecycle action")
+	}
 }
 
 func (h *desktopIPCHandler) clearTransferHistory(w http.ResponseWriter, _ *http.Request) {

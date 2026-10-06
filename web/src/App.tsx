@@ -38,6 +38,7 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
+  xDriveFileExplorerUploadGroupLabel,
   useXDriveFileExplorerDeleteController,
   useXDriveCloudFilesController,
   useXDriveFileOperationLifecycle,
@@ -475,9 +476,21 @@ function FileManager({
   const fileUploads = useXDriveFileExplorerUploadController<File>({
     trackProgress: true,
     fileName: (file) => file.name,
+    fileSize: (file) => file.size,
     preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name),
-    upload: (parentID, file, conflictPolicy, onProgress) =>
-      api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress),
+    upload: (parentID, file, conflictPolicy, onProgress, transferID) =>
+      api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID),
+    transferLifecycle: {
+      startGroup: (input) => api.startTransferGroup(input),
+      startChild: (groupID, input) => api.startTransferChild(groupID, input),
+      begin: (id, input) => {
+        if (input?.group) api.updateTransferGroup(id, input.group)
+        api.beginTransfer(id)
+      },
+      progress: (id, done, total) => api.progressTransfer(id, done, total),
+      updateGroup: (id, progress) => api.updateTransferGroup(id, progress),
+      finish: (id, input) => api.finishTransfer(id, input),
+    },
     onError: handleError,
     onFeedback: (tone, message) => setFeedback({ tone, message }),
   })
@@ -719,25 +732,37 @@ function FileManager({
     entries: XDriveFileExplorerExternalDropPayload['files'],
     directoryPaths: readonly string[] = [],
   ) => {
-    const targets = await xDriveFileExplorerResolveFolderUploadTargets({
-      rootParentID: parentID,
+    const label = xDriveFileExplorerUploadGroupLabel(
       entries,
-      directoryPaths,
-      ensureDirectory: (directoryParentID, name) => xDriveFileExplorerEnsureUploadDirectory({
-        parentID: directoryParentID,
-        name,
-        createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
-        listChildren: (id) => api.list(id),
-      }),
-    })
-    await uploadTargets(
-      targets.map(({ parentID: targetParentID, file }) => ({
-        parentID: targetParentID,
-        file,
-      })),
-      false,
-      'upload-folder',
+      (file) => file.name,
     )
+    const result = await fileUploads.runGroup({
+      label,
+      path: label,
+      action: 'upload-folder',
+      itemsTotal: entries.length,
+      bytesTotal: entries.reduce((sum, entry) => sum + Math.max(0, entry.file.size), 0),
+      resolveTargets: async () => {
+        const targets = await xDriveFileExplorerResolveFolderUploadTargets({
+          rootParentID: parentID,
+          entries,
+          directoryPaths,
+          ensureDirectory: (directoryParentID, name) => xDriveFileExplorerEnsureUploadDirectory({
+            parentID: directoryParentID,
+            name,
+            createDirectory: (id, directoryName) => api.createDirectory(id, directoryName),
+            listChildren: (id) => api.list(id),
+          }),
+        })
+        return targets.map(({ parentID: targetParentID, file, relativePath }) => ({
+          parentID: targetParentID,
+          file,
+          relativePath,
+        }))
+      },
+    })
+    if (result.uploaded > 0) await refreshQuota()
+    return result
   }
 
   const uploadFolderFiles = async (files: FileList | null) => {

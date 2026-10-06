@@ -219,7 +219,23 @@ function TransferGroupItem({
   const percent = bytes.total > 0 ? Math.max(0, Math.min(100, bytes.done * 100 / bytes.total)) : 0
   const active = xDriveTransferActive(item)
   const scanIncomplete = item.scan_complete === false
-  const eta = scanIncomplete ? undefined : xDriveTransferEtaMs({ ...item, bytes_done: bytes.done, bytes_total: bytes.total })
+  const childInstantSpeed = children.reduce(
+    (sum, child) => sum + Math.max(0, child.instant_bytes_per_second || 0),
+    0,
+  )
+  const childAverageSpeed = children.reduce(
+    (sum, child) => sum + Math.max(0, child.average_bytes_per_second || 0),
+    0,
+  )
+  const instantSpeed = childInstantSpeed > 0 ? childInstantSpeed : item.instant_bytes_per_second
+  const averageSpeed = childAverageSpeed > 0 ? childAverageSpeed : item.average_bytes_per_second
+  const eta = scanIncomplete ? undefined : xDriveTransferEtaMs({
+    ...item,
+    bytes_done: bytes.done,
+    bytes_total: bytes.total,
+    instant_bytes_per_second: instantSpeed,
+    average_bytes_per_second: averageSpeed,
+  })
   const processed = Math.min(progress.total, progress.completed + progress.failed)
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
   const discoveredLabel = scanIncomplete
@@ -309,8 +325,8 @@ function TransferGroupItem({
         <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(item.instant_bytes_per_second)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>

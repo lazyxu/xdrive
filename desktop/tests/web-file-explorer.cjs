@@ -219,7 +219,7 @@ test('Web upload API exposes conflict-aware skip/keep-both without changing lega
     'uploadWithConflictPolicy(',
     'conflict_policy: conflictPolicy',
     "session.status === 'skipped'",
-    'webTransferStore.completeSkipped(transferID, file.size)',
+    'if (!managedExternally) webTransferStore.completeSkipped(activeTransferID, file.size)',
     "skipped: finalized.status === 'skipped'",
     'transferred_bytes: transferredBytes',
   ]) {
@@ -261,7 +261,7 @@ test('Web upload batches use the shared upload controller before transferring by
     'useXDriveFileExplorerUploadController<File>({',
     'trackProgress: true',
     'preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name)',
-    'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress)',
+    'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID)',
     'fileUploads.runTargets(targets, action)',
     '<XDriveUploadConflictDialog {...fileUploads.dialogProps}',
     'uploadProgress={fileUploads.progress}',
@@ -292,6 +292,10 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     'relativePath: file.webkitRelativePath || file.name',
     'createDirectory: (id, directoryName) => api.createDirectory(id, directoryName)',
     'listChildren: (id) => api.list(id)',
+    'fileUploads.runGroup({',
+    'itemsTotal: entries.length',
+    'bytesTotal: entries.reduce',
+    'relativePath,',
     'onUploadFolderFiles={uploadFolderFiles}',
   ]) {
     assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)

@@ -104,7 +104,9 @@ test('Web upload and download operations feed persistent transfer history', () =
   assert.ok(webStore.includes('MAX_HISTORY = 200'), 'Web transfer history must be bounded')
   assert.ok(webStore.includes('页面刷新后无法继续跟踪该传输'), 'stale active Web transfers must fail closed after reload')
   assert.ok(webStore.includes('xDriveTransferActive(normalized)'), 'Web stale-transfer recovery must normalize legacy records before using the shared active selector')
-  assert.ok(webStore.includes('this.items.filter(xDriveTransferActive)'), 'Web history clearing must preserve active work through the shared selector')
+  assert.ok(webStore.includes('const activeRoots = new Set('), 'Web history clearing must identify active root transfer trees')
+  assert.ok(webStore.includes('.filter(xDriveTransferActive)'), 'Web history clearing must use the shared active selector')
+  assert.ok(webStore.includes('!removeRoots.has(item.root_id || item.id)'), 'Web history clearing must preserve every child under an active root')
 })
 
 

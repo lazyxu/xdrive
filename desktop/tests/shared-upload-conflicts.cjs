@@ -75,7 +75,7 @@ test('preflight skip stays inside the shared upload controller before platform u
   assert.ok(skip >= 0, 'shared upload controller skip guard is missing')
   assert.ok(upload > skip, 'shared upload transport call must remain after the skip guard')
   assert.ok(uploadController.slice(skip, upload).includes('continue'), 'skip must short-circuit before upload/hash work')
-  assert.ok(webApp.includes('api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress)'), 'Web must keep its upload transport adapter local')
+  assert.ok(webApp.includes('api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID)'), 'Web must keep its upload transport adapter local')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudUploadFile('), 'Desktop must keep its upload transport adapter local')
 })
 

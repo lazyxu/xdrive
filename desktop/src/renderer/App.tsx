@@ -1791,6 +1791,7 @@ export default function App({
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               quickAccessSupported: fileQuickAccessSupported,
               recentSupported: fileRecentSupported,
+              transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
             }}
