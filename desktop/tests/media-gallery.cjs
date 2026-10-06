@@ -11,6 +11,8 @@ const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDet
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
+const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
+const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'VirtualCollectionController.ts')
 const sharedGallery = [
   sharedGalleryMain,
   sharedGalleryDetails,
@@ -491,4 +493,78 @@ test('Gallery delegates filter draft/query mapping and filter-bar presentation t
   assert.equal(/use(?:State|Effect)\(/.test(sharedGalleryFilters), false, 'Gallery filter module must stay stateless/effect-free')
   assert.equal(sharedGalleryMain.includes('type MediaGalleryFilterDraft ='), false, 'filter draft definition must not remain inline')
   assert.equal(sharedGalleryMain.includes('function MediaGalleryFilterBar('), false, 'filter-bar implementation must not remain inline')
+})
+
+
+test('Gallery grid uses VirtualCollection with stable logical height and bounded metadata', () => {
+  for (const token of [
+    'useXDriveVirtualCollection<MediaItem>',
+    'collectionTargetRef',
+    'mediaGalleryCollectionKey(target)',
+    'source.listItemRange(',
+    'source.listAlbumItemRange(',
+    'source.listPersonItemRange',
+    'source.listSuggestedPersonItemRange',
+    'virtualCollection.reset(mediaGalleryCollectionKey(target))',
+    'virtualCollection.primePage({',
+    'itemCount: virtualCollection.totalCount ?? items.length',
+    'loadedItems: virtualCollection.loadedItems',
+    'onRangeChange: virtualCollection.ensureViewport',
+    'virtualCollection.updateLoadedItems',
+    '<MediaVirtualTileGrid',
+    'viewMode === \'timeline\' && hasMore && onLoadMore',
+    'positionLabel={previewIndex >= 0 ?',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery VirtualCollection contract missing: ${token}`)
+  }
+
+  assert.equal(
+    sharedGalleryMain.includes("viewMode === 'grid' && hasMore && onLoadMore"),
+    false,
+    'Gallery Grid must never expose append/load-more UI',
+  )
+  assert.ok(
+    sharedVirtualCollectionController.includes('updateLoadedItems'),
+    'VirtualCollection must allow bounded in-place metadata updates',
+  )
+})
+
+test('Gallery virtual grid uses the existing workspace scroll host without materializing logical items', () => {
+  for (const token of [
+    'xDriveMediaGalleryGridMetrics',
+    'xDriveMediaGalleryGridWindow',
+    'mediaGalleryScrollParent',
+    'ResizeObserver',
+    "addEventListener('scroll', update",
+    'height: layout.metrics.totalHeight',
+    'layout.window.startRow * layout.metrics.rowStep',
+    'collection.itemAt(index)',
+    'collection.onRangeChange(nextWindow.start, nextWindow.end - 1)',
+    'data-xdrive-media-gallery-placeholder',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery virtual surface missing: ${token}`)
+  }
+
+  for (const token of [
+    'XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH = 150',
+    'XDRIVE_MEDIA_GALLERY_GRID_GAP = 8',
+    'XDRIVE_MEDIA_GALLERY_OVERSCAN_ROWS = 2',
+    'export function xDriveMediaGalleryGridMetrics',
+    'export function xDriveMediaGalleryGridWindow',
+  ]) {
+    assert.ok(sharedGalleryVirtualGrid.includes(token), `Gallery grid helper missing: ${token}`)
+  }
+
+  assert.equal(
+    sharedGalleryMain.includes('new Array(virtualCollection.itemCount)'),
+    false,
+    'Gallery must never allocate one slot per logical media item',
+  )
+})
+
+test('Gallery keeps timeline dense compatibility isolated from the virtual Grid', () => {
+  assert.ok(sharedGalleryMain.includes("viewMode === 'timeline' ? ("), 'timeline view must remain explicit')
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items)'), 'timeline grouping must keep its dense compatibility source')
+  assert.ok(sharedGalleryMain.includes("viewMode === 'timeline' && hasMore && onLoadMore"), 'timeline is the only remaining Gallery load-more path')
+  assert.ok(sharedGalleryMain.includes('virtualCollection ? ('), 'Grid must prefer the sparse virtual collection')
 })
