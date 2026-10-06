@@ -252,3 +252,39 @@ test('FileExplorer prefetches the next page before fast scrolling reaches the bo
   assert.ok(shared.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'), 'scroll pagination must use the adaptive prefetch distance')
   assert.equal(shared.includes('host.scrollHeight - host.scrollTop - host.clientHeight <= 500'), false, 'scroll pagination must not keep the fixed 500px threshold')
 })
+
+
+test('FileExplorer sparse virtual surface keeps logical count separate from rendered slots', () => {
+  const surface = shared
+  const virtualSurface = fs.readFileSync(
+    path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerVirtualSurface.ts'),
+    'utf8',
+  )
+
+  for (const token of [
+    'XDriveFileExplorerVirtualCollection',
+    'const logicalItemCount = virtualCollectionEnabled',
+    'xDriveFileExplorerDetailsVirtualWindow({',
+    'xDriveFileExplorerGridVirtualWindow({',
+    'xDriveFileExplorerVirtualWindowSlots({',
+    'virtualCollection?.onRangeChange',
+    'onRangeChange(window.start, window.end - 1)',
+    '!virtualCollectionEnabled &&',
+    '{logicalItemCount} 个项目',
+    'data-xdrive-file-explorer-placeholder',
+  ]) {
+    assert.ok(surface.includes(token), `sparse FileExplorer surface missing: ${token}`)
+  }
+
+  assert.ok(virtualSurface.includes('normalizedEnd - normalizedStart'), 'virtual slots must allocate only the requested window width')
+  assert.equal(surface.includes('new Array(logicalItemCount)'), false, 'FileExplorer must never allocate one placeholder per logical item')
+  assert.equal(surface.includes('Array.from({ length: logicalItemCount'), false, 'FileExplorer must never materialize the logical collection')
+  assert.ok(
+    surface.includes('!virtualCollectionEnabled &&\n      hasMore &&'),
+    'sparse mode must bypass the legacy adaptive load-more path',
+  )
+  assert.ok(
+    surface.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'),
+    'dense mode must retain adaptive prefetch behavior',
+  )
+})
