@@ -223,56 +223,74 @@ FROM search_rows
 WHERE (? = '' OR search_rows.type = ?)
 `
 
-	const componentSearch = `WITH RECURSIVE candidate_tree AS (
-  SELECT n.id
+	const componentSearch = `WITH RECURSIVE matching_nodes AS (
+  SELECT n.id, n.parent_id, n.type
   FROM xd_nodes n
   WHERE n.owner_id = ?
     AND n.parent_id IS NOT NULL
     AND n.deleted_at IS NULL
     AND strpos(lower(n.name), lower(?)) > 0
-  UNION
-  SELECT n.id
+),
+descendant_tree AS (
+  SELECT n.id, n.parent_id, n.type
   FROM xd_nodes n
-  JOIN candidate_tree candidate ON n.parent_id = candidate.id
+  JOIN matching_nodes matched
+    ON matched.type = 'dir' AND n.parent_id = matched.id
+  WHERE n.owner_id = ? AND n.deleted_at IS NULL
+  UNION
+  SELECT n.id, n.parent_id, n.type
+  FROM xd_nodes n
+  JOIN descendant_tree parent
+    ON parent.type = 'dir' AND n.parent_id = parent.id
   WHERE n.owner_id = ? AND n.deleted_at IS NULL
 ),
-ancestry AS (
-  SELECT
-    candidate.id AS candidate_id,
-    n.id AS node_id,
-    n.parent_id,
-    n.name,
-    n.type,
-    0 AS depth
+candidate_tree AS (
+  SELECT id, parent_id, type FROM matching_nodes
+  UNION
+  SELECT id, parent_id, type FROM descendant_tree
+),
+required_dirs AS (
+  SELECT DISTINCT
+    CASE WHEN candidate.type = 'dir' THEN candidate.id ELSE candidate.parent_id END AS id
   FROM candidate_tree candidate
-  JOIN xd_nodes n ON n.id = candidate.id
-  WHERE n.owner_id = ? AND n.deleted_at IS NULL
-  UNION ALL
-  SELECT
-    ancestry.candidate_id,
-    parent.id,
-    parent.parent_id,
-    parent.name,
-    parent.type,
-    ancestry.depth + 1
-  FROM ancestry
-  JOIN xd_nodes parent ON parent.id = ancestry.parent_id
+  WHERE candidate.type = 'dir' OR candidate.parent_id IS NOT NULL
+  UNION
+  SELECT parent.parent_id AS id
+  FROM xd_nodes parent
+  JOIN required_dirs required ON required.id = parent.id
   WHERE parent.owner_id = ?
     AND parent.deleted_at IS NULL
-    AND ancestry.depth < 10000
+    AND parent.parent_id IS NOT NULL
 ),
-candidate_paths AS (
+directory_tree AS (
   SELECT
-    ancestry.candidate_id,
-    string_agg(ancestry.name, '/' ORDER BY ancestry.depth DESC)
-      FILTER (WHERE ancestry.parent_id IS NOT NULL) AS path,
-    jsonb_agg(
-      jsonb_build_object('id', ancestry.node_id, 'name', ancestry.name)
-      ORDER BY ancestry.depth DESC
-    ) FILTER (WHERE ancestry.type = 'dir') AS breadcrumbs,
-    bool_or(ancestry.parent_id IS NULL) AS rooted
-  FROM ancestry
-  GROUP BY ancestry.candidate_id
+    n.id,
+    n.parent_id,
+    n.name,
+    ''::text AS path,
+    jsonb_build_array(jsonb_build_object('id', n.id, 'name', n.name)) AS breadcrumbs
+  FROM xd_nodes n
+  JOIN required_dirs required ON required.id = n.id
+  WHERE n.owner_id = ?
+    AND n.parent_id IS NULL
+    AND n.deleted_at IS NULL
+    AND n.type = 'dir'
+  UNION ALL
+  SELECT
+    n.id,
+    n.parent_id,
+    n.name,
+    CASE
+      WHEN directory_tree.path = '' THEN n.name
+      ELSE directory_tree.path || '/' || n.name
+    END,
+    directory_tree.breadcrumbs || jsonb_build_array(jsonb_build_object('id', n.id, 'name', n.name))
+  FROM xd_nodes n
+  JOIN directory_tree ON n.parent_id = directory_tree.id
+  JOIN required_dirs required ON required.id = n.id
+  WHERE n.owner_id = ?
+    AND n.deleted_at IS NULL
+    AND n.type = 'dir'
 ),
 search_rows AS (
   SELECT
@@ -285,16 +303,28 @@ search_rows AS (
     n.updated_at,
     COALESCE(f.size, 0) AS size,
     COALESCE(f.sha256, '') AS sha256,
-    candidate_paths.path,
-    candidate_paths.breadcrumbs::text AS breadcrumbs_json
-  FROM candidate_paths
+    CASE
+      WHEN n.type = 'dir' THEN self_dir.path
+      WHEN parent_dir.path = '' THEN n.name
+      ELSE parent_dir.path || '/' || n.name
+    END AS path,
+    CASE
+      WHEN n.type = 'dir' THEN self_dir.breadcrumbs::text
+      ELSE parent_dir.breadcrumbs::text
+    END AS breadcrumbs_json
+  FROM candidate_tree candidate
   JOIN xd_nodes n
-    ON n.id = candidate_paths.candidate_id
+    ON n.id = candidate.id
     AND n.owner_id = ?
     AND n.deleted_at IS NULL
+  LEFT JOIN directory_tree self_dir
+    ON n.type = 'dir' AND self_dir.id = n.id
+  LEFT JOIN directory_tree parent_dir
+    ON n.type = 'file' AND parent_dir.id = n.parent_id
   LEFT JOIN xd_files f ON f.node_id = n.id
-  WHERE candidate_paths.rooted
-    AND candidate_paths.path IS NOT NULL
+  WHERE
+    (n.type = 'dir' AND self_dir.id IS NOT NULL)
+    OR (n.type = 'file' AND parent_dir.id IS NOT NULL)
 )
 SELECT *
 FROM search_rows
@@ -304,7 +334,12 @@ WHERE (? = '' OR search_rows.type = ?)
 	if strings.Contains(query, "/") {
 		return recursivePathSearch, []any{ownerID, ownerID, query, nodeType, nodeType}
 	}
-	return componentSearch, []any{ownerID, query, ownerID, ownerID, ownerID, ownerID, nodeType, nodeType}
+	return componentSearch, []any{
+		ownerID, query, ownerID,
+		ownerID, ownerID,
+		ownerID, ownerID,
+		ownerID, nodeType, nodeType,
+	}
 }
 
 func searchNodeOrderExpressions(alias, sortKey, order string) (
