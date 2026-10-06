@@ -51,6 +51,21 @@ cancel the underlying deduplicated task. `Scheduler.Cancel(Identity)` is an expl
 used only after the owning domain has authorized the cancellation. This distinction is important for shared
 derived-cache work such as thumbnails.
 
+## Cancellation rollout and request-scoped work
+
+Cancellation is adopted incrementally with the subsystem being changed; it is not a mandate to perform an unrelated repository-wide retrofit. Existing scheduler/Task Center controls remain authoritative where they already exist, but a feature PR should not expand into transfers, derivatives, maintenance, or another async domain solely to normalize cancellation.
+
+Short request-scoped work that has no durable lifecycle should not be forced into the scheduler or Task Center. In particular, FileExplorer Folder Properties recursive statistics are owned by the Properties dialog/request lifetime:
+
+- opening Properties starts one Server-side recursive statistics request for the selected snapshot;
+- closing the dialog, replacing its target selection, or unmounting the owning FileExplorer automatically aborts that request;
+- Web uses `AbortController`; Desktop propagates an equivalent cancellation token through Electron/Agent to the Server request context;
+- the recursive database query uses that context, so an aborted client request stops Server work rather than only discarding the renderer result;
+- intentional abort is not reported as a user-visible failure, and stale completions never overwrite a newer request;
+- no durable Task Center row is created for this operation.
+
+Other asynchronous subsystems are evaluated for cancellation when they are materially touched. Shared/singleflight derivative work keeps its existing waiter/task distinction: cancelling a waiter is not automatically equivalent to cancelling the shared underlying task.
+
 ## Priority classes
 
 | Priority | Intended work |
