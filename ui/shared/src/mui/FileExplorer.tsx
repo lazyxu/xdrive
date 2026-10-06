@@ -357,13 +357,6 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
   }
 }
 
-export function xDriveFileExplorerLoadMorePrefetchDistance(viewportHeight: number) {
-  return Math.max(
-    fileExplorerLoadMorePrefetchMinimum,
-    Math.ceil(Math.max(0, viewportHeight) * fileExplorerLoadMorePrefetchViewportMultiplier),
-  )
-}
-
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
   return xDriveFileKind(name, kind) === 'image'
 }
@@ -629,8 +622,6 @@ const detailsCompactRowHeight = 30
 const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
-const fileExplorerLoadMorePrefetchViewportMultiplier = 1.5
-const fileExplorerLoadMorePrefetchMinimum = 500
 const gridVirtualizationThreshold = 400
 const gridOverscanRows = 3
 const muiSpacingPixel = 8
@@ -728,9 +719,6 @@ export function XDriveFileExplorer({
   loadThumbnail,
   loadTextPreview,
   loadPreviewURL,
-  hasMore = false,
-  loadingMore = false,
-  onLoadMore,
   externallySorted = false,
   virtualCollection,
 }: {
@@ -805,9 +793,6 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
   ) => Promise<string | null | undefined>
-  hasMore?: boolean
-  loadingMore?: boolean
-  onLoadMore?: () => void
   externallySorted?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
@@ -2552,16 +2537,6 @@ export function XDriveFileExplorer({
         scrollFrameRef.current = window.requestAnimationFrame(updateVirtualWindow)
       }
     }
-    const loadMorePrefetchDistance = xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)
-    if (
-      !virtualCollectionEnabled &&
-      hasMore &&
-      !loadingMore &&
-      onLoadMore &&
-      host.scrollHeight - host.scrollTop - host.clientHeight <= loadMorePrefetchDistance
-    ) {
-      onLoadMore()
-    }
   }
 
   return (
@@ -3584,9 +3559,7 @@ export function XDriveFileExplorer({
           {logicalItemCount} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
         </Typography>
         <Typography variant="caption">
-          {!virtualCollectionEnabled && loadingMore
-            ? '正在加载更多…'
-            : statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatBytes(selectedSize)}` : '')}
+          {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatBytes(selectedSize)}` : '')}
         </Typography>
       </Stack>
     </Paper>

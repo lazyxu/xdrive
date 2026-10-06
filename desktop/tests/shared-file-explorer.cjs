@@ -230,18 +230,17 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
   }
 })
 
-test('shared FileExplorer supports server-paged incremental loading without re-sorting partial pages', () => {
-  for (const token of [
+test('shared FileExplorer surface is range-driven and has no append/load-more contract', () => {
+  assert.ok(explorer.includes('externallySorted?: boolean'), 'server-sorted range presentation must remain')
+  assert.ok(explorer.includes('if (externallySorted) return items'), 'server-sorted ranges must not be re-sorted client-side')
+  for (const legacy of [
     'hasMore?: boolean',
     'loadingMore?: boolean',
     'onLoadMore?: () => void',
-    'externallySorted?: boolean',
-    'if (externallySorted) return items',
-    'xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)',
-    'host.scrollHeight - host.scrollTop - host.clientHeight <= loadMorePrefetchDistance',
-    "loadingMore\n            ? '正在加载更多…'",
+    'xDriveFileExplorerLoadMorePrefetchDistance',
+    '正在加载更多…',
   ]) {
-    assert.ok(explorer.includes(token), `missing server-paging contract: ${token}`)
+    assert.equal(explorer.includes(legacy), false, `legacy append pagination remains in FileExplorer: ${legacy}`)
   }
 })
 

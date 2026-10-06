@@ -16,6 +16,7 @@ const apiHandlers = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'hand
 const explorerProjection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const serverSearch = fs.readFileSync(path.join(repoRoot, 'internal', 'api', 'search.go'), 'utf8')
 const navigationPane = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'), 'utf8')
+const autoLoadSentinel = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AutoLoadSentinel.tsx'), 'utf8')
 const explorerController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 
 function loadPerformanceTypeScriptModule(relativePath) {
@@ -192,8 +193,10 @@ test('FileExplorer navigation tree expands with bounded pages instead of drainin
   const loaderStart = explorerController.indexOf('export async function xDriveFileExplorerLoadChildDirectoryPage')
   const loaderEnd = explorerController.indexOf('export type XDriveFileExplorerFolderUploadEntry', loaderStart)
   assert.equal(explorerController.slice(loaderStart, loaderEnd).includes('while (true)'), false, 'tree expansion must not drain every server page')
-  assert.ok(navigationPane.includes('loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)'), 'tree load-more must advance one cursor page')
-  assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), 'tree must expose an explicit load-more affordance')
+  assert.ok(navigationPane.includes('loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)'), 'tree auto-load must advance one cursor page')
+  assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-auto-load'), 'tree must expose an automatic page sentinel')
+  assert.ok(navigationPane.includes('onLoad={() => loadChildren(node, true)}'), 'tree sentinel must request exactly the next bounded page')
+  assert.equal(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more affordance')
   assert.ok(navigationPane.includes('const pathChild = pathChildByParent.get(node.id)'), 'current path child must remain visible outside the loaded page')
 })
 
@@ -272,13 +275,18 @@ test('FileExplorer folder uploads reuse existing directories with indexed name l
 })
 
 
-test('FileExplorer prefetches the next page before fast scrolling reaches the bottom', () => {
-  assert.ok(shared.includes('const fileExplorerLoadMorePrefetchViewportMultiplier = 1.5'), 'viewport prefetch multiplier is missing')
-  assert.ok(shared.includes('const fileExplorerLoadMorePrefetchMinimum = 500'), 'minimum prefetch distance is missing')
-  assert.ok(shared.includes('export function xDriveFileExplorerLoadMorePrefetchDistance(viewportHeight: number)'), 'prefetch distance helper is missing')
-  assert.ok(shared.includes('Math.ceil(Math.max(0, viewportHeight) * fileExplorerLoadMorePrefetchViewportMultiplier)'), 'prefetch distance must scale with viewport height')
-  assert.ok(shared.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'), 'scroll pagination must use the adaptive prefetch distance')
-  assert.equal(shared.includes('host.scrollHeight - host.scrollTop - host.clientHeight <= 500'), false, 'scroll pagination must not keep the fixed 500px threshold')
+test('FileExplorer uses viewport range prefetch instead of dense bottom append', () => {
+  assert.ok(shared.includes('virtualCollection?.onRangeChange'), 'FileExplorer must request sparse viewport ranges')
+  assert.ok(cloudFilesController.includes('ensureViewport: virtualCollection.ensureViewport'), 'Cloud Files must expose VirtualCollection viewport loading')
+  assert.ok(autoLoadSentinel.includes("rootMargin = '240px 0px'"), 'small cursor browsers should prefetch through the shared sentinel margin')
+  for (const legacy of [
+    'fileExplorerLoadMorePrefetchViewportMultiplier',
+    'fileExplorerLoadMorePrefetchMinimum',
+    'xDriveFileExplorerLoadMorePrefetchDistance',
+    'host.scrollHeight - host.scrollTop - host.clientHeight',
+  ]) {
+    assert.equal(shared.includes(legacy), false, `legacy dense append prefetch remains: ${legacy}`)
+  }
 })
 
 
@@ -297,7 +305,6 @@ test('FileExplorer sparse virtual surface keeps logical count separate from rend
     'xDriveFileExplorerVirtualWindowSlots({',
     'virtualCollection?.onRangeChange',
     'onRangeChange(window.start, window.end - 1)',
-    '!virtualCollectionEnabled &&',
     '{logicalItemCount} 个项目',
     'data-xdrive-file-explorer-placeholder',
   ]) {
@@ -307,14 +314,9 @@ test('FileExplorer sparse virtual surface keeps logical count separate from rend
   assert.ok(virtualSurface.includes('normalizedEnd - normalizedStart'), 'virtual slots must allocate only the requested window width')
   assert.equal(surface.includes('new Array(logicalItemCount)'), false, 'FileExplorer must never allocate one placeholder per logical item')
   assert.equal(surface.includes('Array.from({ length: logicalItemCount'), false, 'FileExplorer must never materialize the logical collection')
-  assert.ok(
-    surface.includes('!virtualCollectionEnabled &&\n      hasMore &&'),
-    'sparse mode must bypass the legacy adaptive load-more path',
-  )
-  assert.ok(
-    surface.includes('xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)'),
-    'dense mode must retain adaptive prefetch behavior',
-  )
+  assert.equal(surface.includes('hasMore?: boolean'), false, 'main FileExplorer surface must not expose cursor append state')
+  assert.equal(surface.includes('onLoadMore?: () => void'), false, 'main FileExplorer surface must not expose a load-more callback')
+  assert.equal(surface.includes('xDriveFileExplorerLoadMorePrefetchDistance'), false, 'legacy dense bottom prefetch helper must be removed')
 })
 
 

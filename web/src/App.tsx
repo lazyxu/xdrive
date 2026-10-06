@@ -513,14 +513,12 @@ function FileManager({
     items,
     crumbs,
     current,
-    pageState: directoryPage,
+    sort: directorySort,
     loading,
-    loadingMore,
     virtualDirectory,
     applyQuota,
     refreshQuota,
     loadDirectory,
-    loadMoreDirectory,
   } = useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: Boolean(profile && !profile.must_change_password),
@@ -568,7 +566,7 @@ function FileManager({
     onRefreshError: handleError,
     onTerminalTransition: () => {
       if (!current) return
-      void loadDirectory(current.id, crumbs, directoryPage?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
+      void loadDirectory(current.id, crumbs, directorySort)
       void refreshQuota()
     },
   })
@@ -936,11 +934,8 @@ function FileManager({
                 crumbs={crumbs}
                 virtualDirectory={virtualDirectory}
                 loading={loading}
-                loadingMore={loadingMore}
-                hasMore={directoryPage?.hasMore ?? false}
                 uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
-                onLoadMore={loadMoreDirectory}
                 onUploadFiles={uploadFiles}
                 onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}

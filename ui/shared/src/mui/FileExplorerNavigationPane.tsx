@@ -17,6 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
 import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
 import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
 
@@ -289,27 +290,20 @@ export function XDriveFileExplorerNavigationPane({
           <Box role="group">
             {children.map((child) => renderNode(child, depth + 1))}
             {hasMore ? (
-              <ListItemButton
-                data-xdrive-file-explorer-tree-load-more
-                disabled={loading}
-                onClick={() => { void loadChildren(node, true) }}
+              <Box
+                data-xdrive-file-explorer-tree-auto-load
                 sx={{
-                  minHeight: 30,
                   ml: 0.5 + (depth + 1) * 1.75,
                   mr: 0.5,
-                  px: 0.75,
-                  borderRadius: 1,
-                  gap: 0.75,
-                  color: 'text.secondary',
                 }}
               >
-                <Box sx={{ width: 26, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                  {loading ? <CircularProgress size={13} /> : null}
-                </Box>
-                <Typography variant="body2" noWrap>
-                  {loading ? '正在加载…' : '加载更多'}
-                </Typography>
-              </ListItemButton>
+                <XDriveAutoLoadSentinel
+                  enabled
+                  loading={loading}
+                  label="正在加载更多文件夹…"
+                  onLoad={() => loadChildren(node, true)}
+                />
+              </Box>
             ) : null}
           </Box>
         </Collapse>

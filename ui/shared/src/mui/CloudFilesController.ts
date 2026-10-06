@@ -9,7 +9,6 @@ import {
 } from '../file-explorer-controller'
 import type {
   XDriveFileExplorerPageSort,
-  XDriveFileExplorerPageState,
 } from '../file-explorer-controller'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 
@@ -71,7 +70,6 @@ export function useXDriveCloudFilesController<
   const [quota, setQuota] = useState<TQuota | null>(null)
   const [items, setItems] = useState<TNode[]>([])
   const [crumbs, setCrumbs] = useState<XDriveCloudFilesCrumb[]>([])
-  const [pageState, setPageState] = useState<XDriveFileExplorerPageState<TSort> | null>(null)
   const [loading, setLoading] = useState(true)
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
@@ -173,7 +171,7 @@ export function useXDriveCloudFilesController<
     nextCrumbs?: readonly XDriveCloudFilesCrumb[],
     sort?: TSort,
   ) => {
-    const effectiveSort = sort ?? pageState?.sort ?? defaultSort
+    const effectiveSort = sort ?? virtualTarget?.sort ?? defaultSort
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     setLoading(true)
@@ -186,12 +184,6 @@ export function useXDriveCloudFilesController<
       )
       if (requestID !== directoryRequestRef.current) return
       setItems([...range.items])
-      setPageState({
-        parentID: id,
-        cursor: '',
-        hasMore: false,
-        sort: effectiveSort,
-      })
       if (nextCrumbs) setCrumbs([...nextCrumbs])
       activateVirtualDirectory(id, effectiveSort, requestID, range)
     } catch (error) {
@@ -199,15 +191,7 @@ export function useXDriveCloudFilesController<
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, pageState?.sort, port, reportError])
-
-  const loadMoreDirectory = useCallback(async (
-    _id: number,
-    _sort: TSort,
-  ) => {
-    // Directory browsing is range-driven. This compatibility callback remains
-    // for dense/search consumers that still share the workspace contract.
-  }, [])
+  }, [activateVirtualDirectory, defaultSort, port, reportError, virtualTarget?.sort])
 
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
@@ -228,12 +212,6 @@ export function useXDriveCloudFilesController<
       setQuota(quotaValue)
       setCrumbs([{ id: root.id, name: rootLabel }])
       setItems([...range.items])
-      setPageState({
-        parentID: root.id,
-        cursor: '',
-        hasMore: false,
-        sort: defaultSort,
-      })
       activateVirtualDirectory(root.id, defaultSort, requestID, range)
     } catch (error) {
       if (requestID === directoryRequestRef.current) reportError(error)
@@ -250,7 +228,6 @@ export function useXDriveCloudFilesController<
       setQuota(null)
       setItems([])
       setCrumbs([])
-      setPageState(null)
       setLoading(false)
       return
     }
@@ -270,14 +247,12 @@ export function useXDriveCloudFilesController<
     items,
     crumbs,
     current,
-    pageState,
+    sort: virtualTarget?.sort ?? defaultSort,
     loading,
-    loadingMore: false,
     virtualDirectory,
     applyQuota,
     refreshQuota,
     loadInitial,
     loadDirectory,
-    loadMoreDirectory,
   }
 }

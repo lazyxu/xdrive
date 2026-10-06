@@ -83,6 +83,12 @@ This is an allocation/residency metric rather than a wall-clock microbenchmark, 
 After Search moved to VirtualCollection, the FileExplorer frontend no longer carries cursor, loading-more, append/merge, or Search pagination-dispatch state. Search viewport loading is exclusively range-driven through VirtualCollection. The server, Go client, Agent, and Web transport may continue to expose cursor Search for compatibility, but the FileExplorer UI does not consume it.
 
 
+### FileExplorer user-visible load-more cleanup
+
+The main FileExplorer directory surface is now range-only end to end. The shared Cloud Files controller no longer manufactures cursor `pageState`, `loadingMore`, or a no-op `loadMoreDirectory` callback after the range migration, and the Web/Desktop FileExplorer adapters no longer pass `hasMore/onLoadMore` compatibility props into the shared surface.
+
+Small hierarchical browsers still keep cursor pagination where it is the correct transport primitive, but pagination is no longer exposed as a button. The FileExplorer navigation tree and the Synology File Station root picker use an IntersectionObserver sentinel to request the next bounded page when it approaches the viewport. They do not eagerly drain every page; cursor validation and stale-request protection remain in their existing controllers.
+
 ## Gallery range contract
 
 Gallery item collections expose an additive range response when the caller sets `range=true`. The legacy array response remains unchanged when the flag is absent.

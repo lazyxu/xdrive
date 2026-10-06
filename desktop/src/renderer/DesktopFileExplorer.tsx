@@ -50,10 +50,7 @@ export default function DesktopFileExplorer({
   crumbs,
   virtualDirectory,
   loading,
-  loadingMore,
-  hasMore,
   onLoadDirectory,
-  onLoadMore,
   onOpenTrash,
   onOpenHistory,
   onOpenShares,
@@ -81,10 +78,7 @@ export default function DesktopFileExplorer({
   crumbs: AgentCloudCrumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<AgentCloudNode> | null
   loading: boolean
-  loadingMore: boolean
-  hasMore: boolean
   onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[], sort: XDriveFileExplorerSort) => Promise<void>
-  onLoadMore: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -167,7 +161,6 @@ export default function DesktopFileExplorer({
     submitPath,
     openItem: openWorkspaceItem,
     openItemInNewTab,
-    explorerPagination,
     explorerVirtualCollection,
     externallySorted,
     searchStatusText,
@@ -185,10 +178,7 @@ export default function DesktopFileExplorer({
     crumbs,
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
-    directoryHasMore: hasMore,
-    directoryLoadingMore: loadingMore,
     onLoadDirectory,
-    onLoadMoreDirectory: onLoadMore,
     loadSearchRange: async (query, searchSort, offset, limit) => {
       const result = await window.xdriveDesktop.agent.cloudSearchRange(
         query,
@@ -912,9 +902,6 @@ export default function DesktopFileExplorer({
         sort={sort}
         onSortChange={changeSort}
         externallySorted={externallySorted}
-        hasMore={explorerPagination.hasMore}
-        loadingMore={explorerPagination.loadingMore}
-        onLoadMore={explorerPagination.onLoadMore}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={copyItems}

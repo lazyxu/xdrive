@@ -3,7 +3,6 @@ import type { Node } from '../models'
 import {
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDispatchOpenItem,
-  xDriveFileExplorerPaginationController,
   xDriveFileExplorerSubmitPath,
 } from '../file-explorer-controller'
 import type { XDriveFileExplorerSearchResultLike } from '../file-explorer-controller'
@@ -57,10 +56,7 @@ export function useXDriveFileExplorerWorkspace<
   crumbs,
   directoryVirtualCollection,
   viewModeStorageKey,
-  directoryHasMore,
-  directoryLoadingMore,
   onLoadDirectory,
-  onLoadMoreDirectory,
   loadSearchRange,
   loadRoot,
   findChildDirectory,
@@ -73,14 +69,11 @@ export function useXDriveFileExplorerWorkspace<
   crumbs: XDriveFileExplorerWorkspaceCrumb[]
   directoryVirtualCollection?: XDriveFileExplorerWorkspaceVirtualDirectory<TNode> | null
   viewModeStorageKey: string
-  directoryHasMore: boolean
-  directoryLoadingMore: boolean
   onLoadDirectory: (
     id: number,
     crumbs: XDriveFileExplorerWorkspaceCrumb[],
     sort: XDriveFileExplorerSort,
   ) => Promise<void>
-  onLoadMoreDirectory: (id: number, sort: XDriveFileExplorerSort) => Promise<void>
   loadSearchRange: XDriveFileExplorerSearchLoader<TSearch>
   loadRoot: () => Promise<{ id: number }>
   findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
@@ -209,13 +202,7 @@ export function useXDriveFileExplorerWorkspace<
     return opened
   }
 
-  const explorerPagination = xDriveFileExplorerPaginationController({
-    directoryHasMore: search.searchResults === null && directoryHasMore,
-    directoryLoadingMore: search.searchResults === null && directoryLoadingMore,
-    currentID: navigation.current?.id,
-    sort: navigation.sort,
-    loadMoreDirectory: onLoadMoreDirectory,
-  })
+
 
   return {
     ...search,
@@ -225,7 +212,6 @@ export function useXDriveFileExplorerWorkspace<
     submitPath,
     openItem,
     openItemInNewTab,
-    explorerPagination,
     explorerVirtualCollection,
     externallySorted: search.searchResults === null || search.searchSortMatches,
     searchStatusText: search.searchResults
