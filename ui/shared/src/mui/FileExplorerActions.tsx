@@ -9,6 +9,7 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
+import TabRoundedIcon from '@mui/icons-material/TabRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import type { XDriveFileExplorerMenuItem } from './FileExplorer'
@@ -18,6 +19,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
   kind,
   primaryDisabled = false,
   onOpen,
+  onOpenInNewTab,
   onSystemOpen,
   systemOpenLabel = '使用系统打开',
   onDownload,
@@ -32,6 +34,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
   kind: 'dir' | 'file'
   primaryDisabled?: boolean
   onOpen?: () => void
+  onOpenInNewTab?: () => void
   onSystemOpen?: () => void
   systemOpenLabel?: string
   onDownload?: () => void
@@ -53,6 +56,15 @@ export function xDriveFileExplorerStandardItemMenuItems({
         icon: <FolderOpenRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
         onSelect: onOpen,
+      })
+    }
+    if (onOpenInNewTab) {
+      items.push({
+        id: 'open-new-tab',
+        label: '在新标签页中打开',
+        icon: <TabRoundedIcon fontSize="small" />,
+        disabled: primaryDisabled,
+        onSelect: onOpenInNewTab,
       })
     }
     if (onReveal) {

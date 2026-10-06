@@ -211,18 +211,24 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     await navigateTo(crumbs.slice(0, index + 1))
   }
 
-  const newTab = async () => {
-    if (tabs.length >= maxTabs) return
-    const root = crumbs[0]
-    if (!root) return
+  const openTab = async (nextCrumbs: TCrumb[]) => {
+    if (tabs.length >= maxTabs) return false
+    const target = nextCrumbs.at(-1)
+    if (!target) return false
     const id = `tab-${nextTabIDRef.current++}`
-    const nextCrumbs = [root]
     const nextTab = createNavigationTab<TCrumb>(id, viewMode, nextCrumbs)
     const requestID = beginNavigation(id)
-    await onLoadDirectory(root.id, nextCrumbs, nextTab.sort)
-    if (!isNavigationCurrent(requestID)) return
+    await onLoadDirectory(target.id, nextCrumbs, nextTab.sort)
+    if (!isNavigationCurrent(requestID)) return false
     setTabs((currentTabs) => [...currentTabs, nextTab])
     setActiveTabID(id)
+    return true
+  }
+
+  const newTab = async () => {
+    const root = crumbs[0]
+    if (!root) return false
+    return openTab([root])
   }
 
   const activateTab = async (id: string) => {
@@ -302,6 +308,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     canGoUp: crumbs.length > 1,
     tabs: tabSummaries,
     activeTabID,
+    openTab,
     newTab,
     activateTab,
     closeTab,
