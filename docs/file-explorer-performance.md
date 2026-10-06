@@ -18,6 +18,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Thumbnail viewport scheduler + bounded cache | **Merged** | Unmeasured wall-clock | Shared viewport observer, max **6** concurrent thumbnail requests, bounded **96-entry** per-Explorer cache. |
 | Unsupported video-thumbnail request suppression | **Implemented** | Structural | FileExplorer only schedules image thumbnails; video files stay on icon/preview paths until a real poster-thumbnail contract exists. |
 | Desktop binary thumbnail transport | **Merged** | Unmeasured wall-clock | Agent raw bytes -> ArrayBuffer -> Blob URL; base64 thumbnail transport removed. |
+| Desktop warm-thumbnail server transport | **Measured baseline** | Measured structural requests/bytes | **600 full GETs**, **0 conditional requests**, **39,321,600 B (37.5 MiB)** payload for 200 unique x 64 KiB thumbnails across 3 sequential passes; CI wall **162.373 ms diagnostic only**. |
 | Adaptive infinite-scroll prefetch | **Merged** | Unmeasured wall-clock | Prefetch threshold is viewport-adaptive and protected by in-flight request locks. |
 | Indexed typed-path lookup | **Merged** | Unmeasured wall-clock | One exact child lookup per path segment instead of full child-list scans. |
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
@@ -70,6 +71,7 @@ Only measurements produced from a stable, repeatable workload belong in this tab
 | Directory-sort 100k mixed-file fixture, updated first/middle | n/a | 150.115920 ms / 275.943830 ms | Baseline |
 | Directory-sort 100k mixed-file fixture, size first/middle | n/a | 150.348111 ms / 273.407850 ms | Baseline |
 | Directory-sort 100k mixed-file fixture, type first/middle | n/a | 273.676411 ms / 422.931606 ms | Slowest current directory sort baseline |
+| Desktop warm-thumbnail transport, 200 unique x 64 KiB x 3 passes | n/a | **600 full GETs / 0 conditional / 39,321,600 B**; **162.373 ms diagnostic wall** | **Measured baseline**; full payload is retransmitted on every view beyond renderer-cache residency; wall time is not a regression gate |
 
 ### Rejected measured attempt: type expression index
 
@@ -125,6 +127,111 @@ This is a controller/VirtualCollection CPU and retained-metadata baseline only. 
 ### Existing optimizations without comparable wall-clock BEFORE/AFTER
 
 Thumbnail queue/cache changes, Desktop binary thumbnail transport, adaptive prefetch, indexed typed-path lookup, indexed folder-upload conflict lookup, navigation-tree pagination, and several controller/projection refactors have correctness/complexity/resource regression coverage but do **not** have an equivalent wall-clock BEFORE/AFTER workload. Do not quote a timing speedup for these changes until a stable benchmark exists.
+
+### Desktop warm-thumbnail transport baseline
+
+Status: **Measured baseline**.
+
+This benchmark isolates the Server -> Go client transport that xdrive-agent uses for Desktop thumbnails; it does not measure Electron IPC, Blob creation, React commit/layout/paint, or browser decode.
+
+Stable workload:
+
+- unique thumbnails: **200**
+- thumbnail payload: **64 KiB** each
+- sequential passes: **3**
+- total logical thumbnail views: **600**
+- this deliberately exceeds the renderer's **96-entry** FileExplorer thumbnail LRU so a sequential revisit cannot remain entirely renderer-resident
+- Server responses include a stable ETag and `Cache-Control: private, max-age=3600`
+
+Command:
+
+`XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF=1 go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline
+## Current video-thumbnail capability gap
+
+The Server media-thumbnail endpoint is currently image-only. FileExplorer now mirrors that capability instead of speculatively scheduling video thumbnails:
+
+- `xDriveFileSupportsThumbnail()` is image-only by default.
+- Grid, Inspector, and Quick Look no longer send ordinary video files through the image-thumbnail loader.
+- Video files continue to use their normal video icon and the shared preview engine for actual video playback.
+- The explicit `thumbnailEligible` override remains available for a future capability-aware adapter, but current Web/Desktop FileExplorer projections do not opt videos into it.
+
+This removes the previous 415/fallback request path from video-heavy directories. A real derived/cached video-poster contract is still required before FileExplorer can offer warm video poster thumbnails.
+
+Gallery's client-side video poster fallback remains Gallery-specific; it loads a video preview and captures a canvas frame, which is not a reusable FileExplorer thumbnail cache and should not be treated as the future FileExplorer poster contract.
+
+## 100k media-directory benchmark matrix
+
+The following four workloads are mandatory before claiming FileExplorer is validated for 100k media-heavy directories. “No thumbnails” means a **cold thumbnail cache at benchmark start**; “with thumbnails” means the same dataset with thumbnails already materialized/warm. The logical directory remains 100,000 items in all four cases.
+
+| Scenario | Thumbnail state | Status | What must be measured |
+| --- | --- | --- | --- |
+| 100k images | Cold / no pre-existing thumbnails | **Planned - not measured** | first-page latency, time-to-first-grid, viewport/scroll CPU, long tasks/FPS, renderer RSS, thumbnail request count, peak in-flight, cold thumbnail latency, bytes transferred, retained metadata |
+| 100k images | Warm / thumbnails pre-existing | **Planned - not measured** | same metrics plus thumbnail cache hit behavior and Blob URL memory; compare directly with cold image run |
+| 100k videos | Image-thumbnail suppression / icon fallback | **Planned - not measured** | first-page/grid latency, verify **0** image-thumbnail requests for ordinary videos, long tasks/FPS, renderer RSS, and icon-fallback latency |
+| 100k videos | Warm / poster thumbnails pre-existing | **Blocked - capability not implemented** | FileExplorer Server thumbnail endpoint is image-only today; measure only after a real video-poster thumbnail contract exists |
+
+### Current assessment of the four 100k media cases
+
+- **100k images, cold/no thumbnails:** sparse metadata and DOM work are already bounded; expected dominant costs are thumbnail generation, object-store I/O, HTTP/Agent transport, image decode, and Blob creation. Client thumbnail work must stay capped at **6 concurrent requests**, and request count must scale with viewport exposure rather than 100k logical items.
+- **100k images, warm thumbnails:** generation cost is removed, isolating cached-object reads, transport, Blob URL creation, renderer commit/layout/paint, and the bounded **96-entry** FileExplorer thumbnail cache. This is the cleanest Web-vs-Desktop transport comparison.
+- **100k videos, image-thumbnail suppression/icon fallback:** ordinary videos are not thumbnail-eligible while the Server thumbnail endpoint is image-only. The benchmark must verify **zero** image-thumbnail requests for video tiles, stable icon fallback, and no request growth after remount/scroll-back.
+- **100k videos, warm poster thumbnails:** blocked until a real derived/cached video-poster contract exists. Do not substitute Gallery's client-side video decode/canvas capture for this workload.
+
+### Media benchmark execution rules
+
+- Use the same 100,000-node namespace shape, sort order, viewport, Grid size, scroll/jump script, and client build for all four runs.
+- Record **cold** and **warm** states separately. Never compare a cold image/video run against a warm run and call the difference a renderer optimization.
+- Keep FileExplorer structural budgets visible in the result: thumbnail requests must remain **O(viewport/scroll exposure), not O(100k)**; in-flight thumbnail work must remain at or below **6**; the per-Explorer thumbnail cache must remain bounded at **96**; sparse logical metadata must remain bounded rather than retaining 100,000 rows.
+- Run both **Web** and **Desktop** for warm-thumbnail transport because Desktop uses Agent IPC/ArrayBuffer while Web uses HTTP/Blob transport.
+- For the current video fallback run, assert that ordinary video tiles do not call the image-thumbnail endpoint. Once a real poster generator exists, benchmark its Server/Agent extraction time separately from renderer time.
+- The pure Node VirtualCollection baseline above is a prerequisite reference, not a substitute for these browser/Electron traces.
+- Until these four runs have real numbers, keep their status as **Planned - not measured** and do not claim that 100k thumbnail-heavy media directories are fully validated.
+
+## Performance scenarios
+
+The FileExplorer performance suite should keep these workloads stable:
+
+| Scenario | Scale | Primary budget |
+| --- | ---: | --- |
+| Open directory | 200 / 10k / 100k children | first-page latency and time-to-interactive |
+| Details scroll | 10k loaded items | frame stability and bounded mounted rows |
+| Grid scroll | 10k loaded items | DOM count, thumbnail request concurrency, frame stability |
+| Marquee select | 10k loaded items | pointer-frame CPU and selection latency |
+| Pagination | 50 consecutive pages | no duplicate requests, no stale-page overwrite |
+| Search | 100k namespace | first-page latency and next-page latency |
+
+## Next work
+
+1. Run and record the **four 100k media-directory traces** above: image cold/warm thumbnails and video cold/warm poster thumbnails, on both Web and Desktop where transport differs.
+2. Add browser/Electron trace fixtures for directory open, continuous scroll, midpoint/end jumps, marquee selection, and thumbnail-heavy folders.
+3. Use the new 100k VirtualCollection CPU baseline as the controller reference while establishing renderer CPU/long-task/RSS budgets; do not conflate the two layers.
+4. Add measured render/interaction budgets to CI only after trace variance is stable enough to avoid noisy failures.
+5. Revisit directory sort indexing only if a future measured workload materially exceeds the baselines above; the first type-expression-index attempt was rejected.
+
+Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
+
+
+### Sparse logical directory surface
+
+The FileExplorer surface can separate the logical directory item count from loaded/rendered items. Details and Grid compute scrollbar geometry from the full logical count, while only the current viewport plus bounded overscan creates render slots. Missing slots are lightweight non-interactive placeholders; the surface never allocates an array sized to the full directory. The dense compatibility path retains adaptive prefetch/load-more behavior, while sparse mode bypasses legacy bottom pagination entirely. Search remains dense until its own range contract migrates.
+
+
+Before sparse runtime is enabled, item interactions must also be logical-index aware. Active item, rename recovery, marquee hit-testing, and keyboard targets resolve against loaded sparse logical indexes. Shift ranges are committed only when every logical item in the requested range is loaded; otherwise FileExplorer requests that range instead of silently selecting a partial loaded subset. Full Ctrl+A / cross-unloaded-range bulk selection remains a separate selection-model problem and must not be faked by selecting only loaded items.
+ -count=1 -v ./internal/client`
+
+Measured evidence:
+
+- branch-scoped GitHub CI run: **1 structural sample**
+- full GET requests: **600**
+- conditional `If-None-Match` requests: **0**
+- response payload: **39,321,600 bytes (37.5 MiB)**
+- diagnostic wall time: **162.373 ms**
+- wall time is **diagnostic only** and has **no regression budget** because the httptest timing is not representative of Server/network/Desktop end-to-end latency
+- deterministic counters exactly matched the pre-measurement expectation
+
+Decision: **accept this as the current Desktop warm-thumbnail transport baseline**. The result confirms that repeated views beyond the renderer's 96-entry URL cache can retransmit the complete thumbnail payload through the Agent's Go client.
+
+Next action: evaluate a **bounded Desktop Agent ETag/byte cache** against this exact workload. The candidate should preserve freshness through conditional validation, keep resident memory bounded, and materially reduce full payload bytes. Do not claim a speedup until the same benchmark records the AFTER counters.
 
 ## Current video-thumbnail capability gap
 

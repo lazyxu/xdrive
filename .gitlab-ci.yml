@@ -289,6 +289,21 @@ file-explorer-directory-sort-performance:
   script:
     - go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+file-explorer-thumbnail-transport-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  variables:
+    XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF: "1"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-thumbnail-warm-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-thumbnail-warm-baseline"'
+  script:
+    - go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline$' -count=1 -v ./internal/client
+
 file-explorer-virtual-collection-performance:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
