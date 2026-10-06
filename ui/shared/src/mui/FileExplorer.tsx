@@ -365,8 +365,7 @@ export function xDriveFileExplorerLoadMorePrefetchDistance(viewportHeight: numbe
 }
 
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
-  const fileKind = xDriveFileKind(name, kind)
-  return fileKind === 'image' || fileKind === 'video'
+  return xDriveFileKind(name, kind) === 'image'
 }
 
 function explorerIDKey(id: XDriveFileExplorerID) {
