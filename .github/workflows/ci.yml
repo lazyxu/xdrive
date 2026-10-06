@@ -261,6 +261,36 @@ jobs:
       - name: Race test internal/api
         run: go test -race ./internal/api
 
+  file-explorer-search-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-search-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_SEARCH_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure FileExplorer Search 100k after optimization
+        run: go test -run '^TestFileExplorerSearchPerformanceBaseline100K$' -count=1 -v ./internal/api
+
   build-source-agent:
     runs-on: ubuntu-latest
     steps:

@@ -167,13 +167,18 @@ test('FileExplorer projection builds large paged view-models in one node pass', 
 })
 
 
-test('FileExplorer search avoids full-tree path materialization for component queries', () => {
-  assert.ok(serverSearch.includes('const componentSearch = `WITH RECURSIVE candidate_tree AS ('), 'component candidate search is missing')
+test('FileExplorer search keeps file matches out of descendant recursion', () => {
+  assert.ok(serverSearch.includes('const componentSearch = `WITH RECURSIVE matching_nodes AS ('), 'component match set is missing')
   assert.ok(serverSearch.includes('AND strpos(lower(n.name), lower(?)) > 0'), 'component search must seed on matching node names')
-  assert.ok(serverSearch.includes('JOIN candidate_tree candidate ON n.parent_id = candidate.id'), 'matching directories must expand to descendants')
-  assert.ok(serverSearch.includes("string_agg(ancestry.name, '/' ORDER BY ancestry.depth DESC)"), 'candidate paths must be reconstructed only after filtering')
-  assert.ok(serverSearch.includes('bool_or(ancestry.parent_id IS NULL) AS rooted'), 'candidate search must prove reachability from an active root')
-  assert.ok(serverSearch.includes('WHERE candidate_paths.rooted'), 'unrooted/deleted-ancestor candidates must be excluded')
+  assert.ok(serverSearch.includes('descendant_tree AS ('), 'directory descendant expansion is missing')
+  assert.ok(serverSearch.includes("ON matched.type = 'dir' AND n.parent_id = matched.id"), 'only matching directories should seed descendant recursion')
+  assert.ok(serverSearch.includes("ON parent.type = 'dir' AND n.parent_id = parent.id"), 'only directory descendants should continue recursion')
+  assert.ok(serverSearch.includes('SELECT id, parent_id, type FROM matching_nodes'), 'candidate set must retain direct file matches without recursive work')
+  assert.ok(serverSearch.includes('SELECT id, parent_id, type FROM descendant_tree'), 'candidate set must include descendants of matching directories')
+  assert.ok(serverSearch.includes('required_dirs AS ('), 'component search must derive the required directory set')
+  assert.ok(serverSearch.includes("CASE WHEN candidate.type = 'dir' THEN candidate.id ELSE candidate.parent_id END AS id"), 'candidate files must contribute only their parent directory to path reconstruction')
+  assert.ok(serverSearch.includes('directory_tree AS ('), 'directory path state must be built separately from candidate files')
+  assert.ok(serverSearch.includes('LEFT JOIN directory_tree parent_dir'), 'file results must reuse parent directory path state')
   assert.ok(serverSearch.includes('const recursivePathSearch = `WITH RECURSIVE tree AS ('), 'full-path fallback must remain available')
   assert.ok(serverSearch.includes('if strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
 })
