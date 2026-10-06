@@ -247,6 +247,19 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatalf("person items=%+v", mediaItems)
 	}
 
+	filteredItems := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/items?person_identity="+url.QueryEscape(person.ID)+"&limit=100",
+		token, nil, http.StatusOK,
+	)
+	mediaItems = nil
+	if err := json.Unmarshal(filteredItems.Body.Bytes(), &mediaItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(mediaItems) != 2 {
+		t.Fatalf("durable person media filter=%+v", mediaItems)
+	}
+
 	requestWithHeaders(
 		t, router, http.MethodPatch,
 		"/api/v1/media/people/identities/"+url.PathEscape(person.ID),
@@ -325,6 +338,27 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatalf("split result=%+v", splitResult)
 	}
 
+	smartCreate := request(
+		t, router, http.MethodPost,
+		"/api/v1/media/smart-albums",
+		token,
+		strings.NewReader(fmt.Sprintf(
+			`{"name":"Alice B","query":{"person_identity":%q}}`,
+			splitResult.Created.ID,
+		)),
+		http.StatusCreated,
+	)
+	var personAlbum mediaAlbumDTO
+	if err := json.Unmarshal(smartCreate.Body.Bytes(), &personAlbum); err != nil {
+		t.Fatal(err)
+	}
+	if personAlbum.Query == nil ||
+		personAlbum.Query.PersonIdentity != splitResult.Created.ID ||
+		personAlbum.ItemCount != 1 ||
+		personAlbum.Revision != 1 {
+		t.Fatalf("durable person smart album=%+v", personAlbum)
+	}
+
 	merged := requestWithHeaders(
 		t, router, http.MethodPost,
 		"/api/v1/media/people/identities/"+url.PathEscape(person.ID)+"/merge",
@@ -347,6 +381,30 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		"/api/v1/media/people/identities/"+url.PathEscape(splitResult.Created.ID)+"/items",
 		token, nil, http.StatusNotFound,
 	)
+
+	albumsResponse := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/albums",
+		token, nil, http.StatusOK,
+	)
+	var albums []mediaAlbumDTO
+	if err := json.Unmarshal(albumsResponse.Body.Bytes(), &albums); err != nil {
+		t.Fatal(err)
+	}
+	var rewritten *mediaAlbumDTO
+	for index := range albums {
+		if albums[index].ID == personAlbum.ID {
+			rewritten = &albums[index]
+			break
+		}
+	}
+	if rewritten == nil ||
+		rewritten.Query == nil ||
+		rewritten.Query.PersonIdentity != person.ID ||
+		rewritten.Revision != 2 ||
+		rewritten.ItemCount != 2 {
+		t.Fatalf("merged durable person smart album=%+v", rewritten)
+	}
 
 	if err := db.Where("id = ?", cluster.ID).
 		Delete(&meta.PhotoPersonCluster{}).Error; err != nil {

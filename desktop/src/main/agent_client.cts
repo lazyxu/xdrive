@@ -500,6 +500,7 @@ export type AgentMediaQuery = {
   favorite?: boolean
   tag?: string
   person?: string
+  person_identity?: string
   place?: string
 }
 
@@ -519,6 +520,9 @@ function appendAgentMediaQuery(
   }
   if (filters.tag?.trim()) query.set('tag', filters.tag.trim())
   if (filters.person?.trim()) query.set('person', filters.person.trim())
+  if (filters.person_identity?.trim()) {
+    query.set('person_identity', filters.person_identity.trim())
+  }
   if (filters.place?.trim()) query.set('place', filters.place.trim())
 }
 

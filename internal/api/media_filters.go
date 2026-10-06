@@ -88,6 +88,13 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 		}
 		out.Person = value
 	}
+	if raw := strings.TrimSpace(c.Query("person_identity")); raw != "" {
+		if !validMediaPersonIdentityID(raw) {
+			fail(c, http.StatusBadRequest, "person_identity is invalid")
+			return mediaQueryOptions{}, false
+		}
+		out.PersonIdentity = raw
+	}
 	if raw := strings.TrimSpace(c.Query("place")); raw != "" {
 		value, ok := parseMediaPlaceKey(raw)
 		if !ok {

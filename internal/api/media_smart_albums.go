@@ -16,16 +16,17 @@ import (
 )
 
 type mediaSmartAlbumQuery struct {
-	MediaKind    string     `json:"media_kind,omitempty"`
-	Search       string     `json:"search,omitempty"`
-	AssetKind    string     `json:"asset_kind,omitempty"`
-	CapturedFrom *time.Time `json:"captured_from,omitempty"`
-	CapturedTo   *time.Time `json:"captured_to,omitempty"`
-	HasLocation  *bool      `json:"has_location,omitempty"`
-	Favorite     *bool      `json:"favorite,omitempty"`
-	Tag          string     `json:"tag,omitempty"`
-	Person       string     `json:"person,omitempty"`
-	Place        string     `json:"place,omitempty"`
+	MediaKind      string     `json:"media_kind,omitempty"`
+	Search         string     `json:"search,omitempty"`
+	AssetKind      string     `json:"asset_kind,omitempty"`
+	CapturedFrom   *time.Time `json:"captured_from,omitempty"`
+	CapturedTo     *time.Time `json:"captured_to,omitempty"`
+	HasLocation    *bool      `json:"has_location,omitempty"`
+	Favorite       *bool      `json:"favorite,omitempty"`
+	Tag            string     `json:"tag,omitempty"`
+	Person         string     `json:"person,omitempty"`
+	PersonIdentity string     `json:"person_identity,omitempty"`
+	Place          string     `json:"place,omitempty"`
 }
 
 func normalizeMediaSmartAlbumQuery(
@@ -65,6 +66,10 @@ func normalizeMediaSmartAlbumQuery(
 		}
 		value.Person = normalized
 	}
+	value.PersonIdentity = strings.TrimSpace(value.PersonIdentity)
+	if value.PersonIdentity != "" && !validMediaPersonIdentityID(value.PersonIdentity) {
+		return mediaSmartAlbumQuery{}, fmt.Errorf("person_identity is invalid")
+	}
 	if value.CapturedFrom != nil {
 		normalized := value.CapturedFrom.UTC()
 		value.CapturedFrom = &normalized
@@ -93,6 +98,7 @@ func (value mediaSmartAlbumQuery) empty() bool {
 		value.Favorite == nil &&
 		value.Tag == "" &&
 		value.Person == "" &&
+		value.PersonIdentity == "" &&
 		value.Place == ""
 }
 
@@ -104,16 +110,17 @@ func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
 		}
 	}
 	return mediaQueryOptions{
-		MediaKind:    value.MediaKind,
-		Search:       value.Search,
-		AssetKind:    value.AssetKind,
-		CapturedFrom: value.CapturedFrom,
-		CapturedTo:   value.CapturedTo,
-		HasLocation:  value.HasLocation,
-		Favorite:     value.Favorite,
-		Tag:          value.Tag,
-		Person:       value.Person,
-		Place:        place,
+		MediaKind:      value.MediaKind,
+		Search:         value.Search,
+		AssetKind:      value.AssetKind,
+		CapturedFrom:   value.CapturedFrom,
+		CapturedTo:     value.CapturedTo,
+		HasLocation:    value.HasLocation,
+		Favorite:       value.Favorite,
+		Tag:            value.Tag,
+		Person:         value.Person,
+		PersonIdentity: value.PersonIdentity,
+		Place:          place,
 	}
 }
 
@@ -140,6 +147,78 @@ func decodeMediaSmartAlbumQuery(raw string) (mediaSmartAlbumQuery, error) {
 	return normalizeMediaSmartAlbumQuery(value)
 }
 
+var errMediaSmartAlbumPersonIdentityNotFound = fmt.Errorf("smart album durable person not found")
+
+func lockMediaSmartAlbumPersonIdentity(
+	tx *gorm.DB,
+	ownerID uint64,
+	query mediaSmartAlbumQuery,
+) error {
+	if query.PersonIdentity == "" {
+		return nil
+	}
+	var person meta.PhotoPerson
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").
+		Where("owner_id = ? AND person_key = ?", ownerID, query.PersonIdentity).
+		First(&person).Error
+	if err == gorm.ErrRecordNotFound {
+		return errMediaSmartAlbumPersonIdentityNotFound
+	}
+	return err
+}
+
+func rewriteMediaSmartAlbumPersonIdentityReferences(
+	tx *gorm.DB,
+	ownerID uint64,
+	sourceIDs []string,
+	targetID string,
+	now time.Time,
+) error {
+	if len(sourceIDs) == 0 {
+		return nil
+	}
+	sources := make(map[string]struct{}, len(sourceIDs))
+	for _, sourceID := range sourceIDs {
+		sources[sourceID] = struct{}{}
+	}
+	var collections []meta.PhotoCollection
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"owner_id = ? AND kind = ? AND state = ?",
+			ownerID,
+			meta.PhotoCollectionKindSmart,
+			meta.PhotoCollectionStateActive,
+		).
+		Find(&collections).Error; err != nil {
+		return err
+	}
+	for _, collection := range collections {
+		query, err := decodeMediaSmartAlbumQuery(collection.QueryJSON)
+		if err != nil {
+			return fmt.Errorf("decode smart album %s: %w", collection.ExternalKey, err)
+		}
+		if _, ok := sources[query.PersonIdentity]; !ok {
+			continue
+		}
+		query.PersonIdentity = targetID
+		encoded, err := encodeMediaSmartAlbumQuery(query)
+		if err != nil {
+			return fmt.Errorf("encode smart album %s: %w", collection.ExternalKey, err)
+		}
+		if err := tx.Model(&meta.PhotoCollection{}).
+			Where("id = ? AND revision = ?", collection.ID, collection.Revision).
+			Updates(map[string]any{
+				"query_json": encoded,
+				"revision":   gorm.Expr("revision + 1"),
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Server) createSmartMediaAlbum(c *gin.Context) {
 	var input struct {
 		Name  string               `json:"name"`
@@ -154,7 +233,12 @@ func (s *Server) createSmartMediaAlbum(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	queryJSON, err := encodeMediaSmartAlbumQuery(input.Query)
+	normalizedQuery, err := normalizeMediaSmartAlbumQuery(input.Query)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	queryJSON, err := encodeMediaSmartAlbumQuery(normalizedQuery)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -171,8 +255,18 @@ func (s *Server) createSmartMediaAlbum(c *gin.Context) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.DB.WithContext(c.Request.Context()).Create(&collection).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "create smart media album failed")
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := lockMediaSmartAlbumPersonIdentity(tx, collection.OwnerID, normalizedQuery); err != nil {
+			return err
+		}
+		return tx.Create(&collection).Error
+	})
+	if err != nil {
+		if err == errMediaSmartAlbumPersonIdentityNotFound {
+			fail(c, http.StatusBadRequest, "person_identity must reference an existing durable person")
+		} else {
+			fail(c, http.StatusInternalServerError, "create smart media album failed")
+		}
 		return
 	}
 	album, err := s.mediaAlbumDTOByKey(
@@ -219,18 +313,30 @@ func (s *Server) updateSmartMediaAlbum(c *gin.Context) {
 		}
 		name = &normalized
 	}
+	var normalizedQuery *mediaSmartAlbumQuery
 	var queryJSON *string
 	if input.Query != nil {
-		encoded, err := encodeMediaSmartAlbumQuery(*input.Query)
+		value, err := normalizeMediaSmartAlbumQuery(*input.Query)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
+		encoded, err := encodeMediaSmartAlbumQuery(value)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		normalizedQuery = &value
 		queryJSON = &encoded
 	}
 
 	var currentRevision uint64
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if normalizedQuery != nil {
+			if err := lockMediaSmartAlbumPersonIdentity(tx, userID(c), *normalizedQuery); err != nil {
+				return err
+			}
+		}
 		var collection meta.PhotoCollection
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
@@ -266,6 +372,10 @@ func (s *Server) updateSmartMediaAlbum(c *gin.Context) {
 	if err != nil {
 		if err == errRevisionConflict {
 			revisionConflict(c, expected, currentRevision)
+			return
+		}
+		if err == errMediaSmartAlbumPersonIdentityNotFound {
+			fail(c, http.StatusBadRequest, "person_identity must reference an existing durable person")
 			return
 		}
 		if err == gorm.ErrRecordNotFound {

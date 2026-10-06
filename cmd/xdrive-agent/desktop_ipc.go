@@ -2400,6 +2400,18 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 		}
 		out.Person = raw
 	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("person_identity")); raw != "" {
+		const prefix = "person:v1:"
+		if !strings.HasPrefix(raw, prefix) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person_identity", "person_identity is invalid")
+			return client.MediaQuery{}, false
+		}
+		if _, err := uuid.Parse(strings.TrimPrefix(raw, prefix)); err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_person_identity", "person_identity is invalid")
+			return client.MediaQuery{}, false
+		}
+		out.PersonIdentity = raw
+	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("place")); raw != "" {
 		if len(raw) > 64 || !strings.HasPrefix(raw, "place:") {
 			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place", "place is invalid")

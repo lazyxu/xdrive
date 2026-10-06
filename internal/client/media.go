@@ -74,16 +74,17 @@ type MediaItem struct {
 }
 
 type MediaSmartAlbumQuery struct {
-	MediaKind    string     `json:"media_kind,omitempty"`
-	Search       string     `json:"search,omitempty"`
-	AssetKind    string     `json:"asset_kind,omitempty"`
-	CapturedFrom *time.Time `json:"captured_from,omitempty"`
-	CapturedTo   *time.Time `json:"captured_to,omitempty"`
-	HasLocation  *bool      `json:"has_location,omitempty"`
-	Favorite     *bool      `json:"favorite,omitempty"`
-	Tag          string     `json:"tag,omitempty"`
-	Person       string     `json:"person,omitempty"`
-	Place        string     `json:"place,omitempty"`
+	MediaKind      string     `json:"media_kind,omitempty"`
+	Search         string     `json:"search,omitempty"`
+	AssetKind      string     `json:"asset_kind,omitempty"`
+	CapturedFrom   *time.Time `json:"captured_from,omitempty"`
+	CapturedTo     *time.Time `json:"captured_to,omitempty"`
+	HasLocation    *bool      `json:"has_location,omitempty"`
+	Favorite       *bool      `json:"favorite,omitempty"`
+	Tag            string     `json:"tag,omitempty"`
+	Person         string     `json:"person,omitempty"`
+	PersonIdentity string     `json:"person_identity,omitempty"`
+	Place          string     `json:"place,omitempty"`
 }
 
 type MediaAlbum struct {
@@ -139,16 +140,17 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
-	MediaKind    string
-	Search       string
-	AssetKind    string
-	CapturedFrom *time.Time
-	CapturedTo   *time.Time
-	HasLocation  *bool
-	Favorite     *bool
-	Tag          string
-	Person       string
-	Place        string
+	MediaKind      string
+	Search         string
+	AssetKind      string
+	CapturedFrom   *time.Time
+	CapturedTo     *time.Time
+	HasLocation    *bool
+	Favorite       *bool
+	Tag            string
+	Person         string
+	PersonIdentity string
+	Place          string
 }
 
 func (q MediaQuery) add(values url.Values) {
@@ -178,6 +180,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Person); value != "" {
 		values.Set("person", value)
+	}
+	if value := strings.TrimSpace(q.PersonIdentity); value != "" {
+		values.Set("person_identity", value)
 	}
 	if value := strings.TrimSpace(q.Place); value != "" {
 		values.Set("place", value)

@@ -381,9 +381,13 @@ export function XDriveMediaGalleryPage({
       void loadFirstPage(currentAlbum, {})
       return
     }
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    setQuery({})
-    void loadFirstPage(currentAlbum, {}, currentSuggestedPerson, currentPerson)
+    const nextDraft = currentPerson
+      ? { ...emptyMediaGalleryFilterDraft, personIdentity: currentPerson.id }
+      : emptyMediaGalleryFilterDraft
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage])
 
   const createAlbum = useCallback(async (name: string) => {
@@ -485,9 +489,14 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const openPerson = useCallback((person: MediaPersonIdentity) => {
-    setQuery({})
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    void loadFirstPage(null, {}, null, person)
+    const nextDraft = {
+      ...emptyMediaGalleryFilterDraft,
+      personIdentity: person.id,
+    }
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setQuery(nextQuery)
+    setDraftFilters(nextDraft)
+    void loadFirstPage(null, nextQuery, null, person)
   }, [loadFirstPage])
 
   const leaveAlbum = useCallback(() => {
@@ -551,14 +560,22 @@ export function XDriveMediaGalleryPage({
         )),
       ])
       setCurrentPerson(updated)
-      await loadFirstPage(null, {}, null, updated)
+      setAlbums(await source.listAlbums())
+      const nextDraft = {
+        ...draftFilters,
+        personIdentity: updated.id,
+      }
+      const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+      await loadFirstPage(null, nextQuery, null, updated)
       return updated
     } catch (personError) {
       setError(xDriveMediaGalleryErrorMessage(personError))
       onError?.(personError)
       throw personError
     }
-  }, [loadFirstPage, onError, source])
+  }, [draftFilters, loadFirstPage, onError, source])
 
   const splitPerson = useCallback(async (
     person: MediaPersonIdentity,
@@ -747,11 +764,17 @@ export function XDriveMediaGalleryPage({
             applyLabel={currentAlbum?.kind === 'smart' ? '保存规则' : '应用'}
             clearLabel={currentAlbum?.kind === 'smart' ? '还原规则' : '清除'}
             placeLabel={places.find((place) => place.id === draftFilters.place)?.name}
+            personIdentityLabel={
+              currentPerson?.name ||
+              people.find((person) => person.id === draftFilters.personIdentity)?.name ||
+              (draftFilters.personIdentity ? '未命名人物' : undefined)
+            }
+            personIdentityLocked={Boolean(currentPerson)}
             onChange={setDraftFilters}
             onApply={applyFilters}
             onClear={clearFilters}
             onSaveSmart={
-              !currentAlbum && !currentSuggestedPerson && !currentPerson && source.createSmartAlbum
+              !currentAlbum && !currentSuggestedPerson && source.createSmartAlbum
                 ? () => {
                     setSmartAlbumName('')
                     setSmartDialogError('')
@@ -823,7 +846,11 @@ export function XDriveMediaGalleryPage({
       >
         <XDriveDialogTitle
           title="保存为智能相册"
-          subtitle="保存当前筛选条件；内容会随图库变化自动更新。"
+          subtitle={
+            currentPerson
+              ? `保存人物「${currentPerson.name || '未命名人物'}」和当前筛选条件；内容会随图库变化自动更新。`
+              : '保存当前筛选条件；内容会随图库变化自动更新。'
+          }
           onClose={() => !smartDialogBusy && setSmartDialogOpen(false)}
         />
         <XDriveDialogContent dividers>

@@ -177,6 +177,9 @@ function appendMediaGalleryQuery(
   }
   if (query.tag?.trim()) values.set('tag', query.tag.trim())
   if (query.person?.trim()) values.set('person', query.person.trim())
+  if (query.person_identity?.trim()) {
+    values.set('person_identity', query.person_identity.trim())
+  }
   if (query.place?.trim()) values.set('place', query.place.trim())
 }
 
