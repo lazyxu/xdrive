@@ -55,6 +55,7 @@ type childrenPageRow struct {
 	UpdatedAt  time.Time `gorm:"column:updated_at"`
 	FileSize   int64     `gorm:"column:file_size"`
 	FileSHA256 string    `gorm:"column:file_sha256"`
+	TotalCount int64     `gorm:"column:total_count"`
 }
 
 func (row childrenPageRow) dto() nodeDTO {
@@ -239,28 +240,13 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
 
 	if options.Offset != nil {
-		var totalCount int64
-		countQuery := s.DB.
-			Table("xd_nodes").
-			Joins(`JOIN xd_nodes AS parent_node
-				ON parent_node.id = ?
-				AND parent_node.owner_id = ?
-				AND parent_node.type = ?
-				AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
-			Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
-		if err := countQuery.Count(&totalCount).Error; err != nil {
-			fail(c, http.StatusInternalServerError, "count children failed")
-			return
-		}
-		if totalCount == 0 {
-			if _, err := s.ownedDirectory(uid, parentID); err != nil {
-				fail(c, statusForLookup(err), "directory not found")
-				return
-			}
-		}
-
 		var rows []childrenPageRow
-		if err := query.
+		rangeQuery := query.Select(`xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
+			xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
+			COALESCE(child_file.size, 0) AS file_size,
+			COALESCE(child_file.sha256, '') AS file_sha256,
+			COUNT(*) OVER() AS total_count`)
+		if err := rangeQuery.
 			Order(orderBy).
 			Offset(*options.Offset).
 			Limit(options.Limit).
@@ -268,6 +254,31 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			fail(c, http.StatusInternalServerError, "list failed")
 			return
 		}
+
+		var totalCount int64
+		if len(rows) > 0 {
+			totalCount = rows[0].TotalCount
+		} else {
+			countQuery := s.DB.
+				Table("xd_nodes").
+				Joins(`JOIN xd_nodes AS parent_node
+					ON parent_node.id = ?
+					AND parent_node.owner_id = ?
+					AND parent_node.type = ?
+					AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
+				Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
+			if err := countQuery.Count(&totalCount).Error; err != nil {
+				fail(c, http.StatusInternalServerError, "count children failed")
+				return
+			}
+			if totalCount == 0 {
+				if _, err := s.ownedDirectory(uid, parentID); err != nil {
+					fail(c, statusForLookup(err), "directory not found")
+					return
+				}
+			}
+		}
+
 		out := make([]nodeDTO, 0, len(rows))
 		for _, row := range rows {
 			out = append(out, row.dto())

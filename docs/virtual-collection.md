@@ -40,7 +40,7 @@ Cursor pagination may remain for compatibility while range APIs are introduced, 
 
 ## FileExplorer directory range transport
 
-The children endpoint supports an explicit range mode when `offset` is present. Range responses return `items`, `total_count`, the requested `offset` and `limit`, plus the stable server sort. The requested limit remains the logical page width even on the final partial page so cache keys do not change after `total_count` becomes known. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.
+The children endpoint supports an explicit range mode when `offset` is present. Range responses return `items`, `total_count`, the requested `offset` and `limit`, plus the stable server sort. Non-empty range pages obtain rows and `total_count` in the same SQL query via `COUNT(*) OVER()`; only an empty/out-of-range page performs the fallback count needed to preserve total-count and 404 semantics. The requested limit remains the logical page width even on the final partial page so cache keys do not change after `total_count` becomes known. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.
 
 
 ## FileExplorer range transport

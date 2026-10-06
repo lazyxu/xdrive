@@ -8,6 +8,7 @@ This performance track is intentionally limited to FileExplorer across shared UI
 
 - Directory listing uses cursor pagination with 200 items per page.
 - Non-empty paged directory reads fetch node and file metadata in one joined DB query; empty/terminal pages perform a fallback parent validation only to preserve 200-vs-404 semantics.
+- Non-empty sparse range reads return the requested rows and `total_count` from one query via `COUNT(*) OVER()`; only empty/out-of-range windows fall back to a separate count/parent validation.
 - Details view windows large directories once 240 items are loaded.
 - Details scroll-window state is updated at most once per animation frame and only when the effective row boundary changes.
 - Grid view windows large directories once 400 items are loaded, with deterministic row geometry and three overscan rows.

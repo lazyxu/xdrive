@@ -288,3 +288,14 @@ test('FileExplorer sparse virtual surface keeps logical count separate from rend
     'dense mode must retain adaptive prefetch behavior',
   )
 })
+
+
+test('FileExplorer range pages return rows and total count in one common-path DB query', () => {
+  assert.ok(childrenPagination.includes('COUNT(*) OVER() AS total_count'), 'range query must derive total_count from the same row scan')
+  assert.ok(childrenPagination.includes('totalCount = rows[0].TotalCount'), 'non-empty range pages must use the window count')
+  const rangeStart = childrenPagination.indexOf('if (options.Offset != nil) {')
+  const rangeEnd = childrenPagination.indexOf('\n\tvar rows []childrenPageRow', rangeStart)
+  const rangeBlock = childrenPagination.slice(rangeStart, rangeEnd)
+  assert.ok(rangeBlock.includes('rangeQuery := query.Select('), 'range mode must issue the row query before any fallback count')
+  assert.ok(rangeBlock.includes('if len(rows) > 0 {'), 'range mode must only fall back when the requested window is empty')
+})
