@@ -1,8 +1,10 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
+  XDriveFilePreviewSurface,
+  XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
@@ -216,6 +218,8 @@ export default function WebFileExplorer({
     onError,
   })
 
+  const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+
   const {
     busy: fileOperationBusy,
     canPaste: fileOperationCanPaste,
@@ -273,12 +277,15 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const openWebNode = async (node: Node) => {
-    try {
-      await api.download(node)
-    } catch (error) {
-      onError(error)
-    }
+  const openWebNode = (node: Node) => {
+    setOpenPreviewItem({
+      id: node.id,
+      name: node.name,
+      kind: node.type,
+      size: node.size,
+      updatedAt: node.updated_at,
+      revision: node.revision,
+    })
   }
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
@@ -304,7 +311,7 @@ export default function WebFileExplorer({
 
     return xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
-      onOpen: node.type === 'dir' ? () => { void openItem(item, openWebNode) } : undefined,
+      onOpen: () => { void openItem(item, openWebNode) },
       onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
@@ -508,6 +515,25 @@ export default function WebFileExplorer({
             : undefined
         )}
       />
+      <XDriveOpenPreviewDialog
+        open={Boolean(openPreviewItem)}
+        title={openPreviewItem?.name ?? ''}
+        onClose={() => setOpenPreviewItem(null)}
+      >
+        <XDriveFilePreviewSurface
+          target={openPreviewItem}
+          loadTextPreview={loadTextPreview}
+          loadImagePreview={loadThumbnail}
+          loadPreviewURL={loadPreviewURL}
+          fallback={(
+            <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
+              此文件暂无可用预览
+            </Box>
+          )}
+          minHeight={320}
+          maxHeight={760}
+        />
+      </XDriveOpenPreviewDialog>
     </Box>
   )
 }

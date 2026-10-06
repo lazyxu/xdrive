@@ -10,6 +10,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import type { XDriveFileExplorerMenuItem } from './FileExplorer'
 import { XDriveFileExplorerCommandButton } from './FileExplorer'
 
@@ -17,6 +18,8 @@ export function xDriveFileExplorerStandardItemMenuItems({
   kind,
   primaryDisabled = false,
   onOpen,
+  onSystemOpen,
+  systemOpenLabel = '使用系统打开',
   onDownload,
   downloadLabel = '下载',
   onReveal,
@@ -29,6 +32,8 @@ export function xDriveFileExplorerStandardItemMenuItems({
   kind: 'dir' | 'file'
   primaryDisabled?: boolean
   onOpen?: () => void
+  onSystemOpen?: () => void
+  systemOpenLabel?: string
   onDownload?: () => void
   downloadLabel?: string
   onReveal?: () => void
@@ -64,9 +69,18 @@ export function xDriveFileExplorerStandardItemMenuItems({
       items.push({
         id: 'open',
         label: '打开',
-        icon: <OpenInNewRoundedIcon fontSize="small" />,
+        icon: <VisibilityRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
         onSelect: onOpen,
+      })
+    }
+    if (onSystemOpen) {
+      items.push({
+        id: 'system-open',
+        label: systemOpenLabel,
+        icon: <OpenInNewRoundedIcon fontSize="small" />,
+        disabled: primaryDisabled,
+        onSelect: onSystemOpen,
       })
     }
     if (onDownload) {
