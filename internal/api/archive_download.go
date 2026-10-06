@@ -32,7 +32,8 @@ var (
 )
 
 type archiveDownloadRequest struct {
-	IDs []uint64 `json:"ids"`
+	IDs        []uint64 `json:"ids"`
+	TransferID string   `json:"transfer_id,omitempty"`
 }
 
 type archiveDownloadEntry struct {
@@ -78,6 +79,21 @@ func (s *Server) downloadArchive(c *gin.Context) {
 		return
 	}
 
+	transferID := strings.TrimSpace(req.TransferID)
+	if transferID != "" {
+		if err := s.beginArchiveDownloadProgress(userID(c), transferID, ids, manifest); err != nil {
+			switch {
+			case errors.Is(err, errArchiveProgressNotFound):
+				fail(c, http.StatusNotFound, "archive transfer not found")
+			case errors.Is(err, errArchiveProgressMismatch):
+				fail(c, http.StatusConflict, err.Error())
+			default:
+				fail(c, http.StatusInternalServerError, "start archive progress failed")
+			}
+			return
+		}
+	}
+
 	filename := archiveDownloadFilename(manifest.Roots)
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filename))
@@ -88,14 +104,37 @@ func (s *Server) downloadArchive(c *gin.Context) {
 
 	zw := zip.NewWriter(c.Writer)
 	for _, entry := range manifest.Entries {
-		if err := writeArchiveDownloadEntry(c.Request.Context(), s, zw, entry); err != nil {
+		var done int64
+		var onProgress func(int64)
+		if transferID != "" && !entry.IsDir {
+			s.updateArchiveDownloadProgress(transferID, entry.Path, "transferring", 0, nil)
+			onProgress = func(delta int64) {
+				done += max(int64(0), delta)
+				s.updateArchiveDownloadProgress(transferID, entry.Path, "transferring", done, nil)
+			}
+		}
+		if err := writeArchiveDownloadEntry(c.Request.Context(), s, zw, entry, onProgress); err != nil {
 			_ = zw.Close()
+			if transferID != "" && !entry.IsDir {
+				s.updateArchiveDownloadProgress(transferID, entry.Path, "failed", done, err)
+				s.finishArchiveDownloadProgress(transferID, archiveProgressContextState(c.Request.Context()), err)
+			}
 			_ = c.Error(err)
 			return
 		}
+		if transferID != "" && !entry.IsDir {
+			s.updateArchiveDownloadProgress(transferID, entry.Path, "completed", entry.Size, nil)
+		}
 	}
 	if err := zw.Close(); err != nil {
+		if transferID != "" {
+			s.finishArchiveDownloadProgress(transferID, "failed", err)
+		}
 		_ = c.Error(err)
+		return
+	}
+	if transferID != "" {
+		s.finishArchiveDownloadProgress(transferID, "completed", nil)
 	}
 }
 
@@ -364,6 +403,7 @@ func writeArchiveDownloadEntry(
 	s *Server,
 	zw *zip.Writer,
 	entry archiveDownloadEntry,
+	onProgress func(int64),
 ) error {
 	header := &zip.FileHeader{Name: entry.Path, Method: zip.Store}
 	header.SetModTime(entry.UpdatedAt)
@@ -383,7 +423,11 @@ func writeArchiveDownloadEntry(
 		return err
 	}
 	defer f.Close()
-	written, err := io.Copy(writer, f)
+	source := io.Reader(f)
+	if onProgress != nil {
+		source = &archiveProgressReader{reader: f, onRead: onProgress}
+	}
+	written, err := io.Copy(writer, source)
 	if err != nil {
 		return err
 	}

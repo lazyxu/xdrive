@@ -134,6 +134,8 @@ class WebTransferStore {
     path?: string
     bytesTotal?: number
     itemsTotal?: number
+    kind?: 'upload' | 'download'
+    direction?: 'upload' | 'download'
   }) {
     const now = Date.now()
     const id = `web-${now}-${++this.sequence}`
@@ -145,8 +147,8 @@ class WebTransferStore {
       scan_complete: false,
       file_name: input.fileName,
       path: input.path || input.fileName,
-      kind: 'upload',
-      direction: 'upload',
+      kind: input.kind ?? 'upload',
+      direction: input.direction ?? input.kind ?? 'upload',
       state: 'running',
       bytes_done: 0,
       bytes_total: Math.max(0, input.bytesTotal || 0),
