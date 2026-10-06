@@ -321,6 +321,21 @@ jobs:
       - name: Measure FileExplorer directory sort 100k baseline
         run: go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-explorer-thumbnail-transport-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-thumbnail-warm-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure FileExplorer Desktop warm-thumbnail transport baseline
+        run: go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline$' -count=1 -v ./internal/client
+
   file-explorer-virtual-collection-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-virtual-100k-baseline'
     runs-on: ubuntu-latest
