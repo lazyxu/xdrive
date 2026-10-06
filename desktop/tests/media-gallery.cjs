@@ -188,6 +188,8 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
     'createXDriveMediaGalleryDataSource',
     'loadPreviewURL',
     'resolveXDriveTransport',
+    "'data' in resource",
+    'new Blob(',
     "'data_base64' in resource",
     'URL.createObjectURL(resource)',
     'data_base64',
@@ -340,6 +342,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.match(desktopAdapter, /cloudFilePreviewURL/)
+  assert.match(agentClient, /data: ArrayBuffer/)
+  assert.match(agentClient, /requestBinary\(/)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaSuggestedPeople/)
   assert.match(desktopAdapter, /getMediaSuggestedPersonItems/)

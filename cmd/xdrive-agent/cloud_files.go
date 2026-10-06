@@ -56,8 +56,8 @@ type agentCreatedShare struct {
 }
 
 type agentMediaThumbnail struct {
-	ContentType string `json:"content_type"`
-	DataBase64  string `json:"data_base64"`
+	ContentType string
+	Data        []byte
 }
 
 type agentMediaMotion struct {
@@ -1439,7 +1439,7 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 	}
 	return agentMediaThumbnail{
 		ContentType: contentType,
-		DataBase64:  base64.StdEncoding.EncodeToString(data),
+		Data:        data,
 	}, nil
 }
 

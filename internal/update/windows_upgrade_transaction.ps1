@@ -269,7 +269,7 @@ function Start-AgentAndVerify([string]$AppDir) {
                 if ([string]$hello.agent_version -ne $TargetVersion) {
                     throw "Agent version $($hello.agent_version) does not match target $TargetVersion"
                 }
-                if ([int]$hello.protocol_min -gt 1 -or [int]$hello.protocol_max -lt 1) {
+                if ([int]$hello.protocol_min -gt 2 -or [int]$hello.protocol_max -lt 2) {
                     throw "Agent Desktop IPC protocol is incompatible"
                 }
                 return

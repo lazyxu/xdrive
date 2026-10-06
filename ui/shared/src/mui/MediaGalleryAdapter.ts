@@ -25,6 +25,10 @@ export type XDriveMediaGalleryBinaryResource =
   | Blob
   | {
       content_type?: string
+      data: ArrayBuffer
+    }
+  | {
+      content_type?: string
       data_base64: string
     }
 
@@ -152,6 +156,12 @@ function mediaResourceURL(
   fallbackContentType: string,
 ) {
   if (typeof resource === 'string') return resource
+  if ('data' in resource) {
+    return URL.createObjectURL(new Blob(
+      [resource.data],
+      { type: resource.content_type || fallbackContentType },
+    ))
+  }
   if ('data_base64' in resource) {
     return `data:${resource.content_type || fallbackContentType};base64,${resource.data_base64}`
   }
