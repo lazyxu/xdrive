@@ -85,6 +85,9 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(info["protocol_version"], 1)
         self.assertEqual(info["embedding_dimensions"], 128)
         self.assertEqual(info["embedding_format"], "f32le")
+        self.assertEqual(info["runtime"]["framework"], "opencv_dnn")
+        self.assertEqual(info["runtime"]["version"], cv.__version__)
+        self.assertEqual(info["runtime"]["device"], "cpu")
         self.assertEqual(
             info["detector"]["sha256"],
             analyzer.YUNET_SHA256,
@@ -207,6 +210,7 @@ class AnalyzerTests(unittest.TestCase):
                 info = json.loads(response.read())
                 self.assertEqual(response.status, 200)
                 self.assertEqual(info["embedding_dimensions"], 128)
+                self.assertEqual(info["runtime"]["device"], "cpu")
                 connection.close()
 
                 payload = json.dumps(task).encode("utf-8")

@@ -17,15 +17,17 @@ import (
 
 func runMediaCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: xdrive-server media <verify|repair> [options]")
+		return fmt.Errorf("usage: xdrive-server media <status|verify|repair> [options]")
 	}
 	switch args[0] {
+	case "status":
+		return runMediaStatus(args[1:])
 	case "verify":
 		return runMediaVerify(args[1:])
 	case "repair":
 		return runMediaRepair(args[1:])
 	default:
-		return fmt.Errorf("usage: xdrive-server media <verify|repair> [options]")
+		return fmt.Errorf("usage: xdrive-server media <status|verify|repair> [options]")
 	}
 }
 
