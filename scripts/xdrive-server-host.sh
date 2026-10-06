@@ -50,8 +50,9 @@ Usage:
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
   xdrive-server source verify [--json]
+  xdrive-server media status [--json]
   xdrive-server media verify [--json]
-  xdrive-server media repair [--json] [--dry-run]
+  xdrive-server media repair [--json] [--dry-run] [--gc-thumbnails] [--gc-intelligence]
   xdrive-server migrate-user USER
   xdrive-server cleanup legacy-volumes [--yes]
   xdrive-server uninstall [--purge-data] [--purge-backups] --yes
@@ -777,6 +778,10 @@ source_cmd() {
 media_cmd() {
   local subcommand="${1:-}"
   case "$subcommand" in
+    status)
+      shift
+      compose exec -T server xdrive-server media status "$@"
+      ;;
     verify)
       shift
       compose exec -T server xdrive-server media verify "$@"
@@ -798,7 +803,7 @@ media_cmd() {
       return "$status"
       ;;
     *)
-      echo "usage: xdrive-server media <verify|repair> [options]" >&2
+      echo "usage: xdrive-server media <status|verify|repair> [options]" >&2
       return 2
       ;;
   esac

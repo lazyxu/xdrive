@@ -349,7 +349,7 @@ Automatic person clusters remain rebuildable derived state. `xdrive-server media
 
 ## Operational status
 
-Use the Server CLI to inspect the configured Photo Intelligence runtime and current derived-state backlog:
+Use the Server CLI to inspect the configured Photo Intelligence runtime and current derived-state backlog. The installed host manager forwards the same command into the running Server container, so the normal host-side invocation is also `~/.xd/bin/xdrive-server media status`.
 
 ```text
 xdrive-server media status

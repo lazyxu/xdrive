@@ -92,6 +92,10 @@ EOF
     readlink /proc/$$/fd/0 > "$TEST_STATE/source-verify-stdin" 2>/dev/null || true
     printf '{"sources":3,"items":42,"bound_items":40,"issues":[]}\n'
     ;;
+  *"media status"*)
+    readlink /proc/$$/fd/0 > "$TEST_STATE/media-status-stdin" 2>/dev/null || true
+    printf '{"face":{"configured":false,"reachable":false},"person":{"enabled":true},"place":{"configured":false},"database":{"photo_assets":10}}\n'
+    ;;
   *"media verify"*)
     readlink /proc/$$/fd/0 > "$TEST_STATE/media-verify-stdin" 2>/dev/null || true
     printf '{"metadata":10,"groups":2,"group_items":4,"derived_resources":2,"thumbnails":1,"issues":[]}\n'
@@ -438,6 +442,18 @@ grep -q '"issues":\[\]' "$TMP/source-verify.out"
 grep -q -- 'exec -T server xdrive-server source verify --json' "$TMP/state/docker-args"
 if grep -q '^pipe:' "$TMP/state/source-verify-stdin"; then
   echo "source verify inherited caller stdin" >&2
+  exit 1
+fi
+
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" media status --json >"$TMP/media-status.out"
+grep -q '"configured":false' "$TMP/media-status.out"
+grep -q '"enabled":true' "$TMP/media-status.out"
+grep -q -- 'exec -T server xdrive-server media status --json' "$TMP/state/docker-args"
+if grep -q '^pipe:' "$TMP/state/media-status-stdin"; then
+  echo "media status inherited caller stdin" >&2
   exit 1
 fi
 
