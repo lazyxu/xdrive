@@ -42,6 +42,7 @@ type childrenPageOptions struct {
 	Sort   string
 	Order  string
 	Name   string
+	NameCI string
 }
 
 type childrenPageRow struct {
@@ -75,7 +76,7 @@ type childrenCursor struct {
 
 func childrenPaginationRequested(c *gin.Context) bool {
 	query := c.Request.URL.Query()
-	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name"} {
+	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name", "name_ci"} {
 		if _, ok := query[key]; ok {
 			return true
 		}
@@ -90,6 +91,7 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 		Sort:   strings.TrimSpace(strings.ToLower(c.Query("sort"))),
 		Order:  strings.TrimSpace(strings.ToLower(c.Query("order"))),
 		Name:   c.Query("name"),
+		NameCI: c.Query("name_ci"),
 	}
 	if options.Sort == "" {
 		options.Sort = "name"
@@ -122,16 +124,20 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 		}
 		options.Offset = &value
 	}
-	if options.Name != "" && options.Cursor != "" {
-		fail(c, http.StatusBadRequest, "name filter does not accept cursor")
+	if options.Name != "" && options.NameCI != "" {
+		fail(c, http.StatusBadRequest, "name and name_ci are mutually exclusive")
+		return childrenPageOptions{}, false
+	}
+	if (options.Name != "" || options.NameCI != "") && options.Cursor != "" {
+		fail(c, http.StatusBadRequest, "name filters do not accept cursor")
 		return childrenPageOptions{}, false
 	}
 	if options.Offset != nil && options.Cursor != "" {
 		fail(c, http.StatusBadRequest, "offset does not accept cursor")
 		return childrenPageOptions{}, false
 	}
-	if options.Offset != nil && options.Name != "" {
-		fail(c, http.StatusBadRequest, "name filter does not accept offset")
+	if options.Offset != nil && (options.Name != "" || options.NameCI != "") {
+		fail(c, http.StatusBadRequest, "name filters do not accept offset")
 		return childrenPageOptions{}, false
 	}
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
@@ -184,6 +190,9 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			options.Name,
 			options.Name,
 		)
+	}
+	if options.NameCI != "" {
+		query = query.Where("lower(xd_nodes.name) = lower(?)", options.NameCI)
 	}
 
 	if options.Cursor != "" {

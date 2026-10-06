@@ -23,6 +23,15 @@ export function xDriveFileExplorerPathLookupPageOptions(name: string) {
   }
 }
 
+export function xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(name: string) {
+  return {
+    limit: 1,
+    sort: 'name' as const,
+    order: 'asc' as const,
+    nameInsensitive: name,
+  }
+}
+
 export async function xDriveResolveFileExplorerPath<
   TNode extends XDriveFileExplorerPathNode,
 >({
@@ -1134,23 +1143,19 @@ export async function xDriveFileExplorerEnsureUploadDirectory<
   parentID,
   name,
   createDirectory,
-  listChildren,
+  findExistingDirectory,
 }: {
   parentID: number
   name: string
   createDirectory: (parentID: number, name: string) => Promise<TNode>
-  listChildren: (parentID: number) => Promise<readonly TNode[]>
+  findExistingDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
 }) {
   try {
     return (await createDirectory(parentID, name)).id
   } catch (createError) {
     try {
-      const children = await listChildren(parentID)
-      const existing = children.find((node) => (
-        node.type === 'dir' &&
-        node.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0
-      ))
-      if (existing) return existing.id
+      const existing = await findExistingDirectory(parentID, name)
+      if (existing?.type === 'dir') return existing.id
     } catch {
       // Preserve the original create error when fallback lookup also fails.
     }

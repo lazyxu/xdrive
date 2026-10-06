@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import {
   XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
   xDriveFileExplorerPathLookupPageOptions,
+  xDriveFileExplorerCaseInsensitiveNameLookupPageOptions,
   xDriveFileExplorerArchiveDownloadPlan,
   xDriveFileExplorerDesktopArchiveDownloadFeedback,
   xDriveFileExplorerLoadChildDirectoryPage,
@@ -496,10 +497,13 @@ export default function DesktopFileExplorer({
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
-      listChildren: async (id) => {
-        const result = await window.xdriveDesktop.agent.cloudChildren(id)
+      findExistingDirectory: async (id, directoryName) => {
+        const result = await window.xdriveDesktop.agent.cloudChildrenPage(
+          id,
+          xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName),
+        )
         if (!result.ok) throw new Error(result.error.message)
-        return result.data
+        return result.data.items[0] ?? null
       },
     }),
   })

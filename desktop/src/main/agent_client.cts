@@ -1298,6 +1298,7 @@ export class AgentIPCClient {
     sort?: 'name' | 'updated' | 'size' | 'type'
     order?: 'asc' | 'desc'
     name?: string
+    nameInsensitive?: string
   } = {}) {
     const query = new URLSearchParams({
       parent_id: String(parentID),
@@ -1307,6 +1308,7 @@ export class AgentIPCClient {
     })
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
     if (options.name) query.set('name', options.name)
+    if (options.nameInsensitive) query.set('name_ci', options.nameInsensitive)
     return this.request<AgentCloudChildrenPage>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 
