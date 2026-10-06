@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -82,9 +83,25 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	hello := uploadTestFile(t, router, tokenA, docs.ID, "hello.txt", "hello world")
 	uploadTestFile(t, router, tokenA, nested.ID, "inner.txt", "inside")
 
+	preparedResponse := request(
+		t, router, http.MethodPost, "/api/v1/download/archive/prepare", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d,%d]}`, docs.ID, hello.ID)),
+		http.StatusOK,
+	)
+	var prepared archiveDownloadPrepareResponse
+	if err := json.Unmarshal(preparedResponse.Body.Bytes(), &prepared); err != nil {
+		t.Fatal(err)
+	}
+	if prepared.TransferID == "" || prepared.Filename != "docs.zip" || len(prepared.Files) != 2 {
+		t.Fatalf("unexpected archive prepare response: %+v", prepared)
+	}
+	if prepared.TotalBytes != int64(len("hello world")+len("inside")) {
+		t.Fatalf("archive prepare total bytes=%d", prepared.TotalBytes)
+	}
+
 	res := request(
 		t, router, http.MethodPost, "/api/v1/download/archive", tokenA,
-		strings.NewReader(fmt.Sprintf(`{"ids":[%d,%d]}`, docs.ID, hello.ID)),
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d,%d],"transfer_id":%q}`, docs.ID, hello.ID, prepared.TransferID)),
 		http.StatusOK,
 	)
 	if got := res.Header().Get("Content-Type"); got != "application/zip" {
@@ -112,6 +129,33 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	if _, duplicate := entries["hello.txt"]; duplicate {
 		t.Fatalf("nested selected file was duplicated at archive root: %v", entries)
 	}
+
+	progressResponse := request(
+		t, router, http.MethodGet,
+		"/api/v1/download/archive/progress/"+prepared.TransferID,
+		tokenA, nil, http.StatusOK,
+	)
+	var progress archiveDownloadProgressResponse
+	if err := json.Unmarshal(progressResponse.Body.Bytes(), &progress); err != nil {
+		t.Fatal(err)
+	}
+	if progress.State != "completed" || progress.ItemsTotal != 2 || progress.ItemsCompleted != 2 ||
+		progress.ItemsFailed != 0 || progress.ItemsRunning != 0 || progress.ItemsQueued != 0 {
+		t.Fatalf("unexpected completed archive progress: %+v", progress)
+	}
+	if progress.BytesDone != progress.BytesTotal || progress.BytesTotal != prepared.TotalBytes {
+		t.Fatalf("archive progress bytes=%d/%d prepare=%d", progress.BytesDone, progress.BytesTotal, prepared.TotalBytes)
+	}
+	for _, file := range progress.Files {
+		if file.State != "completed" || file.Done != file.Size {
+			t.Fatalf("archive child progress not completed: %+v", file)
+		}
+	}
+	request(
+		t, router, http.MethodGet,
+		"/api/v1/download/archive/progress/"+prepared.TransferID,
+		tokenB, nil, http.StatusNotFound,
+	)
 
 	other := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), tokenA, strings.NewReader(`{"name":"other"}`), http.StatusCreated)
 	otherHello := uploadTestFile(t, router, tokenA, other.ID, "hello.txt", "other hello")

@@ -149,6 +149,40 @@ export interface UploadSessionState {
   result?: Node
 }
 
+type ArchiveDownloadPrepareFile = {
+  path: string
+  size: number
+}
+
+type ArchiveDownloadPrepare = {
+  transfer_id: string
+  filename: string
+  total_bytes: number
+  files: ArchiveDownloadPrepareFile[]
+}
+
+type ArchiveDownloadProgressFile = {
+  path: string
+  size: number
+  done: number
+  state: 'queued' | 'transferring' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+}
+
+type ArchiveDownloadProgress = {
+  transfer_id: string
+  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  error?: string
+  bytes_done: number
+  bytes_total: number
+  items_total: number
+  items_completed: number
+  items_failed: number
+  items_running: number
+  items_queued: number
+  files: ArchiveDownloadProgressFile[]
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly detail?: string
@@ -223,6 +257,8 @@ export class XDriveApi {
     path?: string
     bytesTotal: number
     itemsTotal: number
+    kind?: 'upload' | 'download'
+    direction?: 'upload' | 'download'
   }) {
     return webTransferStore.startGroup(input)
   }
@@ -1421,23 +1457,156 @@ export class XDriveApi {
   }
 
   async downloadArchive(ids: number[], filename: string) {
-    await this.downloadAuthenticated('/api/v1/download/archive', filename, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
+    const groupID = this.startTransferGroup({
+      fileName: filename,
+      path: filename,
+      bytesTotal: 0,
+      itemsTotal: 0,
+      kind: 'download',
+      direction: 'download',
     })
+    const childIDs = new Map<string, string>()
+    const childStates = new Map<string, ArchiveDownloadProgressFile['state']>()
+    let stopPolling = false
+    let polling: Promise<void> | null = null
+
+    const applyProgress = (progress: ArchiveDownloadProgress) => {
+      for (const file of progress.files) {
+        const childID = childIDs.get(file.path)
+        if (!childID) continue
+        const previous = childStates.get(file.path)
+        if (file.state === 'transferring' && previous !== 'transferring') {
+          this.beginTransfer(childID)
+        }
+        this.progressTransfer(childID, file.done, file.size)
+        if (
+          (file.state === 'completed' || file.state === 'failed' || file.state === 'cancelled') &&
+          previous !== file.state
+        ) {
+          this.finishTransfer(childID, {
+            state: file.state,
+            ...(file.error ? { error: file.error } : {}),
+          })
+        }
+        childStates.set(file.path, file.state)
+      }
+      this.updateTransferGroup(groupID, {
+        scanComplete: true,
+        bytesDone: progress.bytes_done,
+        bytesTotal: progress.bytes_total,
+        itemsTotal: progress.items_total,
+        itemsCompleted: progress.items_completed,
+        itemsFailed: progress.items_failed,
+        itemsRunning: progress.items_running,
+        itemsQueued: progress.items_queued,
+      })
+    }
+
+    try {
+      const prepared = await this.request<ArchiveDownloadPrepare>('/api/v1/download/archive/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+
+      for (const file of prepared.files) {
+        const childID = this.startTransferChild(groupID, {
+          fileName: file.path.split('/').at(-1) || file.path,
+          relativePath: file.path,
+          bytesTotal: file.size,
+        })
+        childIDs.set(file.path, childID)
+        childStates.set(file.path, 'queued')
+      }
+      this.updateTransferGroup(groupID, {
+        scanComplete: true,
+        bytesDone: 0,
+        bytesTotal: prepared.total_bytes,
+        itemsTotal: prepared.files.length,
+        itemsCompleted: 0,
+        itemsFailed: 0,
+        itemsRunning: 0,
+        itemsQueued: prepared.files.length,
+      })
+
+      polling = (async () => {
+        while (!stopPolling) {
+          try {
+            applyProgress(await this.request<ArchiveDownloadProgress>(
+              `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+            ))
+          } catch {
+            // Side-channel progress must never abort the archive transport.
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 200))
+        }
+      })()
+
+      try {
+        await this.downloadAuthenticated('/api/v1/download/archive', prepared.filename || filename, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
+        }, false)
+      } finally {
+        stopPolling = true
+        await polling
+        polling = null
+      }
+
+      try {
+        applyProgress(await this.request<ArchiveDownloadProgress>(
+          `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+        ))
+      } catch {
+        // A successful archive response proves every entry was fully streamed.
+      }
+
+      for (const file of prepared.files) {
+        const childID = childIDs.get(file.path)
+        if (!childID || childStates.get(file.path) === 'completed') continue
+        this.progressTransfer(childID, file.size, file.size)
+        this.finishTransfer(childID, { state: 'completed' })
+        childStates.set(file.path, 'completed')
+      }
+      this.updateTransferGroup(groupID, {
+        scanComplete: true,
+        bytesDone: prepared.total_bytes,
+        bytesTotal: prepared.total_bytes,
+        itemsTotal: prepared.files.length,
+        itemsCompleted: prepared.files.length,
+        itemsFailed: 0,
+        itemsRunning: 0,
+        itemsQueued: 0,
+      })
+      this.finishTransfer(groupID, { state: 'completed' })
+    } catch (error) {
+      stopPolling = true
+      if (polling) await polling
+      for (const [path, childID] of childIDs) {
+        const state = childStates.get(path)
+        if (state === 'completed' || state === 'failed' || state === 'cancelled') continue
+        this.finishTransfer(childID, { state: 'cancelled' })
+      }
+      this.finishTransfer(groupID, {
+        state: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
   }
 
   private async downloadAuthenticated(
     path: string,
     filename: string,
     init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+    trackTransfer = true,
   ) {
-    const transferID = webTransferStore.create({
+    const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
       path: filename,
       kind: 'download',
-    })
+    }) : ''
 
     try {
       await this.ensureFresh()
@@ -1471,13 +1640,13 @@ export class XDriveApi {
           if (!value) continue
           completed += value.byteLength
           chunks.push(value as BlobPart)
-          webTransferStore.progress(transferID, completed, total)
+          if (trackTransfer) webTransferStore.progress(transferID, completed, total)
         }
         blob = new Blob(chunks, { type: contentType })
       } else {
         blob = await response.blob()
         completed = blob.size
-        webTransferStore.progress(transferID, completed, total || completed)
+        if (trackTransfer) webTransferStore.progress(transferID, completed, total || completed)
       }
 
       const url = URL.createObjectURL(blob)
@@ -1491,9 +1660,9 @@ export class XDriveApi {
       } finally {
         URL.revokeObjectURL(url)
       }
-      webTransferStore.complete(transferID, completed, total || completed)
+      if (trackTransfer) webTransferStore.complete(transferID, completed, total || completed)
     } catch (error) {
-      webTransferStore.fail(transferID, error)
+      if (trackTransfer) webTransferStore.fail(transferID, error)
       throw error
     }
   }
