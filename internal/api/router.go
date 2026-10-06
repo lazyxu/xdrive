@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
@@ -30,6 +31,7 @@ type Server struct {
 	PhotoFaceAnalyzer         photointelligence.FaceAnalyzer
 	PhotoFacePreviewBaseURL   string
 	HostControlDir            string
+	BackgroundScheduler       *background.Scheduler
 	credentialTest            sourceCredentialTester
 	fileStationBrowse         sourceFileStationBrowser
 	obs                       *serverObservability

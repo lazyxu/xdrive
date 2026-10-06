@@ -103,8 +103,10 @@ consumer is migrated so the scheduler remains reusable outside the API process.
 ## Migration order
 
 1. Shared scheduler primitives (this document and `internal/background`).
-2. Thumbnail and analysis-preview generation: same-key singleflight, bounded `media_cpu` workers, visible
-   thumbnails at P0 and analysis preview at P1.
+2. Thumbnail and analysis-preview generation: **current**. Cache misses use owner-scoped scheduler
+   singleflight, bounded `media_cpu` workers, visible thumbnails at P0, analysis preview at P1, and
+   deterministic revision-aware cache keys. HTTP request cancellation stops only that waiter; the shared
+   derivative task continues for other waiters.
 3. MediaIndexer: `file commit -> media job`; keep the 30-second stale scan only as fallback reconciliation.
 4. Photo Intelligence: `Media ready -> face/place`, then `Face ready -> person-cluster(owner)` with owner-level
    coalescing.
@@ -155,3 +157,19 @@ domain lineage.
 
 `SupersedeKey` is separate from the deduplication key: deduplication means "the same concrete result is
 already in flight", while supersession means "a newer revision makes an older queued result unnecessary".
+
+
+## Media derivative consumer
+
+The first Server consumer is thumbnail / analysis-preview generation. Cache hits remain direct reads and do
+not enter the scheduler. Cache misses submit user-owned tasks keyed by derivative kind, node, revision,
+content SHA, edge, and derivative version. Thumbnail requests are P0 user actions; analysis-preview requests
+are P1. Analyzer ticket requests are system-event/service initiated but retain the photo owner as `OwnerID`.
+
+The worker writes only deterministic derived-cache objects. Waiters do not receive large JPEG payloads through
+the scheduler handle; after successful completion they reopen the shared cache object. This preserves
+singleflight while keeping task results small and allows one HTTP request to disconnect without cancelling
+work still needed by another waiter.
+
+A saturated `media_cpu` queue returns service-unavailable with retry guidance. It never falls back to
+synchronous image decode/resize/encode on the request goroutine.
