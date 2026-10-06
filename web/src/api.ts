@@ -999,10 +999,18 @@ export class XDriveApi {
     })
   }
 
-  search(query: string, limit = 200, cursor = '') {
+  search(
+    query: string,
+    limit = 200,
+    cursor = '',
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
     const params = new URLSearchParams({
       q: query.trim(),
       limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
     })
     if (cursor.trim()) params.set('cursor', cursor.trim())
     return this.request<SearchPage>(`/api/v1/search?${params.toString()}`)

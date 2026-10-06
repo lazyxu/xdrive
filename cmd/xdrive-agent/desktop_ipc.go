@@ -192,7 +192,7 @@ type desktopIPCController interface {
 	CloudFilePreviewTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudDownload(context.Context, uint64, string) error
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
-	CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)
+	CloudSearch(context.Context, string, string, string, string) (agentCloudSearchPage, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
@@ -1533,6 +1533,8 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 		r.Context(),
 		query,
 		strings.TrimSpace(r.URL.Query().Get("cursor")),
+		strings.TrimSpace(r.URL.Query().Get("sort")),
+		strings.TrimSpace(r.URL.Query().Get("order")),
 	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)

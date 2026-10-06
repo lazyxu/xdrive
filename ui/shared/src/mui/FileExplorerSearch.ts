@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   xDriveFileExplorerApplySearchPageState,
   xDriveFileExplorerCanLoadMoreSearch,
@@ -13,11 +13,17 @@ import type {
   XDriveFileExplorerSearchResultLike,
   XDriveFileExplorerSearchState,
 } from '../file-explorer-controller'
+import type { XDriveFileExplorerSort } from './FileExplorer'
+
+function searchSortSignature(sort: XDriveFileExplorerSort) {
+  return `${sort.key}:${sort.direction}`
+}
 
 export type XDriveFileExplorerSearchLoader<
   TResult extends XDriveFileExplorerSearchResultLike,
 > = (
   query: string,
+  sort: XDriveFileExplorerSort,
   cursor?: string,
 ) => Promise<XDriveFileExplorerSearchPage<TResult>>
 
@@ -37,16 +43,19 @@ export function useXDriveFileExplorerSearch<
   TResult extends XDriveFileExplorerSearchResultLike,
 >({
   loadPage,
+  sort,
   onError,
   workspaceKey = 'default',
 }: {
   loadPage: XDriveFileExplorerSearchLoader<TResult>
+  sort: XDriveFileExplorerSort
   onError: (error: unknown) => void
   workspaceKey?: string
 }) {
   const requestRef = useRef<Record<string, number>>({})
   const loadMoreRequestRef = useRef<Record<string, boolean>>({})
   const resultIDsRef = useRef<Record<string, Set<number>>>({})
+  const sortSignatureRef = useRef<Record<string, string>>({})
   const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry<TResult>>>({})
 
   const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry<TResult>()
@@ -75,6 +84,7 @@ export function useXDriveFileExplorerSearch<
   const clearSearch = () => {
     nextRequestID(workspaceKey)
     delete resultIDsRef.current[workspaceKey]
+    delete sortSignatureRef.current[workspaceKey]
     updateEntry(workspaceKey, () => idleWorkspaceSearchEntry<TResult>())
   }
 
@@ -86,27 +96,21 @@ export function useXDriveFileExplorerSearch<
     updateEntry(workspaceKey, (current) => ({ ...current, value }))
   }
 
-  const submitSearch = async (rawQuery: string) => {
-    const decision = xDriveFileExplorerSearchDecision(rawQuery)
-    if (decision.kind === 'clear') {
-      clearSearch()
-      return
-    }
-    if (decision.kind === 'invalid') {
-      onError(new Error(decision.message))
-      return
-    }
-
-    const key = workspaceKey
+  const executeSearch = async (
+    key: string,
+    query: string,
+    targetSort: XDriveFileExplorerSort,
+  ) => {
     const requestID = nextRequestID(key)
     const resultIDs = new Set<number>()
     resultIDsRef.current[key] = resultIDs
+    sortSignatureRef.current[key] = searchSortSignature(targetSort)
     updateEntry(key, (current) => ({
-      value: current.value || decision.query,
-      state: xDriveFileExplorerStartSearchState<TResult>(decision.query),
+      value: current.value || query,
+      state: xDriveFileExplorerStartSearchState<TResult>(query),
     }))
     try {
-      const page = await loadPage(decision.query)
+      const page = await loadPage(query, targetSort)
       if (requestID !== requestRef.current[key]) return
       updateEntry(key, (current) => ({
         ...current,
@@ -124,6 +128,26 @@ export function useXDriveFileExplorerSearch<
     }
   }
 
+  const submitSearch = async (rawQuery: string) => {
+    const decision = xDriveFileExplorerSearchDecision(rawQuery)
+    if (decision.kind === 'clear') {
+      clearSearch()
+      return
+    }
+    if (decision.kind === 'invalid') {
+      onError(new Error(decision.message))
+      return
+    }
+    await executeSearch(workspaceKey, decision.query, sort)
+  }
+
+  const sortSignature = searchSortSignature(sort)
+  useEffect(() => {
+    if (searchState.results === null || !searchState.query) return
+    if (sortSignatureRef.current[workspaceKey] === sortSignature) return
+    void executeSearch(workspaceKey, searchState.query, sort)
+  }, [sort.direction, sort.key, workspaceKey])
+
   const loadMoreSearch = async () => {
     const currentResults = searchState.results
     if (
@@ -137,6 +161,7 @@ export function useXDriveFileExplorerSearch<
     if (!searchState.query) return
 
     const key = workspaceKey
+    if (sortSignatureRef.current[key] !== sortSignature) return
     if (loadMoreRequestRef.current[key]) return
     loadMoreRequestRef.current[key] = true
     let resultIDs = resultIDsRef.current[key]
@@ -150,7 +175,7 @@ export function useXDriveFileExplorerSearch<
       state: xDriveFileExplorerStartSearchLoadMoreState(current.state),
     }))
     try {
-      const page = await loadPage(searchState.query, searchState.cursor)
+      const page = await loadPage(searchState.query, sort, searchState.cursor)
       if (requestID !== requestRef.current[key]) return
       updateEntry(key, (current) => ({
         ...current,
@@ -176,6 +201,8 @@ export function useXDriveFileExplorerSearch<
     searchCursor: searchState.cursor,
     searchLoading: searchState.loading,
     searchLoadingMore: searchState.loadingMore,
+    searchSortMatches: searchState.results === null ||
+      sortSignatureRef.current[workspaceKey] === sortSignature,
     changeSearchValue,
     clearSearch,
     submitSearch,

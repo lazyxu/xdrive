@@ -989,7 +989,7 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 	return os.Chmod(destination, 0o644)
 }
 
-func (c *agentController) CloudSearch(ctx context.Context, query, cursor string) (agentCloudSearchPage, error) {
+func (c *agentController) CloudSearch(ctx context.Context, query, cursor, sortKey, order string) (agentCloudSearchPage, error) {
 	query = strings.TrimSpace(query)
 	if len([]rune(query)) < 2 {
 		return agentCloudSearchPage{}, fmt.Errorf("search query must contain at least 2 characters")
@@ -1002,6 +1002,8 @@ func (c *agentController) CloudSearch(ctx context.Context, query, cursor string)
 		Query:  query,
 		Limit:  cloudSearchLimit,
 		Cursor: strings.TrimSpace(cursor),
+		Sort:   strings.TrimSpace(sortKey),
+		Order:  strings.TrimSpace(order),
 	})
 	if err != nil {
 		return agentCloudSearchPage{}, err

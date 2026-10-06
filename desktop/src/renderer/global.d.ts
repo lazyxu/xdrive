@@ -474,7 +474,12 @@ declare global {
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         cloudDownloadArchive: (ids: number[]) => Promise<DesktopResult<AgentCloudArchiveDownloadResult>>
         openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>
+        cloudSearch: (
+          query: string,
+          cursor?: string,
+          sort?: 'name' | 'updated' | 'size' | 'type',
+          order?: 'asc' | 'desc',
+        ) => Promise<DesktopResult<AgentCloudSearchPage>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>

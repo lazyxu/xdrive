@@ -105,15 +105,18 @@ test('Desktop Agent bridge exposes cursor-paged cloud children without changing 
 })
 
 test('Desktop search preserves cursor pages through Agent and Electron bridges', () => {
-  assert.ok(agentIPC.includes('CloudSearch(context.Context, string, string) (agentCloudSearchPage, error)'), 'Agent IPC search page contract is missing')
+  assert.ok(agentIPC.includes('CloudSearch(context.Context, string, string, string, string) (agentCloudSearchPage, error)'), 'Agent IPC sorted search page contract is missing')
   assert.ok(cloudFiles.includes('Cursor: strings.TrimSpace(cursor)'), 'Agent controller must forward the search cursor to the Go client')
+  assert.ok(cloudFiles.includes('Sort:   strings.TrimSpace(sortKey)'), 'Agent controller must forward the search sort key')
+  assert.ok(cloudFiles.includes('Order:  strings.TrimSpace(order)'), 'Agent controller must forward the search sort direction')
   assert.ok(agentClient.includes('export type AgentCloudSearchPage = {'), 'Electron AgentClient search page type is missing')
-  assert.ok(agentClient.includes("cloudSearch(queryText: string, cursor = '')"), 'Electron AgentClient cursor search method is missing')
+  assert.ok(agentClient.includes("sort: 'name' | 'updated' | 'size' | 'type' = 'name'"), 'Electron AgentClient sorted search method is missing')
   assert.ok(agentClient.includes("query.set('cursor', cursor.trim())"), 'Electron AgentClient must forward the search cursor')
-  assert.ok(main.includes("runAgentAction<AgentCloudSearchPage>"), 'Electron main must preserve the search page result')
-  assert.ok(preload.includes("cloudSearch: (query: string, cursor = '')"), 'preload search cursor bridge is missing')
+  assert.ok(main.includes("ipcMain.handle('agent:cloud-search'"), 'Electron main sorted search bridge is missing')
+  assert.ok(main.includes("Search sort is invalid."), 'Electron main must validate search sort')
+  assert.ok(preload.includes("sort: 'name' | 'updated' | 'size' | 'type' = 'name'"), 'preload search sort bridge is missing')
   assert.ok(types.includes('type AgentCloudSearchPage = XDriveCloudFilesSearchPage<AgentCloudNode>'), 'renderer search page type must alias the shared contract')
-  assert.ok(types.includes('cloudSearch: (query: string, cursor?: string) => Promise<DesktopResult<AgentCloudSearchPage>>'), 'renderer search page method type is missing')
+  assert.ok(types.includes("sort?: 'name' | 'updated' | 'size' | 'type'"), 'renderer search method must expose sort')
 })
 
 test('Desktop exposes atomic cloud batch mutations through every IPC layer', () => {

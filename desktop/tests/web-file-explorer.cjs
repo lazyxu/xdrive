@@ -52,7 +52,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('loadSearchPage: (query, cursor) => api.search('), 'Web Explorer must execute search through the shared workspace controller adapter')
+  assert.ok(explorer.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web Explorer must execute search through the shared workspace controller adapter')
   for (const token of [
     'api.download(node)',
     'onShare(node)',
@@ -77,7 +77,9 @@ test('Web FileExplorer search results preserve paths, breadcrumbs, and cursor pa
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, SearchResult>'), 'Web search lifecycle must come from the shared workspace controller')
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Web search draft must come from the shared React controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Web must not own search draft state')
-  assert.ok(explorer.includes('loadSearchPage: (query, cursor) => api.search('), 'Web workspace controller must keep REST search execution local')
+  assert.ok(explorer.includes('loadSearchPage: (query, searchSort, cursor) => api.search('), 'Web workspace controller must keep REST search execution local')
+  assert.ok(explorer.includes('searchSort.key'), 'Web search must forward the shared sort key')
+  assert.ok(explorer.includes('searchSort.direction'), 'Web search must forward the shared sort direction')
   assert.ok(explorer.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE'), 'Web search controller must preserve the shared page size')
   assert.ok(explorer.includes('hasMore={explorerPagination.hasMore}'), 'Web Explorer hasMore must use shared pagination presentation')
   assert.ok(workspaceController.includes('xDriveFileExplorerPaginationController({'), 'shared workspace must own Web search/directory pagination dispatch')

@@ -95,6 +95,7 @@ export function useXDriveFileExplorerWorkspace<
 
   const search = useXDriveFileExplorerSearch<TSearch>({
     loadPage: loadSearchPage,
+    sort: navigation.sort,
     onError,
     workspaceKey: navigation.activeTabID,
   })
@@ -172,7 +173,7 @@ export function useXDriveFileExplorerWorkspace<
     submitPath,
     openItem,
     explorerPagination,
-    externallySorted: search.searchResults === null,
+    externallySorted: search.searchResults === null || search.searchSortMatches,
     searchStatusText: search.searchResults
       ? `搜索“${search.searchState.query}”`
       : undefined,

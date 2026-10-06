@@ -88,6 +88,8 @@ type SearchOptions struct {
 	Type   string
 	Limit  int
 	Cursor string
+	Sort   string
+	Order  string
 }
 
 type ChildrenOptions struct {
@@ -363,6 +365,12 @@ func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage,
 	}
 	if strings.TrimSpace(options.Cursor) != "" {
 		values.Set("cursor", options.Cursor)
+	}
+	if strings.TrimSpace(options.Sort) != "" {
+		values.Set("sort", strings.TrimSpace(options.Sort))
+	}
+	if strings.TrimSpace(options.Order) != "" {
+		values.Set("order", strings.TrimSpace(options.Order))
 	}
 	var out SearchPage
 	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)

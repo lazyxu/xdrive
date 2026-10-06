@@ -1471,8 +1471,13 @@ export class AgentIPCClient {
     }, 6 * 60 * 60 * 1000)
   }
 
-  cloudSearch(queryText: string, cursor = '') {
-    const query = new URLSearchParams({ q: queryText })
+  cloudSearch(
+    queryText: string,
+    cursor = '',
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+  ) {
+    const query = new URLSearchParams({ q: queryText, sort, order })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<AgentCloudSearchPage>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
   }

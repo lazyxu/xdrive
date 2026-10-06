@@ -2875,7 +2875,7 @@ function registerIPCHandlers() {
     return requireAgentClient().openPath(relativePath, revealValue === true)
   }, false))
 
-  ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
+  ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown, sort: unknown, order: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     if (typeof query !== 'string' || query.trim().length < 2) {
@@ -2884,7 +2884,20 @@ function registerIPCHandlers() {
     if (cursor !== undefined && typeof cursor !== 'string') {
       throw new AgentIPCError('invalid_input', 0, 'Search cursor must be a string.')
     }
-    return requireAgentClient().cloudSearch(query.trim(), typeof cursor === 'string' ? cursor.trim() : '')
+    const sortKey = sort === undefined ? 'name' : sort
+    const sortOrder = order === undefined ? 'asc' : order
+    if (sortKey !== 'name' && sortKey !== 'updated' && sortKey !== 'size' && sortKey !== 'type') {
+      throw new AgentIPCError('invalid_input', 0, 'Search sort is invalid.')
+    }
+    if (sortOrder !== 'asc' && sortOrder !== 'desc') {
+      throw new AgentIPCError('invalid_input', 0, 'Search order is invalid.')
+    }
+    return requireAgentClient().cloudSearch(
+      query.trim(),
+      typeof cursor === 'string' ? cursor.trim() : '',
+      sortKey,
+      sortOrder,
+    )
   }, false))
   ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
