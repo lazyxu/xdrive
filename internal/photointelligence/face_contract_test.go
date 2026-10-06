@@ -26,6 +26,11 @@ func testFaceAnalyzerInfo() FaceAnalyzerInfo {
 		},
 		EmbeddingFormat:     "f32le",
 		EmbeddingDimensions: 512,
+		Runtime: &FaceAnalyzerRuntimeInfo{
+			Framework: "opencv_dnn",
+			Version:   "4.14.0",
+			Device:    "cpu",
+		},
 	}
 }
 
@@ -69,6 +74,16 @@ func TestValidateFaceAnalyzerInfo(t *testing.T) {
 	bad.EmbeddingDimensions = 0
 	if err := ValidateFaceAnalyzerInfo(bad); err == nil {
 		t.Fatal("invalid embedding dimensions were accepted")
+	}
+	bad = info
+	bad.Runtime = &FaceAnalyzerRuntimeInfo{Device: "cpu"}
+	if err := ValidateFaceAnalyzerInfo(bad); err == nil {
+		t.Fatal("runtime without framework was accepted")
+	}
+	bad = info
+	bad.Runtime = &FaceAnalyzerRuntimeInfo{Framework: "opencv_dnn"}
+	if err := ValidateFaceAnalyzerInfo(bad); err == nil {
+		t.Fatal("runtime without device was accepted")
 	}
 }
 

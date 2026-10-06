@@ -31,14 +31,21 @@ type FaceAnalyzerModelInfo struct {
 	LicenseURL string `json:"license_url,omitempty"`
 }
 
+type FaceAnalyzerRuntimeInfo struct {
+	Framework string `json:"framework"`
+	Version   string `json:"version,omitempty"`
+	Device    string `json:"device"`
+}
+
 type FaceAnalyzerInfo struct {
-	ProtocolVersion     int                   `json:"protocol_version"`
-	Name                string                `json:"name"`
-	PipelineVersion     string                `json:"pipeline_version"`
-	Detector            FaceAnalyzerModelInfo `json:"detector"`
-	Embedding           FaceAnalyzerModelInfo `json:"embedding"`
-	EmbeddingFormat     string                `json:"embedding_format"`
-	EmbeddingDimensions int                   `json:"embedding_dimensions"`
+	ProtocolVersion     int                      `json:"protocol_version"`
+	Name                string                   `json:"name"`
+	PipelineVersion     string                   `json:"pipeline_version"`
+	Detector            FaceAnalyzerModelInfo    `json:"detector"`
+	Embedding           FaceAnalyzerModelInfo    `json:"embedding"`
+	EmbeddingFormat     string                   `json:"embedding_format"`
+	EmbeddingDimensions int                      `json:"embedding_dimensions"`
+	Runtime             *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
 }
 
 type FaceAnalysisTask struct {
@@ -99,6 +106,14 @@ func ValidateFaceAnalyzerInfo(info FaceAnalyzerInfo) error {
 			"face embedding dimensions %d are invalid",
 			info.EmbeddingDimensions,
 		)
+	}
+	if info.Runtime != nil {
+		if strings.TrimSpace(info.Runtime.Framework) == "" {
+			return errors.New("face analyzer runtime framework is required")
+		}
+		if strings.TrimSpace(info.Runtime.Device) == "" {
+			return errors.New("face analyzer runtime device is required")
+		}
 	}
 	return nil
 }

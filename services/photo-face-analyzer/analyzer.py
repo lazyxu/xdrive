@@ -328,6 +328,11 @@ class FaceRuntime:
             },
             "embedding_format": EMBEDDING_FORMAT,
             "embedding_dimensions": EMBEDDING_DIMENSIONS,
+            "runtime": {
+                "framework": "opencv_dnn",
+                "version": cv.__version__,
+                "device": "cpu",
+            },
         }
 
     def _embedding(self, image: np.ndarray, face14: np.ndarray) -> np.ndarray:

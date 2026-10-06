@@ -347,11 +347,28 @@ Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place l
 
 Automatic person clusters remain rebuildable derived state. `xdrive-server media repair` may remove corrupt memberships, clear a cover that no longer points at one of the durable person's own assets, or reset an inconsistent automatic cluster projection. `--gc-intelligence` additionally removes automatic clusters older than 24 hours when they are empty or no longer authoritative because their owner cluster state is missing, non-ready, stale, or version-mismatched. It never deletes a durable `PhotoPerson`, manual `PeopleJSON`, originals, or smart-album rules.
 
+## Operational status
+
+Use the Server CLI to inspect the configured Photo Intelligence runtime and current derived-state backlog:
+
+```text
+xdrive-server media status
+xdrive-server media status --json
+```
+
+The status command is read-only. It reports:
+
+- whether the optional face analyzer is configured and reachable;
+- the live analyzer manifest, including detector/embedding model name, version, SHA-256, license, embedding format/dimensions, and optional runtime framework/version/device;
+- face-detection and face-embedding `pending / running / ready / failed / stale` counts plus persisted face rows;
+- the current person-clustering analyzer version, owner-state counts, automatic clusters/memberships, and durable people/memberships;
+- whether the offline place resolver is configured plus place-analysis state counts and persisted place labels.
+
+Face analysis remains **disabled by default**. The standard reference deployment enables it only with the `photo-intelligence` Compose profile / analyzer socket configuration. The reference analyzer reports `runtime.framework=opencv_dnn` and `runtime.device=cpu`; alternate analyzers may omit runtime details while still satisfying protocol v1.
+
 ## Product/API rules
 
-The first foundation intentionally adds **no new Gallery UI and no public API**. Existing manual People and GPS place facets continue to behave exactly as before.
-
-When automatic facets are exposed later:
+Current Web/Desktop Gallery surfaces expose Suggested People and durable people through shared MUI, and durable `person_identity` filters may be saved in smart albums. These product surfaces remain connector-neutral and are backed only by local Photo Intelligence state.
 
 - Web and Desktop must share their MUI presentation/interaction model through `ui/shared`;
 - platform transports remain adapters;
@@ -414,4 +431,4 @@ When automatic facets are exposed later:
    - `media repair --gc-intelligence` conservatively removes automatic clusters older than 24 hours when empty or non-authoritative;
    - broken smart-album person references are reported and intentionally left for explicit user repair rather than silently dropping a saved rule.
 
-The model/runtime choice is intentionally deferred until representative accuracy, memory, CPU/GPU cost, package size, and platform support are measured. The schema must not force xDrive to one ML runtime.
+The supported reference runtime is now the opt-in OpenCV DNN CPU analyzer using pinned YuNet detection and SFace embeddings. GPU/NPU or alternate licensed/BYO analyzers remain optional future backends and must preserve the same versioned analyzer contract; the schema and durable-person model remain runtime-agnostic.
