@@ -851,9 +851,30 @@ export function xDriveFileExplorerMergePageItems<
 >(
   currentItems: readonly TItem[],
   pageItems: readonly TItem[],
+  knownIDs?: Set<number>,
 ): TItem[] {
+  if (knownIDs) {
+    const pageIDs = new Set<number>()
+    let hasDuplicate = false
+    for (const item of pageItems) {
+      if (knownIDs.has(item.id) || pageIDs.has(item.id)) {
+        hasDuplicate = true
+        break
+      }
+      pageIDs.add(item.id)
+    }
+    if (!hasDuplicate) {
+      for (const id of pageIDs) knownIDs.add(id)
+      return [...currentItems, ...pageItems]
+    }
+  }
+
   const merged = new Map(currentItems.map((item) => [item.id, item] as const))
   for (const item of pageItems) merged.set(item.id, item)
+  if (knownIDs) {
+    knownIDs.clear()
+    for (const item of merged.values()) knownIDs.add(item.id)
+  }
   return [...merged.values()]
 }
 
@@ -914,14 +935,18 @@ export function xDriveFileExplorerDirectoryPageTransition<
   page: XDriveFileExplorerDirectoryPage<TItem>,
   sort: TSort,
   append: boolean,
+  knownIDs?: Set<number>,
 ) {
   return {
     pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort),
-    applyItems: (currentItems: readonly TItem[]) => (
-      append
-        ? xDriveFileExplorerMergePageItems(currentItems, page.items)
-        : [...page.items]
-    ),
+    applyItems: (currentItems: readonly TItem[]) => {
+      if (append) return xDriveFileExplorerMergePageItems(currentItems, page.items, knownIDs)
+      if (knownIDs) {
+        knownIDs.clear()
+        for (const item of page.items) knownIDs.add(item.id)
+      }
+      return [...page.items]
+    },
   }
 }
 

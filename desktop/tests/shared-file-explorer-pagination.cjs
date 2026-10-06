@@ -33,10 +33,16 @@ test('shared FileExplorer controller owns pagination eligibility and page mergin
     'pageState.sort.direction === sort.direction',
     '!loadingMore',
     'xDriveFileExplorerMergePageItems',
+    'knownIDs?: Set<number>',
+    'const pageIDs = new Set<number>()',
+    'if (knownIDs.has(item.id) || pageIDs.has(item.id))',
+    'return [...currentItems, ...pageItems]',
     'XDriveFileExplorerDirectoryPage',
     'xDriveFileExplorerDirectoryPageTransition',
     'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
     'applyItems: (currentItems: readonly TItem[])',
+    'knownIDs.clear()',
+    'for (const item of page.items) knownIDs.add(item.id)',
     'new Map(currentItems.map((item) => [item.id, item] as const))',
     'for (const item of pageItems) merged.set(item.id, item)',
     'return [...merged.values()]',
@@ -63,6 +69,8 @@ test('Web and Desktop delegate pagination rules while keeping transport adapters
   assert.equal((cloudController.match(/xDriveFileExplorerDirectoryPageTransition\(/g) || []).length, 3, 'shared Cloud Files controller must own directory, load-more and initial transitions')
 
   assert.ok(cloudController.includes('xDriveFileExplorerCanLoadMore(currentPage, id, sort, loadingMore)'), 'shared Cloud Files controller must own pagination eligibility')
+  assert.ok(cloudController.includes('const directoryItemIDsRef = useRef(new Set<number>())'), 'shared Cloud Files controller must retain directory IDs across pages')
+  assert.equal((cloudController.match(/directoryItemIDsRef\.current/g) || []).length >= 4, true, 'all directory transitions and reset must share the retained ID set')
   assert.equal(desktop.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own pagination eligibility')
   assert.equal(web.includes('xDriveFileExplorerPageStateFromResult('), false, 'Web must not duplicate page-state derivation')
   assert.equal(desktop.includes('xDriveFileExplorerPageStateFromResult('), false, 'Desktop must not duplicate page-state derivation')

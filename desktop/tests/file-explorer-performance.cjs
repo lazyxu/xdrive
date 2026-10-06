@@ -194,3 +194,14 @@ test('FileExplorer typed paths use indexed exact-child lookups instead of loadin
   assert.equal(resolverSource.includes('listChildren'), false, 'typed-path traversal must not load a whole directory per segment')
   assert.ok(childrenPagination.includes('"lower(xd_nodes.name) = lower(?) AND xd_nodes.name = ?"'), 'server exact-name filter must use the indexed lower(name) key while preserving exact case')
 })
+
+
+test('FileExplorer directory pagination avoids rebuilding a whole-directory ID Map on normal appends', () => {
+  assert.ok(explorerController.includes('knownIDs?: Set<number>'), 'page merge needs a retained ID-set fast path')
+  assert.ok(explorerController.includes('const pageIDs = new Set<number>()'), 'page merge should inspect only the incoming page for duplicate IDs')
+  assert.ok(explorerController.includes('if (knownIDs.has(item.id) || pageIDs.has(item.id))'), 'page merge must preserve duplicate detection')
+  assert.ok(explorerController.includes('return [...currentItems, ...pageItems]'), 'unique cursor pages should use the direct append path')
+  assert.ok(explorerController.includes('const merged = new Map(currentItems.map((item) => [item.id, item] as const))'), 'duplicate pages must retain the replacement fallback')
+  assert.ok(cloudFilesController.includes('const directoryItemIDsRef = useRef(new Set<number>())'), 'directory controller must retain seen IDs across page loads')
+  assert.ok(cloudFilesController.includes('directoryItemIDsRef.current.clear()'), 'directory ID cache must reset with the workspace')
+})

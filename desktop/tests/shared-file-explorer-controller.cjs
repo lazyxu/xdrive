@@ -337,8 +337,9 @@ test('shared FileExplorer controller owns directory page replace/append transiti
     'xDriveFileExplorerDirectoryPageTransition',
     'pageState: xDriveFileExplorerPageStateFromResult(parentID, page, sort)',
     'applyItems: (currentItems: readonly TItem[])',
-    'xDriveFileExplorerMergePageItems(currentItems, page.items)',
-    ': [...page.items]',
+    'xDriveFileExplorerMergePageItems(currentItems, page.items, knownIDs)',
+    'knownIDs?: Set<number>',
+    'return [...page.items]',
   ]) {
     assert.ok(shared.includes(token), `shared directory page transition missing: ${token}`)
   }
