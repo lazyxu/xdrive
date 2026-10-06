@@ -60,7 +60,7 @@ type storageHistoryDTO struct {
 
 func (s *Server) StartStorageSampler(ctx context.Context) {
 	go func() {
-		s.runStorageSamplingPass(ctx, time.Now().UTC())
+		s.runStorageSamplingLeaderPass(ctx, time.Now().UTC())
 		ticker := time.NewTicker(storageSampleCheckInterval)
 		defer ticker.Stop()
 		for {
@@ -68,10 +68,23 @@ func (s *Server) StartStorageSampler(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				s.runStorageSamplingPass(ctx, now.UTC())
+				s.runStorageSamplingLeaderPass(ctx, now.UTC())
 			}
 		}
 	}()
+}
+
+func (s *Server) runStorageSamplingLeaderPass(
+	ctx context.Context,
+	now time.Time,
+) {
+	s.runMaintenanceLeaderPass(
+		ctx,
+		maintenanceLeaderStorageSampler,
+		func() {
+			s.runStorageSamplingPass(ctx, now)
+		},
+	)
 }
 
 func (s *Server) runStorageSamplingPass(ctx context.Context, now time.Time) {

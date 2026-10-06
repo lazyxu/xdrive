@@ -1130,7 +1130,7 @@ func validMD5(v string) bool {
 
 func (s *Server) StartUploadJanitor(ctx context.Context) {
 	go func() {
-		s.runStorageJanitorPass(ctx)
+		s.runStorageJanitorLeaderPass(ctx)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -1138,10 +1138,20 @@ func (s *Server) StartUploadJanitor(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.runStorageJanitorPass(ctx)
+				s.runStorageJanitorLeaderPass(ctx)
 			}
 		}
 	}()
+}
+
+func (s *Server) runStorageJanitorLeaderPass(ctx context.Context) {
+	s.runMaintenanceLeaderPass(
+		ctx,
+		maintenanceLeaderJanitor,
+		func() {
+			s.runStorageJanitorPass(ctx)
+		},
+	)
 }
 
 func (s *Server) runStorageJanitorPass(ctx context.Context) {
