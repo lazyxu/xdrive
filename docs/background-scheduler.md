@@ -129,8 +129,11 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    `SyncRun` cancellation remain unchanged. Because the Source worker is a separate process, Server Task Center
    health/status continues to come from durable `SyncRun` rows and derives the same P0/P2 + `network` metadata;
    no cross-process generic task table or scheduler-snapshot relay is introduced.
-7. Janitor/storage sampler: remain timer-driven; add PostgreSQL advisory-lock leader election for multi-server
-   deployments when needed.
+7. Janitor/storage sampler: **current**. Both remain timer-driven. Each pass takes a short-lived, non-blocking
+   PostgreSQL session advisory lease before running: one lease key for the upload/storage Janitor and one for the
+   storage sampler. A non-leader Server skips only that pass and competes again on the next timer tick; the lease
+   is released as soon as the pass finishes and is never held across timer intervals. Existing cleanup/GC/sample
+   implementations and manual admin staging cleanup remain unchanged.
 
 ## Fairness and priority policy
 
