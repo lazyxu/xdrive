@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const sharedModel = read('ui', 'shared', 'src', 'cloud-files.ts')
 const controller = read('ui', 'shared', 'src', 'mui', 'FileExplorerQuickAccessController.ts')
 const navigation = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
+const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webExplorer = read('web', 'src', 'WebFileExplorer.tsx')
@@ -93,6 +94,32 @@ test('shared navigation pane renders one Quick Access section above the lazy fol
     'onUnpinQuickAccess',
     '<Box role="tree" aria-label="文件夹树">',
   ]) assert.ok(navigation.includes(token), 'shared navigation Quick Access UI missing: ' + token)
+})
+
+test('folder context menus reuse the shared Quick Access controller', () => {
+  for (const token of [
+    'onToggleQuickAccess,',
+    'quickAccessPinned = false',
+    'quickAccessDisabled = false',
+    "id: 'toggle-quick-access'",
+    "label: quickAccessPinned ? '从快速访问取消固定' : '固定到快速访问'",
+    'disabled: primaryDisabled || quickAccessDisabled',
+    'onSelect: onToggleQuickAccess',
+  ]) assert.ok(actions.includes(token), 'shared folder Quick Access menu missing: ' + token)
+
+  for (const token of [
+    "onToggleQuickAccess: node.type === 'dir'",
+    'void quickAccess.toggle(node.id)',
+    'quickAccessPinned: quickAccess.pinnedIDs.has(node.id)',
+    'quickAccessDisabled: quickAccess.busyID !== null',
+  ]) assert.ok(webExplorer.includes(token), 'Web folder Quick Access menu adapter missing: ' + token)
+
+  for (const token of [
+    "onToggleQuickAccess: node.type === 'dir' && quickAccessSupported",
+    'void quickAccess.toggle(node.id)',
+    'quickAccessPinned: quickAccess.pinnedIDs.has(node.id)',
+    'quickAccessDisabled: quickAccess.busyID !== null',
+  ]) assert.ok(desktopExplorer.includes(token), 'Desktop folder Quick Access menu adapter missing: ' + token)
 })
 
 test('Web and Desktop use the same Quick Access controller with transport-only adapters', () => {

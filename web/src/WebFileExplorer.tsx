@@ -338,6 +338,11 @@ export default function WebFileExplorer({
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
         : undefined,
+      onToggleQuickAccess: node.type === 'dir'
+        ? () => { void quickAccess.toggle(node.id) }
+        : undefined,
+      quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
+      quickAccessDisabled: quickAccess.busyID !== null,
       onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
