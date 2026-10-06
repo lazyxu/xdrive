@@ -321,6 +321,24 @@ jobs:
       - name: Measure FileExplorer directory sort 100k baseline
         run: go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-explorer-virtual-collection-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-virtual-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      XD_FILEEXPLORER_VIRTUAL_COLLECTION_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Desktop performance dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure FileExplorer VirtualCollection 100k CPU baseline
+        working-directory: desktop
+        run: node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
+
   build-source-agent:
     runs-on: ubuntu-latest
     steps:

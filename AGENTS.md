@@ -47,6 +47,18 @@ Provider delivery rules:
 13. Keep long-lived branches to a minimum.
 
 
+## Performance specialization policy
+
+- Before starting or continuing a performance task, inspect only the materially related open branches/PRs/MRs and the canonical performance document for that subsystem. Continue a viable related branch before opening a duplicate implementation. Already-merged, superseded, or abandoned performance branches must not be treated as active work.
+- Every performance track must have a canonical document under `docs/` (for FileExplorer, use `docs/file-explorer-performance.md`). The document is part of the performance contract, not optional release notes.
+- Every performance PR/MR must update its canonical performance document in the **same change** with the current status and evidence for that specific work item. Record at minimum: status, workload/data shape, scale, benchmark or trace command/tool, sample count when applicable, BEFORE baseline, AFTER/current result, units, delta, acceptance/rejection decision, regression budget when one exists, and the next action.
+- Use explicit status labels such as **Planned**, **Benchmarking**, **Measured baseline**, **In progress**, **Accepted**, **Rejected**, and **Merged**. Do not leave a completed optimization documented as merely planned, and do not leave an active benchmark without a status.
+- If a change has no comparable wall-clock BEFORE/AFTER measurement, mark it clearly as **unmeasured / complexity-only** and do not quote a timing or percentage speedup. Structural improvements such as bounded concurrency, fewer allocations, fewer SQL round-trips, or bounded retained metadata may be documented with those exact structural metrics.
+- Benchmark-only PRs/MRs must write their measured output back into the canonical document before merge. CI logs are transient evidence, not the durable performance record. If the benchmark result is produced by CI, amend the documentation with that exact result and rerun the authoritative validation because the source tree changed.
+- Keep accepted and rejected experiments in the performance document. A rejected index, cache, batching policy, or concurrency change should retain its measured data and rejection reason so the same low-value experiment is not repeated later.
+- Large-scale scenarios must use stable, named workloads. When a subsystem claims 10k/100k scalability, document the exact logical item count, viewport/range behavior, thumbnail/cache state where relevant, and whether the run measures pure controller CPU, browser/Electron rendering, network/IPC transport, decode/generation, or end-to-end latency.
+- Performance CI jobs should be scoped to the branch/workload that needs them unless they are stable enough to become a permanent regression gate. Do not turn a noisy exploratory benchmark into a required global CI gate before its variance and budget are understood.
+
 ## UI policy
 
 - Use **MUI (Material UI)** for all newly implemented Web and Desktop renderer UI. Prefer MUI layout, form, feedback, dialog, navigation, and display components over introducing new Ant Design or bespoke HTML/CSS component patterns.
