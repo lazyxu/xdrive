@@ -226,7 +226,30 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 	scheduled := make([]scheduledSourceJob, len(jobs))
 
 	var accountMu sync.Mutex
-	activeAccountKeys := make(map[string]struct{})
+	accountWaiters := make(map[string][]int)
+	for index, job := range jobs {
+		if job.concurrencyKey != "" {
+			accountWaiters[job.concurrencyKey] = append(
+				accountWaiters[job.concurrencyKey],
+				index,
+			)
+		}
+	}
+	removeAccountWaiterLocked := func(accountKey string, jobIndex int) {
+		waiters := accountWaiters[accountKey]
+		for index, queuedJobIndex := range waiters {
+			if queuedJobIndex != jobIndex {
+				continue
+			}
+			waiters = append(waiters[:index], waiters[index+1:]...)
+			if len(waiters) == 0 {
+				delete(accountWaiters, accountKey)
+			} else {
+				accountWaiters[accountKey] = waiters
+			}
+			return
+		}
+	}
 	for index := range jobs {
 		if err := ctx.Err(); err != nil {
 			break
@@ -251,18 +274,12 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			accountKey := job.concurrencyKey
 			task.Lease = func(leaseCtx context.Context, _ background.Descriptor) (background.Lease, bool, error) {
 				accountMu.Lock()
-				if _, busy := activeAccountKeys[accountKey]; busy {
+				waiters := accountWaiters[accountKey]
+				if len(waiters) == 0 || waiters[0] != jobIndex {
 					accountMu.Unlock()
 					return background.Lease{}, false, nil
 				}
-				activeAccountKeys[accountKey] = struct{}{}
 				accountMu.Unlock()
-
-				releaseLocal := func() {
-					accountMu.Lock()
-					delete(activeAccountKeys, accountKey)
-					accountMu.Unlock()
-				}
 
 				var accountLease *sourceaccount.Lease
 				if r.DB != nil {
@@ -270,11 +287,12 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 					var err error
 					accountLease, acquired, err = sourceaccount.TryAcquire(leaseCtx, r.DB, accountKey)
 					if err != nil {
-						releaseLocal()
+						accountMu.Lock()
+						removeAccountWaiterLocked(accountKey, jobIndex)
+						accountMu.Unlock()
 						return background.Lease{}, false, fmt.Errorf("coordinate provider account: %w", err)
 					}
 					if !acquired {
-						releaseLocal()
 						return background.Lease{}, false, nil
 					}
 				}
@@ -284,7 +302,9 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 						if accountLease != nil {
 							accountLease.Close()
 						}
-						releaseLocal()
+						accountMu.Lock()
+						removeAccountWaiterLocked(accountKey, jobIndex)
+						accountMu.Unlock()
 						return nil
 					},
 				}, true, nil
@@ -300,6 +320,11 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		handle, err := scheduler.Submit(task)
 		scheduled[jobIndex].handle = handle
 		scheduled[jobIndex].submitErr = err
+		if err != nil && job.concurrencyKey != "" {
+			accountMu.Lock()
+			removeAccountWaiterLocked(job.concurrencyKey, jobIndex)
+			accountMu.Unlock()
+		}
 	}
 
 	ordered := make([]sourceResult, len(jobs))

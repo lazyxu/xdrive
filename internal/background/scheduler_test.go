@@ -80,6 +80,216 @@ func TestSchedulerPriorityAndPromotion(t *testing.T) {
 	}
 }
 
+func TestSchedulerOwnerFairnessRoundRobinWithinPriority(t *testing.T) {
+	s := testScheduler(t, map[ResourceClass]int{ResourceMediaCPU: 1})
+	block := make(chan struct{})
+	started := make(chan string, 8)
+
+	blocker, err := s.Submit(Task{
+		Scope: ScopeSystem, Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+		Key: "block-fairness", Priority: PriorityP0, Resource: ResourceMediaCPU,
+		Run: func(context.Context) error {
+			started <- "block"
+			<-block
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := <-started; got != "block" {
+		t.Fatalf("started=%q want blocker", got)
+	}
+
+	type queuedTask struct {
+		owner uint64
+		key   string
+	}
+	queued := []queuedTask{
+		{owner: 1, key: "a1"},
+		{owner: 1, key: "a2"},
+		{owner: 1, key: "a3"},
+		{owner: 2, key: "b1"},
+		{owner: 3, key: "c1"},
+	}
+	handles := make([]*Handle, 0, len(queued))
+	for _, item := range queued {
+		item := item
+		h, err := s.Submit(Task{
+			Scope: ScopeUser, OwnerID: item.owner,
+			Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+			Key: item.key, Priority: PriorityP2, Resource: ResourceMediaCPU,
+			Run: func(context.Context) error {
+				started <- item.key
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		handles = append(handles, h)
+	}
+
+	close(block)
+	if err := blocker.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a1", "b1", "c1", "a2", "a3"}
+	for index, expected := range want {
+		select {
+		case got := <-started:
+			if got != expected {
+				t.Fatalf("start[%d]=%q want=%q", index, got, expected)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for start[%d]=%q", index, expected)
+		}
+	}
+	for _, handle := range handles {
+		if err := handle.Wait(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSchedulerPriorityPrecedesOwnerFairness(t *testing.T) {
+	s := testScheduler(t, map[ResourceClass]int{ResourceBackgroundCPU: 1})
+	block := make(chan struct{})
+	started := make(chan string, 4)
+
+	blocker, err := s.Submit(Task{
+		Scope: ScopeSystem, Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+		Key: "block-priority", Priority: PriorityP0, Resource: ResourceBackgroundCPU,
+		Run: func(context.Context) error {
+			started <- "block"
+			<-block
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	submit := func(ownerID uint64, key string, priority Priority) *Handle {
+		t.Helper()
+		h, err := s.Submit(Task{
+			Scope: ScopeUser, OwnerID: ownerID,
+			Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+			Key: key, Priority: priority, Resource: ResourceBackgroundCPU,
+			Run: func(context.Context) error {
+				started <- key
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+
+	low := submit(1, "low-a", PriorityP2)
+	highB := submit(2, "high-b", PriorityP1)
+	highA := submit(1, "high-a", PriorityP1)
+
+	close(block)
+	if err := blocker.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first := <-started
+	second := <-started
+	third := <-started
+	if first == "low-a" || second == "low-a" || third != "low-a" {
+		t.Fatalf("start order=%q,%q,%q; P1 tasks must both precede P2", first, second, third)
+	}
+	for _, handle := range []*Handle{low, highB, highA} {
+		if err := handle.Wait(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSchedulerDueRetryReentersPriorityBeforeLaterBacklog(t *testing.T) {
+	s := testScheduler(t, map[ResourceClass]int{ResourceBackgroundCPU: 1})
+	var attempts atomic.Int32
+	firstAttempt := make(chan struct{})
+	started := make(chan string, 4)
+	backlogRelease := make(chan struct{})
+
+	retry, err := s.Submit(Task{
+		Scope: ScopeSystem, Trigger: TriggerReconcile, Initiator: InitiatorSystem,
+		Key: "due-retry", Priority: PriorityP0, Resource: ResourceBackgroundCPU,
+		Retry: RetryPolicy{
+			MaxAttempts: 2,
+			Initial:     20 * time.Millisecond,
+			Max:         20 * time.Millisecond,
+			Jitter:      -1,
+		},
+		Run: func(context.Context) error {
+			if attempts.Add(1) == 1 {
+				close(firstAttempt)
+				return errors.New("retry me")
+			}
+			started <- "retry"
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-firstAttempt
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		snapshots := s.TaskSnapshots(nil)
+		if len(snapshots) == 1 && snapshots[0].ReadyAt != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("retry never entered delayed queue: %+v", snapshots)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	backlogHandles := make([]*Handle, 0, 3)
+	for i := 1; i <= 3; i++ {
+		key := string(rune('0' + i))
+		h, err := s.Submit(Task{
+			Scope: ScopeSystem, Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+			Key: "backlog-" + key, Priority: PriorityP4, Resource: ResourceBackgroundCPU,
+			Run: func(context.Context) error {
+				started <- "backlog-" + key
+				<-backlogRelease
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		backlogHandles = append(backlogHandles, h)
+	}
+
+	if got := <-started; got != "backlog-1" {
+		t.Fatalf("first ready backlog=%q want backlog-1", got)
+	}
+	time.Sleep(30 * time.Millisecond)
+	backlogRelease <- struct{}{}
+	if got := <-started; got != "retry" {
+		t.Fatalf("next task=%q want due P0 retry before remaining P4 backlog", got)
+	}
+	backlogRelease <- struct{}{}
+	backlogRelease <- struct{}{}
+
+	if err := retry.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, handle := range backlogHandles {
+		if err := handle.Wait(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestSchedulerResourceCapacity(t *testing.T) {
 	s := testScheduler(t, map[ResourceClass]int{ResourceMediaCPU: 2})
 	var running atomic.Int32

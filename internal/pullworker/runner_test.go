@@ -267,6 +267,9 @@ func (h *keyedBlockingHandler) PullSourceConcurrencyKey(_ context.Context, sourc
 }
 
 func TestRunnerSerializesSharedAccountWithoutBlockingOtherAccounts(t *testing.T) {
+	// The ordered Source list is a scheduling contract: same-account jobs must
+	// acquire their account lease in this order even when multiple network
+	// workers call Lease concurrently. An unrelated account stays runnable.
 	handler := &keyedBlockingHandler{
 		blockingHandler: &blockingHandler{
 			started: make(chan uint64, 3),
