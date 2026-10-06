@@ -216,3 +216,25 @@ test('shared Task Center owns durable runtime cancellation wording', () => {
     'Desktop must not duplicate durable cancellation wording',
   )
 })
+
+
+test('shared Task Center owns cluster runtime instance presentation', () => {
+  assert.ok(
+    backgroundModel.includes('instance_count?: number'),
+    'shared background model must expose instance_count',
+  )
+  assert.ok(
+    backgroundCenter.includes("台服务器"),
+    'shared Task Center must render cluster instance count',
+  )
+  assert.equal(
+    web.includes('instance_count'),
+    false,
+    'Web must not duplicate cluster runtime instance presentation',
+  )
+  assert.equal(
+    desktop.includes('instance_count'),
+    false,
+    'Desktop renderer must not duplicate cluster runtime instance presentation',
+  )
+})

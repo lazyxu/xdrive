@@ -47,6 +47,7 @@ export type XDriveBackgroundTask = {
   active_count?: number
   queued_count?: number
   running_count?: number
+  instance_count?: number
   control_actions?: string[]
   started_at?: string
   updated_at: string

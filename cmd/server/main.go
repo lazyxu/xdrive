@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/api"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/background"
@@ -153,20 +154,22 @@ func main() {
 
 	srv := &api.Server{
 		DB: db, Store: store,
-		Auth:                      auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
-		RefreshTTL:                cfg.RefreshTokenTTL,
-		AllowedOrigin:             cfg.AllowedOrigin,
-		MaxUploadBytes:            cfg.MaxUploadBytes,
-		SourceRunFailureRetention: cfg.SourceRunFailureRetention,
-		ConnectorSecrets:          connectorSecrets,
-		PhotoPlaceResolver:        photoPlaceResolver,
-		PhotoFaceAnalyzer:         photoFaceAnalyzer,
-		PhotoFacePreviewBaseURL:   cfg.PhotoFacePreviewBaseURL,
-		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
-		BackgroundScheduler:       backgroundScheduler,
-		MediaIndexWakeups:         mediaIndexListener.Events,
-		FileOperationWakeups:      fileOperationListener.Wakeups,
+		Auth:                        auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
+		RefreshTTL:                  cfg.RefreshTokenTTL,
+		AllowedOrigin:               cfg.AllowedOrigin,
+		MaxUploadBytes:              cfg.MaxUploadBytes,
+		SourceRunFailureRetention:   cfg.SourceRunFailureRetention,
+		ConnectorSecrets:            connectorSecrets,
+		PhotoPlaceResolver:          photoPlaceResolver,
+		PhotoFaceAnalyzer:           photoFaceAnalyzer,
+		PhotoFacePreviewBaseURL:     cfg.PhotoFacePreviewBaseURL,
+		HostControlDir:              strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
+		BackgroundScheduler:         backgroundScheduler,
+		BackgroundRuntimeInstanceID: uuid.NewString(),
+		MediaIndexWakeups:           mediaIndexListener.Events,
+		FileOperationWakeups:        fileOperationListener.Wakeups,
 	}
+	srv.StartBackgroundRuntimePresence(serverCtx)
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
 	srv.StartPhotoIntelligence(serverCtx)
@@ -179,7 +182,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileRecentAccess{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileRecentAccess{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`ALTER TABLE xd_source_item_metadata
