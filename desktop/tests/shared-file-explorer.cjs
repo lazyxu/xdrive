@@ -237,7 +237,8 @@ test('shared FileExplorer supports server-paged incremental loading without re-s
     'onLoadMore?: () => void',
     'externallySorted?: boolean',
     'if (externallySorted) return items',
-    'host.scrollHeight - host.scrollTop - host.clientHeight <= 500',
+    'xDriveFileExplorerLoadMorePrefetchDistance(host.clientHeight)',
+    'host.scrollHeight - host.scrollTop - host.clientHeight <= loadMorePrefetchDistance',
     "loadingMore\n            ? '正在加载更多…'",
   ]) {
     assert.ok(explorer.includes(token), `missing server-paging contract: ${token}`)
