@@ -134,7 +134,9 @@ func (s *Server) pendingPhotoIntelligenceReanalyzeIntents(
 		limit = photoIntelligenceOwnerScanLimit
 	}
 	query := s.DB.WithContext(ctx).
-		Where("requested_epoch > applied_epoch").
+		Where(
+			"requested_epoch > applied_epoch AND requested_epoch > cancelled_epoch",
+		).
 		Order("requested_at ASC, owner_id ASC, kind ASC").
 		Limit(limit)
 	if ownerID != nil {
@@ -215,7 +217,8 @@ func (s *Server) consumePhotoIntelligenceReanalyzeIntent(
 	if err != nil {
 		return false, err
 	}
-	if intent.RequestedEpoch <= intent.AppliedEpoch {
+	if intent.RequestedEpoch <= intent.AppliedEpoch ||
+		intent.RequestedEpoch <= intent.CancelledEpoch {
 		return false, nil
 	}
 	targetEpoch := intent.RequestedEpoch

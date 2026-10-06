@@ -45,6 +45,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		&meta.SyncRun{},
 		&meta.FileOperation{},
 		&meta.SystemMaintenanceRun{},
+		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 	); err != nil {
 		t.Fatal(err)
@@ -527,6 +528,40 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	if len(userBSnapshots) == 0 {
 		t.Fatal("cancelling user A runtime task also cancelled user B work")
 	}
+	cancelledTasksResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/background-tasks?limit=50",
+		userAToken,
+		nil,
+		http.StatusOK,
+	)
+	var cancelledTasks []backgroundTaskDTO
+	if err := json.Unmarshal(
+		cancelledTasksResponse.Body.Bytes(),
+		&cancelledTasks,
+	); err != nil {
+		t.Fatal(err)
+	}
+	cancelledMediaTask := backgroundTaskByID(cancelledTasks, runtimeAID)
+	if cancelledMediaTask == nil ||
+		cancelledMediaTask.State != "cancelled" ||
+		len(cancelledMediaTask.ControlActions) != 0 {
+		t.Fatalf("durable cancelled runtime task=%+v", cancelledMediaTask)
+	}
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/background-tasks/control",
+		userAToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"runtime:user:%d:media.index","action":"cancel"}`,
+			userA.ID,
+		)),
+		http.StatusConflict,
+	)
 
 	request(
 		t,
@@ -548,9 +583,15 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	).First(&cancelledIntent).Error; err != nil {
 		t.Fatal(err)
 	}
-	if cancelledIntent.AppliedEpoch != cancelledIntent.RequestedEpoch {
+	if cancelledIntent.CancelledEpoch != cancelledIntent.RequestedEpoch {
 		t.Fatalf(
-			"cancelled durable reanalyze intent remained pending: %+v",
+			"cancelled durable reanalyze intent was not fenced: %+v",
+			cancelledIntent,
+		)
+	}
+	if cancelledIntent.AppliedEpoch >= cancelledIntent.RequestedEpoch {
+		t.Fatalf(
+			"cancelled durable reanalyze intent was falsely marked applied: %+v",
 			cancelledIntent,
 		)
 	}

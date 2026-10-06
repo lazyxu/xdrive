@@ -427,6 +427,40 @@ func TestSchedulerLeaseHeartbeatAndRelease(t *testing.T) {
 	}
 }
 
+func TestSchedulerHeartbeatCancellationCountsAsCancel(t *testing.T) {
+	s := testScheduler(t, map[ResourceClass]int{ResourceNetwork: 1})
+	started := make(chan struct{})
+	h, err := s.Submit(Task{
+		Key: "heartbeat-cancel", Scope: ScopeSystem,
+		Trigger: TriggerSystemEvent, Initiator: InitiatorSystem,
+		Priority: PriorityP2, Resource: ResourceNetwork,
+		HeartbeatInterval: time.Millisecond,
+		Lease: func(context.Context, Descriptor) (Lease, bool, error) {
+			return Lease{
+				Heartbeat: func(context.Context) error {
+					return context.Canceled
+				},
+			}, true, nil
+		},
+		Run: func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			return context.Cause(ctx)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := h.Wait(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("wait error=%v want context canceled", err)
+	}
+	snapshot := s.Snapshot()
+	if snapshot.Cancelled != 1 || snapshot.LeaseLost != 0 {
+		t.Fatalf("snapshot=%+v want cancelled=1 leaseLost=0", snapshot)
+	}
+}
+
 func TestSchedulerLeaseLossCancelsTask(t *testing.T) {
 	s := testScheduler(t, map[ResourceClass]int{ResourceMLCPU: 1})
 	var releases atomic.Int32

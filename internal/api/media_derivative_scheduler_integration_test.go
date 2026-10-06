@@ -353,7 +353,10 @@ func assertMediaDerivativeResponses(
 
 func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	if err := db.Migrator().DropTable(
+		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.PhotoPersonClusterState{},
+		&meta.PhotoAnalysisState{},
 		&meta.PhotoCollectionAsset{},
 		&meta.PhotoCollection{},
 		&meta.PhotoMetadata{},
@@ -383,6 +386,7 @@ func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{},
+		&meta.BackgroundOwnerCancellation{},
 		&meta.RefreshToken{},
 		&meta.Node{},
 		&meta.File{},
@@ -402,6 +406,8 @@ func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 		&meta.MediaGroup{},
 		&meta.MediaGroupItem{},
 		&meta.PhotoAsset{},
+		&meta.PhotoAnalysisState{},
+		&meta.PhotoPersonClusterState{},
 		&meta.PhotoResource{},
 		&meta.PhotoMetadata{},
 		&meta.PhotoCollection{},

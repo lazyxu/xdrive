@@ -149,6 +149,7 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'waiting_for_cluster_lease': return '等待其他服务器'
     case 'reanalyze_queued': return '重新分析已排队'
     case 'reanalyze_applying': return '正在准备重新分析'
+    case 'cancel_requested': return '正在取消'
     case 'finished': return '完成'
     default: return phase || ''
   }

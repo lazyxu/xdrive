@@ -117,6 +117,25 @@ type StorageSample struct {
 
 func (StorageSample) TableName() string { return "xd_storage_samples" }
 
+type BackgroundOwnerCancellation struct {
+	OwnerID        uint64     `gorm:"primaryKey;autoIncrement:false"`
+	Kind           string     `gorm:"primaryKey;size:64"`
+	RequestedEpoch uint64     `gorm:"not null;default:0"`
+	AppliedEpoch   uint64     `gorm:"not null;default:0"`
+	Initiator      string     `gorm:"size:16;not null"`
+	InitiatorID    uint64     `gorm:"not null;default:0"`
+	RequestedAt    time.Time  `gorm:"not null;index"`
+	AppliedAt      *time.Time `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+
+	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (BackgroundOwnerCancellation) TableName() string {
+	return "xd_background_owner_cancellations"
+}
+
 const (
 	SystemMaintenanceKindJanitor        = "janitor"
 	SystemMaintenanceKindStorageSampler = "storage_sampler"

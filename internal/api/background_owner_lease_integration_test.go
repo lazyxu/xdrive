@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/background"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -17,6 +18,12 @@ func TestBackgroundOwnerLeaseProviderCoordinatesServers(t *testing.T) {
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&meta.User{},
+		&meta.BackgroundOwnerCancellation{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	sqlDB, err := db.DB()
