@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -112,13 +113,26 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mediaScheduler := background.NewScheduler(
+		context.Background(),
+		background.Config{
+			Capacity: map[background.ResourceClass]int{
+				background.ResourceMediaCPU: 2,
+			},
+			QueueCapacity: map[background.ResourceClass]int{
+				background.ResourceMediaCPU: 64,
+			},
+		},
+	)
+	defer mediaScheduler.Close()
 	server := &Server{
-		DB:             db,
-		Store:          store,
-		Auth:           auth.New("media-integration-secret", time.Hour),
-		RefreshTTL:     24 * time.Hour,
-		AllowedOrigin:  "http://localhost",
-		MaxUploadBytes: 10 << 20,
+		DB:                  db,
+		Store:               store,
+		Auth:                auth.New("media-integration-secret", time.Hour),
+		RefreshTTL:          24 * time.Hour,
+		AllowedOrigin:       "http://localhost",
+		MaxUploadBytes:      10 << 20,
+		BackgroundScheduler: mediaScheduler,
 	}
 	router := server.Router()
 

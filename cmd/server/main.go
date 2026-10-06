@@ -12,6 +12,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/api"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/config"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -130,6 +131,14 @@ func main() {
 			"socket", cfg.PhotoFaceAnalyzerSocket,
 		)
 	}
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+	backgroundScheduler := background.NewScheduler(
+		serverCtx,
+		background.DefaultConfig(),
+	)
+	defer backgroundScheduler.Close()
+
 	srv := &api.Server{
 		DB: db, Store: store,
 		Auth:                      auth.New(cfg.JWTSecret, cfg.AccessTokenTTL),
@@ -142,14 +151,13 @@ func main() {
 		PhotoFaceAnalyzer:         photoFaceAnalyzer,
 		PhotoFacePreviewBaseURL:   cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:            strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
+		BackgroundScheduler:       backgroundScheduler,
 	}
-	janitorCtx, janitorCancel := context.WithCancel(context.Background())
-	defer janitorCancel()
-	srv.StartUploadJanitor(janitorCtx)
-	srv.StartStorageSampler(janitorCtx)
-	srv.StartMediaIndexer(janitorCtx)
-	srv.StartPhotoIntelligence(janitorCtx)
-	srv.StartFileOperationWorker(janitorCtx)
+	srv.StartUploadJanitor(serverCtx)
+	srv.StartStorageSampler(serverCtx)
+	srv.StartMediaIndexer(serverCtx)
+	srv.StartPhotoIntelligence(serverCtx)
+	srv.StartFileOperationWorker(serverCtx)
 	slog.Info("server_listening", "address", cfg.ListenAddr)
 	if err := srv.Router().Run(cfg.ListenAddr); err != nil {
 		log.Fatal(err)

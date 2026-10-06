@@ -312,6 +312,13 @@ func (s *Server) metrics(c *gin.Context) {
 	fmt.Fprintln(&b, "# TYPE xdrive_uptime_seconds gauge")
 	fmt.Fprintf(&b, "xdrive_uptime_seconds %.3f\n", uptime)
 
+	if s.BackgroundScheduler != nil {
+		writeBackgroundSchedulerMetrics(
+			&b,
+			s.BackgroundScheduler.Snapshot(),
+		)
+	}
+
 	fmt.Fprintln(&b, "# HELP xdrive_http_requests_total HTTP requests grouped by method, route template, and status.")
 	fmt.Fprintln(&b, "# TYPE xdrive_http_requests_total counter")
 	httpKeys := make([]httpMetricKey, 0, len(requests))

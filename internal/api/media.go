@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/background"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/mediagroup"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -670,85 +671,60 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 		return
 	}
 
-	etag := mediaThumbnailETag(node, metadata)
-	c.Header("ETag", etag)
+	c.Header("ETag", mediaThumbnailETag(node, metadata))
 	c.Header("Cache-Control", "private, max-age=3600")
 
-	if metadata.ThumbnailKey != "" {
-		if file, openErr := s.Store.Open(
-			c.Request.Context(),
-			metadata.ThumbnailKey,
-		); openErr == nil {
-			defer file.Close()
-			contentType := metadata.ThumbnailMIMEType
-			if contentType == "" {
-				contentType = "image/jpeg"
-			}
-			c.Header("Content-Type", contentType)
-			http.ServeContent(
-				c.Writer,
-				c.Request,
-				node.Name+".jpg",
-				metadata.UpdatedAt,
-				file,
-			)
-			return
-		}
-	}
-
-	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
-	if err != nil {
-		fail(c, http.StatusNotFound, "stored content not found")
+	if s.tryServeMediaDerivative(
+		c,
+		metadata.ThumbnailKey,
+		node.Name+".jpg",
+		metadata.ThumbnailMIMEType,
+		metadata.UpdatedAt,
+	) {
 		return
 	}
-	defer file.Close()
+	key := mediaThumbnailStorageKey(node, metadata)
+	if key != metadata.ThumbnailKey &&
+		s.tryServeMediaDerivative(
+			c,
+			key,
+			node.Name+".jpg",
+			"image/jpeg",
+			metadata.UpdatedAt,
+		) {
+		return
+	}
 
-	thumbnailSource, err := s.mediaImagePreviewSource(
+	key, err = s.ensureMediaDerivative(
 		c.Request.Context(),
 		node,
 		metadata,
-		file,
+		mediaDerivativeRequest{
+			Kind:        mediaDerivativeThumbnail,
+			Priority:    background.PriorityP0,
+			Trigger:     background.TriggerUserAction,
+			Initiator:   background.InitiatorUser,
+			InitiatorID: node.OwnerID,
+			TraceID:     requestIDFromContext(c),
+		},
 	)
 	if err != nil {
-		fail(c, http.StatusUnsupportedMediaType, err.Error())
+		writeMediaDerivativeError(
+			c,
+			err,
+			"thumbnail format is not supported",
+		)
 		return
 	}
-	thumbnail, err := mediapkg.ThumbnailJPEG(
-		thumbnailSource,
-		metadata.Orientation,
-		mediaThumbnailEdge,
-	)
-	if err != nil {
-		fail(c, http.StatusUnsupportedMediaType, "thumbnail format is not supported")
-		return
-	}
-
-	key := mediaThumbnailStorageKey(node, metadata)
-	if _, putErr := s.Store.Put(
-		c.Request.Context(),
+	if !s.tryServeMediaDerivative(
+		c,
 		key,
-		bytes.NewReader(thumbnail.Data),
-	); putErr == nil {
-		now := time.Now().UTC()
-		_ = s.DB.WithContext(c.Request.Context()).
-			Model(&meta.MediaMetadata{}).
-			Where(
-				"node_id = ? AND node_revision = ?",
-				node.ID,
-				node.Revision,
-			).
-			Updates(map[string]any{
-				"thumbnail_key":       key,
-				"thumbnail_mime_type": thumbnail.MIMEType,
-				"thumbnail_width":     thumbnail.Width,
-				"thumbnail_height":    thumbnail.Height,
-				"updated_at":          now,
-			}).Error
+		node.Name+".jpg",
+		"image/jpeg",
+		metadata.UpdatedAt,
+	) {
+		fail(c, http.StatusInternalServerError, "generated thumbnail is unavailable")
 	}
-
-	c.Header("Content-Type", thumbnail.MIMEType)
-	c.Status(http.StatusOK)
-	_, _ = c.Writer.Write(thumbnail.Data)
 }
 
 const mediaAnalysisPreviewTicketKind = "analysis"
@@ -779,6 +755,14 @@ func (s *Server) mediaAnalysisPreview(c *gin.Context) {
 		node,
 		metadata,
 		"private, max-age=3600",
+		mediaDerivativeRequest{
+			Kind:        mediaDerivativeAnalysis,
+			Priority:    background.PriorityP1,
+			Trigger:     background.TriggerUserAction,
+			Initiator:   background.InitiatorUser,
+			InitiatorID: node.OwnerID,
+			TraceID:     requestIDFromContext(c),
+		},
 	)
 }
 
@@ -830,7 +814,19 @@ func (s *Server) mediaAnalysisPreviewTicketStream(c *gin.Context) {
 		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
 		return
 	}
-	s.serveMediaAnalysisPreview(c, node, metadata, "private, no-store")
+	s.serveMediaAnalysisPreview(
+		c,
+		node,
+		metadata,
+		"private, no-store",
+		mediaDerivativeRequest{
+			Kind:      mediaDerivativeAnalysis,
+			Priority:  background.PriorityP1,
+			Trigger:   background.TriggerSystemEvent,
+			Initiator: background.InitiatorService,
+			TraceID:   requestIDFromContext(c),
+		},
+	)
 }
 
 func (s *Server) serveMediaAnalysisPreview(
@@ -838,6 +834,7 @@ func (s *Server) serveMediaAnalysisPreview(
 	node meta.Node,
 	metadata meta.MediaMetadata,
 	cacheControl string,
+	req mediaDerivativeRequest,
 ) {
 	key := mediaAnalysisPreviewStorageKey(node, metadata)
 	c.Header("ETag", mediaAnalysisPreviewETag(node, metadata))
@@ -853,59 +850,39 @@ func (s *Server) serveMediaAnalysisPreview(
 		strconv.Itoa(mediapkg.AnalysisPreviewEdge),
 	)
 
-	if cached, openErr := s.Store.Open(c.Request.Context(), key); openErr == nil {
-		defer cached.Close()
-		c.Header("Content-Type", "image/jpeg")
-		http.ServeContent(
-			c.Writer,
-			c.Request,
-			node.Name+".analysis.jpg",
-			metadata.UpdatedAt,
-			cached,
-		)
+	if s.tryServeMediaDerivative(
+		c,
+		key,
+		node.Name+".analysis.jpg",
+		"image/jpeg",
+		metadata.UpdatedAt,
+	) {
 		return
 	}
 
-	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
-	if err != nil {
-		fail(c, http.StatusNotFound, "stored content not found")
-		return
-	}
-	defer file.Close()
-
-	previewSource, err := s.mediaImagePreviewSource(
+	key, err := s.ensureMediaDerivative(
 		c.Request.Context(),
 		node,
 		metadata,
-		file,
+		req,
 	)
 	if err != nil {
-		fail(c, http.StatusUnsupportedMediaType, err.Error())
+		writeMediaDerivativeError(
+			c,
+			err,
+			"analysis preview format is not supported",
+		)
 		return
 	}
-	preview, err := mediapkg.ThumbnailJPEG(
-		previewSource,
-		metadata.Orientation,
-		mediapkg.AnalysisPreviewEdge,
-	)
-	if err != nil {
-		fail(c, http.StatusUnsupportedMediaType, "analysis preview format is not supported")
-		return
-	}
-	_, _ = s.Store.Put(
-		c.Request.Context(),
+	if !s.tryServeMediaDerivative(
+		c,
 		key,
-		bytes.NewReader(preview.Data),
-	)
-
-	c.Header("Content-Type", preview.MIMEType)
-	http.ServeContent(
-		c.Writer,
-		c.Request,
 		node.Name+".analysis.jpg",
+		"image/jpeg",
 		metadata.UpdatedAt,
-		bytes.NewReader(preview.Data),
-	)
+	) {
+		fail(c, http.StatusInternalServerError, "generated analysis preview is unavailable")
+	}
 }
 
 func (s *Server) mediaImagePreviewSource(
