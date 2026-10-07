@@ -111,7 +111,12 @@ type StorageSample struct {
 	P50BlobSizeBytes          int64     `gorm:"not null"`
 	P90BlobSizeBytes          int64     `gorm:"not null"`
 	P99BlobSizeBytes          int64     `gorm:"not null"`
+	UnreferencedBlobCount     int64     `gorm:"not null;default:0"`
+	UnreferencedBlobBytes     int64     `gorm:"not null;default:0"`
+	LegacyBlobCount           int64     `gorm:"not null;default:0"`
+	LegacyPhysicalBytes       int64     `gorm:"not null;default:0"`
 	BucketsJSON               string    `gorm:"type:text;not null"`
+	SnapshotJSON              string    `gorm:"type:text;not null;default:'{}'"`
 	CreatedAt                 time.Time
 }
 

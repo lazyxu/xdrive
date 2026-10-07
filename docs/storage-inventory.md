@@ -100,6 +100,18 @@ The sum of these physical entries is `storage_root_bytes`.
 
 This number, not “CAS + legacy + staging”, is the authoritative xDrive physical usage for the file-data filesystem. It therefore includes `.xdrive-media` and any otherwise missed xDrive-owned files.
 
+### Daily physical snapshot
+
+Storage-backend walking is owned by the durable `storage_sampler` maintenance task, not by the administrator page request.
+The sampler runs at most once per UTC day (with an hourly due-check for restart recovery), persists its scan-heavy result
+in the daily `xd_storage_samples` row, and is visible/controllable in the administrator global Task Center.
+
+The persisted snapshot includes CAS distribution, physically present zero-reference CAS totals, legacy totals, upload
+staging summary, and the complete storage inventory. `GET /api/v1/admin/storage/stats` reads that latest snapshot and
+may refresh only O(1) disk-capacity information. If no snapshot exists yet, the endpoint may return database-only CAS
+statistics, but it must **not** fall back to an object-store walk merely because an administrator opened or refreshed
+the page. Staging orphan file details remain an explicit on-demand inspection action rather than an automatic page-load scan.
+
 ### Database
 
 The PostgreSQL row displays the resolved `XD_POSTGRES_DATA_DIR`.

@@ -50,6 +50,7 @@ type systemMaintenanceStorageRepairRunner interface {
 
 func systemMaintenanceInteractiveKinds() []string {
 	return []string{
+		meta.SystemMaintenanceKindStorageSampler,
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
@@ -61,7 +62,8 @@ func systemMaintenanceInteractiveKinds() []string {
 
 func systemMaintenanceInteractiveKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
-	case meta.SystemMaintenanceKindSourceVerify,
+	case meta.SystemMaintenanceKindStorageSampler,
+		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
@@ -75,6 +77,8 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 
 func systemMaintenancePhase(kind string) string {
 	switch strings.TrimSpace(kind) {
+	case meta.SystemMaintenanceKindStorageSampler:
+		return meta.SystemMaintenancePhaseStorageSample
 	case meta.SystemMaintenanceKindSourceVerify:
 		return meta.SystemMaintenancePhaseSourceVerify
 	case meta.SystemMaintenanceKindSourceRepair:
@@ -298,13 +302,39 @@ func (s *Server) requestSystemMaintenanceRun(
 	initiator background.Initiator,
 	initiatorID uint64,
 ) (meta.SystemMaintenanceRun, error) {
+	kind = strings.TrimSpace(kind)
+	if initiator != background.InitiatorAdmin || initiatorID == 0 {
+		return meta.SystemMaintenanceRun{}, errBackgroundTaskControlUnavailable
+	}
+	return s.requestSystemMaintenanceRunWithMetadata(
+		ctx, kind, background.TriggerAdminAction, initiator, initiatorID,
+	)
+}
+
+func (s *Server) requestScheduledSystemMaintenanceRun(
+	ctx context.Context,
+	kind string,
+) (meta.SystemMaintenanceRun, error) {
+	kind = strings.TrimSpace(kind)
+	if kind != meta.SystemMaintenanceKindStorageSampler {
+		return meta.SystemMaintenanceRun{}, errSystemMaintenanceUnsupported
+	}
+	return s.requestSystemMaintenanceRunWithMetadata(
+		ctx, kind, background.TriggerSchedule, background.InitiatorSystem, 0,
+	)
+}
+
+func (s *Server) requestSystemMaintenanceRunWithMetadata(
+	ctx context.Context,
+	kind string,
+	trigger background.Trigger,
+	initiator background.Initiator,
+	initiatorID uint64,
+) (meta.SystemMaintenanceRun, error) {
 	var run meta.SystemMaintenanceRun
 	kind = strings.TrimSpace(kind)
 	if s == nil || s.DB == nil || !systemMaintenanceInteractiveKind(kind) {
 		return run, errSystemMaintenanceUnsupported
-	}
-	if initiator != background.InitiatorAdmin || initiatorID == 0 {
-		return run, errBackgroundTaskControlUnavailable
 	}
 	requestLease, err := sourceaccount.Acquire(ctx, s.DB, "system-maintenance-request:"+kind)
 	if err != nil {
@@ -313,15 +343,11 @@ func (s *Server) requestSystemMaintenanceRun(
 	defer requestLease.Close()
 
 	err = s.DB.WithContext(ctx).
-		Where(
-			"kind = ? AND status IN ?",
-			kind,
-			[]string{
-				meta.SystemMaintenanceStatusQueued,
-				meta.SystemMaintenanceStatusRunning,
-				meta.SystemMaintenanceStatusCancelRequested,
-			},
-		).
+		Where("kind = ? AND status IN ?", kind, []string{
+			meta.SystemMaintenanceStatusQueued,
+			meta.SystemMaintenanceStatusRunning,
+			meta.SystemMaintenanceStatusCancelRequested,
+		}).
 		Order("id DESC").
 		First(&run).Error
 	if err == nil {
@@ -333,14 +359,10 @@ func (s *Server) requestSystemMaintenanceRun(
 
 	now := time.Now().UTC()
 	run = meta.SystemMaintenanceRun{
-		Kind:        kind,
-		Status:      meta.SystemMaintenanceStatusQueued,
-		Phase:       meta.SystemMaintenancePhaseQueued,
-		Trigger:     string(background.TriggerAdminAction),
-		Initiator:   string(initiator),
-		InitiatorID: initiatorID,
-		TotalSteps:  1,
-		StartedAt:   now,
+		Kind: kind, Status: meta.SystemMaintenanceStatusQueued,
+		Phase:   meta.SystemMaintenancePhaseQueued,
+		Trigger: string(trigger), Initiator: string(initiator),
+		InitiatorID: initiatorID, TotalSteps: 1, StartedAt: now,
 	}
 	if err := s.DB.WithContext(ctx).Create(&run).Error; err != nil {
 		return meta.SystemMaintenanceRun{}, err
@@ -349,9 +371,7 @@ func (s *Server) requestSystemMaintenanceRun(
 		s.ensureObservability()
 		s.obs.logger.Warn(
 			"system_maintenance_submit_deferred",
-			"run_id", run.ID,
-			"kind", run.Kind,
-			"error", err,
+			"run_id", run.ID, "kind", run.Kind, "error", err,
 		)
 	}
 	return run, nil
@@ -509,7 +529,7 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 		Total: 1,
 		Unit:  "step",
 	})
-	summary, state, err := s.executeSystemMaintenanceTask(ctx, run.Kind)
+	summary, state, err := s.executeSystemMaintenanceTask(ctx, run)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 			s.finishSystemMaintenanceCancelled(run.ID)
@@ -541,9 +561,24 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 
 func (s *Server) executeSystemMaintenanceTask(
 	ctx context.Context,
-	kind string,
+	run meta.SystemMaintenanceRun,
 ) (string, string, error) {
-	switch kind {
+	switch run.Kind {
+	case meta.SystemMaintenanceKindStorageSampler:
+		force := systemMaintenanceTrigger(run) == background.TriggerAdminAction
+		if err := s.captureStorageSample(ctx, time.Now().UTC(), force); err != nil {
+			return "", "", err
+		}
+		var sample meta.StorageSample
+		if err := s.DB.WithContext(ctx).Order("slot_at DESC").First(&sample).Error; err != nil {
+			return "", "", err
+		}
+		return fmt.Sprintf(
+			"存储快照完成 · CAS %d 个 / %d bytes · 未引用 %d 个 / %d bytes · Legacy %d 个 / %d bytes",
+			sample.CASBlobCount, sample.CASPhysicalBytes,
+			sample.UnreferencedBlobCount, sample.UnreferencedBlobBytes,
+			sample.LegacyBlobCount, sample.LegacyPhysicalBytes,
+		), meta.SystemMaintenanceStatusSuccess, nil
 	case meta.SystemMaintenanceKindSourceVerify:
 		report, err := s.verifySourcesForSystemMaintenance(ctx)
 		if err != nil {

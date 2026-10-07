@@ -10,7 +10,7 @@ func TestStorageDecisionPrefersSmallFilePacking(t *testing.T) {
 	points := make([]storageHistoryPointDTO, 0, 5)
 	for i := 0; i < 5; i++ {
 		points = append(points, storageHistoryPointDTO{
-			SlotAt:                  base.Add(time.Duration(i) * 6 * time.Hour),
+			SlotAt:                  base.Add(time.Duration(i) * 24 * time.Hour),
 			CASBlobCount:            1000,
 			CASPhysicalBytes:        1 << 30,
 			CASDedupRatio:           1.3,
@@ -33,7 +33,7 @@ func TestStorageDecisionPrefersCDCEvaluation(t *testing.T) {
 	points := make([]storageHistoryPointDTO, 0, 5)
 	for i := 0; i < 5; i++ {
 		points = append(points, storageHistoryPointDTO{
-			SlotAt:                  base.Add(time.Duration(i) * 6 * time.Hour),
+			SlotAt:                  base.Add(time.Duration(i) * 24 * time.Hour),
 			CASBlobCount:            400,
 			CASPhysicalBytes:        8 << 30,
 			CASDedupRatio:           1.07,
@@ -52,8 +52,8 @@ func TestStorageDecisionWaitsForHistory(t *testing.T) {
 	base := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
 	points := []storageHistoryPointDTO{
 		{SlotAt: base, CASBlobCount: 100, SmallLT64KiBCountShare: 0.9},
-		{SlotAt: base.Add(6 * time.Hour), CASBlobCount: 100, SmallLT64KiBCountShare: 0.9},
-		{SlotAt: base.Add(12 * time.Hour), CASBlobCount: 100, SmallLT64KiBCountShare: 0.9},
+		{SlotAt: base.Add(24 * time.Hour), CASBlobCount: 100, SmallLT64KiBCountShare: 0.9},
+		{SlotAt: base.Add(48 * time.Hour), CASBlobCount: 100, SmallLT64KiBCountShare: 0.9},
 	}
 	decision := storageDecision(points)
 	if decision.Priority != "collecting" {
@@ -78,5 +78,15 @@ func TestStorageWorkloadShares(t *testing.T) {
 	}
 	if large16 != 0.90 {
 		t.Fatalf("large16=%f want 0.90", large16)
+	}
+}
+
+func TestStorageSampleIntervalIsDaily(t *testing.T) {
+	if storageSampleInterval != 24*time.Hour {
+		t.Fatalf("storageSampleInterval=%s want=24h", storageSampleInterval)
+	}
+	base := time.Date(2026, 10, 7, 19, 48, 0, 0, time.UTC)
+	if got, want := base.Truncate(storageSampleInterval), time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("daily slot=%s want=%s", got, want)
 	}
 }
