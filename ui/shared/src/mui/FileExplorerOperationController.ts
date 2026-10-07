@@ -23,6 +23,7 @@ export type XDriveFileExplorerQueuedOperationAction =
 export type XDriveFileExplorerPastePlan =
   XDriveFileExplorerQueuedOperationPlan & {
     clearClipboard: boolean
+    clipboardGeneration: number
   }
 
 export function useXDriveFileExplorerOperationController<
@@ -45,7 +46,10 @@ export function useXDriveFileExplorerOperationController<
   currentID?: number | null
   disabled?: boolean
   planPaste: (targetParentID: number) => XDriveFileExplorerPastePlan | null
-  completePaste: (plan: { clearClipboard: boolean }) => void
+  completePaste: (plan: {
+    clearClipboard: boolean
+    clipboardGeneration: number
+  }) => void
   canPaste: (busy: boolean) => boolean
   clearSearch: () => void
   submitOperation: (plan: XDriveFileExplorerQueuedOperationPlan) => Promise<TQueued>

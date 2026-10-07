@@ -182,17 +182,21 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
   }
   for (const token of [
     'useState<XDriveFileExplorerClipboard<TNode> | null>(null)',
-    'xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID)',
+    'const generationRef = useRef(0)',
+    'const next = xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID)',
+    'generationRef.current += 1',
     "setFromItems('copy', selected)",
     "setFromItems('cut', selected)",
     'xDriveFileExplorerClipboardOperationPlan(',
-    'if (plan.clearClipboard) setClipboard(null)',
+    'clipboardGeneration: generationRef.current',
+    'plan.clipboardGeneration !== generationRef.current',
   ]) {
     assert.ok(clipboardController.includes(token), `shared React clipboard controller missing: ${token}`)
   }
   for (const token of [
     'useXDriveFileExplorerOperationController',
     "useState<XDriveFileExplorerQueuedOperationAction>('')",
+    'clipboardGeneration: number',
     'xDriveFileExplorerRunQueuedOperation({',
     'submit: () => submitOperation(plan)',
     "await runPlan('paste', plan",

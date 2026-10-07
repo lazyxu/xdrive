@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
@@ -19,14 +19,16 @@ export function useXDriveFileExplorerClipboard<
   nodeByID: ReadonlyMap<number, TNode>
 }) {
   const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<TNode> | null>(null)
+  const generationRef = useRef(0)
 
   const setFromItems = (
     mode: XDriveFileExplorerClipboardMode,
     selected: XDriveFileExplorerSelectionItem[],
   ) => {
-    setClipboard((current) => (
-      xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID) ?? current
-    ))
+    const next = xDriveFileExplorerClipboardFromItems(mode, selected, nodeByID)
+    if (!next) return
+    generationRef.current += 1
+    setClipboard(next)
   }
 
   const copyItems = (selected: XDriveFileExplorerSelectionItem[]) => {
@@ -39,18 +41,30 @@ export function useXDriveFileExplorerClipboard<
 
   const planPaste = (targetParentID: number) => {
     if (!clipboard?.nodes.length) return null
-    return xDriveFileExplorerClipboardOperationPlan(
-      clipboard.mode,
-      clipboard.nodes,
-      targetParentID,
-    )
+    return {
+      ...xDriveFileExplorerClipboardOperationPlan(
+        clipboard.mode,
+        clipboard.nodes,
+        targetParentID,
+      ),
+      clipboardGeneration: generationRef.current,
+    }
   }
 
-  const completePaste = (plan: { clearClipboard: boolean }) => {
-    if (plan.clearClipboard) setClipboard(null)
+  const completePaste = (plan: {
+    clearClipboard: boolean
+    clipboardGeneration: number
+  }) => {
+    if (
+      !plan.clearClipboard ||
+      plan.clipboardGeneration !== generationRef.current
+    ) return
+    generationRef.current += 1
+    setClipboard(null)
   }
 
   const clearClipboard = () => {
+    generationRef.current += 1
     setClipboard(null)
   }
 

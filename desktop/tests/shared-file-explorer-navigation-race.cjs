@@ -1347,3 +1347,118 @@ test('external-drop completion refreshes the same directory using its latest cru
     sort: { key: 'updated', direction: 'desc' },
   }])
 })
+
+
+function loadClipboardHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts'],
+    react,
+    { '../file-explorer-controller': loadFileExplorerController() },
+  ).useXDriveFileExplorerClipboard
+}
+
+test('pending cut paste completion cannot clear a newer clipboard selection', async () => {
+  const runtime = createHookRuntime()
+  const useClipboard = loadClipboardHook(runtime.react)
+  const useOperation = loadOperationHook(runtime.react)
+  const nodeByID = new Map([
+    [2, { id: 2, revision: 1, parent_id: 1, type: 'file', name: 'A.txt' }],
+    [3, { id: 3, revision: 1, parent_id: 1, type: 'file', name: 'B.txt' }],
+  ])
+
+  let releaseSubmit
+  const render = () => runtime.render(() => {
+    const clipboard = useClipboard({ nodeByID })
+    const operation = useOperation({
+      nodeByID,
+      currentID: 9,
+      planPaste: clipboard.planPaste,
+      completePaste: clipboard.completePaste,
+      canPaste: clipboard.canPaste,
+      clearSearch: () => {},
+      submitOperation: () => new Promise((resolve) => {
+        releaseSubmit = () => resolve({ id: 'move-a' })
+      }),
+      onQueued: () => {},
+      onFeedback: () => {},
+      onError: (error) => { throw error },
+    })
+    return { clipboard, operation }
+  })
+
+  let controller = render()
+  controller.clipboard.cutItems([{ id: 2 }])
+  controller = render()
+
+  const cutPlan = controller.clipboard.planPaste(9)
+  assert.equal(cutPlan.operation, 'move')
+  assert.deepEqual(cutPlan.items.map((item) => item.id), [2])
+
+  const pendingPaste = controller.operation.pasteClipboard()
+  await flushAsync()
+  assert.equal(typeof releaseSubmit, 'function')
+
+  controller.clipboard.copyItems([{ id: 3 }])
+  controller = render()
+  const newerPlan = controller.clipboard.planPaste(9)
+  assert.equal(newerPlan.operation, 'copy')
+  assert.deepEqual(newerPlan.items.map((item) => item.id), [3])
+
+  releaseSubmit()
+  await pendingPaste
+
+  controller = render()
+  const finalPlan = controller.clipboard.planPaste(9)
+  assert.ok(
+    finalPlan,
+    'an older cut paste completion must not clear clipboard content copied while it was pending',
+  )
+  assert.equal(finalPlan.operation, 'copy')
+  assert.deepEqual(finalPlan.items.map((item) => item.id), [3])
+})
+
+
+test('completed cut paste clears the unchanged clipboard generation', async () => {
+  const runtime = createHookRuntime()
+  const useClipboard = loadClipboardHook(runtime.react)
+  const useOperation = loadOperationHook(runtime.react)
+  const nodeByID = new Map([
+    [2, { id: 2, revision: 1, parent_id: 1, type: 'file', name: 'A.txt' }],
+  ])
+
+  let releaseSubmit
+  const render = () => runtime.render(() => {
+    const clipboard = useClipboard({ nodeByID })
+    const operation = useOperation({
+      nodeByID,
+      currentID: 9,
+      planPaste: clipboard.planPaste,
+      completePaste: clipboard.completePaste,
+      canPaste: clipboard.canPaste,
+      clearSearch: () => {},
+      submitOperation: () => new Promise((resolve) => {
+        releaseSubmit = () => resolve({ id: 'move-a' })
+      }),
+      onQueued: () => {},
+      onFeedback: () => {},
+      onError: (error) => { throw error },
+    })
+    return { clipboard, operation }
+  })
+
+  let controller = render()
+  controller.clipboard.cutItems([{ id: 2 }])
+  controller = render()
+
+  const pendingPaste = controller.operation.pasteClipboard()
+  await flushAsync()
+  releaseSubmit()
+  await pendingPaste
+
+  controller = render()
+  assert.equal(
+    controller.clipboard.planPaste(9),
+    null,
+    'the exact cut clipboard submitted by Paste must still clear after successful queueing',
+  )
+})
