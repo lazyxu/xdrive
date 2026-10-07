@@ -311,14 +311,25 @@ export function useXDriveCloudFilesController<
     }
     const scheduledParentID = virtualTargetRef.current?.parentID
     if (scheduledParentID === undefined) return false
+
+    const runRefresh = async () => {
+      const refreshed = await refreshChangedDirectory(scheduledParentID)
+      if (refreshed && changeHandshakeRefreshRef.current) {
+        changeHandshakeRefreshRef.current = false
+      }
+      return refreshed
+    }
+
     if (changeDebounceMs <= 0) {
-      return refreshChangedDirectory(scheduledParentID)
+      return runRefresh()
     }
     changeRefreshTimerRef.current = globalThis.setTimeout(() => {
       changeRefreshTimerRef.current = null
-      void refreshChangedDirectory(scheduledParentID)
+      void runRefresh()
     }, changeDebounceMs)
-    return true
+    // A queued timer is not an acknowledged refresh. Keep any reconnect
+    // handshake intent until the debounced refresh actually succeeds.
+    return false
   }, [changeDebounceMs, refreshChangedDirectory])
 
   const refreshChanges = useCallback(async () => {
@@ -341,8 +352,10 @@ export function useXDriveCloudFilesController<
         ) return false
         changeCursorRef.current = snapshot.latest_cursor
         changeHandshakeRefreshRef.current = true
-        if (virtualTargetRef.current) {
-          changeHandshakeRefreshRef.current = false
+        if (
+          virtualTargetRef.current &&
+          directoryInFlightRequestRef.current === null
+        ) {
           await scheduleChangedDirectoryRefresh()
         }
         return false
@@ -397,7 +410,6 @@ export function useXDriveCloudFilesController<
 
       changeCursorRef.current = cursor
       if (changeHandshakeRefreshRef.current && virtualTargetRef.current) {
-        changeHandshakeRefreshRef.current = false
         affected = true
       }
       if (affected) await scheduleChangedDirectoryRefresh()
@@ -524,9 +536,10 @@ export function useXDriveCloudFilesController<
     if (
       !enabled ||
       !virtualTarget ||
-      !changeHandshakeRefreshRef.current
+      !changeHandshakeRefreshRef.current ||
+      directoryInFlightRequestRef.current !== null
     ) return
-    changeHandshakeRefreshRef.current = false
+
     void scheduleChangedDirectoryRefresh()
   }, [
     enabled,

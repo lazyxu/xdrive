@@ -2091,3 +2091,363 @@ test('change feed does not advance past an event for a directory that is still l
     global.window = originalWindow
   }
 })
+
+
+test('reconnect change-feed handshake survives a pending remounted navigation', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const cloudRuntime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(cloudRuntime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let enabled = true
+    let holdNextBetaLoad = false
+    let releasePendingBeta
+    let handshakeCount = 0
+    const changeCursorArgs = []
+
+    const page = (parentID, offset, limit, betaItemName = 'beta-new.txt') => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: betaItemName }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(
+              page(parentID, offset, limit, 'beta-old.txt'),
+            )
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+      async getChanges(cursor) {
+        changeCursorArgs.push(cursor)
+        if (cursor === 0) {
+          handshakeCount += 1
+          return {
+            changes: [],
+            next_cursor: handshakeCount,
+            latest_cursor: handshakeCount,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        return {
+          changes: [],
+          next_cursor: cursor,
+          latest_cursor: cursor,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const renderCloud = () => cloudRuntime.render(() => useCloudFiles({
+      port,
+      enabled,
+      defaultSort: sort,
+      quotaRefreshIntervalMs: 0,
+      changePollIntervalMs: 0,
+      changeDebounceMs: 0,
+      preserveStateOnDisable: true,
+      onError: (error) => { throw error },
+    }))
+
+    renderCloud()
+    await flushAsync()
+    let cloud = renderCloud()
+
+    await cloud.loadDirectory(alpha.id, [root, alpha], sort)
+    cloud = renderCloud()
+    assert.equal(cloud.current?.id, alpha.id)
+
+    // Establish an ordinary pre-disconnect cursor, then simulate the Desktop
+    // Agent monitor dropping and reconnecting. preserveStateOnDisable keeps
+    // Alpha committed but resets the change-feed handshake.
+    await cloud.refreshChanges()
+    cloud = renderCloud()
+    assert.equal(changeCursorArgs.at(-1), 0)
+
+    enabled = false
+    cloud = renderCloud()
+    assert.equal(cloud.current?.id, alpha.id)
+
+    enabled = true
+    renderCloud()
+    await flushAsync()
+    cloud = renderCloud()
+    assert.equal(cloud.current?.id, alpha.id)
+
+    // DesktopFileExplorer is remounted after reconnect. Model that with a new
+    // navigation-hook runtime owned below the persistent CloudFiles runtime.
+    const navigationRuntime = createHookRuntime()
+    const useNavigation = loadNavigationHook(navigationRuntime.react)
+    const onLoadDirectory = (...args) => cloud.loadDirectory(...args)
+    const renderNavigation = () => navigationRuntime.render(() => useNavigation({
+      crumbs: cloud.crumbs,
+      viewModeStorageKey: 'reconnect-handshake-pending-navigation',
+      onLoadDirectory,
+    }))
+
+    let navigation = renderNavigation()
+    await flushAsync()
+    navigation = renderNavigation()
+    assert.equal(navigation.pathValue, '我的文件/Alpha')
+
+    holdNextBetaLoad = true
+    const openBeta = navigation.openTab([root, beta])
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    // Reconnect handshake jumps to the Server's latest cursor and normally
+    // forces one authoritative current-directory refresh. That refresh must
+    // not be forgotten merely because Beta is still loading.
+    const handshakeResult = await cloud.refreshChanges()
+    assert.equal(handshakeResult, false)
+    assert.equal(changeCursorArgs.at(-1), 0)
+
+    releasePendingBeta()
+    await openBeta
+    cloud = renderCloud()
+    navigation = renderNavigation()
+
+    assert.equal(cloud.current?.id, beta.id)
+    assert.equal(navigation.activeTabID, 'tab-2')
+    assert.equal(navigation.pathValue, '我的文件/Beta')
+    assert.equal(cloud.items[0]?.name, 'beta-old.txt')
+
+    // Give the remounted Beta target a chance to consume any deferred
+    // handshake refresh, then poll once more at the already-established cursor.
+    await flushAsync()
+    cloud = renderCloud()
+    navigation = renderNavigation()
+    await cloud.refreshChanges()
+    await flushAsync()
+    cloud = renderCloud()
+    navigation = renderNavigation()
+
+    assert.deepEqual(
+      changeCursorArgs.slice(-2),
+      [0, 2],
+      'reconnect must establish a fresh cursor and later continue from it',
+    )
+    assert.equal(cloud.current?.id, beta.id)
+    assert.equal(navigation.activeTabID, 'tab-2')
+    assert.equal(navigation.pathValue, '我的文件/Beta')
+    assert.equal(
+      cloud.items[0]?.name,
+      'beta-new.txt',
+      'the reconnect handshake refresh must survive a pending navigation and refresh the directory that ultimately commits',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+
+test('reconnect handshake debounce survives navigation that starts after scheduling', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const cloudRuntime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(cloudRuntime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    const debounceMs = 10
+    let enabled = true
+    let holdNextBetaLoad = false
+    let releasePendingBeta
+    let handshakeCount = 0
+
+    const page = (parentID, offset, limit, betaItemName = 'beta-new.txt') => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: betaItemName }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(
+              page(parentID, offset, limit, 'beta-old.txt'),
+            )
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+      async getChanges(cursor) {
+        if (cursor === 0) {
+          handshakeCount += 1
+          return {
+            changes: [],
+            next_cursor: handshakeCount,
+            latest_cursor: handshakeCount,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        return {
+          changes: [],
+          next_cursor: cursor,
+          latest_cursor: cursor,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const renderCloud = () => cloudRuntime.render(() => useCloudFiles({
+      port,
+      enabled,
+      defaultSort: sort,
+      quotaRefreshIntervalMs: 0,
+      changePollIntervalMs: 0,
+      changeDebounceMs: debounceMs,
+      preserveStateOnDisable: true,
+      onError: (error) => { throw error },
+    }))
+
+    renderCloud()
+    await flushAsync()
+    let cloud = renderCloud()
+    await cloud.loadDirectory(alpha.id, [root, alpha], sort)
+    cloud = renderCloud()
+
+    // Pre-disconnect cursor.
+    await cloud.refreshChanges()
+    enabled = false
+    cloud = renderCloud()
+    enabled = true
+    renderCloud()
+    await flushAsync()
+    cloud = renderCloud()
+
+    // Establish the reconnect handshake while Alpha is idle. The debounce
+    // timer is now scheduled, but has not executed yet.
+    await cloud.refreshChanges()
+
+    const navigationRuntime = createHookRuntime()
+    const useNavigation = loadNavigationHook(navigationRuntime.react)
+    const onLoadDirectory = (...args) => cloud.loadDirectory(...args)
+    const renderNavigation = () => navigationRuntime.render(() => useNavigation({
+      crumbs: cloud.crumbs,
+      viewModeStorageKey: 'reconnect-handshake-debounce-navigation',
+      onLoadDirectory,
+    }))
+
+    renderNavigation()
+    await flushAsync()
+    let navigation = renderNavigation()
+
+    // Start Beta before the scheduled Alpha refresh fires.
+    holdNextBetaLoad = true
+    const openBeta = navigation.openTab([root, beta])
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+
+    releasePendingBeta()
+    await openBeta
+    cloud = renderCloud()
+    navigation = renderNavigation()
+
+    assert.equal(cloud.current?.id, beta.id)
+    assert.equal(navigation.pathValue, '我的文件/Beta')
+    assert.equal(cloud.items[0]?.name, 'beta-old.txt')
+
+    // Beta becoming the committed virtual target must retry the still-pending
+    // handshake refresh. Allow its debounce to run.
+    await flushAsync()
+    cloud = renderCloud()
+    navigation = renderNavigation()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    cloud = renderCloud()
+    navigation = renderNavigation()
+
+    assert.equal(cloud.current?.id, beta.id)
+    assert.equal(navigation.activeTabID, 'tab-2')
+    assert.equal(navigation.pathValue, '我的文件/Beta')
+    assert.equal(
+      cloud.items[0]?.name,
+      'beta-new.txt',
+      'a scheduled reconnect refresh must not acknowledge the handshake until the debounced directory refresh actually succeeds',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
