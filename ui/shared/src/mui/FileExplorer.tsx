@@ -11,6 +11,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
@@ -596,6 +597,7 @@ export function XDriveFileExplorer({
   onOpenItem,
   onOpenItemInNewTab,
   onPreviewItem,
+  onNativeDragOutItem,
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
   onSelectionChange,
@@ -678,6 +680,7 @@ export function XDriveFileExplorer({
   onOpenItem?: (item: XDriveFileExplorerItem) => void
   onOpenItemInNewTab?: (item: XDriveFileExplorerItem) => void
   onPreviewItem?: (item: XDriveFileExplorerItem) => void
+  onNativeDragOutItem?: (item: XDriveFileExplorerItem) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
@@ -2897,6 +2900,55 @@ export function XDriveFileExplorer({
     [selectedItems],
   )
 
+  const nativeDragOutHandle = (
+    item: XDriveFileExplorerItem,
+    overlay = false,
+  ) => onNativeDragOutItem ? (
+    <Box
+      component="span"
+      data-xdrive-native-drag-out
+      title="拖到系统文件管理器"
+      draggable
+      onMouseDown={(event) => {
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onDragStart={(event: ReactDragEvent<HTMLElement>) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onNativeDragOutItem(item)
+      }}
+      onDragEnd={(event) => {
+        event.stopPropagation()
+      }}
+      sx={{
+        position: overlay ? 'absolute' : 'static',
+        top: overlay ? 4 : undefined,
+        right: overlay ? 4 : undefined,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
+        width: 20,
+        height: 20,
+        borderRadius: 0.75,
+        color: 'text.secondary',
+        bgcolor: overlay ? 'background.paper' : 'transparent',
+        boxShadow: overlay ? 1 : undefined,
+        cursor: 'grab',
+        opacity: 0.55,
+        zIndex: overlay ? 3 : undefined,
+        '&:hover': { opacity: 1, bgcolor: 'action.hover' },
+        '&:active': { cursor: 'grabbing' },
+      }}
+    >
+      <DragIndicatorRoundedIcon sx={{ fontSize: 16 }} />
+    </Box>
+  ) : null
+
   const renderDetailsLogicalItem = (
     item: XDriveFileExplorerItem | undefined,
     index: number,
@@ -3018,6 +3070,7 @@ export function XDriveFileExplorer({
                   ) : null}
                 </Box>
                 {availabilityIndicator(item)}
+                {!renaming ? nativeDragOutHandle(item) : null}
               </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary" noWrap>
@@ -3144,6 +3197,7 @@ export function XDriveFileExplorer({
         >
           {thumbnailForItem(item)}
           {availabilityIndicator(item, true)}
+          {!renaming ? nativeDragOutHandle(item, true) : null}
         </Box>
         {renderItemName(item, true)}
       </ButtonBase>

@@ -38,6 +38,10 @@ import { trayStatusIconFile, trayStatusKind, type TrayStatusKind } from './tray_
 import { DesktopLifecycleLog, formatLifecycleError } from './lifecycle_log.cjs'
 import { DesktopFilePreviewProxy } from './file_preview_proxy.cjs'
 import {
+  desktopNativeDragOutSupported,
+  resolveDesktopNativeDragOutPath,
+} from './native_drag_out.cjs'
+import {
   sourceRunIsTerminal,
   sourceRunNotificationPresentation,
 } from './source_run_notification.cjs'
@@ -1702,6 +1706,23 @@ function registerIPCHandlers() {
     if (typeof defaultPath === 'string' && defaultPath.trim()) options.defaultPath = defaultPath
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
     return result.canceled ? null : result.filePaths[0] ?? null
+  })
+  ipcMain.on('desktop:start-native-drag-out', (event, relativePathValue: unknown) => {
+    if (!desktopNativeDragOutSupported()) return
+    if (typeof relativePathValue !== 'string') return
+    try {
+      const file = resolveDesktopNativeDragOutPath(
+        agentState.status?.mount_path,
+        relativePathValue,
+      )
+      event.sender.startDrag({
+        file,
+        icon: desktopWindowIcon ?? nativeImage.createEmpty(),
+      })
+    } catch {
+      // Native drag is a pointer gesture. Invalid/stale local paths simply do
+      // not start an OS drag and never expose the resolved absolute path.
+    }
   })
 
   ipcMain.handle('agent:get-state', () => agentState)

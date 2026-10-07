@@ -669,6 +669,20 @@ export default function DesktopFileExplorer({
     return [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
   }
 
+  const nativeDragOutSupported =
+    keyboardProfile === 'windows' || keyboardProfile === 'macos'
+
+  const startNativeDragOut = (item: XDriveFileExplorerItem) => {
+    const node = nodeByID.get(Number(item.id))
+    if (!node) return
+    const relativePath = relativePathForNode(node)
+    if (!relativePath) {
+      onError('无法确定本地同步路径。')
+      return
+    }
+    window.xdriveDesktop.startNativeDragOut(relativePath)
+  }
+
   const availabilityRequests = useMemo(() => (
     [...nodeByID.values()]
       .map((node) => {
@@ -1311,6 +1325,9 @@ export default function DesktopFileExplorer({
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
         onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
+        onNativeDragOutItem={!trashActive && nativeDragOutSupported
+          ? startNativeDragOut
+          : undefined}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}

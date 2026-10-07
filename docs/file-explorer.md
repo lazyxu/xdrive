@@ -349,7 +349,19 @@ Do not bypass this boundary with renderer-side absolute paths or generic shell e
 
 ### Native drag-out boundary
 
-FileExplorer already owns HTML5 drag/drop for internal file operations. Electron native `webContents.startDrag()` competes with that same `dragstart` lifecycle, so ordinary row dragging must not simply be replaced by native drag-out. Native drag-out must use a distinct Desktop-only drag source/gesture and preserve internal folder/crumb drop behavior. This remains a separate follow-up.
+FileExplorer already owns HTML5 drag/drop for internal file operations. Electron native `webContents.startDrag()` competes with that same `dragstart` lifecycle, so ordinary row/card dragging remains the xDrive internal move/copy source.
+
+Desktop Windows/macOS additionally expose a distinct native drag-out handle on loaded FileExplorer items:
+
+- dragging the normal row/card continues to target FileExplorer folders and breadcrumb drop zones;
+- dragging the dedicated system-drag handle stops the HTML5 drag event and asks Electron main to start one OS drag;
+- renderer/preload pass only the relative xDrive path and never receive the resolved absolute local path;
+- Electron main resolves the path against the latest Agent `mount_path`, canonicalizes both root and candidate, rejects absolute/traversal/out-of-root paths, and permits only files/directories;
+- Windows Explorer and macOS Finder can therefore receive a native filesystem drag without weakening the protected shell-path boundary;
+- Trash does not expose native drag-out because trashed nodes are not represented by their ordinary mounted namespace path;
+- Linux keeps internal FileExplorer drag/drop only until a native desktop drag contract is explicitly supported.
+
+Do not replace the internal drag lifecycle with native drag-out and do not expose mount-root absolute paths to renderer code.
 
 ## Tests
 
