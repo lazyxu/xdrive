@@ -194,11 +194,16 @@ function loadSearchHook(react) {
     react,
     { '../virtual-collection': virtualCore },
   )
+  const searchFilters = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'file-explorer-search.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'],
     react,
     {
       '../file-explorer-controller': controller,
+      '../file-explorer-search': searchFilters,
       './VirtualCollectionController': virtualController,
     },
   ).useXDriveFileExplorerSearch
@@ -667,7 +672,7 @@ test('newer search submission wins when range responses complete out of order', 
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
     pending.set(query, { resolve, offset, limit })
   })
   const errors = []
@@ -706,11 +711,57 @@ test('newer search submission wins when range responses complete out of order', 
 })
 
 
+test('newer structured Search filters win when range responses complete out of order', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const pending = new Map()
+  const loadRange = (query, filters, _sort, offset, limit) => new Promise((resolve) => {
+    pending.set(`${query}:${filters.kind ?? 'all'}:${offset}`, { resolve, limit })
+  })
+  const errors = []
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadRange,
+    sort: { key: 'name', direction: 'asc' },
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  search.changeSearchFilters({ kind: 'pdf' })
+  search = renderSearch()
+  assert.ok(pending.has(':pdf:0'))
+
+  search.changeSearchFilters({ kind: 'image' })
+  search = renderSearch()
+  assert.ok(pending.has(':image:0'))
+
+  pending.get(':image:0').resolve({
+    items: [{ node: { id: 20 }, path: '/new-image.jpg' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+  })
+  await flushAsync()
+
+  pending.get(':pdf:0').resolve({
+    items: [{ node: { id: 10 }, path: '/old.pdf' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+  })
+  await flushAsync()
+
+  search = renderSearch()
+  assert.equal(errors.length, 0)
+  assert.equal(search.searchState.filters.kind, 'image')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
+})
+
+
 test('stale Search viewport ranges cannot overwrite a newer query', async () => {
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
     pending.set(`${query}:${offset}`, { resolve, limit })
   })
   const errors = []
@@ -766,7 +817,7 @@ test('Search tab switch invalidates old ranges and restores the tab query on ret
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
     const key = `${query}:${offset}`
     const queue = pending.get(key) ?? []
     queue.push({ resolve, limit })

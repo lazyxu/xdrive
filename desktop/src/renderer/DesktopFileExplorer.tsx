@@ -26,6 +26,7 @@ import {
   XDriveFilePreviewSurface,
   XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
+  XDriveFileExplorerSearchFilters,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
@@ -46,6 +47,7 @@ import type {
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
+import type { XDriveFileExplorerSearchSourceOption } from '@xdrive/shared'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
@@ -164,6 +166,18 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
+  useEffect(() => {
+    let active = true
+    void window.xdriveDesktop.agent.getSources().then((result) => {
+      if (active && result.ok) {
+        setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
   )
@@ -192,8 +206,10 @@ export default function DesktopFileExplorer({
 
   const {
     searchValue,
+    searchFilters,
     searchLoading,
     changeSearchValue,
+    changeSearchFilters,
     clearSearch,
     submitSearch,
     nodeByID,
@@ -243,13 +259,14 @@ export default function DesktopFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     onLoadDirectory,
-    loadSearchRange: async (query, searchSort, offset, limit) => {
+    loadSearchRange: async (query, filters, searchSort, offset, limit) => {
       const result = await window.xdriveDesktop.agent.cloudSearchRange(
         query,
         offset,
         limit,
         searchSort.key,
         searchSort.direction,
+        filters,
       )
       if (!result.ok) throw new Error(result.error.message)
       return {
@@ -1188,6 +1205,13 @@ export default function DesktopFileExplorer({
         onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
         onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
+        commandBarEnd={(
+          <XDriveFileExplorerSearchFilters
+            filters={searchFilters}
+            sourceOptions={searchSourceOptions}
+            onChange={changeSearchFilters}
+          />
+        )}
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}

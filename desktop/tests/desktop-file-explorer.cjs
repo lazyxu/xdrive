@@ -54,7 +54,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'loadSearchRange: async (query, searchSort, offset, limit) =>',
+    'loadSearchRange: async (query, filters, searchSort, offset, limit) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
@@ -85,6 +85,8 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.ok(explorer.includes('onSearchValueChange={changeSearchValue}'), 'Desktop search draft must come from the shared controller')
   assert.equal(explorer.includes('const [searchValue, setSearchValue] = useState'), false, 'Desktop must not own search draft state')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop Search must use Agent range transport')
+  assert.ok(explorer.includes('filters,'), 'Desktop Search range must forward structured filters')
+  assert.ok(explorer.includes('<XDriveFileExplorerSearchFilters'), 'Desktop must render shared structured filter chips')
   assert.ok(explorer.includes('searchSort.key'), 'Desktop Search range must forward sort key')
   assert.ok(explorer.includes('searchSort.direction'), 'Desktop Search range must forward sort direction')
   assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')

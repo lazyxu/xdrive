@@ -1436,21 +1436,26 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 	return os.Chmod(destination, 0o644)
 }
 
-func (c *agentController) CloudSearch(ctx context.Context, query, cursor, sortKey, order string) (agentCloudSearchPage, error) {
+func (c *agentController) CloudSearch(
+	ctx context.Context,
+	query, cursor, sortKey, order string,
+	filters client.SearchFilters,
+) (agentCloudSearchPage, error) {
 	query = strings.TrimSpace(query)
-	if len([]rune(query)) < 2 {
-		return agentCloudSearchPage{}, fmt.Errorf("search query must contain at least 2 characters")
+	if (query == "" && !filters.Active()) || (query != "" && len([]rune(query)) < 2) {
+		return agentCloudSearchPage{}, fmt.Errorf("search requires at least 2 query characters or a structured filter")
 	}
 	cli, _, err := c.cloudClient()
 	if err != nil {
 		return agentCloudSearchPage{}, err
 	}
 	page, err := cli.Search(ctx, client.SearchOptions{
-		Query:  query,
-		Limit:  cloudSearchLimit,
-		Cursor: strings.TrimSpace(cursor),
-		Sort:   strings.TrimSpace(sortKey),
-		Order:  strings.TrimSpace(order),
+		Query:   query,
+		Filters: filters,
+		Limit:   cloudSearchLimit,
+		Cursor:  strings.TrimSpace(cursor),
+		Sort:    strings.TrimSpace(sortKey),
+		Order:   strings.TrimSpace(order),
 	})
 	if err != nil {
 		return agentCloudSearchPage{}, err
@@ -1470,10 +1475,11 @@ func (c *agentController) CloudSearchRange(
 	query string,
 	offset, limit int,
 	sortKey, order string,
+	filters client.SearchFilters,
 ) (agentCloudSearchRange, error) {
 	query = strings.TrimSpace(query)
-	if len([]rune(query)) < 2 {
-		return agentCloudSearchRange{}, fmt.Errorf("search query must contain at least 2 characters")
+	if (query == "" && !filters.Active()) || (query != "" && len([]rune(query)) < 2) {
+		return agentCloudSearchRange{}, fmt.Errorf("search requires at least 2 query characters or a structured filter")
 	}
 	if offset < 0 {
 		return agentCloudSearchRange{}, fmt.Errorf("search offset must be zero or greater")
@@ -1486,11 +1492,12 @@ func (c *agentController) CloudSearchRange(
 		return agentCloudSearchRange{}, err
 	}
 	page, err := cli.SearchRange(ctx, client.SearchRangeOptions{
-		Query:  query,
-		Limit:  limit,
-		Offset: offset,
-		Sort:   strings.TrimSpace(sortKey),
-		Order:  strings.TrimSpace(order),
+		Query:   query,
+		Filters: filters,
+		Limit:   limit,
+		Offset:  offset,
+		Sort:    strings.TrimSpace(sortKey),
+		Order:   strings.TrimSpace(order),
 	})
 	if err != nil {
 		return agentCloudSearchRange{}, err

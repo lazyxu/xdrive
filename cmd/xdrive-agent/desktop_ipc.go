@@ -216,8 +216,8 @@ type desktopIPCController interface {
 	CloudDownload(context.Context, uint64, string) error
 	CloudDownloadFolder(context.Context, uint64, uint64, string) (agentCloudFolderDownloadResult, error)
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
-	CloudSearch(context.Context, string, string, string, string) (agentCloudSearchPage, error)
-	CloudSearchRange(context.Context, string, int, int, string, string) (agentCloudSearchRange, error)
+	CloudSearch(context.Context, string, string, string, string, client.SearchFilters) (agentCloudSearchPage, error)
+	CloudSearchRange(context.Context, string, int, int, string, string, client.SearchFilters) (agentCloudSearchRange, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
@@ -1755,10 +1755,51 @@ func (h *desktopIPCHandler) cloudDownloadArchive(w http.ResponseWriter, r *http.
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
+func desktopIPCSearchFilters(w http.ResponseWriter, r *http.Request) (client.SearchFilters, bool) {
+	values := r.URL.Query()
+	filters := client.SearchFilters{
+		Kind:         strings.TrimSpace(values.Get("kind")),
+		ModifiedFrom: strings.TrimSpace(values.Get("modified_from")),
+		ModifiedTo:   strings.TrimSpace(values.Get("modified_to")),
+	}
+	parseInt64 := func(name string) (*int64, bool) {
+		raw := strings.TrimSpace(values.Get(name))
+		if raw == "" {
+			return nil, true
+		}
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", name+" must be zero or greater")
+			return nil, false
+		}
+		return &value, true
+	}
+	var ok bool
+	if filters.MinSize, ok = parseInt64("min_size"); !ok {
+		return client.SearchFilters{}, false
+	}
+	if filters.MaxSize, ok = parseInt64("max_size"); !ok {
+		return client.SearchFilters{}, false
+	}
+	if raw := strings.TrimSpace(values.Get("source_id")); raw != "" {
+		sourceID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || sourceID == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", "source_id must be a positive integer")
+			return client.SearchFilters{}, false
+		}
+		filters.SourceID = sourceID
+	}
+	return filters, true
+}
+
 func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if len([]rune(query)) < 2 {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_query", "q must contain at least 2 characters")
+	filters, ok := desktopIPCSearchFilters(w, r)
+	if !ok {
+		return
+	}
+	if (query == "" && !filters.Active()) || (query != "" && len([]rune(query)) < 2) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_query", "search requires at least 2 query characters or a structured filter")
 		return
 	}
 	values := r.URL.Query()
@@ -1792,6 +1833,7 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 			limit,
 			strings.TrimSpace(values.Get("sort")),
 			strings.TrimSpace(values.Get("order")),
+			filters,
 		)
 		if err != nil {
 			writeDesktopIPCControllerError(w, err)
@@ -1806,6 +1848,7 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 		strings.TrimSpace(values.Get("cursor")),
 		strings.TrimSpace(values.Get("sort")),
 		strings.TrimSpace(values.Get("order")),
+		filters,
 	)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
@@ -1813,7 +1856,6 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
-
 func (h *desktopIPCHandler) cloudQuota(w http.ResponseWriter, r *http.Request) {
 	quota, err := h.ctrl.CloudQuota(r.Context())
 	if err != nil {

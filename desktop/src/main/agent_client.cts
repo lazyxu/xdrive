@@ -859,6 +859,28 @@ export type AgentCloudSearchRange = {
   order: 'asc' | 'desc'
 }
 
+export type AgentCloudSearchFilters = {
+  kind?: 'folder' | 'file' | 'image' | 'video' | 'audio' | 'pdf' | 'document' |
+    'spreadsheet' | 'presentation' | 'archive' | 'code' | 'text' | 'other'
+  modifiedFrom?: string
+  modifiedTo?: string
+  minSize?: number
+  maxSize?: number
+  sourceID?: number
+}
+
+function appendAgentCloudSearchFilters(
+  query: URLSearchParams,
+  filters: AgentCloudSearchFilters,
+) {
+  if (filters.kind) query.set('kind', filters.kind)
+  if (filters.modifiedFrom) query.set('modified_from', filters.modifiedFrom)
+  if (filters.modifiedTo) query.set('modified_to', filters.modifiedTo)
+  if (filters.minSize !== undefined) query.set('min_size', String(Math.max(0, Math.trunc(filters.minSize))))
+  if (filters.maxSize !== undefined) query.set('max_size', String(Math.max(0, Math.trunc(filters.maxSize))))
+  if (filters.sourceID) query.set('source_id', String(Math.max(1, Math.trunc(filters.sourceID))))
+}
+
 export type AgentCloudQuickAccessItem = {
   node: AgentCloudNode
   path: string
@@ -1790,9 +1812,11 @@ export class AgentIPCClient {
     cursor = '',
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    filters: AgentCloudSearchFilters = {},
   ) {
     const query = new URLSearchParams({ q: queryText, sort, order })
     if (cursor.trim()) query.set('cursor', cursor.trim())
+    appendAgentCloudSearchFilters(query, filters)
     return this.request<AgentCloudSearchPage>('GET', `/v1/cloud/search?${query.toString()}`, undefined, 45_000)
   }
 
@@ -1802,6 +1826,7 @@ export class AgentIPCClient {
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    filters: AgentCloudSearchFilters = {},
   ) {
     const query = new URLSearchParams({
       q: queryText,
@@ -1810,6 +1835,7 @@ export class AgentIPCClient {
       sort,
       order,
     })
+    appendAgentCloudSearchFilters(query, filters)
     return this.request<AgentCloudSearchRange>(
       'GET',
       `/v1/cloud/search?${query.toString()}`,

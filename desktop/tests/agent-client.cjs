@@ -244,6 +244,9 @@ test('cloud search range preserves offset zero and total count', async (t) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     assert.equal(url.pathname, '/v1/cloud/search')
     assert.equal(url.searchParams.get('q'), 'report')
+    assert.equal(url.searchParams.get('kind'), 'pdf')
+    assert.equal(url.searchParams.get('min_size'), '10')
+    assert.equal(url.searchParams.get('source_id'), '7')
     assert.equal(url.searchParams.get('offset'), '0')
     assert.equal(url.searchParams.get('limit'), '200')
     assert.equal(url.searchParams.get('sort'), 'updated')
@@ -262,7 +265,14 @@ test('cloud search range preserves offset zero and total count', async (t) => {
       order: 'desc',
     })
   })
-  const range = await client.cloudSearchRange('report', 0, 200, 'updated', 'desc')
+  const range = await client.cloudSearchRange(
+    'report',
+    0,
+    200,
+    'updated',
+    'desc',
+    { kind: 'pdf', minSize: 10, sourceID: 7 },
+  )
   assert.equal(range.total_count, 640)
   assert.equal(range.offset, 0)
   assert.equal(range.limit, 200)

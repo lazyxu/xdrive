@@ -43,6 +43,7 @@ import type {
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
+  XDriveFileExplorerSearchFilters,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
@@ -568,6 +569,7 @@ declare global {
           cursor?: string,
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
+          filters?: XDriveFileExplorerSearchFilters,
         ) => Promise<DesktopResult<AgentCloudSearchPage>>
         cloudSearchRange: (
           query: string,
@@ -575,6 +577,7 @@ declare global {
           limit?: number,
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
+          filters?: XDriveFileExplorerSearchFilters,
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
