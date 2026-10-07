@@ -225,6 +225,7 @@ function appendMediaGalleryQuery(
 ) {
   if (query.search?.trim()) values.set('q', query.search.trim())
   if (query.asset_kind) values.set('asset_kind', query.asset_kind)
+  if (query.category?.trim()) values.set('category', query.category.trim())
   if (query.captured_from) values.set('captured_from', query.captured_from)
   if (query.captured_to) values.set('captured_to', query.captured_to)
   if (query.has_location !== undefined) {
@@ -634,6 +635,14 @@ export class XDriveApi {
   }
 
 
+
+  mediaTrashRange(limit = 200, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItemRange>(`/api/v1/media/trash?${query.toString()}`)
+  }
 
   mediaAlbums() {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')

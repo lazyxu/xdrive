@@ -1,4 +1,7 @@
-import { createXDriveMediaGalleryDataSource } from '@xdrive/ui/mui'
+import {
+  createXDriveMediaGalleryDataSource,
+  xDriveMediaGalleryTrashRoots,
+} from '@xdrive/ui/mui'
 
 export function createDesktopMediaGalleryDataSource(
   agent: Window['xdriveDesktop']['agent'],
@@ -6,6 +9,17 @@ export function createDesktopMediaGalleryDataSource(
   return createXDriveMediaGalleryDataSource({
     listItems: (limit, offset, query) => agent.getMediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => agent.getMediaItemRange('', limit, offset, query),
+    listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),
+    restoreTrashItems: async (items) => {
+      for (const root of xDriveMediaGalleryTrashRoots(items)) {
+        await agent.cloudRestoreTrash(root.id, root.revision)
+      }
+    },
+    permanentlyDeleteTrashItems: async (items) => {
+      for (const root of xDriveMediaGalleryTrashRoots(items)) {
+        await agent.cloudDeleteTrash(root.id, root.revision)
+      }
+    },
     listAlbums: () => agent.getMediaAlbums(),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
     listSuggestedPeople: (limit = 24) => agent.getMediaSuggestedPeople(limit),

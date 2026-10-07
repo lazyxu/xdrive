@@ -327,6 +327,34 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	if favoriteMetadata.Description != "Local note survives rebuild" {
 		t.Fatalf("description was overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.Description)
 	}
+
+	deletedAt := time.Now().UTC()
+	if err := db.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ?", live.PrimaryNodeID, owner.ID).
+		Updates(map[string]any{
+			"deleted_at":    &deletedAt,
+			"trash_root_id": live.PrimaryNodeID,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var trashedAsset meta.PhotoAsset
+	if err := db.First(&trashedAsset, "id = ?", live.ID).Error; err != nil {
+		t.Fatalf("soft-deleted PhotoAsset was pruned: %v", err)
+	}
+	var trashedMetadata meta.PhotoMetadata
+	if err := db.First(&trashedMetadata, "asset_id = ?", live.ID).Error; err != nil {
+		t.Fatalf("soft-deleted PhotoMetadata was pruned: %v", err)
+	}
+	if !trashedMetadata.Favorite ||
+		trashedMetadata.TagsJSON != `["Family","Travel"]` ||
+		trashedMetadata.PeopleJSON != `["Alice","Bob"]` ||
+		trashedMetadata.Description != "Local note survives rebuild" {
+		t.Fatalf("soft-delete changed user metadata: %+v", trashedMetadata)
+	}
+
 	for _, asset := range again {
 		if idsBefore[asset.PrimaryNodeID] != asset.ID {
 			t.Fatalf("asset id changed for primary node %d: %d -> %d",

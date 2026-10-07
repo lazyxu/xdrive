@@ -740,6 +740,20 @@ func (f *fakeDesktopIPCController) CloudMediaItemsRange(
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudMediaTrash(
+	_ context.Context,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: 13,
+		Offset:     offset,
+		Limit:      limit,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error) {
 	return append([]client.MediaAlbum(nil), f.cloudMediaAlbums...), f.err
 }
@@ -1886,7 +1900,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -1897,6 +1911,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaOffset != 5 ||
 		ctrl.cloudMediaQuery.Search != "iPhone" ||
 		ctrl.cloudMediaQuery.AssetKind != "live_photo" ||
+		ctrl.cloudMediaQuery.Category != "gif" ||
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
 		ctrl.cloudMediaQuery.Tag != "Travel" ||
@@ -1923,6 +1938,21 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), "\"offset\":200") ||
 		!strings.Contains(res.Body.String(), "\"limit\":25") {
 		t.Fatalf("media item range status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/trash?limit=40&offset=20",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"total_count\":13") ||
+		!strings.Contains(res.Body.String(), "\"offset\":20") ||
+		ctrl.cloudMediaLimit != 40 ||
+		ctrl.cloudMediaOffset != 20 {
+		t.Fatalf("media trash status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/albums", "")

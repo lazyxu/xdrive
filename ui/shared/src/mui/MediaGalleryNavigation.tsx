@@ -8,6 +8,7 @@ export type MediaGallerySection =
   | 'albums'
   | 'favorites'
   | 'media-types'
+  | 'trash'
 
 type GallerySectionOption = {
   value: MediaGallerySection
@@ -29,6 +30,7 @@ const gallerySections: GallerySectionOption[] = [
   { value: 'albums', label: '相册' },
   { value: 'favorites', label: '收藏' },
   { value: 'media-types', label: '媒体类型' },
+  { value: 'trash', label: '回收站' },
 ]
 
 export function XDriveMediaGalleryNavigation({

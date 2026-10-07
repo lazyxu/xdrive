@@ -392,6 +392,7 @@ export interface MediaItem {
   resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean
+  trash_root?: Node
 }
 
 export interface MediaTimelineGroupIndex {
@@ -429,6 +430,7 @@ export interface MediaAlbum {
 export interface MediaGalleryQuery {
   search?: string
   asset_kind?: PhotoAssetKind
+  category?: string
   captured_from?: string
   captured_to?: string
   has_location?: boolean

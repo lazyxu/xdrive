@@ -644,6 +644,7 @@ export type AgentMediaItem = {
   resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
   live_photo?: boolean
+  trash_root?: AgentCloudNode
 }
 
 export type AgentMediaTimelineGroupIndex = {
@@ -670,6 +671,7 @@ export type AgentMediaItemRange = {
 export type AgentMediaQuery = {
   search?: string
   asset_kind?: string
+  category?: string
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -686,6 +688,7 @@ function appendAgentMediaQuery(
 ) {
   if (filters.search?.trim()) query.set('q', filters.search.trim())
   if (filters.asset_kind) query.set('asset_kind', filters.asset_kind)
+  if (filters.category?.trim()) query.set('category', filters.category.trim())
   if (filters.captured_from) query.set('captured_from', filters.captured_from)
   if (filters.captured_to) query.set('captured_to', filters.captured_to)
   if (filters.has_location !== undefined) {
@@ -1204,6 +1207,17 @@ export class AgentIPCClient {
   }
 
 
+
+  mediaTrash(limit = 200, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/trash?${query.toString()}`,
+    )
+  }
 
   mediaAlbums() {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')

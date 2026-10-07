@@ -15,6 +15,7 @@ import type { MediaGalleryQuery } from '../models'
 export type MediaGalleryFilterDraft = {
   search: string
   assetKind: string
+  category: string
   capturedFrom: string
   capturedTo: string
   location: 'any' | 'with' | 'without'
@@ -28,6 +29,7 @@ export type MediaGalleryFilterDraft = {
 export const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   search: '',
   assetKind: '',
+  category: '',
   capturedFrom: '',
   capturedTo: '',
   location: 'any',
@@ -51,6 +53,7 @@ export function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): Medi
   return {
     ...(search ? { search } : {}),
     ...(draft.assetKind ? { asset_kind: draft.assetKind } : {}),
+    ...(draft.category ? { category: draft.category } : {}),
     ...(draft.capturedFrom
       ? { captured_from: localDateBoundaryISO(draft.capturedFrom) }
       : {}),
@@ -91,6 +94,7 @@ export function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): Media
   return {
     search: query.search || '',
     assetKind: query.asset_kind || '',
+    category: query.category || '',
     capturedFrom: mediaGalleryDateInput(query.captured_from),
     capturedTo: mediaGalleryDateInput(query.captured_to, true),
     location: query.has_location === true
@@ -114,6 +118,7 @@ export function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
   return Boolean(
     draft.search.trim() ||
     draft.assetKind ||
+    draft.category ||
     draft.capturedFrom ||
     draft.capturedTo ||
     draft.location !== 'any' ||

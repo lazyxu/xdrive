@@ -13,6 +13,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -30,6 +31,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -40,6 +42,8 @@ const agent = Object.freeze({
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query),
+  getMediaTrash: (limit = 200, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaSuggestedPeople: (limit = 24) =>
@@ -51,6 +55,7 @@ const agent = Object.freeze({
     query: {
       search?: string
       asset_kind?: string
+    category?: string
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -74,6 +79,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -99,6 +105,7 @@ const agent = Object.freeze({
     query: {
       search?: string
       asset_kind?: string
+    category?: string
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -116,6 +123,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -149,6 +157,7 @@ const agent = Object.freeze({
     query: {
       search?: string
       asset_kind?: string
+    category?: string
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -167,6 +176,7 @@ const agent = Object.freeze({
       query?: {
         search?: string
         asset_kind?: string
+    category?: string
         captured_from?: string
         captured_to?: string
         has_location?: boolean
@@ -189,6 +199,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -206,6 +217,7 @@ const agent = Object.freeze({
     query: {
     search?: string
     asset_kind?: string
+    category?: string
     captured_from?: string
     captured_to?: string
     has_location?: boolean

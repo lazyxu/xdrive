@@ -187,13 +187,21 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 	for _, asset := range desired {
 		desiredPrimary = append(desiredPrimary, asset.primaryID)
 	}
-	if len(desiredPrimary) == 0 {
-		if err := tx.Where("owner_id = ?", ownerID).Delete(&meta.PhotoAsset{}).Error; err != nil {
-			return nil, nil, err
-		}
-	} else if err := tx.
-		Where("owner_id = ? AND primary_node_id NOT IN ?", ownerID, desiredPrimary).
-		Delete(&meta.PhotoAsset{}).Error; err != nil {
+	// Soft-deleted nodes stay as frozen PhotoAsset/PhotoMetadata snapshots until
+	// permanent Node deletion cascades them away. Only stale assets whose
+	// primary node is still active are pruned here.
+	activePrimaryNodeIDs := tx.Model(&meta.Node{}).
+		Select("id").
+		Where("owner_id = ? AND deleted_at IS NULL", ownerID)
+	staleActive := tx.Where(
+		"owner_id = ? AND primary_node_id IN (?)",
+		ownerID,
+		activePrimaryNodeIDs,
+	)
+	if len(desiredPrimary) != 0 {
+		staleActive = staleActive.Where("primary_node_id NOT IN ?", desiredPrimary)
+	}
+	if err := staleActive.Delete(&meta.PhotoAsset{}).Error; err != nil {
 		return nil, nil, err
 	}
 

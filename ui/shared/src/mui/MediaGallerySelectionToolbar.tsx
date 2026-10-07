@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
+import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import {
   Button,
   CircularProgress,
@@ -40,29 +42,39 @@ export function XDriveMediaGallerySelectionToolbar({
   selectedCount,
   allFavorite,
   albums,
+  trashRootCount = 0,
+  trashIncludesFolderRoot = false,
   busy = false,
   onFavorite,
   onAddToAlbum,
   onAddTags,
   onDownload,
   onDelete,
+  onRestore,
+  onPermanentDelete,
   onClear,
 }: {
   selectedCount: number
   allFavorite: boolean
   albums: MediaAlbum[]
+  trashRootCount?: number
+  trashIncludesFolderRoot?: boolean
   busy?: boolean
   onFavorite?: (favorite: boolean) => Promise<void>
   onAddToAlbum?: (album: MediaAlbum) => Promise<void>
   onAddTags?: (tags: string[]) => Promise<void>
   onDownload?: () => Promise<void>
   onDelete?: () => Promise<void>
+  onRestore?: () => Promise<void>
+  onPermanentDelete?: () => Promise<void>
   onClear: () => void
 }) {
   const [albumID, setAlbumID] = useState('')
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false)
+  const trashMode = Boolean(onRestore || onPermanentDelete)
   const manualAlbums = useMemo(
     () => albums.filter((album) => album.kind === 'manual'),
     [albums],
@@ -98,8 +110,24 @@ export function XDriveMediaGallerySelectionToolbar({
           <Typography variant="body2" fontWeight={700} sx={{ mr: 0.5 }}>
             已选择 {selectedCount.toLocaleString('zh-CN')} 项
           </Typography>
+          {trashMode ? (
+            <Typography variant="caption" color="text.secondary">
+              对应 {trashRootCount.toLocaleString('zh-CN')} 个回收站条目
+              {trashIncludesFolderRoot ? ' · 包含已删除文件夹' : ''}
+            </Typography>
+          ) : null}
           {busy ? <CircularProgress size={18} /> : null}
-          {onFavorite ? (
+          {onRestore ? (
+            <Button
+              size="small"
+              disabled={disabled}
+              startIcon={<RestoreFromTrashRoundedIcon />}
+              onClick={() => { void onRestore().catch(() => undefined) }}
+            >
+              恢复
+            </Button>
+          ) : null}
+          {onFavorite && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -109,7 +137,7 @@ export function XDriveMediaGallerySelectionToolbar({
               {allFavorite ? '取消收藏' : '收藏'}
             </Button>
           ) : null}
-          {onAddToAlbum && manualAlbums.length > 0 ? (
+          {onAddToAlbum && !trashMode && manualAlbums.length > 0 ? (
             <TextField
               select
               size="small"
@@ -131,7 +159,7 @@ export function XDriveMediaGallerySelectionToolbar({
               ))}
             </TextField>
           ) : null}
-          {onAddTags ? (
+          {onAddTags && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -141,7 +169,7 @@ export function XDriveMediaGallerySelectionToolbar({
               标签
             </Button>
           ) : null}
-          {onDownload ? (
+          {onDownload && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -151,7 +179,7 @@ export function XDriveMediaGallerySelectionToolbar({
               下载
             </Button>
           ) : null}
-          {onDelete ? (
+          {onDelete && !trashMode ? (
             <Button
               size="small"
               color="error"
@@ -160,6 +188,17 @@ export function XDriveMediaGallerySelectionToolbar({
               onClick={() => setDeleteOpen(true)}
             >
               删除
+            </Button>
+          ) : null}
+          {onPermanentDelete ? (
+            <Button
+              size="small"
+              color="error"
+              disabled={disabled}
+              startIcon={<DeleteForeverRoundedIcon />}
+              onClick={() => setPermanentDeleteOpen(true)}
+            >
+              永久删除
             </Button>
           ) : null}
         </Stack>
@@ -206,6 +245,26 @@ export function XDriveMediaGallerySelectionToolbar({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <XDriveConfirmDialog
+        open={permanentDeleteOpen}
+        title="永久删除所选照片或视频？"
+        description={
+          trashIncludesFolderRoot
+            ? `将永久删除 ${trashRootCount.toLocaleString('zh-CN')} 个回收站条目；其中包含已删除文件夹，文件夹内的全部内容也会一起删除。此操作无法撤销。`
+            : `将永久删除 ${trashRootCount.toLocaleString('zh-CN')} 个回收站条目。此操作无法撤销。`
+        }
+        confirmLabel="永久删除"
+        confirmIntent="danger"
+        loading={busy}
+        onCancel={() => setPermanentDeleteOpen(false)}
+        onConfirm={() => {
+          if (!onPermanentDelete) return
+          void onPermanentDelete()
+            .then(() => setPermanentDeleteOpen(false))
+            .catch(() => undefined)
+        }}
+      />
 
       <XDriveConfirmDialog
         open={deleteOpen}

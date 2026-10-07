@@ -113,6 +113,12 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItemRange>
+  listTrashItemRange?: (
+    limit: number,
+    offset: number,
+  ) => Promise<MediaItemRange>
+  restoreTrashItems?: (items: MediaItem[]) => Promise<void>
+  permanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   listAlbums: () => Promise<MediaAlbum[]>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listSuggestedPeople?: (limit?: number) => Promise<MediaSuggestedPerson[]>
@@ -203,7 +209,7 @@ export interface MediaGalleryDataSource {
 }
 
 type MediaGalleryCollectionTarget = {
-  kind: 'all' | 'album' | 'suggested-person' | 'person'
+  kind: 'all' | 'album' | 'suggested-person' | 'person' | 'trash'
   id?: string
   query: MediaGalleryQuery
   requestID: number
@@ -249,6 +255,9 @@ function mediaGallerySectionDraft(
     return { ...emptyMediaGalleryFilterDraft, favorite: 'favorite' }
   }
   if (section === 'media-types' && activeMediaType) {
+    if (activeMediaType === 'gif' || activeMediaType === 'panorama') {
+      return { ...emptyMediaGalleryFilterDraft, category: activeMediaType }
+    }
     return { ...emptyMediaGalleryFilterDraft, assetKind: activeMediaType }
   }
   return emptyMediaGalleryFilterDraft
@@ -317,6 +326,11 @@ export function XDriveMediaGalleryPage({
     limit: number,
   ): Promise<MediaItemRange> => {
     switch (target.kind) {
+      case 'trash':
+        if (!source.listTrashItemRange) {
+          throw new Error('当前客户端不支持图库回收站')
+        }
+        return source.listTrashItemRange(limit, offset)
       case 'person':
         if (!target.id || !source.listPersonItemRange) {
           throw new Error('当前客户端不支持人物图库范围加载')
@@ -412,15 +426,18 @@ export function XDriveMediaGalleryPage({
     nextQuery: MediaGalleryQuery,
     suggestedPerson: MediaSuggestedPerson | null = null,
     person: MediaPersonIdentity | null = null,
+    targetKind: 'default' | 'trash' = 'default',
   ) => {
     const request = ++requestID.current
-    const target = mediaGalleryTarget(
-      request,
-      album,
-      nextQuery,
-      suggestedPerson,
-      person,
-    )
+    const target: MediaGalleryCollectionTarget = targetKind === 'trash'
+      ? { kind: 'trash', query: {}, requestID: request }
+      : mediaGalleryTarget(
+          request,
+          album,
+          nextQuery,
+          suggestedPerson,
+          person,
+        )
     collectionTargetRef.current = target
     setCollectionTarget(target)
     setTimelineGroupSets(emptyMediaTimelineGroupSets())
@@ -504,6 +521,10 @@ export function XDriveMediaGalleryPage({
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
+    if (nextSection === 'trash') {
+      void loadFirstPage(null, {}, null, null, 'trash')
+      return
+    }
     void loadFirstPage(null, nextQuery)
   }, [loadFirstPage])
 
@@ -1047,6 +1068,33 @@ export function XDriveMediaGalleryPage({
     }
   }, [onError, source])
 
+
+  const restoreTrashItems = useCallback(async (selectedItems: MediaItem[]) => {
+    if (!source.restoreTrashItems || selectedItems.length === 0) return
+    setError('')
+    try {
+      await source.restoreTrashItems(selectedItems)
+      await loadFirstPage(null, {}, null, null, 'trash')
+    } catch (restoreError) {
+      setError(xDriveMediaGalleryErrorMessage(restoreError))
+      onError?.(restoreError)
+      throw restoreError
+    }
+  }, [loadFirstPage, onError, source])
+
+  const permanentlyDeleteTrashItems = useCallback(async (selectedItems: MediaItem[]) => {
+    if (!source.permanentlyDeleteTrashItems || selectedItems.length === 0) return
+    setError('')
+    try {
+      await source.permanentlyDeleteTrashItems(selectedItems)
+      await loadFirstPage(null, {}, null, null, 'trash')
+    } catch (deleteError) {
+      setError(xDriveMediaGalleryErrorMessage(deleteError))
+      onError?.(deleteError)
+      throw deleteError
+    }
+  }, [loadFirstPage, onError, source])
+
   useEffect(() => {
     void loadFirstPage(null, {})
     return () => {
@@ -1086,7 +1134,12 @@ export function XDriveMediaGalleryPage({
               (draftFilters.personIdentity ? '未命名人物' : undefined)
             }
             personIdentityLocked={Boolean(currentPerson)}
-            lockedAssetKind={section === 'media-types' && Boolean(activeMediaType)}
+            lockedAssetKind={
+              section === 'media-types' &&
+              Boolean(activeMediaType) &&
+              activeMediaType !== 'gif' &&
+              activeMediaType !== 'panorama'
+            }
             lockedFavorite={section === 'favorites'}
             onChange={setDraftFilters}
             onApply={applyFilters}
@@ -1111,6 +1164,10 @@ export function XDriveMediaGalleryPage({
         onAddItemsToAlbum={source.addToAlbum ? addItemsToAlbum : undefined}
         onDeleteItems={source.deleteItems ? deleteItems : undefined}
         onDownloadItems={source.downloadItems ? downloadItems : undefined}
+        onRestoreTrashItems={source.restoreTrashItems ? restoreTrashItems : undefined}
+        onPermanentlyDeleteTrashItems={
+          source.permanentlyDeleteTrashItems ? permanentlyDeleteTrashItems : undefined
+        }
         onSetTags={source.setTags ? setTags : undefined}
         onSetPeople={source.setPeople ? setPeople : undefined}
         onSetDescription={source.setDescription ? setDescription : undefined}
@@ -1159,6 +1216,7 @@ export function XDriveMediaGalleryPage({
           query,
           currentSuggestedPerson,
           currentPerson,
+          section === 'trash' ? 'trash' : 'default',
         )}
       />
       <Dialog
@@ -1260,6 +1318,8 @@ export interface XDriveMediaGalleryProps {
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
+  onPermanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
@@ -1303,6 +1363,8 @@ export interface XDriveMediaGalleryProps {
 }
 
 function mediaAssetChipLabel(item: MediaItem) {
+  if (item.metadata.mime_type?.toLowerCase() === 'image/gif') return 'GIF'
+  if (item.metadata.exif?.is_panorama === true) return '全景'
   if (item.live_photo || item.asset_kind === 'live_photo') return '实况'
   switch (item.asset_kind) {
     case 'raw_pair':
@@ -1329,6 +1391,8 @@ const mediaGalleryMediaTypes = [
   { value: 'live_photo', label: '实况照片', description: '照片与动态视频组成的实况资产' },
   { value: 'raw_pair', label: 'RAW 组合', description: 'RAW 与渲染照片组成的逻辑资产' },
   { value: 'burst', label: '连拍', description: '由本地证据识别的连拍组' },
+  { value: 'gif', label: 'GIF / 动图', description: '按实际 image/gif MIME 分类' },
+  { value: 'panorama', label: '全景', description: '仅识别带 GPano/XMP 明确信号的全景照片' },
   { value: 'sidecar', label: '编辑组合', description: '带确定性 sidecar 关系的媒体' },
 ] as const
 
@@ -2239,6 +2303,8 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  onRestoreTrashItems,
+  onPermanentlyDeleteTrashItems,
   onSetTags,
   onSetPeople,
   onSetDescription,
@@ -2334,10 +2400,11 @@ export function XDriveMediaGallery({
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
   const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
+    if (section === 'trash') return
     setPreviewItem(item)
     setPreviewLogicalIndex(index ?? null)
     setPendingPreviewIndex(null)
-  }, [])
+  }, [section])
   const previewIndex = previewLogicalIndex ?? (
     previewItem
       ? items.findIndex((item) => item.node.id === previewItem.node.id)
@@ -2412,6 +2479,17 @@ export function XDriveMediaGallery({
   )
   const allSelectedFavorite = selectedMedia.length > 0 &&
     selectedMedia.every((item) => Boolean(item.favorite))
+  const selectedTrashRoots = useMemo(() => {
+    const roots = new Map<number, MediaItem['node']>()
+    for (const item of selectedMedia) {
+      const root = item.trash_root ?? item.node
+      roots.set(root.id, root)
+    }
+    return Array.from(roots.values())
+  }, [selectedMedia])
+  const selectedTrashIncludesFolderRoot = selectedTrashRoots.some(
+    (root) => root.type === 'dir',
+  )
 
   const clearMediaSelection = useCallback(() => {
     setSelectedMediaItems(new Map())
@@ -2463,6 +2541,12 @@ export function XDriveMediaGallery({
 
   useEffect(() => {
     clearMediaSelection()
+    if (section === 'trash') {
+      setSelected(null)
+      setPreviewItem(null)
+      setPreviewLogicalIndex(null)
+      setPendingPreviewIndex(null)
+    }
   }, [
     activeMediaType,
     activePlaceID,
@@ -2493,10 +2577,12 @@ export function XDriveMediaGallery({
   const showPlacesIndex = isRootSection && section === 'places'
   const showPeopleIndex = isRootSection && section === 'people'
   const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
+  const isTrashSection = isRootSection && section === 'trash'
   const showPhotoCollection =
     !isRootSection ||
     section === 'library' ||
     section === 'favorites' ||
+    isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
   const galleryTitle = currentAlbum?.name ||
@@ -2514,7 +2600,9 @@ export function XDriveMediaGallery({
                 ? '地点'
                 : section === 'favorites'
                   ? '收藏'
-                  : section === 'media-types'
+                  : section === 'trash'
+                    ? '回收站'
+                    : section === 'media-types'
                     ? mediaTypeLabel || '媒体类型'
                     : '图库')
   const gallerySubtitle = currentAlbum
@@ -2533,7 +2621,9 @@ export function XDriveMediaGallery({
                 ? '按照片本地 GPS 与本地地名索引浏览'
                 : section === 'favorites'
                   ? '你收藏的照片和视频'
-                  : section === 'media-types'
+                  : section === 'trash'
+                    ? '最近删除的照片和视频；可恢复或永久删除'
+                    : section === 'media-types'
                     ? mediaTypeLabel
                       ? `正在浏览${mediaTypeLabel}`
                       : '按媒体资产类型快速进入照片集合'
@@ -2545,6 +2635,8 @@ export function XDriveMediaGallery({
     activePlaceID ||
     (section === 'media-types' && activeMediaType),
   )
+  const collectionSetFavorite = isTrashSection ? undefined : onSetFavorite
+  const collectionPreviewURL = isTrashSection ? undefined : loadPreviewURL
 
   return (
     <Stack spacing={2} sx={{ minWidth: 0 }}>
@@ -2655,7 +2747,7 @@ export function XDriveMediaGallery({
             {selectionMode ? '完成' : '选择'}
           </Button>
         ) : null}
-        {showPhotoCollection ? (
+        {showPhotoCollection && !isTrashSection ? (
           <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
             {([
               ['year', '年'],
@@ -2695,33 +2787,41 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
       ) : null}
 
-      {showPhotoCollection ? filters : null}
+      {showPhotoCollection && !isTrashSection ? filters : null}
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
           selectedCount={selectedMedia.length}
           allFavorite={allSelectedFavorite}
           albums={albums}
+          trashRootCount={selectedTrashRoots.length}
+          trashIncludesFolderRoot={selectedTrashIncludesFolderRoot}
           busy={selectionBusy}
-          onFavorite={onSetFavoriteBatch
+          onFavorite={!isTrashSection && onSetFavoriteBatch
             ? (favorite) => runSelectionAction(
                 (selectedItems) => onSetFavoriteBatch(selectedItems, favorite),
               )
             : undefined}
-          onAddToAlbum={onAddItemsToAlbum
+          onRestore={isTrashSection && onRestoreTrashItems
+            ? () => runSelectionAction(onRestoreTrashItems)
+            : undefined}
+          onPermanentDelete={isTrashSection && onPermanentlyDeleteTrashItems
+            ? () => runSelectionAction(onPermanentlyDeleteTrashItems)
+            : undefined}
+          onAddToAlbum={!isTrashSection && onAddItemsToAlbum
             ? (album) => runSelectionAction(
                 (selectedItems) => onAddItemsToAlbum(album, selectedItems),
               )
             : undefined}
-          onAddTags={onAddTagsBatch
+          onAddTags={!isTrashSection && onAddTagsBatch
             ? (tags) => runSelectionAction(
                 (selectedItems) => onAddTagsBatch(selectedItems, tags),
               )
             : undefined}
-          onDownload={onDownloadItems
+          onDownload={!isTrashSection && onDownloadItems
             ? () => runSelectionAction(onDownloadItems, false)
             : undefined}
-          onDelete={onDeleteItems
+          onDelete={!isTrashSection && onDeleteItems
             ? () => runSelectionAction(onDeleteItems)
             : undefined}
           onClear={clearMediaSelection}
@@ -3187,11 +3287,11 @@ export function XDriveMediaGallery({
             <Stack alignItems="center" spacing={1}>
               <ImageIcon color="disabled" sx={{ fontSize: 44 }} />
               <Typography color="text.secondary">
-                没有可显示的图片或视频
+                {isTrashSection ? '回收站为空' : '没有可显示的图片或视频'}
               </Typography>
             </Stack>
           </Paper>
-        ) : timeScale !== 'all' ? (
+        ) : !isTrashSection && timeScale !== 'all' ? (
           virtualCollection ? (
             <MediaVirtualTimeline
               groups={activeTimelineGroups}
@@ -3199,8 +3299,8 @@ export function XDriveMediaGallery({
               minTileWidth={minTileWidth}
               loadThumbnail={loadThumbnail}
               thumbnailScheduler={thumbnailScheduler}
-              loadPreviewURL={loadPreviewURL}
-              onSetFavorite={onSetFavorite}
+              loadPreviewURL={collectionPreviewURL}
+              onSetFavorite={collectionSetFavorite}
               onSetCover={
                 currentPerson && onSetPersonCover
                   ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
@@ -3238,8 +3338,8 @@ export function XDriveMediaGallery({
                     selectedNodeIDs={selectedNodeIDs}
                     onSelect={handleMediaSelect}
                     loadThumbnail={loadThumbnail}
-                    loadPreviewURL={loadPreviewURL}
-                    onSetFavorite={onSetFavorite}
+                    loadPreviewURL={collectionPreviewURL}
+                    onSetFavorite={collectionSetFavorite}
                     onSetCover={
                       currentPerson && onSetPersonCover
                         ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
@@ -3262,8 +3362,8 @@ export function XDriveMediaGallery({
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
-            loadPreviewURL={loadPreviewURL}
-            onSetFavorite={onSetFavorite}
+            loadPreviewURL={collectionPreviewURL}
+            onSetFavorite={collectionSetFavorite}
             onSetCover={
               currentPerson && onSetPersonCover
                 ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
@@ -3281,8 +3381,8 @@ export function XDriveMediaGallery({
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
-            loadPreviewURL={loadPreviewURL}
-            onSetFavorite={onSetFavorite}
+            loadPreviewURL={collectionPreviewURL}
+            onSetFavorite={collectionSetFavorite}
             onSetCover={
               currentPerson && onSetPersonCover
                 ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
@@ -3359,12 +3459,12 @@ export function XDriveMediaGallery({
       <XDriveMediaDetailsDialog
         item={selected}
         loadThumbnail={loadThumbnail}
-        loadLivePhotoMotion={loadLivePhotoMotion}
-        loadPreviewURL={loadPreviewURL}
+        loadLivePhotoMotion={isTrashSection ? undefined : loadLivePhotoMotion}
+        loadPreviewURL={isTrashSection ? undefined : loadPreviewURL}
         albums={albums}
         currentAlbum={currentAlbum}
-        onAddToAlbum={onAddToAlbum}
-        onRemoveFromAlbum={onRemoveFromAlbum}
+        onAddToAlbum={isTrashSection ? undefined : onAddToAlbum}
+        onRemoveFromAlbum={isTrashSection ? undefined : onRemoveFromAlbum}
         onSetFavorite={onSetFavorite ? async (item, favorite) => {
           await onSetFavorite(item, favorite)
           setSelected((current) => (
@@ -3373,7 +3473,7 @@ export function XDriveMediaGallery({
               : current
           ))
         } : undefined}
-        onSetTags={onSetTags ? async (item, tags) => {
+        onSetTags={!isTrashSection && onSetTags ? async (item, tags) => {
           const normalized = await onSetTags(item, tags)
           setSelected((current) => (
             current?.node.id === item.node.id
@@ -3382,7 +3482,7 @@ export function XDriveMediaGallery({
           ))
           return normalized
         } : undefined}
-        onSetPeople={onSetPeople ? async (item, people) => {
+        onSetPeople={!isTrashSection && onSetPeople ? async (item, people) => {
           const normalized = await onSetPeople(item, people)
           setSelected((current) => (
             current?.node.id === item.node.id
@@ -3391,7 +3491,7 @@ export function XDriveMediaGallery({
           ))
           return normalized
         } : undefined}
-        onSetDescription={onSetDescription ? async (item, description) => {
+        onSetDescription={!isTrashSection && onSetDescription ? async (item, description) => {
           const normalized = await onSetDescription(item, description)
           setSelected((current) => (
             current?.node.id === item.node.id
