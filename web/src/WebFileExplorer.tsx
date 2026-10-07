@@ -17,6 +17,8 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
+  xDriveCaptureVideoPosterBlob,
+  xDriveFileKind,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerExternalDropPayload,
@@ -319,6 +321,24 @@ export default function WebFileExplorer({
     try {
       const blob = await api.mediaThumbnail(Number(item.id))
       return URL.createObjectURL(blob)
+    } catch {
+      if (xDriveFileKind(item.name, item.kind) !== 'video') return null
+    }
+
+    try {
+      const source = await api.filePreviewURL(Number(item.id))
+      const poster = await xDriveCaptureVideoPosterBlob(source)
+      if (!poster) return null
+      const revision = Number(item.revision)
+      if (Number.isSafeInteger(revision) && revision > 0) {
+        try {
+          await api.mediaVideoPoster(Number(item.id), revision, poster)
+        } catch {
+          // The locally decoded poster is still useful when cache backfill races
+          // with a file revision change or the Server becomes temporarily unavailable.
+        }
+      }
+      return URL.createObjectURL(poster)
     } catch {
       return null
     }

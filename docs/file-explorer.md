@@ -436,7 +436,8 @@ FileExplorer item visuals use one shared MUI thumbnail pipeline:
 
 - Details/list, Grid, properties, Quick Access, Recent and Trash consume the same thumbnail provider/cache/scheduler.
 - Platform code only supplies the thumbnail transport adapter; it does not implement separate thumbnail UI, cache, visibility admission or object-URL lifecycle.
-- Thumbnail-eligible image media uses the same path across every FileExplorer surface. Formats without a Server thumbnail contract, including video posters today, fall back to the shared file-kind icon rather than pretending thumbnail support exists.
+- Thumbnail-eligible image and video media uses the same path across every FileExplorer surface. Images use the Server's 512px derivative directly. Videos first request the revision-fenced Server poster cache; on a cache miss Web/Desktop decode one frame through the existing authenticated preview stream, render a bounded 512px JPEG, and best-effort backfill that same Server cache. Unsupported/undecodable formats fall back to the shared file-kind icon.
+- Video poster backfill must never require a Server ffmpeg runtime or a second full-file download path. The Server remains distroless, validates JPEG size/dimensions plus `If-Match` revision, and stores posters as regenerable cache data under `.xdrive-media/posters/`.
 - The thumbnail scheduler remains viewport-aware, concurrency-bounded and cancellable before work starts.
 
 Trash is a special FileExplorer directory, not a dialog:

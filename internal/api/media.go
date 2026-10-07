@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,8 +27,9 @@ import (
 )
 
 const (
-	mediaRequestIndexBatch = 16
-	mediaThumbnailEdge     = mediapkg.DefaultThumbnailEdge
+	mediaRequestIndexBatch   = 16
+	mediaThumbnailEdge       = mediapkg.DefaultThumbnailEdge
+	mediaVideoPosterMaxBytes = 4 << 20
 )
 
 type mediaMetadataDTO struct {
@@ -889,6 +891,21 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "media indexing failed")
 		return
 	}
+	if metadata.MediaKind == meta.MediaKindVideo {
+		c.Header("ETag", mediapkg.VideoPosterETag(node.ID, node.Revision, metadata.SHA256))
+		c.Header("Cache-Control", "private, max-age=3600")
+		if s.tryServeMediaDerivative(
+			c,
+			mediapkg.VideoPosterStorageKey(node.ID, node.Revision, metadata.SHA256),
+			node.Name+".jpg",
+			"image/jpeg",
+			metadata.UpdatedAt,
+		) {
+			return
+		}
+		fail(c, http.StatusNotFound, "video poster is not cached")
+		return
+	}
 	if metadata.MediaKind != meta.MediaKindImage ||
 		!mediaThumbnailSupported(metadata) {
 		fail(c, http.StatusUnsupportedMediaType, "thumbnail format is not supported")
@@ -939,6 +956,85 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	) {
 		fail(c, http.StatusInternalServerError, "generated thumbnail is unavailable")
 	}
+}
+
+func (s *Server) putMediaVideoPoster(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	expected, ok := expectedRevision(c)
+	if !ok {
+		return
+	}
+	node, err := s.ownedThumbnailNode(c.Request.Context(), userID(c), id)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if node.Revision != expected {
+		revisionConflict(c, expected, node.Revision)
+		return
+	}
+	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "media indexing failed")
+		return
+	}
+	if metadata.MediaKind != meta.MediaKindVideo {
+		fail(c, http.StatusUnsupportedMediaType, "video poster is only supported for video media")
+		return
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(c.GetHeader("Content-Type"), ";", 2)[0]))
+	if contentType != "image/jpeg" {
+		fail(c, http.StatusUnsupportedMediaType, "video poster must be image/jpeg")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(c.Request.Body, mediaVideoPosterMaxBytes+1))
+	if err != nil {
+		fail(c, http.StatusBadRequest, "read video poster failed")
+		return
+	}
+	if len(data) == 0 {
+		fail(c, http.StatusBadRequest, "video poster is empty")
+		return
+	}
+	if len(data) > mediaVideoPosterMaxBytes {
+		fail(c, http.StatusRequestEntityTooLarge, "video poster is too large")
+		return
+	}
+	config, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		fail(c, http.StatusBadRequest, "video poster is not a valid JPEG")
+		return
+	}
+	if config.Width < 1 || config.Height < 1 ||
+		config.Width > mediapkg.VideoPosterEdge ||
+		config.Height > mediapkg.VideoPosterEdge {
+		fail(c, http.StatusBadRequest, "video poster dimensions exceed the cache contract")
+		return
+	}
+
+	current, err := s.ownedThumbnailNode(c.Request.Context(), userID(c), id)
+	if err != nil || current.Type != meta.NodeTypeFile || current.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if current.Revision != node.Revision ||
+		current.File.SHA256 != node.File.SHA256 ||
+		current.File.StorageKey != node.File.StorageKey {
+		revisionConflict(c, expected, current.Revision)
+		return
+	}
+
+	key := mediapkg.VideoPosterStorageKey(node.ID, node.Revision, metadata.SHA256)
+	if _, err := s.Store.Put(c.Request.Context(), key, bytes.NewReader(data)); err != nil {
+		fail(c, http.StatusInternalServerError, "store video poster failed")
+		return
+	}
+	c.Header("ETag", mediapkg.VideoPosterETag(node.ID, node.Revision, metadata.SHA256))
+	c.Status(http.StatusNoContent)
 }
 
 const mediaAnalysisPreviewTicketKind = "analysis"

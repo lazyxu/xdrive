@@ -2469,6 +2469,20 @@ function registerIPCHandlers() {
     return requireAgentClient().mediaThumbnail(nodeID)
   }, false))
 
+  ipcMain.handle('agent:put-media-video-poster', (_event, nodeID: unknown, revision: unknown, data: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      !(data instanceof ArrayBuffer) || data.byteLength === 0 || data.byteLength > (4 << 20)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid media node id, revision, and JPEG poster are required.')
+    }
+    await requireAgentClient().mediaVideoPoster(nodeID, revision, data)
+    return { ok: true }
+  }, false))
+
   ipcMain.handle('agent:get-media-live-photo-motion', (
     event,
     nodeID: unknown,

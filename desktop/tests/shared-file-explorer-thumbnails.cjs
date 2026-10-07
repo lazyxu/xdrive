@@ -40,17 +40,16 @@ test('Details, Grid, properties, Quick Access and Recent use the shared thumbnai
   assert.ok(pane.includes("xDriveFileSupportsThumbnail(item.name, 'file')"))
 })
 
-test('Recent preserves thumbnail identity and only supported image media is eligible', () => {
+test('Recent preserves thumbnail identity and supported image/video media is eligible', () => {
   for (const token of ['revision?: string | number', 'updatedAt?: string', 'size?: number']) {
     assert.ok(recent.includes(token), 'Recent thumbnail identity missing: ' + token)
   }
   assert.ok(explorer.includes("'livp'"), 'FileExplorer image-like thumbnail allowlist must include LIVP')
-  assert.ok(explorer.includes("return xDriveFileKind(name, kind) === 'image'"))
+  assert.ok(explorer.includes("return fileKind === 'image' || fileKind === 'video'"))
   assert.ok(thumbnail.includes('title="实况照片"'), 'LIVP thumbnails must expose a static Live Photo badge')
-  assert.equal(
-    explorer.includes("return fileKind === 'image' || fileKind === 'video'"),
-    false,
-    'FileExplorer must not claim video poster thumbnails before the Server supports them',
+  assert.ok(
+    explorer.includes("'3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'"),
+    'FileExplorer video poster eligibility must cover the shared common-video allowlist',
   )
 })
 

@@ -90,6 +90,7 @@ The canonical categories are:
 | `legacy` | legacy canonical file objects outside reserved xDrive prefixes | file-data root | never |
 | `upload_staging` | resumable upload parts/staging | `.xdrive-uploads/` | only existing expiry/orphan-safe candidates |
 | `media_thumbnail` | 512px Gallery/FileExplorer image thumbnail cache | `.xdrive-media/thumbnails/*-512.jpg` | yes |
+| `video_poster` | 512px FileExplorer video poster cache | `.xdrive-media/posters/*-512.jpg` | yes |
 | `analysis_preview` | 1280px Photo Intelligence analysis preview cache | `.xdrive-media/thumbnails/*-1280.jpg` | yes |
 | `media_other` | other current/future media-derived files | `.xdrive-media/` | no automatic deletion until classified |
 | `write_temp` | atomic storage-write temporary files | `**/.xdrive-upload-*` | only after safety age |
@@ -179,18 +180,19 @@ Today:
 
 - **512px image thumbnails** are persisted Server-side.
 - **1280px Photo Intelligence analysis previews** are persisted Server-side.
-- ordinary Image/PDF/Video/Audio Preview Engine playback streams canonical original bytes and does not persist a separate ordinary-preview cache;
-- video poster generation does not currently create a Server-side persistent poster cache;
+- **512px video posters** are persisted Server-side under a revision/SHA/version-fenced key. FileExplorer first checks that cache; on miss Web/Desktop decodes the first displayable frame through the existing authenticated preview stream and backfills a bounded JPEG. The Server validates the current revision and JPEG contract before accepting it.
+- ordinary Image/PDF/Video/Audio Preview Engine playback still streams canonical original bytes and does not persist a separate ordinary-preview cache;
 - video transcoding/proxy storage is not currently enabled;
 - archive folder downloads are streamed as ZIP output and do not create a persistent Server-side archive cache.
 
-The inventory still reserves resolved future paths for ordinary preview cache, video posters, and video transcodes. Until those pipelines exist, they must report zero / **未启用**.
+The inventory still reserves resolved future paths for ordinary preview cache and video transcodes. Until those pipelines exist, they must report zero / **未启用**.
 
 ## Reclaimable storage and cleanup
 
 The only cleanup kinds are:
 
 - `media_thumbnail`;
+- `video_poster`;
 - `analysis_preview`;
 - `upload_staging`;
 - `storage_temp`;
@@ -198,7 +200,7 @@ The only cleanup kinds are:
 
 ### Media caches
 
-512px and 1280px files are deterministic derivatives of canonical media bytes.
+512px image thumbnails, 512px video posters, and 1280px analysis previews are deterministic, regenerable derivatives of canonical media content.
 
 Deleting them is safe:
 

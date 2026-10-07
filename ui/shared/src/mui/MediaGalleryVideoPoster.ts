@@ -93,3 +93,74 @@ export function xDriveMediaVideoPosterGeometry(
     manualRotation,
   }
 }
+
+
+export function xDriveCaptureVideoPosterBlob(
+  source: string,
+  rotationDegrees = 0,
+  sourceWidth = 0,
+  sourceHeight = 0,
+  maxEdge = 512,
+): Promise<Blob | null> {
+  return new Promise<Blob | null>((resolve) => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      resolve(null)
+      return
+    }
+
+    const video = document.createElement('video')
+    let settled = false
+    const finish = (value: Blob | null) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      video.removeAttribute('src')
+      video.load()
+      resolve(value)
+    }
+    const timer = window.setTimeout(() => finish(null), 15_000)
+
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.addEventListener('loadeddata', () => {
+      try {
+        if (video.videoWidth < 1 || video.videoHeight < 1) {
+          finish(null)
+          return
+        }
+        const geometry = xDriveMediaVideoPosterGeometry(
+          video.videoWidth,
+          video.videoHeight,
+          sourceWidth,
+          sourceHeight,
+          rotationDegrees,
+          maxEdge,
+        )
+        const canvas = document.createElement('canvas')
+        canvas.width = geometry.canvasWidth
+        canvas.height = geometry.canvasHeight
+        const context = canvas.getContext('2d')
+        if (!context) {
+          finish(null)
+          return
+        }
+        if (geometry.manualRotation === 90) {
+          context.translate(canvas.width, 0)
+          context.rotate(Math.PI / 2)
+        } else if (geometry.manualRotation === 270) {
+          context.translate(0, canvas.height)
+          context.rotate(-Math.PI / 2)
+        }
+        context.drawImage(video, 0, 0, geometry.drawWidth, geometry.drawHeight)
+        canvas.toBlob((blob) => finish(blob), 'image/jpeg', 0.82)
+      } catch {
+        finish(null)
+      }
+    }, { once: true })
+    video.addEventListener('error', () => finish(null), { once: true })
+    video.src = source
+    video.load()
+  })
+}
