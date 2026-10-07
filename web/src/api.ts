@@ -1322,6 +1322,16 @@ export class XDriveApi {
     })
   }
 
+  async uploadConflictPreflightBatch(
+    items: readonly { parent_id: number; name: string }[],
+  ) {
+    const result = await this.request<{ items: XDriveUploadConflictPreflight[] }>(
+      '/api/v1/uploads/preflight/batch',
+      { method: 'POST', body: JSON.stringify({ items }) },
+    )
+    return result.items
+  }
+
   async upload(parentID: number, file: File, onProgress?: (percent: number) => void): Promise<Node> {
     const result = await this.uploadWithConflictPolicy(parentID, file, 'fail', onProgress)
     return result.node

@@ -265,6 +265,7 @@ test('Web upload batches use the shared upload controller before transferring by
     'useXDriveFileExplorerUploadController<File>({',
     'trackProgress: true',
     'preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name)',
+    'preflightBatch: (targets) => api.uploadConflictPreflightBatch(',
     'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID)',
     'fileUploads.runTargets(targets, action)',
     '<XDriveUploadConflictDialog {...fileUploads.dialogProps}',
@@ -272,6 +273,10 @@ test('Web upload batches use the shared upload controller before transferring by
   ]) {
     assert.ok(app.includes(token), `missing Web shared upload-controller wiring: ${token}`)
   }
+  assert.ok(api.includes("'/api/v1/uploads/preflight/batch'"), 'Web API must expose batched upload preflight')
+  assert.ok(uploadController.includes('loadBatchPreflights'), 'shared upload controller must batch preflight work')
+  assert.ok(uploadController.includes('.toLowerCase()'), 'batch duplicate keys must use locale-independent case folding')
+  assert.equal(uploadController.includes('.toLocaleLowerCase()'), false, 'batch duplicate keys must not depend on client locale')
   assert.ok(uploadController.includes("if (conflictPolicy === 'skip')"), 'shared upload controller must own skip handling')
   assert.ok(uploadController.includes("if (decision === 'cancel')"), 'shared upload controller must own batch cancellation')
   assert.ok(uploadController.includes('xDriveUploadBatchSummary(result)'), 'shared upload controller must own batch summaries')

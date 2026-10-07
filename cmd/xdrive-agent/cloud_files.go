@@ -539,6 +539,17 @@ func (c *agentController) CloudUploadConflictPreflight(
 	return cli.UploadConflictPreflight(ctx, parentID, strings.TrimSpace(name))
 }
 
+func (c *agentController) CloudUploadConflictPreflightBatch(
+	ctx context.Context,
+	items []client.UploadConflictPreflightRequest,
+) ([]client.UploadConflictPreflight, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.UploadConflictPreflightBatch(ctx, items)
+}
+
 func (c *agentController) CloudUploadWithConflictPolicy(
 	ctx context.Context,
 	parentID uint64,

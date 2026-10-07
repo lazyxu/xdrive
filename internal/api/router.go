@@ -173,6 +173,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/media/smart-albums/:albumID", s.deleteSmartMediaAlbum)
 	authed.PUT("/files/:id/content", s.overwriteFile)
 	authed.POST("/uploads/preflight", s.preflightUploadConflict)
+	authed.POST("/uploads/preflight/batch", s.preflightUploadConflictsBatch)
 	authed.POST("/uploads", s.createUploadSession)
 	authed.GET("/uploads/:id", s.getUploadSession)
 	authed.PUT("/uploads/:id/chunks/:index", s.putUploadChunk)

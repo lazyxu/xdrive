@@ -276,6 +276,7 @@ test('Desktop upload conflicts use the shared upload controller with capability-
     'useXDriveFileExplorerUploadController<File>({',
     'continueOnUploadError: true',
     'window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)',
+    'window.xdriveDesktop.agent.cloudUploadPreflightBatch(',
     'window.xdriveDesktop.agent.cloudUploadFile(',
     'runTargets: runUploadTargets,',
     'runGroup: runUploadGroup,',
@@ -287,6 +288,7 @@ test('Desktop upload conflicts use the shared upload controller with capability-
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop shared upload-controller wiring: ${token}`)
   }
+  assert.ok(uploadController.includes('loadBatchPreflights'), 'shared upload controller must batch preflight work')
   assert.ok(uploadController.includes("if (conflictPolicy === 'skip')"), 'shared upload controller must own skip handling')
   assert.ok(uploadController.includes('continueOnUploadError'), 'shared upload controller must support Desktop continue-on-error behavior')
   assert.ok(uploadController.includes('xDriveUploadBatchSummary(result)'), 'shared upload controller must own upload summaries')

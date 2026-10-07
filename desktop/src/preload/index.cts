@@ -332,6 +332,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-file-operation-resolve', id, policy),
   cloudUploadPreflight: (parentID: number, name: string) =>
     ipcRenderer.invoke('agent:cloud-upload-preflight', parentID, name),
+  cloudUploadPreflightBatch: (items: Array<{ parent_id: number; name: string }>) =>
+    ipcRenderer.invoke('agent:cloud-upload-preflight-batch', items),
   cloudUploadFile: (
     parentID: number,
     file: unknown,

@@ -564,6 +564,7 @@ declare global {
         cloudRedoFileOperation: (id: string) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both' | 'replace') => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudUploadPreflight: (parentID: number, name: string) => Promise<DesktopResult<XDriveUploadConflictPreflight>>
+        cloudUploadPreflightBatch: (items: Array<{ parent_id: number; name: string }>) => Promise<DesktopResult<XDriveUploadConflictPreflight[]>>
         cloudUploadFile: (
           parentID: number,
           file: File,

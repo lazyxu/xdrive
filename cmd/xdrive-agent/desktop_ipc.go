@@ -87,6 +87,7 @@ var desktopIPCCapabilities = []string{
 	"file-recent",
 	"file-properties-stats",
 	"upload-conflict-preflight",
+	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
 	"server-update",
 	"media-gallery",
@@ -222,6 +223,7 @@ type desktopIPCController interface {
 	CloudRedoFileOperation(context.Context, string) (client.FileOperation, error)
 	CloudResolveFileOperationConflict(context.Context, string, string) (client.FileOperation, error)
 	CloudUploadConflictPreflight(context.Context, uint64, string) (client.UploadConflictPreflight, error)
+	CloudUploadConflictPreflightBatch(context.Context, []client.UploadConflictPreflightRequest) ([]client.UploadConflictPreflight, error)
 	CloudUploadWithConflictPolicy(context.Context, uint64, string, string, string) (agentCloudUploadResult, error)
 	CloudUploadWithConflictPolicyTracked(context.Context, uint64, string, string, string, string) (agentCloudUploadResult, error)
 	CloudUpload(context.Context, uint64, string, string) (client.Node, error)
@@ -525,6 +527,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/file-operation/redo", h.cloudRedoFileOperation)
 	mux.HandleFunc("POST /v1/cloud/file-operation/resolve", h.cloudResolveFileOperationConflict)
 	mux.HandleFunc("POST /v1/cloud/upload/preflight", h.cloudUploadConflictPreflight)
+	mux.HandleFunc("POST /v1/cloud/upload/preflight/batch", h.cloudUploadConflictPreflightBatch)
 	mux.HandleFunc("POST /v1/cloud/upload/conflict", h.cloudUploadWithConflictPolicy)
 	mux.HandleFunc("POST /v1/cloud/upload", h.cloudUpload)
 	mux.HandleFunc("GET /v1/cloud/text-preview", h.cloudFileTextPreview)
@@ -1698,6 +1701,28 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudUploadConflictPreflightBatch(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items []client.UploadConflictPreflightRequest `json:"items"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if len(input.Items) == 0 || len(input.Items) > client.UploadConflictPreflightBatchLimit {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_upload_preflight_batch", "items must contain between 1 and 200 entries")
+		return
+	}
+	for index := range input.Items {
+		input.Items[index].Name = strings.TrimSpace(input.Items[index].Name)
+	}
+	results, err := h.ctrl.CloudUploadConflictPreflightBatch(r.Context(), input.Items)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, results)
 }
 
 func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter, r *http.Request) {
