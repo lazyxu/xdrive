@@ -636,3 +636,244 @@ test('background current-directory reload cannot make a discarded manual navigat
     global.window = originalWindow
   }
 })
+
+
+test('reconnect cannot leave tab grouping ahead of the committed directory grouping', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const sort = { key: 'name', direction: 'asc' }
+    const noneGrouping = { groupBy: 'none', foldersFirst: true }
+    const typeGrouping = { groupBy: 'type', foldersFirst: true }
+    let enabled = true
+    let releasePendingGrouping
+
+    const page = (parentID, offset, limit, grouping) => ({
+      items: parentID === root.id ? [alpha] : [{ id: 20, name: 'alpha.txt' }],
+      total_count: 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: grouping?.groupBy === 'type'
+        ? [{ key: 'ext:txt', item_count: 1, start_index: 0 }]
+        : [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit, _sort, _includeCount, grouping) {
+        if (parentID === alpha.id && grouping?.groupBy === 'type') {
+          return new Promise((resolve) => {
+            releasePendingGrouping = () => resolve(
+              page(parentID, offset, limit, grouping),
+            )
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit, grouping))
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'reconnect-grouping',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.deepEqual(app.cloud.grouping, noneGrouping)
+    assert.deepEqual(app.navigation.grouping, noneGrouping)
+
+    app.navigation.changeGrouping(typeGrouping)
+    await flushAsync()
+    app = render()
+    assert.equal(typeof releasePendingGrouping, 'function')
+    assert.deepEqual(
+      app.navigation.grouping,
+      noneGrouping,
+      'directory grouping must remain at the last committed value while its replacement load is pending',
+    )
+
+    enabled = false
+    render()
+    enabled = true
+    render()
+    await flushAsync()
+    app = render()
+    assert.deepEqual(
+      app.cloud.grouping,
+      noneGrouping,
+      'reconnect should reload the grouping that was actually committed before the pending change',
+    )
+
+    releasePendingGrouping()
+    await flushAsync()
+    app = render()
+
+    assert.deepEqual(
+      app.navigation.grouping,
+      app.cloud.grouping,
+      'a discarded grouping load must not leave tab grouping different from visible CloudFiles grouping',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+test('background reload cannot leave tab sort ahead of the committed directory sort', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const nameSort = { key: 'name', direction: 'asc' }
+    const updatedSort = { key: 'updated', direction: 'desc' }
+    const noneGrouping = { groupBy: 'none', foldersFirst: true }
+    let releasePendingSort
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id ? [alpha] : [{ id: 20, name: 'alpha.txt' }],
+      total_count: 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit, sort) {
+        if (parentID === alpha.id && sort?.key === 'updated') {
+          return new Promise((resolve) => {
+            releasePendingSort = () => resolve(page(parentID, offset, limit))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: nameSort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'reload-vs-sort',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.deepEqual(app.cloud.sort, nameSort)
+    assert.deepEqual(app.navigation.sort, nameSort)
+
+    app.navigation.changeSort(updatedSort)
+    await flushAsync()
+    app = render()
+    assert.equal(typeof releasePendingSort, 'function')
+    assert.deepEqual(
+      app.navigation.sort,
+      nameSort,
+      'directory sort must remain at the last committed value while its replacement load is pending',
+    )
+
+    await app.cloud.loadDirectory(
+      alpha.id,
+      [root, alpha],
+      nameSort,
+      noneGrouping,
+    )
+    app = render()
+    assert.deepEqual(app.cloud.sort, nameSort)
+
+    releasePendingSort()
+    await flushAsync()
+    app = render()
+
+    assert.deepEqual(
+      app.navigation.sort,
+      app.cloud.sort,
+      'a discarded sort load must not leave tab sort different from visible CloudFiles sort',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
