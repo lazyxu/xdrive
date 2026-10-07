@@ -569,6 +569,7 @@ CONTROL_TEST_PID=$!
 
 for _ in $(seq 1 50); do
   if grep -q '"state":"idle"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     [[ -f "$TMP/home/state/control/heartbeat" ]] &&
      [[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]; then
     break
   fi
