@@ -42,6 +42,11 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
     assert.ok(shared.includes(token), `shared FileExplorer controller missing: ${token}`)
   }
   assert.ok(sharedIndex.includes("export * from './file-explorer-controller'"), 'shared FileExplorer controller must be exported')
+  assert.equal(
+    externalDropController.includes('currentContextRef'),
+    false,
+    'shared ExternalDrop must not rebuild a weaker current-directory refresh fence',
+  )
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.equal(source.includes('xDriveFileExplorerSubmitPath({'), false, `${label} must not orchestrate typed-path submission outside the shared workspace controller`)
     assert.equal(source.includes('xDriveResolveFileExplorerPath({'), false, `${label} must not orchestrate typed-path traversal locally`)
@@ -263,11 +268,8 @@ test('shared FileExplorer external-drop controller owns target, breadcrumb, and 
     'xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)',
     'uploadFilesToParent(parentID, files)',
     'uploadFolderEntriesToParent(parentID, payload)',
-    'currentContextRef.current',
-    'currentGrouping',
-    'latest.currentID !== expectedCurrentID',
-    'latest.grouping',
-    'await refreshCurrentDirectory(expectedCurrentID)',
+    'refreshCurrentDirectoryIfIdle',
+    'await refreshCurrentDirectoryIfIdle(expectedCurrentID)',
     'Number(crumb.id)',
     'folderDropEnabled',
   ]) {

@@ -1156,7 +1156,7 @@ export default function DesktopFileExplorer({
       if (result.uploaded > 0) await onQuotaChanged()
       return result.uploaded > 0 || result.skipped > 0
     },
-    refreshDirectory: onLoadDirectory,
+    refreshCurrentDirectoryIfIdle: onRefreshCurrentDirectoryIfIdle,
   })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({

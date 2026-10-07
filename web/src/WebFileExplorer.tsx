@@ -440,7 +440,7 @@ export default function WebFileExplorer({
     nodeByID,
     uploadFilesToParent: onUploadDroppedFiles,
     uploadFolderEntriesToParent: onUploadDroppedFolderEntries,
-    refreshDirectory: onLoadDirectory,
+    refreshCurrentDirectoryIfIdle: onRefreshCurrentDirectoryIfIdle,
   })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({

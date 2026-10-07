@@ -1347,13 +1347,10 @@ test('stale external-drop completion cannot refresh a directory after navigation
       releaseUpload = () => resolve(true)
     }),
     uploadFolderEntriesToParent: async () => true,
-    refreshDirectory: async (id, crumbs, refreshSort, refreshGrouping) => {
-      refreshCalls.push({
-        id,
-        crumbs: crumbs.map((crumb) => ({ ...crumb })),
-        sort: { ...refreshSort },
-        grouping: { ...refreshGrouping },
-      })
+    refreshCurrentDirectoryIfIdle: async (expectedCurrentID) => {
+      if (currentID !== expectedCurrentID) return false
+      refreshCalls.push(expectedCurrentID)
+      return true
     },
   }))
 
@@ -1378,7 +1375,7 @@ test('stale external-drop completion cannot refresh a directory after navigation
   )
 })
 
-test('external-drop completion refreshes the same directory using its latest crumbs and sort', async () => {
+test('external-drop completion delegates its captured directory to the guarded refresh adapter', async () => {
   const runtime = createHookRuntime()
   const useExternalDrop = loadExternalDropHook(runtime.react)
   let currentID = 1
@@ -1398,13 +1395,9 @@ test('external-drop completion refreshes the same directory using its latest cru
       releaseUpload = () => resolve(true)
     }),
     uploadFolderEntriesToParent: async () => true,
-    refreshDirectory: async (id, crumbs, refreshSort, refreshGrouping) => {
-      refreshCalls.push({
-        id,
-        crumbs: crumbs.map((crumb) => ({ ...crumb })),
-        sort: { ...refreshSort },
-        grouping: { ...refreshGrouping },
-      })
+    refreshCurrentDirectoryIfIdle: async (expectedCurrentID) => {
+      refreshCalls.push(expectedCurrentID)
+      return true
     },
   }))
 
@@ -1420,12 +1413,11 @@ test('external-drop completion refreshes the same directory using its latest cru
   releaseUpload()
   await pending
 
-  assert.deepEqual(refreshCalls, [{
-    id: 1,
-    crumbs: [{ id: 1, name: 'A renamed' }],
-    sort: { key: 'updated', direction: 'desc' },
-    grouping: { groupBy: 'size', foldersFirst: false },
-  }])
+  assert.deepEqual(
+    refreshCalls,
+    [1],
+    'ExternalDrop should pass only the directory captured when the upload started; CloudFiles owns latest crumbs/sort/grouping validation',
+  )
 })
 
 
