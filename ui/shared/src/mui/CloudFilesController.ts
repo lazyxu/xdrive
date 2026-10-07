@@ -38,6 +38,7 @@ export type XDriveCloudFilesControllerOptions<
   defaultSort: TSort
   rootLabel?: string
   quotaRefreshIntervalMs?: number
+  preserveStateOnDisable?: boolean
   onError: (error: unknown) => void
 }
 
@@ -66,6 +67,7 @@ export function useXDriveCloudFilesController<
   defaultSort,
   rootLabel = '我的文件',
   quotaRefreshIntervalMs = 60_000,
+  preserveStateOnDisable = false,
   onError,
 }: XDriveCloudFilesControllerOptions<TNode, TQuota, TSort>) {
   const [quota, setQuota] = useState<TQuota | null>(null)
@@ -76,8 +78,12 @@ export function useXDriveCloudFilesController<
   const directoryRequestRef = useRef(0)
   const quotaRequestRef = useRef(0)
   const enabledRef = useRef(enabled)
+  const crumbsRef = useRef(crumbs)
+  const virtualTargetRef = useRef(virtualTarget)
   const onErrorRef = useRef(onError)
   enabledRef.current = enabled
+  crumbsRef.current = crumbs
+  virtualTargetRef.current = virtualTarget
   onErrorRef.current = onError
   const reportError = useCallback((error: unknown) => {
     onErrorRef.current(error)
@@ -195,7 +201,7 @@ export function useXDriveCloudFilesController<
     nextCrumbs?: readonly XDriveCloudFilesCrumb[],
     sort?: TSort,
   ) => {
-    const effectiveSort = sort ?? virtualTarget?.sort ?? defaultSort
+    const effectiveSort = sort ?? virtualTargetRef.current?.sort ?? defaultSort
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     setLoading(true)
@@ -216,7 +222,7 @@ export function useXDriveCloudFilesController<
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, port, reportError, virtualTarget?.sort])
+  }, [activateVirtualDirectory, defaultSort, port, reportError])
 
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
@@ -255,6 +261,14 @@ export function useXDriveCloudFilesController<
     if (!enabled) {
       directoryRequestRef.current += 1
       quotaRequestRef.current += 1
+      if (preserveStateOnDisable) {
+        // Desktop keeps the current directory across a temporary Agent
+        // transport outage. Abort stale virtual-range work without discarding
+        // the navigation state that should be resumed after reconnect.
+        virtualCollection.reset()
+        setLoading(false)
+        return
+      }
       virtualCollection.reset('cloud-files:virtual:disabled')
       setVirtualTarget(null)
       setQuota(null)
@@ -263,8 +277,28 @@ export function useXDriveCloudFilesController<
       setLoading(false)
       return
     }
+
+    if (preserveStateOnDisable) {
+      const preservedCrumbs = crumbsRef.current
+      const target = preservedCrumbs.at(-1)
+      if (target) {
+        void loadDirectory(
+          target.id,
+          preservedCrumbs,
+          virtualTargetRef.current?.sort ?? defaultSort,
+        )
+        return
+      }
+    }
     void loadInitial()
-  }, [enabled, loadInitial, virtualCollection.reset])
+  }, [
+    defaultSort,
+    enabled,
+    loadDirectory,
+    loadInitial,
+    preserveStateOnDisable,
+    virtualCollection.reset,
+  ])
 
   useEffect(() => {
     if (!enabled || quotaRefreshIntervalMs <= 0) return
