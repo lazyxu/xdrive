@@ -16,6 +16,7 @@ import (
 	humanize "github.com/dustin/go-humanize"
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
@@ -453,20 +454,30 @@ func (s *Server) appendArchiveDownloadNode(
 }
 
 func (s *Server) validateArchiveStoredFile(ctx context.Context, file meta.File) error {
-	f, err := s.Store.Open(ctx, file.StorageKey)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errArchiveStoredContent, err)
+	var storedSize int64
+	if provider, ok := s.Store.(storage.ObjectStatProvider); ok {
+		info, err := provider.Stat(ctx, file.StorageKey)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errArchiveStoredContent, err)
+		}
+		storedSize = info.Size
+	} else {
+		f, err := s.Store.Open(ctx, file.StorageKey)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errArchiveStoredContent, err)
+		}
+		info, statErr := f.Stat()
+		closeErr := f.Close()
+		if statErr != nil {
+			return fmt.Errorf("%w: %v", errArchiveStoredContent, statErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("%w: %v", errArchiveStoredContent, closeErr)
+		}
+		storedSize = info.Size()
 	}
-	info, statErr := f.Stat()
-	closeErr := f.Close()
-	if statErr != nil {
-		return fmt.Errorf("%w: %v", errArchiveStoredContent, statErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("%w: %v", errArchiveStoredContent, closeErr)
-	}
-	if info.Size() != file.Size {
-		return fmt.Errorf("%w: stored size=%s metadata size=%s", errArchiveStoredContent, humanize.IBytes(uint64(max(int64(0), info.Size()))), humanize.IBytes(uint64(max(int64(0), file.Size))))
+	if storedSize != file.Size {
+		return fmt.Errorf("%w: stored size=%s metadata size=%s", errArchiveStoredContent, humanize.IBytes(uint64(max(int64(0), storedSize))), humanize.IBytes(uint64(max(int64(0), file.Size))))
 	}
 	return nil
 }

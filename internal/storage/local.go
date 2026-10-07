@@ -126,6 +126,21 @@ func (l *Local) Open(_ context.Context, key string) (*os.File, error) {
 	return os.Open(full)
 }
 
+func (l *Local) Stat(_ context.Context, key string) (ObjectStat, error) {
+	full, err := l.resolve(key)
+	if err != nil {
+		return ObjectStat{}, err
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return ObjectStat{}, err
+	}
+	return ObjectStat{
+		Size:       info.Size(),
+		ModifiedAt: info.ModTime(),
+	}, nil
+}
+
 func (l *Local) Ready(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

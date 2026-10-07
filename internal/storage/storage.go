@@ -51,6 +51,17 @@ type Store interface {
 	Delete(ctx context.Context, key string) error
 }
 
+type ObjectStat struct {
+	Size       int64
+	ModifiedAt time.Time
+}
+
+// ObjectStatProvider exposes metadata-only lookup for backends that can inspect
+// a stored object without opening a readable payload handle.
+type ObjectStatProvider interface {
+	Stat(context.Context, string) (ObjectStat, error)
+}
+
 type Capacity struct {
 	TotalBytes     int64
 	AvailableBytes int64
