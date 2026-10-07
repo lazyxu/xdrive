@@ -3555,6 +3555,13 @@ function registerIPCHandlers() {
       }
       out.sourceID = raw.sourceID
     }
+    if (raw.availability !== undefined) {
+      const availability = new Set(['local', 'always-local', 'online-only', 'cloud', 'syncing'])
+      if (typeof raw.availability !== 'string' || !availability.has(raw.availability)) {
+        throw new AgentIPCError('invalid_input', 0, 'Search availability filter is invalid.')
+      }
+      out.availability = raw.availability as AgentCloudSearchFilters['availability']
+    }
     return out
   }
   const cloudSearchFiltersActive = (filters: AgentCloudSearchFilters) => (
@@ -3563,13 +3570,17 @@ function registerIPCHandlers() {
     filters.modifiedTo !== undefined ||
     filters.minSize !== undefined ||
     filters.maxSize !== undefined ||
-    filters.sourceID !== undefined
+    filters.sourceID !== undefined ||
+    filters.availability !== undefined
   )
 
   ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown, sort: unknown, order: unknown, filtersValue: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     const filters = normalizeCloudSearchFilters(filtersValue)
+    if (filters.availability !== undefined) {
+      throw new AgentIPCError('invalid_input', 0, 'Availability filtering requires range Search.')
+    }
     if (typeof query !== 'string' ||
         (query.trim().length < 2 && !(query.trim().length === 0 && cloudSearchFiltersActive(filters)))) {
       throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters or a structured filter.')

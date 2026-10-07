@@ -32,7 +32,17 @@ Web REST, Desktop renderer, Electron/Agent IPC, Go client, and Server carry one 
 
 File availability is **device-scoped state**, not Server namespace state. Windows CfAPI pin/online-only/syncing information can differ between two Desktop devices and has no meaningful Server-global value for Web.
 
-Therefore the availability chip must not be implemented as renderer-side filtering over retained Search pages, and the Server must not invent a global availability field. Its implementation belongs to the Desktop Agent query boundary, backed by an Agent-local availability index/query contract capable of filtering before pagination. Until that dedicated contract exists, Web omits availability and Desktop continues to show availability as item metadata rather than pretending it is a Server filter.
+The implemented availability filter therefore lives at the Desktop Agent query boundary:
+
+- Web omits the availability chip because it has no authoritative local-device state.
+- Desktop exposes `local / always-local / online-only / cloud / syncing` only when Windows CfAPI availability is supported.
+- Server Search still owns authorization, text/type/time/size/synchronization-folder filtering, sort, grouping, and the candidate namespace. It does **not** persist or invent a global availability field.
+- When availability is active, the Agent evaluates the Server-ordered candidate collection against the current device before logical pagination, builds a short-lived filtered offset/group snapshot, and returns authoritative `offset / limit / total_count / groups` for that device-scoped collection.
+- Availability-only Search uses the range-only Server `include_all=true` candidate enumeration. That flag does not define availability semantics; it only lets the authenticated Agent enumerate the owner's namespace so the device-local predicate can be applied before pagination.
+- The first candidate range is counted and carries group indexes. Later 200-item candidate ranges send `include_count=false`, so the Agent does not make Server Search repeat `COUNT(*) OVER()` or group aggregation for every scan page.
+- The renderer never filters retained pages. Changing availability remains part of Search generation identity, so stale ranges cannot mutate a newer filter set.
+
+The Agent snapshot is intentionally short-lived and is invalidated when local availability is changed or the sync engine changes state.
 
 ### Search filter UI
 

@@ -151,6 +151,7 @@ FROM generate_series(1, ?) AS gs
 			200,
 			"name",
 			"asc",
+			true,
 		)
 		elapsed := time.Since(started)
 		if err != nil {

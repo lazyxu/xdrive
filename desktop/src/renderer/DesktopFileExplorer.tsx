@@ -55,12 +55,21 @@ import type {
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerGrouping,
+  XDriveFileExplorerSearchAvailabilityOption,
   XDriveFileExplorerSearchSourceOption,
 } from '@xdrive/shared'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'
+const desktopSearchAvailabilityOptions: readonly XDriveFileExplorerSearchAvailabilityOption[] = [
+  { value: 'local', label: '本地可用' },
+  { value: 'always-local', label: '始终保留在此设备上' },
+  { value: 'online-only', label: '仅联机' },
+  { value: 'cloud', label: '云端' },
+  { value: 'syncing', label: '正在同步' },
+]
+
 let desktopFilePropertiesRequestSequence = 0
 
 function nextDesktopFilePropertiesRequestID() {
@@ -1406,6 +1415,7 @@ export default function DesktopFileExplorer({
           <XDriveFileExplorerSearchFilters
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
+            availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}
             onChange={changeSearchFilters}
           />
         )}

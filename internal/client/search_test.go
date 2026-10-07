@@ -112,6 +112,9 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 		if got := r.URL.Query().Get("cursor"); got != "" {
 			t.Fatalf("cursor must be absent, got=%q", got)
 		}
+		if got := r.URL.Query().Get("include_all"); got != "true" {
+			t.Fatalf("include_all=%q", got)
+		}
 		if got := r.URL.Query().Get("max_size"); got != "1000" {
 			t.Fatalf("max_size=%q", got)
 		}
@@ -143,10 +146,11 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 		Grouping: FileExplorerGroupingOptions{
 			Group: "type", FoldersFirst: &foldersFirst,
 		},
-		Limit:  100,
-		Offset: 200,
-		Sort:   "updated",
-		Order:  "asc",
+		IncludeAll: true,
+		Limit:      100,
+		Offset:     200,
+		Sort:       "updated",
+		Order:      "asc",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -160,6 +164,42 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 		Offset: -1,
 	}); err == nil {
 		t.Fatal("negative search offset unexpectedly succeeded")
+	}
+}
+
+func TestSearchRangeCanOmitTotalCount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("include_count"); got != "false" {
+			t.Fatalf("include_count=%q", got)
+		}
+		included := false
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(SearchRange{
+			Items:              []SearchResult{{Node: Node{ID: 9, Name: "cached.bin", Type: "file"}}},
+			TotalCountIncluded: &included,
+			Offset:             200,
+			Limit:              200,
+			Sort:               "name",
+			Order:              "asc",
+		})
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	page, err := cli.SearchRange(context.Background(), SearchRangeOptions{
+		Query:          "cached",
+		Offset:         200,
+		Limit:          200,
+		OmitTotalCount: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.HasTotalCount() {
+		t.Fatalf("total_count unexpectedly included: %+v", page)
+	}
+	if len(page.Items) != 1 || page.Items[0].Node.ID != 9 {
+		t.Fatalf("items=%+v", page.Items)
 	}
 }
 

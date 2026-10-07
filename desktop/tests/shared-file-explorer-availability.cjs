@@ -7,6 +7,8 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedExplorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const sharedSearch = read('ui', 'shared', 'src', 'file-explorer-search.ts')
+const sharedSearchFilters = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearchFilters.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -129,5 +131,33 @@ test('Details status and availability columns reuse the existing Desktop availab
     (desktopExplorer.match(/getFileAvailabilityBatch\(paths\)/g) || []).length,
     1,
     'status and availability columns must not add a second availability batch request path',
+  )
+})
+
+
+test('Desktop availability Search is an Agent range filter, never renderer filtering', () => {
+  for (const token of [
+    "availability?: XDriveFileExplorerSearchAvailability",
+    "filters?.availability",
+    "filters?.availability ?? ''",
+  ]) {
+    assert.ok(sharedSearch.includes(token), 'shared Search availability identity missing: ' + token)
+  }
+  for (const token of [
+    "availabilityOptions?: readonly XDriveFileExplorerSearchAvailabilityOption[]",
+    "open('availability')",
+    "可用性：",
+    "menu === 'availability'",
+  ]) {
+    assert.ok(sharedSearchFilters.includes(token), 'shared availability filter surface missing: ' + token)
+  }
+  assert.ok(
+    desktopExplorer.includes('availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}'),
+    'Desktop must expose availability only when the local capability is authoritative',
+  )
+  assert.equal(
+    desktopExplorer.includes('.filter((item) => getItemAvailability'),
+    false,
+    'renderer must not filter retained Search pages by availability',
   )
 })

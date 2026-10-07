@@ -81,13 +81,18 @@ type FileExplorerGroupingOptions struct {
 }
 
 type SearchRange struct {
-	Items      []SearchResult           `json:"items"`
-	TotalCount int64                    `json:"total_count"`
-	Offset     int                      `json:"offset"`
-	Limit      int                      `json:"limit"`
-	Sort       string                   `json:"sort"`
-	Order      string                   `json:"order"`
-	Groups     []FileExplorerGroupIndex `json:"groups,omitempty"`
+	Items              []SearchResult           `json:"items"`
+	TotalCount         int64                    `json:"total_count"`
+	TotalCountIncluded *bool                    `json:"total_count_included,omitempty"`
+	Offset             int                      `json:"offset"`
+	Limit              int                      `json:"limit"`
+	Sort               string                   `json:"sort"`
+	Order              string                   `json:"order"`
+	Groups             []FileExplorerGroupIndex `json:"groups,omitempty"`
+}
+
+func (r SearchRange) HasTotalCount() bool {
+	return r.TotalCountIncluded == nil || *r.TotalCountIncluded
 }
 
 type FileQuickAccessItem struct {
@@ -140,14 +145,16 @@ type SearchOptions struct {
 }
 
 type SearchRangeOptions struct {
-	Query    string
-	Type     string
-	Filters  SearchFilters
-	Grouping FileExplorerGroupingOptions
-	Limit    int
-	Offset   int
-	Sort     string
-	Order    string
+	Query          string
+	Type           string
+	Filters        SearchFilters
+	Grouping       FileExplorerGroupingOptions
+	IncludeAll     bool
+	OmitTotalCount bool
+	Limit          int
+	Offset         int
+	Sort           string
+	Order          string
 }
 
 type ChildrenOptions struct {
@@ -669,6 +676,12 @@ func (c *Client) SearchRange(ctx context.Context, options SearchRangeOptions) (S
 		values.Set("limit", strconv.Itoa(options.Limit))
 	}
 	values.Set("offset", strconv.Itoa(options.Offset))
+	if options.IncludeAll {
+		values.Set("include_all", "true")
+	}
+	if options.OmitTotalCount {
+		values.Set("include_count", "false")
+	}
 	if strings.TrimSpace(options.Sort) != "" {
 		values.Set("sort", strings.TrimSpace(options.Sort))
 	}
