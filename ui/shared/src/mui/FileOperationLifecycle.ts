@@ -13,12 +13,14 @@ export function useXDriveFileOperationLifecycle<
   T extends XDriveFileOperationLifecycleItem,
 >({
   enabled,
+  lifecycleKey,
   taskCenterVisible = false,
   loadOperations,
   onRefreshError,
   onTerminalTransition,
 }: {
   enabled: boolean
+  lifecycleKey: string
   taskCenterVisible?: boolean
   loadOperations: (limit: number) => Promise<readonly T[]>
   onRefreshError?: (error: unknown) => void
@@ -30,20 +32,31 @@ export function useXDriveFileOperationLifecycle<
   const rememberSequenceRef = useRef(0)
   const rememberedSequenceByIDRef = useRef(new Map<string, number>())
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const onTerminalTransitionRef = useRef(onTerminalTransition)
   enabledRef.current = enabled
+  lifecycleKeyRef.current = lifecycleKey
 
   useEffect(() => {
     onTerminalTransitionRef.current = onTerminalTransition
   }, [onTerminalTransition])
 
+  useEffect(() => {
+    refreshRequestRef.current += 1
+    setOperations([])
+    statusRef.current = new Map()
+    rememberSequenceRef.current = 0
+    rememberedSequenceByIDRef.current = new Map()
+  }, [lifecycleKey])
+
   const rememberOperation = useCallback((operation: T) => {
+    if (lifecycleKeyRef.current !== lifecycleKey) return
     const sequence = rememberSequenceRef.current + 1
     rememberSequenceRef.current = sequence
     rememberedSequenceByIDRef.current.set(operation.id, sequence)
     statusRef.current.set(operation.id, operation.status)
     setOperations((currentOperations) => xDriveFileOperationUpsert(currentOperations, operation))
-  }, [])
+  }, [lifecycleKey])
 
   const applyRefreshSnapshot = useCallback((
     nextOperations: readonly T[],
@@ -129,7 +142,7 @@ export function useXDriveFileOperationLifecycle<
       active = false
       window.clearInterval(timer)
     }
-  }, [applyRefreshSnapshot, beginRefresh, enabled, loadOperations, pollIntervalMs])
+  }, [applyRefreshSnapshot, beginRefresh, enabled, lifecycleKey, loadOperations, pollIntervalMs])
 
   useEffect(() => {
     const transition = xDriveFileOperationTransitionSnapshot(statusRef.current, operations)
