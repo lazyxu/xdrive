@@ -3409,6 +3409,19 @@ function registerIPCHandlers() {
     return requireAgentClient().openPath(relativePath, revealValue === true)
   }, false))
 
+  ipcMain.handle('agent:open-with', (_event, pathValue: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'open-with')
+    if (typeof pathValue !== 'string') {
+      throw new AgentIPCError('invalid_input', 0, 'A relative xDrive path is required.')
+    }
+    const relativePath = pathValue.trim()
+    if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes('\0')) {
+      throw new AgentIPCError('invalid_input', 0, 'A safe relative xDrive path is required.')
+    }
+    return requireAgentClient().openWith(relativePath)
+  }, false))
+
   const normalizeCloudSearchFilters = (value: unknown): AgentCloudSearchFilters => {
     if (value === undefined || value === null) return {}
     if (typeof value !== 'object' || Array.isArray(value)) {

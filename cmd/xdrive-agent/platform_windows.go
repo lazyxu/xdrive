@@ -2,7 +2,27 @@
 
 package main
 
-import "os/exec"
+import (
+	"fmt"
+	"os/exec"
+	"runtime"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+var (
+	shell32              = windows.NewLazySystemDLL("shell32.dll")
+	procSHOpenWithDialog = shell32.NewProc("SHOpenWithDialog")
+)
+
+const openAsInfoExec = 0x00000004
+
+type openAsInfo struct {
+	File  *uint16
+	Class *uint16
+	Flags uint32
+}
 
 func openFolderPlatform(path string) error {
 	return exec.Command("explorer.exe", path).Start()
@@ -14,4 +34,27 @@ func openFilePlatform(path string) error {
 
 func selectFilePlatform(path string) error {
 	return exec.Command("explorer.exe", "/select,"+path).Start()
+}
+
+func openWithSupportedPlatform() bool { return true }
+
+func openWithPlatform(path string) error {
+	file, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	info := openAsInfo{
+		File:  file,
+		Flags: openAsInfoExec,
+	}
+	hr, _, _ := procSHOpenWithDialog.Call(
+		0,
+		uintptr(unsafe.Pointer(&info)),
+	)
+	runtime.KeepAlive(file)
+	runtime.KeepAlive(info)
+	if int32(hr) < 0 {
+		return fmt.Errorf("SHOpenWithDialog failed: HRESULT 0x%08x", uint32(hr))
+	}
+	return nil
 }

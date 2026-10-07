@@ -334,6 +334,23 @@ These are discoverability affordances only. They must not introduce a second com
 
 FileExplorer file thumbnails use square image frames with no corner radius in Details, Grid, Favorites, and Recent. Rounded containers remain appropriate for buttons, cards, status badges, and other chrome, but must not clip file thumbnail pixels into rounded rectangles.
 
+## Desktop shell integration
+
+Desktop shell actions remain behind the protected Agent managed-path boundary. Renderer code passes only a relative xDrive path; both Electron main and Agent reject unsafe/absolute paths before the platform shell receives an absolute path.
+
+Current behavior:
+
+- **System open** uses the platform default application for a locally available file.
+- **Reveal** opens Windows Explorer with the item selected; macOS uses `open -R` so Finder reveals the exact item; Linux opens the parent directory.
+- **Open With** is advertised only when the Agent reports the `open-with` capability. On Windows it invokes the native `SHOpenWithDialog` for files after the same managed-path/local-readiness checks. Non-Windows clients do not show a fake Open With action.
+- If the synchronized local copy is not ready, the Agent requests sync and returns the existing retry-later message rather than exposing an arbitrary temporary path.
+
+Do not bypass this boundary with renderer-side absolute paths or generic shell execution.
+
+### Native drag-out boundary
+
+FileExplorer already owns HTML5 drag/drop for internal file operations. Electron native `webContents.startDrag()` competes with that same `dragstart` lifecycle, so ordinary row dragging must not simply be replaced by native drag-out. Native drag-out must use a distinct Desktop-only drag source/gesture and preserve internal folder/crumb drop behavior. This remains a separate follow-up.
+
 ## Tests
 
 ### Basic lifecycle regression

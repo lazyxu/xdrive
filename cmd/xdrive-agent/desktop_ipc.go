@@ -105,6 +105,14 @@ var desktopIPCCapabilities = []string{
 	"lifecycle-shutdown",
 }
 
+func desktopIPCHelloCapabilities() []string {
+	capabilities := append([]string(nil), desktopIPCCapabilities...)
+	if openWithSupportedPlatform() {
+		capabilities = append(capabilities, "open-with")
+	}
+	return capabilities
+}
+
 type desktopIPCStatus struct {
 	Revision           uint64              `json:"revision"`
 	Configured         bool                `json:"configured"`
@@ -310,6 +318,7 @@ type desktopIPCController interface {
 	ResolveConflict(id, choice string) error
 	OpenFolder() error
 	OpenManagedPath(path string, reveal bool) error
+	OpenManagedPathWith(path string) error
 }
 
 type desktopIPCServer struct {
@@ -603,6 +612,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/conflicts/resolve", h.resolveConflict)
 	mux.HandleFunc("POST /v1/open-folder", h.openFolder)
 	mux.HandleFunc("POST /v1/open-path", h.openPath)
+	mux.HandleFunc("POST /v1/open-with", h.openWith)
 	mux.HandleFunc("POST /v1/lifecycle/shutdown", h.shutdownAgent)
 	return desktopIPCAuth(token, mux)
 }
@@ -644,7 +654,7 @@ func (h *desktopIPCHandler) hello(w http.ResponseWriter, _ *http.Request) {
 		PID:              os.Getpid(),
 		Platform:         runtime.GOOS,
 		Arch:             runtime.GOARCH,
-		Capabilities:     append([]string(nil), desktopIPCCapabilities...),
+		Capabilities:     desktopIPCHelloCapabilities(),
 	})
 }
 
@@ -3905,6 +3915,29 @@ func (h *desktopIPCHandler) openPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.ctrl.OpenManagedPath(input.Path, input.Reveal); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) openWith(w http.ResponseWriter, r *http.Request) {
+	if !openWithSupportedPlatform() {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "open_with_unsupported", "Open With is not supported on this platform")
+		return
+	}
+	var input struct {
+		Path string `json:"path"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Path = strings.TrimSpace(input.Path)
+	if input.Path == "" || filepath.IsAbs(input.Path) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_managed_path", "a relative xDrive path is required")
+		return
+	}
+	if err := h.ctrl.OpenManagedPathWith(input.Path); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

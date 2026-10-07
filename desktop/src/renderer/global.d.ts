@@ -579,6 +579,7 @@ declare global {
         cloudDownloadFiles: (files: Array<{ id: number; name: string }>) => Promise<DesktopResult<AgentCloudDownloadBatchResult>>
         cloudDownloadArchive: (ids: number[]) => Promise<DesktopResult<AgentCloudArchiveDownloadResult>>
         openPath: (relativePath: string, reveal?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
+        openWith: (relativePath: string) => Promise<DesktopResult<{ ok: boolean }>>
         cloudSearch: (
           query: string,
           cursor?: string,

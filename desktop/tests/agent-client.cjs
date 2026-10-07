@@ -227,6 +227,24 @@ test('file availability batch posts one local Agent request', async (t) => {
   assert.equal(result.items[0].availability.Mode, 'always-local')
 })
 
+test('open with delegates one protected relative path to the Agent', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(req.method, 'POST')
+    assert.equal(url.pathname, '/v1/open-with')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    assert.deepEqual(
+      JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      { path: 'Projects/report.pdf' },
+    )
+    json(res, 200, { ok: true })
+  })
+
+  const result = await client.openWith('Projects/report.pdf')
+  assert.equal(result.ok, true)
+})
+
 test('cloud File Properties cancellation aborts the Agent HTTP request', async (t) => {
   let resolveStarted
   let resolveClosed
