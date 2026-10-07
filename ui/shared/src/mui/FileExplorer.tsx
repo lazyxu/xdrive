@@ -65,8 +65,12 @@ import {
   xDriveFileExplorerKeyboardCommand,
   xDriveFileExplorerKeyboardTabIndex,
   xDriveFileExplorerPrimaryModifierActive,
+  xDriveFileExplorerShortcutLabel,
 } from '../file-explorer-keyboard'
-import type { XDriveFileExplorerKeyboardProfile } from '../file-explorer-keyboard'
+import type {
+  XDriveFileExplorerKeyboardCommand,
+  XDriveFileExplorerKeyboardProfile,
+} from '../file-explorer-keyboard'
 import {
   XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
   xDriveFileExplorerGroupingSignature,
@@ -426,6 +430,51 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
 
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
   return xDriveFileKind(name, kind) === 'image'
+}
+
+function fileExplorerShortcutTitle(
+  label: string,
+  command: XDriveFileExplorerKeyboardCommand,
+  profile: XDriveFileExplorerKeyboardProfile,
+) {
+  const shortcut = xDriveFileExplorerShortcutLabel(command, profile)
+  return shortcut ? `${label}（${shortcut}）` : label
+}
+
+function fileExplorerMenuShortcut(
+  id: string,
+  profile: XDriveFileExplorerKeyboardProfile,
+) {
+  const command: XDriveFileExplorerKeyboardCommand | null = (() => {
+    switch (id) {
+    case 'open': return 'open'
+    case 'rename': return 'rename'
+    case 'cut': return 'cut'
+    case 'copy': return 'copy'
+    case 'copy-path': return 'copy-path'
+    case 'paste': return 'paste'
+    case 'delete':
+    case 'delete-selected':
+      return 'delete'
+    case 'properties': return 'properties'
+    case 'new-folder': return 'new-folder'
+    case 'refresh': return 'refresh'
+    default: return null
+    }
+  })()
+  return command ? xDriveFileExplorerShortcutLabel(command, profile) : ''
+}
+
+function fileExplorerItemHoverTitle(
+  item: XDriveFileExplorerItem,
+  canOpenDirectoryInNewTab: boolean,
+) {
+  if (item.kind === 'dir') {
+    return canOpenDirectoryInNewTab
+      ? `${item.name} · 双击/Enter 打开 · 中键在新标签页打开`
+      : `${item.name} · 双击/Enter 打开`
+  }
+  return `${item.name} · 双击/Enter 打开 · Space 快速预览`
 }
 
 function explorerIDKey(id: XDriveFileExplorerID) {
@@ -2834,6 +2883,7 @@ export function XDriveFileExplorer({
         component="div"
         role="row"
         data-xdrive-file-explorer-item
+        title={fileExplorerItemHoverTitle(item, Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
         draggable={Boolean(onDropItemsToFolder) && !renaming}
@@ -2901,7 +2951,7 @@ export function XDriveFileExplorer({
                             height: 24,
                             flex: '0 0 24px',
                             overflow: 'hidden',
-                            borderRadius: 0.75,
+                            borderRadius: 0,
                           }}
                         >
                           {thumbnailForItem(item, false)}
@@ -2966,6 +3016,7 @@ export function XDriveFileExplorer({
         component="div"
         role="listitem"
         data-xdrive-file-explorer-item
+        title={fileExplorerItemHoverTitle(item, Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
         draggable={Boolean(onDropItemsToFolder) && !renaming}
@@ -3034,7 +3085,7 @@ export function XDriveFileExplorer({
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
-            borderRadius: 1,
+            borderRadius: 0,
             position: 'relative',
           }}
         >
@@ -3267,28 +3318,28 @@ export function XDriveFileExplorer({
           '& .MuiIconButton-root': { width: 32, height: 32, borderRadius: 1 },
         }}
       >
-        <Tooltip title="后退">
+        <Tooltip title={fileExplorerShortcutTitle('后退', 'back', keyboardProfile)}>
           <span>
             <IconButton size="small" aria-label="后退" disabled={!canGoBack} onClick={onBack}>
               <ArrowBackRoundedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="前进">
+        <Tooltip title={fileExplorerShortcutTitle('前进', 'forward', keyboardProfile)}>
           <span>
             <IconButton size="small" aria-label="前进" disabled={!canGoForward} onClick={onForward}>
               <ArrowForwardRoundedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="上一级">
+        <Tooltip title={fileExplorerShortcutTitle('上一级', 'up', keyboardProfile)}>
           <span>
             <IconButton size="small" aria-label="上一级" disabled={!canGoUp} onClick={onUp}>
               <ArrowUpwardRoundedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="刷新">
+        <Tooltip title={fileExplorerShortcutTitle('刷新', 'refresh', keyboardProfile)}>
           <span>
             <IconButton size="small" aria-label="刷新" disabled={!onRefresh || loading} onClick={onRefresh}>
               <RefreshRoundedIcon fontSize="small" />
@@ -3303,6 +3354,7 @@ export function XDriveFileExplorer({
               autoFocus
               size="small"
               aria-label="文件路径"
+              title={fileExplorerShortcutTitle('编辑文件路径', 'focus-path', keyboardProfile)}
               value={pathDraft}
               onFocus={(event) => event.currentTarget.select()}
               onChange={(event) => setPathDraft(event.target.value)}
@@ -3317,6 +3369,7 @@ export function XDriveFileExplorer({
               role={onPathSubmit ? 'button' : undefined}
               tabIndex={onPathSubmit ? 0 : undefined}
               aria-label="文件路径"
+              title={fileExplorerShortcutTitle('点击编辑路径', 'focus-path', keyboardProfile)}
               onClick={() => {
                 if (onPathSubmit) setEditingPath(true)
               }}
@@ -3351,6 +3404,7 @@ export function XDriveFileExplorer({
                 {crumbs.map((crumb, index) => (
                   <ButtonBase
                     key={crumb.id}
+                    title={crumbs.slice(0, index + 1).map((entry) => entry.name).join('/')}
                     aria-current={index === crumbs.length - 1 ? 'page' : undefined}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -3407,6 +3461,7 @@ export function XDriveFileExplorer({
             }}
             placeholder="搜索"
             aria-label="搜索文件和文件夹"
+            title={fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)}
             sx={{
               width: { xs: 150, sm: 220, lg: 280 },
               flexShrink: 0,
@@ -3416,7 +3471,12 @@ export function XDriveFileExplorer({
               input: {
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton size="small" aria-label="搜索" onClick={submitSearch}>
+                    <IconButton
+                      size="small"
+                      aria-label="搜索"
+                      title={fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
+                      onClick={submitSearch}
+                    >
                       <SearchRoundedIcon fontSize="small" />
                     </IconButton>
                   </InputAdornment>
@@ -3453,6 +3513,7 @@ export function XDriveFileExplorer({
             {onCutItems ? (
               <XDriveFileExplorerCommandButton
                 startIcon={<ContentCutRoundedIcon />}
+                title={fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
                 onClick={() => onCutItems(selectedItems)}
               >
                 剪切
@@ -3461,6 +3522,7 @@ export function XDriveFileExplorer({
             {onCopyItems ? (
               <XDriveFileExplorerCommandButton
                 startIcon={<ContentCopyRoundedIcon />}
+                title={fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
                 onClick={() => onCopyItems(selectedItems)}
               >
                 复制
@@ -3479,6 +3541,7 @@ export function XDriveFileExplorer({
             {onDeleteItems ? (
               <XDriveFileExplorerCommandButton
                 startIcon={<DeleteOutlineRoundedIcon />}
+                title={fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
                 onClick={() => onDeleteItems(selectedItems)}
                 sx={{ color: 'error.main' }}
               >
@@ -3497,6 +3560,7 @@ export function XDriveFileExplorer({
             {onPaste ? (
               <XDriveFileExplorerCommandButton
                 startIcon={<ContentPasteRoundedIcon />}
+                title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
                 disabled={!canPaste}
                 onClick={onPaste}
               >
@@ -3504,7 +3568,11 @@ export function XDriveFileExplorer({
               </XDriveFileExplorerCommandButton>
             ) : null}
             {onCreateFolder ? (
-              <XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>
+              <XDriveFileExplorerCommandButton
+                startIcon={<CreateNewFolderRoundedIcon />}
+                title={fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)}
+                onClick={onCreateFolder}
+              >
                 新建文件夹
               </XDriveFileExplorerCommandButton>
             ) : null}
@@ -3525,6 +3593,7 @@ export function XDriveFileExplorer({
         {onUndo ? (
           <XDriveFileExplorerCommandButton
             startIcon={<UndoRoundedIcon />}
+            title={fileExplorerShortcutTitle('撤销', 'undo', keyboardProfile)}
             disabled={!canUndo}
             onClick={onUndo}
           >
@@ -3534,6 +3603,7 @@ export function XDriveFileExplorer({
         {onRedo ? (
           <XDriveFileExplorerCommandButton
             startIcon={<RedoRoundedIcon />}
+            title={fileExplorerShortcutTitle('重做', 'redo', keyboardProfile)}
             disabled={!canRedo}
             onClick={onRedo}
           >
@@ -3547,6 +3617,7 @@ export function XDriveFileExplorer({
 
         <XDriveFileExplorerCommandButton
           startIcon={<InfoOutlinedIcon />}
+          title={fileExplorerShortcutTitle('显示或隐藏详细信息窗格', 'toggle-inspector', keyboardProfile)}
           aria-pressed={inspectorOpen}
           onClick={() => setInspectorOpen((open) => !open)}
         >
@@ -3555,6 +3626,7 @@ export function XDriveFileExplorer({
 
         <XDriveFileExplorerCommandButton
           startIcon={<GridViewRoundedIcon />}
+          title="更改布局和图标大小；网格模式可用 Ctrl + 滚轮缩放"
           onClick={(event) => setViewPreferencesAnchor(event.currentTarget)}
           aria-haspopup="menu"
           aria-expanded={Boolean(viewPreferencesAnchor)}
@@ -3606,6 +3678,7 @@ export function XDriveFileExplorer({
         {viewMode === 'details' ? (
           <XDriveFileExplorerCommandButton
             startIcon={<ViewColumnRoundedIcon />}
+            title="选择详细信息列；拖动表头边缘调整列宽"
             onClick={(event) => setDetailsColumnsAnchor(event.currentTarget)}
             aria-haspopup="menu"
             aria-expanded={Boolean(detailsColumnsAnchor)}
@@ -3629,6 +3702,7 @@ export function XDriveFileExplorer({
 
         <XDriveFileExplorerCommandButton
           startIcon={<SortRoundedIcon />}
+          title="按名称、修改时间、类型或大小排序"
           onClick={(event) => setSortAnchor(event.currentTarget)}
           aria-haspopup="menu"
           aria-expanded={Boolean(sortAnchor)}
@@ -3658,6 +3732,7 @@ export function XDriveFileExplorer({
         <XDriveFileExplorerCommandButton
           disabled={!groupingEnabled}
           startIcon={<ViewAgendaRoundedIcon />}
+          title="按类型、修改日期或大小分组；可启用文件夹优先"
           onClick={(event) => setGroupAnchor(event.currentTarget)}
           aria-haspopup="menu"
           aria-expanded={groupingEnabled && Boolean(groupAnchor)}
@@ -3709,10 +3784,10 @@ export function XDriveFileExplorer({
           }}
           aria-label="文件查看方式"
         >
-          <ToggleButton value="details" aria-label="详细信息">
+          <ToggleButton value="details" aria-label="详细信息" title="详细信息视图">
             <ViewListRoundedIcon fontSize="small" />
           </ToggleButton>
-          <ToggleButton value="grid" aria-label="图标">
+          <ToggleButton value="grid" aria-label="图标" title="图标视图">
             <GridViewRoundedIcon fontSize="small" />
           </ToggleButton>
         </ToggleButtonGroup>
@@ -3833,6 +3908,9 @@ export function XDriveFileExplorer({
                     aria-label={detailsColumnMeta[key].sortKey
                       ? `按${detailsColumnMeta[key].label}排序`
                       : detailsColumnMeta[key].label}
+                    title={detailsColumnMeta[key].sortKey
+                      ? `点击按${detailsColumnMeta[key].label}排序`
+                      : detailsColumnMeta[key].label}
                     tabIndex={detailsColumnMeta[key].sortKey ? 0 : -1}
                     onClick={detailsColumnMeta[key].sortKey
                       ? () => {
@@ -3865,6 +3943,7 @@ export function XDriveFileExplorer({
                     role="separator"
                     aria-orientation="vertical"
                     aria-label={`调整${detailsColumnMeta[key].label}列宽`}
+                    title={`拖动调整${detailsColumnMeta[key].label}列宽；双击自动适应`}
                     onDoubleClick={(event) => {
                       event.preventDefault()
                       event.stopPropagation()
@@ -4238,7 +4317,12 @@ export function XDriveFileExplorer({
               sx={menuItem.danger ? { color: 'error.main' } : undefined}
             >
               {menuItem.icon ? <Box sx={{ mr: 1, display: 'flex' }}>{menuItem.icon}</Box> : null}
-              {menuItem.label}
+              <Box sx={{ minWidth: 0, flex: 1 }}>{menuItem.label}</Box>
+              {fileExplorerMenuShortcut(menuItem.id, keyboardProfile) ? (
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 3, whiteSpace: 'nowrap' }}>
+                  {fileExplorerMenuShortcut(menuItem.id, keyboardProfile)}
+                </Typography>
+              ) : null}
             </MenuItem>
           </Fragment>
         ))}

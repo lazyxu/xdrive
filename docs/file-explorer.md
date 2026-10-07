@@ -304,6 +304,24 @@ stream remains request-scoped:
   invalidates an authorized payload;
 - a broken ZIP connection is not resumable. Retrying the payload may reuse the still-valid prepared manifest.
 
+## Hover and shortcut discoverability
+
+FileExplorer should expose already-supported behavior without turning every control into permanent helper text.
+
+- Navigation controls show platform-appropriate shortcut hints in hover text.
+- Address and search controls expose their focus shortcuts.
+- Command-bar actions such as New Folder, Cut/Copy/Paste, Delete, Undo/Redo and Inspector expose the existing keyboard binding.
+- View, Columns, Sort and Group controls use Chinese hover text that explains what the control changes.
+- Truncated file/folder names expose the complete name on hover. File items also mention Enter/double-click Open and Space Quick Look; directories may mention middle-click new-tab when that action is available.
+- Details headers explain click-to-sort, and resize handles explain drag-to-resize plus double-click auto-fit.
+- Context menus show the shortcut in a right-aligned secondary column for commands that already have a keyboard binding.
+- Tab chrome exposes New/Close/Switch/middle-click behavior without adding always-visible shortcut labels.
+- Do not advertise a shortcut that the active keyboard profile does not actually implement.
+
+These are discoverability affordances only. They must not introduce a second command model or platform-specific action implementation outside the shared keyboard contract.
+
+FileExplorer file thumbnails use square image frames with no corner radius in Details, Grid, Favorites, and Recent. Rounded containers remain appropriate for buttons, cards, status badges, and other chrome, but must not clip file thumbnail pixels into rounded rectangles.
+
 ## Tests
 
 ### Basic lifecycle regression

@@ -181,6 +181,7 @@ export function XDriveFileExplorerTabs({
             >
               <ButtonBase
                 role="tab"
+                title={`${tab.label} · Ctrl+Tab / ⌃Tab 切换 · 中键关闭`}
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => onActivate(tab.id)}
@@ -209,7 +210,7 @@ export function XDriveFileExplorerTabs({
               </ButtonBase>
 
               {canCloseTab ? (
-                <Tooltip title="关闭标签页">
+                <Tooltip title="关闭标签页（Ctrl+W / ⌘W；中键也可关闭）">
                   <IconButton
                     size="small"
                     aria-label={`关闭标签页 ${tab.label}`}
@@ -224,7 +225,7 @@ export function XDriveFileExplorerTabs({
           )
         })}
 
-        <Tooltip title="新建标签页">
+        <Tooltip title="新建标签页（Ctrl+T / ⌘T）">
           <span>
             <IconButton
               size="small"
