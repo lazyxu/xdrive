@@ -18,7 +18,8 @@ export function createWebVersionHistoryDialogAdapter(api: XDriveApi) {
     listVersions: (nodeID) => api.versions(nodeID),
     restoreVersion: (nodeID, revision, versionID) =>
       api.restoreVersion(nodeID, revision, versionID),
-    downloadVersion: (node, version) => api.downloadVersion(node, version),
+    downloadVersion: (node, version) =>
+      api.downloadVersion(node, version).then(() => undefined),
   })
 }
 

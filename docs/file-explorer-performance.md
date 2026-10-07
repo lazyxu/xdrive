@@ -25,6 +25,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
 | Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Recursive tree scan: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response**. #788 also bounded root lookup before the exact lookup follow-up below. No wall-clock speedup claimed. |
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
+| Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
@@ -54,6 +55,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Address-bar path traversal resolves each segment with one exact-name paged child lookup (limit 1) instead of loading every child in each traversed directory.
 - Folder-upload create conflicts reuse an existing sibling through a case-insensitive indexed name lookup (limit 1) instead of listing and scanning the entire parent directory.
 - Desktop folder-tree download resolves the selected root through an owner-scoped exact node-id lookup and validates its expected parent/type/name; recursive directory enumeration uses cursor-paged children reads capped at **500 nodes per response** and must not use the legacy unpaginated children contract.
+- Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
@@ -258,6 +260,38 @@ Decision: **accept** exact root lookup and keep 500-node pagination only for rec
 Regression budget: selected-root resolution must not call `List` or `ListPage`; the exact route remains authenticated, owner-scoped, and active-node-only.
 
 Next action: if very large folder downloads still show Agent memory pressure, benchmark manifest retention and child-transfer creation separately before considering a streaming manifest design.
+
+### Web direct-to-disk download sink
+
+Status: **Accepted / structural; wall-clock unmeasured**.
+
+Problem:
+
+- the legacy authenticated Web download path read every response chunk into a `BlobPart[]`;
+- only after the complete response arrived did it create one Blob and trigger the browser download;
+- application-retained payload therefore grew linearly with file/ZIP size, which is especially harmful for large FileExplorer downloads.
+
+Current contract:
+
+- when `showSaveFilePicker` is available, the save target is requested synchronously from the user's download action before archive preparation, auth refresh, or network I/O can consume transient user activation;
+- the response reader waits for each file-system write before reading the next chunk, so xDrive itself does not retain an ever-growing chunk array;
+- Transfer Center byte progress advances after every successful chunk write;
+- a writer failure cancels the response reader and aborts the uncommitted destination file;
+- cancelling the save picker returns a non-saved outcome before creating a transfer/task and produces neither success nor failure feedback;
+- ordinary file downloads, historical-version downloads, and archive payloads reuse the same sink;
+- browsers without File System Access support retain the existing Blob/object-URL fallback rather than losing download compatibility.
+
+Deterministic behavior test:
+
+- a pull-driven **128 x 64 KiB = 8 MiB** logical response is written in 128 ordered writes;
+- maximum in-flight application writes is **1**;
+- final byte progress is exactly **8 MiB**;
+- no aggregate payload array exists in the direct-to-disk helper;
+- cancellation, unsupported-browser fallback, close, and abort are covered separately.
+
+This is structural memory-pressure evidence only. Browser/network internal buffering is outside xDrive's control, and no wall-clock or RSS speedup is claimed.
+
+Regression budget: the File System Access branch must not reintroduce an application-level response chunk accumulator; it must preserve chunk progress and sequential backpressure.
 
 ### FileOperation batch ancestor coverage
 
