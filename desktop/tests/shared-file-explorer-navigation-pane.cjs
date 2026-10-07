@@ -34,7 +34,7 @@ test('shared FileExplorer tree loader returns one bounded folder page', () => {
   assert.equal(controller.slice(loaderStart, loaderEnd).includes('while (true)'), false, 'tree expansion must not drain every page')
 })
 
-test('shared navigation pane owns lazy tree state and current-path projection', () => {
+test('shared navigation pane owns a manual lazy tree without following the active folder', () => {
   assert.ok(index.includes("export * from './FileExplorerNavigationPane'"), 'shared MUI index must export navigation pane')
   for (const token of [
     'export function XDriveFileExplorerNavigationPane',
@@ -46,8 +46,7 @@ test('shared navigation pane owns lazy tree state and current-path projection', 
     'loadDirectoryPageGenerationRef',
     'loadDirectoryPageRef.current !== loadDirectoryPage',
     'generation !== loadDirectoryPageGenerationRef.current',
-    'pathChildByParent',
-    'for (const node of ancestors) void loadChildren(node)',
+    'const rootNode = useMemo(() =>',
     'const appendCurrentGeneration = append && current?.generation === generation',
     'appendCurrentGeneration ? current?.nextCursor : undefined',
     'generation,',
@@ -55,8 +54,6 @@ test('shared navigation pane owns lazy tree state and current-path projection', 
     'data-xdrive-file-explorer-tree-auto-load',
     'onLoad={() => loadChildren(node, true)}',
     '正在加载更多文件夹…',
-    'currentID === node.id',
-    'aria-current={selected',
     'role="tree"',
     'role="treeitem"',
     'role="group"',
@@ -65,6 +62,20 @@ test('shared navigation pane owns lazy tree state and current-path projection', 
   ]) {
     assert.ok(pane.includes(token), 'shared navigation tree behavior missing: ' + token)
   }
+  for (const legacy of [
+    'for (const node of ancestors) void loadChildren(node)',
+    'pathChildByParent',
+    'currentID === node.id',
+    'aria-current={selected',
+    'selected={selected}',
+  ]) {
+    assert.equal(pane.includes(legacy), false, 'tree must not auto-follow/highlight the active folder: ' + legacy)
+  }
+  assert.equal(
+    (pane.match(/pl: 3\.75, pr: 0\.75/g) || []).length,
+    4,
+    'Trash, Quick Access, Favorites and Recent should align their item icons with the root disclosure column',
+  )
   assert.equal(pane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more row')
 })
 

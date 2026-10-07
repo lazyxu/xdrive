@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
 const explorer = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorer.tsx'), 'utf8')
+const searchFilters = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearchFilters.tsx'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'file-explorer-controller.ts'), 'utf8')
 const propertiesDialog = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx'), 'utf8')
 const index = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'index.tsx'), 'utf8')
@@ -51,12 +52,33 @@ test('shared FileExplorer uses configurable system-style density without breakin
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
   assert.ok(explorer.includes("'& .MuiIconButton-root': { width: 32, height: 32"), 'navigation buttons should use 32px system controls')
-  assert.ok(explorer.includes("height: 36, borderRadius: '6px'"), 'address/search inputs should use compact 36px controls')
+  assert.ok(explorer.includes("height: 36, borderRadius: '4px'"), 'address/search inputs should use compact 36px controls')
   assert.ok(explorer.includes('minHeight: 40'), 'command bar should use compact 40px height')
-  assert.ok(explorer.includes("'& .MuiToggleButton-root': { width: 32, height: 30"), 'view toggles should stay compact')
+  assert.equal(explorer.includes('MuiToggleButton-root'), false, 'duplicate Details/Grid toggle chrome should be removed')
   assert.ok(explorer.includes('minHeight: 28'), 'status bar should use compact system height')
   assert.equal(explorer.includes('const detailsNormalRowHeight = 42'), false, 'legacy loose row density should be removed')
   assert.equal(explorer.includes('const detailsHeaderHeight = 34'), false, 'legacy loose header density should be removed')
+})
+
+test('shared FileExplorer uses Windows-style compact navigation and command chrome', () => {
+  assert.ok(explorer.includes('data-xdrive-file-explorer-address-bar'), 'address bar marker is missing')
+  assert.ok(explorer.includes("crumbs.at(-1)?.name ?? '当前位置'"), 'search must name the current folder')
+  assert.ok(explorer.includes("width: { xs: 180, sm: 280, md: 320, lg: 360 }"), 'contextual search should have useful width')
+  assert.ok(explorer.includes('排序与分组'), 'sort and group must share one command surface')
+  assert.equal(explorer.includes('<ToggleButtonGroup'), false, 'View menu must be the single layout control')
+  for (const token of [
+    'thumbnailWidth: 48,\n    thumbnailHeight: 48',
+    'thumbnailWidth: 72,\n    thumbnailHeight: 72',
+    'thumbnailWidth: 108,\n    thumbnailHeight: 108',
+    'iconSize: 40,\n    folderIconSize: 40',
+    'iconSize: 52,\n    folderIconSize: 52',
+    'iconSize: 76,\n    folderIconSize: 76',
+  ]) {
+    assert.ok(explorer.includes(token), 'Grid metrics must keep square, aligned visual boxes: ' + token)
+  }
+  assert.ok(searchFilters.includes('aria-label="筛选文件"'), 'structured filters need one compact trigger')
+  assert.ok(searchFilters.includes('<Popover'), 'structured filters should expand on demand')
+  assert.ok(searchFilters.includes('data-xdrive-file-explorer-search-filters'), 'filter popover surface is missing')
 })
 
 test('shared FileExplorer details view avoids admin-table chrome', () => {

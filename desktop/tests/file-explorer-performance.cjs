@@ -222,7 +222,7 @@ test('FileExplorer navigation tree expands with bounded pages instead of drainin
   assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-auto-load'), 'tree must expose an automatic page sentinel')
   assert.ok(navigationPane.includes('onLoad={() => loadChildren(node, true)}'), 'tree sentinel must request exactly the next bounded page')
   assert.equal(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more affordance')
-  assert.ok(navigationPane.includes('const pathChild = pathChildByParent.get(node.id)'), 'current path child must remain visible outside the loaded page')
+  assert.equal(navigationPane.includes('pathChildByParent'), false, 'manual tree must not inject current-path children outside loaded pages')
 })
 
 
