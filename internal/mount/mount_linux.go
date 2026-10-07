@@ -74,20 +74,14 @@ func (n *linuxNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Att
 }
 
 func (n *linuxNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	children, err := n.cli.List(ctx, n.node.ID)
+	child, err := n.findChild(ctx, name)
 	if err != nil {
 		return nil, errno(err)
 	}
-	for _, child := range children {
-		if child.Name != name {
-			continue
-		}
-		cn := &linuxNode{cli: n.cli, node: child, transfers: n.transfers}
-		inode := n.NewInode(ctx, cn, cn.stableAttr())
-		fillEntry(out, child)
-		return inode, 0
-	}
-	return nil, syscall.ENOENT
+	cn := &linuxNode{cli: n.cli, node: child, transfers: n.transfers}
+	inode := n.NewInode(ctx, cn, cn.stableAttr())
+	fillEntry(out, child)
+	return inode, 0
 }
 
 func (n *linuxNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
@@ -213,16 +207,17 @@ func (n *linuxNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetA
 }
 
 func (n *linuxNode) findChild(ctx context.Context, name string) (client.Node, error) {
-	children, err := n.cli.List(ctx, n.node.ID)
+	page, err := n.cli.ListPage(ctx, n.node.ID, client.ChildrenOptions{
+		Limit: 1,
+		Name:  name,
+	})
 	if err != nil {
 		return client.Node{}, err
 	}
-	for _, child := range children {
-		if child.Name == name {
-			return child, nil
-		}
+	if len(page.Items) == 0 || page.Items[0].Name != name {
+		return client.Node{}, os.ErrNotExist
 	}
-	return client.Node{}, os.ErrNotExist
+	return page.Items[0], nil
 }
 
 type linuxHandle struct {

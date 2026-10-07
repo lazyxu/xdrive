@@ -162,6 +162,26 @@ func (a *linuxSyncAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		a.mu.Unlock()
+		if name := r.URL.Query().Get("name"); name != "" {
+			if r.URL.Query().Get("limit") != "1" {
+				http.Error(w, "exact child lookup requires limit=1", http.StatusBadRequest)
+				return
+			}
+			filtered := make([]client.Node, 0, 1)
+			for _, node := range out {
+				if node.Name == name {
+					filtered = append(filtered, node)
+					break
+				}
+			}
+			_ = json.NewEncoder(w).Encode(client.ChildrenPage{
+				Items:   filtered,
+				HasMore: false,
+				Sort:    "name",
+				Order:   "asc",
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(out)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/files/") && strings.HasSuffix(path, "/content"):
 		id, ok := linuxSyncID(strings.TrimSuffix(strings.TrimPrefix(path, "/files/"), "/content"))
