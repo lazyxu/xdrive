@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
 	clientpkg "github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -84,6 +85,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		&meta.UploadPart{},
 		&meta.AuditEvent{},
 		&meta.FileOperation{},
+		&meta.ArchivePrepareRun{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -104,14 +106,27 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	archiveCtx, archiveCancel := context.WithCancel(context.Background())
+	t.Cleanup(archiveCancel)
+	archiveScheduler := background.NewScheduler(archiveCtx, background.Config{
+		Capacity: map[background.ResourceClass]int{
+			background.ResourceInteractiveIO: 1,
+		},
+		QueueCapacity: map[background.ResourceClass]int{
+			background.ResourceInteractiveIO: 8,
+		},
+	})
+	t.Cleanup(archiveScheduler.Close)
 	srv := &Server{
-		DB:             db,
-		Store:          store,
-		Auth:           auth.New("file-explorer-basic-secret", time.Hour),
-		RefreshTTL:     24 * time.Hour,
-		AllowedOrigin:  "http://localhost",
-		MaxUploadBytes: 32 << 20,
+		DB:                  db,
+		Store:               store,
+		Auth:                auth.New("file-explorer-basic-secret", time.Hour),
+		RefreshTTL:          24 * time.Hour,
+		AllowedOrigin:       "http://localhost",
+		MaxUploadBytes:      32 << 20,
+		BackgroundScheduler: archiveScheduler,
 	}
+	srv.StartArchivePrepareTasks(archiveCtx)
 	router := srv.Router()
 	token := createTestUser(t, db, router, "file-explorer-basic", "password-file-explorer-basic")
 	otherToken := createTestUser(t, db, router, "file-explorer-basic-other", "password-file-explorer-basic-other")

@@ -38,6 +38,7 @@ func TestBackgroundTaskPageKeepsActiveWorkAheadOfHistory(t *testing.T) {
 		&meta.BackgroundRuntimePresence{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.ArchivePrepareRun{},
 		&meta.SystemMaintenanceRun{},
 	); err != nil {
 		t.Fatal(err)
@@ -76,6 +77,21 @@ func TestBackgroundTaskPageKeepsActiveWorkAheadOfHistory(t *testing.T) {
 		UpdatedAt: now.Add(-24 * time.Hour),
 	}
 	if err := db.Create(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	archiveHistory := meta.ArchivePrepareRun{
+		ID:               "00000000-0000-0000-0000-000000000201",
+		OwnerID:          user.ID,
+		RequestedIDsJSON: "[1]",
+		Status:           meta.ArchivePrepareStatusCompleted,
+		Filename:         "page.zip",
+		ExpiresAt:        now.Add(time.Hour),
+		FinishedAt:       backgroundTaskPageTimePtr(now.Add(-90 * time.Second)),
+		CreatedAt:        now.Add(-91 * time.Second),
+		UpdatedAt:        now.Add(-90 * time.Second),
+	}
+	if err := db.Create(&archiveHistory).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,11 +160,12 @@ func TestBackgroundTaskPageKeepsActiveWorkAheadOfHistory(t *testing.T) {
 	if len(second.CurrentItems) != 0 {
 		t.Fatalf("cursor page unexpectedly repeated current items: %+v", second.CurrentItems)
 	}
-	if len(second.HistoryItems) != 1 || second.NextCursor != "" {
-		t.Fatalf("second history page=%+v want final single item", second)
+	if len(second.HistoryItems) != 2 || second.NextCursor != "" {
+		t.Fatalf("second history page=%+v want final two items", second)
 	}
 
 	seen := map[string]bool{}
+	archiveSeen := false
 	for _, task := range append(
 		append([]backgroundTaskDTO{}, first.HistoryItems...),
 		second.HistoryItems...,
@@ -157,9 +174,15 @@ func TestBackgroundTaskPageKeepsActiveWorkAheadOfHistory(t *testing.T) {
 			t.Fatalf("history task repeated across cursor pages: %s", task.ID)
 		}
 		seen[task.ID] = true
+		if task.ID == archivePrepareTaskID(archiveHistory.ID) {
+			archiveSeen = true
+		}
 	}
-	if len(seen) != 3 {
-		t.Fatalf("history ids=%v want 3 terminal SyncRuns", seen)
+	if !archiveSeen {
+		t.Fatalf("archive prepare history missing across cursor pages: first=%+v second=%+v", first.HistoryItems, second.HistoryItems)
+	}
+	if len(seen) != 4 {
+		t.Fatalf("history ids=%v want 3 terminal SyncRuns + 1 ArchivePrepare", seen)
 	}
 }
 
@@ -190,6 +213,7 @@ func TestBackgroundTaskAdminHistoryCursorStableAcrossDomains(t *testing.T) {
 		&meta.BackgroundRuntimePresence{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.ArchivePrepareRun{},
 		&meta.SystemMaintenanceRun{},
 	); err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
@@ -55,6 +57,7 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{},
 		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
+		&meta.ArchivePrepareRun{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +73,24 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	authManager := auth.New("archive-download-test-secret", time.Hour)
-	router := (&Server{
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	scheduler := background.NewScheduler(ctx, background.Config{
+		Capacity: map[background.ResourceClass]int{
+			background.ResourceInteractiveIO: 2,
+		},
+		QueueCapacity: map[background.ResourceClass]int{
+			background.ResourceInteractiveIO: 16,
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	server := &Server{
 		DB: db, Store: store, Auth: authManager,
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
-	}).Router()
+		BackgroundScheduler: scheduler,
+	}
+	server.StartArchivePrepareTasks(ctx)
+	router := server.Router()
 	peerRouter := (&Server{
 		DB: db, Store: store, Auth: authManager,
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
@@ -91,12 +108,13 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	preparedResponse := request(
 		t, router, http.MethodPost, "/api/v1/download/archive/prepare", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"ids":[%d,%d]}`, docs.ID, hello.ID)),
-		http.StatusOK,
+		http.StatusAccepted,
 	)
 	var prepared archiveDownloadPrepareResponse
 	if err := json.Unmarshal(preparedResponse.Body.Bytes(), &prepared); err != nil {
 		t.Fatal(err)
 	}
+	prepared = waitArchivePrepareCompleted(t, router, tokenA, prepared)
 	if prepared.TransferID == "" || prepared.Filename != "docs.zip" || len(prepared.Files) != 2 {
 		t.Fatalf("unexpected archive prepare response: %+v", prepared)
 	}
@@ -168,12 +186,13 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	crossPreparedResponse := request(
 		t, router, http.MethodPost, "/api/v1/download/archive/prepare", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"ids":[%d]}`, hello.ID)),
-		http.StatusOK,
+		http.StatusAccepted,
 	)
 	var crossPrepared archiveDownloadPrepareResponse
 	if err := json.Unmarshal(crossPreparedResponse.Body.Bytes(), &crossPrepared); err != nil {
 		t.Fatal(err)
 	}
+	crossPrepared = waitArchivePrepareCompleted(t, router, tokenA, crossPrepared)
 	crossServerResponse := request(
 		t, peerRouter, http.MethodPost, "/api/v1/download/archive", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"ids":[%d],"transfer_id":%q}`, hello.ID, crossPrepared.TransferID)),
@@ -245,6 +264,125 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 		strings.NewReader(`{"ids":[]}`),
 		http.StatusBadRequest,
 	)
+
+	var ownerA meta.User
+	if err := db.Where("username = ?", "archive-owner").First(&ownerA).Error; err != nil {
+		t.Fatal(err)
+	}
+	recoveryIDs, err := json.Marshal([]uint64{hello.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovery := meta.ArchivePrepareRun{
+		ID:               uuid.NewString(),
+		OwnerID:          ownerA.ID,
+		RequestedIDsJSON: string(recoveryIDs),
+		Status:           meta.ArchivePrepareStatusRunning,
+		StartedAt:        archiveTestTimePtr(time.Now().UTC().Add(-time.Minute)),
+		ExpiresAt:        time.Now().UTC().Add(archiveDownloadProgressTTL),
+	}
+	if err := db.Create(&recovery).Error; err != nil {
+		t.Fatal(err)
+	}
+	server.reconcileArchivePrepareTasks(ctx)
+	waitArchivePrepareRunStatus(t, db, recovery.ID, meta.ArchivePrepareStatusCompleted)
+
+	interrupted := meta.ArchivePrepareRun{
+		ID:               uuid.NewString(),
+		OwnerID:          ownerA.ID,
+		RequestedIDsJSON: string(recoveryIDs),
+		Status:           meta.ArchivePrepareStatusRunning,
+		StartedAt:        archiveTestTimePtr(time.Now().UTC().Add(-time.Minute)),
+		ExpiresAt:        time.Now().UTC().Add(archiveDownloadProgressTTL),
+	}
+	if err := db.Create(&interrupted).Error; err != nil {
+		t.Fatal(err)
+	}
+	_ = server.handleArchivePrepareInterruption(interrupted.ID, background.ErrClosed)
+	var stillRecoverable meta.ArchivePrepareRun
+	if err := db.Where("id = ?", interrupted.ID).First(&stillRecoverable).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stillRecoverable.Status != meta.ArchivePrepareStatusRunning {
+		t.Fatalf("server interruption changed durable archive prepare to %q", stillRecoverable.Status)
+	}
+	server.reconcileArchivePrepareTasks(ctx)
+	waitArchivePrepareRunStatus(t, db, interrupted.ID, meta.ArchivePrepareStatusCompleted)
+
+	cancelled := meta.ArchivePrepareRun{
+		ID:               uuid.NewString(),
+		OwnerID:          ownerA.ID,
+		RequestedIDsJSON: string(recoveryIDs),
+		Status:           meta.ArchivePrepareStatusQueued,
+		ExpiresAt:        time.Now().UTC().Add(archiveDownloadProgressTTL),
+	}
+	if err := db.Create(&cancelled).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := server.requestArchivePrepareCancel(ctx, cancelled); err != nil {
+		t.Fatal(err)
+	}
+	waitArchivePrepareRunStatus(t, db, cancelled.ID, meta.ArchivePrepareStatusCancelled)
+}
+
+func waitArchivePrepareCompleted(
+	t *testing.T,
+	router http.Handler,
+	token string,
+	prepared archiveDownloadPrepareResponse,
+) archiveDownloadPrepareResponse {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for prepared.State != meta.ArchivePrepareStatusCompleted {
+		if prepared.State == meta.ArchivePrepareStatusFailed ||
+			prepared.State == meta.ArchivePrepareStatusCancelled {
+			t.Fatalf("archive prepare ended in %q: %+v", prepared.State, prepared)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("archive prepare did not complete: %+v", prepared)
+		}
+		time.Sleep(10 * time.Millisecond)
+		response := request(
+			t,
+			router,
+			http.MethodGet,
+			"/api/v1/download/archive/prepare/"+prepared.TransferID,
+			token,
+			nil,
+			http.StatusOK,
+		)
+		if err := json.Unmarshal(response.Body.Bytes(), &prepared); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return prepared
+}
+
+func waitArchivePrepareRunStatus(
+	t *testing.T,
+	db *gorm.DB,
+	runID string,
+	status string,
+) meta.ArchivePrepareRun {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var run meta.ArchivePrepareRun
+		if err := db.Where("id = ?", runID).First(&run).Error; err != nil {
+			t.Fatal(err)
+		}
+		if run.Status == status {
+			return run
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("archive prepare %s status=%q want=%q", runID, run.Status, status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func archiveTestTimePtr(value time.Time) *time.Time {
+	return &value
 }
 
 func readArchiveTestEntries(t *testing.T, raw []byte) map[string]string {

@@ -285,8 +285,10 @@ The server exposes background work as a read model without introducing a generic
   The current Server contributes its live in-process snapshot immediately, while fresh presence from other
   Server processes is merged into the same Task Center row. Presence is observation-only: it never drives
   scheduling, retry, cancellation, or ownership, and expired rows are ignored/cleaned automatically.
-- Durable `FileOperation` and `SyncRun` rows remain their own sources of truth and contribute recent
-  instance-level progress/history.
+- Durable `FileOperation`, `SyncRun`, and archive-prepare rows remain their own sources of truth and
+  contribute current state/history. Archive preparation persists the selected node ids plus the completed
+  immutable ZIP manifest; the scheduler runtime row for `archive.prepare` is hidden to avoid duplicating that
+  durable owner-scoped row.
 - High-frequency scheduler work is grouped by `owner + kind` so thumbnail, preview, media-index and future
   face/place micro-jobs do not create thousands of Task Center rows.
 - Scheduler runtime rows expose bounded operational metadata already owned by the scheduler: `attempt`,
@@ -303,9 +305,18 @@ The server exposes background work as a read model without introducing a generic
   recent terminal history. The opaque `next_cursor` advances only terminal history using
   `updated_at + domain + id` keyset ordering. Ordinary-user history pages contain SyncRun history because
   FileOperation history is already rendered by its dedicated shared surface; admin global history merges
-  FileOperation and SyncRun terminal rows. Later cursor pages do not repeat current items.
+  FileOperation, SyncRun, and ArchivePrepare terminal rows. Ordinary users receive SyncRun + ArchivePrepare
+  history because FileOperation history already has its dedicated shared surface. Later cursor pages do not
+  repeat current items.
 - The Web/Desktop shared controller owns cursor state, de-duplication, polling refresh, and automatic
   IntersectionObserver history admission. There is no platform-local or user-facing “load more” control.
+- Archive prepare is a P0 / `interactive_io` durable user task. POST prepare persists a queued run and returns
+  immediately; Web and the Go/Desktop client poll the durable status until the manifest is ready. A per-run
+  PostgreSQL advisory lease prevents duplicate cross-Server preparation, 30-second reconciliation adopts
+  queued/orphaned work after process loss, and Task Center cancel writes durable `cancel_requested` state.
+  The completed manifest is then consumed by whichever Server receives the ZIP request, so no sticky session
+  is required. The ZIP HTTP stream itself remains request-scoped and is not advertised as resumable across a
+  broken connection.
 - Operator-driven system maintenance is represented by a durable domain row rather than scheduler memory.
   `source.verify` is the first template and `source.repair` reuses the same contract: the admin global Task
   Center always exposes stable idle/latest-result rows; `run` first persists a queued `SystemMaintenanceRun`;
@@ -341,7 +352,7 @@ The server exposes background work as a read model without introducing a generic
   requested action, result, and resulting task id when one is created. System-maintenance `run`/`cancel`
   uses the same audited control endpoint, so Web and Desktop share the same authorization and lifecycle.
 - `GET /api/v1/background-tasks/active-summary` is the lightweight owner-scoped badge contract. It counts
-  active FileOperation, SyncRun, and grouped scheduler rows without loading terminal history. Web/Desktop
+  active FileOperation, SyncRun, ArchivePrepare, and grouped scheduler rows without loading terminal history. Web/Desktop
   continuously poll only this compact summary for the shared Task Center badge; the detailed task list remains
   visibility-scoped. The shared controller combines Server background activity with client transfer activity,
   so neither platform duplicates badge arithmetic.

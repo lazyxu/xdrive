@@ -26,6 +26,9 @@ test('Web archive download creates one download group and one child per prepared
     "kind: 'download'",
     "direction: 'download'",
     "'/api/v1/download/archive/prepare'",
+    '/api/v1/download/archive/prepare/',
+    "prepared.state === 'queued'",
+    "prepared.state !== 'completed'",
     'this.startTransferChild(groupID',
     '/api/v1/download/archive/progress/',
     'applyProgress(await this.request<ArchiveDownloadProgress>',
@@ -43,7 +46,7 @@ test('archive progress is server-side entry progress rather than synthetic child
   for (const token of [
     'archiveDownloadPrepareResponse',
     'archiveDownloadProgressResponse',
-    'prepareArchiveDownloadProgress',
+    'seedArchiveDownloadProgress',
     'beginArchiveDownloadProgress',
     'updateArchiveDownloadProgress',
     'archiveProgressReader',
@@ -62,6 +65,7 @@ test('archive progress is server-side entry progress rather than synthetic child
 
 test('archive prepare/progress routes are optional and legacy archive downloads remain compatible', () => {
   assert.ok(router.includes('POST("/download/archive/prepare", s.prepareArchiveDownload)'), 'archive prepare route missing')
+  assert.ok(router.includes('GET("/download/archive/prepare/:id", s.getArchiveDownloadPrepare)'), 'archive prepare status route missing')
   assert.ok(router.includes('GET("/download/archive/progress/:id", s.getArchiveDownloadProgress)'), 'archive progress route missing')
   assert.ok(router.includes('POST("/download/archive", s.downloadArchive)'), 'legacy archive route missing')
   assert.ok(server.includes('TransferID string   `json:"transfer_id,omitempty"`'), 'archive transfer ticket must remain optional')

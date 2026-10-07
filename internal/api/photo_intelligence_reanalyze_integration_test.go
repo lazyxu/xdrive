@@ -365,6 +365,7 @@ func openPhotoIntelligenceAPITestDB(
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.FileOperation{},
+		&meta.ArchivePrepareRun{},
 		&meta.Source{},
 		&meta.SyncRun{},
 		&meta.SystemMaintenanceRun{},

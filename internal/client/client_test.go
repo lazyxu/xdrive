@@ -46,20 +46,34 @@ func TestDownloadToProgress(t *testing.T) {
 
 func TestDownloadArchiveToProgress(t *testing.T) {
 	var seenIDs []uint64
+	var seenTransferID string
+	prepareReads := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/download/archive" {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/download/archive/prepare":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"transfer_id":"archive-ticket","state":"queued"}`)
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/download/archive/prepare/archive-ticket":
+			prepareReads++
+			_, _ = io.WriteString(w, `{"transfer_id":"archive-ticket","state":"completed","filename":"files.zip","total_bytes":7,"files":[{"path":"a.txt","size":7}]}`)
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/download/archive":
+		default:
 			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Fatalf("content-type=%q", got)
 		}
 		var body struct {
-			IDs []uint64 `json:"ids"`
+			IDs        []uint64 `json:"ids"`
+			TransferID string   `json:"transfer_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
 		seenIDs = append([]uint64(nil), body.IDs...)
+		seenTransferID = body.TransferID
 		w.Header().Set("Content-Length", "7")
 		_, _ = io.WriteString(w, "zipdata")
 	}))
@@ -78,6 +92,9 @@ func TestDownloadArchiveToProgress(t *testing.T) {
 	}
 	if out.String() != "zipdata" || len(seenIDs) != 2 || seenIDs[0] != 2 || seenIDs[1] != 3 {
 		t.Fatalf("archive=%q ids=%v", out.String(), seenIDs)
+	}
+	if seenTransferID != "archive-ticket" || prepareReads == 0 {
+		t.Fatalf("durable prepare transfer=%q reads=%d", seenTransferID, prepareReads)
 	}
 	if len(progress) < 2 || progress[len(progress)-1] != [2]int64{7, 7} {
 		t.Fatalf("progress=%v", progress)

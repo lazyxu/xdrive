@@ -572,6 +572,7 @@ func assertMediaDerivativeResponses(
 func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	if err := db.Migrator().DropTable(
 		&meta.BackgroundRuntimePresence{},
+		&meta.ArchivePrepareRun{},
 		&meta.SystemMaintenanceRun{},
 		&meta.FileOperation{},
 		&meta.SyncRun{},
@@ -608,6 +609,7 @@ func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{},
+		&meta.ArchivePrepareRun{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.RefreshToken{},
 		&meta.Node{},

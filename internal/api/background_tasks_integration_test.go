@@ -48,6 +48,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		&meta.SystemMaintenanceRun{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.ArchivePrepareRun{},
 		&meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)

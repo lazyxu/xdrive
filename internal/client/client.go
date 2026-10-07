@@ -233,10 +233,11 @@ type BackgroundTaskPage struct {
 }
 
 type BackgroundTaskActiveSummary struct {
-	ActiveTotal   int `json:"active_total"`
-	FileOperation int `json:"file_operation"`
-	SyncRun       int `json:"sync_run"`
-	Scheduler     int `json:"scheduler"`
+	ActiveTotal    int `json:"active_total"`
+	FileOperation  int `json:"file_operation"`
+	SyncRun        int `json:"sync_run"`
+	ArchivePrepare int `json:"archive_prepare"`
+	Scheduler      int `json:"scheduler"`
 }
 
 type BackgroundTask struct {
@@ -1072,6 +1073,61 @@ func (c *Client) FileTextPreview(ctx context.Context, id uint64) (FileTextPrevie
 
 type DownloadProgress func(done, total int64)
 
+type ArchivePrepareFile struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+type ArchivePrepare struct {
+	TransferID string               `json:"transfer_id"`
+	State      string               `json:"state"`
+	Filename   string               `json:"filename,omitempty"`
+	TotalBytes int64                `json:"total_bytes,omitempty"`
+	Files      []ArchivePrepareFile `json:"files,omitempty"`
+	Error      string               `json:"error,omitempty"`
+}
+
+func (c *Client) waitArchivePrepare(
+	ctx context.Context,
+	ids []uint64,
+) (ArchivePrepare, error) {
+	var prepared ArchivePrepare
+	if err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/download/archive/prepare",
+		map[string]any{"ids": ids},
+		&prepared,
+	); err != nil {
+		return ArchivePrepare{}, err
+	}
+	for {
+		switch prepared.State {
+		case "completed":
+			return prepared, nil
+		case "failed", "cancelled":
+			if prepared.Error == "" {
+				prepared.Error = "archive prepare " + prepared.State
+			}
+			return ArchivePrepare{}, errors.New(prepared.Error)
+		}
+		select {
+		case <-ctx.Done():
+			return ArchivePrepare{}, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+		if err := c.json(
+			ctx,
+			http.MethodGet,
+			"/api/v1/download/archive/prepare/"+url.PathEscape(prepared.TransferID),
+			nil,
+			&prepared,
+		); err != nil {
+			return ArchivePrepare{}, err
+		}
+	}
+}
+
 func (c *Client) DownloadTo(ctx context.Context, id uint64, w io.Writer) error {
 	return c.DownloadToProgress(ctx, id, w, nil)
 }
@@ -1110,7 +1166,14 @@ func (c *Client) DownloadArchiveToProgress(
 			return fmt.Errorf("archive download node ids must be non-zero")
 		}
 	}
-	body, err := json.Marshal(map[string]any{"ids": ids})
+	prepared, err := c.waitArchivePrepare(ctx, ids)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]any{
+		"ids":         ids,
+		"transfer_id": prepared.TransferID,
+	})
 	if err != nil {
 		return err
 	}
