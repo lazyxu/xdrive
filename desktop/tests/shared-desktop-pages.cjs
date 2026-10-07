@@ -10,11 +10,26 @@ const conflicts = read('desktop', 'src', 'renderer', 'DesktopConflictsPage.tsx')
 const styles = read('desktop', 'src', 'renderer', 'styles.css')
 const metrics = read('ui', 'shared', 'src', 'mui', 'MetricCards.tsx')
 
-test('Desktop overview uses shared metric primitives instead of local status-card CSS', () => {
+test('Desktop home prioritizes user work and actions over diagnostic internals', () => {
   assert.ok(metrics.includes('sx?: SxProps<Theme>'))
   assert.ok(metrics.includes('...(Array.isArray(sx) ? sx : sx ? [sx] : [])'))
-  assert.ok(overview.includes('<XDriveMetricGrid sx={{ mt: 1.5 }}>'))
+  assert.ok(overview.includes('title="主页"'))
   assert.equal((overview.match(/<XDriveMetricCard\b/g) || []).length, 4)
+  for (const token of [
+    'title="快捷操作"',
+    'title="最近使用"',
+    'title="收藏"',
+    'cloudFileRecent(6)',
+    'cloudFileFavorites()',
+    'openPath(relativePath)',
+    '打开 xDrive 文件夹',
+    '云端文件',
+    '图库',
+    '传输',
+  ]) assert.ok(overview.includes(token), `Desktop home missing: ${token}`)
+  for (const diagnostic of ['IPC ', 'title="Agent"', '修订号', '桌面桥接']) {
+    assert.equal(overview.includes(diagnostic), false, `Desktop home must not expose diagnostic chrome: ${diagnostic}`)
+  }
   assert.ok(overview.includes('<Paper variant="outlined"'))
   for (const legacy of ['status-grid', 'status-card', 'status-dot', 'system-card']) {
     assert.equal(overview.includes(legacy), false)
