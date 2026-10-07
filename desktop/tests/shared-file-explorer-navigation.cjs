@@ -27,6 +27,13 @@ test('shared FileExplorer navigation controller owns cross-client per-tab view a
     'const tabs = navigationState.tabs',
     'const activeTabID = navigationState.activeTabID',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
+    'navigationSessionStorageKey?: string',
+    'xDriveFileExplorerNavigationSessionSnapshot',
+    'xDriveNormalizeFileExplorerNavigationSession',
+    'loadStoredNavigationSession<TCrumb>',
+    'storeNavigationSession(navigationSessionStorageKey, next, maxTabs)',
+    "initialNavigationSourceRef.current === 'session'",
+    'initialSessionRestorePendingRef.current',
     "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
     'const refresh = () =>',
     'onLoadDirectory(current.id, crumbs, sort, grouping)',
@@ -89,4 +96,32 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.ok(source.includes('navigateTo(nextCrumbs, true, navigationIntentID)'), `${label} Quick Access/Recent navigation must consume its reserved intent`)
     assert.ok(source.includes('isNavigationIntentCurrent(navigationIntentID)'), `${label} stale Recent file activation must be ignored`)
   }
+})
+
+
+test('FileExplorer session restore stays shared and persists only committed open-tab state', () => {
+  for (const token of [
+    'fileExplorerNavigationSessionVersion = 1',
+    'fileExplorerNavigationSessionHistoryLimit = 64',
+    'const storedState = initialNavigationState',
+    '? undefined\n      : loadStoredNavigationSession<TCrumb>',
+    "initialNavigationSourceRef.current = initialNavigationState",
+    "initialNavigationSourceRef.current === 'session'",
+    'const requestID = beginNavigation(targetTab.id)',
+    'targetTab.sort,',
+    'targetTab.grouping,',
+    'if (!isNavigationCurrent(requestID) || committed !== false) return',
+    'history: [fallbackCrumbs]',
+  ]) {
+    assert.ok(shared.includes(token), 'session-restore contract missing: ' + token)
+  }
+  assert.equal(
+    shared.includes('JSON.stringify(closedTabsRef.current)'),
+    false,
+    'recently closed tabs must remain in-memory and must not be session-persisted',
+  )
+  assert.ok(
+    workspace.includes('navigationSessionStorageKey,'),
+    'workspace controller must pass the optional session storage key into shared navigation',
+  )
 })

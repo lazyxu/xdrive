@@ -79,6 +79,7 @@ export function useXDriveFileExplorerWorkspace<
   findChildDirectory,
   searchCrumbsForResult,
   initialNavigationState,
+  navigationSessionStorageKey,
   onNavigationStateChange,
   onDirectoryAccess,
   onFileAccess,
@@ -101,6 +102,7 @@ export function useXDriveFileExplorerWorkspace<
     result: TSearch,
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
   initialNavigationState?: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>
+  navigationSessionStorageKey?: string
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>,
   ) => void
@@ -120,6 +122,7 @@ export function useXDriveFileExplorerWorkspace<
     searchActive: () => searchActiveRef.current,
     onLoadDirectory,
     initialNavigationState,
+    navigationSessionStorageKey,
     onNavigationStateChange,
     onAfterNavigate: (nextCrumbs) => {
       clearSearchRef.current()

@@ -1892,6 +1892,9 @@ export default function App({
               onLoadDirectory: loadCloudDirectory,
               onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
               navigationState: cloudFileExplorerNavigationState,
+              navigationSessionStorageKey: status?.server && status?.username
+                ? `xdrive.desktop.files.navigation_session.v1:${encodeURIComponent(status.server)}:${encodeURIComponent(status.username)}`
+                : undefined,
               onNavigationStateChange: rememberCloudFileExplorerNavigationState,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,

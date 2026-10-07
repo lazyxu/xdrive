@@ -350,3 +350,26 @@ test('Desktop FileExplorer recursively uploads dropped folders through shared pa
     assert.ok(explorer.includes(token), `missing Desktop dropped-folder support: ${token}`)
   }
 })
+
+
+test('Desktop FileExplorer persists tab sessions per server account while reconnect state stays authoritative', () => {
+  assert.ok(
+    explorer.includes('navigationSessionStorageKey?: string'),
+    'Desktop Explorer adapter must accept the shared session-storage key',
+  )
+  assert.ok(
+    explorer.includes('navigationSessionStorageKey,') &&
+      explorer.includes('initialNavigationState: navigationState'),
+    'Desktop must pass both persistent session and transient reconnect state to shared navigation',
+  )
+  assert.ok(
+    app.includes('xdrive.desktop.files.navigation_session.v1:') &&
+      app.includes('encodeURIComponent(status.server)') &&
+      app.includes('encodeURIComponent(status.username)'),
+    'Desktop session persistence must be scoped by server and username',
+  )
+  assert.ok(
+    app.includes('navigationState: cloudFileExplorerNavigationState'),
+    'Desktop reconnect snapshot must remain available as the explicit initial state',
+  )
+})

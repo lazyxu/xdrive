@@ -91,7 +91,20 @@ Native tab workflows use the same shared navigation state machine:
 - `Ctrl/Cmd+Shift+T` restores the most recently closed tab;
 - asynchronous duplicate/restore/bulk-close loads participate in the same navigation-generation arbitration as ordinary folder navigation and tab activation. A stale completion must never change the current directory, active tab, address path, or tab labels.
 
-The recently-closed stack is intentionally in-memory. Desktop's existing reconnect snapshot preserves committed open navigation state across a transient Agent disconnect, but this feature does not yet persist tabs/recently-closed state across a full renderer/app restart. Full session restore remains a separate optional persistence feature.
+The recently-closed stack is intentionally in-memory and is never persisted across a full restart.
+
+Open-tab session restore is an optional shared navigation capability used by both Web and Desktop:
+
+- only committed open-tab state is persisted: tab order, committed history/index, sort, grouping, view mode, and active tab;
+- Search drafts/results, pending navigation, in-flight directory loads, selections, rename state, clipboard state, and the recently-closed stack are not persisted;
+- persisted history is bounded to 64 entries per tab and the normal 12-tab workspace cap;
+- Web scopes the storage key by signed-in username within the current Server origin; Desktop scopes it by Server + username so accounts cannot inherit each other's paths;
+- Desktop's explicit in-memory reconnect snapshot takes precedence over persisted restart state;
+- after a full restart, the persisted active tab is reloaded through the same navigation generation and `onLoadDirectory` path as normal navigation, including its saved sort/grouping;
+- if the saved target no longer exists, the active tab falls back to the already-loaded current directory/default ordering rather than leaving tab/address/directory state inconsistent;
+- if the user performs a newer navigation while startup restore is pending, the startup request becomes stale and may not reclaim the visible directory.
+
+Session persistence is best-effort UI state. Storage/quota/privacy failures must not break FileExplorer navigation.
 
 ## Native keyboard profiles
 
