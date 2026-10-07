@@ -199,4 +199,76 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 		sampler.Progress.Total != 1 {
 		t.Fatalf("unexpected Storage sampler projection: %+v", sampler)
 	}
+
+	oldFinished := time.Now().UTC().Add(
+		-systemMaintenanceHistoryRetention - 24*time.Hour,
+	)
+	if err := db.Model(&meta.SystemMaintenanceRun{}).
+		Where("id IN ?", []uint64{recovered.ID, samplerID}).
+		Updates(map[string]any{
+			"finished_at": oldFinished,
+			"updated_at":  oldFinished,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	replacementSampler := meta.SystemMaintenanceRun{
+		Kind:           meta.SystemMaintenanceKindStorageSampler,
+		Status:         meta.SystemMaintenanceStatusSuccess,
+		Phase:          meta.SystemMaintenancePhaseFinished,
+		CompletedSteps: 1,
+		TotalSteps:     1,
+		StartedAt:      time.Now().UTC().Add(-time.Minute),
+		FinishedAt:     maintenanceTimePtr(time.Now().UTC()),
+	}
+	if err := db.Create(&replacementSampler).Error; err != nil {
+		t.Fatal(err)
+	}
+	lastKnownOnly := meta.SystemMaintenanceRun{
+		Kind:           "test_last_known_only",
+		Status:         meta.SystemMaintenanceStatusSuccess,
+		Phase:          meta.SystemMaintenancePhaseFinished,
+		CompletedSteps: 1,
+		TotalSteps:     1,
+		StartedAt:      oldFinished.Add(-time.Minute),
+		FinishedAt:     &oldFinished,
+		UpdatedAt:      oldFinished,
+	}
+	if err := db.Create(&lastKnownOnly).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := server.cleanupSystemMaintenanceHistory(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, deletedID := range []uint64{recovered.ID, samplerID} {
+		var count int64
+		if err := db.Model(&meta.SystemMaintenanceRun{}).
+			Where("id = ?", deletedID).
+			Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("expired maintenance run %d was not deleted", deletedID)
+		}
+	}
+	for _, retainedID := range []uint64{
+		runID,
+		replacementSampler.ID,
+		lastKnownOnly.ID,
+	} {
+		var count int64
+		if err := db.Model(&meta.SystemMaintenanceRun{}).
+			Where("id = ?", retainedID).
+			Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("maintenance run %d should be retained", retainedID)
+		}
+	}
+}
+
+func maintenanceTimePtr(value time.Time) *time.Time {
+	return &value
 }

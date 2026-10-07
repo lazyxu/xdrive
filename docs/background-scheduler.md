@@ -156,7 +156,9 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    implementations and manual admin staging cleanup remain unchanged. The elected leader also records a durable
    maintenance-domain run with phase/progress/outcome in `xd_system_maintenance_runs`. Admin global Task Center
    projects only the latest Janitor and Storage sampler runs from this shared table; ordinary users never query or
-   receive system-maintenance rows. This is cluster-aware status, not a second generic task table.
+   receive system-maintenance rows. Janitor also applies 90-day batched retention to finished maintenance-run
+   history, while always preserving the latest row for each maintenance kind so a long-idle installation retains
+   its last-known status. This is cluster-aware status, not a second generic task table.
 
 ## Fairness and priority policy
 

@@ -11,6 +11,11 @@ import (
 	"github.com/lazyxu/xdrive/internal/sourceaccount"
 )
 
+const (
+	systemMaintenanceHistoryRetention = 90 * 24 * time.Hour
+	systemMaintenanceHistoryBatchSize = 500
+)
+
 type systemMaintenancePassResult struct {
 	CompletedSteps int
 	TotalSteps     int
@@ -49,6 +54,44 @@ func (r systemMaintenancePassResult) status() string {
 
 func (r systemMaintenancePassResult) errorText() string {
 	return strings.Join(r.issues, "; ")
+}
+
+func (s *Server) cleanupSystemMaintenanceHistory(ctx context.Context) error {
+	if s == nil || s.DB == nil {
+		return nil
+	}
+	cutoff := time.Now().UTC().Add(-systemMaintenanceHistoryRetention)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		latestByKind := s.DB.WithContext(ctx).
+			Model(&meta.SystemMaintenanceRun{}).
+			Select("MAX(id)").
+			Group("kind")
+
+		var ids []uint64
+		if err := s.DB.WithContext(ctx).
+			Model(&meta.SystemMaintenanceRun{}).
+			Where("finished_at IS NOT NULL AND finished_at < ?", cutoff).
+			Where("id NOT IN (?)", latestByKind).
+			Order("id ASC").
+			Limit(systemMaintenanceHistoryBatchSize).
+			Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := s.DB.WithContext(ctx).
+			Where("id IN ?", ids).
+			Delete(&meta.SystemMaintenanceRun{}).Error; err != nil {
+			return err
+		}
+		if len(ids) < systemMaintenanceHistoryBatchSize {
+			return nil
+		}
+	}
 }
 
 func (s *Server) beginSystemMaintenanceRun(
