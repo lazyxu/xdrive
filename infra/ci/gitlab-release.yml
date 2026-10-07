@@ -30,11 +30,18 @@ release-assets:
   tags:
     - linux
   stage: release-build
-  needs:
-    - job: build-source-agent
-      artifacts: true
-    - job: final-gate
-      artifacts: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      needs:
+        - job: build-source-agent
+          artifacts: true
+        - job: final-gate
+          artifacts: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      needs:
+        - job: build-source-agent
+          artifacts: true
+    - when: never
   script:
     - bash scripts/ci/gitlab-release-assets.sh
   artifacts:
@@ -61,15 +68,26 @@ publish-server-images:
     - .release-linux-docker
   stage: release-build
   resource_group: xdrive-gitlab-server-images
-  needs:
-    - job: final-gate
-      artifacts: false
-    - job: server-image
-      artifacts: true
-    - job: caddy-image
-      artifacts: true
-    - job: photo-face-image
-      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/'
+      needs:
+        - job: final-gate
+          artifacts: false
+        - job: server-image
+          artifacts: true
+        - job: caddy-image
+          artifacts: true
+        - job: photo-face-image
+          artifacts: true
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      needs:
+        - job: server-image
+          artifacts: true
+        - job: caddy-image
+          artifacts: true
+        - job: photo-face-image
+          artifacts: true
+    - when: never
   script:
     - bash scripts/ci/gitlab-server-images.sh
 

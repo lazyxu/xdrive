@@ -38,12 +38,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	gitlabJobs := gitlabJobKeys(gitlab)
 	githubProviderSpecificJobs := map[string]struct{}{
 		"server-rootless-e2e": {},
+		"publish-master":      {},
+		"publish-stable":      {},
 	}
 	var githubCoreJobs []string
 	for _, name := range githubJobs {
-		if name == "publish" {
-			continue
-		}
 		if _, providerSpecific := githubProviderSpecificJobs[name]; providerSpecific {
 			continue
 		}
@@ -411,6 +410,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"test-windows-smoke-artifact:",
 		"test-source-agent-artifact:",
 		"final-gate:",
+		"publish-master:",
+		"publish-stable:",
 		"needs: [final-gate]",
 	)
 	requireRaw(t, "GitLab build-once contract", gitlabRaw,
@@ -474,6 +475,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image"})
+	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",
 		"test-windows-upgrade-artifact",
@@ -916,6 +919,13 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		}
 	}
 
+	requireRaw(t, "GitHub master/stable publish split", githubRaw,
+		"publish-master:",
+		"if: github.event_name == 'push' && github.ref == 'refs/heads/master'",
+		"publish-stable:",
+		"if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+		"needs: [final-gate]",
+	)
 	requireRaw(t, "GitHub Publish Packages", githubRelease,
 		"workflow_call:",
 		"name: xdrive-linux-amd64",
@@ -926,14 +936,14 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"target_tag=\"latest\"",
 		"retention-days: 14",
 		"s|@IMAGE_REGISTRY@|ghcr.io/$GITHUB_REPOSITORY_OWNER|g",
-		"Download exact Linux installer tested by CI",
-		"Download exact Windows installer tested by CI",
+		"Download exact Linux installer produced by CI",
+		"Download exact Windows installer produced by CI",
 		"Verify single-installer distribution contract",
 		"pattern: xdrive-*-image",
 		"load_exact xdrive-server-image xdrive/server:test",
 		"load_exact xdrive-caddy-image xdrive/caddy:test",
-		"Load and verify exact images tested by CI",
-		"Push exact tested images in parallel",
+		"Load and verify exact CI-produced images",
+		"Push exact CI-produced images in parallel",
 		"docker push \"$remote\" &",
 		"scripts/ci/import-docker-image.sh",
 	)
@@ -970,6 +980,15 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		}
 	}
 
+	var gitlabReleaseYAML map[string]any
+	if err := yaml.Unmarshal([]byte(gitlabRelease), &gitlabReleaseYAML); err != nil {
+		t.Fatalf("parse GitLab release CI: %v", err)
+	}
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image", "photo-face-image"})
+
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
 		"release-assets:",
@@ -1000,12 +1019,12 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"XDRIVE_PROMOTION_TAG=\"latest\"",
 		"--use-package-registry",
 		"--package-name xdrive-build-packages",
-		"CI-tested source-agent artifact is missing",
+		"CI-produced source-agent artifact is missing",
 		"s|@IMAGE_REGISTRY@|$CI_REGISTRY_IMAGE|g",
 		"scripts/ci/import-docker-image.sh",
 		"docker push \"$image\" &",
 		"pids=(",
-		"Published exact CI-tested GitLab server images",
+		"Published exact CI-produced GitLab server images",
 	)
 	if strings.Contains(gitlabPublishRelease, "repository/tags/") {
 		t.Error("GitLab 17.x CI job tokens must not attempt unsupported repository tag mutation during release publication")
@@ -1210,6 +1229,29 @@ func assertYAMLStringList(t *testing.T, root map[string]any, key string, want []
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("YAML key %q=%v want=%v", key, got, want)
 	}
+}
+
+func assertGitLabRuleNeeds(t *testing.T, config map[string]any, jobName, condition string, want []string) {
+	t.Helper()
+	job, ok := config[jobName].(map[string]any)
+	if !ok {
+		t.Fatalf("GitLab release job %q missing or invalid", jobName)
+	}
+	rules, ok := job["rules"].([]any)
+	if !ok {
+		t.Fatalf("GitLab release job %q rules missing or invalid", jobName)
+	}
+	for _, rawRule := range rules {
+		rule, ok := rawRule.(map[string]any)
+		if !ok {
+			continue
+		}
+		if rule["if"] == condition {
+			assertNeedNames(t, "GitLab rule", jobName, rule["needs"], want)
+			return
+		}
+	}
+	t.Errorf("GitLab release job %q missing rule for %q", jobName, condition)
 }
 
 func assertGitHubJobNeeds(t *testing.T, github map[string]any, jobName string, want []string) {

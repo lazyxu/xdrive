@@ -8,7 +8,7 @@ source scripts/ci/gitlab-release-version.sh
 for arch in amd64 arm64; do
   source_agent="release/source-agent/xdrive-source-agent-linux-$arch"
   test -f "$source_agent" || {
-    echo "CI-tested source-agent artifact is missing: $source_agent" >&2
+    echo "CI-produced source-agent artifact is missing: $source_agent" >&2
     exit 1
   }
   cp "$source_agent" "release/xdrive-source-agent-linux-$arch"
