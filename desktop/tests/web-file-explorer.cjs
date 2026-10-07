@@ -343,3 +343,21 @@ test('Web Search range normalizes server breadcrumbs into the shared crumbs cont
   assert.ok(explorer.includes('type WebSearchResult = XDriveCloudFilesSearchResult<Node>'), 'Web Explorer must consume the shared Search result contract')
   assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web Explorer must consume normalized shared crumbs')
 })
+
+
+test('Web FileExplorer persists tab sessions in an account-scoped shared navigation key', () => {
+  assert.ok(
+    explorer.includes('navigationSessionStorageKey?: string') &&
+      explorer.includes('navigationSessionStorageKey,'),
+    'Web Explorer adapter must pass the optional shared session-storage key',
+  )
+  assert.ok(
+    app.includes('xdrive.files.navigation_session.v1:') &&
+      app.includes('encodeURIComponent(username)'),
+    'Web session persistence must be scoped by username inside the current Server origin',
+  )
+  assert.ok(
+    workspaceController.includes('navigationSessionStorageKey,'),
+    'Web and Desktop must share the same session-restore implementation',
+  )
+})

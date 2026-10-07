@@ -949,6 +949,7 @@ function FileManager({
                 crumbs={crumbs}
                 virtualDirectory={virtualDirectory}
                 loading={loading}
+                navigationSessionStorageKey={`xdrive.files.navigation_session.v1:${encodeURIComponent(username)}`}
                 uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
                 onRefreshCurrentDirectoryIfIdle={refreshCurrentDirectoryIfIdle}

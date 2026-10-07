@@ -43,6 +43,236 @@ export type XDriveFileExplorerNavigationState<
   activeTabID: string
 }
 
+
+const fileExplorerNavigationSessionVersion = 1
+const fileExplorerNavigationSessionHistoryLimit = 64
+
+function xDriveFileExplorerNavigationSessionHistory<
+  TCrumb extends XDriveFileExplorerCrumb,
+>(
+  history: readonly TCrumb[][],
+  historyIndex: number,
+) {
+  if (history.length <= fileExplorerNavigationSessionHistoryLimit) {
+    return {
+      history: history.map((entry) => entry.map((crumb) => ({ ...crumb }))),
+      historyIndex,
+    }
+  }
+  const halfWindow = Math.floor(fileExplorerNavigationSessionHistoryLimit / 2)
+  const start = Math.max(
+    0,
+    Math.min(
+      historyIndex - halfWindow,
+      history.length - fileExplorerNavigationSessionHistoryLimit,
+    ),
+  )
+  return {
+    history: history
+      .slice(start, start + fileExplorerNavigationSessionHistoryLimit)
+      .map((entry) => entry.map((crumb) => ({ ...crumb }))),
+    historyIndex: historyIndex - start,
+  }
+}
+
+export function xDriveFileExplorerNavigationSessionSnapshot<
+  TCrumb extends XDriveFileExplorerCrumb,
+>(
+  state: XDriveFileExplorerNavigationState<TCrumb>,
+  maxTabs = 12,
+): XDriveFileExplorerNavigationState<TCrumb> {
+  const tabs = state.tabs.slice(0, maxTabs).flatMap((tab) => {
+    if (tab.history.length === 0 || tab.historyIndex < 0) return []
+    const boundedIndex = Math.min(tab.historyIndex, tab.history.length - 1)
+    const bounded = xDriveFileExplorerNavigationSessionHistory(
+      tab.history,
+      boundedIndex,
+    )
+    return [{
+      ...cloneNavigationTab(tab),
+      history: bounded.history,
+      historyIndex: bounded.historyIndex,
+    }]
+  })
+  return {
+    tabs,
+    activeTabID: tabs.some((tab) => tab.id === state.activeTabID)
+      ? state.activeTabID
+      : tabs[0]?.id ?? '',
+  }
+}
+
+function xDriveFileExplorerNavigationSessionCrumb<
+  TCrumb extends XDriveFileExplorerCrumb,
+>(value: unknown): TCrumb | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const crumb = value as { id?: unknown; name?: unknown }
+  const validID = typeof crumb.id === 'string' || (
+    typeof crumb.id === 'number' && Number.isFinite(crumb.id)
+  )
+  if (!validID || typeof crumb.name !== 'string') return null
+  return {
+    id: crumb.id as XDriveFileExplorerCrumb['id'],
+    name: crumb.name,
+  } as TCrumb
+}
+
+export function xDriveNormalizeFileExplorerNavigationSession<
+  TCrumb extends XDriveFileExplorerCrumb,
+>(
+  value: unknown,
+  maxTabs = 12,
+): XDriveFileExplorerNavigationState<TCrumb> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const payload = value as { version?: unknown; state?: unknown }
+  if (
+    payload.version !== fileExplorerNavigationSessionVersion ||
+    !payload.state ||
+    typeof payload.state !== 'object' ||
+    Array.isArray(payload.state)
+  ) return undefined
+
+  const rawState = payload.state as { tabs?: unknown; activeTabID?: unknown }
+  if (!Array.isArray(rawState.tabs) || typeof rawState.activeTabID !== 'string') {
+    return undefined
+  }
+
+  const seenIDs = new Set<string>()
+  const tabs: XDriveFileExplorerNavigationTab<TCrumb>[] = []
+  for (const valueTab of rawState.tabs.slice(0, maxTabs)) {
+    if (!valueTab || typeof valueTab !== 'object' || Array.isArray(valueTab)) continue
+    const tab = valueTab as {
+      id?: unknown
+      history?: unknown
+      historyIndex?: unknown
+      sort?: unknown
+      grouping?: unknown
+      viewMode?: unknown
+    }
+    if (
+      typeof tab.id !== 'string' ||
+      !tab.id.trim() ||
+      seenIDs.has(tab.id) ||
+      !Array.isArray(tab.history) ||
+      !Number.isInteger(tab.historyIndex) ||
+      (tab.historyIndex as number) < 0 ||
+      (tab.historyIndex as number) >= tab.history.length ||
+      !tab.sort ||
+      typeof tab.sort !== 'object' ||
+      Array.isArray(tab.sort) ||
+      !tab.grouping ||
+      typeof tab.grouping !== 'object' ||
+      Array.isArray(tab.grouping) ||
+      (tab.viewMode !== 'details' && tab.viewMode !== 'grid')
+    ) continue
+
+    const sort = tab.sort as { key?: unknown; direction?: unknown }
+    if (
+      !['name', 'updated', 'type', 'size'].includes(String(sort.key)) ||
+      (sort.direction !== 'asc' && sort.direction !== 'desc')
+    ) continue
+    const grouping = tab.grouping as { groupBy?: unknown; foldersFirst?: unknown }
+    if (
+      !['none', 'type', 'modified', 'size'].includes(String(grouping.groupBy)) ||
+      typeof grouping.foldersFirst !== 'boolean'
+    ) continue
+
+    const rawHistory = tab.history
+    const historyIndex = tab.historyIndex as number
+    const halfWindow = Math.floor(fileExplorerNavigationSessionHistoryLimit / 2)
+    const start = Math.max(
+      0,
+      Math.min(
+        historyIndex - halfWindow,
+        rawHistory.length - fileExplorerNavigationSessionHistoryLimit,
+      ),
+    )
+    const history: TCrumb[][] = []
+    let valid = true
+    for (const rawEntry of rawHistory.slice(
+      start,
+      start + fileExplorerNavigationSessionHistoryLimit,
+    )) {
+      if (!Array.isArray(rawEntry) || rawEntry.length === 0) {
+        valid = false
+        break
+      }
+      const entry: TCrumb[] = []
+      for (const rawCrumb of rawEntry) {
+        const crumb = xDriveFileExplorerNavigationSessionCrumb<TCrumb>(rawCrumb)
+        if (!crumb) {
+          valid = false
+          break
+        }
+        entry.push(crumb)
+      }
+      if (!valid) break
+      history.push(entry)
+    }
+    if (!valid || history.length === 0) continue
+
+    seenIDs.add(tab.id)
+    tabs.push({
+      id: tab.id,
+      history,
+      historyIndex: historyIndex - start,
+      sort: {
+        key: sort.key as XDriveFileExplorerSort['key'],
+        direction: sort.direction,
+      },
+      grouping: {
+        groupBy: grouping.groupBy as XDriveFileExplorerGrouping['groupBy'],
+        foldersFirst: grouping.foldersFirst,
+      },
+      viewMode: tab.viewMode,
+    })
+  }
+  if (tabs.length === 0) return undefined
+  return {
+    tabs,
+    activeTabID: tabs.some((tab) => tab.id === rawState.activeTabID)
+      ? rawState.activeTabID
+      : tabs[0].id,
+  }
+}
+
+function loadStoredNavigationSession<TCrumb extends XDriveFileExplorerCrumb>(
+  storageKey: string | undefined,
+  maxTabs: number,
+) {
+  if (!storageKey || typeof window === 'undefined') return undefined
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    return raw
+      ? xDriveNormalizeFileExplorerNavigationSession<TCrumb>(
+          JSON.parse(raw),
+          maxTabs,
+        )
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function storeNavigationSession<TCrumb extends XDriveFileExplorerCrumb>(
+  storageKey: string | undefined,
+  state: XDriveFileExplorerNavigationState<TCrumb>,
+  maxTabs: number,
+) {
+  if (!storageKey || typeof window === 'undefined') return
+  const snapshot = xDriveFileExplorerNavigationSessionSnapshot(state, maxTabs)
+  if (snapshot.tabs.length === 0) return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      version: fileExplorerNavigationSessionVersion,
+      state: snapshot,
+    }))
+  } catch {
+    // Session restore is best-effort UI state. Quota/privacy settings must not
+    // break FileExplorer navigation.
+  }
+}
+
 function cloneNavigationTab<TCrumb extends XDriveFileExplorerCrumb>(
   tab: XDriveFileExplorerNavigationTab<TCrumb>,
 ): XDriveFileExplorerNavigationTab<TCrumb> {
@@ -117,6 +347,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   onLoadDirectory,
   onAfterNavigate,
   initialNavigationState,
+  navigationSessionStorageKey,
   onNavigationStateChange,
   maxTabs = 12,
 }: {
@@ -131,6 +362,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   ) => Promise<boolean | void>
   onAfterNavigate?: (crumbs: TCrumb[]) => void
   initialNavigationState?: XDriveFileExplorerNavigationState<TCrumb>
+  navigationSessionStorageKey?: string
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<TCrumb>,
   ) => void
@@ -141,13 +373,27 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     [viewModeStorageKey],
   )
   const initialNavigationStateRef = useRef<XDriveFileExplorerNavigationState<TCrumb> | null>(null)
+  const initialNavigationSourceRef = useRef<'explicit' | 'session' | 'default' | null>(null)
   if (initialNavigationStateRef.current === null) {
+    const storedState = initialNavigationState
+      ? undefined
+      : loadStoredNavigationSession<TCrumb>(
+          navigationSessionStorageKey,
+          maxTabs,
+        )
+    const restoredState = initialNavigationState ?? storedState
+    initialNavigationSourceRef.current = initialNavigationState
+      ? 'explicit'
+      : storedState ? 'session' : 'default'
     initialNavigationStateRef.current = createInitialNavigationState(
-      initialNavigationState,
+      restoredState,
       initialViewMode,
       maxTabs,
     )
   }
+  const initialSessionRestorePendingRef = useRef(
+    initialNavigationSourceRef.current === 'session',
+  )
   const nextTabIDRef = useRef(nextNavigationTabID(initialNavigationStateRef.current.tabs))
   const navigationRequestRef = useRef({
     id: 0,
@@ -173,6 +419,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     navigationStateRef.current = next
     setNavigationState(next)
     onNavigationStateChangeRef.current?.(cloneNavigationState(next))
+    storeNavigationSession(navigationSessionStorageKey, next, maxTabs)
   }
 
   const rememberClosedTabs = (
@@ -264,6 +511,11 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     onNavigationStateChangeRef.current?.(
       cloneNavigationState(navigationStateRef.current),
     )
+    storeNavigationSession(
+      navigationSessionStorageKey,
+      navigationStateRef.current,
+      maxTabs,
+    )
     return () => {
       navigationRequestRef.current = {
         ...navigationRequestRef.current,
@@ -271,6 +523,48 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (
+      !initialSessionRestorePendingRef.current ||
+      crumbs.length === 0
+    ) return
+    initialSessionRestorePendingRef.current = false
+
+    const currentState = navigationStateRef.current
+    const targetTab = currentState.tabs.find(
+      (tab) => tab.id === currentState.activeTabID,
+    )
+    const targetCrumbs = targetTab?.history[targetTab.historyIndex]
+    const target = targetCrumbs?.at(-1)
+    if (!targetTab || !targetCrumbs || !target) return
+
+    const fallbackCrumbs = crumbs.map((crumb) => ({ ...crumb }))
+    const requestID = beginNavigation(targetTab.id)
+    void (async () => {
+      const committed = await onLoadDirectory(
+        target.id,
+        targetCrumbs,
+        targetTab.sort,
+        targetTab.grouping,
+      )
+      if (!isNavigationCurrent(requestID) || committed !== false) return
+      commitNavigationState((state) => ({
+        ...state,
+        tabs: state.tabs.map((tab) => (
+          tab.id === state.activeTabID
+            ? {
+                ...tab,
+                history: [fallbackCrumbs],
+                historyIndex: 0,
+                sort: { ...XDRIVE_FILE_EXPLORER_DEFAULT_SORT },
+                grouping: { ...XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING },
+              }
+            : tab
+        )),
+      }))
+    })()
+  }, [crumbs, onLoadDirectory])
 
   useEffect(() => {
     if (crumbs.length === 0 || !activeTab || activeTab.history.length > 0) return

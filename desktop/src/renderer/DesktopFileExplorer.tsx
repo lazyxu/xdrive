@@ -125,6 +125,7 @@ export default function DesktopFileExplorer({
   onLoadDirectory,
   onRefreshCurrentDirectoryIfIdle,
   navigationState,
+  navigationSessionStorageKey,
   onNavigationStateChange,
   onOpenTrash,
   trashActive,
@@ -171,6 +172,7 @@ export default function DesktopFileExplorer({
     expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
   navigationState?: XDriveFileExplorerNavigationState<AgentCloudCrumb>
+  navigationSessionStorageKey?: string
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<AgentCloudCrumb>,
   ) => void
@@ -318,6 +320,7 @@ export default function DesktopFileExplorer({
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     onLoadDirectory,
     initialNavigationState: navigationState,
+    navigationSessionStorageKey,
     onNavigationStateChange,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
       const result = await window.xdriveDesktop.agent.cloudSearchRange(

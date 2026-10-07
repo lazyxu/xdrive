@@ -65,6 +65,7 @@ export default function WebFileExplorer({
   crumbs,
   virtualDirectory,
   loading,
+  navigationSessionStorageKey,
   uploadProgress,
   onLoadDirectory,
   onRefreshCurrentDirectoryIfIdle,
@@ -95,6 +96,7 @@ export default function WebFileExplorer({
   crumbs: Crumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
+  navigationSessionStorageKey?: string
   uploadProgress: number | null
   onLoadDirectory: (
     id: number,
@@ -210,6 +212,7 @@ export default function WebFileExplorer({
     crumbs,
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
+    navigationSessionStorageKey,
     onLoadDirectory,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
       const page = await api.searchRange(

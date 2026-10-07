@@ -298,7 +298,7 @@ function createDirectoryDriver(initialCrumbs) {
   }
 }
 
-function createNavigationHarness(driver) {
+function createNavigationHarness(driver, options = {}) {
   const runtime = createHookRuntime()
   const useNavigation = loadNavigationHook(runtime.react)
   const navigated = []
@@ -306,8 +306,10 @@ function createNavigationHarness(driver) {
   return {
     render() {
       return runtime.render(() => useNavigation({
+        ...options,
         crumbs: driver.crumbs,
-        viewModeStorageKey: 'xdrive.test.fileexplorer.navigation-race',
+        viewModeStorageKey: options.viewModeStorageKey ??
+          'xdrive.test.fileexplorer.navigation-race',
         onLoadDirectory: driver.onLoadDirectory,
         onAfterNavigate: (crumbs) => {
           navigated.push(cloneCrumbs(crumbs))
@@ -317,6 +319,134 @@ function createNavigationHarness(driver) {
     navigated,
   }
 }
+
+function installNavigationSessionStorage(entries = {}) {
+  const previousWindow = global.window
+  const values = new Map(Object.entries(entries))
+  global.window = {
+    ...(previousWindow ?? {}),
+    localStorage: {
+      getItem: (key) => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => { values.set(key, String(value)) },
+      removeItem: (key) => { values.delete(key) },
+    },
+  }
+  return {
+    values,
+    restore() {
+      if (previousWindow === undefined) delete global.window
+      else global.window = previousWindow
+    },
+  }
+}
+
+function persistedNavigationSession(state) {
+  return JSON.stringify({ version: 1, state })
+}
+
+test('persisted FileExplorer session restores its active committed directory', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderB = { id: 2, name: 'B' }
+  const key = 'xdrive.test.fileexplorer.session'
+  const storage = installNavigationSessionStorage({
+    [key]: persistedNavigationSession({
+      tabs: [
+        {
+          id: 'tab-1',
+          history: [[root]],
+          historyIndex: 0,
+          sort: { key: 'name', direction: 'asc' },
+          grouping: { groupBy: 'none', foldersFirst: true },
+          viewMode: 'details',
+        },
+        {
+          id: 'tab-2',
+          history: [[root], [root, folderB]],
+          historyIndex: 1,
+          sort: { key: 'updated', direction: 'desc' },
+          grouping: { groupBy: 'type', foldersFirst: true },
+          viewMode: 'grid',
+        },
+      ],
+      activeTabID: 'tab-2',
+    }),
+  })
+  try {
+    const driver = createDirectoryDriver([root])
+    const harness = createNavigationHarness(driver, {
+      navigationSessionStorageKey: key,
+    })
+
+    harness.render()
+    await flushAsync()
+    const navigation = harness.render()
+
+    assert.equal(driver.visibleDirectoryID, folderB.id)
+    assert.equal(navigation.activeTabID, 'tab-2')
+    assert.equal(navigation.pathValue, '我的文件/B')
+    assert.equal(navigation.sort.key, 'updated')
+    assert.equal(navigation.grouping.groupBy, 'type')
+    assert.equal(navigation.viewMode, 'grid')
+
+    const saved = JSON.parse(storage.values.get(key))
+    assert.equal(saved.version, 1)
+    assert.equal(saved.state.activeTabID, 'tab-2')
+    assert.equal(saved.state.tabs.length, 2)
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(saved.state, 'closedTabs'),
+      false,
+      'recently closed tabs must not cross a full restart',
+    )
+  } finally {
+    storage.restore()
+  }
+})
+
+test('a newer manual navigation supersedes a pending persisted-session restore', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderB = { id: 2, name: 'B' }
+  const folderC = { id: 3, name: 'C' }
+  const key = 'xdrive.test.fileexplorer.session-race'
+  const storage = installNavigationSessionStorage({
+    [key]: persistedNavigationSession({
+      tabs: [{
+        id: 'tab-1',
+        history: [[root], [root, folderB]],
+        historyIndex: 1,
+        sort: { key: 'name', direction: 'asc' },
+        grouping: { groupBy: 'none', foldersFirst: true },
+        viewMode: 'details',
+      }],
+      activeTabID: 'tab-1',
+    }),
+  })
+  try {
+    const driver = createDirectoryDriver([root])
+    driver.controlRequests()
+    const harness = createNavigationHarness(driver, {
+      navigationSessionStorageKey: key,
+    })
+
+    const navigation = harness.render()
+    const manual = navigation.navigateTo([root, folderC])
+
+    driver.resolveDirectory(folderC.id)
+    await manual
+    driver.resolveDirectory(folderB.id)
+    await flushAsync()
+
+    const finalNavigation = harness.render()
+    assert.equal(driver.visibleDirectoryID, folderC.id)
+    assert.equal(finalNavigation.pathValue, '我的文件/C')
+    assert.equal(
+      finalNavigation.tabs.find((tab) => tab.id === finalNavigation.activeTabID)?.label,
+      folderC.name,
+      'stale session restore must not reclaim navigation after a manual action',
+    )
+  } finally {
+    storage.restore()
+  }
+})
 
 test('rapid same-tab folder navigation keeps tab title aligned with the newest visible directory', async () => {
   const root = { id: 1, name: '我的文件' }
