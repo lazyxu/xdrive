@@ -480,6 +480,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   setAppearance: (appearance: 'system' | 'light' | 'dark') => ipcRenderer.invoke('desktop:set-appearance', appearance),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
+  startNativeDragOut: (relativePath: string) =>
+    ipcRenderer.send('desktop:start-native-drag-out', relativePath),
   copyText: (text: string) => clipboard.writeText(text),
   hide: () => ipcRenderer.send('desktop:hide'),
   quit: () => ipcRenderer.send('desktop:quit'),

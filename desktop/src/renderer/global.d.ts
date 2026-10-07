@@ -373,6 +373,7 @@ declare global {
       setAppearance: (appearance: 'system' | 'light' | 'dark') => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
       openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
+      startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
       hide: () => void
       quit: () => void
