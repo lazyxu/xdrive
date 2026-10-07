@@ -81,6 +81,7 @@ import {
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
   type AgentCloudChildrenRange,
+  type AgentCloudNodeChangePage,
   type AgentCloudQuickAccessItem,
   type AgentCloudRecentItem,
   type AgentCloudQuota,
@@ -2727,6 +2728,24 @@ function registerIPCHandlers() {
       normalizedIncludeCount,
       grouping,
     )
+  }, false))
+
+  ipcMain.handle('agent:cloud-changes', (
+    _event,
+    afterValue: unknown,
+    limitValue: unknown,
+  ) => runAgentAction<AgentCloudNodeChangePage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-change-feed')
+    const after = afterValue === undefined ? 0 : afterValue
+    const limit = limitValue === undefined ? 200 : limitValue
+    if (typeof after !== 'number' || !Number.isSafeInteger(after) || after < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Change cursor must be a non-negative integer.')
+    }
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      throw new AgentIPCError('invalid_input', 0, 'Change limit must be between 1 and 1000.')
+    }
+    return requireAgentClient().cloudChanges(after, limit)
   }, false))
 
   ipcMain.handle('agent:cloud-quick-access', () => runAgentAction<AgentCloudQuickAccessItem[]>(async () => {

@@ -120,6 +120,13 @@ function loadCloudFilesController(react) {
         ),
       }
     }
+    if (request === '../cloud-files') {
+      return {
+        xDriveCloudFilesChangeAffectsParent: (change, parentID) => (
+          change.affected_parent_ids.includes(parentID)
+        ),
+      }
+    }
     if (request === './VirtualCollectionController') {
       return { useXDriveVirtualCollection: useVirtualCollection }
     }
@@ -416,4 +423,299 @@ test('applyQuota invalidates an older pending Cloud Files quota refresh', async 
     appliedQuota,
     'an older quota refresh must not overwrite a newer applied quota value',
   )
+})
+
+test('Cloud Files change feed refreshes only the affected current directory', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const rangeCalls = []
+  let changeCall = 0
+  const port = {
+    getRoot: async () => ({ id: 1, name: 'root' }),
+    getPage: async () => ({ items: [], has_more: false }),
+    getRange: async (parentID, offset, limit, requestSort, includeCount, grouping) => {
+      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount, grouping })
+      return {
+        items: [],
+        total_count: 0,
+        total_count_included: includeCount,
+        offset,
+        limit,
+        sort: requestSort.key,
+        order: requestSort.direction,
+        groups: [],
+      }
+    },
+    getChanges: async (after) => {
+      changeCall += 1
+      if (changeCall === 1) {
+        assert.equal(after, 0)
+        return {
+          changes: [],
+          next_cursor: 10,
+          latest_cursor: 10,
+          has_more: false,
+        }
+      }
+      if (changeCall === 2) {
+        assert.equal(after, 10)
+        return {
+          changes: [{
+            cursor: 11,
+            node_id: 90,
+            operation: 'upsert',
+            affected_parent_ids: [99],
+          }],
+          next_cursor: 11,
+          latest_cursor: 11,
+          has_more: false,
+        }
+      }
+      assert.equal(after, 11)
+      return {
+        changes: [{
+          cursor: 12,
+          node_id: 91,
+          operation: 'upsert',
+          affected_parent_ids: [1],
+        }],
+        next_cursor: 12,
+        latest_cursor: 12,
+        has_more: false,
+      }
+    },
+    getQuota: async () => ({ quota_bytes: 0, used_bytes: 0 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port,
+    enabled: true,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    changePollIntervalMs: 0,
+    changeDebounceMs: 0,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let controller = render()
+  assert.equal(rangeCalls.length, 1)
+
+  await controller.refreshChanges()
+  controller = render()
+  assert.equal(rangeCalls.length, 2, 'cursor handshake must close the initial-list race with one refresh')
+
+  assert.equal(await controller.refreshChanges(), false)
+  assert.equal(rangeCalls.length, 2, 'unrelated parent changes must not refresh the current directory')
+
+  assert.equal(await controller.refreshChanges(), true)
+  assert.equal(rangeCalls.length, 3, 'affected parent changes must rebuild the current directory generation')
+})
+
+test('late change-feed response cannot refresh the directory navigated away from', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const rangeCalls = []
+  let releaseChanges
+  let changeCall = 0
+  const port = {
+    getRoot: async () => ({ id: 1, name: 'root' }),
+    getPage: async () => ({ items: [], has_more: false }),
+    getRange: async (parentID, offset, limit, requestSort, includeCount, grouping) => {
+      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount, grouping })
+      return {
+        items: [],
+        total_count: 0,
+        total_count_included: includeCount,
+        offset,
+        limit,
+        sort: requestSort.key,
+        order: requestSort.direction,
+        groups: [],
+      }
+    },
+    getChanges: async () => {
+      changeCall += 1
+      if (changeCall === 1) {
+        return {
+          changes: [],
+          next_cursor: 20,
+          latest_cursor: 20,
+          has_more: false,
+        }
+      }
+      return new Promise((resolve) => {
+        releaseChanges = () => resolve({
+          changes: [{
+            cursor: 21,
+            node_id: 7,
+            operation: 'upsert',
+            affected_parent_ids: [2],
+          }],
+          next_cursor: 21,
+          latest_cursor: 21,
+          has_more: false,
+        })
+      })
+    },
+    getQuota: async () => ({ quota_bytes: 0, used_bytes: 0 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port,
+    enabled: true,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    changePollIntervalMs: 0,
+    changeDebounceMs: 0,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let controller = render()
+  await controller.loadDirectory(2, [{ id: 1, name: 'root' }, { id: 2, name: 'A' }], sort)
+  controller = render()
+  await controller.refreshChanges()
+  controller = render()
+
+  const pending = controller.refreshChanges()
+  await flushAsync()
+  assert.equal(typeof releaseChanges, 'function')
+
+  await controller.loadDirectory(3, [{ id: 1, name: 'root' }, { id: 3, name: 'B' }], sort)
+  const beforeRelease = rangeCalls.length
+  releaseChanges()
+  assert.equal(await pending, false)
+  assert.equal(
+    rangeCalls.length,
+    beforeRelease,
+    'a late change for directory A must not refresh the now-current directory B',
+  )
+})
+
+
+test('debounced change refresh stays bound to the directory that scheduled it', async () => {
+  const originalSetTimeout = globalThis.setTimeout
+  const originalClearTimeout = globalThis.clearTimeout
+
+  try {
+    const runtime = createHookRuntime()
+    const useController = loadCloudFilesController(runtime.react)
+    const sort = { key: 'name', direction: 'asc' }
+    const rangeCalls = []
+    let changeCall = 0
+    let debounceMs = 0
+    let scheduled = null
+
+    const port = {
+      getRoot: async () => ({ id: 1, name: 'root' }),
+      getPage: async () => ({ items: [], has_more: false }),
+      getRange: async (parentID, offset, limit, requestSort, includeCount, grouping) => {
+        rangeCalls.push({ parentID, offset, limit, requestSort, includeCount, grouping })
+        return {
+          items: [],
+          total_count: 0,
+          total_count_included: includeCount,
+          offset,
+          limit,
+          sort: requestSort.key,
+          order: requestSort.direction,
+          groups: [],
+        }
+      },
+      getChanges: async () => {
+        changeCall += 1
+        if (changeCall === 1) {
+          return {
+            changes: [],
+            next_cursor: 10,
+            latest_cursor: 10,
+            has_more: false,
+          }
+        }
+        return {
+          changes: [{
+            cursor: 11,
+            node_id: 7,
+            operation: 'upsert',
+            affected_parent_ids: [2],
+          }],
+          next_cursor: 11,
+          latest_cursor: 11,
+          has_more: false,
+        }
+      },
+      getQuota: async () => ({ quota_bytes: 0, used_bytes: 0 }),
+    }
+
+    const render = () => runtime.render(() => useController({
+      port,
+      enabled: true,
+      defaultSort: sort,
+      quotaRefreshIntervalMs: 0,
+      changePollIntervalMs: 0,
+      changeDebounceMs: debounceMs,
+      onError: (error) => { throw error },
+    }))
+
+    render()
+    await flushAsync()
+    let controller = render()
+
+    await controller.loadDirectory(
+      2,
+      [{ id: 1, name: 'root' }, { id: 2, name: 'A' }],
+      sort,
+    )
+    controller = render()
+
+    // Establish the durable change cursor with an immediate handshake refresh.
+    await controller.refreshChanges()
+    controller = render()
+
+    debounceMs = 250
+    controller = render()
+
+    globalThis.setTimeout = (callback) => {
+      scheduled = callback
+      return 123
+    }
+    globalThis.clearTimeout = () => {
+      scheduled = null
+    }
+
+    assert.equal(
+      await controller.refreshChanges(),
+      true,
+      'a change affecting the current directory should schedule a refresh',
+    )
+    assert.equal(typeof scheduled, 'function')
+
+    await controller.loadDirectory(
+      3,
+      [{ id: 1, name: 'root' }, { id: 3, name: 'B' }],
+      sort,
+    )
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+
+    const beforeTimer = rangeCalls.length
+    const fire = scheduled
+    scheduled = null
+    fire()
+    await flushAsync()
+
+    assert.equal(
+      rangeCalls.length,
+      beforeTimer,
+      'a refresh scheduled for A must be discarded after navigation moves to B',
+    )
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+  } finally {
+    globalThis.setTimeout = originalSetTimeout
+    globalThis.clearTimeout = originalClearTimeout
+  }
 })

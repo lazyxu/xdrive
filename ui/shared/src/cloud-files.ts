@@ -26,7 +26,6 @@ export type XDriveCloudFilesPage<TNode extends { id: number }> = {
   has_more: boolean
   sort: XDriveCloudFilesSortKey
   order: XDriveCloudFilesSortDirection
-  groups?: XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveCloudFilesRange<TNode extends { id: number }> = {
@@ -37,6 +36,7 @@ export type XDriveCloudFilesRange<TNode extends { id: number }> = {
   limit: number
   sort: XDriveCloudFilesSortKey
   order: XDriveCloudFilesSortDirection
+  groups?: XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveCloudFilesCrumb = {
@@ -79,6 +79,30 @@ export type XDriveFileRecentItem<TNode extends { id: number }> = {
   accessed_at: string
 }
 
+export type XDriveCloudFilesChange<TNode extends { id: number }> = {
+  cursor: number
+  node_id: number
+  operation: 'upsert' | 'delete'
+  affected_parent_ids: number[]
+  path?: string
+  node?: TNode
+}
+
+export type XDriveCloudFilesChangePage<TNode extends { id: number }> = {
+  changes: XDriveCloudFilesChange<TNode>[]
+  next_cursor: number
+  latest_cursor: number
+  has_more: boolean
+  reset_required?: boolean
+}
+
+export function xDriveCloudFilesChangeAffectsParent(
+  change: Pick<XDriveCloudFilesChange<{ id: number }>, 'affected_parent_ids'>,
+  parentID: number,
+) {
+  return change.affected_parent_ids.includes(parentID)
+}
+
 export interface XDriveCloudFilesPort<
   TNode extends { id: number },
   TQuota extends QuotaUsage = QuotaUsage,
@@ -97,5 +121,9 @@ export interface XDriveCloudFilesPort<
     includeCount: boolean,
     grouping: XDriveFileExplorerGrouping,
   ) => Promise<XDriveCloudFilesRange<TNode>>
+  getChanges?: (
+    after: number,
+    limit: number,
+  ) => Promise<XDriveCloudFilesChangePage<TNode>>
   getQuota: () => Promise<TQuota>
 }

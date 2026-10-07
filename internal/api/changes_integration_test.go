@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -69,11 +70,17 @@ func TestNodeChangeJournalLifecycleAndOwnerScope(t *testing.T) {
 
 	docs := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"docs"}`), http.StatusCreated)
+	archive := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"archive"}`), http.StatusCreated)
 	file := uploadTestFile(t, router, token, docs.ID, "a.txt", "hello")
 
 	created := requestNodeChangePage(t, router, token, cursor, 100)
 	assertNodeChange(t, created.Changes, docs.ID, "upsert", "docs")
+	assertNodeChangeParents(t, created.Changes, docs.ID, root.ID)
+	assertNodeChange(t, created.Changes, archive.ID, "upsert", "archive")
+	assertNodeChangeParents(t, created.Changes, archive.ID, root.ID)
 	assertNodeChange(t, created.Changes, file.ID, "upsert", "docs/a.txt")
+	assertNodeChangeParents(t, created.Changes, file.ID, docs.ID)
 	if created.NextCursor <= cursor || created.LatestCursor < created.NextCursor {
 		t.Fatalf("created page=%+v", created)
 	}
@@ -84,15 +91,28 @@ func TestNodeChangeJournalLifecycleAndOwnerScope(t *testing.T) {
 		map[string]string{"If-Match": fmt.Sprintf(`"%d"`, file.Revision)})
 	changed := requestNodeChangePage(t, router, token, cursor, 100)
 	assertNodeChange(t, changed.Changes, file.ID, "upsert", "docs/b.txt")
+	assertNodeChangeParents(t, changed.Changes, file.ID, docs.ID)
 	if renamed.Revision <= file.Revision {
 		t.Fatalf("rename revision=%d old=%d", renamed.Revision, file.Revision)
 	}
 
 	cursor = changed.LatestCursor
+	moved := requestNodeWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token,
+		strings.NewReader(fmt.Sprintf(`{"parent_id":%d}`, archive.ID)), http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf(`"%d"`, renamed.Revision)})
+	renamedAfterMove := requestNodeWithHeaders(t, router, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token,
+		strings.NewReader(`{"name":"c.txt"}`), http.StatusOK,
+		map[string]string{"If-Match": fmt.Sprintf(`"%d"`, moved.Revision)})
+	movedPage := requestNodeChangePage(t, router, token, cursor, 100)
+	assertNodeChange(t, movedPage.Changes, file.ID, "upsert", "archive/c.txt")
+	assertNodeChangeParents(t, movedPage.Changes, file.ID, docs.ID, archive.ID)
+
+	cursor = movedPage.LatestCursor
 	requestWithHeaders(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", file.ID), token, nil,
-		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf(`"%d"`, renamed.Revision)})
+		http.StatusNoContent, map[string]string{"If-Match": fmt.Sprintf(`"%d"`, renamedAfterMove.Revision)})
 	deleted := requestNodeChangePage(t, router, token, cursor, 100)
 	assertNodeChange(t, deleted.Changes, file.ID, "delete", "")
+	assertNodeChangeParents(t, deleted.Changes, file.ID, archive.ID)
 
 	cursor = deleted.LatestCursor
 	_ = createTestUser(t, db, router, "journal-user-2", "password-456")
@@ -135,6 +155,24 @@ func assertNodeChange(t *testing.T, changes []nodeChangeDTO, nodeID uint64, oper
 		}
 		if operation == "delete" && change.Node != nil {
 			t.Fatalf("node %d delete unexpectedly has node payload", nodeID)
+		}
+		return
+	}
+	t.Fatalf("node %d change not found in %+v", nodeID, changes)
+}
+
+func assertNodeChangeParents(t *testing.T, changes []nodeChangeDTO, nodeID uint64, want ...uint64) {
+	t.Helper()
+	for _, change := range changes {
+		if change.NodeID != nodeID {
+			continue
+		}
+		got := append([]uint64(nil), change.AffectedParentIDs...)
+		sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+		expected := append([]uint64(nil), want...)
+		sort.Slice(expected, func(i, j int) bool { return expected[i] < expected[j] })
+		if fmt.Sprint(got) != fmt.Sprint(expected) {
+			t.Fatalf("node %d affected parents=%v want=%v", nodeID, got, expected)
 		}
 		return
 	}

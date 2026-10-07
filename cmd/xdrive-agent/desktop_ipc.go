@@ -72,6 +72,7 @@ var desktopIPCCapabilities = []string{
 	"storage-tree",
 	"cache-management",
 	"cloud-files",
+	"cloud-change-feed",
 	"background-tasks",
 	"background-task-summary",
 	"file-text-preview",
@@ -179,6 +180,7 @@ type desktopIPCController interface {
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudListPage(context.Context, uint64, client.ChildrenOptions) (client.ChildrenPage, error)
 	CloudListRange(context.Context, uint64, client.ChildrenRangeOptions) (client.ChildrenRange, error)
+	CloudNodeChanges(context.Context, uint64, int) (client.NodeChangePage, error)
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
 	CloudUnpinFileQuickAccess(context.Context, uint64) error
@@ -475,6 +477,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
+	mux.HandleFunc("GET /v1/cloud/changes", h.cloudChanges)
 	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/unpin", h.cloudUnpinFileQuickAccess)
@@ -1037,6 +1040,34 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 		options.Limit = limit
 	}
 	page, err := h.ctrl.CloudListPage(r.Context(), parentID, options)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
+func (h *desktopIPCHandler) cloudChanges(w http.ResponseWriter, r *http.Request) {
+	values := r.URL.Query()
+	var after uint64
+	if raw := strings.TrimSpace(values.Get("after")); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_change_cursor", "after must be a non-negative integer")
+			return
+		}
+		after = value
+	}
+	limit := 200
+	if raw := strings.TrimSpace(values.Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 1000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_change_limit", "limit must be between 1 and 1000")
+			return
+		}
+		limit = value
+	}
+	page, err := h.ctrl.CloudNodeChanges(r.Context(), after, limit)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

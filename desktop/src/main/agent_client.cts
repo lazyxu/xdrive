@@ -557,6 +557,23 @@ export type AgentCloudChildrenRange = {
   groups?: AgentFileExplorerGroupIndex[]
 }
 
+export type AgentCloudNodeChange = {
+  cursor: number
+  node_id: number
+  operation: 'upsert' | 'delete'
+  affected_parent_ids: number[]
+  path?: string
+  node?: AgentCloudNode
+}
+
+export type AgentCloudNodeChangePage = {
+  changes: AgentCloudNodeChange[]
+  next_cursor: number
+  latest_cursor: number
+  has_more: boolean
+  reset_required?: boolean
+}
+
 export type AgentMediaMetadata = {
   media_kind: 'image' | 'video'
   mime_type?: string
@@ -1611,6 +1628,14 @@ export class AgentIPCClient {
     if (!includeCount) query.set('include_count', 'false')
     appendAgentFileExplorerGrouping(query, grouping)
     return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`)
+  }
+
+  cloudChanges(after = 0, limit = 200) {
+    const query = new URLSearchParams({
+      after: String(Math.max(0, Math.trunc(after))),
+      limit: String(Math.min(1000, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<AgentCloudNodeChangePage>('GET', `/v1/cloud/changes?${query.toString()}`)
   }
 
   cloudFileQuickAccess() {

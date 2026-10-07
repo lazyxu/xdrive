@@ -129,6 +129,11 @@ function loadController(react) {
       './VirtualCollectionController': virtual,
       '../file-explorer-controller': fileExplorer,
       '../file-explorer-grouping': grouping,
+      '../cloud-files': {
+        xDriveCloudFilesChangeAffectsParent: (change, parentID) => (
+          change.affected_parent_ids.includes(parentID)
+        ),
+      },
     },
   ).useXDriveCloudFilesController
 }

@@ -286,6 +286,8 @@ const agent = Object.freeze({
     includeCount,
     grouping,
   ),
+  cloudChanges: (after = 0, limit = 200) =>
+    ipcRenderer.invoke('agent:cloud-changes', after, limit),
   cloudFileQuickAccess: () => ipcRenderer.invoke('agent:cloud-quick-access'),
   cloudPinFileQuickAccess: (nodeID: number) => ipcRenderer.invoke('agent:cloud-quick-access-pin', nodeID),
   cloudUnpinFileQuickAccess: (nodeID: number) => ipcRenderer.invoke('agent:cloud-quick-access-unpin', nodeID),

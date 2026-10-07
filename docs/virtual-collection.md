@@ -60,6 +60,12 @@ Grouping is part of the VirtualCollection query-generation identity. A grouping 
 
 The FileExplorer grouped Details/Grid layout owns header geometry separately from item indexes. Viewport planning converts visible group rows back to ordinary logical item ranges before calling `ensureViewport`, so retention, interaction lookup, and range collection keep the same bounded sparse semantics.
 
+## Change-driven FileExplorer generation invalidation
+
+A Server node-change event never mutates retained VirtualCollection pages in place. When the shared Cloud Files controller determines that the active directory is affected, it calls the ordinary counted first-range load again using the latest sort/grouping state. That response creates a new query generation, primes range zero, and lets the viewport request any additional sparse ranges it still needs.
+
+This preserves the existing stale-work guarantees: pages from the pre-change generation cannot overwrite the refreshed directory, logical indexes are never patched heuristically, and group indexes/count metadata remain Server-authoritative.
+
 ## FileExplorer directory activation
 
 Cloud Files directory browsing uses the range contract from the first read. A new navigation/sort/refresh generation always requests `offset=0` with `includeCount=true`; that page is primed into VirtualCollection so the authoritative total establishes the stable scrollbar immediately and page zero is not fetched twice. Once primed, viewport-proximate ranges use `includeCount=false` and `VirtualCollectionApplyPage` retains the generation's already-known `totalCount`.

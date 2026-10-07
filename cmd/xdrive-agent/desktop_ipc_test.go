@@ -75,6 +75,9 @@ type fakeDesktopIPCController struct {
 	cloudChildren              []client.Node
 	cloudChildrenOptions       client.ChildrenOptions
 	cloudChildrenRangeOptions  client.ChildrenRangeOptions
+	cloudChanges               client.NodeChangePage
+	cloudChangesAfter          uint64
+	cloudChangesLimit          int
 	cloudCreatedDir            client.Node
 	cloudCreateParent          uint64
 	cloudCreateName            string
@@ -326,6 +329,12 @@ func (f *fakeDesktopIPCController) CloudListRange(_ context.Context, _ uint64, o
 		Sort:               options.Sort,
 		Order:              options.Order,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudNodeChanges(_ context.Context, after uint64, limit int) (client.NodeChangePage, error) {
+	f.cloudChangesAfter = after
+	f.cloudChangesLimit = limit
+	return f.cloudChanges, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error) {
@@ -1598,6 +1607,12 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			Sort:       "updated",
 			Order:      "asc",
 		},
+		cloudChanges: client.NodeChangePage{
+			Changes: []client.NodeChange{{
+				Cursor: 42, NodeID: 3, Operation: "upsert", AffectedParentIDs: []uint64{2, 8},
+			}},
+			NextCursor: 42, LatestCursor: 42,
+		},
 		cloudCreatedDir: client.Node{ID: 8, ParentID: ptrUint64(1), Name: "New Folder", Type: "dir", Revision: 1},
 		cloudRenamed:    client.Node{ID: 3, ParentID: ptrUint64(2), Name: "renamed.pdf", Type: "file", Revision: 3},
 		cloudCopied:     client.Node{ID: 10, ParentID: ptrUint64(8), Name: "report.pdf", Type: "file", Revision: 1},
@@ -1629,6 +1644,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name_ci=projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc", "", "\"total_count\":640"},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc&include_count=false&group=type&folders_first=false", "", "\"total_count_included\":false"},
+		{http.MethodGet, "/v1/cloud/changes?after=41&limit=25", "", "\"latest_cursor\":42"},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
@@ -1692,6 +1708,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		ctrl.cloudChildrenRangeOptions.Grouping.FoldersFirst == nil ||
 		*ctrl.cloudChildrenRangeOptions.Grouping.FoldersFirst {
 		t.Fatalf("cloud children range options not forwarded: %+v", ctrl.cloudChildrenRangeOptions)
+	}
+	if ctrl.cloudChangesAfter != 41 || ctrl.cloudChangesLimit != 25 {
+		t.Fatalf("cloud changes not forwarded: after=%d limit=%d", ctrl.cloudChangesAfter, ctrl.cloudChangesLimit)
 	}
 	if ctrl.cloudSearchCursor != "search-cursor" {
 		t.Fatalf("cloud search cursor not forwarded: %q", ctrl.cloudSearchCursor)

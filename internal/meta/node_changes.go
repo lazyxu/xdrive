@@ -8,18 +8,20 @@ import (
 )
 
 type NodeChange struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement;index:idx_xd_node_changes_owner_cursor,priority:2"`
-	OwnerID   uint64    `gorm:"not null;index:idx_xd_node_changes_owner_cursor,priority:1"`
-	NodeID    uint64    `gorm:"not null;index"`
-	CreatedAt time.Time `gorm:"not null;index"`
+	ID               uint64    `gorm:"primaryKey;autoIncrement;index:idx_xd_node_changes_owner_cursor,priority:2"`
+	OwnerID          uint64    `gorm:"not null;index:idx_xd_node_changes_owner_cursor,priority:1"`
+	NodeID           uint64    `gorm:"not null;index"`
+	ParentID         *uint64   `gorm:"index"`
+	PreviousParentID *uint64   `gorm:"index"`
+	CreatedAt        time.Time `gorm:"not null;index"`
 }
 
 func (NodeChange) TableName() string { return "xd_node_changes" }
 
 // InstallNodeChangeJournal creates the append-only dirty-node journal and a
-// transaction-local trigger on xd_nodes. The trigger intentionally records
-// only owner/node identity: readers materialize the current node state when
-// consuming a cursor window, which naturally coalesces rapid writes.
+// transaction-local trigger on xd_nodes. Each row records the current and
+// previous parent so consumers can invalidate every directory affected by a
+// create, delete, rename, or move while still coalescing rapid node writes.
 func InstallNodeChangeJournal(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("node change journal database is required")
@@ -32,13 +34,25 @@ CREATE OR REPLACE FUNCTION xd_record_node_change()
 RETURNS trigger AS $$
 BEGIN
 	IF TG_OP = 'DELETE' THEN
-		INSERT INTO xd_node_changes (owner_id, node_id, created_at)
-		VALUES (OLD.owner_id, OLD.id, NOW());
+		INSERT INTO xd_node_changes (
+			owner_id, node_id, parent_id, previous_parent_id, created_at
+		)
+		VALUES (OLD.owner_id, OLD.id, NULL, OLD.parent_id, NOW());
 		RETURN OLD;
 	END IF;
 
-	INSERT INTO xd_node_changes (owner_id, node_id, created_at)
-	VALUES (NEW.owner_id, NEW.id, NOW());
+	IF TG_OP = 'INSERT' THEN
+		INSERT INTO xd_node_changes (
+			owner_id, node_id, parent_id, previous_parent_id, created_at
+		)
+		VALUES (NEW.owner_id, NEW.id, NEW.parent_id, NULL, NOW());
+		RETURN NEW;
+	END IF;
+
+	INSERT INTO xd_node_changes (
+		owner_id, node_id, parent_id, previous_parent_id, created_at
+	)
+	VALUES (NEW.owner_id, NEW.id, NEW.parent_id, OLD.parent_id, NOW());
 	RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

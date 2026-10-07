@@ -143,6 +143,11 @@ function loadCloudFilesHook(react) {
           `${grouping.groupBy}:${grouping.foldersFirst ? 'folders-first' : 'mixed'}`
         ),
       },
+      '../cloud-files': {
+        xDriveCloudFilesChangeAffectsParent: (change, parentID) => (
+          change.affected_parent_ids.includes(parentID)
+        ),
+      },
       './VirtualCollectionController': virtualController,
     },
   ).useXDriveCloudFilesController

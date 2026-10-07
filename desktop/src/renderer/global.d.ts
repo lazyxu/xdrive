@@ -31,6 +31,7 @@ import type {
   BuildInfo,
   UpdateExternalSourceInput,
   XDriveCloudFilesCrumb,
+  XDriveCloudFilesChangePage,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
@@ -272,6 +273,7 @@ declare global {
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
   type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>
+  type AgentCloudNodeChangePage = XDriveCloudFilesChangePage<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
   type AgentCloudRecentItem = XDriveFileRecentItem<AgentCloudNode>
   type AgentCloudQuota = QuotaUsage
@@ -508,6 +510,10 @@ declare global {
           includeCount?: boolean,
           grouping?: XDriveFileExplorerGrouping,
         ) => Promise<DesktopResult<AgentCloudChildrenRange>>
+        cloudChanges: (
+          after?: number,
+          limit?: number,
+        ) => Promise<DesktopResult<AgentCloudNodeChangePage>>
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
         cloudUnpinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
