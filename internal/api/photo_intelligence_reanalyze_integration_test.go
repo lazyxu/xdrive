@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -293,6 +294,18 @@ func TestPhotoIntelligenceReanalyzeUserAndAdminControls(t *testing.T) {
 			user.ID,
 		),
 		adminToken,
+		strings.NewReader(`{"kinds":["unsupported"]}`),
+		http.StatusConflict,
+	)
+	request(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf(
+			"/api/v1/admin/users/%d/photo-intelligence/reanalyze",
+			user.ID,
+		),
+		adminToken,
 		strings.NewReader(`{"kinds":["place","person_cluster"]}`),
 		http.StatusAccepted,
 	)
@@ -309,6 +322,48 @@ func TestPhotoIntelligenceReanalyzeUserAndAdminControls(t *testing.T) {
 		user.ID,
 		meta.PhotoAnalysisStateStale,
 	)
+
+	var auditEvents []meta.AuditEvent
+	if err := db.Where(
+		"action = ?",
+		auditpkg.ActionAdminPhotoIntelligenceReanalyze,
+	).Order("id ASC").Find(&auditEvents).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(auditEvents) != 2 {
+		t.Fatalf("admin reanalyze audit events=%d want=2: %+v", len(auditEvents), auditEvents)
+	}
+	if auditEvents[0].Result != auditpkg.ResultFailure ||
+		auditEvents[0].ActorUsername != "photo-reanalysis-admin" ||
+		auditEvents[0].TargetType != "user" ||
+		auditEvents[0].TargetID != fmt.Sprintf("%d", user.ID) ||
+		auditEvents[0].TargetLabel != "photo-reanalysis-user" {
+		t.Fatalf("unexpected failed admin reanalyze audit: %+v", auditEvents[0])
+	}
+	var failedMetadata map[string]any
+	if err := json.Unmarshal([]byte(auditEvents[0].Metadata), &failedMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if failedMetadata["reason"] != "invalid_kinds" {
+		t.Fatalf("failed reanalyze audit metadata=%v", failedMetadata)
+	}
+
+	if auditEvents[1].Result != auditpkg.ResultSuccess ||
+		auditEvents[1].ActorUsername != "photo-reanalysis-admin" ||
+		auditEvents[1].TargetID != fmt.Sprintf("%d", user.ID) ||
+		auditEvents[1].TargetLabel != "photo-reanalysis-user" {
+		t.Fatalf("unexpected successful admin reanalyze audit: %+v", auditEvents[1])
+	}
+	var successMetadata map[string]any
+	if err := json.Unmarshal([]byte(auditEvents[1].Metadata), &successMetadata); err != nil {
+		t.Fatal(err)
+	}
+	acceptedKinds, ok := successMetadata["accepted_kinds"].([]any)
+	if !ok || len(acceptedKinds) != 2 ||
+		acceptedKinds[0] != "place" ||
+		acceptedKinds[1] != "person_cluster" {
+		t.Fatalf("successful reanalyze audit metadata=%v", successMetadata)
+	}
 }
 
 func openPhotoIntelligenceAPITestDB(

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
@@ -705,12 +706,54 @@ func (s *Server) invalidatePhotoIntelligenceOwner(
 }
 
 func (s *Server) reanalyzePhotoIntelligence(c *gin.Context) {
-	s.reanalyzePhotoIntelligenceOwner(c, userID(c), background.InitiatorUser)
+	s.reanalyzePhotoIntelligenceOwner(
+		c,
+		userID(c),
+		background.InitiatorUser,
+		"",
+	)
+}
+
+func (s *Server) recordAdminPhotoIntelligenceReanalyzeAudit(
+	c *gin.Context,
+	targetID, targetLabel string,
+	requestedKinds, acceptedKinds []string,
+	result, reason string,
+) {
+	metadata := make(map[string]any, 3)
+	if len(requestedKinds) != 0 {
+		metadata["requested_kinds"] = requestedKinds
+	}
+	if len(acceptedKinds) != 0 {
+		metadata["accepted_kinds"] = acceptedKinds
+	}
+	if reason != "" {
+		metadata["reason"] = reason
+	}
+	s.recordAuditBestEffort(c, auditEventFromContext(
+		c,
+		auditpkg.ActionAdminPhotoIntelligenceReanalyze,
+		"user",
+		targetID,
+		targetLabel,
+		result,
+		metadata,
+	))
 }
 
 func (s *Server) adminReanalyzePhotoIntelligence(c *gin.Context) {
-	ownerID, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	rawOwnerID := strings.TrimSpace(c.Param("id"))
+	ownerID, err := strconv.ParseUint(rawOwnerID, 10, 64)
 	if err != nil || ownerID == 0 {
+		s.recordAdminPhotoIntelligenceReanalyzeAudit(
+			c,
+			rawOwnerID,
+			"",
+			nil,
+			nil,
+			auditpkg.ResultFailure,
+			"invalid_user_id",
+		)
 		fail(c, http.StatusBadRequest, "invalid user id")
 		return
 	}
@@ -721,6 +764,19 @@ func (s *Server) adminReanalyzePhotoIntelligence(c *gin.Context) {
 			ownerID,
 		).
 		First(&user).Error; err != nil {
+		reason := "load_user_failed"
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reason = "user_not_found"
+		}
+		s.recordAdminPhotoIntelligenceReanalyzeAudit(
+			c,
+			rawOwnerID,
+			"",
+			nil,
+			nil,
+			auditpkg.ResultFailure,
+			reason,
+		)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			fail(c, http.StatusNotFound, "user not found")
 		} else {
@@ -732,6 +788,7 @@ func (s *Server) adminReanalyzePhotoIntelligence(c *gin.Context) {
 		c,
 		ownerID,
 		background.InitiatorAdmin,
+		user.Username,
 	)
 }
 
@@ -739,22 +796,51 @@ func (s *Server) reanalyzePhotoIntelligenceOwner(
 	c *gin.Context,
 	ownerID uint64,
 	initiator background.Initiator,
+	targetLabel string,
 ) {
+	admin := initiator == background.InitiatorAdmin
 	var req photoIntelligenceReanalyzeRequest
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
+			if admin {
+				s.recordAdminPhotoIntelligenceReanalyzeAudit(
+					c,
+					strconv.FormatUint(ownerID, 10),
+					targetLabel,
+					nil,
+					nil,
+					auditpkg.ResultFailure,
+					"invalid_request",
+				)
+			}
 			fail(c, http.StatusBadRequest, "invalid request")
 			return
 		}
 	}
 	kinds, err := s.normalizePhotoIntelligenceKinds(req.Kinds)
 	if err != nil {
+		if admin {
+			s.recordAdminPhotoIntelligenceReanalyzeAudit(
+				c,
+				strconv.FormatUint(ownerID, 10),
+				targetLabel,
+				req.Kinds,
+				nil,
+				auditpkg.ResultFailure,
+				"invalid_kinds",
+			)
+		}
 		fail(c, http.StatusConflict, err.Error())
 		return
 	}
+	accepted := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		accepted = append(accepted, string(kind))
+	}
+
 	initiatorID := userID(c)
 	trigger := background.TriggerUserAction
-	if initiator == background.InitiatorAdmin {
+	if admin {
 		trigger = background.TriggerAdminAction
 	}
 	if err := s.enqueuePhotoIntelligenceReanalysis(
@@ -765,6 +851,21 @@ func (s *Server) reanalyzePhotoIntelligenceOwner(
 		initiator,
 		initiatorID,
 	); err != nil {
+		if admin {
+			reason := "enqueue_failed"
+			if errors.Is(err, errPhotoIntelligenceUnavailable) {
+				reason = "unavailable"
+			}
+			s.recordAdminPhotoIntelligenceReanalyzeAudit(
+				c,
+				strconv.FormatUint(ownerID, 10),
+				targetLabel,
+				req.Kinds,
+				accepted,
+				auditpkg.ResultFailure,
+				reason,
+			)
+		}
 		if errors.Is(err, errPhotoIntelligenceUnavailable) {
 			fail(c, http.StatusConflict, err.Error())
 		} else {
@@ -773,9 +874,16 @@ func (s *Server) reanalyzePhotoIntelligenceOwner(
 		return
 	}
 
-	accepted := make([]string, 0, len(kinds))
-	for _, kind := range kinds {
-		accepted = append(accepted, string(kind))
+	if admin {
+		s.recordAdminPhotoIntelligenceReanalyzeAudit(
+			c,
+			strconv.FormatUint(ownerID, 10),
+			targetLabel,
+			req.Kinds,
+			accepted,
+			auditpkg.ResultSuccess,
+			"",
+		)
 	}
 	c.JSON(http.StatusAccepted, photoIntelligenceReanalyzeResponse{
 		OwnerID:  ownerID,

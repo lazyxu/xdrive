@@ -40,6 +40,8 @@ const (
 	ActionSourceMirrorTrash      = "source.mirror.trash"
 )
 
+const ActionAdminPhotoIntelligenceReanalyze = "admin.photo_intelligence.reanalyze"
+
 type Event struct {
 	ActorUserID   *uint64
 	ActorUsername string
