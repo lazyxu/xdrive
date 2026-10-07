@@ -60,6 +60,13 @@ type CapacityReporter interface {
 	Capacity(context.Context) (Capacity, error)
 }
 
+// FilesystemRootProvider exposes a read-only local filesystem root to internal
+// maintenance code that must validate xDrive-managed cache files by path.
+// Backends without a filesystem root intentionally do not implement it.
+type FilesystemRootProvider interface {
+	FilesystemRoot() string
+}
+
 type ContentPromoter interface {
 	Promote(context.Context, string, string, int64) error
 }

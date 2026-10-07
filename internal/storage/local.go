@@ -30,6 +30,13 @@ func NewLocal(root string) (*Local, error) {
 	return local, nil
 }
 
+func (l *Local) FilesystemRoot() string {
+	if l == nil {
+		return ""
+	}
+	return l.root
+}
+
 func (l *Local) resolve(key string) (string, error) {
 	key = filepath.FromSlash(key)
 	if filepath.IsAbs(key) {

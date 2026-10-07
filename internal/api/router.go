@@ -60,6 +60,7 @@ type Server struct {
 	photoPersonRunner             photoPersonOwnerRunner
 	systemMaintenanceSourceVerify systemMaintenanceSourceVerifyRunner
 	systemMaintenanceSourceRepair systemMaintenanceSourceRepairRunner
+	systemMaintenanceMediaVerify  systemMaintenanceMediaVerifyRunner
 	systemMaintenanceHeartbeat    time.Duration
 }
 
