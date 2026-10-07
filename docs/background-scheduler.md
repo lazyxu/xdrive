@@ -338,9 +338,11 @@ The server exposes background work as a read model without introducing a generic
   per-object SHA-256 hashing stop cooperatively on Task Center cancellation. It reuses the existing Janitor
   cluster lease so the full scan cannot race CAS GC/state transitions; a Janitor pass skips while the verifier
   owns the lease, and the verifier defer-retries while Janitor owns it. `storage.repair` uses that same
-  exclusion boundary and calls only deterministic `RepairCASMetadata(..., false)`: it may create/reconcile
-  CAS metadata or mark zero-reference metadata as `deleting`, but it never deletes blob bytes directly;
-  physical deletion remains Janitor-owned. Both full verify hashing and repair-time physical-object hashing
+  exclusion boundary and calls deterministic `RepairStorage(..., false)`. It first hashes and verifies each
+  still-referenced legacy object, creates or verifies its canonical CAS object, atomically switches all current-file
+  and historical-version references, and only then removes the zero-reference legacy source. It then runs the
+  existing CAS metadata reconciliation and may mark zero-reference CAS metadata as `deleting`. CAS physical
+  deletion remains Janitor-owned; legacy bytes are never removed before the durable reference switch commits. Both full verify hashing and repair-time physical-object hashing
   are context-aware so Task Center cancellation is cooperative. Valid shared CAS references remain
   informational rather than integrity failures.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task

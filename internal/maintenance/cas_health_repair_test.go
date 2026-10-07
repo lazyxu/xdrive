@@ -118,6 +118,126 @@ func TestCASHealthAndRepairMetadata(t *testing.T) {
 	}
 }
 
+func TestStorageRepairMigratesLegacyReferencesToCAS(t *testing.T) {
+	db := newCASMaintenanceTestDB(t, "storage_repair_legacy")
+	root := t.TempDir()
+	user, rootNode := newCASMaintenanceUser(t, db)
+
+	content := "legacy-content"
+	legacyKey := "legacy/user/old-object"
+	parentID := rootNode.ID
+	node := meta.Node{
+		ParentID: &parentID,
+		Name:     "legacy.txt",
+		Type:     meta.NodeTypeFile,
+		OwnerID:  user.ID,
+		Revision: 2,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.File{
+		NodeID: node.ID, StorageKey: legacyKey, Size: int64(len(content)),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.FileVersion{
+		NodeID: node.ID, Revision: 1, StorageKey: legacyKey, Size: int64(len(content)),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	writeCASMaintenanceBlob(t, root, legacyKey, content)
+
+	report, err := RepairStorage(context.Background(), db, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Skipped) != 0 {
+		t.Fatalf("legacy migration unexpectedly skipped: %+v", report.Skipped)
+	}
+	var migration *CASRepairAction
+	for index := range report.Actions {
+		if report.Actions[index].Kind == "migrate_legacy" {
+			migration = &report.Actions[index]
+			break
+		}
+	}
+	if migration == nil || !migration.Applied || migration.SourceStorageKey != legacyKey {
+		t.Fatalf("legacy migration action missing: %+v", report.Actions)
+	}
+
+	hash := verifyTestHash(content)
+	canonicalKey, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migration.SHA256 != hash || migration.StorageKey != canonicalKey || migration.AfterRefCount != 2 {
+		t.Fatalf("unexpected migration action: %+v", migration)
+	}
+
+	var file meta.File
+	if err := db.First(&file, "node_id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if file.StorageKey != canonicalKey || file.SHA256 != hash {
+		t.Fatalf("current file not migrated: %+v", file)
+	}
+	var version meta.FileVersion
+	if err := db.First(&version, "node_id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if version.StorageKey != canonicalKey || version.SHA256 != hash {
+		t.Fatalf("historical version not migrated: %+v", version)
+	}
+	var blob meta.ContentBlob
+	if err := db.First(&blob, "sha256 = ?", hash).Error; err != nil {
+		t.Fatal(err)
+	}
+	if blob.StorageKey != canonicalKey || blob.RefCount != 2 || blob.State != meta.ContentBlobStateReady {
+		t.Fatalf("canonical metadata after migration: %+v", blob)
+	}
+	if err := verifyCASObject(root, canonicalKey, int64(len(content)), hash); err != nil {
+		t.Fatalf("canonical bytes not verified: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(legacyKey))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy source still exists after reference switch: %v", err)
+	}
+}
+
+func TestStorageRepairLegacyDryRunDoesNotMutate(t *testing.T) {
+	db := newCASMaintenanceTestDB(t, "storage_repair_legacy_dry")
+	root := t.TempDir()
+	user, rootNode := newCASMaintenanceUser(t, db)
+
+	content := "legacy-dry-run"
+	legacyKey := "legacy/dry/object"
+	createCASMaintenanceFile(t, db, rootNode, user.ID, "legacy-dry.txt", legacyKey, "", int64(len(content)))
+	writeCASMaintenanceBlob(t, root, legacyKey, content)
+
+	report, err := RepairStorage(context.Background(), db, root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Actions) != 1 || report.Actions[0].Kind != "migrate_legacy" || report.Actions[0].Applied {
+		t.Fatalf("unexpected legacy dry-run report: %+v", report)
+	}
+	var file meta.File
+	if err := db.First(&file, "storage_key = ?", legacyKey).Error; err != nil {
+		t.Fatal(err)
+	}
+	if file.StorageKey != legacyKey {
+		t.Fatalf("dry-run changed legacy reference: %+v", file)
+	}
+	hash := verifyTestHash(content)
+	canonicalKey, _ := storage.ContentAddressedKey(hash)
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(canonicalKey))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dry-run created canonical bytes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(legacyKey))); err != nil {
+		t.Fatalf("dry-run removed legacy bytes: %v", err)
+	}
+}
+
 func TestCASRepairSkipsCorruptReferencedObject(t *testing.T) {
 	db := newCASMaintenanceTestDB(t, "cas_repair_corrupt")
 	root := t.TempDir()
@@ -264,6 +384,16 @@ func TestVerifyCASObjectWithContextRejectsCancelledWork(t *testing.T) {
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("verify CAS object error=%v want context.Canceled", err)
+	}
+}
+
+func TestRepairStorageRejectsCancelledWork(t *testing.T) {
+	db := newCASMaintenanceTestDB(t, "storage_repair_cancelled")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := RepairStorage(ctx, db, t.TempDir(), false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("repair storage error=%v want context.Canceled", err)
 	}
 }
 
