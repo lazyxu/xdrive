@@ -124,6 +124,16 @@ The journal remains owner-scoped and durable. `next_cursor / latest_cursor / has
 
 Current-directory invalidation does not turn the navigation tree into a globally live replicated tree. Tree nodes continue to load through their existing paged contract; tree-specific invalidation should be added only when its own correctness contract is defined.
 
+## Archive download data plane and progress side channel
+
+Web archive preparation may create a process-local `transfer_id` so Transfer Center can show per-entry progress, but that identifier is **not** part of archive authorization or payload correctness.
+
+- The requested node IDs, signed-in owner, current namespace, and rebuilt archive manifest remain authoritative for every payload request.
+- A load-balanced payload request may land on a different Server instance from the prepare request. If that instance has no local progress record for the supplied `transfer_id`, it must continue the authenticated archive download without progress tracking; sticky sessions are not a correctness requirement.
+- When progress state is unavailable, the Server clears the local progress correlation before writing any entry so a coincident or another owner's transfer ID can never mutate unrelated process-local state.
+- If a matching local progress record exists but its prepared IDs or manifest no longer match the payload request, the Server returns a conflict instead of silently reusing stale progress state.
+- Progress polling may therefore become unavailable while the archive payload still succeeds. Web treats the progress channel as best-effort and the archive response as the data-plane result.
+
 ## Navigation tree drag and drop
 
 The shared left folder tree is a first-class drop target, not navigation-only chrome.
