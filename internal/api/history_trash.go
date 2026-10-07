@@ -228,28 +228,33 @@ func (s *Server) downloadFileVersion(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid version id")
 		return
 	}
-	n, err := s.ownedNode(userID(c), id, false)
-	if err != nil || n.Type != meta.NodeTypeFile {
+	metadata, err := loadFileVersionDownloadMetadata(
+		c.Request.Context(),
+		s.DB,
+		userID(c),
+		id,
+		versionID,
+	)
+	if err != nil {
 		fail(c, http.StatusNotFound, "file not found")
 		return
 	}
-	var version meta.FileVersion
-	if err := s.DB.Where("id = ? AND node_id = ?", versionID, id).First(&version).Error; err != nil {
+	if !metadata.VersionFound {
 		fail(c, http.StatusNotFound, "version not found")
 		return
 	}
-	f, err := s.Store.Open(c.Request.Context(), version.StorageKey)
+	f, err := s.Store.Open(c.Request.Context(), metadata.StorageKey)
 	if err != nil {
 		fail(c, http.StatusNotFound, "stored version not found")
 		return
 	}
 	defer f.Close()
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(n.Name))
-	if version.SHA256 != "" {
-		c.Header("X-Content-SHA256", version.SHA256)
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(metadata.Name))
+	if metadata.SHA256 != "" {
+		c.Header("X-Content-SHA256", metadata.SHA256)
 	}
-	http.ServeContent(c.Writer, c.Request, n.Name, version.CreatedAt, f)
+	http.ServeContent(c.Writer, c.Request, metadata.Name, metadata.CreatedAt, f)
 }
 
 func (s *Server) restoreFileVersion(c *gin.Context) {

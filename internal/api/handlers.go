@@ -671,24 +671,29 @@ func (s *Server) downloadFile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid file id")
 		return
 	}
-	n, err := s.ownedNode(userID(c), id, true)
-	if err != nil || n.Type != meta.NodeTypeFile || n.File == nil {
+	metadata, err := loadCurrentFileDownloadMetadata(
+		c.Request.Context(),
+		s.DB,
+		userID(c),
+		id,
+	)
+	if err != nil {
 		fail(c, http.StatusNotFound, "file not found")
 		return
 	}
-	f, err := s.Store.Open(c.Request.Context(), n.File.StorageKey)
+	f, err := s.Store.Open(c.Request.Context(), metadata.StorageKey)
 	if err != nil {
 		fail(c, http.StatusNotFound, "stored content not found")
 		return
 	}
 	defer f.Close()
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(n.Name))
-	c.Header("ETag", fmt.Sprintf("\"%d\"", n.Revision))
-	if n.File.SHA256 != "" {
-		c.Header("X-Content-SHA256", n.File.SHA256)
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(metadata.Name))
+	c.Header("ETag", fmt.Sprintf("\"%d\"", metadata.Revision))
+	if metadata.SHA256 != "" {
+		c.Header("X-Content-SHA256", metadata.SHA256)
 	}
-	http.ServeContent(c.Writer, c.Request, n.Name, n.File.UpdatedAt, f)
+	http.ServeContent(c.Writer, c.Request, metadata.Name, metadata.UpdatedAt, f)
 }
 
 func (s *Server) overwriteFile(c *gin.Context) {
