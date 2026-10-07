@@ -43,6 +43,30 @@ export type XDriveBackgroundTaskPage = {
   next_cursor?: string
 }
 
+export function xDriveNormalizeBackgroundTaskPage(
+  value: unknown,
+): XDriveBackgroundTaskPage {
+  if (Array.isArray(value)) {
+    return {
+      current_items: value as XDriveBackgroundTask[],
+      history_items: [],
+    }
+  }
+  if (!value || typeof value !== 'object') {
+    return { current_items: [], history_items: [] }
+  }
+  const page = value as Partial<XDriveBackgroundTaskPage>
+  const currentItems = Array.isArray(page.current_items) ? page.current_items : []
+  const historyItems = Array.isArray(page.history_items) ? page.history_items : []
+  return {
+    current_items: currentItems,
+    history_items: historyItems,
+    ...(typeof page.next_cursor === 'string' && page.next_cursor.trim()
+      ? { next_cursor: page.next_cursor }
+      : {}),
+  }
+}
+
 export type XDriveBackgroundTask = {
   id: string
   kind: string

@@ -284,6 +284,23 @@ test('Task Center badge includes owner background activity through shared summar
 })
 
 
+test('background task page normalization tolerates partial and legacy responses', () => {
+  for (const token of [
+    'export function xDriveNormalizeBackgroundTaskPage',
+    'Array.isArray(value)',
+    'Array.isArray(page.current_items)',
+    'Array.isArray(page.history_items)',
+    'current_items: []',
+    'history_items: []',
+  ]) {
+    assert.ok(backgroundModel.includes(token), `background page normalizer missing: ${token}`)
+  }
+  assert.ok(
+    controller.includes('xDriveNormalizeBackgroundTaskPage('),
+    'Task Center controller must normalize runtime page responses before iterating arrays',
+  )
+})
+
 test('background task history uses one shared active-first cursor controller', () => {
   for (const token of [
     'loadMinePage',

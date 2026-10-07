@@ -5,6 +5,7 @@ import {
   xDriveBackgroundTaskPollIntervalMs,
   xDriveBackgroundTaskSummaryPollIntervalMs,
   xDriveFileOperationHasHistory,
+  xDriveNormalizeBackgroundTaskPage,
 } from '..'
 import type {
   XDriveBackgroundTask,
@@ -183,7 +184,9 @@ function useXDriveBackgroundTasks({
     if (global) setGlobalLoading(true)
     else setMineLoading(true)
     try {
-      const page = await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT)
+      const page = xDriveNormalizeBackgroundTaskPage(
+        await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT),
+      )
       const update = (
         previous: XDriveBackgroundTaskPageState,
       ): XDriveBackgroundTaskPageState => ({
@@ -219,9 +222,11 @@ function useXDriveBackgroundTasks({
     if (global) setGlobalLoadingMore(true)
     else setMineLoadingMore(true)
     try {
-      const page = await load(
-        XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
-        visibleState.nextCursor,
+      const page = xDriveNormalizeBackgroundTaskPage(
+        await load(
+          XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
+          visibleState.nextCursor,
+        ),
       )
       const update = (
         previous: XDriveBackgroundTaskPageState,
