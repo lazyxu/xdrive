@@ -102,6 +102,7 @@ export function useXDriveCloudFilesController<
   const changeRequestRef = useRef(0)
   const changePollRunningRef = useRef(false)
   const changeHandshakeRefreshRef = useRef(false)
+  const changeRefreshParentIDRef = useRef<number | null>(null)
   const changeRefreshTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const enabledRef = useRef(enabled)
   const crumbsRef = useRef(crumbs)
@@ -186,6 +187,9 @@ export function useXDriveCloudFilesController<
       offset: firstRange.offset,
       limit: firstRange.limit,
     })
+    if (changeRefreshParentIDRef.current === parentID) {
+      changeRefreshParentIDRef.current = null
+    }
     // State commits on the next render, but async change-feed work can resume
     // immediately after this directory load. Publish the authoritative target
     // to the ref synchronously so stale events cannot observe the old parent.
@@ -388,6 +392,10 @@ export function useXDriveCloudFilesController<
         }
 
         if (page.reset_required) {
+          const activeParentID = virtualTargetRef.current?.parentID
+          if (activeParentID !== undefined) {
+            changeRefreshParentIDRef.current = activeParentID
+          }
           cursor = page.latest_cursor
           affected = true
           break
@@ -400,6 +408,7 @@ export function useXDriveCloudFilesController<
             xDriveCloudFilesChangeAffectsParent(change, activeParentID)
           ))
         ) {
+          changeRefreshParentIDRef.current = activeParentID
           affected = true
         }
 
@@ -409,8 +418,15 @@ export function useXDriveCloudFilesController<
       }
 
       changeCursorRef.current = cursor
-      if (changeHandshakeRefreshRef.current && virtualTargetRef.current) {
-        affected = true
+      const activeParentID = virtualTargetRef.current?.parentID
+      if (
+        changeHandshakeRefreshRef.current ||
+        (
+          activeParentID !== undefined &&
+          changeRefreshParentIDRef.current === activeParentID
+        )
+      ) {
+        affected = Boolean(virtualTargetRef.current)
       }
       if (affected) await scheduleChangedDirectoryRefresh()
       return affected
@@ -488,6 +504,7 @@ export function useXDriveCloudFilesController<
       changeCursorRef.current = null
       changePollRunningRef.current = false
       changeHandshakeRefreshRef.current = false
+      changeRefreshParentIDRef.current = null
       if (changeRefreshTimerRef.current !== null) {
         globalThis.clearTimeout(changeRefreshTimerRef.current)
         changeRefreshTimerRef.current = null
@@ -536,7 +553,10 @@ export function useXDriveCloudFilesController<
     if (
       !enabled ||
       !virtualTarget ||
-      !changeHandshakeRefreshRef.current ||
+      (
+        !changeHandshakeRefreshRef.current &&
+        changeRefreshParentIDRef.current !== virtualTarget.parentID
+      ) ||
       directoryInFlightRequestRef.current !== null
     ) return
 
