@@ -373,3 +373,16 @@ test('Desktop FileExplorer persists tab sessions per server account while reconn
     'Desktop reconnect snapshot must remain available as the explicit initial state',
   )
 })
+
+
+test('Desktop FileExplorer remounts shared navigation when session identity key changes', () => {
+  const start = filesPage.indexOf('<DesktopFileExplorer')
+  const end = filesPage.indexOf('/>', start)
+  assert.ok(start >= 0 && end > start, 'Desktop Files page Explorer element is missing')
+  const block = filesPage.slice(start, end)
+
+  assert.ok(
+    block.includes('key={explorer.navigationSessionStorageKey}'),
+    'Desktop FileExplorer must remount when the Server+username navigation session key changes so old-account tabs cannot survive into or be persisted under the new account',
+  )
+})

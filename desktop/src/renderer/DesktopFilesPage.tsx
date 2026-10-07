@@ -67,6 +67,7 @@ export function DesktopFilesPage({
       ) : null}
 
       <DesktopFileExplorer
+        key={explorer.navigationSessionStorageKey}
         {...explorer}
         trashActive={trashOpen}
         trashAdapter={desktopTrashDialogAdapter}
