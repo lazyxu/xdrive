@@ -246,3 +246,113 @@ test('transient availability outage does not return Desktop FileExplorer to 我�
     'a best-effort availability failure must not reset the active child directory',
   )
 })
+
+
+test('transient Agent monitor reconnect preserves the active child directory', async () => {
+  const mainSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'main', 'index.cts'),
+    'utf8',
+  )
+  const monitorStart = mainSource.indexOf('function startAgentMonitor()')
+  const monitorEnd = mainSource.indexOf('function startTransferMonitor()', monitorStart)
+  assert.ok(monitorStart >= 0 && monitorEnd > monitorStart)
+  const monitorSource = mainSource.slice(monitorStart, monitorEnd)
+  assert.ok(
+    monitorSource.includes('publishAgentState({ connected: false'),
+    'Agent monitor should continue reporting a real transient disconnected state',
+  )
+
+  const runtime = createHookRuntime()
+  const useCloudFiles = loadCloudFilesHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const projects = { id: 2, name: 'Projects' }
+  const report = { id: 3, name: 'report.pdf' }
+  const sort = { key: 'name', direction: 'asc' }
+  let enabled = true
+
+  const port = {
+    async getRoot() {
+      return root
+    },
+    async getQuota() {
+      return {
+        quota_bytes: 1000,
+        physical_used_bytes: 100,
+        available_bytes: 900,
+        logical_file_bytes: 100,
+        trash_bytes: 0,
+        history_bytes: 0,
+        over_quota: false,
+      }
+    },
+    async getPage() {
+      throw new Error('unexpected getPage')
+    },
+    async getRange(parentID, offset, limit) {
+      return {
+        items: parentID === root.id ? [projects] : [report],
+        total_count: 1,
+        offset,
+        limit,
+        sort: 'name',
+        order: 'asc',
+      }
+    },
+  }
+
+  const render = () => runtime.render(() => useCloudFiles({
+    port,
+    enabled,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    preserveStateOnDisable: true,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let cloud = render()
+  assert.deepEqual(cloud.crumbs, [root])
+
+  await cloud.loadDirectory(projects.id, [root, projects], sort)
+  cloud = render()
+  assert.deepEqual(cloud.crumbs, [root, projects])
+
+  // A monitor failure still reaches the renderer as connected=false. Desktop
+  // opts into state preservation, so disabling aborts stale work but keeps the
+  // active crumbs. Reconnect reloads Projects rather than loadInitial(root).
+  enabled = false
+  cloud = render()
+  assert.deepEqual(cloud.crumbs, [root, projects])
+
+  enabled = true
+  render()
+  await flushAsync()
+  cloud = render()
+
+  assert.deepEqual(
+    cloud.crumbs,
+    [root, projects],
+    'transient Agent monitor reconnect must preserve the active child directory',
+  )
+})
+
+test('CloudFiles reconnect preservation is Desktop-only opt-in', () => {
+  const appSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'),
+    'utf8',
+  )
+  assert.ok(
+    appSource.includes('preserveStateOnDisable: true'),
+    'Desktop CloudFiles must preserve navigation across transient Agent disconnects',
+  )
+
+  const controllerSource = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'),
+    'utf8',
+  )
+  assert.ok(
+    controllerSource.includes('preserveStateOnDisable = false'),
+    'shared/Web callers must retain the existing destructive disable default',
+  )
+})

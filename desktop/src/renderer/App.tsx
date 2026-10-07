@@ -354,6 +354,7 @@ export default function App({
     port: cloudFilesPort,
     enabled: agent.connected && configured,
     defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
+    preserveStateOnDisable: true,
     onError: handleCloudFilesError,
   })
 
