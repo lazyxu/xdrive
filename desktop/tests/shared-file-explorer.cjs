@@ -180,7 +180,10 @@ test('shared FileExplorer provides internal and external drag and drop contracts
 
 test('shared FileExplorer details columns are sortable, resizable, configurable and persisted', () => {
   for (const token of [
-    "export type XDriveFileExplorerDetailsColumnKey = XDriveFileExplorerSortKey",
+    "export type XDriveFileExplorerDetailsColumnKey =",
+    "| 'created'",
+    "| 'status'",
+    "| 'availability'",
     'export type XDriveFileExplorerDetailsLayout = {',
     'xDriveNormalizeFileExplorerDetailsLayout',
     'window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))',
@@ -190,8 +193,12 @@ test('shared FileExplorer details columns are sortable, resizable, configurable 
     'setPointerCapture(event.pointerId)',
     "cursor: 'col-resize'",
     'onPointerMove={(event) => moveDetailsColumnResize(event, key)}',
-    'onClick={() => setSort({',
-    'aria-label={`按${detailsColumnMeta[key].label}排序`}',
+    'sortKey?: XDriveFileExplorerSortKey',
+    "created: { label: '创建时间'",
+    "status: { label: '状态'",
+    "availability: { label: '可用性'",
+    'detailsColumnMeta[key].sortKey',
+    'const sortKey = detailsColumnMeta[key].sortKey!',
   ]) {
     assert.ok(explorer.includes(token), `missing details-column feature: ${token}`)
   }

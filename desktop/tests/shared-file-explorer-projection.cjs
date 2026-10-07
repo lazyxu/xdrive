@@ -81,6 +81,7 @@ test('sparse Search projection preserves logical indexes without dense aliases',
       type: 'file',
       size: 10,
       revision: 1,
+      created_at: '2026-10-05T00:00:00Z',
       updated_at: '2026-10-06T00:00:00Z',
     },
     path: 'Search/result-400.jpg',
@@ -92,6 +93,7 @@ test('sparse Search projection preserves logical indexes without dense aliases',
       type: 'file',
       size: 20,
       revision: 1,
+      created_at: '2026-10-05T01:00:00Z',
       updated_at: '2026-10-06T00:00:00Z',
     },
     path: 'Search/result-401.jpg',
@@ -106,6 +108,7 @@ test('sparse Search projection preserves logical indexes without dense aliases',
   assert.equal(projected.explorerItems.length, 0, 'sparse Search must not create dense 0..N aliases')
   assert.deepEqual([...projected.virtualExplorerItems.keys()], [400, 401])
   assert.equal(projected.virtualExplorerItems.get(400).secondaryLabel, 'Search/result-400.jpg')
+  assert.equal(projected.virtualExplorerItems.get(400).createdAt, '2026-10-05T00:00:00Z')
   assert.equal(projected.nodeByID.get(401).name, 'result-400.jpg')
   assert.equal(projected.searchByID.get(402).path, 'Search/result-401.jpg')
 })

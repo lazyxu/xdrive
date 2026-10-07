@@ -71,6 +71,12 @@ type DesktopFileAvailabilityEntry = {
   state: AgentFileAvailability
 }
 
+function desktopFileStatusLabel(state: AgentFileAvailability) {
+  if (state.Syncing || state.Mode === 'syncing') return '正在同步'
+  if (state.InSync) return '已同步'
+  return '待同步'
+}
+
 function desktopFileAvailabilityVisual(
   state: AgentFileAvailability,
 ): NonNullable<XDriveFileExplorerItem['availability']> {
@@ -711,6 +717,11 @@ export default function DesktopFileExplorer({
     return () => window.clearTimeout(timer)
   }, [availabilityByID, fileAvailabilitySupported])
 
+  const getItemStatus = useCallback((item: XDriveFileExplorerItem) => {
+    const entry = availabilityByID.get(Number(item.id))
+    return entry ? desktopFileStatusLabel(entry.state) : undefined
+  }, [availabilityByID])
+
   const getItemAvailability = useCallback((item: XDriveFileExplorerItem) => {
     const entry = availabilityByID.get(Number(item.id))
     return entry ? desktopFileAvailabilityVisual(entry.state) : undefined
@@ -1229,6 +1240,7 @@ export default function DesktopFileExplorer({
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
+        getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
