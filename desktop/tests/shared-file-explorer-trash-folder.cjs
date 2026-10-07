@@ -57,7 +57,6 @@ test('Trash controller keeps refresh identity stable across renderer callback re
     'onErrorRef.current = onError',
     'onFeedbackRef.current = onFeedback',
     'onChangedRef.current = onChanged',
-    '}, [adapter])',
     'await onChangedRef.current?.()',
   ]) assert.ok(controller.includes(token), 'Trash callback stability guard missing: ' + token)
   assert.equal(
@@ -66,3 +65,23 @@ test('Trash controller keeps refresh identity stable across renderer callback re
     'inline renderer error callbacks must not restart Trash refresh effect',
   )
 })
+
+test('Trash FileExplorer uses shared sparse ranges with server-global sorting', () => {
+  for (const token of [
+    'useXDriveVirtualCollection',
+    'fileExplorerTrashPageSize = 200',
+    'adapter.listTrashRange',
+    'includeCount',
+    'rangeCollection.primePage',
+    'virtualCollection',
+    'itemCount',
+  ]) assert.ok(controller.includes(token), 'Trash range contract missing: ' + token)
+
+  for (const source of [webExplorer, desktopExplorer]) {
+    assert.ok(source.includes('sort: trashSort'))
+    assert.ok(source.includes('trashActive ? trash.virtualCollection : explorerVirtualCollection'))
+    assert.ok(source.includes('trashActive ? Boolean(trash.virtualCollection) : externallySorted'))
+    assert.ok(source.includes('${trash.itemCount} 个回收站项目'))
+  }
+})
+

@@ -3,13 +3,17 @@ import type {
   FileVersion,
   Node,
 } from '../models'
+import type { XDriveCloudFilesRange } from '../cloud-files'
 import { resolveXDriveTransport } from '../transport-result'
 import type {
   XDriveTransportError,
   XDriveTransportResult,
 } from '../transport-result'
 import type { XDriveShareCreateInput, XDriveShareDialogAdapter } from './ShareDialog'
-import type { XDriveTrashDialogAdapter } from './TrashDialog'
+import type {
+  XDriveTrashDialogAdapter,
+  XDriveTrashRangeRequest,
+} from './TrashDialog'
 import type { XDriveVersionHistoryDialogAdapter } from './VersionHistoryDialog'
 
 export type XDriveFileDialogTransportError = XDriveTransportError
@@ -25,6 +29,9 @@ export function resolveXDriveFileDialogTransport<T>(
 
 export interface XDriveTrashDialogPort {
   listTrash: () => Promise<XDriveFileDialogTransportResult<Node[]>>
+  listTrashRange?: (
+    request: XDriveTrashRangeRequest,
+  ) => Promise<XDriveFileDialogTransportResult<XDriveCloudFilesRange<Node>>>
   restoreTrash: (
     nodeID: number,
     revision: number,
@@ -40,6 +47,9 @@ export function createXDriveTrashDialogAdapter(
 ): XDriveTrashDialogAdapter {
   return {
     listTrash: () => resolveXDriveFileDialogTransport(port.listTrash()),
+    listTrashRange: port.listTrashRange
+      ? (request) => resolveXDriveFileDialogTransport(port.listTrashRange!(request))
+      : undefined,
     restoreTrash: (node) => resolveXDriveFileDialogTransport(
       port.restoreTrash(node.id, node.revision),
     ),

@@ -240,6 +240,7 @@ type desktopIPCController interface {
 	CloudStorageStats(context.Context) (client.StorageStats, error)
 	CloudCleanupStorageCache(context.Context, string) (client.StorageCacheCleanup, error)
 	CloudTrash(context.Context) ([]client.Node, error)
+	CloudTrashRange(context.Context, int, int, string, string, bool) (client.TrashRange, error)
 	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
 	CloudDeleteTrash(context.Context, uint64, uint64) error
 	CloudVersions(context.Context, uint64) ([]client.FileVersion, error)
@@ -543,6 +544,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
 	mux.HandleFunc("POST /v1/cloud/storage-cache/cleanup", h.cloudCleanupStorageCache)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
+	mux.HandleFunc("GET /v1/cloud/trash/range", h.cloudTrashRange)
 	mux.HandleFunc("POST /v1/cloud/trash/restore", h.cloudRestoreTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/delete", h.cloudDeleteTrash)
 	mux.HandleFunc("GET /v1/cloud/versions", h.cloudVersions)
@@ -2122,6 +2124,50 @@ func (h *desktopIPCHandler) cloudTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudTrashRange(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	offset, err := strconv.Atoi(query.Get("offset"))
+	if err != nil || offset < 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_range", "offset must be zero or greater")
+		return
+	}
+	limit, err := strconv.Atoi(query.Get("limit"))
+	if err != nil || limit < 1 || limit > 500 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_range", "limit must be between 1 and 500")
+		return
+	}
+	sortKey := strings.TrimSpace(query.Get("sort"))
+	order := strings.TrimSpace(query.Get("order"))
+	if sortKey == "" {
+		sortKey = "name"
+	}
+	if order == "" {
+		order = "asc"
+	}
+	if sortKey != "name" && sortKey != "updated" && sortKey != "size" && sortKey != "type" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_range", "sort is invalid")
+		return
+	}
+	if order != "asc" && order != "desc" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_range", "order is invalid")
+		return
+	}
+	includeCount := true
+	if raw := strings.TrimSpace(query.Get("include_count")); raw != "" {
+		includeCount, err = strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_trash_range", "include_count must be true or false")
+			return
+		}
+	}
+	page, err := h.ctrl.CloudTrashRange(r.Context(), offset, limit, sortKey, order, includeCount)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) cloudRestoreTrash(w http.ResponseWriter, r *http.Request) {

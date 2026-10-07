@@ -29,6 +29,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
 | Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
+| FileExplorer Trash sparse ranges | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201 trash roots: initial response/materialization **1,201 items -> first 200 items + authoritative total**; later viewport ranges are <=200 items and omit repeated count work. Legacy unpaged Trash API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
@@ -91,6 +92,38 @@ This table is the durable status index for the FileExplorer performance track. A
 - Search result sorting is server-paged for name/updated/size/type; cursors bind query/type/sort/order, and changing sort reloads the active search from page one instead of re-sorting only the loaded subset.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
 - Navigation-tree expansion loads one 200-item folder page at a time; further sibling folders require explicit load-more, while the active path child stays injected even when it lies outside the loaded page.
+
+### FileExplorer Trash sparse-range contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- FileExplorer recycle bin with **1,201 trash-root nodes**;
+- Web/Desktop both use the shared Trash controller and shared VirtualCollection;
+- structural evidence is bounded response/item projection count; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- opening the recycle bin calls legacy `GET /api/v1/trash`;
+- Server materializes all **1,201** trash roots and their file metadata;
+- Web/Desktop retain/project the whole result before FileExplorer can render;
+- changing sort is local-only over that full array.
+
+AFTER / current:
+
+- FileExplorer uses `range=true&offset=&limit=&sort=&order=` with page size **200**;
+- first range returns at most **200 items + total_count**;
+- later viewport ranges return at most **200 items** and use `include_count=false` after the authoritative count is known;
+- sorting is Server-global for name / deletion time / size / type, with directories kept ahead of files;
+- default name ordering is supported by the partial `idx_xd_nodes_trash_name` index;
+- legacy unpaged `listTrash()` remains unchanged for compatibility outside FileExplorer.
+
+Decision: **Accepted.** This removes total-trash-size response/render amplification from the FileExplorer open path without changing restore or permanent-delete semantics.
+
+Regression budget: FileExplorer Trash must never require an unpaged full-list request for initial display; ordinary viewport range payloads stay <= **200 items**.
+
+Next action: continue the basic-path audit at ordinary download / sync reconciliation / delete mutation paths and only change another deterministic request, SQL, allocation, or I/O multiplier.
 
 ### Resumable upload chunk-buffer allocation contract
 

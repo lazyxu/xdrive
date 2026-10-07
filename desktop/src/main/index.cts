@@ -85,6 +85,7 @@ import {
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
   type AgentCloudChildrenRange,
+  type AgentCloudTrashRange,
   type AgentCloudNodeChangePage,
   type AgentCloudQuickAccessItem,
   type AgentCloudFavoriteItem,
@@ -3686,6 +3687,28 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cloud-files')
     return requireAgentClient().cloudTrash()
   }, false))
+  ipcMain.handle(
+    'agent:cloud-trash-range',
+    (_event, offset: unknown, limit: unknown, sort: unknown, order: unknown, includeCount: unknown) =>
+      runAgentAction<AgentCloudTrashRange>(async () => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'cloud-files')
+        if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 ||
+            typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 500 ||
+            !['name', 'updated', 'size', 'type'].includes(String(sort)) ||
+            !['asc', 'desc'].includes(String(order)) ||
+            typeof includeCount !== 'boolean') {
+          throw new AgentIPCError('invalid_input', 0, 'Trash range arguments are invalid.')
+        }
+        return requireAgentClient().cloudTrashRange(
+          offset,
+          limit,
+          sort as 'name' | 'updated' | 'size' | 'type',
+          order as 'asc' | 'desc',
+          includeCount,
+        )
+      }, false),
+  )
   ipcMain.handle('agent:cloud-restore-trash', (_event, id: unknown, revision: unknown) => runAgentAction<AgentCloudNode>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')

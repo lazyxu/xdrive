@@ -697,6 +697,36 @@ func (f *fakeDesktopIPCController) CloudTrash(context.Context) ([]client.Node, e
 	return append([]client.Node(nil), f.cloudTrash...), f.err
 }
 
+func (f *fakeDesktopIPCController) CloudTrashRange(
+	_ context.Context,
+	offset, limit int,
+	sortKey, order string,
+	includeCount bool,
+) (client.TrashRange, error) {
+	start := offset
+	if start > len(f.cloudTrash) {
+		start = len(f.cloudTrash)
+	}
+	end := start + limit
+	if end > len(f.cloudTrash) {
+		end = len(f.cloudTrash)
+	}
+	countIncluded := includeCount
+	totalCount := int64(0)
+	if includeCount {
+		totalCount = int64(len(f.cloudTrash))
+	}
+	return client.TrashRange{
+		Items:              append([]client.Node(nil), f.cloudTrash[start:end]...),
+		TotalCount:         totalCount,
+		TotalCountIncluded: &countIncluded,
+		Offset:             offset,
+		Limit:              limit,
+		Sort:               sortKey,
+		Order:              order,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudRestoreTrash(_ context.Context, _, _ uint64) (client.Node, error) {
 	return f.cloudRestored, f.err
 }

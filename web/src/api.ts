@@ -1729,6 +1729,24 @@ export class XDriveApi {
     return this.request<Node[]>('/api/v1/trash')
   }
 
+  trashRange(
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    includeCount = true,
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+      include_count: String(includeCount),
+    })
+    return this.request<XDriveCloudFilesRange<Node>>(`/api/v1/trash?${query.toString()}`)
+  }
+
   restoreTrash(nodeID: number, revision: number) {
     return this.request<Node>(`/api/v1/trash/${nodeID}/restore`, {
       method: 'POST',

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,9 +43,51 @@ type CreateShareInput struct {
 	MaxDownloads int64      `json:"max_downloads"`
 }
 
+type TrashRange struct {
+	Items              []Node `json:"items"`
+	TotalCount         int64  `json:"total_count"`
+	TotalCountIncluded *bool  `json:"total_count_included,omitempty"`
+	Offset             int    `json:"offset"`
+	Limit              int    `json:"limit"`
+	Sort               string `json:"sort"`
+	Order              string `json:"order"`
+}
+
+func (r TrashRange) HasTotalCount() bool {
+	return r.TotalCountIncluded == nil || *r.TotalCountIncluded
+}
+
 func (c *Client) Trash(ctx context.Context) ([]Node, error) {
 	var out []Node
 	err := c.json(ctx, http.MethodGet, "/api/v1/trash", nil, &out)
+	return out, err
+}
+
+func (c *Client) TrashRange(ctx context.Context, offset, limit int, sort, order string, includeCount bool) (TrashRange, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	sort = strings.TrimSpace(sort)
+	if sort == "" {
+		sort = "name"
+	}
+	order = strings.TrimSpace(order)
+	if order == "" {
+		order = "asc"
+	}
+	values := url.Values{
+		"range":         []string{"true"},
+		"offset":        []string{strconv.Itoa(offset)},
+		"limit":         []string{strconv.Itoa(limit)},
+		"sort":          []string{sort},
+		"order":         []string{order},
+		"include_count": []string{strconv.FormatBool(includeCount)},
+	}
+	var out TrashRange
+	err := c.json(ctx, http.MethodGet, "/api/v1/trash?"+values.Encode(), nil, &out)
 	return out, err
 }
 
