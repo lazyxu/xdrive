@@ -46,6 +46,7 @@ export function useXDriveFileExplorerRecent<
   const clearItemsRef = useRef(clearItems)
   const rawItemsRef = useRef(new Map<number, XDriveFileRecentItem<TNode>>())
   const loadRequestRef = useRef(0)
+  const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
 
   loadItemsRef.current = loadItems
   touchItemRef.current = touchItem
@@ -84,37 +85,50 @@ export function useXDriveFileExplorerRecent<
     void refresh()
   }, [refresh])
 
-  const record = useCallback(async (nodeID: number) => {
-    if (!enabled || nodeID <= 0) return false
-    try {
-      const raw = await touchItemRef.current(nodeID)
-      loadRequestRef.current += 1
-      setLoading(false)
-      rawItemsRef.current.set(nodeID, raw)
-      const projected = projectRecentItem(raw)
-      setItems((current) => [
-        projected,
-        ...current.filter((item) => item.id !== nodeID),
-      ].slice(0, 16))
-      return true
-    } catch {
-      return false
-    }
-  }, [enabled])
+  const enqueueMutation = useCallback(<T,>(operation: () => Promise<T>) => {
+    const result = mutationTailRef.current.then(operation, operation)
+    mutationTailRef.current = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }, [])
 
-  const clear = useCallback(async () => {
-    if (!enabled) return false
-    try {
-      await clearItemsRef.current()
-      loadRequestRef.current += 1
-      setLoading(false)
-      rawItemsRef.current.clear()
-      setItems([])
-      return true
-    } catch {
-      return false
-    }
-  }, [enabled])
+  const record = useCallback((nodeID: number) => {
+    if (!enabled || nodeID <= 0) return Promise.resolve(false)
+    return enqueueMutation(async () => {
+      try {
+        const raw = await touchItemRef.current(nodeID)
+        loadRequestRef.current += 1
+        setLoading(false)
+        rawItemsRef.current.set(nodeID, raw)
+        const projected = projectRecentItem(raw)
+        setItems((current) => [
+          projected,
+          ...current.filter((item) => item.id !== nodeID),
+        ].slice(0, 16))
+        return true
+      } catch {
+        return false
+      }
+    })
+  }, [enabled, enqueueMutation])
+
+  const clear = useCallback(() => {
+    if (!enabled) return Promise.resolve(false)
+    return enqueueMutation(async () => {
+      try {
+        await clearItemsRef.current()
+        loadRequestRef.current += 1
+        setLoading(false)
+        rawItemsRef.current.clear()
+        setItems([])
+        return true
+      } catch {
+        return false
+      }
+    })
+  }, [enabled, enqueueMutation])
 
   const activate = useCallback(async (
     nodeID: number,

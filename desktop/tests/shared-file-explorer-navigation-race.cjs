@@ -955,3 +955,64 @@ test('stale Recent refresh cannot overwrite a newer recorded access', async () =
     'a stale Recent refresh must not erase a newer recorded access',
   )
 })
+
+
+test('Recent mutations preserve user order when clear follows a pending record', async () => {
+  const runtime = createHookRuntime()
+  const useRecent = loadRecentHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const recordedItem = {
+    node: { id: 7, name: 'late.txt', type: 'file' },
+    path: '/late.txt',
+    crumbs: [root],
+    accessed_at: '2026-10-07T00:00:00Z',
+  }
+
+  let releaseTouch
+  let releaseClear
+  let clearCalls = 0
+  const renderRecent = () => runtime.render(() => useRecent({
+    loadItems: async () => [],
+    touchItem: (nodeID) => {
+      assert.equal(nodeID, recordedItem.node.id)
+      return new Promise((resolve) => {
+        releaseTouch = () => resolve(recordedItem)
+      })
+    },
+    clearItems: () => {
+      clearCalls += 1
+      return new Promise((resolve) => {
+        releaseClear = resolve
+      })
+    },
+  }))
+
+  renderRecent()
+  await flushAsync()
+  let recent = renderRecent()
+
+  const olderRecord = recent.record(recordedItem.node.id)
+  const newerClear = recent.clear()
+  await flushAsync()
+
+  assert.equal(
+    clearCalls,
+    0,
+    'clear must wait for an earlier Recent record instead of racing the Server mutation',
+  )
+
+  releaseTouch()
+  assert.equal(await olderRecord, true)
+  await flushAsync()
+  assert.equal(clearCalls, 1)
+
+  releaseClear()
+  assert.equal(await newerClear, true)
+
+  recent = renderRecent()
+  assert.deepEqual(
+    recent.items,
+    [],
+    'a newer clear must remain the final Recent state after an older record settles',
+  )
+})
