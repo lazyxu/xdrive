@@ -327,7 +327,7 @@ file-explorer-virtual-collection-performance:
       node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
 
 
-file-explorer-media-server-performance:
+file-explorer-range-count-performance:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
   stage: test
@@ -342,15 +342,15 @@ file-explorer-media-server-performance:
     POSTGRES_PASSWORD: "xdrive"
     POSTGRES_DB: "xdrive_test"
     XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
-    XD_FILEEXPLORER_MEDIA_SERVER_PERF: "1"
+    XD_FILEEXPLORER_RANGE_COUNT_PERF: "1"
   before_script:
     - *ensure_linux_fetch_tools
     - *install_postgres_client
   rules:
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-real-media-100k"'
-    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-real-media-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-range-count-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-range-count-100k"'
   script:
-    - go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
+    - go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
 file-explorer-media-renderer-trace:
   image: $XDRIVE_CI_NODE_IMAGE
@@ -362,8 +362,6 @@ file-explorer-media-renderer-trace:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/file-explorer-media-/'
     - if: '$CI_COMMIT_BRANCH =~ /^perf\/file-explorer-media-/'
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-real-media-100k"'
-    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-real-media-100k"'
   before_script:
     - |
       set -euo pipefail

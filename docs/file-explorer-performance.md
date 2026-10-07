@@ -11,6 +11,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Work item | Status | Measurement state | Current evidence |
 | --- | --- | --- | --- |
 | Sparse paged directory SQL | **Merged** | Measured | Non-empty sparse reads: **2 -> 1 SQL round-trip**. |
+| Sparse range count reuse at 100k | **Measured / production follow-up approved (#739)** | Paired SQL A/B | Broad-offset rows-only: **2040.550 -> 1259.486 ms (-38.28%)** per 20 ranges; sequential count-once session: **1782.320 -> 1077.919 ms (-39.52%)**. #739 remains benchmark-only. |
 | Search candidate-first / sparse range | **Merged** | Measured | 100k range/cursor workloads: **2.38x to 5.67x faster** depending on access pattern. |
 | Directory sort at 100k | **Measured baseline** | Measured | name/updated/size/type baselines recorded below; type is currently slowest. |
 | Sparse VirtualCollection CPU at 100k | **Accepted structural baseline / no optimization (PR #708)** | Measured | Three CI CPU medians: **126.877 / 160.081 / 161.319 ms per sweep** (**50.751 / 64.032 / 64.528 us per viewport**); hosted-runner timing is diagnostic only, while structural counts are stable at **500 page loads / 800 peak / 600 final retained**. |
@@ -355,11 +356,67 @@ The FileExplorer performance suite should keep these workloads stable:
 | Pagination | 50 consecutive pages | no duplicate requests, no stale-page overwrite |
 | Search | 100k namespace | first-page latency and next-page latency |
 
+### Sparse range count cost A/B
+
+Status: **Measured / production follow-up approved**.
+
+The #734 media benchmark left one repeatable Server-side cost worth isolating: 100k file-heavy sparse directory ranges stayed around **200-236 ms** at first, middle, and end offsets even though thumbnail/object-store behavior was healthy. The current range query computes `COUNT(*) OVER()` on every viewport page, while the VirtualCollection contract only needs one stable `totalCount` to size the scrollbar for the active generation.
+
+This PR is **benchmark-only**. It does not change the production children API, Go client, Agent/Web transport, or shared VirtualCollection contract.
+
+Named workload: `file-explorer-range-count-100k`.
+
+- namespace: **100,000 files** in one directory;
+- range width: **200 items**;
+- initial range: current counted query at offset 0, because a new generation still needs an authoritative total;
+- broad-offset workload: **20 ranges** spread deterministically across the complete directory at offsets **200, 5,200, 10,200, ... 95,200**, preserving visibility into deep OFFSET cost;
+- sequential-viewport workload: one authoritative counted range at offset 0 followed by **20 consecutive 200-item ranges** at offsets **200, 400, ... 4,000**;
+- A path: the current production SQL shape with `COUNT(*) OVER() AS total_count` on every subsequent range;
+- B path: the identical parent authorization join, File join, ordering, offset, limit, and projected row columns with only the window count removed after the initial counted range;
+- correctness prerequisite: every broad-offset A/B range must return the exact same ordered node IDs, and every counted path must report `total_count=100000`;
+- samples: **3 paired broad-offset batches** plus **3 paired sequential sessions**, alternating A/B execution order to reduce simple run-order bias;
+- timing: report first-counted median, broad-offset batch/per-range medians, sequential session medians, raw sample batches, and paired reductions. Hosted-runner wall time remains diagnostic until repeated samples establish variance.
+
+Command:
+
+`XD_FILEEXPLORER_RANGE_COUNT_PERF=1 go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api`
+
+Measured first authoritative CI sample (#739):
+
+| Workload | Current counted path | Count-once / rows-only path | Delta |
+| --- | ---: | ---: | ---: |
+| Initial authoritative range | **82.252 ms median** | n/a | The first range still counts by design |
+| 20 broad-offset subsequent ranges | **2040.550 ms** batch median (**102.028 ms/range**) | **1259.486 ms** batch median (**62.974 ms/range**) | **-38.28%**, about **39.1 ms/range** avoided |
+| Sequential session: counted first range + 20 subsequent ranges | **1782.320 ms** median | **1077.919 ms** median | **-39.52%**, about **704.4 ms/session** avoided |
+
+Raw paired samples:
+
+- broad counted batches: **[2017.723, 2097.399, 2040.550] ms**;
+- broad rows-only batches: **[1258.320, 1353.622, 1259.486] ms**;
+- sequential count-every-page sessions: **[1782.320, 1793.888, 1782.060] ms**;
+- sequential count-once sessions: **[1092.544, 1077.919, 1069.505] ms**.
+
+The test completed in **29.39 s** and verified exact ordered node-ID equality for every broad A/B range plus `total_count=100000` on counted reads.
+
+Decision: **accept the count-once direction for a separate production PR.** The roughly **38-40%** paired reduction is large and internally stable enough to justify implementation work. #739 remains benchmark-only so measurement and production-contract risk stay separated.
+
+The production follow-up must preserve these semantics:
+
+- offset 0 / a new navigation-or-sort generation obtains an authoritative total count;
+- subsequent ranges may omit recomputing the count only when the client already owns that same generation's stable count;
+- a missing count is never interpreted as zero;
+- navigation, sort, refresh, or another generation reset reacquires an authoritative count;
+- empty/out-of-range and 404 distinction must remain correct;
+- Web and Desktop must consume one shared contract rather than inventing platform-specific count reuse.
+
+The final #739 CI rerun is a validation sample of this unchanged benchmark. If it materially contradicts the first paired result, keep the optimization in benchmarking state instead of proceeding.
+
+
 ## Next work
 
 1. **No further thumbnail or marquee production tuning from #734.** Keep the current **80 ms scroll-settle**, **6-request thumbnail concurrency**, **96-entry FileExplorer cache**, video icon fallback, and virtual-geometry marquee implementation.
-2. The next performance investigation is **100k file-heavy sparse range count cost**. A/B the current `COUNT(*) OVER()` range query against a count-once / count-free subsequent-range contract on the same PostgreSQL fixture, including first/middle/end ranges and repeated viewport loads.
-3. Only promote that investigation into a production API/SQL change if the paired benchmark shows a repeatable material improvement and preserves exact total-count semantics across navigation-generation resets and directory mutations.
+2. **Measured / accepted direction:** #739 shows a **38.28% broad-offset** and **39.52% sequential-session** reduction when later ranges stop recomputing `COUNT(*) OVER()`. Keep #739 benchmark-only.
+3. Next production PR: implement an explicit **count-once / count-free subsequent-range** contract across Server -> Go client -> Desktop Agent/Web adapters -> shared CloudFiles/VirtualCollection, with generation reset and exact-count correctness tests before any timing claim.
 4. Keep a combined browser-to-real-Server trace as optional validation if field behavior later disagrees with the separate backend and Chromium measurements; do not build it merely to chase hosted-runner timing.
 5. Warm FileExplorer video posters remain blocked until the product has a real derived/cached poster contract.
 
