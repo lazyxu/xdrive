@@ -379,9 +379,20 @@ processes candidates requests a person-cluster rebuild for the same owner. Repea
 generation is queued/running. Candidate-owner scans every 30 seconds remain the correctness fallback for
 lost events, process restarts, analyzer-version changes, and retry eligibility.
 
+MediaIndexer and Photo Intelligence scheduler generations are intentionally not persisted as a second
+domain-run history. Their bounded batches are execution details that may be coalesced, retried, or split
+without changing the business result. Media indexing history is represented by canonical `MediaMetadata`
+state/error/timestamps; Photo Intelligence retains per-asset/per-owner analyzer version, attempt, last error,
+completion timestamps, plus the durable reanalysis intent epochs and initiator attribution. A separate run
+history should be introduced only for a concrete compliance/SLA/forensics requirement that those domain
+records cannot answer.
+
 Users may explicitly request reanalysis with `POST /api/v1/photo-intelligence/reanalyze`. Administrators may
 request the same derived-state rebuild for a specific active user with
-`POST /api/v1/admin/users/:id/photo-intelligence/reanalyze`. Manual reanalysis is a durable owner+kind intent
+`POST /api/v1/admin/users/:id/photo-intelligence/reanalyze`. That privileged direct API records both accepted
+and rejected administrator commands in the existing audit log (actor, target user, requested/accepted kinds,
+result and rejection reason); automatic scheduler generations are not audit events. Manual reanalysis is a
+durable owner+kind intent
 in `xd_photo_intelligence_reanalyze_intents`: the API atomically advances `requested_epoch` before returning
 202, then scheduling is best-effort. Startup and the 30-second reconcile scan recover any
 `requested_epoch > applied_epoch` row after queue pressure or Server restart. Only a generation that has
