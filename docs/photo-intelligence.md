@@ -1,8 +1,8 @@
 # xDrive Photo Intelligence
 
-> **Normative boundary:** Photo Intelligence is an optional, connector-neutral analysis layer that runs only after xDrive has created local `PhotoAsset` / `PhotoResource` / `PhotoMetadata` state. Yike, Synology Photos, FileStation, Synology Push, and future synchronization-folder connectors must not provide canonical face/person/place intelligence.
+> **Normative boundary:** Photo Intelligence is an optional, connector-neutral analysis layer that runs only after xDrive has created local `PhotoAsset` / `PhotoResource` / `PhotoMetadata` state. Yike, Synology Photos, FileStation, Synology Push, and future synchronization-folder connectors must not provide canonical face/person/place/visual/OCR intelligence.
 
-This document defines the architecture for automatic face/person analysis and human-readable place analysis. It is deliberately separate from `docs/photo-source-v2-roadmap.md`: Photo Source v2 is the file-ingestion and native-media foundation; Photo Intelligence is a later derived product layer.
+This document defines the architecture for automatic face/person analysis, human-readable place analysis, and rebuildable Smart Search visual/OCR analysis. It is deliberately separate from `docs/photo-source-v2-roadmap.md`: Photo Source v2 is the file-ingestion and native-media foundation; Photo Intelligence is a later derived product layer.
 
 ## Goals
 
@@ -11,7 +11,9 @@ Photo Intelligence may add rebuildable facets such as:
 - detected faces and face embeddings;
 - automatic person clusters;
 - human-readable place labels derived from locally parsed GPS;
-- future smart Gallery facets based on those derived results.
+- bounded visual object/scene labels derived from the canonical analysis preview;
+- bounded OCR text derived from the canonical analysis preview;
+- future semantic-search embeddings built only after the lexical intelligence index is stable.
 
 The same local original must produce the same analysis inputs regardless of whether it arrived through upload, Web, Desktop, Yike, Synology Photos, FileStation, Synology Push, FUSE, or CfAPI.
 
@@ -29,8 +31,12 @@ Node + File + CAS
        |    -> PhotoPersonCluster
        |
        +-> local GPS
-            -> place resolver
-            -> PhotoPlaceLabel
+       |    -> place resolver
+       |    -> PhotoPlaceLabel
+       |
+       +-> visual/OCR analyzer
+            -> PhotoVisualLabel
+            -> PhotoOCRText
 ```
 
 Photo Intelligence must not:
@@ -76,7 +82,9 @@ Initial analysis kinds are:
 
 - `face_detection`;
 - `face_embedding`;
-- `place_label`.
+- `place_label`;
+- `visual_label`;
+- `ocr_text`.
 
 ### `PhotoFace`
 
@@ -101,6 +109,21 @@ When an owner temporarily has more than one ready embedding version during a mod
 A photo asset may have one current derived human-readable place label. The row records the exact GPS coordinates used plus resolver/dataset version and structured country/region/city/district/locality fields.
 
 The canonical coordinates remain `PhotoMetadata.Latitude/Longitude`; a place label is only a rebuildable presentation/search facet.
+
+### `PhotoVisualLabel` / `PhotoOCRText`
+
+Smart Search intelligence is also asset-scoped, derived, and rebuildable.
+
+- `PhotoVisualLabel` stores a bounded label vocabulary and confidence. The initial
+  reference classifier is MobileNetV2 over the pinned ImageNet-1K vocabulary. These
+  labels are search evidence, not media identity and not user-authored tags.
+- `PhotoOCRText` stores bounded recognized scene text plus the recognizer language
+  contract. It is never copied into descriptions or tags.
+- Search consumes these rows only while the corresponding `PhotoAnalysisState` is
+  `ready`. Stale/failed rows may remain physically present until a successful rebuild
+  but are not authoritative.
+- Model/pipeline hashes participate in analyzer-version tokens, so upgrades invalidate
+  derived search evidence deterministically.
 
 ## Face/person analysis policy
 
@@ -359,12 +382,13 @@ to the next generation when work is already active, preventing an older generati
 premature stale marker. Reanalysis only invalidates/rebuilds derived Photo Intelligence state; it does not
 modify originals, durable people, manual `PeopleJSON`, tags, favorites, descriptions, or albums.
 
-The current control surface intentionally does not expose mid-flight cancellation for face/place/person
-analysis. Killing a process-local task without first defining durable cancellation recovery could strand
-`running` analysis rows, so cancellation remains unavailable until that state transition is explicitly
-designed.
+Owner-scoped face/place/person/Smart Search runtime work uses the durable background
+cancellation fence. A cancellation request advances the persisted owner+kind epoch;
+running work observes that epoch through the distributed owner lease heartbeat, rolls
+any `running` analysis state back to `stale`, and only then acknowledges cancellation.
+Queued generations captured before the epoch are fenced before domain work starts.
 
-Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place label, and cluster memberships. Durable person membership is checked separately because its owner and cover invariants represent user intent. Smart-album `person_identity` references are verified but never guessed or silently removed when they are broken.
+Deleting a `PhotoAsset` cascades its asset-scoped analysis state, faces, place label, visual labels, OCR text, and cluster memberships. Durable person membership is checked separately because its owner and cover invariants represent user intent. Smart-album `person_identity` references are verified but never guessed or silently removed when they are broken.
 
 Automatic person clusters remain rebuildable derived state. `xdrive-server media repair` may remove corrupt memberships, clear a cover that no longer points at one of the durable person's own assets, or reset an inconsistent automatic cluster projection. `--gc-intelligence` additionally removes automatic clusters older than 24 hours when they are empty or no longer authoritative because their owner cluster state is missing, non-ready, stale, or version-mismatched. It never deletes a durable `PhotoPerson`, manual `PeopleJSON`, originals, or smart-album rules.
 
@@ -379,13 +403,14 @@ xdrive-server media status --json
 
 The status command is read-only. It reports:
 
-- whether the optional face analyzer is configured and reachable;
+- whether the optional local Photo Intelligence analyzer is configured and reachable;
 - the live analyzer manifest, including detector/embedding model name, version, SHA-256, license, embedding format/dimensions, and optional runtime framework/version/device;
 - face-detection and face-embedding `pending / running / ready / failed / stale` counts plus persisted face rows;
 - the current person-clustering analyzer version, owner-state counts, automatic clusters/memberships, and durable people/memberships;
-- whether the offline place resolver is configured plus place-analysis state counts and persisted place labels.
+- whether the offline place resolver is configured plus place-analysis state counts and persisted place labels;
+- visual-label/OCR analysis state counts plus persisted visual-label and OCR-document counts.
 
-Face analysis remains **disabled by default**. The standard reference deployment enables it only with the `photo-intelligence` Compose profile / analyzer socket configuration. The reference analyzer reports `runtime.framework=opencv_dnn` and `runtime.device=cpu`; alternate analyzers may omit runtime details while still satisfying protocol v1.
+Photo Intelligence ML analysis remains **disabled by default**. The standard reference deployment enables face plus Smart Search inference only with the `photo-intelligence` Compose profile / analyzer socket configuration. The reference analyzer reports `runtime.framework=opencv_dnn` and `runtime.device=cpu`; alternate analyzers may omit runtime details while still satisfying protocol v1.
 
 ## Product/API rules
 
@@ -395,6 +420,7 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
 - platform transports remain adapters;
 - automatic suggestions must be visually distinguishable from user-authored metadata;
 - search/smart-album filters must remain usable with all synchronization providers offline;
+- Gallery lexical search may consume only local ready visual/OCR/place/person evidence; semantic embeddings must remain versioned derived state;
 - deleting/rebuilding intelligence must not delete or mutate originals or user-authored metadata.
 
 ## Delivery sequence
@@ -451,5 +477,11 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
    - corrupt ready automatic-person projections are reset as rebuildable derived state; user-authored durable people are never inferred or deleted;
    - `media repair --gc-intelligence` conservatively removes automatic clusters older than 24 hours when empty or non-authoritative;
    - broken smart-album person references are reported and intentionally left for explicit user repair rather than silently dropping a saved rule.
+9. **Smart Search lexical intelligence — current**
+   - `visual_label` and `ocr_text` are first-class versioned analysis kinds;
+   - MobileNetV2 + PP-OCRv3 + CRNN CN run inside the existing optional local analyzer boundary using the canonical analysis preview;
+   - the shared Gallery `q` query searches only ready visual/OCR evidence together with local filenames, metadata, tags, people, and place labels;
+   - Task Center exposes `photo.smart_search` through the same cancel/reanalyze contract;
+   - semantic/vector retrieval remains the next Phase-8 slice and must not mix embedding versions.
 
 The supported reference runtime is now the opt-in OpenCV DNN CPU analyzer using pinned YuNet detection and SFace embeddings. GPU/NPU or alternate licensed/BYO analyzers remain optional future backends and must preserve the same versioned analyzer contract; the schema and durable-person model remain runtime-agnostic.

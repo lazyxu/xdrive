@@ -130,7 +130,7 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   assert.match(sharedGalleryFilters, /export function XDriveMediaGalleryFilterToolbar/)
   assert.match(sharedGalleryFilters, /<Popover/)
   assert.match(sharedGalleryFilters, /showSearch=\{false\}/)
-  assert.match(sharedGalleryFilters, /placeholder="搜索照片、文件名、相机或镜头"/)
+  assert.match(sharedGalleryFilters, /placeholder="搜索照片、对象、场景或文字"/)
   assert.match(sharedGalleryMain, /section=\{section\}/)
   assert.match(sharedGalleryMain, /showAlbumIndex/)
   assert.match(sharedGalleryMain, /showPlacesIndex/)

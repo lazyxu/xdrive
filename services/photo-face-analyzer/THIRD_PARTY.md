@@ -1,10 +1,10 @@
-# xDrive Photo Face Analyzer — third-party components
+# xDrive Photo Intelligence Analyzer — third-party components
 
 The reference analyzer is optional and separate from the CGO-free xDrive Server.
 
 ## OpenCV Zoo model provenance
 
-The image build downloads the two model files from OpenCV Zoo commit
+The image build downloads the following model files from OpenCV Zoo commit
 `47534e27c9851bb1128ccc0102f1145e27f23f98` and verifies their Git LFS
 SHA-256 object IDs before the image can be built.
 
@@ -12,15 +12,22 @@ SHA-256 object IDs before the image can be built.
 | --- | --- | --- | --- |
 | YuNet | `face_detection_yunet_2023mar.onnx` | `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4` | MIT |
 | SFace | `face_recognition_sface_2021dec.onnx` | `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` | Apache-2.0 |
+| MobileNetV2 | `image_classification_mobilenetv2_2022apr.onnx` | `c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5` | Apache-2.0 |
+| PP-OCRv3 CN detector | `text_detection_cn_ppocrv3_2023may.onnx` | `03f550c6b406fda8bf54bd8327815f6c7e2edd98cea02348c93d879254366587` | Apache-2.0 |
+| CRNN CN recognizer | `text_recognition_CRNN_CN_2021nov.onnx` | `c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba` | Apache-2.0 |
 
-The full upstream YuNet and SFace license texts are downloaded from the same
-pinned OpenCV Zoo commit into `/licenses/YUNET_LICENSE.txt` and
-`/licenses/SFACE_LICENSE.txt` during the image build.
+The corresponding upstream license texts are downloaded from the same pinned
+commit into `/licenses`. ImageNet labels and the CRNN CN charset are extracted
+at image-build time from the pinned OpenCV Zoo source files; xDrive does not
+fetch labels or dictionaries at runtime.
 
 Sources:
 
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_recognition_sface
+- https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/image_classification_mobilenet
+- https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_detection_ppocr
+- https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_recognition_crnn
 
 ## Runtime packages
 
@@ -35,7 +42,7 @@ analyzer has no GUI/display dependency.
 
 ## Processing contract
 
-The reference pipeline is CPU-only in this release:
+The reference face pipeline is CPU-only:
 
 1. YuNet detection: confidence 0.9, NMS 0.3, top-K 5000.
 2. SFace alignment with the five YuNet landmarks via `alignCrop`.
@@ -43,6 +50,14 @@ The reference pipeline is CPU-only in this release:
 4. L2 normalization.
 5. little-endian float32 serialization.
 
-Any change to these semantics must change the analyzer `pipeline_version`, so
-xDrive invalidates and rebuilds derived embeddings rather than comparing
-vectors produced by incompatible preprocessing.
+The initial Smart Search pipeline is also CPU-only:
+
+1. MobileNetV2 provides a bounded top-5 ImageNet visual-label vocabulary.
+2. PP-OCRv3 CN detects scene-text regions on the xDrive analysis preview.
+3. CRNN CN recognizes Chinese, Latin letters, digits, and its pinned symbol set.
+4. xDrive stores only rebuildable labels/OCR text; originals and user metadata
+   remain authoritative.
+
+Any change to these semantics changes the relevant analyzer
+`pipeline_version`/model version token, so xDrive invalidates and rebuilds
+derived intelligence rather than mixing incompatible generations.

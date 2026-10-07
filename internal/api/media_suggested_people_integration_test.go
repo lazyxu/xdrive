@@ -51,6 +51,8 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 		&meta.PhotoAnalysisState{}, &meta.PhotoFace{},
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
+		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 	); err != nil {
 		t.Fatal(err)
 	}

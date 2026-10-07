@@ -29,7 +29,7 @@ presentation and product intelligence.
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | **Current** |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | **Current** |
 | 7 | Map Places | **Current** |
-| 8 | Smart Search: object/scene + OCR, then semantic search | Planned |
+| 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical intelligence first** |
 | 9 | Memories / Recent Days / Trips / On This Day | Planned |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | Planned |
 | 11 | Pets / people groups / suggestion review | Planned |
@@ -247,3 +247,36 @@ shared provider adapter without changing Gallery Place identity or platform adap
 Server and Desktop Agent accept up to 1000 compact Place facets for this surface while
 keeping the ordinary default at 24. Web/Desktop transport code remains otherwise
 unchanged.
+
+
+## Phase 8 — Smart Search: visual labels + OCR foundation
+
+The first Smart Search slice keeps the existing shared Gallery search box and existing
+Server-side `q` query. Web/Desktop do not gain a second search controller or client-side
+index. Instead, the optional local Photo Intelligence worker produces two rebuildable
+asset-scoped projections:
+
+- `visual_label`: bounded MobileNetV2/ImageNet object and broad scene labels with
+  confidence;
+- `ocr_text`: bounded scene text from PP-OCRv3 detection plus the Chinese CRNN
+  recognizer, whose pinned charset also covers Latin letters and digits.
+
+Both analyses consume only the canonical xDrive 1280px analysis preview. They run in
+the existing `ml_cpu` background resource class through the same distributed owner
+lease, durable reanalyze, cancellation, and Task Center contracts as other Photo
+Intelligence work. The reference analyzer remains opt-in and has no runtime Internet
+access; model hashes, licenses, label vocabulary, and OCR charset are pinned in the
+image build.
+
+Gallery `q` now searches local filename/camera/description plus user tags, manual
+people labels, durable person names, ready place labels, ready visual labels, and ready
+OCR text. Stale/failed analysis rows are deliberately excluded from search, so a model
+upgrade never exposes a mixed-generation intelligence index.
+
+The search UI remains entirely under `ui/shared`; platform adapters continue to pass
+the same `MediaGalleryQuery.search` value.
+
+**Still inside Phase 8, not implemented by this slice:** vector embeddings, natural-
+language ranking, similarity search, and semantic retrieval. Those must be added after
+the lexical object/scene/OCR index is stable, and must use a versioned embedding space
+rather than silently changing `q` semantics.

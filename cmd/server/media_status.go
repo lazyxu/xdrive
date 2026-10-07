@@ -26,6 +26,15 @@ type mediaFaceStatusDTO struct {
 	EmbeddingAnalyzerVersion string                              `json:"embedding_analyzer_version,omitempty"`
 }
 
+type mediaSmartStatusDTO struct {
+	Configured            bool                                 `json:"configured"`
+	Reachable             bool                                 `json:"reachable"`
+	Error                 string                               `json:"error,omitempty"`
+	Analyzer              *photointelligence.SmartAnalyzerInfo `json:"analyzer,omitempty"`
+	VisualAnalyzerVersion string                               `json:"visual_analyzer_version,omitempty"`
+	OCRAnalyzerVersion    string                               `json:"ocr_analyzer_version,omitempty"`
+}
+
 type mediaPersonStatusDTO struct {
 	Enabled         bool   `json:"enabled"`
 	AnalyzerVersion string `json:"analyzer_version"`
@@ -37,6 +46,7 @@ type mediaPlaceStatusDTO struct {
 
 type mediaStatusDTO struct {
 	Face     mediaFaceStatusDTO                                `json:"face"`
+	Smart    mediaSmartStatusDTO                               `json:"smart_search"`
 	Person   mediaPersonStatusDTO                              `json:"person"`
 	Place    mediaPlaceStatusDTO                               `json:"place"`
 	Database photointelligence.PhotoIntelligenceDatabaseStatus `json:"database"`
@@ -78,6 +88,9 @@ func runMediaStatus(args []string) error {
 		Face: mediaFaceStatusDTO{
 			Configured: strings.TrimSpace(cfg.PhotoFaceAnalyzerSocket) != "",
 		},
+		Smart: mediaSmartStatusDTO{
+			Configured: strings.TrimSpace(cfg.PhotoFaceAnalyzerSocket) != "",
+		},
 		Person: mediaPersonStatusDTO{
 			Enabled:         true,
 			AnalyzerVersion: photointelligence.PersonClusterAnalyzerVersion(),
@@ -112,6 +125,34 @@ func runMediaStatus(args []string) error {
 					photointelligence.FaceDetectorAnalyzerVersion(info)
 				report.Face.EmbeddingAnalyzerVersion =
 					photointelligence.FaceEmbeddingAnalyzerVersion(info)
+			}
+		}
+	}
+
+	if report.Smart.Configured {
+		analyzer, analyzerErr := photointelligence.NewUnixSmartAnalyzer(
+			cfg.PhotoFaceAnalyzerSocket,
+			cfg.PhotoFaceAnalyzerToken,
+			mediaStatusAnalyzerTimeout,
+		)
+		if analyzerErr != nil {
+			report.Smart.Error = analyzerErr.Error()
+		} else {
+			analyzerCtx, analyzerCancel := context.WithTimeout(
+				context.Background(),
+				mediaStatusAnalyzerTimeout,
+			)
+			defer analyzerCancel()
+			info, infoErr := analyzer.Info(analyzerCtx)
+			if infoErr != nil {
+				report.Smart.Error = infoErr.Error()
+			} else {
+				report.Smart.Reachable = true
+				report.Smart.Analyzer = &info
+				report.Smart.VisualAnalyzerVersion =
+					photointelligence.SmartVisualAnalyzerVersion(info)
+				report.Smart.OCRAnalyzerVersion =
+					photointelligence.SmartOCRAnalyzerVersion(info)
 			}
 		}
 	}
@@ -183,6 +224,56 @@ func printMediaStatus(report mediaStatusDTO) {
 		formatAnalysisStateCounts(report.Database.FaceEmbedding),
 	)
 	fmt.Printf("detected face rows: %d\n", report.Database.FaceRows)
+
+	if !report.Smart.Configured {
+		fmt.Println("smart search analysis: disabled")
+	} else if !report.Smart.Reachable {
+		fmt.Println("smart search analysis: configured, analyzer unreachable")
+		if report.Smart.Error != "" {
+			fmt.Printf("smart analyzer error: %s\n", report.Smart.Error)
+		}
+	} else {
+		fmt.Println("smart search analysis: enabled")
+		info := report.Smart.Analyzer
+		fmt.Printf("smart analyzer: %s\n", info.Name)
+		fmt.Printf("smart pipeline: %s\n", info.PipelineVersion)
+		fmt.Printf(
+			"classifier: %s %s sha256=%s license=%s\n",
+			info.Classifier.Name,
+			info.Classifier.Version,
+			info.Classifier.SHA256,
+			info.Classifier.License,
+		)
+		fmt.Printf(
+			"OCR: %s %s + %s %s language=%s\n",
+			info.TextDetector.Name,
+			info.TextDetector.Version,
+			info.TextRecognizer.Name,
+			info.TextRecognizer.Version,
+			info.OCRLanguage,
+		)
+		fmt.Printf(
+			"visual analyzer version: %s\n",
+			report.Smart.VisualAnalyzerVersion,
+		)
+		fmt.Printf(
+			"OCR analyzer version: %s\n",
+			report.Smart.OCRAnalyzerVersion,
+		)
+	}
+	fmt.Printf(
+		"visual analysis states: %s\n",
+		formatAnalysisStateCounts(report.Database.VisualAnalysis),
+	)
+	fmt.Printf(
+		"OCR analysis states: %s\n",
+		formatAnalysisStateCounts(report.Database.OCRAnalysis),
+	)
+	fmt.Printf(
+		"visual labels: %d OCR documents=%d\n",
+		report.Database.VisualLabels,
+		report.Database.OCRDocuments,
+	)
 
 	fmt.Println("person clustering: enabled")
 	fmt.Printf("person cluster analyzer: %s\n", report.Person.AnalyzerVersion)

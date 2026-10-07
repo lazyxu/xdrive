@@ -20,6 +20,7 @@ func backgroundOwnerCancellableKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
 	case "media.index",
 		"photo.face",
+		"photo.smart_search",
 		"photo.place",
 		"photo.person_cluster":
 		return true

@@ -16,6 +16,8 @@ func backgroundOwnerCancellationTaskShape(
 		return background.PriorityP1, background.ResourceMediaCPU, true
 	case "photo.face":
 		return background.PriorityP2, background.ResourceMLCPU, true
+	case "photo.smart_search":
+		return background.PriorityP3, background.ResourceMLCPU, true
 	case "photo.place", "photo.person_cluster":
 		return background.PriorityP3, background.ResourceBackgroundCPU, true
 	default:

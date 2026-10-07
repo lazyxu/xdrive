@@ -57,6 +57,8 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_people",
 		"xd_photo_person_assets",
 		"xd_photo_place_labels",
+		"xd_photo_visual_labels",
+		"xd_photo_ocr_texts",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("photo intelligence table %q was not created", table)
@@ -240,5 +242,28 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	duplicatePlace := place
 	if err := db.Create(&duplicatePlace).Error; err == nil {
 		t.Fatal("multiple current place labels were accepted for one photo asset")
+	}
+
+	visual := meta.PhotoVisualLabel{
+		AssetID: asset.ID, Label: "beach", Confidence: 0.9,
+	}
+	if err := db.Create(&visual).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateVisual := visual
+	duplicateVisual.ID = 0
+	if err := db.Create(&duplicateVisual).Error; err == nil {
+		t.Fatal("duplicate visual label was accepted for one photo asset")
+	}
+
+	ocr := meta.PhotoOCRText{
+		AssetID: asset.ID, Text: "上海 2026", Language: "zh-en",
+	}
+	if err := db.Create(&ocr).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateOCR := ocr
+	if err := db.Create(&duplicateOCR).Error; err == nil {
+		t.Fatal("multiple current OCR rows were accepted for one photo asset")
 	}
 }

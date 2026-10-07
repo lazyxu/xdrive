@@ -56,6 +56,7 @@ class AnalyzerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.runtime = analyzer.FaceRuntime()
+        cls.smart_runtime = analyzer.SmartRuntime()
         blank = np.zeros((240, 320, 3), dtype=np.uint8)
         ok, encoded = cv.imencode(".jpg", blank)
         if not ok:
@@ -97,6 +98,22 @@ class AnalyzerTests(unittest.TestCase):
             analyzer.SFACE_SHA256,
         )
         self.assertIn("aligncrop-l2", info["pipeline_version"])
+
+        smart = self.smart_runtime.info()
+        self.assertEqual(smart["protocol_version"], 1)
+        self.assertEqual(smart["ocr_language"], "zh-en")
+        self.assertEqual(
+            smart["classifier"]["sha256"],
+            analyzer.MOBILENET_SHA256,
+        )
+        self.assertEqual(
+            smart["text_detector"]["sha256"],
+            analyzer.PPOCR_SHA256,
+        )
+        self.assertEqual(
+            smart["text_recognizer"]["sha256"],
+            analyzer.CRNN_SHA256,
+        )
 
     def test_task_requires_exact_preview_origin_and_path(self) -> None:
         task = {
@@ -176,6 +193,7 @@ class AnalyzerTests(unittest.TestCase):
             socket_path = str(Path(tmp) / "photo-face.sock")
             state = analyzer.AnalyzerState(
                 self.runtime,
+                self.smart_runtime,
                 self.preview_origin,
                 "secret",
             )
@@ -231,6 +249,41 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertIsInstance(result["faces"], list)
                 self.assertLessEqual(len(result["faces"]), analyzer.MAX_FACES)
+                connection.close()
+
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "GET",
+                    "/v1/smart-info",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Smart-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                smart_info = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(smart_info["ocr_language"], "zh-en")
+                connection.close()
+
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/smart-analyze",
+                    body=payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(payload)),
+                        "X-XDrive-Smart-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                smart_result = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertIsInstance(smart_result["labels"], list)
+                self.assertIsInstance(smart_result["ocr_text"], str)
+                self.assertEqual(smart_result["ocr_language"], "zh-en")
                 connection.close()
             finally:
                 server.shutdown()

@@ -119,6 +119,7 @@ func main() {
 		)
 	}
 	var photoFaceAnalyzer photointelligence.FaceAnalyzer
+	var photoSmartAnalyzer photointelligence.SmartAnalyzer
 	if cfg.PhotoFaceAnalyzerSocket != "" {
 		analyzer, err := photointelligence.NewUnixFaceAnalyzer(
 			cfg.PhotoFaceAnalyzerSocket,
@@ -128,9 +129,22 @@ func main() {
 		if err != nil {
 			log.Fatalf("configure photo face analyzer: %v", err)
 		}
+		smartAnalyzer, err := photointelligence.NewUnixSmartAnalyzer(
+			cfg.PhotoFaceAnalyzerSocket,
+			cfg.PhotoFaceAnalyzerToken,
+			2*time.Minute,
+		)
+		if err != nil {
+			log.Fatalf("configure photo smart-search analyzer: %v", err)
+		}
 		photoFaceAnalyzer = analyzer
+		photoSmartAnalyzer = smartAnalyzer
 		slog.Info(
 			"photo_face_analyzer_configured",
+			"socket", cfg.PhotoFaceAnalyzerSocket,
+		)
+		slog.Info(
+			"photo_smart_search_analyzer_configured",
 			"socket", cfg.PhotoFaceAnalyzerSocket,
 		)
 	}
@@ -162,6 +176,7 @@ func main() {
 		ConnectorSecrets:            connectorSecrets,
 		PhotoPlaceResolver:          photoPlaceResolver,
 		PhotoFaceAnalyzer:           photoFaceAnalyzer,
+		PhotoSmartAnalyzer:          photoSmartAnalyzer,
 		PhotoFacePreviewBaseURL:     cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:              strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 		FilesDataHostPath:           strings.TrimSpace(os.Getenv("XD_FILES_DATA_HOST_PATH")),
@@ -190,7 +205,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.ArchivePrepareRun{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.ArchivePrepareRun{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`ALTER TABLE xd_source_item_metadata

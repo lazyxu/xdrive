@@ -48,6 +48,7 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPlaceLabel{},
+		&meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +93,16 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 			AssetID: asset.ID, Kind: meta.PhotoAnalysisKindPlaceLabel,
 			AnalyzerVersion: "place-v1", InputFingerprint: "input-1",
 			State: meta.PhotoAnalysisStatePending,
+		},
+		{
+			AssetID: asset.ID, Kind: meta.PhotoAnalysisKindVisualLabel,
+			AnalyzerVersion: "visual-v1", InputFingerprint: "input-1",
+			State: meta.PhotoAnalysisStateReady,
+		},
+		{
+			AssetID: asset.ID, Kind: meta.PhotoAnalysisKindOCRText,
+			AnalyzerVersion: "ocr-v1", InputFingerprint: "input-1",
+			State: meta.PhotoAnalysisStateStale,
 		},
 	}
 	if err := db.Create(&states).Error; err != nil {
@@ -163,6 +174,16 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&meta.PhotoVisualLabel{
+		AssetID: asset.ID, Label: "beach", Confidence: 0.9,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoOCRText{
+		AssetID: asset.ID, Text: "上海 2026", Language: "zh-en",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	status, err := LoadPhotoIntelligenceDatabaseStatus(context.Background(), db)
 	if err != nil {
@@ -171,6 +192,8 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 	if status.PhotoAssets != 1 ||
 		status.FaceRows != 1 ||
 		status.PlaceLabels != 1 ||
+		status.VisualLabels != 1 ||
+		status.OCRDocuments != 1 ||
 		status.AutomaticClusters != 1 ||
 		status.AutomaticClusterFaces != 1 ||
 		status.DurablePeople != 1 ||
@@ -180,6 +203,8 @@ func TestLoadPhotoIntelligenceDatabaseStatus(t *testing.T) {
 	if status.FaceDetection.Ready != 1 ||
 		status.FaceEmbedding.Failed != 1 ||
 		status.PlaceAnalysis.Pending != 1 ||
+		status.VisualAnalysis.Ready != 1 ||
+		status.OCRAnalysis.Stale != 1 ||
 		status.PersonClustering.Running != 1 {
 		t.Fatalf("states=%+v", status)
 	}
