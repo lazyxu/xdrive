@@ -686,15 +686,23 @@ func (s *Server) executeSystemMaintenanceTask(
 			report.After.SizeMismatches +
 			report.After.KeyHashMismatches +
 			report.After.InvalidStates
+		legacyMigrations := 0
+		for _, action := range report.Actions {
+			if action.Kind == "migrate_legacy" {
+				legacyMigrations++
+			}
+		}
+		casActions := len(report.Actions) - legacyMigrations
 		summary := fmt.Sprintf(
-			"修复 %d 个 CAS 元数据项 · 跳过 %d 项 · 剩余 %d 个一致性问题 · 待 GC %d 个",
-			len(report.Actions),
+			"迁移 %d 个 legacy 对象 · 修复 %d 个 CAS 元数据项 · 跳过 %d 项 · 剩余 %d 个一致性问题 · 待 GC %d 个",
+			legacyMigrations,
+			casActions,
 			len(report.Skipped),
 			remaining,
 			report.After.StaleDeletingBlobs,
 		)
 		state := meta.SystemMaintenanceStatusSuccess
-		if !report.After.Healthy {
+		if !report.After.Healthy || len(report.Skipped) > 0 {
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
@@ -773,7 +781,7 @@ func (s *Server) repairStorageForSystemMaintenance(
 	if err != nil {
 		return maintenance.CASRepairReport{}, err
 	}
-	return maintenance.RepairCASMetadata(ctx, s.DB, root, false)
+	return maintenance.RepairStorage(ctx, s.DB, root, false)
 }
 
 func (s *Server) systemMaintenanceFilesystemRoot() (string, error) {

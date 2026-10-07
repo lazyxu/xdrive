@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -114,14 +115,15 @@ SELECT
 }
 
 type CASRepairAction struct {
-	Kind           string `json:"kind"`
-	SHA256         string `json:"sha256"`
-	StorageKey     string `json:"storage_key"`
-	BeforeRefCount int64  `json:"before_ref_count"`
-	AfterRefCount  int64  `json:"after_ref_count"`
-	BeforeState    string `json:"before_state,omitempty"`
-	AfterState     string `json:"after_state"`
-	Applied        bool   `json:"applied"`
+	Kind             string `json:"kind"`
+	SHA256           string `json:"sha256"`
+	StorageKey       string `json:"storage_key"`
+	SourceStorageKey string `json:"source_storage_key,omitempty"`
+	BeforeRefCount   int64  `json:"before_ref_count"`
+	AfterRefCount    int64  `json:"after_ref_count"`
+	BeforeState      string `json:"before_state,omitempty"`
+	AfterState       string `json:"after_state"`
+	Applied          bool   `json:"applied"`
 }
 
 type CASRepairSkip struct {
@@ -144,6 +146,421 @@ type casRefSummary struct {
 	RefCount   int64
 	MinSize    int64
 	MaxSize    int64
+}
+
+func RepairStorage(ctx context.Context, db *gorm.DB, storageRoot string, dryRun bool) (CASRepairReport, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return CASRepairReport{}, err
+	}
+	if db == nil {
+		return CASRepairReport{}, fmt.Errorf("storage repair database is unavailable")
+	}
+	before, err := CASHealth(db.WithContext(ctx), CASDeletingStaleAfter)
+	if err != nil {
+		return CASRepairReport{}, err
+	}
+	report := CASRepairReport{DryRun: dryRun, Before: before}
+
+	legacyRefs, err := loadLegacyRefSummaries(db.WithContext(ctx))
+	if err != nil {
+		return report, err
+	}
+	for _, ref := range legacyRefs {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+		action, skip, err := migrateLegacyReferenceSet(ctx, db, storageRoot, ref, dryRun)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return report, err
+			}
+			report.Skipped = append(report.Skipped, CASRepairSkip{
+				StorageKey: ref.StorageKey,
+				Reason:     "legacy_migration_failed: " + err.Error(),
+			})
+			continue
+		}
+		if action.Kind != "" {
+			report.Actions = append(report.Actions, action)
+		}
+		if skip != nil {
+			report.Skipped = append(report.Skipped, *skip)
+		}
+	}
+
+	casReport, err := RepairCASMetadata(ctx, db, storageRoot, dryRun)
+	if err != nil {
+		return report, err
+	}
+	report.Actions = append(report.Actions, casReport.Actions...)
+	report.Skipped = append(report.Skipped, casReport.Skipped...)
+	report.After = casReport.After
+	report.GeneratedAt = time.Now().UTC()
+
+	sort.Slice(report.Actions, func(i, j int) bool {
+		if report.Actions[i].StorageKey != report.Actions[j].StorageKey {
+			return report.Actions[i].StorageKey < report.Actions[j].StorageKey
+		}
+		return report.Actions[i].Kind < report.Actions[j].Kind
+	})
+	sort.Slice(report.Skipped, func(i, j int) bool {
+		if report.Skipped[i].StorageKey != report.Skipped[j].StorageKey {
+			return report.Skipped[i].StorageKey < report.Skipped[j].StorageKey
+		}
+		return report.Skipped[i].Reason < report.Skipped[j].Reason
+	})
+	return report, nil
+}
+
+func loadLegacyRefSummaries(db *gorm.DB) ([]casRefSummary, error) {
+	const query = `SELECT storage_key, COUNT(*) AS ref_count, MIN(size) AS min_size, MAX(size) AS max_size
+FROM (
+  SELECT storage_key, size FROM xd_files WHERE storage_key NOT LIKE ?
+  UNION ALL
+  SELECT storage_key, size FROM xd_file_versions WHERE storage_key NOT LIKE ?
+) refs
+GROUP BY storage_key
+ORDER BY storage_key ASC`
+	pattern := storage.ContentBlobDir + "/sha256/%"
+	var refs []casRefSummary
+	if err := db.Raw(query, pattern, pattern).Scan(&refs).Error; err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+func legacyObjectIdentity(ctx context.Context, storageRoot string, ref casRefSummary) (string, string, error) {
+	if ref.RefCount <= 0 || ref.MinSize < 0 || ref.MinSize != ref.MaxSize {
+		return "", "", fmt.Errorf("conflicting_reference_sizes")
+	}
+	key, err := cleanStorageKey(ref.StorageKey)
+	if err != nil {
+		return "", "", err
+	}
+	root, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return "", "", err
+	}
+	full := filepath.Join(root, filepath.FromSlash(key))
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", fmt.Errorf("not a regular file")
+	}
+	if info.Size() != ref.MaxSize {
+		return "", "", fmt.Errorf("size mismatch: got %d want %d", info.Size(), ref.MaxSize)
+	}
+	hash, err := hashFileWithContext(ctx, full)
+	if err != nil {
+		return "", "", err
+	}
+	canonicalKey, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		return "", "", err
+	}
+	return hash, canonicalKey, nil
+}
+
+func ensureCanonicalLegacyObject(
+	ctx context.Context,
+	storageRoot, sourceKey, canonicalKey string,
+	expectedSize int64,
+	expectedHash string,
+) (bool, error) {
+	sourceClean, err := cleanStorageKey(sourceKey)
+	if err != nil {
+		return false, err
+	}
+	canonicalClean, err := cleanStorageKey(canonicalKey)
+	if err != nil {
+		return false, err
+	}
+	root, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return false, err
+	}
+	sourcePath := filepath.Join(root, filepath.FromSlash(sourceClean))
+	canonicalPath := filepath.Join(root, filepath.FromSlash(canonicalClean))
+
+	if err := verifyCASObjectWithContext(ctx, storageRoot, canonicalClean, expectedSize, expectedHash); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		if _, statErr := os.Stat(canonicalPath); statErr == nil {
+			return false, fmt.Errorf("existing canonical blob is invalid: %w", err)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return false, statErr
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(canonicalPath), 0o750); err != nil {
+		return false, err
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return false, err
+	}
+	defer source.Close()
+
+	target, err := os.OpenFile(canonicalPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			if verifyErr := verifyCASObjectWithContext(ctx, storageRoot, canonicalClean, expectedSize, expectedHash); verifyErr != nil {
+				return false, fmt.Errorf("concurrent canonical blob is invalid: %w", verifyErr)
+			}
+			return false, nil
+		}
+		return false, err
+	}
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = target.Close()
+			_ = os.Remove(canonicalPath)
+		}
+	}()
+
+	buf := make([]byte, 128*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		n, readErr := source.Read(buf)
+		if n > 0 {
+			written := 0
+			for written < n {
+				count, writeErr := target.Write(buf[written:n])
+				if writeErr != nil {
+					return false, writeErr
+				}
+				if count <= 0 {
+					return false, io.ErrShortWrite
+				}
+				written += count
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return false, readErr
+		}
+	}
+	if err := target.Sync(); err != nil {
+		return false, err
+	}
+	if err := target.Close(); err != nil {
+		return false, err
+	}
+	if err := verifyCASObjectWithContext(ctx, storageRoot, canonicalClean, expectedSize, expectedHash); err != nil {
+		return false, fmt.Errorf("copied canonical blob verification failed: %w", err)
+	}
+	cleanup = false
+	return true, nil
+}
+
+func removeCreatedCanonicalIfUnreferenced(ctx context.Context, db *gorm.DB, storageRoot, canonicalKey string) {
+	ref, err := loadCASRefSummary(db.WithContext(ctx), canonicalKey)
+	if err != nil || ref.RefCount != 0 {
+		return
+	}
+	var metadata int64
+	if err := db.WithContext(ctx).Model(&meta.ContentBlob{}).
+		Where("storage_key = ?", canonicalKey).
+		Count(&metadata).Error; err != nil || metadata != 0 {
+		return
+	}
+	clean, err := cleanStorageKey(canonicalKey)
+	if err != nil {
+		return
+	}
+	root, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return
+	}
+	_ = os.Remove(filepath.Join(root, filepath.FromSlash(clean)))
+}
+
+func migrateLegacyReferenceSet(
+	ctx context.Context,
+	db *gorm.DB,
+	storageRoot string,
+	ref casRefSummary,
+	dryRun bool,
+) (CASRepairAction, *CASRepairSkip, error) {
+	hash, canonicalKey, err := legacyObjectIdentity(ctx, storageRoot, ref)
+	if err != nil {
+		return CASRepairAction{}, &CASRepairSkip{
+			StorageKey: ref.StorageKey,
+			Reason:     "legacy_object_not_verified: " + err.Error(),
+		}, nil
+	}
+
+	currentCanonical, err := loadCASRefSummary(db.WithContext(ctx), canonicalKey)
+	if err != nil {
+		return CASRepairAction{}, nil, err
+	}
+	if currentCanonical.RefCount > 0 &&
+		(currentCanonical.MinSize != ref.MaxSize || currentCanonical.MaxSize != ref.MaxSize) {
+		return CASRepairAction{}, &CASRepairSkip{
+			SHA256: hash, StorageKey: ref.StorageKey,
+			Reason: "canonical_reference_sizes_conflict",
+		}, nil
+	}
+
+	action := CASRepairAction{
+		Kind:             "migrate_legacy",
+		SHA256:           hash,
+		StorageKey:       canonicalKey,
+		SourceStorageKey: ref.StorageKey,
+		BeforeRefCount:   currentCanonical.RefCount,
+		AfterRefCount:    currentCanonical.RefCount + ref.RefCount,
+		AfterState:       meta.ContentBlobStateReady,
+		Applied:          !dryRun,
+	}
+	if dryRun {
+		cleanCanonical, cleanErr := cleanStorageKey(canonicalKey)
+		if cleanErr != nil {
+			return CASRepairAction{}, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: cleanErr.Error()}, nil
+		}
+		root, rootErr := filepath.Abs(storageRoot)
+		if rootErr != nil {
+			return CASRepairAction{}, nil, rootErr
+		}
+		canonicalPath := filepath.Join(root, filepath.FromSlash(cleanCanonical))
+		if _, statErr := os.Stat(canonicalPath); statErr == nil {
+			if verifyErr := verifyCASObjectWithContext(ctx, storageRoot, canonicalKey, ref.MaxSize, hash); verifyErr != nil {
+				return CASRepairAction{}, &CASRepairSkip{
+					SHA256: hash, StorageKey: ref.StorageKey,
+					Reason: "existing_canonical_blob_invalid: " + verifyErr.Error(),
+				}, nil
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return CASRepairAction{}, nil, statErr
+		}
+		return action, nil, nil
+	}
+
+	created, err := ensureCanonicalLegacyObject(ctx, storageRoot, ref.StorageKey, canonicalKey, ref.MaxSize, hash)
+	if err != nil {
+		return CASRepairAction{}, &CASRepairSkip{
+			SHA256: hash, StorageKey: ref.StorageKey,
+			Reason: "canonical_copy_failed: " + err.Error(),
+		}, nil
+	}
+
+	var committedRefCount int64
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockCASHash(tx, "legacy:"+ref.StorageKey); err != nil {
+			return err
+		}
+		if err := lockCASHash(tx, hash); err != nil {
+			return err
+		}
+
+		currentLegacy, err := loadCASRefSummary(tx, ref.StorageKey)
+		if err != nil {
+			return err
+		}
+		if currentLegacy.RefCount != ref.RefCount ||
+			currentLegacy.MinSize != ref.MinSize ||
+			currentLegacy.MaxSize != ref.MaxSize {
+			return fmt.Errorf("legacy reference set changed during repair")
+		}
+		currentCAS, err := loadCASRefSummary(tx, canonicalKey)
+		if err != nil {
+			return err
+		}
+		if currentCAS.RefCount > 0 &&
+			(currentCAS.MinSize != ref.MaxSize || currentCAS.MaxSize != ref.MaxSize) {
+			return fmt.Errorf("canonical reference sizes conflict")
+		}
+		if err := verifyCASObjectWithContext(ctx, storageRoot, canonicalKey, ref.MaxSize, hash); err != nil {
+			return fmt.Errorf("canonical blob changed during repair: %w", err)
+		}
+
+		var blob meta.ContentBlob
+		blobErr := tx.Where("sha256 = ?", hash).First(&blob).Error
+		if blobErr == nil {
+			if blob.StorageKey != canonicalKey || blob.Size != ref.MaxSize {
+				return fmt.Errorf("content blob identity conflicts with legacy migration")
+			}
+		} else if !errors.Is(blobErr, gorm.ErrRecordNotFound) {
+			return blobErr
+		} else {
+			var keyCount int64
+			if err := tx.Model(&meta.ContentBlob{}).
+				Where("storage_key = ?", canonicalKey).
+				Count(&keyCount).Error; err != nil {
+				return err
+			}
+			if keyCount != 0 {
+				return fmt.Errorf("canonical storage key is already bound to another hash")
+			}
+		}
+
+		fileResult := tx.Model(&meta.File{}).
+			Where("storage_key = ?", ref.StorageKey).
+			Updates(map[string]any{"storage_key": canonicalKey, "sha256": hash})
+		if fileResult.Error != nil {
+			return fileResult.Error
+		}
+		versionResult := tx.Model(&meta.FileVersion{}).
+			Where("storage_key = ?", ref.StorageKey).
+			Updates(map[string]any{"storage_key": canonicalKey, "sha256": hash})
+		if versionResult.Error != nil {
+			return versionResult.Error
+		}
+		if fileResult.RowsAffected+versionResult.RowsAffected != ref.RefCount {
+			return fmt.Errorf("legacy reference count changed during update")
+		}
+
+		committedRefCount = currentCAS.RefCount + ref.RefCount
+		if errors.Is(blobErr, gorm.ErrRecordNotFound) {
+			return tx.Create(&meta.ContentBlob{
+				SHA256: hash, StorageKey: canonicalKey, Size: ref.MaxSize,
+				RefCount: committedRefCount, State: meta.ContentBlobStateReady,
+			}).Error
+		}
+		return tx.Model(&meta.ContentBlob{}).
+			Where("sha256 = ?", hash).
+			Updates(map[string]any{"ref_count": committedRefCount, "state": meta.ContentBlobStateReady}).Error
+	})
+	if err != nil {
+		if created {
+			removeCreatedCanonicalIfUnreferenced(ctx, db, storageRoot, canonicalKey)
+		}
+		return CASRepairAction{}, &CASRepairSkip{
+			SHA256: hash, StorageKey: ref.StorageKey,
+			Reason: "legacy_reference_switch_failed: " + err.Error(),
+		}, nil
+	}
+	action.AfterRefCount = committedRefCount
+
+	remaining, err := loadCASRefSummary(db.WithContext(ctx), ref.StorageKey)
+	if err != nil {
+		return action, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "legacy_source_cleanup_check_failed: " + err.Error()}, nil
+	}
+	if remaining.RefCount != 0 {
+		return action, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "legacy_source_cleanup_blocked_by_new_reference"}, nil
+	}
+	sourceClean, err := cleanStorageKey(ref.StorageKey)
+	if err != nil {
+		return action, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "legacy_source_cleanup_invalid_key: " + err.Error()}, nil
+	}
+	root, err := filepath.Abs(storageRoot)
+	if err != nil {
+		return action, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "legacy_source_cleanup_root_failed: " + err.Error()}, nil
+	}
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(sourceClean))); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return action, &CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "legacy_source_cleanup_failed: " + err.Error()}, nil
+	}
+	return action, nil, nil
 }
 
 func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dryRun bool) (CASRepairReport, error) {

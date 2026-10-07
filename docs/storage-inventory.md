@@ -227,7 +227,8 @@ A recent temporary file may belong to an active write or readiness operation and
 Storage cleanup must never delete:
 
 - CAS canonical content;
-- legacy canonical file content;
+- legacy canonical file content (cache/staging cleanup never deletes it; `storage.repair` may remove the old
+  physical key only after verified CAS migration and an atomic durable-reference switch);
 - PostgreSQL data;
 - backups;
 - trash/history canonical content;
