@@ -7,6 +7,26 @@ import (
 	"unsafe"
 )
 
+func TestWindowsHydrationBufferBoundedToRangeChunk(t *testing.T) {
+	tests := []struct {
+		name     string
+		required int64
+		want     int
+	}{
+		{name: "empty", required: 0, want: 0},
+		{name: "small", required: 123, want: 123},
+		{name: "one-gib", required: 1 << 30, want: int(windowsHydrationChunkSize)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := newWindowsHydrationBuffer(tt.required)
+			if len(buf) != tt.want {
+				t.Fatalf("buffer len=%d want=%d", len(buf), tt.want)
+			}
+		})
+	}
+}
+
 func TestCfapiStructLayouts64Bit(t *testing.T) {
 	if unsafe.Sizeof(uintptr(0)) != 8 {
 		t.Skip("layout assertions target 64-bit Windows")

@@ -101,6 +101,52 @@ func TestDownloadArchiveToProgress(t *testing.T) {
 	}
 }
 
+func TestDownloadRangeIntoUsesCallerBuffer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("Authorization=%q", got)
+		}
+		if got := r.Header.Get("Range"); got != "bytes=2-5" {
+			t.Errorf("Range=%q", got)
+		}
+		w.Header().Set("Content-Range", "bytes 2-5/6")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = io.WriteString(w, "cdef")
+	}))
+	defer ts.Close()
+
+	c := New(ts.URL, "token")
+	buf := []byte{'x', 'x', 'x', 'x', 'z', 'z'}
+	n, err := c.DownloadRangeInto(context.Background(), 9, 2, buf[:4])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 4 || string(buf[:n]) != "cdef" {
+		t.Fatalf("n=%d data=%q", n, buf[:n])
+	}
+	if string(buf[4:]) != "zz" {
+		t.Fatalf("DownloadRangeInto wrote past destination: %q", buf)
+	}
+}
+
+func TestDownloadRangeIntoPreservesShortRangeBehavior(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = io.WriteString(w, "ab")
+	}))
+	defer ts.Close()
+
+	c := New(ts.URL, "token")
+	buf := make([]byte, 4)
+	n, err := c.DownloadRangeInto(context.Background(), 9, 0, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || string(buf[:n]) != "ab" {
+		t.Fatalf("n=%d data=%q", n, buf[:n])
+	}
+}
+
 func TestDownloadRangeSendsRangeAndAuth(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {

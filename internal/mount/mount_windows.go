@@ -278,6 +278,19 @@ func runPlatformWithOptions(ctx context.Context, cli *client.Client, root string
 	}
 }
 
+const windowsHydrationChunkSize int64 = 4 << 20
+
+func newWindowsHydrationBuffer(required int64) []byte {
+	if required <= 0 {
+		return nil
+	}
+	size := required
+	if size > windowsHydrationChunkSize {
+		size = windowsHydrationChunkSize
+	}
+	return make([]byte, int(size))
+}
+
 func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 	activeWinProvider.RLock()
 	p := activeWinProvider.p
@@ -303,14 +316,15 @@ func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 		task.Progress(0, params.RequiredLength)
 	}
 	var transferred int64
-	const chunkSize int64 = 4 << 20
+	buffer := newWindowsHydrationBuffer(remaining)
 	for remaining > 0 {
 		want := remaining
-		if want > chunkSize {
-			want = chunkSize
+		if want > windowsHydrationChunkSize {
+			want = windowsHydrationChunkSize
 		}
-		data, err := p.cli.DownloadRange(context.Background(), id, offset, want)
-		if err != nil || int64(len(data)) == 0 {
+		data := buffer[:int(want)]
+		n, err := p.cli.DownloadRangeInto(context.Background(), id, offset, data)
+		if err != nil || n == 0 {
 			if err == nil {
 				err = io.ErrUnexpectedEOF
 			}
@@ -318,16 +332,17 @@ func fetchData(info *cfCallbackInfo, params *cfCallbackParametersFetchData) {
 			cfTransferFailure(info, offset, remaining)
 			return
 		}
+		data = data[:n]
 		if err := cfTransfer(info, data, offset); err != nil {
 			finishTransfer(task, err)
 			return
 		}
-		transferred += int64(len(data))
+		transferred += int64(n)
 		if task != nil {
 			task.Progress(transferred, params.RequiredLength)
 		}
-		offset += int64(len(data))
-		remaining -= int64(len(data))
+		offset += int64(n)
+		remaining -= int64(n)
 	}
 	finishTransfer(task, nil)
 }
