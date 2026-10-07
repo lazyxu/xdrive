@@ -1388,6 +1388,58 @@ func assertGitLabCache(t *testing.T, root map[string]any, jobName, wantKey strin
 	}
 }
 
+func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
+	root := repositoryRoot(t)
+	dockerfile := readFile(t, filepath.Join(root, "services", "photo-face-analyzer", "Dockerfile"))
+	testScript := readFile(t, filepath.Join(root, "scripts", "ci", "test-photo-face-image.sh"))
+
+	finalMarker := "FROM runtime AS final"
+	finalIndex := strings.Index(dockerfile, finalMarker)
+	if finalIndex < 0 {
+		t.Fatalf("Photo Face Dockerfile is missing %q", finalMarker)
+	}
+	runtimeSection := dockerfile[:finalIndex]
+	requireRaw(t, "Photo Face runtime image", runtimeSection,
+		"FROM python:3.12-slim-bookworm AS runtime",
+		"COPY requirements.txt",
+		"COPY fetch_models.py",
+	)
+	for _, forbidden := range []string{
+		"ARG VERSION",
+		"ARG BUILD_COMMIT",
+		"COPY analyzer.py",
+		"COPY tests",
+		"RUN python -m unittest",
+		"--self-test",
+		"--benchmark",
+	} {
+		if strings.Contains(runtimeSection, forbidden) {
+			t.Errorf("Photo Face runtime image must not contain mutable business/test input %q", forbidden)
+		}
+	}
+
+	requireRaw(t, "Photo Face mounted-source test script", testScript,
+		`runtime_image="xdrive/photo-face:test-runtime"`,
+		`--target runtime`,
+		`runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"`,
+		`--mount "$runtime_mount"`,
+		`python -m unittest discover -s tests -v`,
+		`python analyzer.py --self-test`,
+		`python analyzer.py --benchmark --iterations 1`,
+		`--target final`,
+		`docker run --rm "$final_image" --self-test`,
+		`bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"`,
+	)
+	for _, forbidden := range []string{
+		"--target test ",
+		"test-stage",
+	} {
+		if strings.Contains(testScript, forbidden) {
+			t.Errorf("Photo Face tests must not rebuild a business-code test image containing %q", forbidden)
+		}
+	}
+}
+
 func collectYAMLStrings(value any) string {
 	var out strings.Builder
 	var walk func(any)

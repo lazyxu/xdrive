@@ -127,21 +127,26 @@ publish that exact artifact
 
 The fast source-mounted stage proves current behavior in a stable environment. The exact-artifact stage proves packaging/release correctness. One must not impersonate the other.
 
-## 6. Photo Intelligence reference pattern
+## 6. Photo Intelligence reference implementation
 
-`scripts/ci/test-photo-face-image.sh` is the first migration target for this contract.
+`scripts/ci/test-photo-face-image.sh` is the reference implementation for this contract.
 
-Its ordinary analyzer tests, self-test, and benchmark should run from a reusable Photo Face runtime image with the current:
+The `runtime` Docker target contains only the stable Photo Face execution environment: Python, native libraries, pinned Python dependencies, and verified third-party face models. It deliberately contains no `analyzer.py`, no `tests/`, and no commit/version labels.
 
-- `analyzer.py`;
-- `tests/`;
-- relevant test scripts/artifacts
+The ordinary analyzer unit tests, self-test, and benchmark run from that runtime image with `services/photo-face-analyzer` bind-mounted read-only at `/workspace`. A business-source or test-only change therefore does not create a different test-runtime image; Docker can reuse the runtime layers while the mounted checkout supplies the current code.
 
-mounted from the checkout instead of copied into a unique test image for every business-code change.
+The `final` Docker target is separate. It packages `analyzer.py`, adds build version/revision labels, runs exact-image self-test/benchmark without source overrides, and is then exported as the release artifact. This preserves **Build Once / Test Exact Artifact / Publish Exact Artifact** while keeping ordinary source tests independent from the release image contents.
 
-The final Photo Face release image may still package `analyzer.py`, because that image is the deliverable. Its exact-image validation must run separately and must not replace the packaged analyzer with a mounted copy.
+Stable OpenCV/native dependencies and verified third-party face models remain in the reusable runtime target because they are runtime dependencies rather than mutable xDrive business source. Changing those inputs is a valid reason to rebuild the runtime layers.
 
-Stable OpenCV/native dependencies and verified third-party face models may remain in the reusable runtime image because they are runtime dependencies rather than mutable xDrive business source. Changing those inputs is a valid reason to rebuild/version the runtime image.
+### Current repository audit
+
+As of this migration:
+
+- Photo Face is the only repository-owned Docker test stage that previously copied mutable xDrive business/test source into a test image; it now follows the mounted-code pattern.
+- GitLab `golang:1.25-bookworm` and `node:22-bookworm` job images are already stable toolchain environments; GitLab supplies the current checkout in the job workspace.
+- PostgreSQL and other third-party CI service images are stable external runtime dependencies rather than xDrive business-code images.
+- `xdrive/server:test`, `xdrive/caddy:test`, and the final `xdrive/photo-face:test` image are exact release-artifact candidates despite their local `:test` tag. They intentionally package business code and must not be converted to bind-mounted source validation.
 
 ## 7. GitHub/GitLab parity
 
