@@ -14,15 +14,15 @@ func TestMediaThumbnailIdentityIncludesDerivativeVersion(t *testing.T) {
 	row := meta.MediaMetadata{SHA256: sha}
 
 	if got, want := mediaThumbnailETag(node, row),
-		"\"media-"+sha+"-v2-512\""; got != want {
+		"\"media-"+sha+"-v3-512\""; got != want {
 		t.Fatalf("thumbnail etag=%q want=%q", got, want)
 	}
 	if got, want := mediaThumbnailStorageKey(node, row),
-		mediapkg.ThumbnailStoragePrefix+"aa/"+sha+"-v2-512.jpg"; got != want {
+		mediapkg.ThumbnailStoragePrefix+"aa/"+sha+"-v3-512.jpg"; got != want {
 		t.Fatalf("thumbnail storage key=%q want=%q", got, want)
 	}
 	if got, want := mediaAnalysisPreviewStorageKey(node, row),
-		mediapkg.ThumbnailStoragePrefix+"aa/"+sha+"-v2-1280.jpg"; got != want {
+		mediapkg.ThumbnailStoragePrefix+"aa/"+sha+"-v3-1280.jpg"; got != want {
 		t.Fatalf("analysis preview storage key=%q want=%q", got, want)
 	}
 }
