@@ -2,11 +2,8 @@ package maintenance
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -150,6 +147,15 @@ type casRefSummary struct {
 }
 
 func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dryRun bool) (CASRepairReport, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return CASRepairReport{}, err
+	}
+	if db == nil {
+		return CASRepairReport{}, fmt.Errorf("CAS repair database is unavailable")
+	}
 	before, err := CASHealth(db.WithContext(ctx), CASDeletingStaleAfter)
 	if err != nil {
 		return CASRepairReport{}, err
@@ -166,11 +172,17 @@ func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dry
 	blobByKey := make(map[string]meta.ContentBlob, len(blobs))
 	blobByHash := make(map[string]meta.ContentBlob, len(blobs))
 	for _, blob := range blobs {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
 		blobByKey[blob.StorageKey] = blob
 		blobByHash[strings.ToLower(blob.SHA256)] = blob
 	}
 	refByKey := make(map[string]casRefSummary, len(refs))
 	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
 		refByKey[ref.StorageKey] = ref
 		hash, ok := storage.ContentHashFromKey(ref.StorageKey)
 		if !ok {
@@ -191,7 +203,7 @@ func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dry
 				continue
 			}
 			if dryRun {
-				if err := verifyCASObject(storageRoot, ref.StorageKey, ref.MaxSize, hash); err != nil {
+				if err := verifyCASObjectWithContext(ctx, storageRoot, ref.StorageKey, ref.MaxSize, hash); err != nil {
 					report.Skipped = append(report.Skipped, CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "physical_blob_not_verified: " + err.Error()})
 					continue
 				}
@@ -213,7 +225,7 @@ func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dry
 			continue
 		}
 		if dryRun {
-			if err := verifyCASObject(storageRoot, ref.StorageKey, ref.MaxSize, hash); err != nil {
+			if err := verifyCASObjectWithContext(ctx, storageRoot, ref.StorageKey, ref.MaxSize, hash); err != nil {
 				report.Skipped = append(report.Skipped, CASRepairSkip{SHA256: hash, StorageKey: ref.StorageKey, Reason: "physical_blob_not_verified: " + err.Error()})
 				continue
 			}
@@ -229,6 +241,9 @@ func RepairCASMetadata(ctx context.Context, db *gorm.DB, storageRoot string, dry
 	}
 
 	for _, blob := range blobs {
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
 		if _, referenced := refByKey[blob.StorageKey]; referenced {
 			continue
 		}
@@ -331,7 +346,7 @@ func reconcileReferencedCAS(ctx context.Context, db *gorm.DB, storageRoot, key, 
 		if ref.RefCount <= 0 || ref.MinSize != ref.MaxSize {
 			return fmt.Errorf("reference set changed during repair")
 		}
-		if err := verifyCASObject(storageRoot, key, ref.MaxSize, hash); err != nil {
+		if err := verifyCASObjectWithContext(ctx, storageRoot, key, ref.MaxSize, hash); err != nil {
 			return fmt.Errorf("physical blob changed during repair: %w", err)
 		}
 		var blob meta.ContentBlob
@@ -381,7 +396,32 @@ func markUnreferencedCASDeleting(ctx context.Context, db *gorm.DB, key, hash str
 	})
 }
 
-func verifyCASObject(storageRoot, rawKey string, expectedSize int64, expectedHash string) error {
+func verifyCASObject(
+	storageRoot, rawKey string,
+	expectedSize int64,
+	expectedHash string,
+) error {
+	return verifyCASObjectWithContext(
+		context.Background(),
+		storageRoot,
+		rawKey,
+		expectedSize,
+		expectedHash,
+	)
+}
+
+func verifyCASObjectWithContext(
+	ctx context.Context,
+	storageRoot, rawKey string,
+	expectedSize int64,
+	expectedHash string,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	key, err := cleanStorageKey(rawKey)
 	if err != nil {
 		return err
@@ -401,16 +441,10 @@ func verifyCASObject(storageRoot, rawKey string, expectedSize int64, expectedHas
 	if info.Size() != expectedSize {
 		return fmt.Errorf("size mismatch: got %d want %d", info.Size(), expectedSize)
 	}
-	f, err := os.Open(full)
+	actual, err := hashFileWithContext(ctx, full)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return err
-	}
-	actual := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(actual, expectedHash) {
 		return fmt.Errorf("sha256 mismatch")
 	}
