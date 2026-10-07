@@ -33,6 +33,8 @@ On Windows, the provider captures a journal checkpoint before its startup full r
 
 Full remote reconciliation still builds the complete owner-visible remote path map because convergence requires a whole-tree snapshot, but `Client.Walk()` enumerates every directory through cursor-paged children reads capped at **500 nodes per response**. The walker inserts each page directly into the final path map instead of materializing an additional full sibling slice, and fails if a `has_more` page does not advance its cursor.
 
+Linux FUSE name resolution uses the Server's exact `name=` children filter with `limit=1` for `Lookup`, `Unlink`, `Rmdir`, and `Rename`. These point operations no longer materialize every sibling in a wide directory. `Readdir` remains a full directory enumeration path and is intentionally handled separately.
+
 Windows baseline persistence uses a V2 framed transaction log at the existing state-file path. Each baseline commit appends only path-level puts/deletes with a CRC-protected frame; a truncated final frame is discarded on restart. Legacy V1 whole-file JSON baselines migrate automatically on first load. The log is compacted atomically after 10,000 appended frames or roughly 64 MiB of delta data.
 
 ## Continuous CI coverage
@@ -55,6 +57,7 @@ Windows baseline persistence uses a V2 framed transaction log at the existing st
 | Windows CfAPI | Policy | exclude, always-local, pin/dehydrate and cache policy | `TestWindowsCfAPISelectiveSyncAndCachePolicy` |
 | Linux FUSE operation layer | Web -> Client | newly created file lookup, content refresh, rename visibility | `TestLinuxFUSEBidirectionalMutationContract` |
 | Linux FUSE operation layer | Client -> Web | rename+move, content write/truncate, unlink | `TestLinuxFUSEBidirectionalMutationContract` |
+| Linux FUSE lookup path | Server -> Client | exact child name lookup uses `limit=1&name=` and does not fall back to unbounded sibling enumeration | `TestLinuxFindChildUsesExactServerLookup` |
 | Shared resumable-upload client | Client -> Server | interrupted multi-chunk call, new Client instance resumes received chunks and finalizes once | `TestUploadFileResumableResumesAfterInterruptedCallAndClientRestart` |
 | Shared client / Windows full reconcile | Server -> Client | 1,201-sibling remote directory is consumed as 500/500/201 cursor pages; non-advancing cursor fails instead of looping | `TestWalkUsesPagedChildren` / `TestWalkRejectsNonAdvancingChildrenCursor` |
 | Windows CfAPI | Restart / offline | persisted baseline resumes local-only offline edits after provider restart | `TestWindowsCfAPIRestartAndOfflineConflict` |
