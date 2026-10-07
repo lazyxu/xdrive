@@ -1,6 +1,7 @@
 import type { MediaTimelineGroupIndex } from '../models'
 import {
   XDRIVE_MEDIA_GALLERY_GRID_GAP,
+  XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH,
   xDriveMediaGalleryGridMetrics,
 } from './MediaGalleryVirtualGrid'
 
@@ -56,19 +57,31 @@ function nonNegativeInteger(value: number) {
 
 export function xDriveMediaGalleryTimelineGroupLabel(key: string) {
   if (key === 'unknown') return '日期未知'
-  const match = /^(\d{4})-(\d{2})$/.exec(key)
-  if (!match) return key
-  return `${Number(match[1])}年${Number(match[2])}月`
+  const year = /^(\d{4})$/.exec(key)
+  if (year) return `${Number(year[1])}年`
+  const month = /^(\d{4})-(\d{2})$/.exec(key)
+  if (month) return `${Number(month[1])}年${Number(month[2])}月`
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  if (day) {
+    return `${Number(day[1])}年${Number(day[2])}月${Number(day[3])}日`
+  }
+  return key
 }
 
 export function xDriveMediaGalleryTimelineLayout({
   width,
   groups,
+  minColumnWidth = XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH,
 }: {
   width: number
   groups: readonly MediaTimelineGroupIndex[]
+  minColumnWidth?: number
 }): XDriveMediaGalleryTimelineLayout {
-  const grid = xDriveMediaGalleryGridMetrics({ width, itemCount: 1 })
+  const grid = xDriveMediaGalleryGridMetrics({
+    width,
+    itemCount: 1,
+    minColumnWidth,
+  })
   const layoutGroups: XDriveMediaGalleryTimelineLayoutGroup[] = []
   let top = 0
 

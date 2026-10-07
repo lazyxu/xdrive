@@ -86,7 +86,13 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /保存为智能相册/)
   assert.match(sharedGallery, /保存规则/)
   assert.match(sharedGallery, /智能相册/)
-  assert.match(sharedGallery, /时间轴/)
+  assert.match(sharedGallery, /data-xdrive-gallery-time-scale/)
+  assert.match(sharedGallery, /\['year', '年'\]/)
+  assert.match(sharedGallery, /\['month', '月'\]/)
+  assert.match(sharedGallery, /\['day', '日'\]/)
+  assert.match(sharedGallery, /\['all', '所有照片'\]/)
+  assert.match(sharedGallery, /缩略图大小/)
+  assert.match(sharedGallery, /<Slider/)
   assert.match(sharedGallery, /日期未知/)
   assert.match(sharedGallery, /mediaTimelineGroups/)
   assert.match(sharedGallery, /captured_at/)
@@ -155,7 +161,11 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
 test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /export interface MediaItem \{\s*node: Node\s*metadata: MediaMetadata/s)
   assert.match(sharedModels, /export interface MediaTimelineGroupIndex \{[\s\S]*item_count: number[\s\S]*start_index: number/)
-  assert.match(sharedModels, /export interface MediaItemRange \{[\s\S]*total_count: number[\s\S]*offset: number[\s\S]*limit: number[\s\S]*timeline_groups\?: MediaTimelineGroupIndex\[\]/)
+  assert.match(sharedModels, /export interface MediaTimelineGroupSets/)
+  assert.match(sharedModels, /year: MediaTimelineGroupIndex\[\]/)
+  assert.match(sharedModels, /month: MediaTimelineGroupIndex\[\]/)
+  assert.match(sharedModels, /day: MediaTimelineGroupIndex\[\]/)
+  assert.match(sharedModels, /export interface MediaItemRange \{[\s\S]*total_count: number[\s\S]*offset: number[\s\S]*limit: number[\s\S]*timeline_groups\?: MediaTimelineGroupIndex\[\][\s\S]*timeline_group_sets\?: MediaTimelineGroupSets/)
   assert.match(sharedModels, /rotation_degrees\?: number/)
   assert.match(sharedModels, /latitude\?: number/)
   assert.match(sharedModels, /longitude\?: number/)
@@ -543,7 +553,7 @@ test('Gallery grid uses VirtualCollection with stable logical height and bounded
     'virtualCollection.updateLoadedItems',
     '<MediaVirtualTileGrid',
     '<MediaVirtualTimeline',
-    'timelineGroups={timelineGroups}',
+    'timelineGroupSets={timelineGroupSets}',
     'positionLabel={previewIndex >= 0 ?',
   ]) {
     assert.ok(sharedGalleryMain.includes(token), `Gallery VirtualCollection contract missing: ${token}`)
@@ -591,10 +601,10 @@ test('Gallery virtual grid uses the existing workspace scroll host without mater
   )
 })
 
-test('Gallery Timeline maps month groups onto the shared sparse VirtualCollection', () => {
+test('Gallery time scales map compact group indexes onto the shared sparse VirtualCollection', () => {
   for (const token of [
-    'timelineGroups={timelineGroups}',
-    'setTimelineGroups(range.timeline_groups ?? [])',
+    'timelineGroupSets={timelineGroupSets}',
+    'setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))',
     'function MediaVirtualTimeline({',
     'xDriveMediaGalleryTimelineLayout',
     'xDriveMediaGalleryTimelineWindow',
@@ -616,7 +626,7 @@ test('Gallery Timeline maps month groups onto the shared sparse VirtualCollectio
   ]) {
     assert.ok(sharedGalleryVirtualTimeline.includes(token), `Gallery Timeline helper missing: ${token}`)
   }
-  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items)'), 'standalone dense fallback remains available')
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, timeScale)'), 'standalone dense fallback remains available')
   assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
 })
 

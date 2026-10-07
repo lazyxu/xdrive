@@ -115,8 +115,27 @@ test('Gallery Timeline preserves group logical indexes across row boundaries', (
   assert.equal(xDriveMediaGalleryTimelineIndexVisible(12, window), false)
 })
 
-test('Gallery Timeline labels canonical month keys and unknown dates', () => {
+test('Gallery Timeline labels canonical year, month, day keys and unknown dates', () => {
+  assert.equal(xDriveMediaGalleryTimelineGroupLabel('2026'), '2026年')
   assert.equal(xDriveMediaGalleryTimelineGroupLabel('2026-10'), '2026年10月')
   assert.equal(xDriveMediaGalleryTimelineGroupLabel('2026-01'), '2026年1月')
+  assert.equal(xDriveMediaGalleryTimelineGroupLabel('2026-10-05'), '2026年10月5日')
   assert.equal(xDriveMediaGalleryTimelineGroupLabel('unknown'), '日期未知')
+})
+
+test('Gallery thumbnail density changes layout columns without changing logical items', () => {
+  const groups = [{ key: '2026-10', item_count: 120, start_index: 0 }]
+  const dense = xDriveMediaGalleryTimelineLayout({
+    width: 1_200,
+    groups,
+    minColumnWidth: 96,
+  })
+  const roomy = xDriveMediaGalleryTimelineLayout({
+    width: 1_200,
+    groups,
+    minColumnWidth: 240,
+  })
+  assert.ok(dense.columns > roomy.columns)
+  assert.equal(dense.groups[0].itemCount, 120)
+  assert.equal(roomy.groups[0].itemCount, 120)
 })

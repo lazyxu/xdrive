@@ -23,7 +23,7 @@ presentation and product intelligence.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | Gallery IA/UI: Library / Memories / People / Places / Albums / Favorites / Media Types; advanced filters in popover | **Current foundation** |
-| 2 | Year / Month / Day semantic timeline + thumbnail density | Planned |
+| 2 | Year / Month / Day semantic timeline + thumbnail density | **Current** |
 | 3 | Multi-select + shared Selection Toolbar | Planned |
 | 4 | Gallery Trash + Favorites + media-type smart collections | Planned |
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | Planned |
@@ -69,3 +69,23 @@ Phase 2 must build Year / Month / Day semantic navigation on the existing range-
 VirtualCollection contract. It must keep stable scrollbar geometry and bounded
 metadata/thumbnail retention, and must not implement semantic zoom by materializing
 the entire Gallery.
+
+
+## Phase 2 — semantic time scale and thumbnail density
+
+The Gallery collection surface now exposes **年 / 月 / 日 / 所有照片** as shared
+Web/Desktop time-scale controls. The first sparse range response carries compact
+`year`, `month`, and `day` group indexes. Server computes one day-level aggregate
+over the already-filtered collection and derives month/year indexes from those counts;
+it does not materialize media rows and changing the time scale does not re-fetch the
+whole collection.
+
+`所有照片` uses the ordinary sparse virtual grid. Year/month/day views use the same
+logical item indexes with different group headers, so preview navigation and viewport
+range requests remain stable.
+
+Thumbnail density is presentation-only shared state. The size slider changes the
+minimum tile width used by Grid and Timeline layout calculations; it does not change
+the query key, reset VirtualCollection, or issue a new Server request. Viewport
+retention and the bounded thumbnail scheduler therefore continue to control memory and
+network work independently from tile size.

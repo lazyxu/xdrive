@@ -98,12 +98,19 @@ type mediaTimelineGroupDTO struct {
 	StartIndex int64  `json:"start_index"`
 }
 
+type mediaTimelineGroupSetsDTO struct {
+	Year  []mediaTimelineGroupDTO `json:"year"`
+	Month []mediaTimelineGroupDTO `json:"month"`
+	Day   []mediaTimelineGroupDTO `json:"day"`
+}
+
 type mediaItemRangeDTO struct {
-	Items          []mediaItemDTO          `json:"items"`
-	TotalCount     int64                   `json:"total_count"`
-	Offset         int                     `json:"offset"`
-	Limit          int                     `json:"limit"`
-	TimelineGroups []mediaTimelineGroupDTO `json:"timeline_groups,omitempty"`
+	Items             []mediaItemDTO             `json:"items"`
+	TotalCount        int64                      `json:"total_count"`
+	Offset            int                        `json:"offset"`
+	Limit             int                        `json:"limit"`
+	TimelineGroups    []mediaTimelineGroupDTO    `json:"timeline_groups,omitempty"`
+	TimelineGroupSets *mediaTimelineGroupSetsDTO `json:"timeline_group_sets,omitempty"`
 }
 
 type mediaAlbumDTO struct {
@@ -631,9 +638,32 @@ func (s *Server) queryMediaItems(
 	return s.materializeMediaItems(ctx, uid, query, limit, offset)
 }
 
-const mediaTimelineGroupExpression = "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 'unknown' ELSE TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM') END"
+const mediaTimelineDayGroupExpression = "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 'unknown' ELSE TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') END"
 
-func queryMediaTimelineGroups(query *gorm.DB) ([]mediaTimelineGroupDTO, error) {
+func collapseMediaTimelineGroups(
+	groups []mediaTimelineGroupDTO,
+	prefixLength int,
+) []mediaTimelineGroupDTO {
+	out := make([]mediaTimelineGroupDTO, 0, len(groups))
+	for _, group := range groups {
+		key := group.Key
+		if key != "unknown" && len(key) >= prefixLength {
+			key = key[:prefixLength]
+		}
+		if len(out) > 0 && out[len(out)-1].Key == key {
+			out[len(out)-1].ItemCount += group.ItemCount
+			continue
+		}
+		out = append(out, mediaTimelineGroupDTO{
+			Key:        key,
+			ItemCount:  group.ItemCount,
+			StartIndex: group.StartIndex,
+		})
+	}
+	return out
+}
+
+func queryMediaTimelineGroupSets(query *gorm.DB) (mediaTimelineGroupSetsDTO, error) {
 	type groupRow struct {
 		Key         string `gorm:"column:group_key"`
 		ItemCount   int64  `gorm:"column:item_count"`
@@ -644,31 +674,35 @@ func queryMediaTimelineGroups(query *gorm.DB) ([]mediaTimelineGroupDTO, error) {
 	if err := query.
 		Session(&gorm.Session{}).
 		Select(
-			mediaTimelineGroupExpression +
+			mediaTimelineDayGroupExpression +
 				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
 				"MAX(CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END) AS unknown_rank",
 		).
-		Group(mediaTimelineGroupExpression).
+		Group(mediaTimelineDayGroupExpression).
 		Order("unknown_rank ASC").
 		Order("group_key DESC").
 		Scan(&rows).Error; err != nil {
-		return nil, err
+		return mediaTimelineGroupSetsDTO{}, err
 	}
 
-	groups := make([]mediaTimelineGroupDTO, 0, len(rows))
+	day := make([]mediaTimelineGroupDTO, 0, len(rows))
 	var startIndex int64
 	for _, row := range rows {
 		if row.ItemCount <= 0 {
 			continue
 		}
-		groups = append(groups, mediaTimelineGroupDTO{
+		day = append(day, mediaTimelineGroupDTO{
 			Key:        row.Key,
 			ItemCount:  row.ItemCount,
 			StartIndex: startIndex,
 		})
 		startIndex += row.ItemCount
 	}
-	return groups, nil
+	return mediaTimelineGroupSetsDTO{
+		Year:  collapseMediaTimelineGroups(day, 4),
+		Month: collapseMediaTimelineGroups(day, 7),
+		Day:   day,
+	}, nil
 }
 
 func (s *Server) queryMediaItemRange(
@@ -691,11 +725,14 @@ func (s *Server) queryMediaItemRange(
 	}
 
 	var timelineGroups []mediaTimelineGroupDTO
+	var timelineGroupSets *mediaTimelineGroupSetsDTO
 	if offset == 0 {
-		timelineGroups, err = queryMediaTimelineGroups(query)
-		if err != nil {
-			return mediaItemRangeDTO{}, err
+		sets, groupErr := queryMediaTimelineGroupSets(query)
+		if groupErr != nil {
+			return mediaItemRangeDTO{}, groupErr
 		}
+		timelineGroups = sets.Month
+		timelineGroupSets = &sets
 	}
 
 	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset)
@@ -703,11 +740,12 @@ func (s *Server) queryMediaItemRange(
 		return mediaItemRangeDTO{}, err
 	}
 	return mediaItemRangeDTO{
-		Items:          items,
-		TotalCount:     totalCount,
-		Offset:         offset,
-		Limit:          limit,
-		TimelineGroups: timelineGroups,
+		Items:             items,
+		TotalCount:        totalCount,
+		Offset:            offset,
+		Limit:             limit,
+		TimelineGroups:    timelineGroups,
+		TimelineGroupSets: timelineGroupSets,
 	}, nil
 }
 

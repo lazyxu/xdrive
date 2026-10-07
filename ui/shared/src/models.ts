@@ -400,12 +400,19 @@ export interface MediaTimelineGroupIndex {
   start_index: number
 }
 
+export interface MediaTimelineGroupSets {
+  year: MediaTimelineGroupIndex[]
+  month: MediaTimelineGroupIndex[]
+  day: MediaTimelineGroupIndex[]
+}
+
 export interface MediaItemRange {
   items: MediaItem[]
   total_count: number
   offset: number
   limit: number
   timeline_groups?: MediaTimelineGroupIndex[]
+  timeline_group_sets?: MediaTimelineGroupSets
 }
 
 export interface MediaAlbum {

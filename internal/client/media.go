@@ -79,12 +79,19 @@ type MediaTimelineGroupIndex struct {
 	StartIndex int64  `json:"start_index"`
 }
 
+type MediaTimelineGroupSets struct {
+	Year  []MediaTimelineGroupIndex `json:"year"`
+	Month []MediaTimelineGroupIndex `json:"month"`
+	Day   []MediaTimelineGroupIndex `json:"day"`
+}
+
 type MediaItemRange struct {
-	Items          []MediaItem               `json:"items"`
-	TotalCount     int64                     `json:"total_count"`
-	Offset         int                       `json:"offset"`
-	Limit          int                       `json:"limit"`
-	TimelineGroups []MediaTimelineGroupIndex `json:"timeline_groups,omitempty"`
+	Items             []MediaItem               `json:"items"`
+	TotalCount        int64                     `json:"total_count"`
+	Offset            int                       `json:"offset"`
+	Limit             int                       `json:"limit"`
+	TimelineGroups    []MediaTimelineGroupIndex `json:"timeline_groups,omitempty"`
+	TimelineGroupSets *MediaTimelineGroupSets   `json:"timeline_group_sets,omitempty"`
 }
 
 type MediaSmartAlbumQuery struct {
