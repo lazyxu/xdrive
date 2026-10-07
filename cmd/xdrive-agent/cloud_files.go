@@ -782,38 +782,103 @@ func agentCloudDownloadPathSegment(name string) (string, error) {
 	return name, nil
 }
 
+const agentCloudDownloadChildrenPageLimit = 500
+
+type agentCloudDownloadChildrenPageFunc func(
+	context.Context,
+	uint64,
+	client.ChildrenOptions,
+) (client.ChildrenPage, error)
+
+func visitAgentCloudDownloadChildren(
+	ctx context.Context,
+	parentID uint64,
+	listPage agentCloudDownloadChildrenPageFunc,
+	visit func(client.Node) (bool, error),
+) error {
+	if listPage == nil {
+		return fmt.Errorf("cloud download children pager is unavailable")
+	}
+	cursor := ""
+	seenCursors := map[string]struct{}{"": {}}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		page, err := listPage(ctx, parentID, client.ChildrenOptions{
+			Limit:  agentCloudDownloadChildrenPageLimit,
+			Cursor: cursor,
+			Sort:   "name",
+			Order:  "asc",
+		})
+		if err != nil {
+			return err
+		}
+		for _, node := range page.Items {
+			stop, err := visit(node)
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		if !page.HasMore {
+			return nil
+		}
+		next := strings.TrimSpace(page.NextCursor)
+		if next == "" {
+			return fmt.Errorf("cloud download children pagination did not return a next cursor")
+		}
+		if _, exists := seenCursors[next]; exists {
+			return fmt.Errorf("cloud download children pagination repeated cursor")
+		}
+		seenCursors[next] = struct{}{}
+		cursor = next
+	}
+}
+
 func resolveAgentCloudDownloadFolderRoot(
 	ctx context.Context,
-	cli *client.Client,
 	id uint64,
 	parentID uint64,
+	listPage agentCloudDownloadChildrenPageFunc,
 ) (client.Node, error) {
 	if id == 0 || parentID == 0 {
 		return client.Node{}, fmt.Errorf("folder id and parent id are required")
 	}
-	children, err := cli.List(ctx, parentID)
+	var found client.Node
+	err := visitAgentCloudDownloadChildren(
+		ctx,
+		parentID,
+		listPage,
+		func(node client.Node) (bool, error) {
+			if node.ID != id {
+				return false, nil
+			}
+			if node.Type != meta.NodeTypeDir {
+				return false, fmt.Errorf("download root is not a directory")
+			}
+			if _, err := agentCloudDownloadPathSegment(node.Name); err != nil {
+				return false, err
+			}
+			found = node
+			return true, nil
+		},
+	)
 	if err != nil {
 		return client.Node{}, err
 	}
-	for _, node := range children {
-		if node.ID != id {
-			continue
-		}
-		if node.Type != meta.NodeTypeDir {
-			return client.Node{}, fmt.Errorf("download root is not a directory")
-		}
-		if _, err := agentCloudDownloadPathSegment(node.Name); err != nil {
-			return client.Node{}, err
-		}
-		return node, nil
+	if found.ID == 0 {
+		return client.Node{}, fmt.Errorf("download folder is no longer available")
 	}
-	return client.Node{}, fmt.Errorf("download folder is no longer available")
+	return found, nil
 }
 
 func scanAgentCloudDownloadFolder(
 	ctx context.Context,
 	root client.Node,
-	list func(context.Context, uint64) ([]client.Node, error),
+	listPage agentCloudDownloadChildrenPageFunc,
 ) (agentCloudFolderDownloadManifest, error) {
 	if root.Type != meta.NodeTypeDir {
 		return agentCloudFolderDownloadManifest{}, fmt.Errorf("download root is not a directory")
@@ -837,23 +902,25 @@ func scanAgentCloudDownloadFolder(
 		switch node.Type {
 		case meta.NodeTypeDir:
 			manifest.Directories = append(manifest.Directories, relativePath)
-			children, err := list(ctx, node.ID)
-			if err != nil {
-				return err
-			}
-			for _, child := range children {
-				segment, err := agentCloudDownloadPathSegment(child.Name)
-				if err != nil {
-					return err
-				}
-				childPath := segment
-				if relativePath != "" {
-					childPath = pathpkg.Join(relativePath, segment)
-				}
-				if err := walk(child, childPath); err != nil {
-					return err
-				}
-			}
+			return visitAgentCloudDownloadChildren(
+				ctx,
+				node.ID,
+				listPage,
+				func(child client.Node) (bool, error) {
+					segment, err := agentCloudDownloadPathSegment(child.Name)
+					if err != nil {
+						return false, err
+					}
+					childPath := segment
+					if relativePath != "" {
+						childPath = pathpkg.Join(relativePath, segment)
+					}
+					if err := walk(child, childPath); err != nil {
+						return false, err
+					}
+					return false, nil
+				},
+			)
 		case meta.NodeTypeFile:
 			if node.Size < 0 {
 				return fmt.Errorf("cloud download file has invalid size")
@@ -960,7 +1027,7 @@ func (c *agentController) CloudDownloadFolder(
 		return agentCloudFolderDownloadResult{}, fmt.Errorf("folder download destination is not a directory")
 	}
 
-	root, err := resolveAgentCloudDownloadFolderRoot(ctx, cli, id, parentID)
+	root, err := resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.ListPage)
 	if err != nil {
 		return agentCloudFolderDownloadResult{}, err
 	}
@@ -977,7 +1044,7 @@ func (c *agentController) CloudDownloadFolder(
 		return agentCloudFolderDownloadResult{}, fmt.Errorf("transfer manager is unavailable")
 	}
 
-	manifest, err := scanAgentCloudDownloadFolder(ctx, root, cli.List)
+	manifest, err := scanAgentCloudDownloadFolder(ctx, root, cli.ListPage)
 	if err != nil {
 		_ = group.Finish(transfer.StateFailed, err)
 		return agentCloudFolderDownloadResult{}, err

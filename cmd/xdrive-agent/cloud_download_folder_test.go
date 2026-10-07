@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,9 +24,7 @@ func TestScanAgentCloudDownloadFolderBuildsLeafManifest(t *testing.T) {
 	manifest, err := scanAgentCloudDownloadFolder(
 		context.Background(),
 		root,
-		func(_ context.Context, parentID uint64) ([]client.Node, error) {
-			return append([]client.Node(nil), tree[parentID]...), nil
-		},
+		folderDownloadPagedTree(tree, nil),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -47,18 +46,111 @@ func TestScanAgentCloudDownloadFolderBuildsLeafManifest(t *testing.T) {
 	}
 }
 
+func TestScanAgentCloudDownloadFolderPagesWideDirectories(t *testing.T) {
+	root := client.Node{ID: 1, Name: "Wide", Type: meta.NodeTypeDir}
+	children := make([]client.Node, 1201)
+	for index := range children {
+		children[index] = client.Node{
+			ID:       uint64(index + 2),
+			ParentID: folderDownloadUint64Ptr(root.ID),
+			Name:     "file-" + strconv.Itoa(index) + ".txt",
+			Type:     meta.NodeTypeFile,
+			Size:     1,
+		}
+	}
+	pageCalls := 0
+	maxReturned := 0
+	pager := folderDownloadPagedTree(
+		map[uint64][]client.Node{root.ID: children},
+		func(parentID uint64, options client.ChildrenOptions, returned int) {
+			if parentID != root.ID {
+				t.Fatalf("parent id=%d want %d", parentID, root.ID)
+			}
+			if options.Limit != agentCloudDownloadChildrenPageLimit {
+				t.Fatalf("page limit=%d want %d", options.Limit, agentCloudDownloadChildrenPageLimit)
+			}
+			if options.Sort != "name" || options.Order != "asc" {
+				t.Fatalf("page order=%s/%s want name/asc", options.Sort, options.Order)
+			}
+			pageCalls++
+			if returned > maxReturned {
+				maxReturned = returned
+			}
+		},
+	)
+
+	manifest, err := scanAgentCloudDownloadFolder(context.Background(), root, pager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Files) != len(children) || manifest.TotalBytes != int64(len(children)) {
+		t.Fatalf("manifest files=%d bytes=%d want=%d/%d", len(manifest.Files), manifest.TotalBytes, len(children), len(children))
+	}
+	if pageCalls != 3 {
+		t.Fatalf("page calls=%d want 3", pageCalls)
+	}
+	if maxReturned != agentCloudDownloadChildrenPageLimit {
+		t.Fatalf("max returned=%d want %d", maxReturned, agentCloudDownloadChildrenPageLimit)
+	}
+}
+
+func TestResolveAgentCloudDownloadFolderRootPagesWideParent(t *testing.T) {
+	const parentID = uint64(10)
+	children := make([]client.Node, 1201)
+	for index := range children {
+		children[index] = client.Node{
+			ID:       uint64(index + 100),
+			ParentID: folderDownloadUint64Ptr(parentID),
+			Name:     "Folder-" + strconv.Itoa(index),
+			Type:     meta.NodeTypeDir,
+		}
+	}
+	target := children[len(children)-1]
+	pageCalls := 0
+	maxReturned := 0
+	pager := folderDownloadPagedTree(
+		map[uint64][]client.Node{parentID: children},
+		func(_ uint64, options client.ChildrenOptions, returned int) {
+			if options.Limit != agentCloudDownloadChildrenPageLimit {
+				t.Fatalf("page limit=%d want %d", options.Limit, agentCloudDownloadChildrenPageLimit)
+			}
+			pageCalls++
+			if returned > maxReturned {
+				maxReturned = returned
+			}
+		},
+	)
+
+	got, err := resolveAgentCloudDownloadFolderRoot(
+		context.Background(),
+		target.ID,
+		parentID,
+		pager,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != target.ID || got.Name != target.Name {
+		t.Fatalf("resolved root=%+v want=%+v", got, target)
+	}
+	if pageCalls != 3 {
+		t.Fatalf("page calls=%d want 3", pageCalls)
+	}
+	if maxReturned != agentCloudDownloadChildrenPageLimit {
+		t.Fatalf("max returned=%d want %d", maxReturned, agentCloudDownloadChildrenPageLimit)
+	}
+}
+
 func TestScanAgentCloudDownloadFolderRejectsCyclesAndUnsafeNames(t *testing.T) {
 	root := client.Node{ID: 1, Name: "Projects", Type: meta.NodeTypeDir}
 
 	_, err := scanAgentCloudDownloadFolder(
 		context.Background(),
 		root,
-		func(_ context.Context, parentID uint64) ([]client.Node, error) {
-			if parentID == 1 {
-				return []client.Node{{ID: 2, ParentID: folderDownloadUint64Ptr(1), Name: "Loop", Type: meta.NodeTypeDir}}, nil
-			}
-			return []client.Node{{ID: 1, ParentID: folderDownloadUint64Ptr(2), Name: "Projects", Type: meta.NodeTypeDir}}, nil
-		},
+		folderDownloadPagedTree(map[uint64][]client.Node{
+			1: {{ID: 2, ParentID: folderDownloadUint64Ptr(1), Name: "Loop", Type: meta.NodeTypeDir}},
+			2: {{ID: 1, ParentID: folderDownloadUint64Ptr(2), Name: "Projects", Type: meta.NodeTypeDir}},
+		}, nil),
 	)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("cycle error=%v", err)
@@ -67,15 +159,82 @@ func TestScanAgentCloudDownloadFolderRejectsCyclesAndUnsafeNames(t *testing.T) {
 	_, err = scanAgentCloudDownloadFolder(
 		context.Background(),
 		root,
-		func(_ context.Context, parentID uint64) ([]client.Node, error) {
-			if parentID == 1 {
-				return []client.Node{{ID: 3, ParentID: folderDownloadUint64Ptr(1), Name: "../escape", Type: meta.NodeTypeFile, Size: 1}}, nil
-			}
-			return nil, nil
-		},
+		folderDownloadPagedTree(map[uint64][]client.Node{
+			1: {{ID: 3, ParentID: folderDownloadUint64Ptr(1), Name: "../escape", Type: meta.NodeTypeFile, Size: 1}},
+		}, nil),
 	)
 	if err == nil {
 		t.Fatal("unsafe name must be rejected")
+	}
+}
+
+func TestScanAgentCloudDownloadFolderRejectsRepeatedCursor(t *testing.T) {
+	root := client.Node{ID: 1, Name: "Projects", Type: meta.NodeTypeDir}
+	calls := 0
+	_, err := scanAgentCloudDownloadFolder(
+		context.Background(),
+		root,
+		func(_ context.Context, _ uint64, options client.ChildrenOptions) (client.ChildrenPage, error) {
+			calls++
+			if options.Cursor == "" {
+				return client.ChildrenPage{HasMore: true, NextCursor: "repeat"}, nil
+			}
+			return client.ChildrenPage{HasMore: true, NextCursor: "repeat"}, nil
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "repeated cursor") {
+		t.Fatalf("cursor error=%v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("page calls=%d want 2", calls)
+	}
+}
+
+func folderDownloadPagedTree(
+	tree map[uint64][]client.Node,
+	onPage func(uint64, client.ChildrenOptions, int),
+) agentCloudDownloadChildrenPageFunc {
+	return func(
+		_ context.Context,
+		parentID uint64,
+		options client.ChildrenOptions,
+	) (client.ChildrenPage, error) {
+		start := 0
+		if options.Cursor != "" {
+			parsed, err := strconv.Atoi(options.Cursor)
+			if err != nil {
+				return client.ChildrenPage{}, err
+			}
+			start = parsed
+		}
+		items := tree[parentID]
+		if start > len(items) {
+			start = len(items)
+		}
+		limit := options.Limit
+		if limit <= 0 {
+			limit = len(items)
+		}
+		end := start + limit
+		if end > len(items) {
+			end = len(items)
+		}
+		pageItems := append([]client.Node(nil), items[start:end]...)
+		hasMore := end < len(items)
+		nextCursor := ""
+		if hasMore {
+			nextCursor = strconv.Itoa(end)
+		}
+		if onPage != nil {
+			onPage(parentID, options, len(pageItems))
+		}
+		return client.ChildrenPage{
+			Items:      pageItems,
+			NextCursor: nextCursor,
+			HasMore:    hasMore,
+			Sort:       options.Sort,
+			Order:      options.Order,
+		}, nil
 	}
 }
 
