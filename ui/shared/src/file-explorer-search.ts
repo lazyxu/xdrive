@@ -13,6 +13,13 @@ export type XDriveFileExplorerSearchKind =
   | 'text'
   | 'other'
 
+export type XDriveFileExplorerSearchAvailability =
+  | 'local'
+  | 'always-local'
+  | 'online-only'
+  | 'cloud'
+  | 'syncing'
+
 export type XDriveFileExplorerSearchFilters = {
   kind?: XDriveFileExplorerSearchKind
   modifiedFrom?: string
@@ -20,11 +27,17 @@ export type XDriveFileExplorerSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
+  availability?: XDriveFileExplorerSearchAvailability
 }
 
 export type XDriveFileExplorerSearchSourceOption = {
   id: number
   name: string
+}
+
+export type XDriveFileExplorerSearchAvailabilityOption = {
+  value: XDriveFileExplorerSearchAvailability
+  label: string
 }
 
 export function xDriveFileExplorerSearchFiltersActive(
@@ -36,7 +49,8 @@ export function xDriveFileExplorerSearchFiltersActive(
     filters?.modifiedTo ||
     filters?.minSize !== undefined ||
     filters?.maxSize !== undefined ||
-    filters?.sourceID,
+    filters?.sourceID ||
+    filters?.availability,
   )
 }
 
@@ -50,6 +64,7 @@ export function xDriveFileExplorerSearchFiltersSignature(
     filters?.minSize ?? '',
     filters?.maxSize ?? '',
     filters?.sourceID ?? '',
+    filters?.availability ?? '',
   ].join('|')
 }
 
@@ -61,5 +76,6 @@ export function xDriveFileExplorerSearchFilterCount(
   if (filters?.modifiedFrom || filters?.modifiedTo) count += 1
   if (filters?.minSize !== undefined || filters?.maxSize !== undefined) count += 1
   if (filters?.sourceID) count += 1
+  if (filters?.availability) count += 1
   return count
 }

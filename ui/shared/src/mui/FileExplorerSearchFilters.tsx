@@ -12,6 +12,7 @@ import {
 } from '@mui/material'
 import type { MouseEvent } from 'react'
 import type {
+  XDriveFileExplorerSearchAvailabilityOption,
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerSearchKind,
   XDriveFileExplorerSearchSourceOption,
@@ -20,7 +21,7 @@ import {
   xDriveFileExplorerSearchFilterCount,
 } from '../file-explorer-search'
 
-type FilterMenu = 'kind' | 'modified' | 'size' | 'source'
+type FilterMenu = 'kind' | 'modified' | 'size' | 'availability' | 'source'
 
 const kindLabels: Record<XDriveFileExplorerSearchKind, string> = {
   folder: '文件夹',
@@ -66,10 +67,12 @@ function sizeLabel(filters: XDriveFileExplorerSearchFilters) {
 export function XDriveFileExplorerSearchFilters({
   filters,
   sourceOptions = [],
+  availabilityOptions = [],
   onChange,
 }: {
   filters: XDriveFileExplorerSearchFilters
   sourceOptions?: readonly XDriveFileExplorerSearchSourceOption[]
+  availabilityOptions?: readonly XDriveFileExplorerSearchAvailabilityOption[]
   onChange: (filters: XDriveFileExplorerSearchFilters) => void
 }) {
   const [panelAnchor, setPanelAnchor] = useState<HTMLElement | null>(null)
@@ -79,6 +82,10 @@ export function XDriveFileExplorerSearchFilters({
   const sourceName = useMemo(
     () => sourceOptions.find((item) => item.id === filters.sourceID)?.name,
     [filters.sourceID, sourceOptions],
+  )
+  const availabilityName = useMemo(
+    () => availabilityOptions.find((item) => item.value === filters.availability)?.label,
+    [availabilityOptions, filters.availability],
   )
 
   const open = (next: FilterMenu) => (event: MouseEvent<HTMLElement>) => {
@@ -154,6 +161,18 @@ export function XDriveFileExplorerSearchFilters({
                 ? () => onChange({ ...filters, minSize: undefined, maxSize: undefined })
                 : undefined}
             />
+            {availabilityOptions.length > 0 ? (
+              <Chip
+                size="small"
+                variant={filters.availability ? 'filled' : 'outlined'}
+                color={filters.availability ? 'primary' : 'default'}
+                label={filters.availability ? `可用性：${availabilityName ?? filters.availability}` : '可用性'}
+                onClick={open('availability')}
+                onDelete={filters.availability
+                  ? () => onChange({ ...filters, availability: undefined })
+                  : undefined}
+              />
+            ) : null}
             <Chip
               size="small"
               variant={filters.sourceID ? 'filled' : 'outlined'}
@@ -189,6 +208,19 @@ export function XDriveFileExplorerSearchFilters({
         <MenuItem onClick={() => patch({ minSize: 1 << 20, maxSize: (100 << 20) - 1 })}>1–100 MiB</MenuItem>
         <MenuItem onClick={() => patch({ minSize: 100 << 20, maxSize: (1 << 30) - 1 })}>100 MiB–1 GiB</MenuItem>
         <MenuItem onClick={() => patch({ minSize: 1 << 30, maxSize: undefined })}>1 GiB 及以上</MenuItem>
+      </Menu>
+
+      <Menu anchorEl={anchor} open={menu === 'availability'} onClose={close}>
+        <MenuItem onClick={() => patch({ availability: undefined })}>全部可用性</MenuItem>
+        {availabilityOptions.map((option) => (
+          <MenuItem
+            key={option.value}
+            selected={filters.availability === option.value}
+            onClick={() => patch({ availability: option.value })}
+          >
+            {option.label}
+          </MenuItem>
+        ))}
       </Menu>
 
       <Menu anchorEl={anchor} open={menu === 'source'} onClose={close}>

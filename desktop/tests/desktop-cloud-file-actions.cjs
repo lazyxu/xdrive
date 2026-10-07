@@ -105,7 +105,8 @@ test('Desktop Agent bridge exposes cursor-paged cloud children without changing 
 })
 
 test('Desktop search preserves cursor pages through Agent and Electron bridges', () => {
-  assert.ok(agentIPC.includes('CloudSearch(context.Context, string, string, string, string, client.SearchFilters) (agentCloudSearchPage, error)'), 'Agent IPC structured search page contract is missing')
+  assert.ok(agentIPC.includes('CloudSearch(context.Context, string, string, string, string, agentCloudSearchFilters) (agentCloudSearchPage, error)'), 'Agent IPC structured search page contract is missing')
+  assert.ok(agentIPC.includes('CloudSearchRange(context.Context, string, int, int, string, string, agentCloudSearchFilters, client.FileExplorerGroupingOptions) (agentCloudSearchRange, error)'), 'Agent IPC device-filtered search range contract is missing')
   assert.ok(cloudFiles.includes('Cursor:  strings.TrimSpace(cursor)'), 'Agent controller must forward the search cursor to the Go client')
   assert.ok(cloudFiles.includes('Sort:    strings.TrimSpace(sortKey)'), 'Agent controller must forward the search sort key')
   assert.ok(cloudFiles.includes('Order:   strings.TrimSpace(order)'), 'Agent controller must forward the search sort direction')

@@ -39,13 +39,14 @@ type searchPageDTO struct {
 }
 
 type searchRangeDTO struct {
-	Items      []searchResultDTO           `json:"items"`
-	TotalCount int64                       `json:"total_count"`
-	Offset     int                         `json:"offset"`
-	Limit      int                         `json:"limit"`
-	Sort       string                      `json:"sort"`
-	Order      string                      `json:"order"`
-	Groups     []fileExplorerGroupIndexDTO `json:"groups,omitempty"`
+	Items              []searchResultDTO           `json:"items"`
+	TotalCount         int64                       `json:"total_count"`
+	TotalCountIncluded *bool                       `json:"total_count_included,omitempty"`
+	Offset             int                         `json:"offset"`
+	Limit              int                         `json:"limit"`
+	Sort               string                      `json:"sort"`
+	Order              string                      `json:"order"`
+	Groups             []fileExplorerGroupIndexDTO `json:"groups,omitempty"`
 }
 
 type searchCursor struct {
@@ -211,7 +212,16 @@ func (s *Server) searchNodes(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if query == "" && nodeType == "" && !filters.active() {
+	includeAll := false
+	if raw, exists := c.GetQuery("include_all"); exists {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			fail(c, http.StatusBadRequest, "include_all must be true or false")
+			return
+		}
+		includeAll = value
+	}
+	if query == "" && nodeType == "" && !filters.active() && !includeAll {
 		fail(c, http.StatusBadRequest, "q or at least one structured filter is required")
 		return
 	}
@@ -250,6 +260,27 @@ func (s *Server) searchNodes(c *gin.Context) {
 
 	rawOffset, rangeRequested := c.GetQuery("offset")
 	offset := 0
+	if includeAll && !rangeRequested {
+		fail(c, http.StatusBadRequest, "include_all requires offset")
+		return
+	}
+	includeCount := true
+	if rawValues, exists := c.Request.URL.Query()["include_count"]; exists {
+		if !rangeRequested {
+			fail(c, http.StatusBadRequest, "include_count requires offset")
+			return
+		}
+		raw := ""
+		if len(rawValues) > 0 {
+			raw = strings.TrimSpace(strings.ToLower(rawValues[0]))
+		}
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "include_count must be true or false")
+			return
+		}
+		includeCount = value
+	}
 	if rangeRequested {
 		rawOffset = strings.TrimSpace(rawOffset)
 		value, err := strconv.Atoi(rawOffset)
@@ -292,7 +323,7 @@ func (s *Server) searchNodes(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	if rangeRequested {
-		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, filters, grouping, offset, limit, sortKey, order)
+		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, filters, grouping, offset, limit, sortKey, order, includeCount)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "search failed")
 			return
@@ -696,6 +727,7 @@ func (s *Server) searchNodeRange(
 	grouping fileExplorerGrouping,
 	offset, limit int,
 	sortKey, order string,
+	includeCount bool,
 ) (searchRangeDTO, error) {
 	baseSQL, baseArgs := searchNodeBaseQuery(ownerID, query, nodeType, filters)
 	_, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
@@ -716,12 +748,17 @@ func (s *Server) searchNodeRange(
 		direction,
 		pathExpr,
 	)
-	sqlText := fmt.Sprintf(`SELECT search_page.*, COUNT(*) OVER() AS total_count
+	selectPrefix := "SELECT search_page.*"
+	if includeCount {
+		selectPrefix += ", COUNT(*) OVER() AS total_count"
+	}
+	sqlText := fmt.Sprintf(`%s
 FROM (
 %s
 ) AS search_page
 ORDER BY %s
 OFFSET ? LIMIT ?`,
+		selectPrefix,
 		baseSQL,
 		orderBy,
 	)
@@ -733,24 +770,26 @@ OFFSET ? LIMIT ?`,
 	}
 
 	totalCount := int64(0)
-	if len(rows) > 0 {
-		totalCount = rows[0].TotalCount
-	} else if offset > 0 {
-		countSQL := fmt.Sprintf(
-			"SELECT COUNT(*) AS total_count FROM (\n%s\n) AS search_count",
-			baseSQL,
-		)
-		var count struct {
-			TotalCount int64 `gorm:"column:total_count"`
+	if includeCount {
+		if len(rows) > 0 {
+			totalCount = rows[0].TotalCount
+		} else if offset > 0 {
+			countSQL := fmt.Sprintf(
+				"SELECT COUNT(*) AS total_count FROM (\n%s\n) AS search_count",
+				baseSQL,
+			)
+			var count struct {
+				TotalCount int64 `gorm:"column:total_count"`
+			}
+			if err := s.DB.WithContext(ctx).Raw(countSQL, baseArgs...).Scan(&count).Error; err != nil {
+				return searchRangeDTO{}, err
+			}
+			totalCount = count.TotalCount
 		}
-		if err := s.DB.WithContext(ctx).Raw(countSQL, baseArgs...).Scan(&count).Error; err != nil {
-			return searchRangeDTO{}, err
-		}
-		totalCount = count.TotalCount
 	}
 
 	var groups []fileExplorerGroupIndexDTO
-	if offset == 0 && grouping.Group != "none" {
+	if includeCount && offset == 0 && grouping.Group != "none" {
 		groupFields := fileExplorerGroupFields{
 			Type:    "search_group.type",
 			Name:    "search_group.name",
@@ -780,7 +819,7 @@ ORDER BY %s`,
 	if err != nil {
 		return searchRangeDTO{}, err
 	}
-	return searchRangeDTO{
+	page := searchRangeDTO{
 		Items:      items,
 		TotalCount: totalCount,
 		Offset:     offset,
@@ -788,7 +827,12 @@ ORDER BY %s`,
 		Sort:       sortKey,
 		Order:      order,
 		Groups:     groups,
-	}, nil
+	}
+	if !includeCount {
+		included := false
+		page.TotalCountIncluded = &included
+	}
+	return page, nil
 }
 
 func searchRowCursorValue(row searchRow, sortKey string) string {

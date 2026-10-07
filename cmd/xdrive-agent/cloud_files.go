@@ -1550,9 +1550,12 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 func (c *agentController) CloudSearch(
 	ctx context.Context,
 	query, cursor, sortKey, order string,
-	filters client.SearchFilters,
+	filters agentCloudSearchFilters,
 ) (agentCloudSearchPage, error) {
 	query = strings.TrimSpace(query)
+	if strings.TrimSpace(filters.Availability) != "" {
+		return agentCloudSearchPage{}, fmt.Errorf("availability filtering requires range search")
+	}
 	if (query == "" && !filters.Active()) || (query != "" && len([]rune(query)) < 2) {
 		return agentCloudSearchPage{}, fmt.Errorf("search requires at least 2 query characters or a structured filter")
 	}
@@ -1562,7 +1565,7 @@ func (c *agentController) CloudSearch(
 	}
 	page, err := cli.Search(ctx, client.SearchOptions{
 		Query:   query,
-		Filters: filters,
+		Filters: filters.Server,
 		Limit:   cloudSearchLimit,
 		Cursor:  strings.TrimSpace(cursor),
 		Sort:    strings.TrimSpace(sortKey),
@@ -1586,7 +1589,7 @@ func (c *agentController) CloudSearchRange(
 	query string,
 	offset, limit int,
 	sortKey, order string,
-	filters client.SearchFilters,
+	filters agentCloudSearchFilters,
 	grouping client.FileExplorerGroupingOptions,
 ) (agentCloudSearchRange, error) {
 	query = strings.TrimSpace(query)
@@ -1599,13 +1602,27 @@ func (c *agentController) CloudSearchRange(
 	if limit <= 0 || limit > cloudSearchLimit {
 		return agentCloudSearchRange{}, fmt.Errorf("search limit must be between 1 and %d", cloudSearchLimit)
 	}
-	cli, _, err := c.cloudClient()
+	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return agentCloudSearchRange{}, err
 	}
+	if strings.TrimSpace(filters.Availability) != "" {
+		return c.cloudSearchRangeByAvailability(
+			ctx,
+			cli,
+			cfg,
+			query,
+			offset,
+			limit,
+			sortKey,
+			order,
+			filters,
+			grouping,
+		)
+	}
 	page, err := cli.SearchRange(ctx, client.SearchRangeOptions{
 		Query:    query,
-		Filters:  filters,
+		Filters:  filters.Server,
 		Grouping: grouping,
 		Limit:    limit,
 		Offset:   offset,

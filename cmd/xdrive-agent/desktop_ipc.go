@@ -232,8 +232,8 @@ type desktopIPCController interface {
 	CloudDownload(context.Context, uint64, string) error
 	CloudDownloadFolder(context.Context, uint64, uint64, string) (agentCloudFolderDownloadResult, error)
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
-	CloudSearch(context.Context, string, string, string, string, client.SearchFilters) (agentCloudSearchPage, error)
-	CloudSearchRange(context.Context, string, int, int, string, string, client.SearchFilters, client.FileExplorerGroupingOptions) (agentCloudSearchRange, error)
+	CloudSearch(context.Context, string, string, string, string, agentCloudSearchFilters) (agentCloudSearchPage, error)
+	CloudSearchRange(context.Context, string, int, int, string, string, agentCloudSearchFilters, client.FileExplorerGroupingOptions) (agentCloudSearchRange, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
@@ -1920,13 +1920,13 @@ func (h *desktopIPCHandler) cloudDownloadArchive(w http.ResponseWriter, r *http.
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
-func desktopIPCSearchFilters(w http.ResponseWriter, r *http.Request) (client.SearchFilters, bool) {
+func desktopIPCSearchFilters(w http.ResponseWriter, r *http.Request) (agentCloudSearchFilters, bool) {
 	values := r.URL.Query()
-	filters := client.SearchFilters{
+	filters := agentCloudSearchFilters{Server: client.SearchFilters{
 		Kind:         strings.TrimSpace(values.Get("kind")),
 		ModifiedFrom: strings.TrimSpace(values.Get("modified_from")),
 		ModifiedTo:   strings.TrimSpace(values.Get("modified_to")),
-	}
+	}}
 	parseInt64 := func(name string) (*int64, bool) {
 		raw := strings.TrimSpace(values.Get(name))
 		if raw == "" {
@@ -1940,19 +1940,27 @@ func desktopIPCSearchFilters(w http.ResponseWriter, r *http.Request) (client.Sea
 		return &value, true
 	}
 	var ok bool
-	if filters.MinSize, ok = parseInt64("min_size"); !ok {
-		return client.SearchFilters{}, false
+	if filters.Server.MinSize, ok = parseInt64("min_size"); !ok {
+		return agentCloudSearchFilters{}, false
 	}
-	if filters.MaxSize, ok = parseInt64("max_size"); !ok {
-		return client.SearchFilters{}, false
+	if filters.Server.MaxSize, ok = parseInt64("max_size"); !ok {
+		return agentCloudSearchFilters{}, false
 	}
 	if raw := strings.TrimSpace(values.Get("source_id")); raw != "" {
 		sourceID, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil || sourceID == 0 {
 			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", "source_id must be a positive integer")
-			return client.SearchFilters{}, false
+			return agentCloudSearchFilters{}, false
 		}
-		filters.SourceID = sourceID
+		filters.Server.SourceID = sourceID
+	}
+	if raw := strings.TrimSpace(values.Get("availability")); raw != "" {
+		availability, err := normalizeAgentAvailabilityFilter(raw)
+		if err != nil || availability == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", "availability is invalid")
+			return agentCloudSearchFilters{}, false
+		}
+		filters.Availability = availability
 	}
 	return filters, true
 }
@@ -2014,6 +2022,10 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 	}
 	if values.Get("group") != "" || values.Get("folders_first") != "" {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_group", "group and folders_first require offset")
+		return
+	}
+	if filters.Availability != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", "availability requires offset")
 		return
 	}
 	page, err := h.ctrl.CloudSearch(

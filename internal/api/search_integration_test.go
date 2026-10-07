@@ -209,6 +209,51 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 
 	res = request(t, router, http.MethodGet,
+		"/api/v1/search?include_all=true&offset=0&limit=200&sort=name&order=asc",
+		tokenA, nil, http.StatusOK)
+	var allRange searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &allRange); err != nil {
+		t.Fatal(err)
+	}
+	allIDs := make(map[uint64]bool, len(allRange.Items))
+	for _, item := range allRange.Items {
+		if strings.Contains(item.Path, "Deleted") || strings.Contains(item.Path, "Private") {
+			t.Fatalf("include_all leaked deleted/cross-user item: %+v", item)
+		}
+		allIDs[item.Node.ID] = true
+	}
+	for _, id := range []uint64{alpha.ID, beta.ID, gamma.ID} {
+		if !allIDs[id] {
+			t.Fatalf("include_all missing authorized node %d from %+v", id, allRange.Items)
+		}
+	}
+	request(t, router, http.MethodGet,
+		"/api/v1/search?include_all=true&limit=10",
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?include_all=maybe&offset=0&limit=10",
+		tokenA, nil, http.StatusBadRequest)
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=1&limit=1&sort=name&order=asc&group=size&include_count=false",
+		tokenA, nil, http.StatusOK)
+	var uncounted searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &uncounted); err != nil {
+		t.Fatal(err)
+	}
+	if uncounted.TotalCountIncluded == nil || *uncounted.TotalCountIncluded ||
+		uncounted.TotalCount != 0 || len(uncounted.Groups) != 0 ||
+		len(uncounted.Items) != 1 || uncounted.Items[0].Node.ID != beta.ID {
+		t.Fatalf("unexpected uncounted search range: %+v", uncounted)
+	}
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&include_count=false",
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=0&include_count=maybe",
+		tokenA, nil, http.StatusBadRequest)
+
+	res = request(t, router, http.MethodGet,
 		"/api/v1/search?q=report&type=file&offset=99&limit=1&sort=name&order=asc",
 		tokenA, nil, http.StatusOK)
 	var emptyRange searchRangeDTO

@@ -52,26 +52,28 @@ type agentController struct {
 	wake     chan struct{}
 	recovery chan agentRecoveryRequest
 
-	mu               sync.RWMutex
-	snap             agentSnapshot
-	snapshotRevision uint64
-	snapshotChanged  chan struct{}
-	transfers        *transfer.Manager
-	updates          *clientUpdateManager
-	thumbnailCache   *agentMediaThumbnailCache
+	mu                 sync.RWMutex
+	snap               agentSnapshot
+	snapshotRevision   uint64
+	snapshotChanged    chan struct{}
+	transfers          *transfer.Manager
+	updates            *clientUpdateManager
+	thumbnailCache     *agentMediaThumbnailCache
+	availabilitySearch *agentAvailabilitySearchCache
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
 	return &agentController{
-		ctx:              ctx,
-		cancel:           cancel,
-		wake:             make(chan struct{}, 1),
-		recovery:         make(chan agentRecoveryRequest, 1),
-		snapshotRevision: 1,
-		snapshotChanged:  make(chan struct{}),
-		transfers:        transfer.NewManager(transfer.DefaultHistoryLimit),
-		updates:          newClientUpdateManager(ctx),
-		thumbnailCache:   newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
+		ctx:                ctx,
+		cancel:             cancel,
+		wake:               make(chan struct{}, 1),
+		recovery:           make(chan agentRecoveryRequest, 1),
+		snapshotRevision:   1,
+		snapshotChanged:    make(chan struct{}),
+		transfers:          transfer.NewManager(transfer.DefaultHistoryLimit),
+		updates:            newClientUpdateManager(ctx),
+		thumbnailCache:     newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
+		availabilitySearch: newAgentAvailabilitySearchCache(),
 		snap: agentSnapshot{
 			AuthStatus: "未登录",
 			SyncStatus: "等待登录",
@@ -143,12 +145,14 @@ func (c *agentController) Run() {
 	mount.SetEventSink(func(event mount.Event) {
 		switch event.Kind {
 		case mount.EventSyncStarted:
+			c.availabilitySearch.Invalidate()
 			c.setSnapshot(func(s *agentSnapshot) {
 				if !s.HasConflict {
 					s.SyncStatus = "正在同步"
 				}
 			})
 		case mount.EventSyncCompleted:
+			c.availabilitySearch.Invalidate()
 			c.setSnapshot(func(s *agentSnapshot) {
 				if !s.HasConflict {
 					s.SyncStatus = "同步正常"
@@ -156,6 +160,7 @@ func (c *agentController) Run() {
 				}
 			})
 		case mount.EventSyncFailed:
+			c.availabilitySearch.Invalidate()
 			c.setSnapshot(func(s *agentSnapshot) {
 				if !s.HasConflict {
 					s.SyncStatus = "同步错误"
@@ -1216,6 +1221,7 @@ func (c *agentController) CancelClientUpdate() (clientUpdateState, error) {
 }
 
 func (c *agentController) SyncNow() error {
+	c.availabilitySearch.Invalidate()
 	cfg, err := userconfig.Load()
 	if err != nil {
 		return err
@@ -1244,6 +1250,7 @@ func (c *agentController) FileAvailability(path string) (mount.FileAvailability,
 }
 
 func (c *agentController) SetFileAvailability(path, action string) error {
+	c.availabilitySearch.Invalidate()
 	_, root, abs, err := managedPath(path)
 	if err != nil {
 		return err

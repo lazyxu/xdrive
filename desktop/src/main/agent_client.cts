@@ -942,6 +942,7 @@ export type AgentCloudSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
+  availability?: 'local' | 'always-local' | 'online-only' | 'cloud' | 'syncing'
 }
 
 function appendAgentFileExplorerGrouping(
@@ -963,6 +964,7 @@ function appendAgentCloudSearchFilters(
   if (filters.minSize !== undefined) query.set('min_size', String(Math.max(0, Math.trunc(filters.minSize))))
   if (filters.maxSize !== undefined) query.set('max_size', String(Math.max(0, Math.trunc(filters.maxSize))))
   if (filters.sourceID) query.set('source_id', String(Math.max(1, Math.trunc(filters.sourceID))))
+  if (filters.availability) query.set('availability', filters.availability)
 }
 
 export type AgentCloudQuickAccessItem = {
@@ -1994,7 +1996,7 @@ export class AgentIPCClient {
       'GET',
       `/v1/cloud/search?${query.toString()}`,
       undefined,
-      45_000,
+      filters.availability ? 130_000 : 45_000,
     )
   }
 

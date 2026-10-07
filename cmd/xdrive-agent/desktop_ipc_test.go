@@ -117,7 +117,7 @@ type fakeDesktopIPCController struct {
 	cloudSearchLimit           int
 	cloudSearchSort            string
 	cloudSearchOrder           string
-	cloudSearchFilters         client.SearchFilters
+	cloudSearchFilters         agentCloudSearchFilters
 	cloudSearchGrouping        client.FileExplorerGroupingOptions
 	cloudQuota                 client.QuotaUsage
 	cloudServerUpdate          client.ServerUpdateState
@@ -645,7 +645,7 @@ func (f *fakeDesktopIPCController) CloudSearch(
 	_ context.Context,
 	_ string,
 	cursor, sortKey, order string,
-	filters client.SearchFilters,
+	filters agentCloudSearchFilters,
 ) (agentCloudSearchPage, error) {
 	f.cloudSearchCursor = cursor
 	f.cloudSearchSort = sortKey
@@ -659,7 +659,7 @@ func (f *fakeDesktopIPCController) CloudSearchRange(
 	_ string,
 	offset, limit int,
 	sortKey, order string,
-	filters client.SearchFilters,
+	filters agentCloudSearchFilters,
 	grouping client.FileExplorerGroupingOptions,
 ) (agentCloudSearchRange, error) {
 	f.cloudSearchOffset = offset
@@ -1791,7 +1791,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor&sort=size&order=desc&kind=pdf&source_id=7", "", "\"next_cursor\":\"search-next\""},
-		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc&min_size=10&modified_from=2026-10-01T00%3A00%3A00Z&group=size&folders_first=false", "", "\"total_count\":640"},
+		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc&min_size=10&modified_from=2026-10-01T00%3A00%3A00Z&availability=cloud&group=size&folders_first=false", "", "\"total_count\":640"},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodPost, "/v1/cloud/storage-cache/cleanup", `{"kind":"media_thumbnail"}`, "\"deleted_bytes\":12"},
@@ -1813,6 +1813,8 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	for _, path := range []string{
 		"/v1/cloud/children?parent_id=1&offset=400&limit=200&include_count=maybe",
 		"/v1/cloud/children?parent_id=1&limit=200&include_count=false",
+		"/v1/cloud/search?q=report&availability=cloud",
+		"/v1/cloud/search?q=report&offset=0&availability=somewhere",
 	} {
 		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {
@@ -1842,8 +1844,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		t.Fatalf("cloud search range not forwarded: offset=%d limit=%d sort=%q order=%q",
 			ctrl.cloudSearchOffset, ctrl.cloudSearchLimit, ctrl.cloudSearchSort, ctrl.cloudSearchOrder)
 	}
-	if ctrl.cloudSearchFilters.MinSize == nil || *ctrl.cloudSearchFilters.MinSize != 10 ||
-		ctrl.cloudSearchFilters.ModifiedFrom != "2026-10-01T00:00:00Z" {
+	if ctrl.cloudSearchFilters.Server.MinSize == nil || *ctrl.cloudSearchFilters.Server.MinSize != 10 ||
+		ctrl.cloudSearchFilters.Server.ModifiedFrom != "2026-10-01T00:00:00Z" ||
+		ctrl.cloudSearchFilters.Availability != "cloud" {
 		t.Fatalf("cloud search structured filters not forwarded: %+v", ctrl.cloudSearchFilters)
 	}
 	if ctrl.cloudSearchGrouping.Group != "size" ||
