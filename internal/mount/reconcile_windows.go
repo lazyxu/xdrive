@@ -238,6 +238,69 @@ func (p *winProvider) reconcileMovedPlaceholder(ctx context.Context, rel string,
 	return true, nil
 }
 
+type winBaselineNodeIndex map[uint64]string
+
+func indexBaselinePathsByNodeID(baseline map[string]winState) winBaselineNodeIndex {
+	index := make(winBaselineNodeIndex, len(baseline))
+	for rel, state := range baseline {
+		if rel == "" || state.node.ID == 0 {
+			continue
+		}
+		index[state.node.ID] = rel
+	}
+	return index
+}
+
+func findBaselinePathByNodeIDIndexed(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	nodeID uint64,
+) (string, winState, bool) {
+	rel, ok := index[nodeID]
+	if !ok {
+		return "", winState{}, false
+	}
+	state, ok := baseline[rel]
+	if !ok || state.node.ID != nodeID {
+		delete(index, nodeID)
+		return "", winState{}, false
+	}
+	return rel, state, true
+}
+
+func deleteBaselinePrefixIndexed(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	prefix string,
+) {
+	for rel, state := range baseline {
+		if rel != prefix && !strings.HasPrefix(rel, prefix+"/") {
+			continue
+		}
+		delete(baseline, rel)
+		if state.node.ID != 0 {
+			delete(index, state.node.ID)
+		}
+	}
+}
+
+func moveBaselineFileIndexed(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	oldRel string,
+	newRel string,
+) {
+	state, ok := baseline[oldRel]
+	if !ok {
+		return
+	}
+	delete(baseline, oldRel)
+	baseline[newRel] = state
+	if state.node.ID != 0 {
+		index[state.node.ID] = newRel
+	}
+}
+
 func findBaselinePathByNodeID(baseline map[string]winState, nodeID uint64) (string, winState, bool) {
 	for rel, state := range baseline {
 		if rel != "" && state.node.ID == nodeID {
@@ -527,6 +590,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	baseline := cloneBaseline(p.baseline)
 	hydrated := cloneHydrated(p.hydrated)
 	p.mu.Unlock()
+	baselineByNodeID := indexBaselinePathsByNodeID(baseline)
 
 	// Directory creates/moves/deletes may implicitly expose or hide an entire
 	// subtree whose descendants do not receive their own node mutation. Keep
@@ -541,7 +605,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if change.Node.Type != "dir" {
 				continue
 			}
-			oldRel, oldState, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			oldRel, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
 			if !exists || oldRel != change.Path {
 				return true, nil
 			}
@@ -557,7 +621,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			// A directory revision change without a path change is harmless
 			// metadata churn; update it incrementally.
 		case "delete":
-			_, oldState, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			_, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
 			if exists && oldState.node.Type == "dir" {
 				return true, nil
 			}
@@ -570,7 +634,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	for _, change := range changes {
 		switch change.Operation {
 		case "delete":
-			oldRel, base, exists := findBaselinePathByNodeID(baseline, change.NodeID)
+			oldRel, base, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
 			if !exists {
 				continue
 			}
@@ -589,7 +653,8 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if err := os.RemoveAll(abs); err != nil {
 				return false, err
 			}
-			deletePrefix(baseline, oldRel)
+			delete(baseline, oldRel)
+			delete(baselineByNodeID, base.node.ID)
 
 		case "upsert":
 			rn := *change.Node
@@ -601,13 +666,13 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				continue
 			}
 
-			oldRel, _, oldExists := findBaselinePathByNodeID(baseline, rn.ID)
+			oldRel, _, oldExists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, rn.ID)
 			if p.policy.excludedPath(rel) {
 				if oldExists {
 					if err := os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
 						return false, err
 					}
-					deletePrefix(baseline, oldRel)
+					deleteBaselinePrefixIndexed(baseline, baselineByNodeID, oldRel)
 				}
 				continue
 			}
@@ -615,6 +680,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				state := baseline[rel]
 				state.node = rn
 				baseline[rel] = state
+				baselineByNodeID[rn.ID] = rel
 				continue
 			}
 			if rn.Type != "file" {
@@ -643,7 +709,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				} else if !errors.Is(statErr, os.ErrNotExist) {
 					return false, statErr
 				}
-				moveBaselinePrefix(baseline, oldRel, rel)
+				moveBaselineFileIndexed(baseline, baselineByNodeID, oldRel, rel)
 			}
 
 			base, exists := baseline[rel]
@@ -672,6 +738,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if exists && localExists && base.node.Revision == rn.Revision {
 				base.node = rn
 				baseline[rel] = base
+				baselineByNodeID[rn.ID] = rel
 				continue
 			}
 
@@ -688,6 +755,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
+				baselineByNodeID[rn.ID] = rel
 			}
 		}
 	}

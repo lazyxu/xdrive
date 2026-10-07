@@ -27,6 +27,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
+| Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -65,6 +66,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Desktop folder-tree download resolves the selected root through an owner-scoped exact node-id lookup and validates its expected parent/type/name; recursive directory enumeration uses cursor-paged children reads capped at **500 nodes per response** and must not use the legacy unpaginated children contract.
 - Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
 - Windows CfAPI hydration keeps the existing 4 MiB HTTP range granularity but fills one caller-owned buffer through `DownloadRangeInto` for the lifetime of each fetch callback, rather than allocating one response slice per range. The legacy `DownloadRange` API remains unchanged for compatibility.
+- Windows remote change-journal pages build one `nodeID -> baseline path` index per page. File upsert/delete lookup is O(1) after that build; incremental file delete removes the exact baseline entry directly and file rename moves the exact entry directly. Directory create/move/delete continues to use the existing full-reconcile safety path.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
 - Upload finalize keeps a reused source object open across fixed-block overwrite parts with the same source storage key. Interleaved newly uploaded staging chunks do not force that source handle to reopen; staging parts keep their existing per-object open/close behavior.
 - Multi-file and folder uploads batch conflict preflight for unique destination names, with at most **200 targets per request**. Shared orchestration consumes results in original file order, excludes duplicate destination names from upfront batching, and falls back to the legacy per-file preflight when the batch transport is unavailable or fails.
@@ -171,6 +173,42 @@ Decision: **Accepted.** This removes range-count-scaled large response allocatio
 Regression budget: explicit hydration payload buffers must remain **O(1) per fetch callback**, capped at **4 MiB**; do not replace this with full-file buffering.
 
 Next action: continue the basic-path performance audit at FileOperation Copy/Move execution and FileExplorer thumbnail/cache transport; only optimize when a deterministic structural or measured hotspot is found.
+
+### Windows change-journal baseline index contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows incremental remote journal fast path;
+- stable baseline: **100,000 non-root entries**;
+- one maximum-sized journal page: **500 missing file-delete events**;
+- each missing delete exercises both the directory-safety precheck and the apply pass without filesystem mutation;
+- evidence method: source-level lookup cardinality plus a Windows unit test that builds the 100k index and performs both lookup passes; wall-clock timing is intentionally not quoted;
+- samples: n/a for the structural count.
+
+BEFORE:
+
+- each precheck delete calls `findBaselinePathByNodeID`, which linearly scans the whole baseline when the node is absent;
+- each apply delete repeats the same linear lookup;
+- **500 changes x 2 passes = 1,000 full baseline scans**, or roughly **100 million baseline-entry checks** at 100k entries;
+- existing file deletes then call `deletePrefix`, another full baseline scan;
+- existing file renames call `moveBaselinePrefix`, another full baseline scan plus path sorting even though directory moves already fall back to full reconciliation.
+
+AFTER / current:
+
+- the page builds one `winBaselineNodeIndex` in **1 baseline traversal**;
+- the two 500-change passes use **1,000 O(1) map lookups**;
+- incremental file delete removes the known exact baseline path and index entry directly;
+- incremental file rename moves the known exact baseline entry directly and updates the node index;
+- rare excluded-directory prefix cleanup updates the baseline and index together;
+- directory move/delete safety fallback, journal cursors, placeholder updates, local-conflict checks, and full reconciliation remain unchanged.
+
+Decision: **Accepted.** This removes change-count x baseline-size CPU amplification from the normal incremental journal page without weakening directory subtree safety.
+
+Regression budget: `applyRemoteChangePage` must build at most **1 baseline node index per journal page** and must not call the linear `findBaselinePathByNodeID` for each change. Incremental file delete/rename must not call `deletePrefix` / `moveBaselinePrefix`.
+
+Next action: continue delete-path performance at content-reference release / physical blob cleanup, and only change it if deterministic SQL or object-store amplification is found.
 
 ### Upload conflict preflight batching contract
 
