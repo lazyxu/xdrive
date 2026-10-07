@@ -219,6 +219,12 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     onNavigationStateChangeRef.current?.(
       cloneNavigationState(navigationStateRef.current),
     )
+    return () => {
+      navigationRequestRef.current = {
+        ...navigationRequestRef.current,
+        id: navigationRequestRef.current.id + 1,
+      }
+    }
   }, [])
 
   useEffect(() => {

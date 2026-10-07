@@ -91,6 +91,15 @@ function createHookRuntime() {
       }
       return result
     },
+    unmount() {
+      for (const slot of slots) {
+        if (typeof slot?.cleanup === 'function') {
+          const cleanup = slot.cleanup
+          slot.cleanup = undefined
+          cleanup()
+        }
+      }
+    },
   }
 }
 
@@ -1739,4 +1748,90 @@ test('Web and Desktop external drop use the CloudFiles guarded idle refresh adap
     false,
     'Desktop external drop must not pass the raw directory loader as a background refresh',
   )
+})
+
+
+test('unmounted FileExplorer navigation intent cannot overwrite a remounted workspace', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const root = { id: 1, name: '我的文件' }
+    const beta = { id: 2, name: 'Beta' }
+    const gamma = { id: 3, name: 'Gamma' }
+    let crumbs = [root]
+    let visibleDirectoryID = root.id
+
+    const loadDirectory = async (id, nextCrumbs) => {
+      visibleDirectoryID = id
+      crumbs = [...nextCrumbs]
+      return true
+    }
+
+    // This first hook instance models DesktopFileExplorer before Agent disconnect.
+    const oldRuntime = createHookRuntime()
+    const useOldNavigation = loadNavigationHook(oldRuntime.react)
+    const renderOld = () => oldRuntime.render(() => useOldNavigation({
+      crumbs,
+      viewModeStorageKey: 'unmount-navigation-race-old',
+      onLoadDirectory: loadDirectory,
+    }))
+
+    let oldNavigation = renderOld()
+    await flushAsync()
+    oldNavigation = renderOld()
+
+    // Quick Access / Recent / typed-path flows capture a navigation intent
+    // before awaiting target resolution. Hold that intent across unmount.
+    const staleIntent = oldNavigation.beginNavigationIntent()
+    oldRuntime.unmount()
+
+    // Agent reconnect mounts a brand-new FileExplorer instance. The user then
+    // explicitly navigates the new instance to Gamma.
+    const newRuntime = createHookRuntime()
+    const useNewNavigation = loadNavigationHook(newRuntime.react)
+    const renderNew = () => newRuntime.render(() => useNewNavigation({
+      crumbs,
+      viewModeStorageKey: 'unmount-navigation-race-new',
+      onLoadDirectory: loadDirectory,
+    }))
+
+    let newNavigation = renderNew()
+    await flushAsync()
+    newNavigation = renderNew()
+    await newNavigation.navigateTo([root, gamma])
+    newNavigation = renderNew()
+
+    assert.equal(visibleDirectoryID, gamma.id)
+    assert.equal(newNavigation.pathValue, '我的文件/Gamma')
+    assert.equal(newNavigation.tabs[0]?.label, 'Gamma')
+
+    // The old instance's async target resolution now completes. It must not be
+    // allowed to call the App-owned directory loader after its owner unmounted.
+    await oldNavigation.navigateTo([root, beta], true, staleIntent)
+
+    const finalNavigation = renderNew()
+    assert.equal(
+      visibleDirectoryID,
+      gamma.id,
+      'an unmounted FileExplorer instance must not navigate the shared CloudFiles state after reconnect',
+    )
+    assert.equal(
+      finalNavigation.pathValue,
+      '我的文件/Gamma',
+      'address path must stay aligned with the remounted active workspace',
+    )
+    assert.equal(
+      finalNavigation.tabs[0]?.label,
+      'Gamma',
+      'active tab title must stay aligned with the visible directory after stale old-instance completion',
+    )
+  } finally {
+    global.window = originalWindow
+  }
 })
