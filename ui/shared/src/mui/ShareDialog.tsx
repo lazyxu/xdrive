@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import { Box, Dialog, LinearProgress } from '@mui/material'
@@ -98,18 +98,31 @@ export function XDriveShareDialog({
   const [passwordError, setPasswordError] = useState('')
   const [maxDownloadsError, setMaxDownloadsError] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const loadRequestRef = useRef(0)
+  const nodeLifecycleGenerationRef = useRef(0)
 
   const load = useCallback(async () => {
     if (!node) return
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      setShares(await adapter.listShares(node.id))
+      const next = await adapter.listShares(node.id)
+      if (requestID !== loadRequestRef.current) return
+      setShares(next)
     } catch (error) {
-      onError(error)
+      if (requestID === loadRequestRef.current) onError(error)
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [adapter, node, onError])
+
+  useEffect(() => {
+    nodeLifecycleGenerationRef.current += 1
+    setCreating(false)
+    setRevokingID(null)
+    setFeedback(null)
+  }, [node?.id])
 
   useEffect(() => {
     if (!node) return
@@ -124,11 +137,18 @@ export function XDriveShareDialog({
 
   useEffect(() => {
     if (!node) {
+      loadRequestRef.current += 1
       setShares([])
+      setLoading(false)
       return
     }
     void load()
   }, [load, node])
+
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    nodeLifecycleGenerationRef.current += 1
+  }, [])
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -146,6 +166,7 @@ export function XDriveShareDialog({
     setMaxDownloadsError(nextMaxDownloadsError)
     if (expiry.error || nextPasswordError || nextMaxDownloadsError) return
 
+    const lifecycleGeneration = nodeLifecycleGenerationRef.current
     setCreating(true)
     try {
       const created = await adapter.createShare(node.id, {
@@ -153,13 +174,14 @@ export function XDriveShareDialog({
         password,
         max_downloads: parsedMaxDownloads,
       })
+      if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
       setCreatedLink(created.url)
       setFeedback({ tone: 'good', message: '分享链接已创建' })
       await load()
     } catch (error) {
-      onError(error)
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) onError(error)
     } finally {
-      setCreating(false)
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) setCreating(false)
     }
   }
 
@@ -174,15 +196,17 @@ export function XDriveShareDialog({
   }
 
   const revoke = async (share: FileShare) => {
+    const lifecycleGeneration = nodeLifecycleGenerationRef.current
     setRevokingID(share.id)
     try {
       await adapter.revokeShare(share.id)
+      if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
       setFeedback({ tone: 'good', message: '分享已撤销' })
       await load()
     } catch (error) {
-      onError(error)
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) onError(error)
     } finally {
-      setRevokingID(null)
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) setRevokingID(null)
     }
   }
 
