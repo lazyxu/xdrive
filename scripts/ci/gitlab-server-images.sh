@@ -55,4 +55,4 @@ for i in "${!pids[@]}"; do
 done
 [[ "$status" == "0" ]] || exit "$status"
 
-echo "Published exact CI-tested GitLab server images with tag $XDRIVE_IMAGE_TAG"
+echo "Published exact CI-produced GitLab server images with tag $XDRIVE_IMAGE_TAG"

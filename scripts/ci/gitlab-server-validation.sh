@@ -139,8 +139,8 @@ grep -q 'profiles: \["photo-intelligence"\]' deploy/docker-compose.yml
 grep -q 'container_name: xdrive-caddy' deploy/docker-compose.yml
 grep -q 'COPY web/dist/ /srv/' deploy/Caddy.Dockerfile
 grep -q 'reverse_proxy server:8080' deploy/Caddyfile.common
-grep -q 'Load and verify exact images tested by CI' .github/workflows/release.yml
-grep -q 'Push exact tested images in parallel' .github/workflows/release.yml
+grep -q 'Load and verify exact CI-produced images' .github/workflows/release.yml
+grep -q 'Push exact CI-produced images in parallel' .github/workflows/release.yml
 grep -q 'docker push "$remote" &' .github/workflows/release.yml
 grep -q 'gh release create snapshot release/\* --repo "\$repo" --prerelease' .github/workflows/release.yml
 if grep -q 'snapshot-${GITHUB_SHA::12}' .github/workflows/release.yml; then
@@ -159,11 +159,11 @@ fi
 grep -q '^# Server host layout and Rootless Docker contract' docs/server-host-layout.md
 grep -q 'dns alidns' deploy/Caddyfile
 if grep -q 'docker/build-push-action@v6' .github/workflows/release.yml; then
-  echo "release must publish exact tested server images without docker rebuild" >&2
+  echo "release must publish exact CI-produced server images without docker rebuild" >&2
   exit 1
 fi
 if grep -q 'tags=.*:edge' .github/workflows/release.yml; then
-  echo "server image jobs must not publish edge before the full bundle succeeds" >&2
+  echo "server image build jobs must not bypass the publish workflow by writing edge directly" >&2
   exit 1
 fi
 
