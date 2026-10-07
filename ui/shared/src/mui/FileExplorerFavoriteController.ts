@@ -70,6 +70,8 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   if (enabledRef.current !== enabled) {
     enabledRef.current = enabled
     lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
+    pendingMutationCountRef.current = 0
   }
 
   loadItemsRef.current = loadItems
@@ -109,6 +111,8 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   useEffect(() => () => {
     loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
+    pendingMutationCountRef.current = 0
   }, [])
 
   const favoriteIDs = useMemo(() => new Set(items.map((item) => item.id)), [items])
@@ -130,6 +134,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     }
     const queued = mutationTailRef.current.then(run, run)
     const tracked = queued.finally(() => {
+      if (generation !== lifecycleGenerationRef.current) return
       pendingMutationCountRef.current = Math.max(0, pendingMutationCountRef.current - 1)
       if (pendingMutationCountRef.current === 0) setBusyID(null)
     })
