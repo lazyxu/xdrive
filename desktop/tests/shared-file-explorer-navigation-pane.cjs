@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
+const drag = read('ui', 'shared', 'src', 'file-explorer-drag.ts')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
@@ -87,4 +88,55 @@ test('Web and Desktop use the same navigation pane and paged directory loader', 
   assert.ok(web.includes('loadPage: (id, options) => api.listPage(id, options)'), 'Web tree must use the existing paged children REST adapter')
   assert.ok(desktop.includes('loadDirectoryPage={loadTreeDirectoryPage}'), 'Desktop tree must pass the shared paged loader into the pane')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, options)'), 'Desktop tree must use the existing paged Agent adapter')
+})
+
+
+test('navigation tree is a complete internal and external drop target', () => {
+  for (const token of [
+    'XDRIVE_FILE_EXPLORER_DRAG_MIME',
+    'xDriveFileExplorerEncodeDragItems',
+    'xDriveFileExplorerDecodeDragIDs',
+  ]) {
+    assert.ok(drag.includes(token), 'shared drag payload contract missing: ' + token)
+  }
+
+  for (const token of [
+    'dropDisabled = false',
+    'onDropInternalItems,',
+    'onExternalFilesDrop,',
+    'onExternalFolderDrop,',
+    'const [dropTargetID, setDropTargetID]',
+    'const dragOverNode =',
+    'const dropOnNode = async',
+    "types.includes(XDRIVE_FILE_EXPLORER_DRAG_MIME)",
+    "types.includes('Files')",
+    'xDriveFileExplorerReadExternalDrop(dataTransfer)',
+    'xDriveFileExplorerDecodeDragIDs(',
+    "event.ctrlKey || event.metaKey ? 'copy' : 'move'",
+    'onDragOver={(event) => dragOverNode(event, node)}',
+    'onDrop={(event) => { void dropOnNode(event, node) }}',
+    "outlineColor: dropTargetID === node.id ? 'primary.main' : undefined",
+  ]) {
+    assert.ok(pane.includes(token), 'navigation-tree DnD contract missing: ' + token)
+  }
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    for (const token of [
+      'onDropInternalItems={(itemIDs, target, operation) =>',
+      'void dropItemsToCrumb(',
+      'itemIDs.map((id) => ({ id }))',
+      'onExternalFilesDrop={(files, target) =>',
+      'void dropExternalFilesToCrumb(files, target)',
+    ]) {
+      assert.ok(source.includes(token), label + ' navigation-tree DnD adapter missing: ' + token)
+    }
+  }
+  assert.ok(
+    web.includes('void dropExternalFolderEntriesToCrumb(payload, target)'),
+    'Web navigation tree must support dropped local folders',
+  )
+  assert.ok(
+    desktop.includes('void dropExternalFolderEntriesToCrumb(payload, target)'),
+    'Desktop navigation tree must support dropped local folders when folder upload is available',
+  )
 })

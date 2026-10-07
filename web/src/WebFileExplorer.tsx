@@ -502,6 +502,20 @@ export default function WebFileExplorer({
             currentCrumbs={crumbs}
             loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            dropDisabled={fileOperationBusy}
+            onDropInternalItems={(itemIDs, target, operation) => {
+              void dropItemsToCrumb(
+                itemIDs.map((id) => ({ id })),
+                target,
+                operation,
+              )
+            }}
+            onExternalFilesDrop={(files, target) => {
+              void dropExternalFilesToCrumb(files, target)
+            }}
+            onExternalFolderDrop={(payload, target) => {
+              void dropExternalFolderEntriesToCrumb(payload, target)
+            }}
             quickAccessEnabled
             quickAccessItems={quickAccess.items}
             quickAccessLoading={quickAccess.loading}

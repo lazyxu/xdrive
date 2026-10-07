@@ -9,6 +9,19 @@ This document is the canonical **non-performance** FileExplorer design contract 
 - Server is authoritative for filesystem semantics that require the full namespace. Clients must not reconstruct recursive filesystem state by paginating/traversing the tree in the renderer.
 - New FileExplorer features should preserve Web/Desktop behavior parity unless the feature is inherently platform-specific.
 
+## Navigation tree drag and drop
+
+The shared left folder tree is a first-class drop target, not navigation-only chrome.
+
+- Internal FileExplorer drags carry a small shared DataTransfer payload containing the logical selected item IDs.
+- Dropping onto any folder-tree node delegates to the existing FileOperation drop-to-parent path. The tree does not implement separate Copy/Move semantics, conflict handling, replace/merge rules, or task tracking.
+- Move is the default internal operation; Ctrl on Windows/Linux or Command on macOS requests Copy, matching the main FileExplorer surface.
+- Local files dropped onto a tree node reuse the existing external-file upload adapter for that target directory.
+- Local folders dropped onto a tree node reuse the existing hierarchical folder-upload adapter when that platform/capability supports folder upload.
+- A tree node shows the same primary-accent drop-target outline used by the main FileExplorer surface.
+- The drop target must not navigate into the directory as a side effect. Refresh/navigation behavior remains owned by the existing operation/upload controllers.
+- Web and Desktop consume the same shared navigation-pane DnD contract; only their transport/upload adapters remain platform-local.
+
 ## Folder Properties
 
 Folder Properties must report real recursive statistics rather than displaying `—` for directories.

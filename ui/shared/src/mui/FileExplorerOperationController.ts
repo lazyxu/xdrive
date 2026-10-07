@@ -7,6 +7,7 @@ import {
 import type {
   XDriveFileExplorerOperationNode,
   XDriveFileExplorerQueuedOperationPlan,
+  XDriveFileExplorerSelectionItem,
 } from '../file-explorer-controller'
 import type { Node } from '../models'
 import type {
@@ -102,7 +103,7 @@ export function useXDriveFileExplorerOperationController<
   }
 
   const dropItemsToCrumb = async (
-    selected: XDriveFileExplorerItem[],
+    selected: XDriveFileExplorerSelectionItem[],
     crumb: XDriveFileExplorerCrumb,
     operation: 'move' | 'copy',
   ) => {

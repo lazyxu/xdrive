@@ -1193,6 +1193,22 @@ export default function DesktopFileExplorer({
             currentCrumbs={crumbs}
             loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            dropDisabled={explorerActionBusy}
+            onDropInternalItems={(itemIDs, target, operation) => {
+              void dropItemsToCrumb(
+                itemIDs.map((id) => ({ id })),
+                target,
+                operation,
+              )
+            }}
+            onExternalFilesDrop={(files, target) => {
+              void dropExternalFilesToCrumb(files, target)
+            }}
+            onExternalFolderDrop={uploadConflictSupported
+              ? (payload, target) => {
+                  void dropExternalFolderEntriesToCrumb(payload, target)
+                }
+              : undefined}
             quickAccessEnabled={quickAccessSupported}
             quickAccessItems={quickAccess.items}
             quickAccessLoading={quickAccess.loading}
