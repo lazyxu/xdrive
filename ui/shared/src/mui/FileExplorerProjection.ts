@@ -20,6 +20,7 @@ export function xDriveProjectFileExplorerNode<TNode extends Node>(
     name: node.name,
     kind: node.type,
     size: node.size,
+    createdAt: node.created_at,
     updatedAt: node.updated_at,
     secondaryLabel: resultPath,
     path: resultPath || `${pathPrefix}${node.name}`,

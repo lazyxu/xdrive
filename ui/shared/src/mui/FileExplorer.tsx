@@ -105,7 +105,11 @@ export type XDriveFileExplorerViewMode = 'details' | 'grid'
 export type XDriveFileExplorerPresentation = 'card' | 'workspace'
 export type XDriveFileExplorerSortKey = 'name' | 'updated' | 'type' | 'size'
 export type XDriveFileExplorerSortDirection = 'asc' | 'desc'
-export type XDriveFileExplorerDetailsColumnKey = XDriveFileExplorerSortKey
+export type XDriveFileExplorerDetailsColumnKey =
+  | XDriveFileExplorerSortKey
+  | 'created'
+  | 'status'
+  | 'availability'
 
 export type XDriveFileExplorerDetailsLayout = {
   visible: XDriveFileExplorerDetailsColumnKey[]
@@ -121,17 +125,37 @@ export type XDriveFileExplorerViewPreferences = {
   gridSize: XDriveFileExplorerGridSize
 }
 
-const detailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = ['name', 'updated', 'type', 'size']
-const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, { label: string; defaultWidth: number; minWidth: number; maxWidth: number }> = {
-  name: { label: '名称', defaultWidth: 320, minWidth: 180, maxWidth: 900 },
-  updated: { label: '修改时间', defaultWidth: 190, minWidth: 130, maxWidth: 420 },
-  type: { label: '类型', defaultWidth: 150, minWidth: 100, maxWidth: 360 },
-  size: { label: '大小', defaultWidth: 120, minWidth: 90, maxWidth: 260 },
+const defaultDetailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [
+  'name',
+  'updated',
+  'type',
+  'size',
+]
+const detailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [
+  ...defaultDetailsColumnKeys,
+  'created',
+  'status',
+  'availability',
+]
+const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, {
+  label: string
+  defaultWidth: number
+  minWidth: number
+  maxWidth: number
+  sortKey?: XDriveFileExplorerSortKey
+}> = {
+  name: { label: '名称', defaultWidth: 320, minWidth: 180, maxWidth: 900, sortKey: 'name' },
+  updated: { label: '修改时间', defaultWidth: 190, minWidth: 130, maxWidth: 420, sortKey: 'updated' },
+  type: { label: '类型', defaultWidth: 150, minWidth: 100, maxWidth: 360, sortKey: 'type' },
+  size: { label: '大小', defaultWidth: 120, minWidth: 90, maxWidth: 260, sortKey: 'size' },
+  created: { label: '创建时间', defaultWidth: 190, minWidth: 130, maxWidth: 420 },
+  status: { label: '状态', defaultWidth: 120, minWidth: 90, maxWidth: 260 },
+  availability: { label: '可用性', defaultWidth: 150, minWidth: 100, maxWidth: 320 },
 }
 
 export function xDriveDefaultFileExplorerDetailsLayout(): XDriveFileExplorerDetailsLayout {
   return {
-    visible: [...detailsColumnKeys],
+    visible: [...defaultDetailsColumnKeys],
     order: [...detailsColumnKeys],
     widths: Object.fromEntries(detailsColumnKeys.map((key) => [key, detailsColumnMeta[key].defaultWidth])) as Record<XDriveFileExplorerDetailsColumnKey, number>,
   }
@@ -300,7 +324,9 @@ export type XDriveFileExplorerItem = {
   name: string
   kind: 'dir' | 'file'
   size?: number
+  createdAt?: string
   updatedAt?: string
+  statusLabel?: string
   typeLabel?: string
   fileKind?: XDriveFileExplorerFileKind
   secondaryLabel?: string
@@ -563,6 +589,7 @@ export function XDriveFileExplorer({
   loadPreviewURL,
   loadLivePhotoMotion,
   loadPropertiesStats,
+  getItemStatus,
   getItemAvailability,
   externallySorted = false,
   virtualCollection,
@@ -649,6 +676,9 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
   ) => Promise<string | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
+  getItemStatus?: (
+    item: XDriveFileExplorerItem,
+  ) => string | undefined
   getItemAvailability?: (
     item: XDriveFileExplorerItem,
   ) => XDriveFileExplorerAvailability | undefined
@@ -2126,7 +2156,10 @@ export function XDriveFileExplorer({
   ) => {
     if (key === 'name') return item.name
     if (key === 'updated') return item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—'
+    if (key === 'created') return item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'
     if (key === 'type') return defaultTypeLabel(item)
+    if (key === 'status') return item.statusLabel ?? getItemStatus?.(item) ?? '—'
+    if (key === 'availability') return availabilityForItem(item)?.label ?? '—'
     return item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0)
   }
 
@@ -3797,15 +3830,35 @@ export function XDriveFileExplorer({
                     aria-grabbed={draggedDetailsColumn === key}
                     onDragStart={(event) => startDetailsColumnDrag(event, key)}
                     onDragEnd={endDetailsColumnDrag}
-                    aria-label={`按${detailsColumnMeta[key].label}排序`}
-                    onClick={() => setSort({
-                      key,
-                      direction: sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc',
-                    })}
-                    sx={{ minWidth: 0, flex: 1, height: '100%', justifyContent: 'flex-start', pr: 1.5, fontSize: 12, color: 'inherit' }}
+                    aria-label={detailsColumnMeta[key].sortKey
+                      ? `按${detailsColumnMeta[key].label}排序`
+                      : detailsColumnMeta[key].label}
+                    tabIndex={detailsColumnMeta[key].sortKey ? 0 : -1}
+                    onClick={detailsColumnMeta[key].sortKey
+                      ? () => {
+                          const sortKey = detailsColumnMeta[key].sortKey!
+                          setSort({
+                            key: sortKey,
+                            direction: sort.key === sortKey && sort.direction === 'asc' ? 'desc' : 'asc',
+                          })
+                        }
+                      : undefined}
+                    sx={{
+                      minWidth: 0,
+                      flex: 1,
+                      height: '100%',
+                      justifyContent: 'flex-start',
+                      pr: 1.5,
+                      fontSize: 12,
+                      color: 'inherit',
+                      cursor: detailsColumnMeta[key].sortKey ? 'pointer' : 'default',
+                    }}
                   >
                     <Typography component="span" variant="caption" noWrap color="inherit">
-                      {detailsColumnMeta[key].label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+                      {detailsColumnMeta[key].label}
+                      {detailsColumnMeta[key].sortKey === sort.key
+                        ? (sort.direction === 'asc' ? ' ↑' : ' ↓')
+                        : ''}
                     </Typography>
                   </ButtonBase>
                   <Box

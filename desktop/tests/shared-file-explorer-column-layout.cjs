@@ -50,3 +50,59 @@ test('Details columns support single and all-column auto fit', () => {
     assert.ok(explorer.includes(token), `details column auto-fit missing: ${token}`)
   }
 })
+
+
+test('Details adds optional created/status/availability columns without changing the default four-column layout', () => {
+  for (const token of [
+    "const defaultDetailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [",
+    "'created',",
+    "'status',",
+    "'availability',",
+    'visible: [...defaultDetailsColumnKeys]',
+    'order: [...detailsColumnKeys]',
+    "created: { label: '创建时间'",
+    "status: { label: '状态'",
+    "availability: { label: '可用性'",
+  ]) {
+    assert.ok(explorer.includes(token), 'optional Details column contract missing: ' + token)
+  }
+  assert.ok(
+    explorer.includes("name: { label: '名称'") &&
+      explorer.includes("sortKey: 'name'") &&
+      explorer.includes("sortKey: 'updated'") &&
+      explorer.includes("sortKey: 'type'") &&
+      explorer.includes("sortKey: 'size'"),
+    'only the original four Details columns should expose Server sort keys',
+  )
+  assert.equal(
+    explorer.includes("created: { label: '创建时间', defaultWidth: 190, minWidth: 130, maxWidth: 420, sortKey:"),
+    false,
+    'created time must stay a display-only column until Server sort contract explicitly supports it',
+  )
+  assert.equal(
+    explorer.includes("status: { label: '状态', defaultWidth: 120, minWidth: 90, maxWidth: 260, sortKey:"),
+    false,
+    'device status must never masquerade as a Server sort key',
+  )
+  assert.equal(
+    explorer.includes("availability: { label: '可用性', defaultWidth: 150, minWidth: 100, maxWidth: 320, sortKey:"),
+    false,
+    'device availability must never masquerade as a Server sort key',
+  )
+})
+
+test('legacy Details layouts keep new columns hidden while normalization appends them to column order', () => {
+  assert.ok(
+    explorer.includes('const visibleInput = Array.isArray(input.visible) ? input.visible : fallback.visible'),
+    'stored visible-column selection must remain authoritative during layout normalization',
+  )
+  assert.ok(
+    explorer.includes('...detailsColumnKeys.filter((key) => !ordered.includes(key))'),
+    'new columns must be appended to old saved order without being dropped',
+  )
+  assert.equal(
+    explorer.includes('visible: [...detailsColumnKeys]'),
+    false,
+    'new optional columns must not become visible by default after upgrade',
+  )
+})

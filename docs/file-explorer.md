@@ -107,6 +107,31 @@ Do not add a `Shift+Delete` permanent-delete shortcut merely for Windows parity.
 
 Finder's `Option+Command+V` move-after-copy semantics require a clipboard-operation contract change and are intentionally separate from this keyboard-only alignment.
 
+## Details columns
+
+The shared Details view separates **display columns** from **Server sort keys**.
+
+Default visible columns remain unchanged:
+
+- 名称
+- 修改时间
+- 类型
+- 大小
+
+Optional columns are available from the shared **列** menu and are hidden by default so upgrades do not widen existing layouts:
+
+- **创建时间** — projected from the existing Node `created_at` field;
+- **状态** — device/runtime status when the platform has an authoritative local state source;
+- **可用性** — device-local availability such as 仅联机 / 本地可用 / 始终保留在此设备上.
+
+The persisted Details layout stores visible columns, complete column order, and widths. Normalization must preserve an older saved visible set while appending newly introduced columns to the saved order with default widths.
+
+Only columns backed by the existing Server range ordering contract are sortable today: `name / updated / type / size`. Creating a display column must not silently broaden the Server sort contract.
+
+Desktop Windows derives 状态 and 可用性 from the existing batched CfAPI availability snapshot. It must not issue per-row IPC or a second batch solely for columns. Web has no device-local availability truth and therefore renders those optional columns as `—` rather than inventing Server-global state.
+
+Media-specific optional columns such as dimensions and duration may be added later when the shared media metadata projection has an explicit bounded contract. They are not default columns.
+
 ## File favorites and Quick Access
 
 FileExplorer keeps **folder pinning** and **file favorites** as separate concepts:

@@ -69,7 +69,9 @@ test('Desktop availability is Windows-only and preserves shared sparse collectio
     'Desktop availability must require the batch capability',
   )
   for (const token of [
+    'const getItemStatus = useCallback',
     'const getItemAvailability = useCallback',
+    'getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}',
     'getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}',
     'items={trashActive ? trash.items : explorerItems}',
     'virtualCollection={trashActive ? undefined : explorerVirtualCollection}',
@@ -81,6 +83,8 @@ test('Desktop availability is Windows-only and preserves shared sparse collectio
 test('Desktop maps CfAPI state to Explorer labels and management actions', () => {
   for (const label of [
     '正在同步',
+    '已同步',
+    '待同步',
     '始终保留在此设备上',
     '仅联机',
     '云端',
@@ -104,5 +108,26 @@ test('Desktop maps CfAPI state to Explorer labels and management actions', () =>
   assert.ok(
     sharedExplorer.includes("{ label: '可用性', value: availability.label }"),
     'availability must also appear in shared Properties',
+  )
+})
+
+
+test('Details status and availability columns reuse the existing Desktop availability batch', () => {
+  for (const token of [
+    "if (key === 'status') return item.statusLabel ?? getItemStatus?.(item) ?? '—'",
+    "if (key === 'availability') return availabilityForItem(item)?.label ?? '—'",
+    'getItemStatus?: (',
+    "createdAt?: string",
+  ]) {
+    assert.ok(sharedExplorer.includes(token), 'shared Details metadata missing: ' + token)
+  }
+  assert.ok(
+    desktopExplorer.includes('const entry = availabilityByID.get(Number(item.id))'),
+    'Desktop status/availability must reuse the already-batched availability map',
+  )
+  assert.equal(
+    (desktopExplorer.match(/getFileAvailabilityBatch\(paths\)/g) || []).length,
+    1,
+    'status and availability columns must not add a second availability batch request path',
   )
 })
