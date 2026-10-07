@@ -1381,7 +1381,12 @@ async function runAgentAction<T>(operation: () => Promise<T>, refresh = true): P
     if (refresh) await refreshAgentState()
     return { ok: true, data }
   } catch (error) {
-    if (isUnavailable(error)) publishAgentState({ connected: false, error: agentError(error).message })
+    // refresh=false is used by renderer reads/background probes. Those requests
+    // may report their own error, but the long-lived Agent monitor remains the
+    // owner of global connected/disconnected transitions.
+    if (refresh && isUnavailable(error)) {
+      publishAgentState({ connected: false, error: agentError(error).message })
+    }
     return { ok: false, error: agentError(error) }
   }
 }
@@ -3757,8 +3762,11 @@ function registerIPCHandlers() {
     if (paths.length === 0) {
       return { ok: false, error: { code: 'invalid_input', message: 'At least one file path is required.' } }
     }
-    return runAgentAction<AgentFileAvailabilityBatch>(async () => {
-      const hello = await requireAgentLifecycle().ensureRunning()
+    return runAgentAction<AgentFileAvailabilityBatch>(() => {
+      const hello = agentState.connected ? agentState.hello : undefined
+      if (!hello) {
+        throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent is not connected.')
+      }
       requireAgentCapability(hello, 'file-availability-batch')
       return requireAgentClient().fileAvailabilityBatch(paths)
     }, false)
