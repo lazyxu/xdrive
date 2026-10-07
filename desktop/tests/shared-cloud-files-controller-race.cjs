@@ -109,6 +109,17 @@ function loadCloudFilesController(react) {
     if (request === '../file-explorer-controller') {
       return { XDRIVE_FILE_EXPLORER_PAGE_SIZE: 200 }
     }
+    if (request === '../file-explorer-grouping') {
+      return {
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING: {
+          groupBy: 'none',
+          foldersFirst: true,
+        },
+        xDriveFileExplorerGroupingSignature: (grouping) => (
+          `${grouping.groupBy}:${grouping.foldersFirst ? 'folders-first' : 'mixed'}`
+        ),
+      }
+    }
     if (request === './VirtualCollectionController') {
       return { useXDriveVirtualCollection: useVirtualCollection }
     }

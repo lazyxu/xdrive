@@ -499,13 +499,14 @@ function FileManager({
   const cloudFilesPort = useMemo<XDriveCloudFilesPort<Node, QuotaUsage, XDriveFileExplorerSort>>(() => ({
     getRoot: () => api.root(),
     getPage: (parentID, options) => api.listPage(parentID, options),
-    getRange: (parentID, offset, limit, sort, includeCount) => api.listRange(
+    getRange: (parentID, offset, limit, sort, includeCount, grouping) => api.listRange(
       parentID,
       offset,
       limit,
       sort.key,
       sort.direction,
       includeCount,
+      grouping,
     ),
     getQuota: () => api.quota(),
   }), [api])
@@ -516,6 +517,7 @@ function FileManager({
     crumbs,
     current,
     sort: directorySort,
+    grouping: directoryGrouping,
     loading,
     virtualDirectory,
     applyQuota,
@@ -532,6 +534,7 @@ function FileManager({
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort: directorySort,
+    currentGrouping: directoryGrouping,
     refreshDirectory: loadDirectory,
   })
 

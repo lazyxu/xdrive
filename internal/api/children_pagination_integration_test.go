@@ -327,6 +327,68 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		t.Fatalf("range1 order=%v", got)
 	}
 
+	groupedType := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=8&sort=name&order=asc&group=type&folders_first=true",
+		rootA.ID,
+	), http.StatusOK)
+	if groupedType.TotalCount != 8 || len(groupedType.Items) != 8 {
+		t.Fatalf("type grouped range=%+v", groupedType)
+	}
+	if got := []string{
+		groupedType.Items[0].Name, groupedType.Items[1].Name, groupedType.Items[2].Name,
+		groupedType.Items[3].Name, groupedType.Items[4].Name, groupedType.Items[5].Name,
+		groupedType.Items[6].Name, groupedType.Items[7].Name,
+	}; fmt.Sprint(got) != fmt.Sprint([]string{
+		"AlphaDir", "EmptyDir", "ZuluDir", "d.log", "c.pdf", "a.txt", "b.txt", "e.zip",
+	}) {
+		t.Fatalf("type grouped order=%v", got)
+	}
+	wantGroups := []fileExplorerGroupIndexDTO{
+		{Key: "folder", ItemCount: 3, StartIndex: 0},
+		{Key: "ext:log", ItemCount: 1, StartIndex: 3},
+		{Key: "ext:pdf", ItemCount: 1, StartIndex: 4},
+		{Key: "ext:txt", ItemCount: 2, StartIndex: 5},
+		{Key: "ext:zip", ItemCount: 1, StartIndex: 7},
+	}
+	if fmt.Sprint(groupedType.Groups) != fmt.Sprint(wantGroups) {
+		t.Fatalf("type groups=%+v want=%+v", groupedType.Groups, wantGroups)
+	}
+
+	groupedMixed := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=8&sort=name&order=asc&group=type&folders_first=false",
+		rootA.ID,
+	), http.StatusOK)
+	if got := []string{
+		groupedMixed.Items[0].Name, groupedMixed.Items[1].Name, groupedMixed.Items[2].Name,
+		groupedMixed.Items[3].Name, groupedMixed.Items[4].Name, groupedMixed.Items[5].Name,
+		groupedMixed.Items[6].Name, groupedMixed.Items[7].Name,
+	}; fmt.Sprint(got) != fmt.Sprint([]string{
+		"d.log", "c.pdf", "a.txt", "b.txt", "e.zip", "AlphaDir", "EmptyDir", "ZuluDir",
+	}) {
+		t.Fatalf("type grouped mixed order=%v", got)
+	}
+	if len(groupedMixed.Groups) != 5 ||
+		groupedMixed.Groups[0].Key != "ext:log" ||
+		groupedMixed.Groups[4].Key != "folder" ||
+		groupedMixed.Groups[4].StartIndex != 5 {
+		t.Fatalf("type grouped mixed groups=%+v", groupedMixed.Groups)
+	}
+
+	groupedContinuation := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=3&limit=3&sort=name&order=asc&group=type&folders_first=true&include_count=false",
+		rootA.ID,
+	), http.StatusOK)
+	if groupedContinuation.TotalCountIncluded || len(groupedContinuation.Groups) != 0 {
+		t.Fatalf("count-free grouped continuation must reuse first-range metadata: %+v", groupedContinuation)
+	}
+	if got := []string{
+		groupedContinuation.Items[0].Name,
+		groupedContinuation.Items[1].Name,
+		groupedContinuation.Items[2].Name,
+	}; fmt.Sprint(got) != fmt.Sprint([]string{"d.log", "c.pdf", "a.txt"}) {
+		t.Fatalf("grouped continuation order=%v", got)
+	}
+
 	range2 := readRange(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?offset=3&limit=3&sort=name&order=asc",
 		rootA.ID,
@@ -403,6 +465,9 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=-1&limit=3", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&include_count=maybe", rootA.ID), http.StatusBadRequest)
 	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&include_count=false", rootA.ID), http.StatusBadRequest)
+	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&group=unknown", rootA.ID), http.StatusBadRequest)
+	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&group=type", rootA.ID), http.StatusBadRequest)
+	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&folders_first=maybe", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?offset=0&limit=3&cursor=%s",
 		rootA.ID, url.QueryEscape(page1.NextCursor),

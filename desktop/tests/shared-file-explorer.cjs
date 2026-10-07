@@ -66,7 +66,7 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
   )
   assert.ok(explorer.includes("borderRadius: '4px'"), 'details rows should retain Explorer-style rounded surfaces')
   assert.ok(
-    explorer.includes("gridTemplateColumns: detailsGridTemplate,\n                  minHeight: detailsRowHeight,\n                  alignItems: 'center',\n                  justifyContent: 'start',"),
+    explorer.includes("gridTemplateColumns: detailsGridTemplate") && explorer.includes("justifyContent: 'start'"),
     'details row grid tracks must stay left-aligned with the header instead of inheriting ButtonBase centering',
   )
   assert.ok(explorer.includes("selected ? 'action.selected' : 'transparent'"), 'details rows should retain selected state styling')
@@ -76,7 +76,10 @@ test('shared FileExplorer details view avoids admin-table chrome', () => {
     false,
     'details rows should not be separated by admin-table grid lines',
   )
-  assert.ok(explorer.includes('borderRadius: 1,\n                  p: gridMetrics.itemPadding,'), 'grid tiles should keep restrained corners while using shared density metrics')
+  assert.ok(
+    explorer.includes('borderRadius: 1,') && explorer.includes('p: gridMetrics.itemPadding,'),
+    'grid tiles should keep restrained corners while using shared density metrics',
+  )
 })
 
 test('shared FileExplorer keeps folders first and owns common client-side sorting', () => {

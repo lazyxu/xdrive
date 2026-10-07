@@ -38,6 +38,44 @@ Therefore the availability chip must not be implemented as renderer-side filteri
 
 Web and Desktop reuse the shared MUI filter-chip surface. Type, modified time, size, and synchronization-folder chips mutate shared Search-controller state. Filter-only Search is valid. Clearing the last filter with an empty query exits Search and returns to the current directory.
 
+## Group By and folders-first
+
+FileExplorer grouping is a **Server-ordered range contract**, not a renderer-side regroup of whichever VirtualCollection pages happen to be retained.
+
+Canonical shared state is per tab:
+
+- `groupBy=none|type|modified|size`
+- `foldersFirst=true|false`
+- default: `none + foldersFirst=true`, preserving the existing Explorer order.
+
+Directory and Search range requests serialize this as `group` and `folders_first`. Cursor pagination, exact-name lookup, typed-path traversal, and the navigation-tree cursor remain ungrouped compatibility paths.
+
+### Group index
+
+When grouping is active, the authoritative `offset=0` range additionally returns:
+
+```text
+groups[] = { key, item_count, start_index }
+```
+
+The index is generated from the same authorized/filtered Server query and the same group ordering as the item range. It covers the complete logical collection; clients must not infer group boundaries from retained pages.
+
+Canonical group keys:
+
+- **type**: `folder`, `other`, or `ext:<lowercase-extension>`;
+- **modified**: `month:YYYY-MM` in UTC, with `unknown` available for missing timestamps;
+- **size**: `folder / empty / tiny / small / medium / large`, where file thresholds are 1 MiB, 100 MiB, and 1 GiB.
+
+For date grouping, folders-first applies **inside the month group** rather than creating a fake folder/date cross-group. For type/size grouping, the folder group is first or last according to `foldersFirst`.
+
+The first counted directory range owns both `total_count` and `groups`. Later `include_count=false` ranges reuse both generation metadata values and therefore skip both the window count and group aggregation. Search range generation similarly carries grouping identity; changing grouping fences stale query/filter/sort responses.
+
+### Grouped VirtualCollection geometry
+
+Group headers are part of the real scroll geometry. Shared layout code maps `start_index/item_count` into deterministic header/item offsets for Details and Grid, translates the viewport back into logical sparse indexes, and keeps keyboard focus, marquee selection, Quick Look, and logical selection on the same index space.
+
+Do not insert group headers into the item array, do not renumber filesystem items, and do not make one pseudo-item per header. The logical item indexes remain Server indexes; group headers are presentation geometry only.
+
 ## Navigation tree drag and drop
 
 The shared left folder tree is a first-class drop target, not navigation-only chrome.
@@ -110,7 +148,7 @@ Required behavior:
 - Quick Look previous/next follows logical collection order, loads missing ranges on demand, and skips folders.
 - File operations from a virtual selection must retain enough node metadata for every selected item even if its render page is later evicted.
 - Logical range resolution must stay bounded. Never fan out every page of a 100k-item selection concurrently; load small page groups and allow ordinary viewport retention to evict old render metadata after interaction metadata has been captured.
-- Directory/search/tab/sort generation changes invalidate in-flight interaction resolution so stale results cannot change current selection or Quick Look state.
+- Directory/search/tab/sort/grouping generation changes invalidate in-flight interaction resolution so stale results cannot change current selection or Quick Look state.
 
 These are correctness requirements, not a FileExplorer performance specialization. Performance work remains governed separately by `docs/file-explorer-performance.md`.
 

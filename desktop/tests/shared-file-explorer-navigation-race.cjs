@@ -123,6 +123,14 @@ function loadNavigationHook(react) {
         },
       }
     }
+    if (request === '../file-explorer-grouping') {
+      return {
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING: {
+          groupBy: 'none',
+          foldersFirst: true,
+        },
+      }
+    }
     return require(request)
   }
   const execute = new Function('exports', 'module', 'require', output)
@@ -212,12 +220,17 @@ function loadSearchHook(react) {
     ['ui', 'shared', 'src', 'file-explorer-search.ts'],
     null,
   )
+  const grouping = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'file-explorer-grouping.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'],
     react,
     {
       '../file-explorer-controller': controller,
       '../file-explorer-search': searchFilters,
+      '../file-explorer-grouping': grouping,
       './VirtualCollectionController': virtualController,
     },
   ).useXDriveFileExplorerSearch
@@ -686,13 +699,14 @@ test('newer search submission wins when range responses complete out of order', 
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _grouping, _sort, offset, limit) => new Promise((resolve) => {
     pending.set(query, { resolve, offset, limit })
   })
   const errors = []
   const renderSearch = () => runtime.render(() => useSearch({
     loadRange,
     sort: { key: 'name', direction: 'asc' },
+    grouping: { groupBy: 'none', foldersFirst: true },
     onError: (error) => errors.push(error),
   }))
 
@@ -729,13 +743,14 @@ test('newer structured Search filters win when range responses complete out of o
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, filters, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, filters, _grouping, _sort, offset, limit) => new Promise((resolve) => {
     pending.set(`${query}:${filters.kind ?? 'all'}:${offset}`, { resolve, limit })
   })
   const errors = []
   const renderSearch = () => runtime.render(() => useSearch({
     loadRange,
     sort: { key: 'name', direction: 'asc' },
+    grouping: { groupBy: 'none', foldersFirst: true },
     onError: (error) => errors.push(error),
   }))
 
@@ -771,17 +786,72 @@ test('newer structured Search filters win when range responses complete out of o
 })
 
 
+test('newer Search grouping wins when range responses complete out of order', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const pending = new Map()
+  let activeGrouping = { groupBy: 'type', foldersFirst: true }
+  const loadRange = (query, filters, grouping, _sort, offset, limit) => new Promise((resolve) => {
+    pending.set(`${query}:${filters.kind ?? 'all'}:${grouping.groupBy}:${grouping.foldersFirst}:${offset}`, {
+      resolve,
+      limit,
+    })
+  })
+  const errors = []
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadRange,
+    sort: { key: 'name', direction: 'asc' },
+    grouping: activeGrouping,
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  const first = search.submitSearch('report')
+  assert.ok(pending.has('report:all:type:true:0'))
+
+  activeGrouping = { groupBy: 'size', foldersFirst: false }
+  search = renderSearch()
+  await flushAsync()
+  assert.ok(pending.has('report:all:size:false:0'))
+
+  pending.get('report:all:size:false:0').resolve({
+    items: [{ node: { id: 20 }, path: '/new-size' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+    groups: [{ key: 'tiny', item_count: 1, start_index: 0 }],
+  })
+  await flushAsync()
+
+  pending.get('report:all:type:true:0').resolve({
+    items: [{ node: { id: 10 }, path: '/old-type' }],
+    totalCount: 1,
+    offset: 0,
+    limit: 200,
+    groups: [{ key: 'ext:pdf', item_count: 1, start_index: 0 }],
+  })
+  await first
+
+  search = renderSearch()
+  assert.equal(errors.length, 0)
+  assert.deepEqual(search.searchState.groups, [
+    { key: 'tiny', item_count: 1, start_index: 0 },
+  ])
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
+})
+
 test('stale Search viewport ranges cannot overwrite a newer query', async () => {
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _grouping, _sort, offset, limit) => new Promise((resolve) => {
     pending.set(`${query}:${offset}`, { resolve, limit })
   })
   const errors = []
   const renderSearch = () => runtime.render(() => useSearch({
     loadRange,
     sort: { key: 'name', direction: 'asc' },
+    grouping: { groupBy: 'none', foldersFirst: true },
     onError: (error) => errors.push(error),
   }))
 
@@ -831,7 +901,7 @@ test('Search tab switch invalidates old ranges and restores the tab query on ret
   const runtime = createHookRuntime()
   const useSearch = loadSearchHook(runtime.react)
   const pending = new Map()
-  const loadRange = (query, _filters, _sort, offset, limit) => new Promise((resolve) => {
+  const loadRange = (query, _filters, _grouping, _sort, offset, limit) => new Promise((resolve) => {
     const key = `${query}:${offset}`
     const queue = pending.get(key) ?? []
     queue.push({ resolve, limit })
@@ -848,6 +918,7 @@ test('Search tab switch invalidates old ranges and restores the tab query on ret
   const renderSearch = () => runtime.render(() => useSearch({
     loadRange,
     sort: { key: 'name', direction: 'asc' },
+    grouping: { groupBy: 'none', foldersFirst: true },
     workspaceKey,
     onError: (error) => errors.push(error),
   }))
@@ -1262,6 +1333,7 @@ test('stale external-drop completion cannot refresh a directory after navigation
   let currentID = 1
   let currentCrumbs = [{ id: 1, name: 'A' }]
   let sort = { key: 'name', direction: 'asc' }
+  let grouping = { groupBy: 'none', foldersFirst: true }
   let releaseUpload
   const refreshCalls = []
 
@@ -1269,16 +1341,18 @@ test('stale external-drop completion cannot refresh a directory after navigation
     currentID,
     currentCrumbs,
     sort,
+    currentGrouping: grouping,
     nodeByID: new Map(),
     uploadFilesToParent: () => new Promise((resolve) => {
       releaseUpload = () => resolve(true)
     }),
     uploadFolderEntriesToParent: async () => true,
-    refreshDirectory: async (id, crumbs, refreshSort) => {
+    refreshDirectory: async (id, crumbs, refreshSort, refreshGrouping) => {
       refreshCalls.push({
         id,
         crumbs: crumbs.map((crumb) => ({ ...crumb })),
         sort: { ...refreshSort },
+        grouping: { ...refreshGrouping },
       })
     },
   }))
@@ -1291,6 +1365,7 @@ test('stale external-drop completion cannot refresh a directory after navigation
   currentID = 2
   currentCrumbs = [{ id: 2, name: 'B' }]
   sort = { key: 'updated', direction: 'desc' }
+  grouping = { groupBy: 'size', foldersFirst: false }
   renderDrop()
 
   releaseUpload()
@@ -1309,6 +1384,7 @@ test('external-drop completion refreshes the same directory using its latest cru
   let currentID = 1
   let currentCrumbs = [{ id: 1, name: 'A' }]
   let sort = { key: 'name', direction: 'asc' }
+  let grouping = { groupBy: 'none', foldersFirst: true }
   let releaseUpload
   const refreshCalls = []
 
@@ -1316,16 +1392,18 @@ test('external-drop completion refreshes the same directory using its latest cru
     currentID,
     currentCrumbs,
     sort,
+    currentGrouping: grouping,
     nodeByID: new Map(),
     uploadFilesToParent: () => new Promise((resolve) => {
       releaseUpload = () => resolve(true)
     }),
     uploadFolderEntriesToParent: async () => true,
-    refreshDirectory: async (id, crumbs, refreshSort) => {
+    refreshDirectory: async (id, crumbs, refreshSort, refreshGrouping) => {
       refreshCalls.push({
         id,
         crumbs: crumbs.map((crumb) => ({ ...crumb })),
         sort: { ...refreshSort },
+        grouping: { ...refreshGrouping },
       })
     },
   }))
@@ -1336,6 +1414,7 @@ test('external-drop completion refreshes the same directory using its latest cru
 
   currentCrumbs = [{ id: 1, name: 'A renamed' }]
   sort = { key: 'updated', direction: 'desc' }
+  grouping = { groupBy: 'size', foldersFirst: false }
   renderDrop()
 
   releaseUpload()
@@ -1345,6 +1424,7 @@ test('external-drop completion refreshes the same directory using its latest cru
     id: 1,
     crumbs: [{ id: 1, name: 'A renamed' }],
     sort: { key: 'updated', direction: 'desc' },
+    grouping: { groupBy: 'size', foldersFirst: false },
   }])
 })
 

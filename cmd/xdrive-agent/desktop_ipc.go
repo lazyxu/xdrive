@@ -217,7 +217,7 @@ type desktopIPCController interface {
 	CloudDownloadFolder(context.Context, uint64, uint64, string) (agentCloudFolderDownloadResult, error)
 	CloudDownloadArchive(context.Context, []uint64, string) (agentCloudArchiveDownloadResult, error)
 	CloudSearch(context.Context, string, string, string, string, client.SearchFilters) (agentCloudSearchPage, error)
-	CloudSearchRange(context.Context, string, int, int, string, string, client.SearchFilters) (agentCloudSearchRange, error)
+	CloudSearchRange(context.Context, string, int, int, string, string, client.SearchFilters, client.FileExplorerGroupingOptions) (agentCloudSearchRange, error)
 	CloudQuota(context.Context) (client.QuotaUsage, error)
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
@@ -913,6 +913,37 @@ func (h *desktopIPCHandler) cloudRoot(w http.ResponseWriter, r *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, node)
 }
 
+func desktopIPCFileExplorerGrouping(
+	w http.ResponseWriter,
+	r *http.Request,
+) (client.FileExplorerGroupingOptions, bool) {
+	query := r.URL.Query()
+	group := strings.TrimSpace(strings.ToLower(query.Get("group")))
+	switch group {
+	case "", "none", "type", "modified", "size":
+	default:
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_group", "group must be none, type, modified, or size")
+		return client.FileExplorerGroupingOptions{}, false
+	}
+	var foldersFirst *bool
+	if rawValues, exists := query["folders_first"]; exists {
+		raw := ""
+		if len(rawValues) > 0 {
+			raw = strings.TrimSpace(strings.ToLower(rawValues[0]))
+		}
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_folders_first", "folders_first must be true or false")
+			return client.FileExplorerGroupingOptions{}, false
+		}
+		foldersFirst = &value
+	}
+	return client.FileExplorerGroupingOptions{
+		Group:        group,
+		FoldersFirst: foldersFirst,
+	}, true
+}
+
 func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request) {
 	parentID, ok := desktopIPCUint64Query(w, r, "parent_id")
 	if !ok {
@@ -933,10 +964,15 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_range", "range requests do not accept cursor or name filters")
 			return
 		}
+		grouping, ok := desktopIPCFileExplorerGrouping(w, r)
+		if !ok {
+			return
+		}
 		options := client.ChildrenRangeOptions{
-			Offset: offset,
-			Sort:   strings.TrimSpace(query.Get("sort")),
-			Order:  strings.TrimSpace(query.Get("order")),
+			Offset:   offset,
+			Sort:     strings.TrimSpace(query.Get("sort")),
+			Order:    strings.TrimSpace(query.Get("order")),
+			Grouping: grouping,
 		}
 		if raw := strings.TrimSpace(strings.ToLower(query.Get("include_count"))); raw != "" {
 			switch raw {
@@ -968,6 +1004,10 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 
 	if query.Get("include_count") != "" {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_include_count", "include_count requires offset")
+		return
+	}
+	if query.Get("group") != "" || query.Get("folders_first") != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_group", "group and folders_first require offset")
 		return
 	}
 
@@ -1826,6 +1866,10 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 			}
 			limit = value
 		}
+		grouping, ok := desktopIPCFileExplorerGrouping(w, r)
+		if !ok {
+			return
+		}
 		page, err := h.ctrl.CloudSearchRange(
 			r.Context(),
 			query,
@@ -1834,12 +1878,17 @@ func (h *desktopIPCHandler) cloudSearch(w http.ResponseWriter, r *http.Request) 
 			strings.TrimSpace(values.Get("sort")),
 			strings.TrimSpace(values.Get("order")),
 			filters,
+			grouping,
 		)
 		if err != nil {
 			writeDesktopIPCControllerError(w, err)
 			return
 		}
 		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
+	if values.Get("group") != "" || values.Get("folders_first") != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_group", "group and folders_first require offset")
 		return
 	}
 	page, err := h.ctrl.CloudSearch(

@@ -118,12 +118,17 @@ function loadController(react) {
     ['ui', 'shared', 'src', 'file-explorer-controller.ts'],
     react,
   )
+  const grouping = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'file-explorer-grouping.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'],
     react,
     {
       './VirtualCollectionController': virtual,
       '../file-explorer-controller': fileExplorer,
+      '../file-explorer-grouping': grouping,
     },
   ).useXDriveCloudFilesController
 }
@@ -159,8 +164,8 @@ test('CloudFilesController primes range zero and exposes the full logical count'
       pageCalls.push(args)
       throw new Error('directory browsing must not use cursor pages')
     },
-    getRange: async (parentID, offset, limit, requestSort, includeCount) => {
-      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount })
+    getRange: async (parentID, offset, limit, requestSort, includeCount, requestGrouping) => {
+      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount, requestGrouping })
       return {
         items: [node(offset + 1, `item-${offset + 1}`)],
         total_count: includeCount ? 1000 : 0,
@@ -193,6 +198,7 @@ test('CloudFilesController primes range zero and exposes the full logical count'
     limit: 200,
     requestSort: sort,
     includeCount: true,
+    requestGrouping: { groupBy: 'none', foldersFirst: true },
   })
   assert.equal(controller.virtualDirectory.itemCount, 1000)
   assert.equal(controller.virtualDirectory.loadedItems.size, 1)
@@ -209,14 +215,83 @@ test('CloudFilesController primes range zero and exposes the full logical count'
     'viewport overscan may prefetch later ranges but must not duplicate page zero',
   )
   assert.ok(
-    rangeCalls.slice(1).every((call) => call.includeCount === false),
-    'subsequent ranges must reuse the generation total instead of recounting',
+    rangeCalls.slice(1).every((call) => (
+      call.includeCount === false &&
+      call.requestGrouping.groupBy === 'none' &&
+      call.requestGrouping.foldersFirst === true
+    )),
+    'subsequent ranges must reuse both the generation total and grouping contract',
   )
   controller = render()
   assert.equal(
     controller.virtualDirectory.itemCount,
     1000,
     'count-free range responses must preserve the authoritative generation total',
+  )
+})
+
+test('CloudFilesController treats grouping changes as a new sparse generation', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadController(runtime.react)
+  const rangeCalls = []
+  const sort = { key: 'name', direction: 'asc' }
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ used_bytes: 0, quota_bytes: 0 }),
+    getPage: async () => { throw new Error('unexpected cursor page') },
+    getRange: async (parentID, offset, limit, requestSort, includeCount, grouping) => {
+      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount, grouping })
+      return {
+        items: [node(offset + 1, `item-${offset + 1}`)],
+        total_count: 2,
+        total_count_included: includeCount,
+        offset,
+        limit,
+        sort: requestSort.key,
+        order: requestSort.direction,
+        groups: includeCount && grouping.groupBy === 'type'
+          ? [{ key: 'ext:txt', item_count: 2, start_index: 0 }]
+          : [],
+      }
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port,
+    enabled: true,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsyncWork()
+  let controller = render()
+  assert.equal(controller.grouping.groupBy, 'none')
+
+  await controller.loadDirectory(
+    1,
+    [{ id: 1, name: 'root' }],
+    sort,
+    { groupBy: 'type', foldersFirst: false },
+  )
+  controller = render()
+
+  assert.deepEqual(controller.grouping, { groupBy: 'type', foldersFirst: false })
+  assert.deepEqual(controller.virtualDirectory.groups, [
+    { key: 'ext:txt', item_count: 2, start_index: 0 },
+  ])
+  assert.deepEqual(
+    rangeCalls.at(-1).grouping,
+    { groupBy: 'type', foldersFirst: false },
+  )
+
+  await controller.virtualDirectory.ensureViewport(1, 1)
+  assert.ok(
+    rangeCalls.slice(1).every((call) => (
+      call.grouping.groupBy === 'type' &&
+      call.grouping.foldersFirst === false
+    )),
+    'viewport ranges must remain bound to the active grouping generation',
   )
 })
 

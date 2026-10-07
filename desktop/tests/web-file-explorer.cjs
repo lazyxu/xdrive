@@ -52,7 +52,7 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
 
 test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
-  assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchSort, offset, limit) =>'), 'Web Explorer must execute Search ranges through the shared workspace controller adapter')
+  assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web Explorer must execute Search ranges through the shared workspace controller adapter')
   for (const token of [
     'setOpenPreviewItem({',
     'await api.download(plan.file)',
@@ -82,7 +82,7 @@ test('Web FileExplorer Search preserves paths and breadcrumbs across sparse rang
   assert.ok(explorer.includes('setOpenPreviewItem({'), 'opening a Search-result file should target the shared preview dialog')
   assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web shared workspace should preserve Search breadcrumbs')
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, WebSearchResult>'), 'Web Search lifecycle must come from the shared workspace controller')
-  assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchSort, offset, limit) =>'), 'Web must inject REST Search range execution')
+  assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web must inject REST Search range execution')
   assert.ok(explorer.includes('api.searchRange('), 'Web Search must use REST range transport')
   assert.ok(explorer.includes('filters,'), 'Web Search range must forward structured filters')
   assert.ok(explorer.includes('<XDriveFileExplorerSearchFilters'), 'Web must render shared structured filter chips')
@@ -177,6 +177,9 @@ test('Web FileExplorer uses the shared Cloud Files controller for range-backed s
   assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Web Explorer must activate the shared sparse surface')
   assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Web directory ranges should consume shared workspace sorting state')
   assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted ranges')
+  assert.ok(explorer.includes('grouping={grouping}'), 'Web grouping must come from shared tab state')
+  assert.ok(explorer.includes('onGroupingChange={changeGrouping}'), 'Web grouping changes must reload Server ranges')
+  assert.ok(explorer.includes('searchGrouping,'), 'Web Search must forward grouping to the Server range contract')
 })
 
 test('Web multi-select mutations use persistent operations while retaining legacy atomic batch APIs', () => {

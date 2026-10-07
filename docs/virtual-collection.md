@@ -49,8 +49,16 @@ The flag is additive for compatibility. Old clients omit `include_count` and con
 
 ## FileExplorer range transport
 
-The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort, includeCount)` while retaining `getPage` for cursor pagination and exact-name path traversal. Web and Desktop do not decide count reuse independently: the shared Cloud Files controller owns that policy and platform adapters only serialize the flag.
+The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort, includeCount, grouping)` while retaining `getPage` for cursor pagination and exact-name path traversal. Web and Desktop do not decide count reuse or grouping independently: the shared Cloud Files controller owns that generation policy and platform adapters only serialize it.
 
+
+## FileExplorer grouped range metadata
+
+Grouped directory/Search ranges reuse the Gallery timeline principle without sharing Gallery layout code. The authoritative first range may carry a compact `groups[]` index of `{ key, item_count, start_index }`; group headers are not filesystem items and therefore never enter the sparse item map.
+
+Grouping is part of the VirtualCollection query-generation identity. A grouping change resets the range generation, reacquires authoritative count/group metadata, and rejects older in-flight pages. Once the first directory range is primed, later count-free ranges reuse both `totalCount` and the group index and never recompute either value.
+
+The FileExplorer grouped Details/Grid layout owns header geometry separately from item indexes. Viewport planning converts visible group rows back to ordinary logical item ranges before calling `ensureViewport`, so retention, interaction lookup, and range collection keep the same bounded sparse semantics.
 
 ## FileExplorer directory activation
 

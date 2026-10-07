@@ -103,7 +103,8 @@ test('large Details and Grid directories use bounded rendering', () => {
   assert.ok(shared.includes('const gridOverscanRows = 3'), 'Grid virtualization overscan is missing')
   assert.ok(shared.includes('visibleItems.slice(gridWindow.start, gridWindow.end)'), 'Grid view does not window large directories')
   assert.ok(shared.includes("gridAutoRows: virtualizeGrid ? `${gridMetrics.estimatedRowHeight}px` : undefined"), 'Grid rows must stay deterministic only while windowing')
-  assert.ok(shared.includes('height: virtualizeGrid ? gridWindow.totalHeight : undefined'), 'Grid window must preserve full scroll height')
+  assert.ok(shared.includes('groupedGridLayout.totalHeight'), 'grouped Grid must preserve full scroll height including group headers')
+  assert.ok(shared.includes('virtualizeGrid ? gridWindow.totalHeight : undefined'), 'ungrouped Grid must preserve its existing virtual scroll height')
   assert.ok(shared.includes('gridPaddingPx + gridWindow.startRow * gridRowStep'), 'Grid window must position the mounted row range')
   assert.ok(shared.includes("contentVisibility: 'auto'"), 'Grid items should retain browser render containment')
 })
@@ -290,6 +291,8 @@ test('FileExplorer folder uploads reuse existing directories with indexed name l
 
 test('FileExplorer uses viewport range prefetch instead of dense bottom append', () => {
   assert.ok(shared.includes('virtualCollection?.onRangeChange'), 'FileExplorer must request sparse viewport ranges')
+  assert.ok(shared.includes('groupedDetailsSegments'), 'grouped Details must translate viewport geometry into sparse logical ranges')
+  assert.ok(shared.includes('groupedGridSegments'), 'grouped Grid must translate viewport geometry into sparse logical ranges')
   assert.ok(cloudFilesController.includes('ensureViewport: virtualCollection.ensureViewport'), 'Cloud Files must expose VirtualCollection viewport loading')
   assert.ok(autoLoadSentinel.includes("rootMargin = '240px 0px'"), 'small cursor browsers should prefetch through the shared sentinel margin')
   for (const legacy of [

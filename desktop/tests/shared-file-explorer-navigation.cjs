@@ -20,13 +20,14 @@ test('shared FileExplorer navigation controller owns cross-client per-tab view a
     'history: TCrumb[][]',
     'historyIndex: number',
     'sort: XDriveFileExplorerSort',
+    'grouping: XDriveFileExplorerGrouping',
     'viewMode: XDriveFileExplorerViewMode',
     'const [tabs, setTabs]',
     'const [activeTabID, setActiveTabID]',
     'window.localStorage.setItem(viewModeStorageKey, viewMode)',
     "const pathValue = crumbs.map((crumb) => crumb.name).join('/')",
     'const refresh = () =>',
-    'onLoadDirectory(current.id, crumbs, sort)',
+    'onLoadDirectory(current.id, crumbs, sort, grouping)',
     'const beginNavigationIntent = () => beginNavigation(activeTabID)',
     'const isNavigationIntentCurrent = (requestID: number)',
     'navigationIntentID?: number',
@@ -51,6 +52,7 @@ test('shared FileExplorer navigation controller owns cross-client per-tab view a
   }
   assert.ok(controller.includes("XDRIVE_FILE_EXPLORER_DEFAULT_SORT = {\n  key: 'name',\n  direction: 'asc',"), 'framework-neutral controller must own the default Explorer sort')
   assert.ok(shared.includes("import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'"), 'navigation must consume the shared default sort')
+  assert.ok(shared.includes('changeGrouping'), 'navigation must own per-tab grouping transitions')
   assert.ok(sharedMuiIndex.includes("export * from './FileExplorerNavigation'"), 'shared Explorer navigation controller must be exported')
 })
 

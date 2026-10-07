@@ -93,6 +93,7 @@ import {
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
   type AgentCloudSearchFilters,
+  type AgentFileExplorerGrouping,
   type AgentMediaItem,
   type AgentMediaItemRange,
   type AgentMediaAlbum,
@@ -2659,6 +2660,30 @@ function registerIPCHandlers() {
       ...(nameInsensitive ? { nameInsensitive } : {}),
     })
   }, false))
+  const normalizeFileExplorerGrouping = (value: unknown): AgentFileExplorerGrouping => {
+    if (value === undefined || value === null) {
+      return { groupBy: 'none', foldersFirst: true }
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'File grouping must be an object.')
+    }
+    const raw = value as Record<string, unknown>
+    const groupBy = raw.groupBy === undefined ? 'none' : raw.groupBy
+    if (
+      groupBy !== 'none' &&
+      groupBy !== 'type' &&
+      groupBy !== 'modified' &&
+      groupBy !== 'size'
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'File group is invalid.')
+    }
+    const foldersFirst = raw.foldersFirst === undefined ? true : raw.foldersFirst
+    if (typeof foldersFirst !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'foldersFirst must be boolean.')
+    }
+    return { groupBy, foldersFirst }
+  }
+
   ipcMain.handle('agent:cloud-children-range', (
     _event,
     parentID: unknown,
@@ -2667,6 +2692,7 @@ function registerIPCHandlers() {
     sort: unknown,
     order: unknown,
     includeCount: unknown,
+    groupingValue: unknown,
   ) => runAgentAction<AgentCloudChildrenRange>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
@@ -2688,6 +2714,7 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid directory range sort options.')
     }
     const normalizedIncludeCount = includeCount === undefined ? true : includeCount
+    const grouping = normalizeFileExplorerGrouping(groupingValue)
     if (typeof normalizedIncludeCount !== 'boolean') {
       throw new AgentIPCError('invalid_input', 0, 'Directory range includeCount must be boolean.')
     }
@@ -2698,6 +2725,7 @@ function registerIPCHandlers() {
       normalizedSort as 'name' | 'updated' | 'size' | 'type',
       normalizedOrder as 'asc' | 'desc',
       normalizedIncludeCount,
+      grouping,
     )
   }, false))
 
@@ -3398,10 +3426,12 @@ function registerIPCHandlers() {
     sort: unknown,
     order: unknown,
     filtersValue: unknown,
+    groupingValue: unknown,
   ) => runAgentAction<AgentCloudSearchRange>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     const filters = normalizeCloudSearchFilters(filtersValue)
+    const grouping = normalizeFileExplorerGrouping(groupingValue)
     if (typeof query !== 'string' ||
         (query.trim().length < 2 && !(query.trim().length === 0 && cloudSearchFiltersActive(filters)))) {
       throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters or a structured filter.')
@@ -3429,6 +3459,7 @@ function registerIPCHandlers() {
       sortKey,
       sortOrder,
       filters,
+      grouping,
     )
   }, false))
   ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {

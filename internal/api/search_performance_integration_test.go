@@ -146,6 +146,7 @@ FROM generate_series(1, ?) AS gs
 			"perf",
 			meta.NodeTypeFile,
 			searchFilters{},
+			fileExplorerGrouping{Group: "none", FoldersFirst: true},
 			offset,
 			200,
 			"name",

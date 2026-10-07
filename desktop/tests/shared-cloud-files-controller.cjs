@@ -173,17 +173,22 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
     'offset: number',
     'limit: number',
     'includeCount: boolean',
+    'XDriveFileExplorerGrouping',
+    'groups?: XDriveFileExplorerGroupIndex[]',
     'getRange: (',
   ]) {
     assert.ok(contract.includes(token), `shared Cloud Files range contract missing: ${token}`)
   }
   assert.ok(webApi.includes('listRange('), 'Web API must expose children range transport')
-  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount) => api.listRange('), 'Web shared port must wire shared count-reuse decisions')
-  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount) =>'), 'Desktop shared port must wire shared count-reuse decisions')
+  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping) => api.listRange('), 'Web shared port must wire count reuse and grouping')
+  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping) =>'), 'Desktop shared port must wire count reuse and grouping')
   assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
   assert.ok(webApi.includes("query.set('include_count', 'false')"), 'Web transport must serialize count-free ranges')
   assert.ok(desktopPreload.includes('includeCount = true'), 'Desktop preload must default legacy callers to counted ranges')
   assert.ok(desktopMain.includes('normalizedIncludeCount'), 'Desktop main IPC must validate and forward includeCount')
+  assert.ok(desktopMain.includes('normalizeFileExplorerGrouping'), 'Desktop main IPC must validate grouping')
+  assert.ok(controller.includes('xDriveFileExplorerGroupingSignature'), 'directory sparse generation must include grouping identity')
+  assert.ok(controller.includes('groups: virtualTarget.groups'), 'directory VirtualCollection must expose authoritative group indexes')
   assert.ok(desktopTypes.includes('type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>'), 'Desktop renderer must alias the shared range contract')
 })
 
@@ -211,6 +216,6 @@ test('Search range transport is explicit across Web and Desktop adapters', () =>
   assert.ok(webApi.includes('crumbs: item.breadcrumbs'), 'Web Search range must normalize server breadcrumbs into shared crumbs')
   assert.ok(desktopTypes.includes('type AgentCloudSearchRange = XDriveCloudFilesSearchRange<AgentCloudNode>'), 'Desktop renderer must alias the shared Search range DTO')
   assert.ok(desktopTypes.includes('cloudSearchRange: ('), 'Desktop renderer bridge must expose Search range')
-  assert.ok(desktopPreload.includes("ipcRenderer.invoke('agent:cloud-search-range'"), 'preload must expose dedicated Search range IPC')
+  assert.ok(desktopPreload.includes("'agent:cloud-search-range'"), 'preload must expose dedicated Search range IPC')
   assert.ok(desktopMain.includes("ipcMain.handle('agent:cloud-search-range'"), 'Electron main must validate dedicated Search range IPC')
 })

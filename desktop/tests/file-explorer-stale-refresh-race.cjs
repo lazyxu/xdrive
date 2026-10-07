@@ -114,13 +114,15 @@ test('shared current-directory refresh fence ignores stale completion and uses l
   let currentID = 10
   let crumbs = [{ id: 1, name: '我的文件' }, { id: 10, name: 'A' }]
   let sort = { key: 'name', direction: 'asc' }
+  let grouping = { groupBy: 'none', foldersFirst: true }
 
   const render = () => runtime.render(() => useRefresh({
     currentID,
     currentCrumbs: crumbs,
     sort,
-    refreshDirectory: async (id, nextCrumbs, nextSort) => {
-      refreshes.push({ id, crumbs: nextCrumbs, sort: nextSort })
+    currentGrouping: grouping,
+    refreshDirectory: async (id, nextCrumbs, nextSort, nextGrouping) => {
+      refreshes.push({ id, crumbs: nextCrumbs, sort: nextSort, grouping: nextGrouping })
     },
   }))
 
@@ -128,6 +130,7 @@ test('shared current-directory refresh fence ignores stale completion and uses l
   currentID = 20
   crumbs = [{ id: 1, name: '我的文件' }, { id: 20, name: 'B' }]
   sort = { key: 'updated', direction: 'desc' }
+  grouping = { groupBy: 'size', foldersFirst: false }
   const currentCallback = render()
 
   assert.equal(await staleCallback(10), false)
@@ -138,6 +141,7 @@ test('shared current-directory refresh fence ignores stale completion and uses l
     id: 20,
     crumbs,
     sort,
+    grouping,
   }])
 })
 

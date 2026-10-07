@@ -69,13 +69,25 @@ type SearchPage struct {
 	NextCursor string         `json:"next_cursor,omitempty"`
 }
 
+type FileExplorerGroupIndex struct {
+	Key        string `json:"key"`
+	ItemCount  int64  `json:"item_count"`
+	StartIndex int64  `json:"start_index"`
+}
+
+type FileExplorerGroupingOptions struct {
+	Group        string
+	FoldersFirst *bool
+}
+
 type SearchRange struct {
-	Items      []SearchResult `json:"items"`
-	TotalCount int64          `json:"total_count"`
-	Offset     int            `json:"offset"`
-	Limit      int            `json:"limit"`
-	Sort       string         `json:"sort"`
-	Order      string         `json:"order"`
+	Items      []SearchResult           `json:"items"`
+	TotalCount int64                    `json:"total_count"`
+	Offset     int                      `json:"offset"`
+	Limit      int                      `json:"limit"`
+	Sort       string                   `json:"sort"`
+	Order      string                   `json:"order"`
+	Groups     []FileExplorerGroupIndex `json:"groups,omitempty"`
 }
 
 type FileQuickAccessItem struct {
@@ -121,13 +133,14 @@ type SearchOptions struct {
 }
 
 type SearchRangeOptions struct {
-	Query   string
-	Type    string
-	Filters SearchFilters
-	Limit   int
-	Offset  int
-	Sort    string
-	Order   string
+	Query    string
+	Type     string
+	Filters  SearchFilters
+	Grouping FileExplorerGroupingOptions
+	Limit    int
+	Offset   int
+	Sort     string
+	Order    string
 }
 
 type ChildrenOptions struct {
@@ -153,16 +166,18 @@ type ChildrenRangeOptions struct {
 	Sort           string
 	Order          string
 	OmitTotalCount bool
+	Grouping       FileExplorerGroupingOptions
 }
 
 type ChildrenRange struct {
-	Items              []Node `json:"items"`
-	TotalCount         int64  `json:"total_count"`
-	TotalCountIncluded *bool  `json:"total_count_included,omitempty"`
-	Offset             int    `json:"offset"`
-	Limit              int    `json:"limit"`
-	Sort               string `json:"sort"`
-	Order              string `json:"order"`
+	Items              []Node                   `json:"items"`
+	TotalCount         int64                    `json:"total_count"`
+	TotalCountIncluded *bool                    `json:"total_count_included,omitempty"`
+	Offset             int                      `json:"offset"`
+	Limit              int                      `json:"limit"`
+	Sort               string                   `json:"sort"`
+	Order              string                   `json:"order"`
+	Groups             []FileExplorerGroupIndex `json:"groups,omitempty"`
 }
 
 func (r ChildrenRange) HasTotalCount() bool {
@@ -525,6 +540,15 @@ func (c *Client) ListPage(ctx context.Context, parentID uint64, options Children
 	return out, err
 }
 
+func appendFileExplorerGrouping(values url.Values, grouping FileExplorerGroupingOptions) {
+	if value := strings.TrimSpace(grouping.Group); value != "" {
+		values.Set("group", value)
+	}
+	if grouping.FoldersFirst != nil {
+		values.Set("folders_first", strconv.FormatBool(*grouping.FoldersFirst))
+	}
+}
+
 func (c *Client) ListRange(ctx context.Context, parentID uint64, options ChildrenRangeOptions) (ChildrenRange, error) {
 	if options.Offset < 0 {
 		return ChildrenRange{}, fmt.Errorf("offset must be zero or greater")
@@ -546,6 +570,7 @@ func (c *Client) ListRange(ctx context.Context, parentID uint64, options Childre
 	if options.OmitTotalCount {
 		values.Set("include_count", "false")
 	}
+	appendFileExplorerGrouping(values, options.Grouping)
 	var out ChildrenRange
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)
 	return out, err
@@ -616,6 +641,7 @@ func (c *Client) SearchRange(ctx context.Context, options SearchRangeOptions) (S
 	if strings.TrimSpace(options.Order) != "" {
 		values.Set("order", strings.TrimSpace(options.Order))
 	}
+	appendFileExplorerGrouping(values, options.Grouping)
 	var out SearchRange
 	err := c.json(ctx, http.MethodGet, "/api/v1/search?"+values.Encode(), nil, &out)
 	return out, err

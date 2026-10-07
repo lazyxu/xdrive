@@ -44,6 +44,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
   XDriveFileExplorerSearchFilters,
+  XDriveFileExplorerGrouping,
   XDriveFileQuickAccessItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
@@ -505,6 +506,7 @@ declare global {
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
           includeCount?: boolean,
+          grouping?: XDriveFileExplorerGrouping,
         ) => Promise<DesktopResult<AgentCloudChildrenRange>>
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
@@ -578,6 +580,7 @@ declare global {
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
           filters?: XDriveFileExplorerSearchFilters,
+          grouping?: XDriveFileExplorerGrouping,
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>

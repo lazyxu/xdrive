@@ -113,6 +113,7 @@ type fakeDesktopIPCController struct {
 	cloudSearchSort            string
 	cloudSearchOrder           string
 	cloudSearchFilters         client.SearchFilters
+	cloudSearchGrouping        client.FileExplorerGroupingOptions
 	cloudQuota                 client.QuotaUsage
 	cloudServerUpdate          client.ServerUpdateState
 	cloudServerUpdateSource    string
@@ -614,12 +615,14 @@ func (f *fakeDesktopIPCController) CloudSearchRange(
 	offset, limit int,
 	sortKey, order string,
 	filters client.SearchFilters,
+	grouping client.FileExplorerGroupingOptions,
 ) (agentCloudSearchRange, error) {
 	f.cloudSearchOffset = offset
 	f.cloudSearchLimit = limit
 	f.cloudSearchSort = sortKey
 	f.cloudSearchOrder = order
 	f.cloudSearchFilters = filters
+	f.cloudSearchGrouping = grouping
 	return f.cloudSearchRange, f.err
 }
 
@@ -1625,7 +1628,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name=Projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name_ci=projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc", "", "\"total_count\":640"},
-		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc&include_count=false", "", "\"total_count_included\":false"},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc&include_count=false&group=type&folders_first=false", "", "\"total_count_included\":false"},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
@@ -1650,7 +1653,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/download", `{"id":3,"destination":"/tmp/report.pdf"}`, "\"ok\":true"},
 		{http.MethodPost, "/v1/cloud/download/archive", fmt.Sprintf(`{"ids":[2,3],"destination":%q}`, archiveDestination), "\"Projects\""},
 		{http.MethodGet, "/v1/cloud/search?q=report&cursor=search-cursor&sort=size&order=desc&kind=pdf&source_id=7", "", "\"next_cursor\":\"search-next\""},
-		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc&min_size=10&modified_from=2026-10-01T00%3A00%3A00Z", "", "\"total_count\":640"},
+		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc&min_size=10&modified_from=2026-10-01T00%3A00%3A00Z&group=size&folders_first=false", "", "\"total_count\":640"},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
 		{http.MethodPost, "/v1/cloud/storage-cache/cleanup", `{"kind":"media_thumbnail"}`, "\"deleted_bytes\":12"},
@@ -1684,7 +1687,10 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	}
 	if ctrl.cloudChildrenRangeOptions.Offset != 400 || ctrl.cloudChildrenRangeOptions.Limit != 200 ||
 		ctrl.cloudChildrenRangeOptions.Sort != "updated" || ctrl.cloudChildrenRangeOptions.Order != "desc" ||
-		!ctrl.cloudChildrenRangeOptions.OmitTotalCount {
+		!ctrl.cloudChildrenRangeOptions.OmitTotalCount ||
+		ctrl.cloudChildrenRangeOptions.Grouping.Group != "type" ||
+		ctrl.cloudChildrenRangeOptions.Grouping.FoldersFirst == nil ||
+		*ctrl.cloudChildrenRangeOptions.Grouping.FoldersFirst {
 		t.Fatalf("cloud children range options not forwarded: %+v", ctrl.cloudChildrenRangeOptions)
 	}
 	if ctrl.cloudSearchCursor != "search-cursor" {
@@ -1698,6 +1704,11 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 	if ctrl.cloudSearchFilters.MinSize == nil || *ctrl.cloudSearchFilters.MinSize != 10 ||
 		ctrl.cloudSearchFilters.ModifiedFrom != "2026-10-01T00:00:00Z" {
 		t.Fatalf("cloud search structured filters not forwarded: %+v", ctrl.cloudSearchFilters)
+	}
+	if ctrl.cloudSearchGrouping.Group != "size" ||
+		ctrl.cloudSearchGrouping.FoldersFirst == nil ||
+		*ctrl.cloudSearchGrouping.FoldersFirst {
+		t.Fatalf("cloud search grouping not forwarded: %+v", ctrl.cloudSearchGrouping)
 	}
 	if ctrl.cloudDeleteID != 4 || ctrl.cloudDeleteRev != 3 || ctrl.cloudRevokeID != 6 {
 		t.Fatalf("cloud mutations not forwarded: delete=%d/%d revoke=%d", ctrl.cloudDeleteID, ctrl.cloudDeleteRev, ctrl.cloudRevokeID)
