@@ -846,24 +846,14 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	c.Header("ETag", mediaThumbnailETag(node, metadata))
 	c.Header("Cache-Control", "private, max-age=3600")
 
+	key := mediaThumbnailStorageKey(node, metadata)
 	if s.tryServeMediaDerivative(
 		c,
-		metadata.ThumbnailKey,
+		key,
 		node.Name+".jpg",
-		metadata.ThumbnailMIMEType,
+		"image/jpeg",
 		metadata.UpdatedAt,
 	) {
-		return
-	}
-	key := mediaThumbnailStorageKey(node, metadata)
-	if key != metadata.ThumbnailKey &&
-		s.tryServeMediaDerivative(
-			c,
-			key,
-			node.Name+".jpg",
-			"image/jpeg",
-			metadata.UpdatedAt,
-		) {
 		return
 	}
 
@@ -1105,11 +1095,10 @@ func mediaAnalysisPreviewStorageKey(
 	node meta.Node,
 	row meta.MediaMetadata,
 ) string {
-	return mediapkg.ThumbnailStorageKey(
+	return mediapkg.AnalysisPreviewStorageKey(
 		node.ID,
 		node.Revision,
 		row.SHA256,
-		mediapkg.AnalysisPreviewEdge,
 	)
 }
 
@@ -1158,15 +1147,17 @@ func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 func mediaThumbnailETag(node meta.Node, row meta.MediaMetadata) string {
 	if sha := strings.ToLower(strings.TrimSpace(row.SHA256)); sha != "" {
 		return fmt.Sprintf(
-			"\"media-%s-%d\"",
+			"\"media-%s-v%d-%d\"",
 			sha,
+			mediapkg.ThumbnailVersion,
 			mediaThumbnailEdge,
 		)
 	}
 	return fmt.Sprintf(
-		"\"media-node-%d-%d-%d\"",
+		"\"media-node-%d-%d-v%d-%d\"",
 		node.ID,
 		node.Revision,
+		mediapkg.ThumbnailVersion,
 		mediaThumbnailEdge,
 	)
 }

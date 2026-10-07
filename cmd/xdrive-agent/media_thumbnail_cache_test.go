@@ -8,7 +8,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/userconfig"
 )
+
+func TestAgentMediaThumbnailCacheKeyIncludesDerivativeVersion(t *testing.T) {
+	cfg := userconfig.Config{
+		Server:    "https://drive.example.test",
+		Username:  "alice",
+		SessionID: "session",
+	}
+	if got, want := agentMediaThumbnailCacheKey(cfg, 7),
+		"https://drive.example.test\x00alice\x00session\x00v2\x007"; got != want {
+		t.Fatalf("cache key=%q want=%q", got, want)
+	}
+}
 
 func TestAgentMediaThumbnailCacheFreshHitSkipsLoader(t *testing.T) {
 	now := time.Unix(1000, 0)

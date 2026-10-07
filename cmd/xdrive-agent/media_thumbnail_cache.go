@@ -15,6 +15,8 @@ import (
 const (
 	agentMediaThumbnailCacheMaxEntries = 256
 	agentMediaThumbnailCacheMaxBytes   = int64(32 << 20)
+	// Bump when thumbnail pixels can change without a Node revision change.
+	agentMediaThumbnailCacheVersion = "v2"
 )
 
 type agentMediaThumbnailFetch struct {
@@ -63,6 +65,7 @@ func agentMediaThumbnailCacheKey(cfg userconfig.Config, nodeID uint64) string {
 	return strings.TrimSpace(cfg.Server) + "\x00" +
 		strings.TrimSpace(cfg.Username) + "\x00" +
 		strings.TrimSpace(cfg.SessionID) + "\x00" +
+		agentMediaThumbnailCacheVersion + "\x00" +
 		strconv.FormatUint(nodeID, 10)
 }
 

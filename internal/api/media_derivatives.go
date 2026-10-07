@@ -22,7 +22,7 @@ const (
 	mediaDerivativeThumbnail mediaDerivativeKind = "thumbnail"
 	mediaDerivativeAnalysis  mediaDerivativeKind = "analysis_preview"
 
-	mediaThumbnailDerivativeVersion = 1
+	mediaThumbnailDerivativeVersion = mediapkg.ThumbnailVersion
 	mediaDerivativeRunTimeout       = 2 * time.Minute
 )
 

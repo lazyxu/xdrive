@@ -214,12 +214,20 @@ func loadProtectedThumbnailKeys(
 				mediapkg.DefaultThumbnailEdge,
 				mediapkg.AnalysisPreviewEdge,
 			} {
-				protected[mediapkg.ThumbnailStorageKey(
+				key := mediapkg.ThumbnailStorageKey(
 					row.NodeID,
 					row.NodeRevision,
 					row.SHA256,
 					edge,
-				)] = struct{}{}
+				)
+				if edge == mediapkg.AnalysisPreviewEdge {
+					key = mediapkg.AnalysisPreviewStorageKey(
+						row.NodeID,
+						row.NodeRevision,
+						row.SHA256,
+					)
+				}
+				protected[key] = struct{}{}
 			}
 		}
 	}

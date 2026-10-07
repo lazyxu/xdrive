@@ -910,7 +910,7 @@ export class XDriveApi {
 
   async mediaThumbnail(nodeID: number): Promise<Blob> {
     await this.ensureFresh()
-    const path = `/api/v1/media/items/${nodeID}/thumbnail`
+    const path = `/api/v1/media/items/${nodeID}/thumbnail?v=2`
     let response = await fetch(`${API_BASE}${path}`, {
       headers: this.session.accessToken
         ? { Authorization: `Bearer ${this.session.accessToken}` }

@@ -826,7 +826,7 @@ func (c *Client) MediaThumbnailConditional(
 	req, err := c.request(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("/api/v1/media/items/%d/thumbnail", nodeID),
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail?v=2", nodeID),
 		nil,
 	)
 	if err != nil {

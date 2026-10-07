@@ -6,6 +6,7 @@ import {
 } from '@mui/icons-material'
 import { Box, CircularProgress } from '@mui/material'
 import type { MediaMetadata } from '../models'
+import { xDriveMediaVideoPosterGeometry } from './MediaGalleryVideoPoster'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 type MediaPreviewURLLoader = (
@@ -102,6 +103,9 @@ function scheduleMediaPoster<T>(task: () => Promise<T>): Promise<T> {
 async function captureVideoPoster(
   nodeID: number,
   loadPreviewURL: MediaPreviewURLLoader,
+  rotationDegrees = 0,
+  sourceWidth = 0,
+  sourceHeight = 0,
 ): Promise<string | null> {
   const source = await loadPreviewURL(nodeID, 'video')
   if (!source) return null
@@ -130,22 +134,36 @@ async function captureVideoPoster(
           finish(null)
           return
         }
-        const maxEdge = 512
-        const scale = Math.min(
-          1,
-          maxEdge / Math.max(video.videoWidth, video.videoHeight),
+        const geometry = xDriveMediaVideoPosterGeometry(
+          video.videoWidth,
+          video.videoHeight,
+          sourceWidth,
+          sourceHeight,
+          rotationDegrees,
+          512,
         )
-        const width = Math.max(1, Math.round(video.videoWidth * scale))
-        const height = Math.max(1, Math.round(video.videoHeight * scale))
         const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
+        canvas.width = geometry.canvasWidth
+        canvas.height = geometry.canvasHeight
         const context = canvas.getContext('2d')
         if (!context) {
           finish(null)
           return
         }
-        context.drawImage(video, 0, 0, width, height)
+        if (geometry.manualRotation === 90) {
+          context.translate(canvas.width, 0)
+          context.rotate(Math.PI / 2)
+        } else if (geometry.manualRotation === 270) {
+          context.translate(0, canvas.height)
+          context.rotate(-Math.PI / 2)
+        }
+        context.drawImage(
+          video,
+          0,
+          0,
+          geometry.drawWidth,
+          geometry.drawHeight,
+        )
         finish(canvas.toDataURL('image/jpeg', 0.82))
       } catch {
         finish(null)
@@ -162,11 +180,17 @@ export function XDriveMediaAsyncVideoPoster({
   alt,
   loadPreviewURL,
   fallback,
+  rotationDegrees = 0,
+  sourceWidth = 0,
+  sourceHeight = 0,
 }: {
   nodeID: number
   alt: string
   loadPreviewURL: MediaPreviewURLLoader
   fallback: ReactNode
+  rotationDegrees?: number
+  sourceWidth?: number
+  sourceHeight?: number
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
@@ -195,7 +219,13 @@ export function XDriveMediaAsyncVideoPoster({
     setSrc('')
     if (!visible) return () => { active = false }
 
-    void scheduleMediaPoster(() => captureVideoPoster(nodeID, loadPreviewURL))
+    void scheduleMediaPoster(() => captureVideoPoster(
+      nodeID,
+      loadPreviewURL,
+      rotationDegrees,
+      sourceWidth,
+      sourceHeight,
+    ))
       .then((value) => {
         if (active && value) setSrc(value)
       })
@@ -204,7 +234,14 @@ export function XDriveMediaAsyncVideoPoster({
     return () => {
       active = false
     }
-  }, [loadPreviewURL, nodeID, visible])
+  }, [
+    loadPreviewURL,
+    nodeID,
+    rotationDegrees,
+    sourceHeight,
+    sourceWidth,
+    visible,
+  ])
 
   return (
     <Box ref={rootRef} sx={{ width: '100%', height: '100%' }}>
