@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
@@ -54,13 +54,15 @@ export function useXDriveFileExplorerOperationController<
   onError: (error: unknown) => void
 }) {
   const [busyAction, setBusyAction] = useState<XDriveFileExplorerQueuedOperationAction>('')
+  const busyActionRef = useRef<XDriveFileExplorerQueuedOperationAction>('')
 
   const runPlan = async (
     action: Exclude<XDriveFileExplorerQueuedOperationAction, ''>,
     plan: XDriveFileExplorerQueuedOperationPlan,
     onComplete: () => void,
   ) => {
-    if (disabled || busyAction) return false
+    if (disabled || busyActionRef.current) return false
+    busyActionRef.current = action
     setBusyAction(action)
     try {
       return await xDriveFileExplorerRunQueuedOperation({
@@ -72,12 +74,18 @@ export function useXDriveFileExplorerOperationController<
         onError,
       })
     } finally {
+      busyActionRef.current = ''
       setBusyAction('')
     }
   }
 
   const pasteClipboard = async () => {
-    if (currentID === null || currentID === undefined || disabled || busyAction) return
+    if (
+      currentID === null ||
+      currentID === undefined ||
+      disabled ||
+      busyActionRef.current
+    ) return
     const plan = planPaste(currentID)
     if (!plan) return
     await runPlan('paste', plan, () => {
@@ -91,7 +99,7 @@ export function useXDriveFileExplorerOperationController<
     target: XDriveFileExplorerItem,
     operation: 'move' | 'copy',
   ) => {
-    if (disabled || busyAction) return
+    if (disabled || busyActionRef.current) return
     const plan = xDriveFileExplorerDropItemsPlan(
       operation,
       selected,
@@ -107,7 +115,7 @@ export function useXDriveFileExplorerOperationController<
     crumb: XDriveFileExplorerCrumb,
     operation: 'move' | 'copy',
   ) => {
-    if (disabled || busyAction) return
+    if (disabled || busyActionRef.current) return
     const plan = xDriveFileExplorerDropItemsToParentPlan(
       operation,
       selected,

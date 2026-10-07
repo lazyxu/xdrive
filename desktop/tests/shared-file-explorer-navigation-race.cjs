@@ -175,6 +175,14 @@ function loadRecentHook(react) {
   ).useXDriveFileExplorerRecent
 }
 
+function loadOperationHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts'],
+    react,
+    { '../file-explorer-controller': loadFileExplorerController() },
+  ).useXDriveFileExplorerOperationController
+}
+
 function loadSearchHook(react) {
   const controller = loadFileExplorerController()
   const virtualCore = loadTypeScriptModule(
@@ -1118,5 +1126,66 @@ test('disabling Quick Access invalidates a pending pin completion', async () => 
     quick.items,
     [],
     'a Quick Access mutation started before disable must not repopulate disabled state',
+  )
+})
+
+
+test('FileExplorer operation controller blocks same-tick duplicate paste submissions', async () => {
+  const runtime = createHookRuntime()
+  const useOperation = loadOperationHook(runtime.react)
+  const plan = {
+    operation: 'copy',
+    parentID: 1,
+    items: [{ id: 2, revision: 1 }],
+    count: 1,
+    clearClipboard: false,
+  }
+
+  let submitCalls = 0
+  let releaseFirst
+  const renderOperation = () => runtime.render(() => useOperation({
+    nodeByID: new Map(),
+    currentID: 1,
+    planPaste: () => plan,
+    completePaste: () => {},
+    canPaste: () => true,
+    clearSearch: () => {},
+    submitOperation: () => {
+      submitCalls += 1
+      if (submitCalls === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = () => resolve({ id: 'first' })
+        })
+      }
+      return Promise.resolve({ id: 'later' })
+    },
+    onQueued: () => {},
+    onFeedback: () => {},
+    onError: (error) => { throw error },
+  }))
+
+  let operation = renderOperation()
+  const first = operation.pasteClipboard()
+  const duplicate = operation.pasteClipboard()
+  await flushAsync()
+
+  assert.equal(
+    submitCalls,
+    1,
+    'busy state must synchronously fence a same-tick second durable file operation',
+  )
+
+  releaseFirst()
+  await first
+  await duplicate
+
+  operation = renderOperation()
+  assert.equal(operation.busy, false)
+
+  await operation.pasteClipboard()
+  assert.equal(
+    submitCalls,
+    2,
+    'the synchronous operation fence must release after the first operation settles',
   )
 })
