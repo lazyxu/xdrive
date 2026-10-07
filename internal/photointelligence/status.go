@@ -20,6 +20,8 @@ type PhotoIntelligenceDatabaseStatus struct {
 	PhotoAssets              int64               `json:"photo_assets"`
 	FaceRows                 int64               `json:"face_rows"`
 	PlaceLabels              int64               `json:"place_labels"`
+	VisualLabels             int64               `json:"visual_labels"`
+	OCRDocuments             int64               `json:"ocr_documents"`
 	AutomaticClusters        int64               `json:"automatic_clusters"`
 	AutomaticClusterFaces    int64               `json:"automatic_cluster_faces"`
 	DurablePeople            int64               `json:"durable_people"`
@@ -27,6 +29,8 @@ type PhotoIntelligenceDatabaseStatus struct {
 	FaceDetection            AnalysisStateCounts `json:"face_detection"`
 	FaceEmbedding            AnalysisStateCounts `json:"face_embedding"`
 	PlaceAnalysis            AnalysisStateCounts `json:"place_analysis"`
+	VisualAnalysis           AnalysisStateCounts `json:"visual_analysis"`
+	OCRAnalysis              AnalysisStateCounts `json:"ocr_analysis"`
 	PersonClustering         AnalysisStateCounts `json:"person_clustering"`
 }
 
@@ -62,6 +66,8 @@ func LoadPhotoIntelligenceDatabaseStatus(
 		{&meta.PhotoAsset{}, &status.PhotoAssets, "photo assets"},
 		{&meta.PhotoFace{}, &status.FaceRows, "photo faces"},
 		{&meta.PhotoPlaceLabel{}, &status.PlaceLabels, "photo place labels"},
+		{&meta.PhotoVisualLabel{}, &status.VisualLabels, "photo visual labels"},
+		{&meta.PhotoOCRText{}, &status.OCRDocuments, "photo OCR documents"},
 		{&meta.PhotoPersonCluster{}, &status.AutomaticClusters, "automatic person clusters"},
 		{&meta.PhotoPersonClusterFace{}, &status.AutomaticClusterFaces, "automatic cluster faces"},
 		{&meta.PhotoPerson{}, &status.DurablePeople, "durable people"},
@@ -89,6 +95,10 @@ func LoadPhotoIntelligenceDatabaseStatus(
 			target = &status.FaceEmbedding
 		case meta.PhotoAnalysisKindPlaceLabel:
 			target = &status.PlaceAnalysis
+		case meta.PhotoAnalysisKindVisualLabel:
+			target = &status.VisualAnalysis
+		case meta.PhotoAnalysisKindOCRText:
+			target = &status.OCRAnalysis
 		default:
 			continue
 		}

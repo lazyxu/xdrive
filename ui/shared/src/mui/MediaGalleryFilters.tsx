@@ -172,7 +172,7 @@ export function XDriveMediaGalleryFilterBar({
           <TextField
             size="small"
             label="搜索"
-            placeholder="文件名、相机或镜头"
+            placeholder="文件名、对象、场景、文字或相机"
             value={draft.search}
             onChange={(event) => onChange({ ...draft, search: event.target.value })}
             onKeyDown={(event) => {
@@ -376,7 +376,7 @@ export function XDriveMediaGalleryFilterToolbar({
           size="small"
           fullWidth
           aria-label="搜索图库"
-          placeholder="搜索照片、文件名、相机或镜头"
+          placeholder="搜索照片、对象、场景或文字"
           value={draft.search}
           onChange={(event) => onChange({ ...draft, search: event.target.value })}
           onKeyDown={(event) => {

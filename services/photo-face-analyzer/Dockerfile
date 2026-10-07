@@ -9,6 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     XD_FACE_YUNET_MODEL=/models/face_detection_yunet_2023mar.onnx \
     XD_FACE_SFACE_MODEL=/models/face_recognition_sface_2021dec.onnx \
+    XD_SMART_CLASSIFIER_MODEL=/models/image_classification_mobilenetv2_2022apr.onnx \
+    XD_SMART_OCR_DETECTOR_MODEL=/models/text_detection_cn_ppocrv3_2023may.onnx \
+    XD_SMART_OCR_RECOGNIZER_MODEL=/models/text_recognition_CRNN_CN_2021nov.onnx \
+    XD_SMART_IMAGENET_LABELS=/models/imagenet1k_labels.txt \
+    XD_SMART_OCR_CHARSET=/models/crnn_cn_charset.txt \
     XD_FACE_SOCKET=/run/xdrive-photo-face/photo-face.sock
 
 RUN apt-get update \
@@ -33,7 +38,7 @@ ARG VERSION=dev
 ARG BUILD_COMMIT=
 
 LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
-      org.opencontainers.image.description="xDrive Photo Intelligence reference face analyzer" \
+      org.opencontainers.image.description="xDrive Photo Intelligence reference analyzer" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$BUILD_COMMIT"
 

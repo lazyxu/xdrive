@@ -255,7 +255,7 @@ func (s *Server) consumePhotoIntelligenceReanalyzeIntent(
 func photoIntelligenceTaskResource(
 	kind photoIntelligenceTaskKind,
 ) background.ResourceClass {
-	if kind == photoIntelligenceFace {
+	if kind == photoIntelligenceFace || kind == photoIntelligenceSmartSearch {
 		return background.ResourceMLCPU
 	}
 	return background.ResourceBackgroundCPU
@@ -281,6 +281,7 @@ func (s *Server) backgroundPhotoIntelligenceIntentTasks(
 		kind := photoIntelligenceTaskKind(intent.Kind)
 		switch kind {
 		case photoIntelligenceFace,
+			photoIntelligenceSmartSearch,
 			photoIntelligencePlace,
 			photoIntelligencePersonCluster:
 		default:

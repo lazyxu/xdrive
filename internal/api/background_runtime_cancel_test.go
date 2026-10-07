@@ -291,6 +291,7 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 	for _, kind := range []string{
 		"media.index",
 		"photo.face",
+		"photo.smart_search",
 		"photo.place",
 		"photo.person_cluster",
 	} {

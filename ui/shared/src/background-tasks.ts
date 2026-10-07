@@ -125,6 +125,7 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'media.thumbnail': return '缩略图生成'
     case 'media.analysis_preview': return '分析预览'
     case 'photo.face': return '人脸识别'
+    case 'photo.smart_search': return '图库智能搜索索引'
     case 'photo.place': return '地点识别'
     case 'photo.person_cluster': return '人物聚类'
     case 'system.maintenance.janitor': return 'Janitor'

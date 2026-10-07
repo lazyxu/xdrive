@@ -44,6 +44,28 @@ func (s *Server) rollbackPhotoIntelligenceOwnerAfterCancel(
 				"completed_at": nil,
 				"updated_at":   now,
 			}).Error
+	case photoIntelligenceSmartSearch:
+		assetIDs := s.DB.WithContext(ctx).
+			Model(&meta.PhotoAsset{}).
+			Select("id").
+			Where("owner_id = ?", ownerID)
+		return s.DB.WithContext(ctx).
+			Model(&meta.PhotoAnalysisState{}).
+			Where("asset_id IN (?)", assetIDs).
+			Where(
+				"kind IN ?",
+				[]string{
+					meta.PhotoAnalysisKindVisualLabel,
+					meta.PhotoAnalysisKindOCRText,
+				},
+			).
+			Where("state = ?", meta.PhotoAnalysisStateRunning).
+			Updates(map[string]any{
+				"state":        meta.PhotoAnalysisStateStale,
+				"last_error":   "",
+				"completed_at": nil,
+				"updated_at":   now,
+			}).Error
 	case photoIntelligencePlace:
 		assetIDs := s.DB.WithContext(ctx).
 			Model(&meta.PhotoAsset{}).

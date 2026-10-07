@@ -6,6 +6,8 @@ const (
 	PhotoAnalysisKindFaceDetection = "face_detection"
 	PhotoAnalysisKindFaceEmbedding = "face_embedding"
 	PhotoAnalysisKindPlaceLabel    = "place_label"
+	PhotoAnalysisKindVisualLabel   = "visual_label"
+	PhotoAnalysisKindOCRText       = "ocr_text"
 
 	PhotoAnalysisStatePending = "pending"
 	PhotoAnalysisStateRunning = "running"
@@ -176,9 +178,35 @@ type PhotoPlaceLabel struct {
 
 func (PhotoPlaceLabel) TableName() string { return "xd_photo_place_labels" }
 
+type PhotoVisualLabel struct {
+	ID         uint64  `gorm:"primaryKey"`
+	AssetID    uint64  `gorm:"not null;index;uniqueIndex:idx_xd_photo_visual_labels_asset_label,priority:1"`
+	Label      string  `gorm:"size:128;not null;index;uniqueIndex:idx_xd_photo_visual_labels_asset_label,priority:2"`
+	Confidence float64 `gorm:"not null;default:0;index"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+
+	Asset PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoVisualLabel) TableName() string { return "xd_photo_visual_labels" }
+
+type PhotoOCRText struct {
+	AssetID   uint64 `gorm:"primaryKey;autoIncrement:false"`
+	Text      string `gorm:"type:text;not null"`
+	Language  string `gorm:"size:32;not null;default:'zh-en'"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Asset PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoOCRText) TableName() string { return "xd_photo_ocr_texts" }
+
 func ValidPhotoAnalysisKind(kind string) bool {
 	switch kind {
-	case PhotoAnalysisKindFaceDetection, PhotoAnalysisKindFaceEmbedding, PhotoAnalysisKindPlaceLabel:
+	case PhotoAnalysisKindFaceDetection, PhotoAnalysisKindFaceEmbedding, PhotoAnalysisKindPlaceLabel,
+		PhotoAnalysisKindVisualLabel, PhotoAnalysisKindOCRText:
 		return true
 	default:
 		return false

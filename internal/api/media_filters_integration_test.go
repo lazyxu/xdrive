@@ -48,6 +48,8 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
+		&meta.PhotoAnalysisState{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
+		&meta.PhotoPlaceLabel{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +150,69 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	readyAt := time.Now().UTC()
+	if err := db.Create(&[]meta.PhotoAnalysisState{
+		{
+			AssetID: assets[0].ID, Kind: meta.PhotoAnalysisKindVisualLabel,
+			AnalyzerVersion: "visual-v1", InputFingerprint: "smart-input-1",
+			State: meta.PhotoAnalysisStateReady, CompletedAt: &readyAt,
+		},
+		{
+			AssetID: assets[0].ID, Kind: meta.PhotoAnalysisKindOCRText,
+			AnalyzerVersion: "ocr-v1", InputFingerprint: "smart-input-1",
+			State: meta.PhotoAnalysisStateReady, CompletedAt: &readyAt,
+		},
+		{
+			AssetID: assets[0].ID, Kind: meta.PhotoAnalysisKindPlaceLabel,
+			AnalyzerVersion: "place-v1", InputFingerprint: "place-input-1",
+			State: meta.PhotoAnalysisStateReady, CompletedAt: &readyAt,
+		},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]meta.PhotoVisualLabel{
+		{AssetID: assets[0].ID, Label: "golden retriever", Confidence: 0.91},
+		{AssetID: assets[0].ID, Label: "seashore", Confidence: 0.74},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoOCRText{
+		AssetID:  assets[0].ID,
+		Text:     "Marina Hotel invoice 2026",
+		Language: "zh-en",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoPlaceLabel{
+		AssetID:         assets[0].ID,
+		Resolver:        "test",
+		ResolverVersion: "v1",
+		Latitude:        lat,
+		Longitude:       lon,
+		CountryCode:     "SG",
+		Country:         "Singapore",
+		City:            "Singapore",
+		District:        "Downtown Core",
+		Formatted:       "Downtown Core, Singapore",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	person := meta.PhotoPerson{
+		OwnerID:   owner.ID,
+		PersonKey: "person:v1:" + uuid.NewString(),
+		Name:      "Diana",
+		Revision:  1,
+	}
+	if err := db.Create(&person).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoPersonAsset{
+		PersonID: person.ID,
+		AssetID:  assets[0].ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	collection := meta.PhotoCollection{
 		OwnerID:     owner.ID,
 		ExternalKey: fmt.Sprintf("folder:%d", folder.ID),
@@ -202,6 +267,36 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 	assertIDs(
 		"search local description",
 		mediaQueryOptions{Search: "marina bay"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"search visual label",
+		mediaQueryOptions{Search: "golden retriever"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"search OCR text",
+		mediaQueryOptions{Search: "invoice 2026"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"search derived place",
+		mediaQueryOptions{Search: "downtown core"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"search durable person name",
+		mediaQueryOptions{Search: "diana"},
+		"",
+		nodes[0].ID,
+	)
+	assertIDs(
+		"search tag text",
+		mediaQueryOptions{Search: "travel"},
 		"",
 		nodes[0].ID,
 	)

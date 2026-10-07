@@ -45,6 +45,43 @@ SFACE_LICENSE_URL = (
     "47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_recognition_sface"
 )
 
+SMART_PROTOCOL_VERSION = 1
+SMART_ANALYZER_NAME = "xdrive-opencv-mobilenetv2-ppocr-crnn"
+
+MOBILENET_MODEL_NAME = "image_classification_mobilenetv2_2022apr.onnx"
+MOBILENET_MODEL_VERSION = "2022apr"
+MOBILENET_SHA256 = "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5"
+MOBILENET_LICENSE = "Apache-2.0"
+MOBILENET_LICENSE_URL = (
+    "https://github.com/opencv/opencv_zoo/tree/"
+    "47534e27c9851bb1128ccc0102f1145e27f23f98/models/image_classification_mobilenet"
+)
+
+PPOCR_MODEL_NAME = "text_detection_cn_ppocrv3_2023may.onnx"
+PPOCR_MODEL_VERSION = "ppocrv3-2023may"
+PPOCR_SHA256 = "03f550c6b406fda8bf54bd8327815f6c7e2edd98cea02348c93d879254366587"
+PPOCR_LICENSE = "Apache-2.0"
+PPOCR_LICENSE_URL = (
+    "https://github.com/opencv/opencv_zoo/tree/"
+    "47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_detection_ppocr"
+)
+
+CRNN_MODEL_NAME = "text_recognition_CRNN_CN_2021nov.onnx"
+CRNN_MODEL_VERSION = "CN-2021nov"
+CRNN_SHA256 = "c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba"
+CRNN_LICENSE = "Apache-2.0"
+CRNN_LICENSE_URL = (
+    "https://github.com/opencv/opencv_zoo/tree/"
+    "47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_recognition_crnn"
+)
+
+SMART_VISUAL_TOP_K = 5
+SMART_VISUAL_MIN_CONFIDENCE = 0.03
+SMART_OCR_INPUT_SIZE = (736, 736)
+SMART_OCR_MAX_CANDIDATES = 64
+SMART_OCR_LANGUAGE = "zh-en"
+SMART_OCR_MAX_TEXT_CHARS = 8192
+
 EMBEDDING_FORMAT = "f32le"
 EMBEDDING_DIMENSIONS = 128
 
@@ -60,6 +97,11 @@ PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-yunet2023mar"
     f"-conf{CONFIDENCE_THRESHOLD:g}-nms{NMS_THRESHOLD:g}-topk{TOP_K}"
     "-sface2021dec-aligncrop-l2-clip-v1"
+)
+
+SMART_PIPELINE_VERSION = (
+    f"opencv-{cv.__version__}-cpu-mobilenetv2-2022apr"
+    "-ppocrv3-cn-2023may-crnn-cn-2021nov-v1"
 )
 
 
@@ -128,7 +170,7 @@ def validate_task(task: dict[str, Any], allowed_origin: str) -> dict[str, Any]:
         "input_fingerprint",
     }
     if set(task) != required:
-        raise RequestError(400, "invalid face analysis task fields")
+        raise RequestError(400, "invalid analysis task fields")
 
     preview_url = task.get("preview_url")
     fingerprint = task.get("input_fingerprint")
@@ -424,14 +466,246 @@ class FaceRuntime:
             return output
 
 
+class SmartRuntime:
+    def __init__(
+        self,
+        classifier_path: str | None = None,
+        detector_path: str | None = None,
+        recognizer_path: str | None = None,
+        labels_path: str | None = None,
+        charset_path: str | None = None,
+    ) -> None:
+        self.classifier_path = Path(
+            classifier_path
+            or os.environ.get(
+                "XD_SMART_CLASSIFIER_MODEL",
+                f"/models/{MOBILENET_MODEL_NAME}",
+            )
+        )
+        self.detector_path = Path(
+            detector_path
+            or os.environ.get(
+                "XD_SMART_OCR_DETECTOR_MODEL",
+                f"/models/{PPOCR_MODEL_NAME}",
+            )
+        )
+        self.recognizer_path = Path(
+            recognizer_path
+            or os.environ.get(
+                "XD_SMART_OCR_RECOGNIZER_MODEL",
+                f"/models/{CRNN_MODEL_NAME}",
+            )
+        )
+        self.labels_path = Path(
+            labels_path
+            or os.environ.get(
+                "XD_SMART_IMAGENET_LABELS",
+                "/models/imagenet1k_labels.txt",
+            )
+        )
+        self.charset_path = Path(
+            charset_path
+            or os.environ.get(
+                "XD_SMART_OCR_CHARSET",
+                "/models/crnn_cn_charset.txt",
+            )
+        )
+
+        FaceRuntime._verify_model(self.classifier_path, MOBILENET_SHA256)
+        FaceRuntime._verify_model(self.detector_path, PPOCR_SHA256)
+        FaceRuntime._verify_model(self.recognizer_path, CRNN_SHA256)
+
+        self.labels = [
+            value.strip()
+            for value in self.labels_path.read_text(encoding="utf-8").splitlines()
+            if value.strip()
+        ]
+        if len(self.labels) != 1000:
+            raise RuntimeError(
+                f"ImageNet label count is {len(self.labels)}, expected 1000"
+            )
+        self.charset = self.charset_path.read_text(encoding="utf-8")
+        if len(self.charset) < 3900:
+            raise RuntimeError("CRNN CN charset is incomplete")
+
+        self.classifier = cv.dnn.readNet(str(self.classifier_path))
+        self.classifier.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+        self.classifier.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+
+        detector_net = cv.dnn.readNet(str(self.detector_path))
+        detector_net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+        detector_net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+        self.text_detector = cv.dnn_TextDetectionModel_DB(detector_net)
+        self.text_detector.setBinaryThreshold(0.3)
+        self.text_detector.setPolygonThreshold(0.5)
+        self.text_detector.setUnclipRatio(2.0)
+        self.text_detector.setMaxCandidates(200)
+        self.text_detector.setInputSize(SMART_OCR_INPUT_SIZE)
+        self.text_detector.setInputMean((123.675, 116.28, 103.53))
+        self.text_detector.setInputScale(
+            1.0 / 255.0 / np.array([0.229, 0.224, 0.225])
+        )
+
+        self.text_recognizer = cv.dnn.readNet(str(self.recognizer_path))
+        self.text_recognizer.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+        self.text_recognizer.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+        self.lock = threading.Lock()
+        self._ocr_target_vertices = np.array(
+            [[0, 31], [0, 0], [99, 0], [99, 31]],
+            dtype=np.float32,
+        )
+
+    def info(self) -> dict[str, Any]:
+        runtime = {
+            "framework": "opencv_dnn",
+            "version": cv.__version__,
+            "device": "cpu",
+        }
+        return {
+            "protocol_version": SMART_PROTOCOL_VERSION,
+            "name": SMART_ANALYZER_NAME,
+            "pipeline_version": SMART_PIPELINE_VERSION,
+            "classifier": {
+                "name": "MobileNetV2",
+                "version": MOBILENET_MODEL_VERSION,
+                "sha256": MOBILENET_SHA256,
+                "license": MOBILENET_LICENSE,
+                "license_url": MOBILENET_LICENSE_URL,
+            },
+            "text_detector": {
+                "name": "PP-OCRv3",
+                "version": PPOCR_MODEL_VERSION,
+                "sha256": PPOCR_SHA256,
+                "license": PPOCR_LICENSE,
+                "license_url": PPOCR_LICENSE_URL,
+            },
+            "text_recognizer": {
+                "name": "CRNN-CN",
+                "version": CRNN_MODEL_VERSION,
+                "sha256": CRNN_SHA256,
+                "license": CRNN_LICENSE,
+                "license_url": CRNN_LICENSE_URL,
+            },
+            "ocr_language": SMART_OCR_LANGUAGE,
+            "runtime": runtime,
+        }
+
+    def _classify(self, image: np.ndarray) -> list[dict[str, Any]]:
+        rgb = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        resized = cv.resize(rgb, (256, 256), interpolation=cv.INTER_AREA)
+        crop = resized[16:240, 16:240, :].astype(np.float32)
+        normalized = (
+            crop / 255.0
+            - np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        ) / np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        blob = normalized.transpose(2, 0, 1)[np.newaxis, :, :, :]
+        self.classifier.setInput(blob.astype(np.float32))
+        output = np.asarray(self.classifier.forward(), dtype=np.float32).reshape(-1)
+        if output.size != len(self.labels) or not np.isfinite(output).all():
+            raise RuntimeError("MobileNet classifier returned invalid output")
+        if (
+            float(output.min()) < 0.0
+            or float(output.max()) > 1.0
+            or abs(float(output.sum()) - 1.0) > 0.05
+        ):
+            stable = output - float(output.max())
+            probabilities = np.exp(stable)
+            probabilities /= max(float(probabilities.sum()), 1e-12)
+        else:
+            probabilities = output
+        indices = np.argsort(probabilities)[::-1][:SMART_VISUAL_TOP_K]
+        labels: list[dict[str, Any]] = []
+        for raw_index in indices:
+            index = int(raw_index)
+            confidence = float(probabilities[index])
+            if confidence < SMART_VISUAL_MIN_CONFIDENCE:
+                continue
+            labels.append(
+                {
+                    "label": self.labels[index],
+                    "confidence": confidence,
+                }
+            )
+        return labels
+
+    def _decode_text(self, output: np.ndarray) -> str:
+        chars: list[str] = []
+        previous = -1
+        for step in np.asarray(output):
+            values = np.asarray(step).reshape(-1)
+            index = int(np.argmax(values))
+            if index != 0 and index != previous:
+                charset_index = index - 1
+                if 0 <= charset_index < len(self.charset):
+                    chars.append(self.charset[charset_index])
+            previous = index
+        return "".join(chars).strip()
+
+    def _recognize_text(
+        self,
+        image: np.ndarray,
+        box: np.ndarray,
+    ) -> str:
+        vertices = np.asarray(box, dtype=np.float32).reshape((4, 2))
+        transform = cv.getPerspectiveTransform(
+            vertices,
+            self._ocr_target_vertices,
+        )
+        cropped = cv.warpPerspective(image, transform, (100, 32))
+        blob = cv.dnn.blobFromImage(
+            cropped,
+            size=(100, 32),
+            mean=127.5,
+            scalefactor=1 / 127.5,
+        )
+        self.text_recognizer.setInput(blob)
+        return self._decode_text(self.text_recognizer.forward())
+
+    def _ocr(self, image: np.ndarray) -> str:
+        resized = cv.resize(image, SMART_OCR_INPUT_SIZE, interpolation=cv.INTER_AREA)
+        boxes, scores = self.text_detector.detect(resized)
+        if boxes is None or len(boxes) == 0:
+            return ""
+        candidates: list[tuple[float, float, np.ndarray, float]] = []
+        for box, score in zip(boxes, scores):
+            points = np.asarray(box, dtype=np.float32).reshape((4, 2))
+            candidates.append(
+                (
+                    float(points[:, 1].mean()),
+                    float(points[:, 0].mean()),
+                    points,
+                    float(score),
+                )
+            )
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        texts: list[str] = []
+        for _, _, points, _ in candidates[:SMART_OCR_MAX_CANDIDATES]:
+            text = self._recognize_text(resized, points)
+            if text:
+                texts.append(text)
+        return " ".join(texts).strip()[:SMART_OCR_MAX_TEXT_CHARS]
+
+    def analyze(self, image: np.ndarray) -> dict[str, Any]:
+        if image.ndim != 3 or image.shape[2] != 3:
+            raise RuntimeError("smart analysis image dimensions are invalid")
+        with self.lock:
+            return {
+                "labels": self._classify(image),
+                "ocr_text": self._ocr(image),
+                "ocr_language": SMART_OCR_LANGUAGE,
+            }
+
+
 class AnalyzerState:
     def __init__(
         self,
         runtime: FaceRuntime,
+        smart_runtime: SmartRuntime,
         preview_origin: str,
         token: str,
     ) -> None:
         self.runtime = runtime
+        self.smart_runtime = smart_runtime
         self.preview_origin = normalize_origin(preview_origin)
         self.token = token.strip()
 
@@ -489,12 +763,39 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 headers[key.strip().lower()] = value.strip()
 
             self._authorize(headers)
-            if headers.get("x-xdrive-face-protocol") != str(PROTOCOL_VERSION):
-                raise RequestError(400, "face analyzer protocol version mismatch")
             if method == "GET" and target == "/v1/info":
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-face-protocol",
+                    PROTOCOL_VERSION,
+                    "face",
+                )
                 self._write_json(200, self.server.state.runtime.info())
                 return
-            if method == "POST" and target == "/v1/analyze":
+            if method == "GET" and target == "/v1/smart-info":
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-smart-protocol",
+                    SMART_PROTOCOL_VERSION,
+                    "smart",
+                )
+                self._write_json(200, self.server.state.smart_runtime.info())
+                return
+            if method == "POST" and target in ("/v1/analyze", "/v1/smart-analyze"):
+                if target == "/v1/analyze":
+                    self._require_protocol(
+                        headers,
+                        "x-xdrive-face-protocol",
+                        PROTOCOL_VERSION,
+                        "face",
+                    )
+                else:
+                    self._require_protocol(
+                        headers,
+                        "x-xdrive-smart-protocol",
+                        SMART_PROTOCOL_VERSION,
+                        "smart",
+                    )
                 content_type = headers.get("content-type", "").split(";", 1)[0]
                 if content_type.strip().lower() != "application/json":
                     raise RequestError(415, "content type must be application/json")
@@ -515,21 +816,40 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 except json.JSONDecodeError as exc:
                     raise RequestError(400, "invalid JSON body") from exc
                 if not isinstance(task, dict):
-                    raise RequestError(400, "face analysis task must be an object")
+                    raise RequestError(400, "analysis task must be an object")
                 image = fetch_preview(task, self.server.state.preview_origin)
-                faces = self.server.state.runtime.analyze(image)
-                self._write_json(200, {"faces": faces})
+                if target == "/v1/analyze":
+                    faces = self.server.state.runtime.analyze(image)
+                    self._write_json(200, {"faces": faces})
+                else:
+                    self._write_json(
+                        200,
+                        self.server.state.smart_runtime.analyze(image),
+                    )
                 return
             raise RequestError(404, "not found")
         except RequestError as exc:
             self._write_json(exc.status, {"error": exc.message})
         except Exception as exc:
             print(
-                f"photo-face request failed: {type(exc).__name__}: {exc}",
+                f"photo-intelligence request failed: {type(exc).__name__}: {exc}",
                 file=sys.stderr,
                 flush=True,
             )
-            self._write_json(500, {"error": "face analysis failed"})
+            self._write_json(500, {"error": "analysis failed"})
+
+    @staticmethod
+    def _require_protocol(
+        headers: dict[str, str],
+        header: str,
+        expected: int,
+        label: str,
+    ) -> None:
+        if headers.get(header) != str(expected):
+            raise RequestError(
+                400,
+                f"{label} analyzer protocol version mismatch",
+            )
 
     def _authorize(self, headers: dict[str, str]) -> None:
         expected = self.server.state.token
@@ -586,7 +906,7 @@ def synthetic_image(width: int = 320, height: int = 240) -> np.ndarray:
     return image
 
 
-def self_test(runtime: FaceRuntime) -> None:
+def self_test(runtime: FaceRuntime, smart_runtime: SmartRuntime) -> None:
     image = synthetic_image()
     runtime.detector.setInputSize((image.shape[1], image.shape[0]))
     runtime.detector.detect(image)
@@ -616,20 +936,38 @@ def self_test(runtime: FaceRuntime) -> None:
     norm = float(np.linalg.norm(vector))
     if abs(norm - 1.0) > 1e-4:
         raise RuntimeError(f"SFace self-test embedding norm is {norm}")
+    smart_image = np.zeros((240, 320, 3), dtype=np.uint8)
+    smart = smart_runtime.analyze(smart_image)
+    if not isinstance(smart.get("labels"), list):
+        raise RuntimeError("smart-search self-test returned invalid labels")
+    if not isinstance(smart.get("ocr_text"), str):
+        raise RuntimeError("smart-search self-test returned invalid OCR text")
+    ocr_probe = smart_runtime._recognize_text(
+        np.zeros((32, 100, 3), dtype=np.uint8),
+        smart_runtime._ocr_target_vertices,
+    )
+    if not isinstance(ocr_probe, str):
+        raise RuntimeError("CRNN self-test returned invalid text")
     print(
         json.dumps(
             {
                 "ok": True,
                 "opencv": cv.__version__,
                 "pipeline_version": PIPELINE_VERSION,
+                "smart_pipeline_version": SMART_PIPELINE_VERSION,
                 "embedding_dimensions": int(vector.size),
+                "smart_label_count": len(smart["labels"]),
             },
             separators=(",", ":"),
         )
     )
 
 
-def benchmark(runtime: FaceRuntime, iterations: int) -> None:
+def benchmark(
+    runtime: FaceRuntime,
+    smart_runtime: SmartRuntime,
+    iterations: int,
+) -> None:
     if iterations <= 0 or iterations > 100:
         raise ValueError("benchmark iterations must be between 1 and 100")
     image = synthetic_image(1280, 720)
@@ -653,12 +991,15 @@ def benchmark(runtime: FaceRuntime, iterations: int) -> None:
         dtype=np.float32,
     )
 
+    smart_image = np.zeros_like(image)
     runtime.detector.setInputSize((image.shape[1], image.shape[0]))
     runtime.detector.detect(image)
     runtime._embedding(image, face)
+    smart_runtime.analyze(smart_image)
 
     detector_times = []
     embedding_times = []
+    smart_times = []
     for _ in range(iterations):
         started = time.perf_counter()
         runtime.detector.detect(image)
@@ -668,6 +1009,10 @@ def benchmark(runtime: FaceRuntime, iterations: int) -> None:
         runtime._embedding(image, face)
         embedding_times.append((time.perf_counter() - started) * 1000.0)
 
+        started = time.perf_counter()
+        smart_runtime.analyze(smart_image)
+        smart_times.append((time.perf_counter() - started) * 1000.0)
+
     print(
         json.dumps(
             {
@@ -676,6 +1021,7 @@ def benchmark(runtime: FaceRuntime, iterations: int) -> None:
                 "iterations": iterations,
                 "detector_ms_avg": sum(detector_times) / len(detector_times),
                 "embedding_ms_avg": sum(embedding_times) / len(embedding_times),
+                "smart_search_ms_avg": sum(smart_times) / len(smart_times),
                 "device": "cpu",
             },
             separators=(",", ":"),
@@ -684,24 +1030,37 @@ def benchmark(runtime: FaceRuntime, iterations: int) -> None:
 
 
 def healthcheck(socket_path: str, token: str) -> None:
-    connection = UnixHTTPConnection(socket_path, timeout=5)
-    headers = {
-        "Connection": "close",
-        "X-XDrive-Face-Protocol": str(PROTOCOL_VERSION),
-    }
-    if token.strip():
-        headers["Authorization"] = "Bearer " + token.strip()
-    try:
-        connection.request("GET", "/v1/info", headers=headers)
-        response = connection.getresponse()
-        body = response.read(MAX_REQUEST_BYTES)
-        if response.status != 200:
-            raise RuntimeError(f"analyzer health status is {response.status}")
-        payload = json.loads(body)
-        if payload.get("protocol_version") != PROTOCOL_VERSION:
-            raise RuntimeError("analyzer protocol version mismatch")
-    finally:
-        connection.close()
+    checks = (
+        ("/v1/info", "X-XDrive-Face-Protocol", PROTOCOL_VERSION),
+        (
+            "/v1/smart-info",
+            "X-XDrive-Smart-Protocol",
+            SMART_PROTOCOL_VERSION,
+        ),
+    )
+    for target, protocol_header, protocol_version in checks:
+        connection = UnixHTTPConnection(socket_path, timeout=5)
+        headers = {
+            "Connection": "close",
+            protocol_header: str(protocol_version),
+        }
+        if token.strip():
+            headers["Authorization"] = "Bearer " + token.strip()
+        try:
+            connection.request("GET", target, headers=headers)
+            response = connection.getresponse()
+            body = response.read(MAX_REQUEST_BYTES)
+            if response.status != 200:
+                raise RuntimeError(
+                    f"analyzer health status for {target} is {response.status}"
+                )
+            payload = json.loads(body)
+            if payload.get("protocol_version") != protocol_version:
+                raise RuntimeError(
+                    f"analyzer protocol version mismatch for {target}"
+                )
+        finally:
+            connection.close()
 
 
 def serve(args: argparse.Namespace) -> None:
@@ -711,6 +1070,7 @@ def serve(args: argparse.Namespace) -> None:
         raise RuntimeError("XD_FACE_PREVIEW_ORIGIN is required")
     state = AnalyzerState(
         runtime=FaceRuntime(),
+        smart_runtime=SmartRuntime(),
         preview_origin=preview_origin,
         token=args.token,
     )
@@ -739,6 +1099,7 @@ def serve(args: argparse.Namespace) -> None:
                 "socket": socket_path,
                 "preview_origin": state.preview_origin,
                 "pipeline_version": PIPELINE_VERSION,
+                "smart_pipeline_version": SMART_PIPELINE_VERSION,
             },
             separators=(",", ":"),
         ),
@@ -786,10 +1147,10 @@ def main() -> int:
         return 0
 
     if args.self_test:
-        self_test(FaceRuntime())
+        self_test(FaceRuntime(), SmartRuntime())
         return 0
     if args.benchmark:
-        benchmark(FaceRuntime(), args.iterations)
+        benchmark(FaceRuntime(), SmartRuntime(), args.iterations)
         return 0
 
     serve(args)

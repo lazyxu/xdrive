@@ -22,7 +22,7 @@ func (s *Server) photoFacePreviewURL(
 		"/",
 	)
 	if baseURL == "" {
-		return "", fmt.Errorf("photo face preview base URL is not configured")
+		return "", fmt.Errorf("photo analysis preview base URL is not configured")
 	}
 	ticket, _, err := s.Auth.IssuePreviewStream(
 		ownerID,
@@ -33,7 +33,7 @@ func (s *Server) photoFacePreviewURL(
 		photoFacePreviewTicketTTL,
 	)
 	if err != nil {
-		return "", fmt.Errorf("issue photo face preview ticket: %w", err)
+		return "", fmt.Errorf("issue photo analysis preview ticket: %w", err)
 	}
 	return fmt.Sprintf(
 		"%s/api/v1/media-analysis-preview/%d?ticket=%s",

@@ -121,7 +121,7 @@ test('Desktop delegates shared Task Center composition while retaining native tr
 test('shared Task Center renders sync folders, background processing and admin global view', () => {
   for (const token of ['backgroundTaskPort?: XDriveBackgroundTaskPort','backgroundTasksVisible','globalTasksEnabled','loadMinePage','loadGlobalPage','xDriveBackgroundTaskPollIntervalMs']) assert.ok(controller.includes(token), 'shared background controller missing: ' + token)
   for (const token of ['同步文件夹','后台处理','我的任务','全局任务','<XDriveBackgroundTaskList','<XDriveBackgroundTaskTable']) assert.ok(page.includes(token), 'Task Center background UI missing: ' + token)
-  for (const token of ['媒体索引','缩略图生成','分析预览','人脸识别','地点识别','人物聚类','owner_username','control_actions']) assert.ok(backgroundModel.includes(token), 'background task model missing: ' + token)
+  for (const token of ['媒体索引','缩略图生成','分析预览','人脸识别','图库智能搜索索引','地点识别','人物聚类','owner_username','control_actions']) assert.ok(backgroundModel.includes(token), 'background task model missing: ' + token)
   for (const token of ['用户','任务类型','优先级','资源类','触发方式','控制能力']) assert.ok(backgroundCenter.includes(token), 'global task table missing: ' + token)
 })
 

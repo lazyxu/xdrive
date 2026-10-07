@@ -29,6 +29,7 @@ type Server struct {
 	ConnectorSecrets               *connectorsecret.Keyring
 	PhotoPlaceResolver             photointelligence.PlaceResolver
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
+	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string
@@ -56,6 +57,7 @@ type Server struct {
 	photoIntelligenceMu            sync.Mutex
 	photoIntelligenceOwners        map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
 	photoFaceRunner                photoFaceOwnerRunner
+	photoSmartRunner               photoSmartOwnerRunner
 	photoPlaceRunner               photoPlaceOwnerRunner
 	photoPersonRunner              photoPersonOwnerRunner
 	systemMaintenanceSourceVerify  systemMaintenanceSourceVerifyRunner

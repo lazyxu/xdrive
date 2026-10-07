@@ -103,7 +103,7 @@ func (r *fakePhotoPersonOwnerRunner) RunOwner(
 	return nil
 }
 
-func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
+func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -123,11 +123,17 @@ func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
 	defer scheduler.Close()
 
 	faceRelease := make(chan struct{})
+	smartRelease := make(chan struct{})
 	placeRelease := make(chan struct{})
 	personRelease := make(chan struct{})
 	face := &fakePhotoFaceOwnerRunner{
 		started:   make(chan uint64, 1),
 		release:   faceRelease,
+		processed: 1,
+	}
+	smart := &fakePhotoFaceOwnerRunner{
+		started:   make(chan uint64, 1),
+		release:   smartRelease,
 		processed: 1,
 	}
 	place := &fakePhotoPlaceOwnerRunner{
@@ -142,6 +148,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
 	server := &Server{
 		BackgroundScheduler:     scheduler,
 		photoFaceRunner:         face,
+		photoSmartRunner:        smart,
 		photoPlaceRunner:        place,
 		photoPersonRunner:       person,
 		photoIntelligenceOwners: make(map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState),
@@ -176,11 +183,19 @@ func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
 			t.Fatalf("foreign owner snapshot: %+v", snapshot)
 		}
 	}
-	if !kinds["photo.face"] || !kinds["photo.place"] {
-		t.Fatalf("runtime kinds=%v want face+place", kinds)
+	if !kinds["photo.face"] || !kinds["photo.smart_search"] || !kinds["photo.place"] {
+		t.Fatalf("runtime kinds=%v want face+smart_search+place", kinds)
 	}
 
 	close(faceRelease)
+	select {
+	case got := <-smart.started:
+		if got != ownerID {
+			t.Fatalf("smart owner=%d want=%d", got, ownerID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("smart-search task did not start after face released ML CPU")
+	}
 	select {
 	case got := <-person.started:
 		if got != ownerID {
@@ -189,6 +204,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFacePlaceAndCluster(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("person-cluster task was not triggered by face completion")
 	}
+	close(smartRelease)
 	close(placeRelease)
 	close(personRelease)
 
