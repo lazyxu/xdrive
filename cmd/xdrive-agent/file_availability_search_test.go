@@ -151,6 +151,7 @@ func TestAgentAvailabilityClassMatchesDesktopLabels(t *testing.T) {
 		pinned           bool
 		onlineOnly       bool
 		availableOffline bool
+		mixed            bool
 		syncing          bool
 		want             string
 	}{
@@ -158,11 +159,12 @@ func TestAgentAvailabilityClassMatchesDesktopLabels(t *testing.T) {
 		{name: "always-local", stateMode: "always-local", pinned: true, availableOffline: true, want: "always-local"},
 		{name: "online-only", stateMode: "online-only", onlineOnly: true, want: "online-only"},
 		{name: "cloud", stateMode: "cloud", want: "cloud"},
+		{name: "mixed", stateMode: "mixed", mixed: true, want: "mixed"},
 		{name: "local", stateMode: "local", availableOffline: true, want: "local"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got := agentAvailabilityClass(structToAvailability(test.stateMode, test.pinned, test.onlineOnly, test.availableOffline, test.syncing))
+			got := agentAvailabilityClass(structToAvailability(test.stateMode, test.pinned, test.onlineOnly, test.availableOffline, test.mixed, test.syncing))
 			if got != test.want {
 				t.Fatalf("class=%q want=%q", got, test.want)
 			}
@@ -170,12 +172,13 @@ func TestAgentAvailabilityClassMatchesDesktopLabels(t *testing.T) {
 	}
 }
 
-func structToAvailability(mode string, pinned, onlineOnly, availableOffline, syncing bool) mount.FileAvailability {
+func structToAvailability(mode string, pinned, onlineOnly, availableOffline, mixed, syncing bool) mount.FileAvailability {
 	return mount.FileAvailability{
 		Mode:             mode,
 		Pinned:           pinned,
 		OnlineOnly:       onlineOnly,
 		AvailableOffline: availableOffline,
+		Mixed:            mixed,
 		Syncing:          syncing,
 	}
 }

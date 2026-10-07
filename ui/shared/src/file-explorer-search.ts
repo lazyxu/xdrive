@@ -18,6 +18,7 @@ export type XDriveFileExplorerSearchAvailability =
   | 'always-local'
   | 'online-only'
   | 'cloud'
+  | 'mixed'
   | 'syncing'
 
 export type XDriveFileExplorerSearchFilters = {

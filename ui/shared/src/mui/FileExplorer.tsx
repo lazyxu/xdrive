@@ -4,6 +4,10 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded'
 import ContentPasteRoundedIcon from '@mui/icons-material/ContentPasteRounded'
@@ -13,6 +17,7 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
 import AudioFileRoundedIcon from '@mui/icons-material/AudioFileRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
@@ -27,6 +32,7 @@ import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
@@ -38,6 +44,7 @@ import {
   Breadcrumbs,
   Button,
   ButtonBase,
+  CircularProgress,
   Divider,
   IconButton,
   InputAdornment,
@@ -58,6 +65,7 @@ import {
   xDriveFileExplorerEncodeDragItems,
 } from '../file-explorer-drag'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
+import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 import {
   xDriveFileExplorerKeyboardCommand,
   xDriveFileExplorerKeyboardTabIndex,
@@ -100,6 +108,8 @@ import {
   xDriveFileExplorerGroupedItemTop,
   xDriveFileExplorerVisibleGroupSegments,
 } from './FileExplorerGroupingLayout'
+
+export type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
@@ -314,12 +324,6 @@ export type XDriveFileExplorerFileKind =
 
 export type XDriveFileExplorerProperty = XDriveFilePropertiesDialogProperty
 
-export type XDriveFileExplorerAvailability = {
-  label: string
-  title?: string
-  icon?: ReactNode
-}
-
 export type XDriveFileExplorerItem = {
   id: XDriveFileExplorerID
   name: string
@@ -509,6 +513,113 @@ function setFileExplorerDragImage(
 }
 
 const xDriveWindowsFolderYellow = '#ffcb3d'
+
+export function XDriveFileExplorerItemIcon({
+  item,
+  size = 21,
+  folderSize = size,
+}: {
+  item: Pick<XDriveFileExplorerItem, 'name' | 'kind' | 'fileKind'>
+  size?: number
+  folderSize?: number
+}) {
+  const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
+  if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: folderSize, color: xDriveWindowsFolderYellow }} />
+  if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'pdf') return <PictureAsPdfRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'spreadsheet') return <TableChartRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'presentation') return <ViewCarouselRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'archive') return <FolderZipRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'document' || fileKind === 'text') return <DescriptionRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  if (fileKind === 'code') return <CodeRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+  return <InsertDriveFileRoundedIcon sx={{ fontSize: size, color: 'text.secondary' }} />
+}
+
+export function XDriveFileExplorerAvailabilityBadge({
+  availability,
+  overlay = false,
+  compact = false,
+}: {
+  availability: XDriveFileExplorerAvailability
+  overlay?: boolean
+  compact?: boolean
+}) {
+  const icon = (() => {
+    switch (availability.kind) {
+      case 'syncing':
+        return typeof availability.progress === 'number'
+          ? (
+              <CircularProgress
+                variant="determinate"
+                value={availability.progress}
+                size="1em"
+                thickness={5}
+                aria-hidden
+              />
+            )
+          : <SyncRoundedIcon fontSize="inherit" sx={{ color: 'primary.main' }} />
+      case 'always-local':
+        return <CheckCircleRoundedIcon fontSize="inherit" sx={{ color: 'success.main' }} />
+      case 'online-only':
+      case 'cloud':
+        return <CloudOutlinedIcon fontSize="inherit" sx={{ color: 'primary.main' }} />
+      case 'mixed':
+        return (
+          <Box component="span" sx={{ position: 'relative', width: '1em', height: '1em', display: 'inline-flex' }}>
+            <CloudOutlinedIcon sx={{ fontSize: '1em', color: 'primary.main' }} />
+            <CheckCircleRoundedIcon
+              sx={{
+                position: 'absolute',
+                right: '-0.12em',
+                bottom: '-0.12em',
+                fontSize: '0.58em',
+                color: 'success.main',
+                bgcolor: 'background.paper',
+                borderRadius: '50%',
+              }}
+            />
+          </Box>
+        )
+      case 'error':
+        return <ErrorOutlineRoundedIcon fontSize="inherit" sx={{ color: 'error.main' }} />
+      default:
+        return <CheckCircleOutlineRoundedIcon fontSize="inherit" sx={{ color: 'success.main' }} />
+    }
+  })()
+  const edge = compact ? 13 : 20
+  const fontSize = compact ? 11 : overlay ? 16 : 17
+  return (
+    <Box
+      component="span"
+      aria-label={availability.label}
+      title={availability.title || availability.label}
+      sx={overlay ? {
+        position: 'absolute',
+        right: compact ? -1 : 2,
+        bottom: compact ? -1 : 2,
+        width: edge,
+        height: edge,
+        borderRadius: '50%',
+        bgcolor: 'background.paper',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize,
+        boxShadow: compact ? 0 : 1,
+      } : {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
+        fontSize,
+      }}
+    >
+      {icon}
+    </Box>
+  )
+}
 
 export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
   return (
@@ -2296,53 +2407,20 @@ export function XDriveFileExplorer({
     overlay = false,
   ) => {
     const availability = availabilityForItem(item)
-    if (!availability?.icon) return null
-    const title = availability.title || availability.label
-    return (
-      <Box
-        component="span"
-        aria-label={availability.label}
-        title={title}
-        sx={overlay ? {
-          position: 'absolute',
-          right: 2,
-          bottom: 2,
-          width: 20,
-          height: 20,
-          borderRadius: '50%',
-          bgcolor: 'background.paper',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          boxShadow: 1,
-        } : {
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: '0 0 auto',
-          fontSize: 17,
-        }}
-      >
-        {availability.icon}
-      </Box>
-    )
+    return availability
+      ? <XDriveFileExplorerAvailabilityBadge availability={availability} overlay={overlay} />
+      : null
   }
 
   const defaultItemIcon = (item: XDriveFileExplorerItem, large = false) => {
     if (item.icon) return item.icon
-    const fontSize = large ? gridMetrics.iconSize : 21
-    const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
-    if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? gridMetrics.folderIconSize : 22, color: xDriveWindowsFolderYellow }} />
-    if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'pdf') return <PictureAsPdfRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'spreadsheet') return <TableChartRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'presentation') return <ViewCarouselRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'document' || fileKind === 'text') return <DescriptionRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    if (fileKind === 'code') return <CodeRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
-    return <InsertDriveFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    return (
+      <XDriveFileExplorerItemIcon
+        item={item}
+        size={large ? gridMetrics.iconSize : 21}
+        folderSize={large ? gridMetrics.folderIconSize : 22}
+      />
+    )
   }
 
   const thumbnailForItem = (

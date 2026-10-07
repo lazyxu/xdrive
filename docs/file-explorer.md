@@ -9,6 +9,18 @@ This document is the canonical **non-performance** FileExplorer design contract 
 - Server is authoritative for filesystem semantics that require the full namespace. Clients must not reconstruct recursive filesystem state by paginating/traversing the tree in the renderer.
 - New FileExplorer features should preserve Web/Desktop behavior parity unless the feature is inherently platform-specific.
 
+## Item icons and availability badges
+
+FileExplorer uses one shared visual grammar across Details, Grid, Quick Access, Favorites, Recent, the folder tree, and Desktop Home recent/favorite rows:
+
+- The **primary icon describes object type only**. The canonical visual families are folder, generic file, image, video, audio, PDF, document/text, spreadsheet, presentation, archive, and code.
+- A real thumbnail replaces the file primary icon when one is available. Availability never creates a second cloud/local copy of the primary icon.
+- Device state is a separate **Availability Badge**: local, always-local, online-only, cloud, mixed, syncing, or error. Folder and file badges use the same semantic mapping.
+- Syncing may render a determinate progress ring when a bounded percentage is already available; otherwise it uses the ordinary syncing glyph. Badge rendering must not start a transfer or extra scan just to obtain progress.
+- **Mixed** means a directory currently has only part of its content available locally. On Windows the Agent derives this from CfAPI's directory placeholder state (`PARTIALLY_ON_DISK`); the renderer must never recursively walk descendants just to decide which badge to paint.
+- "Keep on this device" policy and current materialization state are distinct concepts. A directory that is still only partly materialized remains mixed/in-progress until the OS reports the corresponding current state.
+- Exact child counts may be shown later only when the sync/runtime layer already owns a bounded aggregate snapshot. UI code must not add recursive scans to calculate counts for a badge.
+
 ## Structured Search and filters
 
 FileExplorer Search is a Server-side logical collection. Web/Desktop must never implement a structured filter by filtering only the currently retained VirtualCollection pages.
@@ -35,7 +47,7 @@ File availability is **device-scoped state**, not Server namespace state. Window
 The implemented availability filter therefore lives at the Desktop Agent query boundary:
 
 - Web omits the availability chip because it has no authoritative local-device state.
-- Desktop exposes `local / always-local / online-only / cloud / syncing` only when Windows CfAPI availability is supported.
+- Desktop exposes `local / always-local / online-only / cloud / mixed / syncing` only when Windows CfAPI availability is supported.
 - Server Search still owns authorization, text/type/time/size/synchronization-folder filtering, sort, grouping, and the candidate namespace. It does **not** persist or invent a global availability field.
 - When availability is active, the Agent evaluates the Server-ordered candidate collection against the current device before logical pagination, builds a short-lived filtered offset/group snapshot, and returns authoritative `offset / limit / total_count / groups` for that device-scoped collection.
 - Availability-only Search uses the range-only Server `include_all=true` candidate enumeration. That flag does not define availability semantics; it only lets the authenticated Agent enumerate the owner's namespace so the device-local predicate can be applied before pagination.
@@ -145,7 +157,7 @@ Optional columns are available from the shared **列** menu and are hidden by de
 
 - **创建时间** — projected from the existing Node `created_at` field;
 - **状态** — device/runtime status when the platform has an authoritative local state source;
-- **可用性** — device-local availability such as 仅联机 / 本地可用 / 始终保留在此设备上.
+- **可用性** — device-local availability such as 仅联机 / 本地可用 / 始终保留在此设备上 / 混合.
 
 The persisted Details layout stores visible columns, complete column order, and widths. Normalization must preserve an older saved visible set while appending newly introduced columns to the saved order with default widths.
 

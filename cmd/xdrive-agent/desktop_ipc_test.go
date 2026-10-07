@@ -2796,3 +2796,32 @@ func TestDesktopIPCPreservesAPIDetail(t *testing.T) {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
 	}
 }
+
+func TestDesktopIPCFileAvailabilityBatchTreatsMissingManagedItemAsCloud(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{
+		revision: 1,
+		err:      os.ErrNotExist,
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+	res := desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/file-availability/batch",
+		"{\"paths\":[\"Projects/cloud-only.txt\"]}",
+	)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	var got desktopIPCFileAvailabilityBatch
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Availability == nil {
+		t.Fatalf("items=%+v", got.Items)
+	}
+	state := got.Items[0].Availability
+	if state.Mode != "cloud" || state.AvailableOffline || got.Items[0].Error != "" {
+		t.Fatalf("availability=%+v error=%q", state, got.Items[0].Error)
+	}
+}

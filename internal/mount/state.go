@@ -6,6 +6,7 @@ type FileAvailability struct {
 	Placeholder      bool
 	Pinned           bool
 	OnlineOnly       bool
+	Mixed            bool
 	AvailableOffline bool
 	InSync           bool
 	Syncing          bool

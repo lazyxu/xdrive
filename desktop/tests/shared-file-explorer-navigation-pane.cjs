@@ -58,7 +58,7 @@ test('shared navigation pane owns a manual lazy tree without following the activ
     'role="treeitem"',
     'role="group"',
     'void onNavigate(node.crumbs)',
-    "color: '#ffcb3d'",
+    'XDriveFileExplorerItemIcon',
   ]) {
     assert.ok(pane.includes(token), 'shared navigation tree behavior missing: ' + token)
   }

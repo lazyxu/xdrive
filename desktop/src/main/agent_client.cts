@@ -94,6 +94,7 @@ export type AgentFileAvailability = {
   Placeholder: boolean
   Pinned: boolean
   OnlineOnly: boolean
+  Mixed: boolean
   AvailableOffline: boolean
   InSync: boolean
   Syncing: boolean
@@ -952,7 +953,7 @@ export type AgentCloudSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
-  availability?: 'local' | 'always-local' | 'online-only' | 'cloud' | 'syncing'
+  availability?: 'local' | 'always-local' | 'online-only' | 'cloud' | 'mixed' | 'syncing'
 }
 
 function appendAgentFileExplorerGrouping(

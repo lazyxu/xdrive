@@ -144,13 +144,20 @@ func availabilityPlatform(path string) (FileAvailability, error) {
 	partiallyOnDisk := state&cfPlaceholderStatePartiallyOnDisk != 0
 	recall := attrs&(fileAttrOffline|fileAttrRecallOnOpen|fileAttrRecallOnDataAccess) != 0
 	availableOffline := !placeholder || (!partiallyOnDisk && !recall)
-	onlineOnly := placeholder && unpinned
 	syncing := placeholder && !inSync
+	isDir := attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0
+	// CfAPI exposes PARTIALLY_ON_DISK for placeholders whose content is only partly
+	// present locally. For directories this is the bounded, OS-maintained aggregate
+	// needed by Explorer; do not recurse through descendants just to paint a badge.
+	mixed := isDir && placeholder && partiallyOnDisk && !syncing
+	onlineOnly := placeholder && unpinned && !mixed
 
 	mode := "local"
 	switch {
 	case syncing:
 		mode = "syncing"
+	case mixed:
+		mode = "mixed"
 	case pinned:
 		mode = "always-local"
 	case onlineOnly:
@@ -166,6 +173,7 @@ func availabilityPlatform(path string) (FileAvailability, error) {
 		Placeholder:      placeholder,
 		Pinned:           pinned,
 		OnlineOnly:       onlineOnly,
+		Mixed:            mixed,
 		AvailableOffline: availableOffline,
 		InSync:           inSync,
 		Syncing:          syncing,

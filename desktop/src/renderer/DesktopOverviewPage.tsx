@@ -1,11 +1,14 @@
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import { Box, ListItemButton, ListItemText, Paper, Stack, Typography } from '@mui/material'
-import { useEffect, useState } from 'react'
-import { formatBytes } from '@xdrive/shared'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  formatBytes,
+  xDriveFileExplorerAvailabilityError,
+  xDriveFileExplorerAvailabilityFromSnapshot,
+} from '@xdrive/shared'
 import {
   XDriveActionButton,
   XDriveMetricCard,
@@ -13,7 +16,13 @@ import {
   XDriveSectionHeader,
   XDriveStatusAlert,
   XDriveWorkspaceSurface,
+  XDriveFileExplorerAvailabilityBadge,
+  XDriveFileExplorerItemIcon,
+  XDriveFileExplorerThumbnail,
+  XDriveFileExplorerThumbnailProvider,
+  xDriveFileSupportsThumbnail,
 } from '@xdrive/ui/mui'
+import type { XDriveFileExplorerItem } from '@xdrive/ui/mui'
 
 function recentTime(value: string) {
   const parsed = new Date(value)
@@ -34,6 +43,7 @@ export function DesktopOverviewPage({
   activeTaskCount,
   recentSupported,
   favoritesSupported,
+  fileAvailabilitySupported,
   openFolderLoading,
   onOpenFolder,
   onOpenFiles,
@@ -47,6 +57,7 @@ export function DesktopOverviewPage({
   activeTaskCount: number
   recentSupported: boolean
   favoritesSupported: boolean
+  fileAvailabilitySupported: boolean
   openFolderLoading: boolean
   onOpenFolder: () => void
   onOpenFiles: () => void
@@ -57,6 +68,9 @@ export function DesktopOverviewPage({
 }) {
   const [recentItems, setRecentItems] = useState<AgentCloudRecentItem[]>([])
   const [favoriteItems, setFavoriteItems] = useState<AgentCloudFavoriteItem[]>([])
+  const [availabilityByID, setAvailabilityByID] = useState<Map<number, AgentFileAvailability | null>>(
+    () => new Map(),
+  )
 
   useEffect(() => {
     let active = true
@@ -81,6 +95,94 @@ export function DesktopOverviewPage({
     }
   }, [favoritesSupported, recentSupported])
 
+  const overviewItems = useMemo(() => {
+    const byID = new Map<number, { node: AgentCloudNode; path: string }>()
+    for (const item of recentItems) {
+      const path = item.path.replace(/^\/+/, '')
+      if (path) byID.set(item.node.id, { node: item.node, path })
+    }
+    for (const item of favoriteItems) {
+      const path = item.path.replace(/^\/+/, '')
+      if (path) byID.set(item.node.id, { node: item.node, path })
+    }
+    return [...byID.values()]
+  }, [favoriteItems, recentItems])
+
+  useEffect(() => {
+    let active = true
+    if (!fileAvailabilitySupported || overviewItems.length === 0) {
+      setAvailabilityByID(new Map())
+      return () => { active = false }
+    }
+    const paths = overviewItems.map((item) => item.path)
+    void window.xdriveDesktop.agent.getFileAvailabilityBatch(paths).then((result) => {
+      if (!active || !result.ok) return
+      const byPath = new Map(result.data.items.map((item) => [item.path, item] as const))
+      const next = new Map<number, AgentFileAvailability | null>()
+      for (const item of overviewItems) {
+        const resolved = byPath.get(item.path)
+        if (resolved?.availability) next.set(item.node.id, resolved.availability)
+        else if (resolved?.error) next.set(item.node.id, null)
+      }
+      setAvailabilityByID(next)
+    })
+    return () => { active = false }
+  }, [fileAvailabilitySupported, overviewItems])
+
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return null
+    const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
+    if (!result.ok) return null
+    const contentType = result.data.content_type || 'image/jpeg'
+    return URL.createObjectURL(new Blob([result.data.data], { type: contentType }))
+  }, [])
+
+  const overviewExplorerItem = (
+    item: AgentCloudRecentItem | AgentCloudFavoriteItem,
+  ): XDriveFileExplorerItem => ({
+    id: item.node.id,
+    name: item.node.name,
+    kind: item.node.type === 'dir' ? 'dir' : 'file',
+    size: item.node.size,
+    revision: item.node.revision,
+    updatedAt: item.node.updated_at,
+    path: item.path.replace(/^\/+/, ''),
+  })
+
+  const overviewAvailability = (item: XDriveFileExplorerItem) => {
+    if (!fileAvailabilitySupported) return undefined
+    const state = availabilityByID.get(Number(item.id))
+    if (state === null) return xDriveFileExplorerAvailabilityError()
+    if (!state) return undefined
+    return xDriveFileExplorerAvailabilityFromSnapshot({
+      mode: state.Mode,
+      pinned: state.Pinned,
+      onlineOnly: state.OnlineOnly,
+      availableOffline: state.AvailableOffline,
+      mixed: state.Mixed,
+      syncing: state.Syncing,
+    })
+  }
+
+  const overviewItemVisual = (
+    item: AgentCloudRecentItem | AgentCloudFavoriteItem,
+  ) => {
+    const explorerItem = overviewExplorerItem(item)
+    const availability = overviewAvailability(explorerItem)
+    return (
+      <Box sx={{ width: 34, height: 34, mr: 1.25, flex: '0 0 34px', position: 'relative', overflow: 'visible' }}>
+        <XDriveFileExplorerThumbnail
+          item={explorerItem}
+          eligible={explorerItem.kind === 'file' && xDriveFileSupportsThumbnail(explorerItem.name, 'file')}
+          fallback={<XDriveFileExplorerItemIcon item={explorerItem} size={24} folderSize={25} />}
+        />
+        {availability ? (
+          <XDriveFileExplorerAvailabilityBadge availability={availability} overlay compact />
+        ) : null}
+      </Box>
+    )
+  }
+
   const openCloudItem = async (
     item: AgentCloudRecentItem | AgentCloudFavoriteItem,
   ) => {
@@ -96,6 +198,7 @@ export function DesktopOverviewPage({
   const needsAttention = Boolean(status?.last_error || status?.paused || status?.has_conflict)
 
   return (
+    <XDriveFileExplorerThumbnailProvider loadThumbnail={loadThumbnail}>
     <XDriveWorkspaceSurface
       presentation="page"
       title="主页"
@@ -195,6 +298,7 @@ export function DesktopOverviewPage({
                   onClick={() => { void openCloudItem(item) }}
                   sx={{ borderRadius: 1, px: 1 }}
                 >
+                  {overviewItemVisual(item)}
                   <ListItemText
                     primary={item.node.name}
                     secondary={[item.path, recentTime(item.accessed_at)].filter(Boolean).join(' · ')}
@@ -225,7 +329,7 @@ export function DesktopOverviewPage({
                   onClick={() => { void openCloudItem(item) }}
                   sx={{ borderRadius: 1, px: 1 }}
                 >
-                  <StarRoundedIcon sx={{ mr: 1, fontSize: 18, color: 'text.secondary' }} />
+                  {overviewItemVisual(item)}
                   <ListItemText
                     primary={item.node.name}
                     secondary={item.path}
@@ -245,5 +349,6 @@ export function DesktopOverviewPage({
         </Box>
       </Stack>
     </XDriveWorkspaceSurface>
+    </XDriveFileExplorerThumbnailProvider>
   )
 }

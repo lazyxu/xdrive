@@ -34,7 +34,8 @@ test('Details, Grid, properties, Quick Access and Recent use the shared thumbnai
   assert.ok(explorer.includes('{thumbnailForItem(item, false)}'), 'Details/list thumbnail is missing')
   assert.ok(explorer.includes('{thumbnailForItem(item)}'), 'Grid thumbnail is missing')
   assert.ok(explorer.includes('thumbnailForItem(propertiesDialogItem)'), 'properties thumbnail is missing')
-  assert.ok((pane.match(/<XDriveFileExplorerThumbnail/g) || []).length >= 3)
+  assert.ok(pane.includes('const renderItemVisual ='), 'navigation surfaces must share one thumbnail/type/badge visual helper')
+  assert.ok((pane.match(/\{renderItemVisual\(/g) || []).length >= 4, 'tree, Quick Access, Favorites and Recent must reuse the shared visual helper')
   assert.ok(pane.includes('quickAccessItems.map'))
   assert.ok(pane.includes('recentItems.slice(0, 8).map'))
   assert.ok(pane.includes("xDriveFileSupportsThumbnail(item.name, 'file')"))
@@ -65,10 +66,9 @@ test('FileExplorer file thumbnails use square frames without rounded clipping', 
       explorer.includes("overflow: 'hidden',\n            borderRadius: 0,\n            position: 'relative',"),
     'Grid thumbnail frame must remain square',
   )
-  assert.equal(
-    (pane.match(/width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0/g) || []).length,
-    2,
-    'Favorite and Recent file thumbnail frames must remain square',
+  assert.ok(
+    pane.includes("position: 'relative', overflow: 'visible', borderRadius: 0"),
+    'navigation thumbnail frames must remain square while leaving availability badges visible',
   )
 })
 
