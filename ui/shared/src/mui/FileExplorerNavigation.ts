@@ -554,7 +554,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     if (id === currentState.activeTabID) {
       if (
-        closingIDs.includes(navigationRequestRef.current.targetTabID) &&
+        navigationRequestRef.current.targetTabID !== targetTab.id &&
         current
       ) {
         beginNavigation(currentState.activeTabID)
@@ -603,7 +603,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     if (activeStillOpen) {
       if (
-        closing.some((tab) => (
+        !remaining.some((tab) => (
           tab.id === navigationRequestRef.current.targetTabID
         )) &&
         current

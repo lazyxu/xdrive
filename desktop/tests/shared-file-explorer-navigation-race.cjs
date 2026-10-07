@@ -1737,3 +1737,105 @@ test('close-other-tabs invalidates a pending activation of a tab it removes', as
     'address path must remain aligned with the only surviving tab',
   )
 })
+
+
+test('close-other-tabs invalidates a pending duplicate whose future tab is not yet listed', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+
+  driver.controlRequests()
+
+  const pendingDuplicate = navigation.duplicateTab(tabA)
+  await flushAsync()
+
+  assert.equal(await navigation.closeOtherTabs(tabA), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'close-other-tabs must synchronously leave only A',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.resolveDirectory(folderA.id)
+  await pendingDuplicate
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'a pending duplicate with a future tab id must not insert itself after close-other-tabs',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
+
+test('close-tabs-to-right invalidates a pending duplicate whose future tab would land on the right', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.controlRequests()
+
+  const pendingDuplicate = navigation.duplicateTab(tabA)
+  await flushAsync()
+
+  assert.equal(await navigation.closeTabsToRight(tabA), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'close-right must synchronously remove the existing right-hand tab',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.resolveDirectory(folderA.id)
+  await pendingDuplicate
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'a pending future duplicate must not recreate a right-hand tab after close-right',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
