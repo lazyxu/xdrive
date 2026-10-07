@@ -289,6 +289,25 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_nodes_children_updated ON xd_nodes(owner_id, parent_id, type, updated_at, id) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_xd_nodes_children_type
+		ON xd_nodes (
+			owner_id,
+			parent_id,
+			((CASE WHEN type = 'dir' THEN 0 ELSE 1 END)),
+			((CASE
+				WHEN type = 'dir' THEN ''
+				WHEN strpos(name, '.') > 1 AND right(name, 1) <> '.'
+					THEN lower(regexp_replace(name, '^.*\.', ''))
+				ELSE ''
+			END)),
+			lower(name),
+			id
+		)
+		WHERE parent_id IS NOT NULL AND deleted_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_files_size_node ON xd_files(size, node_id)`).Error; err != nil {
 		return err
 	}

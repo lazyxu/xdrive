@@ -13,7 +13,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Sparse paged directory SQL | **Merged** | Measured | Non-empty sparse reads: **2 -> 1 SQL round-trip**. |
 | Sparse range count reuse at 100k | **Accepted / production validated (#750)** | Paired SQL A/B + production contract CI | #739 established the direction; #750 production validation preserved the same result: broad-offset **3885.236 -> 2136.375 ms (-45.01%)** and sequential **3480.204 -> 1695.987 ms (-51.27%)**. First range remains authoritative-counted; later ranges reuse that generation's count. |
 | Search candidate-first / sparse range | **Merged** | Measured | 100k range/cursor workloads: **2.38x to 5.67x faster** depending on access pattern. |
-| Directory sort at 100k | **Measured / expression-index candidate accepted (#756)** | Current count-once rebaseline + paired type-sort A/B | Under the #750 contract, type remains slowest at **209.882 / 294.771 ms** first-counted / middle-count-free. The exact expression index leaves first-counted effectively unchanged (**-1.39%**) but cuts the middle count-free range **300.789 -> 126.174 ms (-58.05%)**; persisted-key is rejected for production complexity and weaker later-range performance. |
+| Directory sort at 100k | **Accepted / production validated (#759)** | #756 paired A/B + #759 production migration/benchmark CI | #759 reproduced the accepted exact expression-index result: first-counted **212.644 -> 210.804 ms (-0.87%)** and middle count-free **299.467 -> 127.996 ms (-57.26%)**. The index is installed idempotently through Server migration; persisted-key remains rejected. |
 | Sparse VirtualCollection CPU at 100k | **Accepted structural baseline / no optimization (PR #708)** | Measured | Three CI CPU medians: **126.877 / 160.081 / 161.319 ms per sweep** (**50.751 / 64.032 / 64.528 us per viewport**); hosted-runner timing is diagnostic only, while structural counts are stable at **500 page loads / 800 peak / 600 final retained**. |
 | Details/Grid windowing and logical-index interaction | **Merged** | Unmeasured wall-clock | Bounded mounted/retained work; no comparable end-to-end BEFORE/AFTER timing yet. |
 | Thumbnail viewport scheduler + bounded cache | **Merged** | Unmeasured wall-clock | Shared viewport observer, max **6** concurrent thumbnail requests, bounded **96-entry** per-Explorer cache. |
@@ -130,7 +130,20 @@ Decision:
 - **Reject the persisted-key candidate for now.** Although it improves the counted first range more, it is slower than the expression index on the repeated count-free middle-range path, requires a multi-second 100k-row backfill in this fixture, adds persistent column/storage cost, and must be maintained on every name-changing create/rename/keep-both path.
 - #756 remains benchmark-only: it does **not** add a production schema/index or change the Server query.
 
-Next action: a separate small production PR should add only the exact expression index through the real Server schema/migration path, preserve existing sort semantics, and rerun this 100k current-contract workload plus ordinary API race/correctness gates. The production PR should keep the persisted-key design out unless future data reverses this result.
+Production follow-up status: **Accepted / production validated (#759)**.
+
+The production change installs only the accepted exact expression index as `idx_xd_nodes_children_type` through the normal Server `migrate()` path. It does not add a persisted sort-key column, alter the `sort=type` wire contract, or change the SQL sort expression. Migration coverage verifies that the partial expression index exists and that repeated Server migrations remain idempotent.
+
+The unchanged #756 100k workload rerun on the #759 production branch measured:
+
+| Production validation | Dynamic expression | Exact expression index | Paired reduction |
+| --- | ---: | ---: | ---: |
+| First range, counted | **212.643712 ms** | **210.804146 ms** | **-0.87%** |
+| Middle range, count-free | **299.467459 ms** | **127.996139 ms** | **-57.26%** |
+
+The same run measured expression-index build at **223.486145 ms**. The rejected persisted-key candidate measured **197.439026 ms** on the middle count-free range (**-34.07%**) and required **2.897457423 s** of backfill plus **148.027849 ms** index build, so it remains inferior for the repeated viewport path and materially more invasive.
+
+Decision: **ship the expression index and keep the persisted-key design rejected.** #759 is the production realization of #756's measured candidate, not a new query contract.
 
 ### VirtualCollection 100k CPU baseline (PR #708)
 
@@ -496,7 +509,7 @@ Decision: **accept the production count-once contract.** Keep `total_count_inclu
 1. **No further thumbnail or marquee production tuning from #734.** Keep the current **80 ms scroll-settle**, **6-request thumbnail concurrency**, **96-entry FileExplorer cache**, video icon fallback, and virtual-geometry marquee implementation.
 2. **Measured / accepted direction:** #739 shows a **38.28% broad-offset** and **39.52% sequential-session** reduction when later ranges stop recomputing `COUNT(*) OVER()`. Keep #739 benchmark-only.
 3. **Accepted / implemented:** the production **count-once / count-free subsequent-range** contract is complete across Server -> Go client -> xdrive-agent/Electron/Web -> shared Cloud Files/VirtualCollection. Keep #739 as the decision benchmark and #750 as the production validation.
-4. **Measured / production candidate selected:** #756 rebaselined 100k directory sorts under the #750 count-once contract. The exact type expression index cuts the repeated count-free middle range **300.789 -> 126.174 ms (-58.05%)** with only **-1.39%** change on the once-per-generation counted first range. Proceed with a separate production index PR; keep the persisted-key candidate rejected. The combined browser-to-real-Server trace remains optional only if field behavior later disagrees with existing measurements.
+4. **Accepted / implemented:** #759 installs the #756-selected exact type expression index through Server migration. Production-branch validation reproduced a **57.26%** reduction on the repeated count-free middle range while leaving the counted first range effectively unchanged (**-0.87%**). Keep the persisted-key candidate rejected. No further FileExplorer directory-sort optimization is selected from current evidence.
 5. Warm FileExplorer video posters remain blocked until the product has a real derived/cached poster contract.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
