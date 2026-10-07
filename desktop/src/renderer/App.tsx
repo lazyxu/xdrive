@@ -70,6 +70,7 @@ import {
   useXDriveServerUpdateController,
 } from '@xdrive/ui/mui'
 import type {
+  XDriveFileExplorerNavigationState,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
   XDriveWorkspaceViewKey,
@@ -208,6 +209,11 @@ export default function App({
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
+  const [cloudFileExplorerNavigationSnapshot, setCloudFileExplorerNavigationSnapshot] = useState<{
+    server: string
+    username: string
+    state: XDriveFileExplorerNavigationState<AgentCloudCrumb>
+  } | null>(null)
 
   const mediaGallerySource = useMemo(
     () => createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent),
@@ -275,6 +281,24 @@ export default function App({
   const savedPasswordAvailable = password.length === 0 && hasStoredPassword
 
   const status = agent.status
+  const cloudFileExplorerNavigationState =
+    cloudFileExplorerNavigationSnapshot &&
+    cloudFileExplorerNavigationSnapshot.server === status?.server &&
+    cloudFileExplorerNavigationSnapshot.username === status?.username
+      ? cloudFileExplorerNavigationSnapshot.state
+      : undefined
+  const rememberCloudFileExplorerNavigationState = useCallback((
+    state: XDriveFileExplorerNavigationState<AgentCloudCrumb>,
+  ) => {
+    const currentServer = status?.server
+    const currentUsername = status?.username
+    if (!currentServer || !currentUsername) return
+    setCloudFileExplorerNavigationSnapshot({
+      server: currentServer,
+      username: currentUsername,
+      state,
+    })
+  }, [status?.server, status?.username])
   const sourceManagerAdapter = useMemo(
     () => createDesktopSourceManagerAdapter(status?.username),
     [status?.username],
@@ -1852,6 +1876,8 @@ export default function App({
               loading: cloudLoading,
               onLoadDirectory: loadCloudDirectory,
               onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
+              navigationState: cloudFileExplorerNavigationState,
+              onNavigationStateChange: rememberCloudFileExplorerNavigationState,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,
               onOpenShares: openCloudShares,

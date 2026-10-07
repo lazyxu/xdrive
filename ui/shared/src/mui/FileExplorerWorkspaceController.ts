@@ -28,6 +28,9 @@ import {
 import {
   useXDriveFileExplorerNavigation,
 } from './FileExplorerNavigation'
+import type {
+  XDriveFileExplorerNavigationState,
+} from './FileExplorerNavigation'
 import {
   useXDriveFileExplorerProjection,
   xDriveProjectFileExplorerNode,
@@ -75,6 +78,8 @@ export function useXDriveFileExplorerWorkspace<
   loadRoot,
   findChildDirectory,
   searchCrumbsForResult,
+  initialNavigationState,
+  onNavigationStateChange,
   onDirectoryAccess,
   onFileAccess,
   onError,
@@ -95,6 +100,10 @@ export function useXDriveFileExplorerWorkspace<
   searchCrumbsForResult?: (
     result: TSearch,
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
+  initialNavigationState?: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>
+  onNavigationStateChange?: (
+    state: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>,
+  ) => void
   onDirectoryAccess?: (nodeID: number) => void | Promise<void>
   onFileAccess?: (nodeID: number) => void | Promise<void>
   onError: (error: unknown) => void
@@ -110,6 +119,8 @@ export function useXDriveFileExplorerWorkspace<
     viewModeStorageKey,
     searchActive: () => searchActiveRef.current,
     onLoadDirectory,
+    initialNavigationState,
+    onNavigationStateChange,
     onAfterNavigate: (nextCrumbs) => {
       clearSearchRef.current()
       const target = nextCrumbs.at(-1)

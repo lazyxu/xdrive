@@ -1397,3 +1397,151 @@ test('background FileExplorer mutation completions use the guarded idle refresh 
     'Version History restore refresh must yield to an in-flight navigation',
   )
 })
+
+
+test('real Desktop reconnect remount preserves FileExplorer tabs and committed per-tab view state', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const desktopSource = fs.readFileSync(
+      path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'),
+      'utf8',
+    )
+    const disconnectedReturn = desktopSource.indexOf('if (!agent.connected) {')
+    const filesPage = desktopSource.indexOf('<DesktopFilesPage')
+    assert.ok(
+      disconnectedReturn >= 0 && filesPage > disconnectedReturn,
+      'the real Desktop reconnect boundary unmounts DesktopFileExplorer while App survives',
+    )
+    assert.ok(
+      desktopSource.includes('preserveStateOnDisable: true'),
+      'CloudFiles must continue preserving the committed directory across the same reconnect',
+    )
+
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const updatedSort = { key: 'updated', direction: 'desc' }
+    const typeGrouping = { groupBy: 'type', foldersFirst: false }
+    let crumbs = [root]
+    let navigationSnapshot
+
+    const loadDirectory = async (_id, nextCrumbs) => {
+      crumbs = [...nextCrumbs]
+      return true
+    }
+
+    const firstRuntime = createHookRuntime()
+    const useFirstNavigation = loadNavigationHook(firstRuntime.react)
+    const renderFirst = () => firstRuntime.render(() => useFirstNavigation({
+      crumbs,
+      viewModeStorageKey: 'reconnect-remount',
+      onLoadDirectory: loadDirectory,
+      onNavigationStateChange: (state) => {
+        navigationSnapshot = state
+      },
+    }))
+
+    let navigation = renderFirst()
+    await flushAsync()
+    navigation = renderFirst()
+    await navigation.navigateTo([root, alpha])
+    navigation = renderFirst()
+    assert.equal(await navigation.openTab([root, beta]), true)
+    navigation = renderFirst()
+
+    navigation.changeSort(updatedSort)
+    await flushAsync()
+    navigation = renderFirst()
+    navigation.changeGrouping(typeGrouping)
+    await flushAsync()
+    navigation = renderFirst()
+
+    assert.equal(navigation.tabs.length, 2)
+    assert.equal(navigation.activeTabID, 'tab-2')
+    assert.deepEqual(navigation.sort, updatedSort)
+    assert.deepEqual(navigation.grouping, typeGrouping)
+    assert.equal(navigation.pathValue, '我的文件/Beta')
+    assert.equal(navigationSnapshot?.tabs.length, 2)
+    assert.equal(navigationSnapshot?.activeTabID, 'tab-2')
+
+    const secondRuntime = createHookRuntime()
+    const useSecondNavigation = loadNavigationHook(secondRuntime.react)
+    const renderSecond = () => secondRuntime.render(() => useSecondNavigation({
+      crumbs,
+      viewModeStorageKey: 'reconnect-remount',
+      onLoadDirectory: loadDirectory,
+      initialNavigationState: navigationSnapshot,
+      onNavigationStateChange: (state) => {
+        navigationSnapshot = state
+      },
+    }))
+
+    let restored = renderSecond()
+    await flushAsync()
+    restored = renderSecond()
+
+    assert.equal(restored.tabs.length, 2)
+    assert.deepEqual(
+      restored.tabs.map((tab) => tab.label),
+      ['Alpha', 'Beta'],
+      'transient Agent reconnect must not collapse or relabel FileExplorer tabs',
+    )
+    assert.equal(restored.activeTabID, 'tab-2')
+    assert.equal(restored.pathValue, '我的文件/Beta')
+    assert.deepEqual(
+      restored.sort,
+      updatedSort,
+      'remounted tab sort must match the preserved CloudFiles directory sort',
+    )
+    assert.deepEqual(
+      restored.grouping,
+      typeGrouping,
+      'remounted tab grouping must match the preserved CloudFiles directory grouping',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+test('Desktop owns transient FileExplorer navigation state above the Agent disconnect boundary', () => {
+  const desktopSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'),
+    'utf8',
+  )
+  const explorerSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'),
+    'utf8',
+  )
+  const workspaceSource = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'),
+    'utf8',
+  )
+
+  assert.ok(
+    desktopSource.includes('cloudFileExplorerNavigationSnapshot'),
+    'Desktop App must own the reconnect navigation snapshot so FileExplorer unmount cannot destroy it',
+  )
+  assert.ok(
+    desktopSource.includes('navigationState: cloudFileExplorerNavigationState'),
+    'Desktop must restore its owner-scoped navigation snapshot into FileExplorer',
+  )
+  assert.ok(
+    desktopSource.includes('onNavigationStateChange: rememberCloudFileExplorerNavigationState'),
+    'Desktop must receive committed navigation snapshots from FileExplorer',
+  )
+  assert.ok(
+    explorerSource.includes('initialNavigationState: navigationState'),
+    'DesktopFileExplorer must pass the transient snapshot into the shared workspace',
+  )
+  assert.ok(
+    workspaceSource.includes('initialNavigationState'),
+    'the shared workspace must support a caller-owned transient navigation snapshot',
+  )
+})

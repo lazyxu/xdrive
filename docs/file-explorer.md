@@ -120,6 +120,8 @@ The journal remains owner-scoped and durable. `next_cursor / latest_cursor / has
 - The refresh uses the **latest** breadcrumbs, sort, and grouping. A late event/request from a directory that the user has already left must never navigate or refresh the new directory.
 - A reset-required page conservatively refreshes the current directory and adopts the Server's latest cursor.
 - Agent disconnect/reconnect resets the local cursor handshake. Desktop keeps its existing preserved directory/sort/grouping state and reacquires the feed after reconnect.
+- A transient Desktop Agent disconnect may remove the FileExplorer surface from the render tree, but it must not reset committed navigation state. The Desktop App owns an in-memory, current-user-scoped navigation snapshot containing tabs, tab history, active tab, per-tab sort/grouping and view mode, and restores it when FileExplorer remounts. Pending/uncommitted navigation is never snapshotted.
+- This reconnect snapshot is intentionally transient. It does not create browser/app session restore across a full renderer restart and must not be persisted as a substitute for the separate optional tab session-restore feature.
 - The change feed is an invalidation signal only. It never patches sparse item pages directly. Authoritative items, count, group indexes, permissions, and ordering are reacquired through the normal Server range API.
 
 Current-directory invalidation does not turn the navigation tree into a globally live replicated tree. Tree nodes continue to load through their existing paged contract; tree-specific invalidation should be added only when its own correctness contract is defined.
