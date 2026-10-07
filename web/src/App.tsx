@@ -38,6 +38,7 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
+  useXDriveFileExplorerCurrentDirectoryRefresh,
   xDriveFileExplorerUploadGroupLabel,
   useXDriveFileExplorerDeleteController,
   useXDriveCloudFilesController,
@@ -527,6 +528,13 @@ function FileManager({
     onError: handleError,
   })
 
+  const refreshCurrentDirectory = useXDriveFileExplorerCurrentDirectoryRefresh({
+    currentID: current?.id,
+    currentCrumbs: crumbs,
+    sort: directorySort,
+    refreshDirectory: loadDirectory,
+  })
+
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => api.quota(),
     getStats: () => api.storageStats(),
@@ -733,9 +741,10 @@ function FileManager({
     reloadCurrent = true,
     action: 'upload' | 'drop-upload' | 'upload-folder' = 'upload',
   ) => {
+    const expectedCurrentID = current?.id
     const result = await fileUploads.runTargets(targets, action)
-    if (result.uploaded > 0 && reloadCurrent && current) {
-      await loadDirectory(current.id)
+    if (result.uploaded > 0 && reloadCurrent) {
+      await refreshCurrentDirectory(expectedCurrentID)
     }
     if (result.uploaded > 0) await refreshQuota()
     return result
@@ -800,15 +809,16 @@ function FileManager({
 
   const uploadFolderFiles = async (files: FileList | null) => {
     if (!current || !files?.length) return
+    const expectedCurrentID = current.id
     try {
       await uploadFolderEntriesTo(
-        current.id,
+        expectedCurrentID,
         Array.from(files).map((file) => ({
           file,
           relativePath: file.webkitRelativePath || file.name,
         })),
       )
-      await loadDirectory(current.id)
+      await refreshCurrentDirectory(expectedCurrentID)
     } catch (error) {
       handleError(error)
     }
@@ -827,8 +837,9 @@ function FileManager({
 
   const createFolder = async (name: string) => {
     if (!current) return
-    await api.createDirectory(current.id, name)
-    await loadDirectory(current.id)
+    const expectedCurrentID = current.id
+    await api.createDirectory(expectedCurrentID, name)
+    await refreshCurrentDirectory(expectedCurrentID)
   }
 
   const openTrash = () => setTrashOpen(true)
