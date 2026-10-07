@@ -36,20 +36,26 @@ test('Desktop folder download uses one group with one child per leaf file', () =
   }
 })
 
-test('Desktop folder download bounds root lookup and tree scans to cursor pages', () => {
+test('Desktop folder download uses exact root lookup and paged tree scans', () => {
   for (const token of [
     'agentCloudDownloadChildrenPageLimit = 500',
     'client.ChildrenOptions{',
     'NextCursor',
-    'resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.ListPage)',
+    'resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.Node)',
     'scanAgentCloudDownloadFolder(ctx, root, cli.ListPage)',
   ]) {
-    assert.ok(agentCloud.includes(token), 'bounded folder-download pagination missing: ' + token)
+    assert.ok(agentCloud.includes(token), 'folder-download lookup/scan contract missing: ' + token)
   }
 
-  const scanStart = agentCloud.indexOf('const agentCloudDownloadChildrenPageLimit = 500')
-  const downloadStart = agentCloud.indexOf('func downloadAgentCloudFileIntoPath(', scanStart)
-  const scanSource = agentCloud.slice(scanStart, downloadStart)
+  const rootStart = agentCloud.indexOf('func resolveAgentCloudDownloadFolderRoot(')
+  const scanStart = agentCloud.indexOf('func scanAgentCloudDownloadFolder(', rootStart)
+  const rootSource = agentCloud.slice(rootStart, scanStart)
+  assert.ok(rootSource.includes('getNode(ctx, id)'), 'folder root must use one exact node lookup')
+  assert.equal(rootSource.includes('visitAgentCloudDownloadChildren('), false, 'folder root lookup must not page siblings')
+
+  const pageStart = agentCloud.indexOf('func visitAgentCloudDownloadChildren(')
+  const pageEnd = agentCloud.indexOf('func downloadAgentCloudFileIntoPath(', pageStart)
+  const scanSource = agentCloud.slice(pageStart, pageEnd)
   assert.equal(scanSource.includes('func(context.Context, uint64) ([]client.Node, error)'), false, 'legacy unpaged scanner contract must be removed')
   assert.equal(scanSource.includes('.List(ctx,'), false, 'folder-download scan helpers must not use legacy unpaged List')
 })

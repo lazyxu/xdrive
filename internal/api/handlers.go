@@ -260,6 +260,20 @@ func (s *Server) root(c *gin.Context) {
 	c.JSON(http.StatusOK, toNodeDTO(n))
 }
 
+func (s *Server) getNode(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid node id")
+		return
+	}
+	n, err := s.ownedNode(userID(c), id, true)
+	if err != nil {
+		fail(c, statusForLookup(err), "node not found")
+		return
+	}
+	c.JSON(http.StatusOK, toNodeDTO(n))
+}
+
 func (s *Server) children(c *gin.Context) {
 	parentID, ok := parseID(c.Param("id"))
 	if !ok {

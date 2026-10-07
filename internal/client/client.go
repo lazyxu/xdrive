@@ -510,6 +510,12 @@ func (c *Client) Root(ctx context.Context) (Node, error) {
 	return out, err
 }
 
+func (c *Client) Node(ctx context.Context, id uint64) (Node, error) {
+	var out Node
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d", id), nil, &out)
+	return out, err
+}
+
 func (c *Client) List(ctx context.Context, parentID uint64) ([]Node, error) {
 	var out []Node
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", parentID), nil, &out)

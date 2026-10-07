@@ -94,50 +94,41 @@ func TestScanAgentCloudDownloadFolderPagesWideDirectories(t *testing.T) {
 	}
 }
 
-func TestResolveAgentCloudDownloadFolderRootPagesWideParent(t *testing.T) {
-	const parentID = uint64(10)
-	children := make([]client.Node, 1201)
-	for index := range children {
-		children[index] = client.Node{
-			ID:       uint64(index + 100),
-			ParentID: folderDownloadUint64Ptr(parentID),
-			Name:     "Folder-" + strconv.Itoa(index),
-			Type:     meta.NodeTypeDir,
-		}
+func TestResolveAgentCloudDownloadFolderRootUsesExactNodeLookup(t *testing.T) {
+	const (
+		parentID     = uint64(10)
+		siblingCount = 1201
+	)
+	target := client.Node{
+		ID:       uint64(siblingCount + 100),
+		ParentID: folderDownloadUint64Ptr(parentID),
+		Name:     "Folder-1200",
+		Type:     meta.NodeTypeDir,
 	}
-	target := children[len(children)-1]
-	pageCalls := 0
-	maxReturned := 0
-	pager := folderDownloadPagedTree(
-		map[uint64][]client.Node{parentID: children},
-		func(_ uint64, options client.ChildrenOptions, returned int) {
-			if options.Limit != agentCloudDownloadChildrenPageLimit {
-				t.Fatalf("page limit=%d want %d", options.Limit, agentCloudDownloadChildrenPageLimit)
-			}
-			pageCalls++
-			if returned > maxReturned {
-				maxReturned = returned
-			}
-		},
-	)
-
-	got, err := resolveAgentCloudDownloadFolderRoot(
-		context.Background(),
-		target.ID,
-		parentID,
-		pager,
-	)
+	calls := 0
+	getter := func(_ context.Context, id uint64) (client.Node, error) {
+		calls++
+		if id != target.ID {
+			t.Fatalf("node id=%d want %d", id, target.ID)
+		}
+		return target, nil
+	}
+	got, err := resolveAgentCloudDownloadFolderRoot(context.Background(), target.ID, parentID, getter)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != target.ID || got.Name != target.Name {
 		t.Fatalf("resolved root=%+v want=%+v", got, target)
 	}
-	if pageCalls != 3 {
-		t.Fatalf("page calls=%d want 3", pageCalls)
+	if calls != 1 {
+		t.Fatalf("exact lookup calls=%d want 1 for %d logical siblings", calls, siblingCount)
 	}
-	if maxReturned != agentCloudDownloadChildrenPageLimit {
-		t.Fatalf("max returned=%d want %d", maxReturned, agentCloudDownloadChildrenPageLimit)
+	_, err = resolveAgentCloudDownloadFolderRoot(context.Background(), target.ID, parentID+1, getter)
+	if err == nil || !strings.Contains(err.Error(), "no longer available") {
+		t.Fatalf("mismatched parent error=%v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("exact lookup calls after parent check=%d want 2", calls)
 	}
 }
 
