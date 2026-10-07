@@ -22,6 +22,7 @@ type PhotoIntelligenceDatabaseStatus struct {
 	PlaceLabels              int64               `json:"place_labels"`
 	VisualLabels             int64               `json:"visual_labels"`
 	OCRDocuments             int64               `json:"ocr_documents"`
+	SemanticEmbeddings       int64               `json:"semantic_embeddings"`
 	AutomaticClusters        int64               `json:"automatic_clusters"`
 	AutomaticClusterFaces    int64               `json:"automatic_cluster_faces"`
 	DurablePeople            int64               `json:"durable_people"`
@@ -31,6 +32,7 @@ type PhotoIntelligenceDatabaseStatus struct {
 	PlaceAnalysis            AnalysisStateCounts `json:"place_analysis"`
 	VisualAnalysis           AnalysisStateCounts `json:"visual_analysis"`
 	OCRAnalysis              AnalysisStateCounts `json:"ocr_analysis"`
+	SemanticAnalysis         AnalysisStateCounts `json:"semantic_analysis"`
 	PersonClustering         AnalysisStateCounts `json:"person_clustering"`
 }
 
@@ -68,6 +70,7 @@ func LoadPhotoIntelligenceDatabaseStatus(
 		{&meta.PhotoPlaceLabel{}, &status.PlaceLabels, "photo place labels"},
 		{&meta.PhotoVisualLabel{}, &status.VisualLabels, "photo visual labels"},
 		{&meta.PhotoOCRText{}, &status.OCRDocuments, "photo OCR documents"},
+		{&meta.PhotoSemanticEmbedding{}, &status.SemanticEmbeddings, "photo semantic embeddings"},
 		{&meta.PhotoPersonCluster{}, &status.AutomaticClusters, "automatic person clusters"},
 		{&meta.PhotoPersonClusterFace{}, &status.AutomaticClusterFaces, "automatic cluster faces"},
 		{&meta.PhotoPerson{}, &status.DurablePeople, "durable people"},
@@ -99,6 +102,8 @@ func LoadPhotoIntelligenceDatabaseStatus(
 			target = &status.VisualAnalysis
 		case meta.PhotoAnalysisKindOCRText:
 			target = &status.OCRAnalysis
+		case meta.PhotoAnalysisKindSemanticEmbedding:
+			target = &status.SemanticAnalysis
 		default:
 			continue
 		}

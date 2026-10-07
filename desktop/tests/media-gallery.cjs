@@ -873,8 +873,16 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   ]) {
     assert.ok(sharedGalleryVirtualTimeline.includes(token), `Gallery Timeline helper missing: ${token}`)
   }
-  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, timeScale)'), 'standalone dense fallback remains available')
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale)'), 'standalone dense fallback remains available')
   assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
+  for (const token of [
+    'searchActive={Boolean(query.search?.trim())}',
+    "const effectiveTimeScale: MediaGalleryTimeScale = searchActive ? 'all' : timeScale",
+    '!searchActive ? (',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery relevance-mode contract missing: ${token}`)
+  }
+  assert.match(sharedModels, /search_order\?: 'relevance' \| 'time' \| string/)
 })
 
 

@@ -3,11 +3,12 @@ package meta
 import "time"
 
 const (
-	PhotoAnalysisKindFaceDetection = "face_detection"
-	PhotoAnalysisKindFaceEmbedding = "face_embedding"
-	PhotoAnalysisKindPlaceLabel    = "place_label"
-	PhotoAnalysisKindVisualLabel   = "visual_label"
-	PhotoAnalysisKindOCRText       = "ocr_text"
+	PhotoAnalysisKindFaceDetection     = "face_detection"
+	PhotoAnalysisKindFaceEmbedding     = "face_embedding"
+	PhotoAnalysisKindPlaceLabel        = "place_label"
+	PhotoAnalysisKindVisualLabel       = "visual_label"
+	PhotoAnalysisKindOCRText           = "ocr_text"
+	PhotoAnalysisKindSemanticEmbedding = "semantic_embedding"
 
 	PhotoAnalysisStatePending = "pending"
 	PhotoAnalysisStateRunning = "running"
@@ -203,10 +204,29 @@ type PhotoOCRText struct {
 
 func (PhotoOCRText) TableName() string { return "xd_photo_ocr_texts" }
 
+type PhotoSemanticEmbedding struct {
+	AssetID         uint64 `gorm:"primaryKey;autoIncrement:false"`
+	OwnerID         uint64 `gorm:"not null;index"`
+	AnalyzerVersion string `gorm:"size:128;not null;index"`
+	Embedding       []byte `gorm:"type:bytea;not null"`
+	EmbeddingFormat string `gorm:"size:32;not null"`
+	Dimensions      int    `gorm:"not null"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+
+	Asset PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Owner User       `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoSemanticEmbedding) TableName() string {
+	return "xd_photo_semantic_embeddings"
+}
+
 func ValidPhotoAnalysisKind(kind string) bool {
 	switch kind {
 	case PhotoAnalysisKindFaceDetection, PhotoAnalysisKindFaceEmbedding, PhotoAnalysisKindPlaceLabel,
-		PhotoAnalysisKindVisualLabel, PhotoAnalysisKindOCRText:
+		PhotoAnalysisKindVisualLabel, PhotoAnalysisKindOCRText,
+		PhotoAnalysisKindSemanticEmbedding:
 		return true
 	default:
 		return false

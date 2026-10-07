@@ -30,6 +30,7 @@ type Server struct {
 	PhotoPlaceResolver             photointelligence.PlaceResolver
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
+	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string
@@ -58,7 +59,9 @@ type Server struct {
 	photoIntelligenceOwners        map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
 	photoFaceRunner                photoFaceOwnerRunner
 	photoSmartRunner               photoSmartOwnerRunner
+	photoSemanticRunner            photoSemanticOwnerRunner
 	photoPlaceRunner               photoPlaceOwnerRunner
+	photoSemanticSearch            *photoSemanticSearchEngine
 	photoPersonRunner              photoPersonOwnerRunner
 	systemMaintenanceSourceVerify  systemMaintenanceSourceVerifyRunner
 	systemMaintenanceSourceRepair  systemMaintenanceSourceRepairRunner

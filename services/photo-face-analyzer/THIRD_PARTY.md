@@ -5,8 +5,8 @@ The reference analyzer is optional and separate from the CGO-free xDrive Server.
 ## OpenCV Zoo model provenance
 
 The image build downloads the following model files from OpenCV Zoo commit
-`47534e27c9851bb1128ccc0102f1145e27f23f98` and verifies their Git LFS
-SHA-256 object IDs before the image can be built.
+`47534e27c9851bb1128ccc0102f1145e27f23f98` and verifies their SHA-256
+identities before the image can be built.
 
 | Component | File | SHA-256 | License |
 | --- | --- | --- | --- |
@@ -21,6 +21,24 @@ commit into `/licenses`. ImageNet labels and the CRNN CN charset are extracted
 at image-build time from the pinned OpenCV Zoo source files; xDrive does not
 fetch labels or dictionaries at runtime.
 
+## SigLIP 2 semantic-search provenance
+
+Semantic search uses the Apache-2.0 Google SigLIP 2 Base Patch16 224 model in a
+shared multilingual image/text embedding space. The runtime pins the separate
+int8 ONNX towers from
+`onnx-community/siglip2-base-patch16-224-ONNX` commit
+`ba1f3b0843f24bc5417d38e19c37b287d719b2f4` and the Google tokenizer from
+commit `997aaec`.
+
+| Component | File | SHA-256 | License |
+| --- | --- | --- | --- |
+| SigLIP2 vision int8 | `siglip2_vision_int8.onnx` | `0dd31785a2713f1113ef2272472165c69d580473dae38d7b47568ac587795e70` | Apache-2.0 |
+| SigLIP2 text int8 | `siglip2_text_int8.onnx` | `3a0603d3a00c05a80a6ded4743c16aaac7b1e62cdcc7e362e7ce418659b96400` | Apache-2.0 |
+| SigLIP2 tokenizer | `siglip2_tokenizer.json` | `cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322` | Apache-2.0 |
+
+The image build verifies all three files before publication. The analyzer has no
+runtime network dependency.
+
 Sources:
 
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet
@@ -28,6 +46,8 @@ Sources:
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/image_classification_mobilenet
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_detection_ppocr
 - https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/text_recognition_crnn
+- https://huggingface.co/google/siglip2-base-patch16-224
+- https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX
 
 ## Runtime packages
 
@@ -35,10 +55,11 @@ The image pins:
 
 - `opencv-python-headless==4.14.0.94`
 - `numpy==2.5.3`
+- `onnxruntime==1.30.0`
+- `tokenizers==0.23.2`
 
-The OpenCV Python wheel includes its own license and third-party notices in the
-installed Python distribution. The headless package is used because the
-analyzer has no GUI/display dependency.
+The headless OpenCV package is used because the analyzer has no GUI/display
+dependency. ONNX Runtime is CPU-only in the reference path.
 
 ## Processing contract
 
@@ -50,13 +71,25 @@ The reference face pipeline is CPU-only:
 4. L2 normalization.
 5. little-endian float32 serialization.
 
-The initial Smart Search pipeline is also CPU-only:
+The lexical Smart Search pipeline is CPU-only:
 
 1. MobileNetV2 provides a bounded top-5 ImageNet visual-label vocabulary.
 2. PP-OCRv3 CN detects scene-text regions on the xDrive analysis preview.
 3. CRNN CN recognizes Chinese, Latin letters, digits, and its pinned symbol set.
-4. xDrive stores only rebuildable labels/OCR text; originals and user metadata
-   remain authoritative.
+4. xDrive stores only rebuildable labels/OCR text.
+
+The semantic Smart Search pipeline is CPU-only:
+
+1. SigLIP2 vision consumes the canonical xDrive analysis preview normalized to
+   RGB 224×224 with rescale 1/255 and mean/std 0.5.
+2. SigLIP2 text uses the pinned multilingual tokenizer, max 64 tokens and
+   `</s>` padding.
+3. Both towers emit the same 768-dimensional space.
+4. xDrive L2-normalizes and deterministically quantizes each vector to signed
+   int8 `i8norm-v1`; PostgreSQL stores only rebuildable derived bytes.
+5. Server search ranks only current-version `ready` embeddings. User-authored
+   tags, descriptions, people, favorites, albums and originals remain
+   authoritative and are never mutated by semantic search.
 
 Any change to these semantics changes the relevant analyzer
 `pipeline_version`/model version token, so xDrive invalidates and rebuilds

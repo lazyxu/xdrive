@@ -29,7 +29,7 @@ presentation and product intelligence.
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | **Current** |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | **Current** |
 | 7 | Map Places | **Current** |
-| 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical intelligence first** |
+| 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical + semantic relevance** |
 | 9 | Memories / Recent Days / Trips / On This Day | Planned |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | Planned |
 | 11 | Pets / people groups / suggestion review | Planned |
@@ -276,7 +276,30 @@ upgrade never exposes a mixed-generation intelligence index.
 The search UI remains entirely under `ui/shared`; platform adapters continue to pass
 the same `MediaGalleryQuery.search` value.
 
-**Still inside Phase 8, not implemented by this slice:** vector embeddings, natural-
-language ranking, similarity search, and semantic retrieval. Those must be added after
-the lexical object/scene/OCR index is stable, and must use a versioned embedding space
-rather than silently changing `q` semantics.
+### Semantic retrieval
+
+The second Phase-8 slice adds multilingual image/text semantic retrieval without
+introducing a second Gallery search surface:
+
+- `semantic_embedding` is a rebuildable Photo Intelligence analysis kind generated
+  from the same canonical 1280px analysis preview.
+- The optional local analyzer uses pinned SigLIP2 image/text towers. Image vectors are
+  produced asynchronously; query text is embedded on demand.
+- Embeddings are L2-normalized and persisted as compact signed-int8 `i8norm-v1`
+  bytes with analyzer version and dimensions. Model generations never mix.
+- PostgreSQL remains the durable source of truth. xDrive does not require pgvector or
+  a second database for this phase.
+- Server keeps a bounded owner-scoped in-memory exact-cosine index/cache rebuilt from
+  current `ready` rows. The initial exact implementation is intentionally simple and
+  deterministic; an approximate HNSW backend may replace it later if named large-library
+  benchmarks show a real bottleneck, without changing the Gallery/API contract.
+- Existing lexical evidence receives a strong relevance boost, so exact filename,
+  tag, OCR, person and place hits remain ahead of merely similar images.
+- If the semantic analyzer or current-version index is unavailable, `q` degrades to
+  the lexical Smart Search behavior instead of failing Gallery search.
+- Relevance results use the ordinary shared virtual photo grid. Year/Month/Day controls
+  are hidden while a search term is active because timeline order would contradict
+  relevance order; clearing search restores the previous time-scale UI.
+
+Web/Desktop continue to share the same Gallery controller and `MediaGalleryQuery.search`
+contract in `ui/shared`; platform code still only transports requests.

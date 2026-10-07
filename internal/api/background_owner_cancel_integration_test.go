@@ -244,6 +244,7 @@ func TestRollbackPhotoIntelligenceRunningStateAfterCancel(t *testing.T) {
 		meta.PhotoAnalysisKindFaceEmbedding,
 		meta.PhotoAnalysisKindVisualLabel,
 		meta.PhotoAnalysisKindOCRText,
+		meta.PhotoAnalysisKindSemanticEmbedding,
 		meta.PhotoAnalysisKindPlaceLabel,
 	} {
 		if err := db.Create(&meta.PhotoAnalysisState{
@@ -269,6 +270,7 @@ func TestRollbackPhotoIntelligenceRunningStateAfterCancel(t *testing.T) {
 	for _, kind := range []photoIntelligenceTaskKind{
 		photoIntelligenceFace,
 		photoIntelligenceSmartSearch,
+		photoIntelligenceSemanticSearch,
 		photoIntelligencePlace,
 		photoIntelligencePersonCluster,
 	} {

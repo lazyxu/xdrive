@@ -57,6 +57,7 @@ class AnalyzerTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.runtime = analyzer.FaceRuntime()
         cls.smart_runtime = analyzer.SmartRuntime()
+        cls.semantic_runtime = analyzer.SemanticRuntime()
         blank = np.zeros((240, 320, 3), dtype=np.uint8)
         ok, encoded = cv.imencode(".jpg", blank)
         if not ok:
@@ -114,6 +115,28 @@ class AnalyzerTests(unittest.TestCase):
             smart["text_recognizer"]["sha256"],
             analyzer.CRNN_SHA256,
         )
+
+        semantic = self.semantic_runtime.info()
+        self.assertEqual(semantic["protocol_version"], 1)
+        self.assertEqual(
+            semantic["embedding_dimensions"],
+            analyzer.SEMANTIC_DIMENSIONS,
+        )
+        self.assertEqual(semantic["embedding_format"], "i8norm-v1")
+        self.assertEqual(
+            semantic["vision_model"]["sha256"],
+            analyzer.SEMANTIC_VISION_SHA256,
+        )
+        self.assertEqual(
+            semantic["text_model"]["sha256"],
+            analyzer.SEMANTIC_TEXT_SHA256,
+        )
+        self.assertEqual(
+            semantic["tokenizer_sha256"],
+            analyzer.SEMANTIC_TOKENIZER_SHA256,
+        )
+        self.assertEqual(semantic["runtime"]["framework"], "onnxruntime")
+        self.assertEqual(semantic["runtime"]["device"], "cpu")
 
     def test_task_requires_exact_preview_origin_and_path(self) -> None:
         task = {
@@ -194,6 +217,7 @@ class AnalyzerTests(unittest.TestCase):
             state = analyzer.AnalyzerState(
                 self.runtime,
                 self.smart_runtime,
+                self.semantic_runtime,
                 self.preview_origin,
                 "secret",
             )
@@ -284,6 +308,72 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertIsInstance(smart_result["labels"], list)
                 self.assertIsInstance(smart_result["ocr_text"], str)
                 self.assertEqual(smart_result["ocr_language"], "zh-en")
+                connection.close()
+
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "GET",
+                    "/v1/semantic-info",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Semantic-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                semantic_info = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(
+                    semantic_info["embedding_dimensions"],
+                    analyzer.SEMANTIC_DIMENSIONS,
+                )
+                connection.close()
+
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/semantic-image",
+                    body=payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(payload)),
+                        "X-XDrive-Semantic-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                semantic_image = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(
+                    semantic_image["dimensions"],
+                    analyzer.SEMANTIC_DIMENSIONS,
+                )
+                self.assertEqual(semantic_image["format"], "i8norm-v1")
+                connection.close()
+
+                text_payload = json.dumps(
+                    {"text": "海边的狗"},
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/semantic-text",
+                    body=text_payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(text_payload)),
+                        "X-XDrive-Semantic-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                semantic_text = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(
+                    semantic_text["dimensions"],
+                    analyzer.SEMANTIC_DIMENSIONS,
+                )
+                self.assertEqual(semantic_text["format"], "i8norm-v1")
                 connection.close()
             finally:
                 server.shutdown()

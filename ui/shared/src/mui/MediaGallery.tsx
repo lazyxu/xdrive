@@ -1137,6 +1137,7 @@ export function XDriveMediaGalleryPage({
         error={error}
         section={section}
         activeMediaType={activeMediaType}
+        searchActive={Boolean(query.search?.trim())}
         filters={(
           <XDriveMediaGalleryFilterToolbar
             draft={draftFilters}
@@ -1336,6 +1337,7 @@ export interface XDriveMediaGalleryProps {
   error?: string
   section?: MediaGallerySection
   activeMediaType?: string
+  searchActive?: boolean
   filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
@@ -2322,6 +2324,7 @@ export function XDriveMediaGallery({
   error = '',
   section = 'library',
   activeMediaType = '',
+  searchActive = false,
   filters,
   loadThumbnail,
   loadLivePhotoMotion,
@@ -2421,16 +2424,19 @@ export function XDriveMediaGallery({
     ))
   }, [onSetFavorite])
 
-  const activeTimelineGroups = timeScale === 'year'
+  const effectiveTimeScale: MediaGalleryTimeScale = searchActive ? 'all' : timeScale
+  const activeTimelineGroups = effectiveTimeScale === 'year'
     ? timelineGroupSets.year
-    : timeScale === 'month'
+    : effectiveTimeScale === 'month'
       ? timelineGroupSets.month
-      : timeScale === 'day'
+      : effectiveTimeScale === 'day'
         ? timelineGroupSets.day
         : []
   const denseTimelineGroups = useMemo(
-    () => timeScale === 'all' ? [] : mediaTimelineGroups(items, timeScale),
-    [items, timeScale],
+    () => effectiveTimeScale === 'all'
+      ? []
+      : mediaTimelineGroups(items, effectiveTimeScale),
+    [effectiveTimeScale, items],
   )
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
@@ -2792,7 +2798,7 @@ export function XDriveMediaGallery({
             {selectionMode ? '完成' : '选择'}
           </Button>
         ) : null}
-        {showPhotoCollection && !isTrashSection ? (
+        {showPhotoCollection && !isTrashSection && !searchActive ? (
           <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
             {([
               ['year', '年'],
@@ -2803,8 +2809,8 @@ export function XDriveMediaGallery({
               <Button
                 key={value}
                 size="small"
-                variant={timeScale === value ? 'contained' : 'text'}
-                aria-pressed={timeScale === value}
+                variant={effectiveTimeScale === value ? 'contained' : 'text'}
+                aria-pressed={effectiveTimeScale === value}
                 data-xdrive-gallery-time-scale={value}
                 onClick={() => setTimeScale(value)}
               >
