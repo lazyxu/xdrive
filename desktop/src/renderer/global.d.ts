@@ -396,6 +396,10 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
+        getMediaTrash: (
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaSuggestedPeople: (limit?: number) => Promise<DesktopResult<MediaSuggestedPerson[]>>

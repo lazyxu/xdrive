@@ -411,6 +411,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
   const filters = {
     search: 'iPhone',
     asset_kind: 'live_photo',
+    category: 'panorama',
     captured_from: '2026-09-01T00:00:00.000Z',
     captured_to: '2026-10-01T00:00:00.000Z',
     has_location: true,
@@ -426,6 +427,7 @@ test('media Gallery filters are serialized for items and album items', async (t)
     const url = new URL(raw, 'http://127.0.0.1')
     assert.equal(url.searchParams.get('q'), 'iPhone')
     assert.equal(url.searchParams.get('asset_kind'), 'live_photo')
+    assert.equal(url.searchParams.get('category'), 'panorama')
     assert.equal(url.searchParams.get('captured_from'), filters.captured_from)
     assert.equal(url.searchParams.get('captured_to'), filters.captured_to)
     assert.equal(url.searchParams.get('has_location'), 'true')
@@ -436,6 +438,26 @@ test('media Gallery filters are serialized for items and album items', async (t)
   }
   assert.equal(new URL(seen[0], 'http://127.0.0.1').searchParams.get('offset'), '10')
   assert.equal(new URL(seen[1], 'http://127.0.0.1').searchParams.get('album_id'), 'folder:9')
+})
+
+test('media trash uses the scoped Agent API', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    assert.equal(req.method, 'GET')
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/media/trash')
+    assert.equal(url.searchParams.get('limit'), '40')
+    assert.equal(url.searchParams.get('offset'), '20')
+    json(res, 200, {
+      items: [{ node: { id: 31, name: 'deleted.jpg', type: 'file', revision: 2 } }],
+      total_count: 1,
+      offset: 20,
+      limit: 40,
+    })
+  })
+  const page = await client.mediaTrash(40, 20)
+  assert.equal(page.total_count, 1)
+  assert.equal(page.offset, 20)
+  assert.equal(page.items[0].node.id, 31)
 })
 
 test('media places use the scoped Agent API', async (t) => {

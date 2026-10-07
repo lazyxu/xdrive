@@ -1829,6 +1829,17 @@ func (c *agentController) CloudMediaItemsRange(
 	return cli.MediaItemsRangeQuery(ctx, query, limit, offset)
 }
 
+func (c *agentController) CloudMediaTrash(
+	ctx context.Context,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaTrashRange(ctx, limit, offset)
+}
+
 func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaAlbum, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

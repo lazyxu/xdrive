@@ -17,6 +17,7 @@ type mediaQueryOptions struct {
 	MediaKind      string
 	Search         string
 	AssetKind      string
+	Category       string
 	CapturedFrom   *time.Time
 	CapturedTo     *time.Time
 	HasLocation    *bool
@@ -43,6 +44,11 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	out.AssetKind = strings.TrimSpace(c.Query("asset_kind"))
 	if out.AssetKind != "" && !meta.ValidPhotoAssetKind(out.AssetKind) {
 		fail(c, http.StatusBadRequest, "asset_kind is invalid")
+		return mediaQueryOptions{}, false
+	}
+	out.Category = strings.TrimSpace(c.Query("category"))
+	if out.Category != "" && !validMediaCategory(out.Category) {
+		fail(c, http.StatusBadRequest, "category is invalid")
 		return mediaQueryOptions{}, false
 	}
 	var ok bool
@@ -120,12 +126,30 @@ func mediaQueryTime(c *gin.Context, name string) (*time.Time, bool) {
 	return &value, true
 }
 
+func validMediaCategory(value string) bool {
+	switch value {
+	case "gif", "panorama":
+		return true
+	default:
+		return false
+	}
+}
+
 func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB {
 	if options.MediaKind != "" {
 		query = query.Where("xd_media_metadata.media_kind = ?", options.MediaKind)
 	}
 	if options.AssetKind != "" {
 		query = query.Where("pa.kind = ?", options.AssetKind)
+	}
+	switch options.Category {
+	case "gif":
+		query = query.Where("LOWER(xd_media_metadata.mime_type) = ?", "image/gif")
+	case "panorama":
+		query = query.Where(
+			"COALESCE(NULLIF(xd_media_metadata.exif_json, ''), '{}')::jsonb @> ?::jsonb",
+			`{"is_panorama":true}`,
+		)
 	}
 	if options.Search != "" {
 		like := "%" + strings.ToLower(options.Search) + "%"

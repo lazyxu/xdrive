@@ -249,6 +249,7 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaItemsRange(context.Context, client.MediaQuery, int, int) (client.MediaItemRange, error)
+	CloudMediaTrash(context.Context, int, int) (client.MediaItemRange, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
@@ -550,6 +551,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
+	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
@@ -2277,6 +2279,19 @@ func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
+func (h *desktopIPCHandler) mediaTrash(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	page, err := h.ctrl.CloudMediaTrash(r.Context(), limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
 func (h *desktopIPCHandler) mediaAlbums(w http.ResponseWriter, r *http.Request) {
 	items, err := h.ctrl.CloudMediaAlbums(r.Context())
 	if err != nil {
@@ -2983,6 +2998,11 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 	out.AssetKind = strings.TrimSpace(r.URL.Query().Get("asset_kind"))
 	if out.AssetKind != "" && !meta.ValidPhotoAssetKind(out.AssetKind) {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_asset_kind", "asset_kind is invalid")
+		return client.MediaQuery{}, false
+	}
+	out.Category = strings.TrimSpace(r.URL.Query().Get("category"))
+	if out.Category != "" && out.Category != "gif" && out.Category != "panorama" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_category", "category is invalid")
 		return client.MediaQuery{}, false
 	}
 

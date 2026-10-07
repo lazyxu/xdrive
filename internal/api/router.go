@@ -141,6 +141,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/download/archive/progress/:id", s.getArchiveDownloadProgress)
 	authed.POST("/download/archive", s.downloadArchive)
 	authed.GET("/media/items", s.listMediaItems)
+	authed.GET("/media/trash", s.listMediaTrash)
 	authed.GET("/media/items/:id", s.getMediaItem)
 	authed.PATCH("/media/items/:id/favorite", s.setMediaFavorite)
 	authed.PATCH("/media/items/:id/tags", s.setMediaTags)

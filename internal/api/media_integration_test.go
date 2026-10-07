@@ -1044,6 +1044,33 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		)
 	}
 
+	trashRangeResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/media/trash?limit=20&offset=0",
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var trashRange mediaItemRangeDTO
+	if err := json.Unmarshal(trashRangeResponse.Body.Bytes(), &trashRange); err != nil {
+		t.Fatal(err)
+	}
+	var trashItem *mediaItemDTO
+	for index := range trashRange.Items {
+		if trashRange.Items[index].Node.ID == trashThumbnailNode.ID {
+			trashItem = &trashRange.Items[index]
+			break
+		}
+	}
+	if trashItem == nil ||
+		trashItem.TrashRoot == nil ||
+		trashItem.TrashRoot.ID != trashThumbnailNode.ID ||
+		trashItem.Node.DeletedAt == nil {
+		t.Fatalf("media trash item=%+v range=%+v", trashItem, trashRange)
+	}
+
 	// Only thumbnail reads are Trash-aware. Analysis preview remains an
 	// active-media API and must not expose deleted nodes.
 	request(

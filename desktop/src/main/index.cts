@@ -1267,6 +1267,15 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.asset_kind = input.asset_kind
   }
+  if (input.category !== undefined) {
+    if (
+      typeof input.category !== 'string' ||
+      !['gif', 'panorama'].includes(input.category)
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media category is invalid.')
+    }
+    out.category = input.category
+  }
   for (const key of ['captured_from', 'captured_to'] as const) {
     const raw = input[key]
     if (raw === undefined) continue
@@ -1820,6 +1829,17 @@ function registerIPCHandlers() {
       window.offset,
       normalizeMediaGalleryQuery(query),
     )
+  }, false))
+
+  ipcMain.handle('agent:get-media-trash', (
+    _event,
+    limit: unknown = 200,
+    offset: unknown = 0,
+  ) => runAgentAction<AgentMediaItemRange>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    const window = normalizeMediaRangeWindow(limit, offset)
+    return requireAgentClient().mediaTrash(window.limit, window.offset)
   }, false))
 
   ipcMain.handle('agent:get-media-albums', () => runAgentAction<AgentMediaAlbum[]>(async () => {

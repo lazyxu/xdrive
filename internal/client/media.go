@@ -71,6 +71,7 @@ type MediaItem struct {
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
+	TrashRoot        *Node                  `json:"trash_root,omitempty"`
 }
 
 type MediaTimelineGroupIndex struct {
@@ -98,6 +99,7 @@ type MediaSmartAlbumQuery struct {
 	MediaKind      string     `json:"media_kind,omitempty"`
 	Search         string     `json:"search,omitempty"`
 	AssetKind      string     `json:"asset_kind,omitempty"`
+	Category       string     `json:"category,omitempty"`
 	CapturedFrom   *time.Time `json:"captured_from,omitempty"`
 	CapturedTo     *time.Time `json:"captured_to,omitempty"`
 	HasLocation    *bool      `json:"has_location,omitempty"`
@@ -164,6 +166,7 @@ type MediaQuery struct {
 	MediaKind      string
 	Search         string
 	AssetKind      string
+	Category       string
 	CapturedFrom   *time.Time
 	CapturedTo     *time.Time
 	HasLocation    *bool
@@ -183,6 +186,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.AssetKind); value != "" {
 		values.Set("asset_kind", value)
+	}
+	if value := strings.TrimSpace(q.Category); value != "" {
+		values.Set("category", value)
 	}
 	if q.CapturedFrom != nil {
 		values.Set("captured_from", q.CapturedFrom.UTC().Format(time.RFC3339))
@@ -263,6 +269,29 @@ func (c *Client) MediaItemsRangeQuery(
 	path := "/api/v1/media/items?" + values.Encode()
 	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaTrashRange(
+	ctx context.Context,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	var out MediaItemRange
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		"/api/v1/media/trash?"+values.Encode(),
+		nil,
+		&out,
+	)
 	return out, err
 }
 

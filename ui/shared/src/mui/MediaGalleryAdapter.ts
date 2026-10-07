@@ -3,6 +3,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
+  Node,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -41,6 +42,16 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  listTrashItemRange?: (
+    limit: number,
+    offset: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  restoreTrashItems?: (
+    items: MediaItem[],
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  permanentlyDeleteTrashItems?: (
+    items: MediaItem[],
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   listAlbums: () => Promise<XDriveMediaGalleryTransportResult<MediaAlbum[]>>
   listPlaces?: (
     limit?: number,
@@ -187,6 +198,18 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
 }
 
+export function xDriveMediaGalleryTrashRoots(
+  items: readonly MediaItem[],
+): Node[] {
+  const roots = new Map<number, Node>()
+  for (const item of items) {
+    const root = item.trash_root ?? item.node
+    if (!root?.id) continue
+    roots.set(root.id, root)
+  }
+  return Array.from(roots.values())
+}
+
 function mediaResourceURL(
   resource: XDriveMediaGalleryBinaryResource,
   fallbackContentType: string,
@@ -211,6 +234,21 @@ export function createXDriveMediaGalleryDataSource(
     listItemRange: (limit, offset, query) => resolveXDriveTransport(
       port.listItemRange(limit, offset, query),
     ),
+    listTrashItemRange: port.listTrashItemRange
+      ? (limit, offset) => resolveXDriveTransport(
+          port.listTrashItemRange!(limit, offset),
+        )
+      : undefined,
+    restoreTrashItems: port.restoreTrashItems
+      ? async (items) => {
+          await resolveXDriveTransport(port.restoreTrashItems!(items))
+        }
+      : undefined,
+    permanentlyDeleteTrashItems: port.permanentlyDeleteTrashItems
+      ? async (items) => {
+          await resolveXDriveTransport(port.permanentlyDeleteTrashItems!(items))
+        }
+      : undefined,
     listAlbums: () => resolveXDriveTransport(port.listAlbums()),
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))

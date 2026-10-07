@@ -25,7 +25,7 @@ presentation and product intelligence.
 | 1 | Gallery IA/UI: Library / Memories / People / Places / Albums / Favorites / Media Types; advanced filters in popover | **Current foundation** |
 | 2 | Year / Month / Day semantic timeline + thumbnail density | **Current** |
 | 3 | Multi-select + shared Selection Toolbar | **Current** |
-| 4 | Gallery Trash + Favorites + media-type smart collections | Planned |
+| 4 | Gallery Trash + Favorites + media-type smart collections | **Current** |
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | Planned |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | Planned |
 | 7 | Map Places | Planned |
@@ -117,3 +117,49 @@ Selection state is collection-generation local. Changing Gallery section/person/
 album/media-type clears the selection, and Escape exits selection mode. Grid and Timeline
 share the same selection state and toolbar; platform adapters only bind the existing
 download/delete transports.
+
+
+## Phase 4 — Trash, Favorites and reliable media collections
+
+Favorites remain a first-class Gallery destination backed by the existing durable
+`PhotoMetadata.favorite` state.
+
+Media Types now distinguishes collections that can be derived from deterministic local
+evidence:
+
+- **视频** from canonical media kind;
+- **实况照片** from reliable Live Photo relation/LIVP evidence;
+- **RAW 组合** and **连拍** from the existing local PhotoAsset relation model;
+- **GIF / 动图** from the actual indexed `image/gif` MIME type;
+- **全景** only when embedded GPano/XMP explicitly confirms panorama semantics.
+
+xDrive does **not** infer **截图 / 自拍 / 录屏** from filenames, directory names,
+aspect ratios, dimensions, or timestamps. Those destinations stay absent until the
+local parser/classifier has a deterministic evidence contract. Provider-specific
+labels must not become canonical Gallery truth.
+
+### Gallery Trash
+
+Gallery Trash is a dedicated sparse collection over deleted media projections. It
+reuses the shared Gallery grid and thumbnail scheduler, and each media item carries
+its generic Trash root so restore/permanent-delete actions preserve the existing
+FileExplorer subtree semantics. Shared code deduplicates selected media by Trash root before invoking platform
+transports. The Selection Toolbar surfaces that root count and warns explicitly when
+a selected photo belongs to a deleted folder, because restore/permanent-delete acts on
+the whole Trash root subtree rather than one descendant photo.
+
+Soft deletion preserves the existing `PhotoAsset` and user-authored
+`PhotoMetadata` snapshot (favorites, tags, people labels, descriptions and manual
+album membership). Active Gallery and album counts still exclude deleted nodes. The
+snapshot is reconciled normally after restore and is removed only when the underlying
+Node is permanently deleted and FK cascade applies.
+
+Deleted media intentionally has a narrower capability surface:
+
+- thumbnail and indexed metadata are readable;
+- restore and permanent delete are available;
+- favorite/tag/album edits are disabled;
+- original file Preview, Live Photo motion, and analysis preview remain unavailable.
+
+This preserves the existing active-node authorization boundary: Gallery Trash does
+not widen the generic file-preview ticket or analysis-preview contracts.

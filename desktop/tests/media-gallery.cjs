@@ -112,7 +112,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 })
 
 test('Gallery IA keeps photo browsing primary and moves advanced controls behind shared navigation', () => {
-  for (const label of ['图库', '回忆', '人物', '地点', '相册', '收藏', '媒体类型']) {
+  for (const label of ['图库', '回忆', '人物', '地点', '相册', '收藏', '媒体类型', '回收站']) {
     assert.ok(sharedGalleryNavigation.includes(label), 'Gallery navigation missing: ' + label)
   }
   assert.match(sharedGalleryNavigation, /value: 'memories'/)
@@ -128,7 +128,7 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   assert.match(sharedGalleryMain, /showMediaTypeIndex/)
   assert.match(sharedGalleryMain, /showPhotoCollection/)
   assert.match(sharedGalleryMain, /lockedFavorite=\{section === 'favorites'\}/)
-  assert.match(sharedGalleryMain, /lockedAssetKind=\{section === 'media-types'/)
+  assert.match(sharedGalleryMain, /lockedAssetKind=\{[\s\S]*section === 'media-types'[\s\S]*activeMediaType !== 'gif'[\s\S]*activeMediaType !== 'panorama'/)
   assert.match(sharedGalleryMain, /mediaGalleryMediaTypes/)
   assert.match(sharedGalleryMain, /你收藏的照片和视频/)
   assert.match(sharedGalleryMain, /按媒体资产类型快速进入照片集合/)
@@ -185,6 +185,67 @@ test('Gallery multi-select and Selection Toolbar stay shared across Web and Desk
   assert.match(desktopMain, /agent:add-media-tags-batch/)
   assert.match(desktopIPC, /PATCH \/v1\/media\/favorites/)
   assert.match(desktopIPC, /POST \/v1\/media\/tags\/batch/)
+})
+
+test('Gallery Trash and reliable media collections stay shared and evidence-based', () => {
+  for (const token of [
+    "'trash'",
+    '回收站',
+    'listTrashItemRange',
+    'restoreTrashItems',
+    'permanentlyDeleteTrashItems',
+    "section === 'trash'",
+    '回收站为空',
+    'GIF / 动图',
+    '全景',
+    'GPano/XMP',
+    "activeMediaType === 'gif'",
+    "activeMediaType === 'panorama'",
+  ]) {
+    assert.ok(sharedGallery.includes(token), `Gallery phase-4 surface missing: ${token}`)
+  }
+
+  for (const token of [
+    'onRestore',
+    'onPermanentDelete',
+    '恢复',
+    '永久删除',
+    '对应 ',
+    '包含已删除文件夹',
+    '文件夹内的全部内容也会一起删除',
+    '此操作无法撤销',
+  ]) {
+    assert.ok(sharedGallerySelectionToolbar.includes(token), `Trash toolbar missing: ${token}`)
+  }
+
+  assert.match(sharedModels, /trash_root\?: Node/)
+  assert.match(sharedModels, /category\?: string/)
+  assert.match(sharedGalleryAdapter, /xDriveMediaGalleryTrashRoots/)
+  assert.match(sharedGalleryAdapter, /const root = item\.trash_root \?\? item\.node/)
+  assert.match(webAdapter, /xDriveMediaGalleryTrashRoots/)
+  assert.match(desktopAdapter, /xDriveMediaGalleryTrashRoots/)
+  assert.match(webAdapter, /api\.restoreTrash/)
+  assert.match(webAdapter, /api\.permanentlyDeleteTrash/)
+  assert.match(desktopAdapter, /agent\.cloudRestoreTrash/)
+  assert.match(desktopAdapter, /agent\.cloudDeleteTrash/)
+
+  assert.match(sharedGalleryMain, /collectionSetFavorite = isTrashSection \? undefined/)
+  assert.match(sharedGalleryMain, /collectionPreviewURL = isTrashSection \? undefined/)
+  assert.match(sharedGalleryMain, /loadLivePhotoMotion=\{isTrashSection \? undefined/)
+  assert.match(sharedGalleryMain, /if \(section === 'trash'\) return/)
+  assert.match(sharedGalleryMain, /!isTrashSection && timeScale !== 'all'/)
+
+  assert.match(webAPI, /values\.set\('category'/)
+  assert.match(agentClient, /query\.set\('category'/)
+  assert.match(desktopMain, /\['gif', 'panorama'\]/)
+
+  for (const guessed of ['自拍', '截图', '录屏']) {
+    assert.equal(
+      sharedGalleryMain.includes(`label: '${guessed}'`),
+      false,
+      `${guessed} must not be exposed before deterministic local evidence exists`,
+    )
+  }
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {
@@ -313,6 +374,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
   assert.equal(desktopApp.includes('listItems: async (limit, offset, query)'), false, 'Desktop App must not compose Gallery data source methods inline')
   for (const token of [
     'listItemRange:',
+    'listTrashItemRange:',
     'listSuggestedPersonItemRange:',
     'listPersonItemRange:',
     'listAlbumItemRange:',
@@ -327,14 +389,18 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(webAPI, /person_identity/)
   assert.match(agentClient, /person_identity/)
   assert.match(desktopIPC, /person_identity/)
+  assert.match(webAPI, /category/)
+  assert.match(agentClient, /category/)
+  assert.match(desktopIPC, /Category/)
 
-  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
   for (const token of [
     'api.mediaItems(',
     'api.mediaItemRange(',
+    'api.mediaTrashRange(',
     'api.mediaAlbums()',
     'api.mediaPlaces(',
     'api.mediaSuggestedPeople(',
@@ -371,6 +437,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   for (const token of [
     'getMediaItems:',
     'getMediaItemRange:',
+    'getMediaTrash:',
     'getMediaAlbums:',
     'getMediaPlaces:',
     'getMediaSuggestedPeople:',
@@ -407,6 +474,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   for (const token of [
     'mediaItems(',
     'mediaItemRange(',
+    'mediaTrash(',
     'mediaAlbums()',
     'mediaPlaces(',
     'mediaSuggestedPeople(',
@@ -448,6 +516,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 
   assert.ok(desktopIPC.includes('"media-gallery"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
+  assert.ok(desktopIPC.includes('GET /v1/media/trash'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/places'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestions'))

@@ -51,6 +51,29 @@ func TestReadJPEGXMPRelationEvidence(t *testing.T) {
 	}
 }
 
+func TestReadJPEGXMPMediaFieldsDetectsConfirmedPanorama(t *testing.T) {
+	xmp := []byte(`<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+ xmlns:GPano="http://ns.google.com/photos/1.0/panorama/">
+<rdf:Description GPano:ProjectionType="equirectangular"
+ GPano:UsePanoramaViewer="True"/>
+</rdf:RDF></x:xmpmeta>`)
+	payload := append([]byte(xmpJPEGHeader), xmp...)
+	segment := make([]byte, 4+len(payload))
+	segment[0], segment[1] = 0xff, 0xe1
+	binary.BigEndian.PutUint16(segment[2:4], uint16(len(payload)+2))
+	copy(segment[4:], payload)
+	jpeg := append([]byte{0xff, 0xd8}, segment...)
+	jpeg = append(jpeg, 0xff, 0xd9)
+
+	fields := readJPEGXMPMediaFields(bytes.NewReader(jpeg))
+	if fields["gpano_projection_type"] != "equirectangular" ||
+		fields["gpano_use_panorama_viewer"] != true ||
+		fields["is_panorama"] != true {
+		t.Fatalf("fields=%+v", fields)
+	}
+}
+
 func TestAppleMakerNoteBurstUUID(t *testing.T) {
 	const burst = "E9C7F7C4-4F73-40B8-B394-4D7FE7428E52"
 	note := buildAppleMakerNoteStringTag(0x000b, burst)

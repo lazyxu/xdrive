@@ -185,6 +185,60 @@ func TestManualMediaAlbumsUseMembershipOnly(t *testing.T) {
 		t.Fatalf("manual album items=%+v", mediaItems)
 	}
 
+	deletedAt := time.Now().UTC()
+	if err := db.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ?", nodes[1].ID, user.ID).
+		Updates(map[string]any{
+			"deleted_at":    &deletedAt,
+			"trash_root_id": nodes[1].ID,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := photoasset.ReconcileOwner(context.Background(), db, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	listWithTrash := request(t, router, http.MethodGet, "/api/v1/media/albums", token, nil, http.StatusOK)
+	var albumsWithTrash []mediaAlbumDTO
+	if err := json.Unmarshal(listWithTrash.Body.Bytes(), &albumsWithTrash); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range albumsWithTrash {
+		if candidate.ID == album.ID && candidate.ItemCount != 1 {
+			t.Fatalf("manual album counted trashed member: %+v", candidate)
+		}
+	}
+	itemsWithTrash := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/albums/"+url.PathEscape(album.ID)+"/items?limit=100",
+		token, nil, http.StatusOK,
+	)
+	mediaItems = nil
+	if err := json.Unmarshal(itemsWithTrash.Body.Bytes(), &mediaItems); err != nil {
+		t.Fatal(err)
+	}
+	if len(mediaItems) != 1 || mediaItems[0].Node.ID != nodes[0].ID {
+		t.Fatalf("manual album exposed trashed member: %+v", mediaItems)
+	}
+
+	if err := db.Model(&meta.Node{}).
+		Where("id = ? AND owner_id = ?", nodes[1].ID, user.ID).
+		Updates(map[string]any{
+			"deleted_at":    nil,
+			"trash_root_id": nil,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := photoasset.ReconcileOwner(context.Background(), db, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	restoredAlbum, err := server.mediaAlbumDTOByKey(context.Background(), user.ID, album.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restoredAlbum.ItemCount != 2 {
+		t.Fatalf("restored manual album item_count=%d want=2", restoredAlbum.ItemCount)
+	}
+
 	requestWithHeaders(
 		t, router, http.MethodPatch,
 		"/api/v1/media/albums/"+url.PathEscape(album.ID),

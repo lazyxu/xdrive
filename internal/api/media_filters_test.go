@@ -15,7 +15,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
 		nil,
 	)
 	ctx.Request = req
@@ -26,6 +26,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	}
 	if query.Search != "iPhone" ||
 		query.AssetKind != "live_photo" ||
+		query.Category != "panorama" ||
 		query.HasLocation == nil || !*query.HasLocation ||
 		query.Favorite == nil || !*query.Favorite ||
 		query.Tag != "Travel" ||
@@ -39,6 +40,24 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	if query.CapturedTo == nil ||
 		!query.CapturedTo.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("captured_to=%v", query.CapturedTo)
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidCategory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(
+		"GET",
+		"/api/v1/media/items?category=screenshot",
+		nil,
+	)
+
+	if _, ok := mediaQueryFromRequest(ctx); ok {
+		t.Fatal("unsupported inferred media category was accepted")
+	}
+	if recorder.Code != 400 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

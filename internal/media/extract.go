@@ -257,10 +257,12 @@ func extractImage(r io.ReadSeeker, header []byte, out *Result) error {
 	}
 
 	var exif *exifData
+	var xmpFields map[string]any
 	switch {
 	case isJPEG(header):
 		exif, _ = readJPEGExif(r)
 		mergeResultRelationEvidence(out, readJPEGXMPRelationEvidence(r))
+		xmpFields = readJPEGXMPMediaFields(r)
 	case isTIFF(header):
 		if _, err := r.Seek(0, io.SeekStart); err == nil {
 			data, _ := io.ReadAll(io.LimitReader(r, maxEmbeddedMetadataBytes))
@@ -270,6 +272,17 @@ func extractImage(r io.ReadSeeker, header []byte, out *Result) error {
 		exif, _ = readCR3EXIF(r)
 	default:
 		exif, _ = readEmbeddedEXIF(r)
+	}
+	if len(xmpFields) != 0 {
+		if exif == nil {
+			exif = &exifData{Orientation: 1, Fields: map[string]any{}}
+		}
+		if exif.Fields == nil {
+			exif.Fields = map[string]any{}
+		}
+		for key, value := range xmpFields {
+			exif.Fields[key] = value
+		}
 	}
 	if exif != nil {
 		applyEXIF(out, exif)

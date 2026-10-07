@@ -16,6 +16,7 @@ const (
 
 	xmpMMNamespace = "http://ns.adobe.com/xap/1.0/mm/"
 	stRefNamespace = "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
+	gpanoNamespace = "http://ns.google.com/photos/1.0/panorama/"
 	xmpJPEGHeader  = "http://ns.adobe.com/xap/1.0/\x00"
 )
 
@@ -195,6 +196,108 @@ func firstRelationValue(current, candidate string) string {
 		return current
 	}
 	return candidate
+}
+
+func parseXMPMediaFields(data []byte) map[string]any {
+	out := map[string]any{}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || len(data) > maxEmbeddedMetadataBytes {
+		return out
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	var current xml.Name
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			current = value.Name
+			for _, attr := range value.Attr {
+				if attr.Name.Space == gpanoNamespace {
+					setGPanoMediaField(out, attr.Name.Local, attr.Value)
+				}
+			}
+		case xml.CharData:
+			if current.Space == gpanoNamespace {
+				setGPanoMediaField(out, current.Local, string(value))
+			}
+		case xml.EndElement:
+			current = xml.Name{}
+		}
+	}
+	return out
+}
+
+func setGPanoMediaField(out map[string]any, name, raw string) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return
+	}
+	switch name {
+	case "ProjectionType":
+		out["gpano_projection_type"] = value
+		out["is_panorama"] = true
+	case "UsePanoramaViewer":
+		if strings.EqualFold(value, "true") || value == "1" {
+			out["gpano_use_panorama_viewer"] = true
+			out["is_panorama"] = true
+		}
+	}
+}
+
+func readJPEGXMPMediaFields(r io.ReadSeeker) map[string]any {
+	out := map[string]any{}
+	if r == nil {
+		return out
+	}
+	if _, err := r.Seek(2, io.SeekStart); err != nil {
+		return out
+	}
+	for {
+		var marker [2]byte
+		if _, err := io.ReadFull(r, marker[:]); err != nil {
+			return out
+		}
+		if marker[0] != 0xff {
+			return out
+		}
+		for marker[1] == 0xff {
+			if _, err := io.ReadFull(r, marker[1:2]); err != nil {
+				return out
+			}
+		}
+		if marker[1] == 0xd9 || marker[1] == 0xda {
+			return out
+		}
+		if marker[1] >= 0xd0 && marker[1] <= 0xd7 {
+			continue
+		}
+		var lengthBytes [2]byte
+		if _, err := io.ReadFull(r, lengthBytes[:]); err != nil {
+			return out
+		}
+		payloadLength := int(binary.BigEndian.Uint16(lengthBytes[:])) - 2
+		if payloadLength < 0 || payloadLength > maxEmbeddedMetadataBytes {
+			return out
+		}
+		if marker[1] == 0xe1 && payloadLength >= len(xmpJPEGHeader) {
+			payload := make([]byte, payloadLength)
+			if _, err := io.ReadFull(r, payload); err != nil {
+				return out
+			}
+			if bytes.HasPrefix(payload, []byte(xmpJPEGHeader)) {
+				for key, value := range parseXMPMediaFields(payload[len(xmpJPEGHeader):]) {
+					out[key] = value
+				}
+			}
+			continue
+		}
+		if _, err := r.Seek(int64(payloadLength), io.SeekCurrent); err != nil {
+			return out
+		}
+	}
 }
 
 func readJPEGXMPRelationEvidence(r io.ReadSeeker) RelationEvidence {

@@ -19,6 +19,7 @@ type mediaSmartAlbumQuery struct {
 	MediaKind      string     `json:"media_kind,omitempty"`
 	Search         string     `json:"search,omitempty"`
 	AssetKind      string     `json:"asset_kind,omitempty"`
+	Category       string     `json:"category,omitempty"`
 	CapturedFrom   *time.Time `json:"captured_from,omitempty"`
 	CapturedTo     *time.Time `json:"captured_to,omitempty"`
 	HasLocation    *bool      `json:"has_location,omitempty"`
@@ -45,6 +46,10 @@ func normalizeMediaSmartAlbumQuery(
 	value.AssetKind = strings.TrimSpace(value.AssetKind)
 	if value.AssetKind != "" && !meta.ValidPhotoAssetKind(value.AssetKind) {
 		return mediaSmartAlbumQuery{}, fmt.Errorf("asset_kind is invalid")
+	}
+	value.Category = strings.TrimSpace(value.Category)
+	if value.Category != "" && !validMediaCategory(value.Category) {
+		return mediaSmartAlbumQuery{}, fmt.Errorf("category is invalid")
 	}
 	value.Place = strings.TrimSpace(value.Place)
 	if value.Place != "" {
@@ -92,6 +97,7 @@ func (value mediaSmartAlbumQuery) empty() bool {
 	return value.MediaKind == "" &&
 		value.Search == "" &&
 		value.AssetKind == "" &&
+		value.Category == "" &&
 		value.CapturedFrom == nil &&
 		value.CapturedTo == nil &&
 		value.HasLocation == nil &&
@@ -113,6 +119,7 @@ func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
 		MediaKind:      value.MediaKind,
 		Search:         value.Search,
 		AssetKind:      value.AssetKind,
+		Category:       value.Category,
 		CapturedFrom:   value.CapturedFrom,
 		CapturedTo:     value.CapturedTo,
 		HasLocation:    value.HasLocation,

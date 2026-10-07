@@ -1,10 +1,24 @@
-import { createXDriveMediaGalleryDataSource } from '@xdrive/ui/mui'
+import {
+  createXDriveMediaGalleryDataSource,
+  xDriveMediaGalleryTrashRoots,
+} from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
 
 export function createWebMediaGalleryDataSource(api: XDriveApi) {
   return createXDriveMediaGalleryDataSource({
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => api.mediaItemRange('', limit, offset, query),
+    listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),
+    restoreTrashItems: async (items) => {
+      for (const root of xDriveMediaGalleryTrashRoots(items)) {
+        await api.restoreTrash(root.id, root.revision)
+      }
+    },
+    permanentlyDeleteTrashItems: async (items) => {
+      for (const root of xDriveMediaGalleryTrashRoots(items)) {
+        await api.permanentlyDeleteTrash(root.id, root.revision)
+      }
+    },
     listAlbums: () => api.mediaAlbums(),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
     listSuggestedPeople: (limit = 24) => api.mediaSuggestedPeople(limit),

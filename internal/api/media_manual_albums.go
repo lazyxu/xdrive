@@ -76,13 +76,14 @@ func (s *Server) mediaAlbumDTOByKey(
 		Table("xd_photo_collections AS pc").
 		Select(
 			"pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, "+
-				"COUNT(DISTINCT pca.asset_id) AS item_count, "+
-				"MIN(CASE WHEN lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
-				"MAX(COALESCE(pm.captured_at, pc.updated_at)) AS updated_at",
+				"COUNT(DISTINCT album_n.id) AS item_count, "+
+				"MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
+				"MAX(CASE WHEN album_n.id IS NOT NULL THEN COALESCE(pm.captured_at, pc.updated_at) ELSE pc.updated_at END) AS updated_at",
 			thumbnailMIMEs,
 		).
 		Joins("LEFT JOIN xd_photo_collection_assets AS pca ON pca.collection_id = pc.id").
 		Joins("LEFT JOIN xd_photo_assets AS pa ON pa.id = pca.asset_id AND pa.owner_id = pc.owner_id").
+		Joins("LEFT JOIN xd_nodes AS album_n ON album_n.id = pa.primary_node_id AND album_n.owner_id = pc.owner_id AND album_n.deleted_at IS NULL").
 		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where(

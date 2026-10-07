@@ -14,7 +14,7 @@ func TestMediaItemRangeQueries(t *testing.T) {
 		path string
 		call func(*Client) (MediaItemRange, error)
 	}
-	query := MediaQuery{Search: "marina"}
+	query := MediaQuery{Search: "marina", Category: "panorama"}
 	cases := []requestCase{
 		{
 			name: "items",
@@ -68,6 +68,9 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				if got := r.URL.Query().Get("q"); got != "marina" {
 					t.Fatalf("q=%q", got)
 				}
+				if got := r.URL.Query().Get("category"); got != "panorama" {
+					t.Fatalf("category=%q", got)
+				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(MediaItemRange{
 					Items:      []MediaItem{{Node: Node{ID: 7, Name: "photo.jpg", Type: "file"}}},
@@ -112,6 +115,43 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				t.Fatalf("unexpected page: %+v", page)
 			}
 		})
+	}
+
+	trashServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/media/trash" {
+			t.Fatalf("trash path=%q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != "40" {
+			t.Fatalf("trash limit=%q", got)
+		}
+		if got := r.URL.Query().Get("offset"); got != "20" {
+			t.Fatalf("trash offset=%q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(MediaItemRange{
+			Items: []MediaItem{{
+				Node:      Node{ID: 7, Name: "deleted.jpg", Type: "file"},
+				TrashRoot: &Node{ID: 9, Name: "Deleted Folder", Type: "dir"},
+			}},
+			TotalCount: 1,
+			Offset:     20,
+			Limit:      40,
+		})
+	}))
+	defer trashServer.Close()
+	trashPage, err := New(trashServer.URL, "token").MediaTrashRange(
+		context.Background(),
+		40,
+		20,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trashPage.TotalCount != 1 ||
+		len(trashPage.Items) != 1 ||
+		trashPage.Items[0].TrashRoot == nil ||
+		trashPage.Items[0].TrashRoot.ID != 9 {
+		t.Fatalf("unexpected trash page: %+v", trashPage)
 	}
 
 	cli := New("http://127.0.0.1", "")
