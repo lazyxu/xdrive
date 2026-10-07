@@ -152,6 +152,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const navigationRequestRef = useRef({
     id: 0,
     targetTabID: initialNavigationStateRef.current.activeTabID,
+    sourceTabID: undefined as string | undefined,
   })
   const [navigationState, setNavigationState] = useState<XDriveFileExplorerNavigationState<TCrumb>>(
     () => cloneNavigationState(initialNavigationStateRef.current!),
@@ -223,10 +224,14 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     typeof searchActive === 'function' ? searchActive() : searchActive
   )
 
-  const beginNavigation = (targetTabID = activeTabID) => {
+  const beginNavigation = (
+    targetTabID = activeTabID,
+    sourceTabID?: string,
+  ) => {
     const request = {
       id: navigationRequestRef.current.id + 1,
       targetTabID,
+      sourceTabID,
     }
     navigationRequestRef.current = request
     return request.id
@@ -452,7 +457,13 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (closingIndex < 0) return
 
     if (id !== activeTabID) {
-      if (navigationRequestRef.current.targetTabID === id && current) {
+      if (
+        (
+          navigationRequestRef.current.targetTabID === id ||
+          navigationRequestRef.current.sourceTabID === id
+        ) &&
+        current
+      ) {
         beginNavigation(activeTabID)
         void onLoadDirectory(current.id, crumbs, sort, grouping)
       }
@@ -522,7 +533,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const duplicateID = `tab-${nextTabIDRef.current++}`
     const duplicate = cloneNavigationTab(sourceTab)
     duplicate.id = duplicateID
-    const requestID = beginNavigation(duplicateID)
+    const requestID = beginNavigation(duplicateID, id)
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
@@ -554,10 +565,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     if (id === currentState.activeTabID) {
       if (
-        closingIDs.includes(navigationRequestRef.current.targetTabID) &&
+        navigationRequestRef.current.targetTabID !== targetTab.id &&
         current
       ) {
-        beginNavigation(currentState.activeTabID)
+        beginNavigation(targetTab.id)
         void onLoadDirectory(current.id, crumbs, sort, grouping)
       }
       rememberClosedTabs(currentState.tabs, closingIDs)
@@ -603,7 +614,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     if (activeStillOpen) {
       if (
-        closing.some((tab) => (
+        !remaining.some((tab) => (
           tab.id === navigationRequestRef.current.targetTabID
         )) &&
         current
