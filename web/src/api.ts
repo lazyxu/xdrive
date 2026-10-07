@@ -63,6 +63,7 @@ import type {
   XDriveCloudFilesSearchRange,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
+  XDriveFileFavoriteItem,
   XDriveFileRecentItem,
   XDriveUploadConflictPolicy,
   XDriveUploadConflictPreflight,
@@ -1182,6 +1183,22 @@ export class XDriveApi {
 
   unpinFileQuickAccess(nodeID: number) {
     return this.request<void>(`/api/v1/file-quick-access/${nodeID}`, {
+      method: 'DELETE',
+    })
+  }
+
+  fileFavorites() {
+    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites')
+  }
+
+  favoriteFile(nodeID: number) {
+    return this.request<XDriveFileFavoriteItem<Node>>(`/api/v1/file-favorites/${nodeID}`, {
+      method: 'PUT',
+    })
+  }
+
+  unfavoriteFile(nodeID: number) {
+    return this.request<void>(`/api/v1/file-favorites/${nodeID}`, {
       method: 'DELETE',
     })
   }

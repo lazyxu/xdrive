@@ -47,6 +47,7 @@ import type {
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerGrouping,
   XDriveFileQuickAccessItem,
+  XDriveFileFavoriteItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
   XDriveTransferTask,
@@ -275,6 +276,7 @@ declare global {
   type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>
   type AgentCloudNodeChangePage = XDriveCloudFilesChangePage<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
+  type AgentCloudFavoriteItem = XDriveFileFavoriteItem<AgentCloudNode>
   type AgentCloudRecentItem = XDriveFileRecentItem<AgentCloudNode>
   type AgentCloudQuota = QuotaUsage
   type AgentCloudStorageStats = StorageStats
@@ -517,6 +519,9 @@ declare global {
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
         cloudUnpinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudFileFavorites: () => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
+        cloudFavoriteFile: (nodeID: number) => Promise<DesktopResult<AgentCloudFavoriteItem>>
+        cloudUnfavoriteFile: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudFileRecent: (limit?: number) => Promise<DesktopResult<AgentCloudRecentItem[]>>
         cloudTouchFileRecent: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
         cloudClearFileRecent: () => Promise<DesktopResult<{ ok: boolean }>>

@@ -34,6 +34,7 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
@@ -140,6 +141,7 @@ export default function DesktopFileExplorer({
   propertiesStatsSupported = false,
   fileAvailabilitySupported = false,
   quickAccessSupported = false,
+  favoritesSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
   keyboardProfile = 'web',
@@ -186,6 +188,7 @@ export default function DesktopFileExplorer({
   propertiesStatsSupported?: boolean
   fileAvailabilitySupported?: boolean
   quickAccessSupported?: boolean
+  favoritesSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
@@ -367,6 +370,26 @@ export default function DesktopFileExplorer({
     },
     unpinItem: async (nodeID) => {
       const result = await window.xdriveDesktop.agent.cloudUnpinFileQuickAccess(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  })
+
+  const favorites = useXDriveFileExplorerFavorites<AgentCloudNode>({
+    enabled: favoritesSupported,
+    loadItems: async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileFavorites()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    favoriteItem: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.cloudFavoriteFile(nodeID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    unfavoriteItem: async (nodeID) => {
+      const result = await window.xdriveDesktop.agent.cloudUnfavoriteFile(nodeID)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -931,6 +954,11 @@ export default function DesktopFileExplorer({
         : undefined,
       quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
       quickAccessDisabled: quickAccess.busyID !== null,
+      onToggleFavorite: node.type === 'file' && favoritesSupported
+        ? () => { void favorites.toggle(node.id) }
+        : undefined,
+      favorite: favorites.favoriteIDs.has(node.id),
+      favoriteDisabled: favorites.busyID !== null,
       onSystemOpen: node.type === 'file'
         ? () => { void openLocalNode(node) }
         : undefined,
@@ -1310,6 +1338,15 @@ export default function DesktopFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            favoritesEnabled={favoritesSupported}
+            favoriteItems={favorites.items}
+            favoritesLoading={favorites.loading}
+            favoriteBusyID={favorites.busyID}
+            onActivateFavorite={(nodeID) => {
+              onCloseTrash()
+              void favorites.activate(nodeID, (node) => openLocalNode(node))
+            }}
+            onUnfavorite={(nodeID) => { void favorites.unfavorite(nodeID) }}
             recentEnabled={recentSupported}
             recentItems={recent.items}
             recentLoading={recent.loading}
