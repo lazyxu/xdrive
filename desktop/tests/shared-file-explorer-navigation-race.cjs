@@ -1737,3 +1737,376 @@ test('close-other-tabs invalidates a pending activation of a tab it removes', as
     'address path must remain aligned with the only surviving tab',
   )
 })
+
+
+test('close-other-tabs invalidates a pending open-tab that has not committed yet', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+  )
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+
+  driver.controlRequests()
+
+  // Start creating B, but keep its directory load pending so the new tab has
+  // not entered navigationState yet.
+  const pendingOpenB = navigation.openTab([root, folderB])
+  await flushAsync()
+
+  // Close-other-tabs(A) cannot see B in closingIDs because B has not committed
+  // to the tab list yet. It must still invalidate the pending tab creation.
+  assert.equal(await navigation.closeOtherTabs(tabA), true)
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'close-other-tabs must keep only A even when a new tab is still pending',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+
+  driver.resolveDirectory(folderB.id)
+  assert.equal(
+    await pendingOpenB,
+    false,
+    'a tab creation invalidated by close-other-tabs must not commit later',
+  )
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'the pending B tab must not appear after close-other-tabs has completed',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderA.id,
+    'the stale pending open-tab must not replace the surviving A directory',
+  )
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
+
+
+test('close-tabs-to-right invalidates a pending open-tab that has not committed yet', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderC = { id: 3, name: 'C' }
+  const folderB = { id: 4, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderC]), true)
+  navigation = harness.render()
+  const tabC = navigation.activeTabID
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA, tabC],
+  )
+
+  driver.controlRequests()
+
+  // B is a new tab whose directory request is pending, so it is not yet
+  // present in the committed tab list or in close-right's "closing" slice.
+  const pendingOpenB = navigation.openTab([root, folderB])
+  await flushAsync()
+
+  assert.equal(await navigation.closeTabsToRight(tabA), true)
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'close-right must remove C and keep no uncommitted pending tab alive',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+
+  driver.resolveDirectory(folderB.id)
+  assert.equal(
+    await pendingOpenB,
+    false,
+    'a pending tab creation outside the close-right survivors must be invalidated',
+  )
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'the pending B tab must not appear after close-right has completed',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
+
+
+test('close-other-tabs invalidates a pending duplicate whose future tab is not yet listed', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+
+  driver.controlRequests()
+
+  const pendingDuplicate = navigation.duplicateTab(tabA)
+  await flushAsync()
+
+  assert.equal(await navigation.closeOtherTabs(tabA), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'close-other-tabs must synchronously leave only A',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.resolveDirectory(folderA.id)
+  assert.equal(
+    await pendingDuplicate,
+    false,
+    'a duplicate invalidated by close-other-tabs must not commit later',
+  )
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'a pending duplicate with a future tab id must not insert itself after close-other-tabs',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
+
+test('close-tabs-to-right invalidates a pending duplicate whose future tab would land on the right', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.controlRequests()
+
+  const pendingDuplicate = navigation.duplicateTab(tabA)
+  await flushAsync()
+
+  assert.equal(await navigation.closeTabsToRight(tabA), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'close-right must synchronously remove the existing right-hand tab',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+
+  driver.resolveDirectory(folderA.id)
+  assert.equal(
+    await pendingDuplicate,
+    false,
+    'a future duplicate invalidated by close-right must not commit later',
+  )
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabA],
+    'a pending future duplicate must not recreate a right-hand tab after close-right',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+})
+
+
+test('closing a duplicate source tab invalidates its pending future duplicate navigation', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+  const tabB = navigation.activeTabID
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+  assert.equal(navigation.pathValue, '我的文件/B')
+
+  driver.controlRequests()
+
+  // Duplicate the non-active source A. The duplicate uses a future tab id and
+  // starts loading A, but that new tab has not entered navigationState yet.
+  const pendingDuplicate = navigation.duplicateTab(tabA)
+  await flushAsync()
+
+  // Closing the source A must also invalidate its pending duplicate. The
+  // current B workspace survives this close.
+  await navigation.closeTab(tabA)
+  navigation = harness.render()
+
+  assert.equal(
+    navigation.tabs.some((tab) => tab.id === tabA),
+    false,
+    'the duplicate source tab A must be closed immediately',
+  )
+  assert.equal(navigation.activeTabID, tabB)
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+  assert.equal(navigation.pathValue, '我的文件/B')
+
+  driver.resolveDirectory(folderA.id)
+  assert.equal(
+    await pendingDuplicate,
+    false,
+    'a duplicate whose source tab was closed must not commit its future tab',
+  )
+  navigation = harness.render()
+
+  assert.equal(
+    navigation.tabs.some((tab) => tab.id === tabA),
+    false,
+    'closed source A must stay closed after the duplicate load completes',
+  )
+  assert.equal(
+    navigation.tabs.some((tab) => tab.id !== 'tab-1' && tab.id !== tabB),
+    false,
+    'the future duplicate must not be inserted after its source was closed',
+  )
+  assert.equal(navigation.activeTabID, tabB)
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderB.id,
+    'the stale duplicate directory load must not replace visible B after source A is closed',
+  )
+  assert.equal(
+    navigation.pathValue,
+    '我的文件/B',
+    'address path must remain aligned with surviving active tab B',
+  )
+})
+
+
+test('closing an unrelated tab does not cancel a pending duplicate owned by a surviving source', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+  const tabB = navigation.activeTabID
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  driver.controlRequests()
+
+  // Duplicate the surviving active B, then close unrelated non-active A.
+  // The future duplicate is owned by B and must remain valid.
+  const pendingDuplicate = navigation.duplicateTab(tabB)
+  await flushAsync()
+
+  await navigation.closeTab(tabA)
+  navigation = harness.render()
+  assert.equal(
+    navigation.tabs.some((tab) => tab.id === tabA),
+    false,
+    'unrelated A should close immediately',
+  )
+  assert.equal(navigation.activeTabID, tabB)
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  driver.resolveDirectory(folderB.id)
+  assert.equal(
+    await pendingDuplicate,
+    true,
+    'closing unrelated A must not cancel a pending duplicate owned by surviving B',
+  )
+  navigation = harness.render()
+
+  assert.equal(
+    navigation.tabs.filter((tab) => tab.id !== 'tab-1' && tab.id !== tabB).length,
+    1,
+    'the future duplicate of B should still be inserted',
+  )
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+  assert.equal(navigation.pathValue, '我的文件/B')
+})
