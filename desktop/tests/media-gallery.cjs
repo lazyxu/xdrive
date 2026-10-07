@@ -11,6 +11,7 @@ const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDet
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
+const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
@@ -21,6 +22,7 @@ const sharedGallery = [
   sharedGalleryPreview,
   sharedGalleryUtils,
   sharedGalleryFilters,
+  sharedGalleryNavigation,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -99,6 +101,29 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')
   assert.equal(webApp.includes('function MediaGallery'), false)
   assert.equal(desktopApp.includes('function MediaGallery'), false)
+})
+
+test('Gallery IA keeps photo browsing primary and moves advanced controls behind shared navigation', () => {
+  for (const label of ['图库', '回忆', '人物', '地点', '相册', '收藏', '媒体类型']) {
+    assert.ok(sharedGalleryNavigation.includes(label), 'Gallery navigation missing: ' + label)
+  }
+  assert.match(sharedGalleryNavigation, /value: 'memories'/)
+  assert.match(sharedGalleryNavigation, /disabled: true/)
+  assert.match(sharedGalleryFilters, /export function XDriveMediaGalleryFilterToolbar/)
+  assert.match(sharedGalleryFilters, /<Popover/)
+  assert.match(sharedGalleryFilters, /showSearch=\{false\}/)
+  assert.match(sharedGalleryFilters, /placeholder="搜索照片、文件名、相机或镜头"/)
+  assert.match(sharedGalleryMain, /section=\{section\}/)
+  assert.match(sharedGalleryMain, /showAlbumIndex/)
+  assert.match(sharedGalleryMain, /showPlacesIndex/)
+  assert.match(sharedGalleryMain, /showPeopleIndex/)
+  assert.match(sharedGalleryMain, /showMediaTypeIndex/)
+  assert.match(sharedGalleryMain, /showPhotoCollection/)
+  assert.match(sharedGalleryMain, /lockedFavorite=\{section === 'favorites'\}/)
+  assert.match(sharedGalleryMain, /lockedAssetKind=\{section === 'media-types'/)
+  assert.match(sharedGalleryMain, /mediaGalleryMediaTypes/)
+  assert.match(sharedGalleryMain, /你收藏的照片和视频/)
+  assert.match(sharedGalleryMain, /按媒体资产类型快速进入照片集合/)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {
@@ -372,7 +397,6 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /data: ArrayBuffer/)
   assert.match(agentClient, /mediaLivePhotoMotion\(nodeID: number\): Promise<AgentMediaMotion>/)
   assert.match(agentClient, /requestBinary\(/)
-  assert.equal(agentClient.includes('data_base64'), false)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaSuggestedPeople/)
   assert.match(desktopAdapter, /getMediaSuggestedPersonItems/)
@@ -390,6 +414,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.equal(desktopAdapter.includes('getMediaVideoURL'), false, 'Desktop Gallery adapter must use generic file preview URLs')
   assert.equal(webAPI.includes('mediaVideoURL('), false, 'Web API must not keep the legacy media playback helper')
   assert.equal(agentClient.includes('mediaVideoURL('), false, 'Desktop Agent client must not keep the legacy media playback helper')
+  assert.equal(agentClient.includes('data_base64'), false)
   assert.equal(agentClient.includes('media_token'), false, 'Desktop discovery must not keep a second media token')
   assert.equal(desktopIPC.includes('"media-video-stream"'), false, 'Agent must expose only the generic file-preview stream capability')
   assert.equal(desktopIPC.includes('/v1/media/video'), false, 'Agent must not keep the legacy media video stream route')
@@ -476,9 +501,10 @@ test('Gallery delegates MediaDetails and preview-media helpers to internal modul
 })
 
 
-test('Gallery delegates filter draft/query mapping and filter-bar presentation to an internal module', () => {
-  assert.ok(sharedGalleryMain.includes('<XDriveMediaGalleryFilterBar'), 'Gallery page must render the internal filter bar')
-  assert.ok(sharedGalleryFilters.includes('export function XDriveMediaGalleryFilterBar'), 'missing Gallery filter-bar module')
+test('Gallery delegates filter mapping and advanced-filter presentation to the shared filter module', () => {
+  assert.ok(sharedGalleryMain.includes('<XDriveMediaGalleryFilterToolbar'), 'Gallery page must render the compact shared filter toolbar')
+  assert.ok(sharedGalleryFilters.includes('export function XDriveMediaGalleryFilterBar'), 'missing Gallery advanced filter form')
+  assert.ok(sharedGalleryFilters.includes('export function XDriveMediaGalleryFilterToolbar'), 'missing Gallery filter toolbar')
   for (const token of [
     'export type MediaGalleryFilterDraft',
     'emptyMediaGalleryFilterDraft',
@@ -493,7 +519,8 @@ test('Gallery delegates filter draft/query mapping and filter-bar presentation t
   ]) {
     assert.ok(sharedGalleryFilters.includes(token), `MediaGalleryFilters missing: ${token}`)
   }
-  assert.equal(/use(?:State|Effect)\(/.test(sharedGalleryFilters), false, 'Gallery filter module must stay stateless/effect-free')
+  assert.match(sharedGalleryFilters, /useState<HTMLElement \| null>/, 'shared filter toolbar must own Popover anchor state')
+  assert.match(sharedGalleryFilters, /<Popover/, 'advanced Gallery filters must live behind the shared Popover')
   assert.equal(sharedGalleryMain.includes('type MediaGalleryFilterDraft ='), false, 'filter draft definition must not remain inline')
   assert.equal(sharedGalleryMain.includes('function MediaGalleryFilterBar('), false, 'filter-bar implementation must not remain inline')
 })

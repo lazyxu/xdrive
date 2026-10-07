@@ -1,8 +1,12 @@
+import { useState } from 'react'
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
 import {
+  Box,
   Button,
   Chip,
   MenuItem,
   Paper,
+  Popover,
   Stack,
   TextField,
 } from '@mui/material'
@@ -129,6 +133,9 @@ export function XDriveMediaGalleryFilterBar({
   placeLabel,
   personIdentityLabel,
   personIdentityLocked = false,
+  showSearch = true,
+  lockedAssetKind = false,
+  lockedFavorite = false,
   onChange,
   onApply,
   onClear,
@@ -141,6 +148,9 @@ export function XDriveMediaGalleryFilterBar({
   placeLabel?: string
   personIdentityLabel?: string
   personIdentityLocked?: boolean
+  showSearch?: boolean
+  lockedAssetKind?: boolean
+  lockedFavorite?: boolean
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
@@ -153,17 +163,19 @@ export function XDriveMediaGalleryFilterBar({
         spacing={1}
         alignItems={{ xs: 'stretch', lg: 'center' }}
       >
-        <TextField
-          size="small"
-          label="搜索"
-          placeholder="文件名、相机或镜头"
-          value={draft.search}
-          onChange={(event) => onChange({ ...draft, search: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') onApply()
-          }}
-          sx={{ minWidth: { lg: 240 }, flex: { lg: 1 } }}
-        />
+        {showSearch ? (
+          <TextField
+            size="small"
+            label="搜索"
+            placeholder="文件名、相机或镜头"
+            value={draft.search}
+            onChange={(event) => onChange({ ...draft, search: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') onApply()
+            }}
+            sx={{ minWidth: { lg: 240 }, flex: { lg: 1 } }}
+          />
+        ) : null}
         <TextField
           size="small"
           label="标签"
@@ -191,6 +203,7 @@ export function XDriveMediaGalleryFilterBar({
           size="small"
           label="资产类型"
           value={draft.assetKind}
+          disabled={lockedAssetKind}
           onChange={(event) => onChange({ ...draft, assetKind: event.target.value })}
           sx={{ minWidth: 132 }}
         >
@@ -244,6 +257,7 @@ export function XDriveMediaGalleryFilterBar({
           size="small"
           label="收藏"
           value={draft.favorite}
+          disabled={lockedFavorite}
           onChange={(event) => onChange({
             ...draft,
             favorite: event.target.value as MediaGalleryFilterDraft['favorite'],
@@ -295,5 +309,118 @@ export function XDriveMediaGalleryFilterBar({
         </Stack>
       </Stack>
     </Paper>
+  )
+}
+
+
+function mediaGalleryAdvancedFilterCount(draft: MediaGalleryFilterDraft) {
+  return [
+    draft.assetKind,
+    draft.capturedFrom,
+    draft.capturedTo,
+    draft.location !== 'any' ? draft.location : '',
+    draft.favorite !== 'any' ? draft.favorite : '',
+    draft.tag.trim(),
+    draft.person.trim(),
+    draft.personIdentity.trim(),
+    draft.place.trim(),
+  ].filter(Boolean).length
+}
+
+export function XDriveMediaGalleryFilterToolbar({
+  draft,
+  loading,
+  applyLabel = '应用',
+  clearLabel = '清除',
+  placeLabel,
+  personIdentityLabel,
+  personIdentityLocked = false,
+  lockedAssetKind = false,
+  lockedFavorite = false,
+  onChange,
+  onApply,
+  onClear,
+  onSaveSmart,
+}: {
+  draft: MediaGalleryFilterDraft
+  loading: boolean
+  applyLabel?: string
+  clearLabel?: string
+  placeLabel?: string
+  personIdentityLabel?: string
+  personIdentityLocked?: boolean
+  lockedAssetKind?: boolean
+  lockedFavorite?: boolean
+  onChange: (next: MediaGalleryFilterDraft) => void
+  onApply: () => void
+  onClear: () => void
+  onSaveSmart?: () => void
+}) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const advancedCount = mediaGalleryAdvancedFilterCount(draft)
+
+  return (
+    <>
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        sx={{ minWidth: 0 }}
+      >
+        <TextField
+          size="small"
+          fullWidth
+          aria-label="搜索图库"
+          placeholder="搜索照片、文件名、相机或镜头"
+          value={draft.search}
+          onChange={(event) => onChange({ ...draft, search: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onApply()
+          }}
+          sx={{ maxWidth: 520 }}
+        />
+        <Button
+          size="small"
+          variant={advancedCount > 0 ? 'contained' : 'outlined'}
+          startIcon={<FilterAltOutlinedIcon />}
+          aria-expanded={Boolean(anchorEl)}
+          aria-haspopup="dialog"
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+          sx={{ flexShrink: 0 }}
+        >
+          {advancedCount > 0 ? `筛选 · ${advancedCount}` : '筛选'}
+        </Button>
+      </Stack>
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { sx: { mt: 0.75, maxWidth: 'calc(100vw - 32px)' } } }}
+      >
+        <Box sx={{ p: 1.5, width: { xs: 320, sm: 720, lg: 860 }, maxWidth: '100%' }}>
+          <XDriveMediaGalleryFilterBar
+            draft={draft}
+            loading={loading}
+            applyLabel={applyLabel}
+            clearLabel={clearLabel}
+            placeLabel={placeLabel}
+            personIdentityLabel={personIdentityLabel}
+            personIdentityLocked={personIdentityLocked}
+            showSearch={false}
+            lockedAssetKind={lockedAssetKind}
+            lockedFavorite={lockedFavorite}
+            onChange={onChange}
+            onApply={() => {
+              onApply()
+              setAnchorEl(null)
+            }}
+            onClear={onClear}
+            onSaveSmart={onSaveSmart}
+          />
+        </Box>
+      </Popover>
+    </>
   )
 }
