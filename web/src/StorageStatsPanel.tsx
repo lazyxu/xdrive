@@ -53,6 +53,8 @@ import type { XDriveApi } from './api'
 const STAGING_PAGE_SIZE = 20
 const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
 
+type StorageMaintenanceKind = 'storage_verify' | 'storage_repair'
+
 function unreferencedBlobStatus(blob: StorageUnreferencedBlob) {
   switch (blob.gc_status) {
     case 'awaiting_gc':
@@ -102,9 +104,13 @@ function decisionDescription(decision: StorageDecision) {
 export default function StorageStatsPanel({
   api,
   scope,
+  onOpenTaskCenter,
+  onRunStorageMaintenance,
 }: {
   api: XDriveApi
   scope: 'self' | 'global'
+  onOpenTaskCenter?: () => void
+  onRunStorageMaintenance?: (kind: StorageMaintenanceKind) => Promise<void>
 }) {
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
@@ -129,6 +135,7 @@ export default function StorageStatsPanel({
   const [unreferencedPageNumber, setUnreferencedPageNumber] = useState(1)
   const [unreferencedCursors, setUnreferencedCursors] = useState<string[]>([''])
   const [unreferencedLoading, setUnreferencedLoading] = useState(false)
+  const [maintenanceLoading, setMaintenanceLoading] = useState<StorageMaintenanceKind | ''>('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
@@ -312,6 +319,22 @@ export default function StorageStatsPanel({
     }
   }
 
+  const runStorageMaintenance = async (kind: StorageMaintenanceKind) => {
+    if (!onRunStorageMaintenance || maintenanceLoading) return
+    setMaintenanceLoading(kind)
+    setError('')
+    try {
+      await onRunStorageMaintenance(kind)
+      setMaintenanceLoading('')
+      onOpenTaskCenter?.()
+    } catch (err) {
+      setMaintenanceLoading('')
+      setError(err instanceof Error && err.message.trim()
+        ? err.message
+        : '提交存储维护任务失败，请稍后重试。')
+    }
+  }
+
   const firstHistory = history?.samples[0]
   const lastHistory = history?.samples[history.samples.length - 1]
   const otherDiskUsed = stats?.disk_used_bytes !== undefined && stats?.xdrive_physical_bytes !== undefined
@@ -376,6 +399,47 @@ export default function StorageStatsPanel({
                 >
                   {`ready ${health.ready_blobs.toLocaleString()} · deleting ${health.deleting_blobs.toLocaleString()} · stale ${health.stale_deleting_blobs.toLocaleString()} · missing metadata ${health.missing_metadata.toLocaleString()} · refcount drift ${health.refcount_mismatches.toLocaleString()} · state drift ${health.state_mismatches.toLocaleString()} · size drift ${health.size_mismatches.toLocaleString()} · key/hash drift ${health.key_hash_mismatches.toLocaleString()} · invalid state ${health.invalid_states.toLocaleString()}`}
                 </XDriveStatusAlert>
+              )}
+
+              {scope === 'global' && (onOpenTaskCenter || onRunStorageMaintenance) && (
+                <Stack spacing={1.5}>
+                  <XDriveSectionHeader
+                    level="h3"
+                    title="维护与修复"
+                    subtitle="全局存储只负责发现问题；长时间校验、修复、取消和进度统一交给 Task Center。"
+                    actions={onOpenTaskCenter ? (
+                      <XDriveActionButton compact onClick={onOpenTaskCenter}>
+                        查看维护任务
+                      </XDriveActionButton>
+                    ) : undefined}
+                  />
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {onRunStorageMaintenance ? (
+                      <>
+                        <XDriveActionButton
+                          loading={maintenanceLoading === 'storage_verify'}
+                          loadingLabel="正在提交…"
+                          disabled={Boolean(maintenanceLoading)}
+                          onClick={() => { void runStorageMaintenance('storage_verify') }}
+                        >
+                          运行存储完整性校验
+                        </XDriveActionButton>
+                        <XDriveActionButton
+                          intent="warning"
+                          loading={maintenanceLoading === 'storage_repair'}
+                          loadingLabel="正在提交…"
+                          disabled={Boolean(maintenanceLoading)}
+                          onClick={() => { void runStorageMaintenance('storage_repair') }}
+                        >
+                          运行存储修复
+                        </XDriveActionButton>
+                      </>
+                    ) : null}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    存储修复会先校验并迁移仍被引用的 legacy 对象到 CAS，再修复 CAS 元数据；CAS 物理删除仍由 Janitor 负责。每日存储快照和 Janitor 的运行状态也在全局 Task Center 中查看。
+                  </Typography>
+                </Stack>
               )}
 
               {scope === 'global' &&

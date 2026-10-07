@@ -104,7 +104,15 @@ This number, not “CAS + legacy + staging”, is the authoritative xDrive physi
 
 Storage-backend walking is owned by the durable `storage_sampler` maintenance task, not by the administrator page request.
 The sampler runs at most once per UTC day (with an hourly due-check for restart recovery), persists its scan-heavy result
-in the daily `xd_storage_samples` row, and is visible/controllable in the administrator global Task Center.
+in the daily `xd_storage_samples` row, and is visible in the administrator global Task Center.
+
+The administrator **全局存储** page may submit the existing interactive `storage.verify` and
+`storage.repair` maintenance controls, but it must immediately hand execution visibility back to the global
+Task Center. The storage page must not implement a second maintenance lifecycle, progress model, cancellation
+model, or audit path. Janitor and the daily storage sampler remain schedule-owned; the storage page links to
+their Task Center state instead of inventing manual run semantics for them. `storage.repair` includes the
+verified legacy-to-CAS migration contract before CAS metadata reconciliation; CAS physical deletion remains
+Janitor-owned.
 
 The persisted snapshot includes CAS distribution, physically present zero-reference CAS totals, legacy totals, upload
 staging summary, and the complete storage inventory. `GET /api/v1/admin/storage` reads that latest snapshot and

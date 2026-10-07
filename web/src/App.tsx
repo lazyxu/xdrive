@@ -633,6 +633,17 @@ function FileManager({
     onBackgroundTaskError: handleError,
   })
 
+  const openGlobalTaskCenter = useCallback(() => {
+    taskCenter.pageProps.onBackgroundScopeChange?.('global')
+    setAppView('transfers')
+  }, [taskCenter.pageProps.onBackgroundScopeChange])
+
+  const runStorageMaintenance = useCallback(async (
+    kind: 'storage_verify' | 'storage_repair',
+  ) => {
+    await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
+  }, [api])
+
   useEffect(() => {
     if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {
       setAppView('files')
@@ -1022,6 +1033,8 @@ function FileManager({
           <StorageStatsPanel
             api={api}
             scope="global"
+            onOpenTaskCenter={openGlobalTaskCenter}
+            onRunStorageMaintenance={runStorageMaintenance}
           />
         ) : (
           <Box sx={{ height: { xs: 560, md: '100%' }, minHeight: { xs: 480, md: 0 } }}>

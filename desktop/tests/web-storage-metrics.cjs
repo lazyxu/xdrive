@@ -25,7 +25,7 @@ const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'ren
 test('Web global storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
   assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 28)
-  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 8)
+  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 9)
   assert.equal(storageStats.includes('function StorageStatGrid'), false)
   assert.equal(storageStats.includes('function StorageStat('), false)
   assert.equal(storageStats.includes('function SectionTitle'), false)
@@ -145,4 +145,26 @@ test('global storage page reads daily physical snapshot without scanning staging
     false,
     'opening global storage must not trigger a staging filesystem scan',
   )
+})
+
+
+test('global storage delegates durable maintenance to the global Task Center', () => {
+  for (const token of [
+    'title="维护与修复"',
+    '运行存储完整性校验',
+    '运行存储修复',
+    '查看维护任务',
+    "runStorageMaintenance('storage_verify')",
+    "runStorageMaintenance('storage_repair')",
+    'legacy 对象到 CAS',
+    'CAS 物理删除仍由 Janitor 负责',
+  ]) assert.ok(storageStats.includes(token), 'storage maintenance handoff missing: ' + token)
+
+  for (const token of [
+    "taskCenter.pageProps.onBackgroundScopeChange?.('global')",
+    "setAppView('transfers')",
+    "api.controlBackgroundTask(\`system-maintenance:\${kind}\`, 'run', true)",
+    'onOpenTaskCenter={openGlobalTaskCenter}',
+    'onRunStorageMaintenance={runStorageMaintenance}',
+  ]) assert.ok(webApp.includes(token), 'Web Task Center handoff missing: ' + token)
 })
