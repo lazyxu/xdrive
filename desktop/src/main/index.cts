@@ -3105,6 +3105,33 @@ function registerIPCHandlers() {
       return requireAgentClient().cloudUploadPreflight(parentID, name.trim())
     }, false))
 
+  ipcMain.handle('agent:cloud-upload-preflight-batch', (_event, items: unknown) =>
+    runAgentAction<AgentCloudUploadConflictPreflight[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      requireAgentCapability(hello, 'upload-conflict-preflight-batch')
+      if (
+        !Array.isArray(items) ||
+        items.length === 0 ||
+        items.length > 200 ||
+        items.some((item) => (
+          !item ||
+          typeof item !== 'object' ||
+          typeof (item as { parent_id?: unknown }).parent_id !== 'number' ||
+          !Number.isSafeInteger((item as { parent_id: number }).parent_id) ||
+          typeof (item as { name?: unknown }).name !== 'string'
+        ))
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Upload preflight batch must contain 1-200 parent/name entries.')
+      }
+      return requireAgentClient().cloudUploadPreflightBatch(
+        items.map((item) => ({
+          parent_id: (item as { parent_id: number }).parent_id,
+          name: (item as { name: string }).name,
+        })),
+      )
+    }, false))
+
   ipcMain.handle(
     'agent:cloud-upload-file',
     (_event, parentID: unknown, localPath: unknown, name: unknown, policy: unknown, transferID: unknown) =>

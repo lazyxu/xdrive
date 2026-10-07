@@ -417,6 +417,7 @@ export type AgentCloudUploadConflictPreflight = {
   conflict: boolean
   target_type?: 'file' | 'dir'
   can_overwrite?: boolean
+  error?: string
 }
 
 export type AgentCloudFileTextPreview = {
@@ -1863,6 +1864,15 @@ export class AgentIPCClient {
       parent_id: parentID,
       name,
     }, 45_000)
+  }
+
+  cloudUploadPreflightBatch(items: Array<{ parent_id: number; name: string }>) {
+    return this.request<AgentCloudUploadConflictPreflight[]>(
+      'POST',
+      '/v1/cloud/upload/preflight/batch',
+      { items },
+      45_000,
+    )
   }
 
   cloudUploadWithConflictPolicy(

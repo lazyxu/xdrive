@@ -97,6 +97,7 @@ type fakeDesktopIPCController struct {
 	cloudUploaded              client.Node
 	cloudPreflightParent       uint64
 	cloudPreflightName         string
+	cloudPreflightBatch        []client.UploadConflictPreflightRequest
 	cloudUploadParent          uint64
 	cloudUploadPath            string
 	cloudUploadName            string
@@ -559,6 +560,18 @@ func (f *fakeDesktopIPCController) CloudUploadConflictPreflight(
 	return client.UploadConflictPreflight{
 		Conflict: true, TargetType: "file", CanOverwrite: true,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUploadConflictPreflightBatch(
+	_ context.Context,
+	items []client.UploadConflictPreflightRequest,
+) ([]client.UploadConflictPreflight, error) {
+	f.cloudPreflightBatch = append([]client.UploadConflictPreflightRequest(nil), items...)
+	out := make([]client.UploadConflictPreflight, len(items))
+	for index := range out {
+		out[index] = client.UploadConflictPreflight{Conflict: true, TargetType: "file", CanOverwrite: true}
+	}
+	return out, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudUploadWithConflictPolicy(
@@ -1391,6 +1404,9 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight") {
 		t.Fatalf("hello missing upload conflict preflight capability: %+v", hello.Capabilities)
 	}
+	if !strings.Contains(strings.Join(hello.Capabilities, ","), "upload-conflict-preflight-batch") {
+		t.Fatalf("hello missing upload conflict preflight batch capability: %+v", hello.Capabilities)
+	}
 	if !strings.Contains(strings.Join(hello.Capabilities, ","), "archive-download") {
 		t.Fatalf("hello missing archive download capability: %+v", hello.Capabilities)
 	}
@@ -1700,6 +1716,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodPost, "/v1/cloud/file-operation/retry", `{"id":"file-op"}`, "\"id\":\"file-op-retry\""},
 		{http.MethodPost, "/v1/cloud/file-operation/resolve", `{"id":"file-op","conflict_policy":"replace"}`, "\"id\":\"file-op-resolved\""},
 		{http.MethodPost, "/v1/cloud/upload/preflight", `{"parent_id":2,"name":"upload.txt"}`, "\"conflict\":true"},
+		{http.MethodPost, "/v1/cloud/upload/preflight/batch", `{"items":[{"parent_id":2,"name":"a.txt"},{"parent_id":2,"name":"b.txt"}]}`, "\"conflict\":true"},
 		{http.MethodPost, "/v1/cloud/upload/conflict", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt","conflict_policy":"keep_both"}`, "\"transferred_bytes\":12"},
 		{http.MethodPost, "/v1/cloud/upload", `{"parent_id":2,"local_path":"/tmp/upload.txt","name":"upload.txt"}`, "\"upload.txt\""},
 		{http.MethodGet, "/v1/cloud/text-preview?id=3", "", "\"text\":\"preview\""},
@@ -1782,6 +1799,9 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			ctrl.cloudPreflightParent,
 			ctrl.cloudPreflightName,
 		)
+	}
+	if len(ctrl.cloudPreflightBatch) != 2 || ctrl.cloudPreflightBatch[0].Name != "a.txt" || ctrl.cloudPreflightBatch[1].Name != "b.txt" {
+		t.Fatalf("cloud upload preflight batch not forwarded: %+v", ctrl.cloudPreflightBatch)
 	}
 	if ctrl.cloudRenameID != 3 || ctrl.cloudRenameRev != 2 || ctrl.cloudRenameName != "renamed.pdf" {
 		t.Fatalf("cloud rename not forwarded: id=%d revision=%d name=%q", ctrl.cloudRenameID, ctrl.cloudRenameRev, ctrl.cloudRenameName)

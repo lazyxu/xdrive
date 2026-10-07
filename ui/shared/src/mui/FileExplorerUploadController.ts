@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import {
   xDriveUploadBatchSummary,
   xDriveUploadConflictCanOverwrite,
+  xDriveUploadConflictPreflightBatchSize,
 } from '../upload-conflicts'
 import type {
   XDriveUploadConflictPolicy,
@@ -123,6 +124,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
   fileName,
   fileSize = () => 0,
   preflight,
+  preflightBatch,
   upload,
   transferLifecycle,
   onError,
@@ -137,6 +139,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
     parentID: number,
     file: TFile,
   ) => Promise<XDriveUploadConflictPreflight>
+  preflightBatch?: (
+    targets: readonly XDriveFileExplorerUploadTarget<TFile>[],
+  ) => Promise<readonly XDriveUploadConflictPreflight[]>
   upload: (
     parentID: number,
     file: TFile,
@@ -152,6 +157,52 @@ export function useXDriveFileExplorerUploadController<TFile>({
   const [busyAction, setBusyAction] = useState<XDriveFileExplorerUploadBusyAction>('')
   const busyActionRef = useRef<XDriveFileExplorerUploadBusyAction>('')
   const [progress, setProgress] = useState<number | null>(null)
+
+  const loadBatchPreflights = async (
+    targets: readonly XDriveFileExplorerUploadTarget<TFile>[],
+  ): Promise<Map<number, XDriveUploadConflictPreflight> | null> => {
+    if (!preflightBatch || targets.length < 2) return null
+
+    const keys = targets.map((target) => (
+      `${target.parentID}\n${fileName(target.file).trim().toLowerCase()}`
+    ))
+    const counts = new Map<string, number>()
+    for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1)
+    const candidateIndices = keys
+      .map((key, index) => counts.get(key) === 1 ? index : -1)
+      .filter((index) => index >= 0)
+    if (candidateIndices.length < 2) return new Map()
+
+    const out = new Map<number, XDriveUploadConflictPreflight>()
+    try {
+      for (
+        let start = 0;
+        start < candidateIndices.length;
+        start += xDriveUploadConflictPreflightBatchSize
+      ) {
+        const indices = candidateIndices.slice(
+          start,
+          start + xDriveUploadConflictPreflightBatchSize,
+        )
+        const batch = await preflightBatch(indices.map((index) => targets[index]))
+        if (batch.length !== indices.length) return null
+        batch.forEach((result, offset) => out.set(indices[offset], result))
+      }
+      return out
+    } catch {
+      return null
+    }
+  }
+
+  const preflightTarget = async (
+    target: XDriveFileExplorerUploadTarget<TFile>,
+    batch: Map<number, XDriveUploadConflictPreflight> | null,
+    index: number,
+  ) => {
+    const result = batch?.get(index) ?? await preflight(target.parentID, target.file)
+    if (result.error) throw new Error(result.error)
+    return result
+  }
 
   const runTargets = async (
     targets: readonly XDriveFileExplorerUploadTarget<TFile>[],
@@ -172,13 +223,15 @@ export function useXDriveFileExplorerUploadController<TFile>({
     let fatalError: unknown = null
 
     try {
-      for (const target of targets) {
+      const batchPreflights = await loadBatchPreflights(targets)
+      for (let index = 0; index < targets.length; index += 1) {
+        const target = targets[index]
         const name = fileName(target.file)
         let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
         let conflict: XDriveUploadConflictPreflight
 
         try {
-          conflict = await preflight(target.parentID, target.file)
+          conflict = await preflightTarget(target, batchPreflights, index)
         } catch (error) {
           fatalError = error
           break
@@ -356,6 +409,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       let fatalError: unknown = null
       let firstFailure: unknown = null
       let stoppedAt = targets.length
+      const batchPreflights = await loadBatchPreflights(targets)
 
       for (let index = 0; index < targets.length; index += 1) {
         const target = targets[index]
@@ -369,7 +423,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
 
         let conflict: XDriveUploadConflictPreflight
         try {
-          conflict = await preflight(target.parentID, target.file)
+          conflict = await preflightTarget(target, batchPreflights, index)
         } catch (error) {
           aggregate.running = 0
           aggregate.failed += 1

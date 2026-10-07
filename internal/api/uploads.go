@@ -29,6 +29,8 @@ const (
 	uploadSessionTTL       = 24 * time.Hour
 )
 
+const uploadConflictPreflightBatchMaxItems = 200
+
 var (
 	errUploadExpired   = errors.New("upload expired")
 	errUploadFinalized = errors.New("upload finalized")
@@ -44,6 +46,15 @@ type uploadConflictPreflightDTO struct {
 	Conflict     bool   `json:"conflict"`
 	TargetType   string `json:"target_type,omitempty"`
 	CanOverwrite bool   `json:"can_overwrite,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type uploadConflictPreflightBatchRequest struct {
+	Items []uploadConflictPreflightRequest `json:"items"`
+}
+
+type uploadConflictPreflightBatchResponse struct {
+	Items []uploadConflictPreflightDTO `json:"items"`
 }
 
 type uploadInitRequest struct {
@@ -121,6 +132,109 @@ func (s *Server) preflightUploadConflict(c *gin.Context) {
 		out.CanOverwrite = conflict.Type == meta.NodeTypeFile
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) preflightUploadConflictsBatch(c *gin.Context) {
+	var req uploadConflictPreflightBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if len(req.Items) == 0 || len(req.Items) > uploadConflictPreflightBatchMaxItems {
+		fail(c, http.StatusBadRequest, "items must contain between 1 and 200 entries")
+		return
+	}
+	items, err := batchUploadConflictPreflights(c.Request.Context(), s.DB, userID(c), req.Items)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "check upload targets failed")
+		return
+	}
+	c.JSON(http.StatusOK, uploadConflictPreflightBatchResponse{Items: items})
+}
+
+type uploadConflictPreflightBatchRow struct {
+	Index       int    `gorm:"column:idx"`
+	ParentValid bool   `gorm:"column:parent_valid"`
+	TargetType  string `gorm:"column:target_type"`
+}
+
+func batchUploadConflictPreflights(
+	ctx context.Context,
+	db *gorm.DB,
+	uid uint64,
+	requests []uploadConflictPreflightRequest,
+) ([]uploadConflictPreflightDTO, error) {
+	out := make([]uploadConflictPreflightDTO, len(requests))
+	type validRequest struct {
+		index    int
+		parentID uint64
+		name     string
+	}
+	valid := make([]validRequest, 0, len(requests))
+	for index, request := range requests {
+		request.Name = strings.TrimSpace(request.Name)
+		if request.ParentID == 0 {
+			out[index].Error = "parent_id is required"
+			continue
+		}
+		if err := meta.ValidateName(request.Name); err != nil {
+			out[index].Error = err.Error()
+			continue
+		}
+		valid = append(valid, validRequest{index: index, parentID: request.ParentID, name: request.Name})
+	}
+	if len(valid) == 0 {
+		return out, nil
+	}
+
+	values := make([]string, 0, len(valid))
+	args := make([]any, 0, len(valid)*3+3)
+	for _, request := range valid {
+		values = append(values, "(CAST(? AS integer), CAST(? AS bigint), CAST(? AS text))")
+		args = append(args, request.index, request.parentID, request.name)
+	}
+	args = append(args, uid, meta.NodeTypeDir, uid)
+	query := fmt.Sprintf(`WITH requested(idx, parent_id, name) AS (
+	VALUES %s
+)
+SELECT requested.idx,
+       (parent.id IS NOT NULL) AS parent_valid,
+       COALESCE(conflict.type, '') AS target_type
+FROM requested
+LEFT JOIN xd_nodes AS parent
+  ON parent.id = requested.parent_id
+ AND parent.owner_id = ?
+ AND parent.type = ?
+ AND parent.deleted_at IS NULL
+LEFT JOIN xd_nodes AS conflict
+  ON conflict.owner_id = ?
+ AND conflict.parent_id = requested.parent_id
+ AND conflict.deleted_at IS NULL
+ AND lower(conflict.name) = lower(requested.name)
+ORDER BY requested.idx ASC`, strings.Join(values, ", "))
+
+	var rows []uploadConflictPreflightBatchRow
+	if err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) != len(valid) {
+		return nil, fmt.Errorf("upload preflight batch returned %d rows for %d valid requests", len(rows), len(valid))
+	}
+	for _, row := range rows {
+		if row.Index < 0 || row.Index >= len(out) {
+			return nil, fmt.Errorf("upload preflight batch returned invalid index %d", row.Index)
+		}
+		if !row.ParentValid {
+			out[row.Index].Error = "parent directory not found"
+			continue
+		}
+		if row.TargetType != "" {
+			out[row.Index].Conflict = true
+			out[row.Index].TargetType = row.TargetType
+			out[row.Index].CanOverwrite = row.TargetType == meta.NodeTypeFile
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) createUploadSession(c *gin.Context) {

@@ -15,6 +15,7 @@ import (
 )
 
 const DefaultUploadChunkSize int64 = 8 << 20
+const UploadConflictPreflightBatchLimit = 200
 
 type UploadProgress func(done, total int64)
 
@@ -33,6 +34,12 @@ type UploadConflictPreflight struct {
 	Conflict     bool   `json:"conflict"`
 	TargetType   string `json:"target_type,omitempty"`
 	CanOverwrite bool   `json:"can_overwrite,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type UploadConflictPreflightRequest struct {
+	ParentID uint64 `json:"parent_id"`
+	Name     string `json:"name"`
 }
 
 const (
@@ -94,6 +101,22 @@ func (c *Client) UploadConflictPreflight(
 		"name":      name,
 	}, &out)
 	return out, err
+}
+
+func (c *Client) UploadConflictPreflightBatch(
+	ctx context.Context,
+	items []UploadConflictPreflightRequest,
+) ([]UploadConflictPreflight, error) {
+	if len(items) == 0 || len(items) > UploadConflictPreflightBatchLimit {
+		return nil, fmt.Errorf("upload conflict preflight batch requires between 1 and %d items", UploadConflictPreflightBatchLimit)
+	}
+	var out struct {
+		Items []UploadConflictPreflight `json:"items"`
+	}
+	err := c.json(ctx, http.MethodPost, "/api/v1/uploads/preflight/batch", map[string]any{
+		"items": items,
+	}, &out)
+	return out.Items, err
 }
 
 func (c *Client) StartUpload(ctx context.Context, init UploadInit) (UploadSession, error) {

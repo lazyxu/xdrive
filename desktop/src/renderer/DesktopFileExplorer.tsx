@@ -424,6 +424,13 @@ export default function DesktopFileExplorer({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    preflightBatch: async (targets) => {
+      const result = await window.xdriveDesktop.agent.cloudUploadPreflightBatch(
+        targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
+      )
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
       const result = await window.xdriveDesktop.agent.cloudUploadFile(
         parentID,

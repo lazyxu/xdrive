@@ -477,6 +477,9 @@ function FileManager({
     fileName: (file) => file.name,
     fileSize: (file) => file.size,
     preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name),
+    preflightBatch: (targets) => api.uploadConflictPreflightBatch(
+      targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
+    ),
     upload: (parentID, file, conflictPolicy, onProgress, transferID) =>
       api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID),
     transferLifecycle: {

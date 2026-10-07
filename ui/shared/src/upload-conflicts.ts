@@ -1,3 +1,5 @@
+export const xDriveUploadConflictPreflightBatchSize = 200
+
 export type XDriveUploadConflictPolicy = 'fail' | 'skip' | 'keep_both' | 'overwrite'
 
 export type XDriveUploadConflictResolution = Exclude<XDriveUploadConflictPolicy, 'fail'>
@@ -6,6 +8,7 @@ export type XDriveUploadConflictPreflight = {
   conflict: boolean
   target_type?: 'file' | 'dir'
   can_overwrite?: boolean
+  error?: string
 }
 
 export function xDriveUploadConflictCanOverwrite(
