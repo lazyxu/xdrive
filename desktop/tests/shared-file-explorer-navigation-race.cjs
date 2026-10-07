@@ -1016,3 +1016,57 @@ test('Recent mutations preserve user order when clear follows a pending record',
     'a newer clear must remain the final Recent state after an older record settles',
   )
 })
+
+
+test('Quick Access mutations preserve user order when pin follows a pending unpin', async () => {
+  const runtime = createHookRuntime()
+  const useQuickAccess = loadQuickAccessHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const pinnedItem = {
+    node: { id: 2, name: 'Pinned' },
+    path: '/Pinned',
+    crumbs: [root, { id: 2, name: 'Pinned' }],
+    pinned_at: '2026-10-07T00:00:00Z',
+  }
+
+  let releaseUnpin
+  let pinCalls = 0
+  const renderQuick = () => runtime.render(() => useQuickAccess({
+    loadItems: async () => [pinnedItem],
+    pinItem: async () => {
+      pinCalls += 1
+      return pinnedItem
+    },
+    unpinItem: () => new Promise((resolve) => {
+      releaseUnpin = resolve
+    }),
+    onError: (error) => { throw error },
+  }))
+
+  renderQuick()
+  await flushAsync()
+  let quick = renderQuick()
+  assert.deepEqual(quick.items.map((item) => item.id), [pinnedItem.node.id])
+
+  const olderUnpin = quick.unpin(pinnedItem.node.id)
+  const newerPin = quick.pin(pinnedItem.node.id)
+  await flushAsync()
+
+  assert.equal(
+    pinCalls,
+    0,
+    'the newer pin must wait for the older unpin instead of racing it on the Server',
+  )
+
+  releaseUnpin()
+  assert.equal(await olderUnpin, true)
+  assert.equal(await newerPin, true)
+  assert.equal(pinCalls, 1)
+
+  quick = renderQuick()
+  assert.deepEqual(
+    quick.items.map((item) => item.id),
+    [pinnedItem.node.id],
+    'the later Quick Access mutation must be the final visible state',
+  )
+})
