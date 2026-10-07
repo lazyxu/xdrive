@@ -301,8 +301,12 @@ The server exposes background work as a read model without introducing a generic
 - The Web/Desktop shared controller owns cursor state, de-duplication, polling refresh, and automatic
   IntersectionObserver history admission. There is no platform-local or user-facing “load more” control.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
-  kind. Cross-user admin controls are deliberately empty until the corresponding domain explicitly defines
-  and authorizes them.
+  kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
+  active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable
+  initiator attribution; administrators may cancel a running `SyncRun`, cancel owner-scoped
+  `media.index` / Photo Intelligence work, and request Photo Intelligence reanalysis. Every administrator
+  Task Center control attempt is written to the audit log with the actor, target task, domain/kind, owner id,
+  requested action, result, and resulting task id when one is created.
 - `GET /api/v1/background-tasks/active-summary` is the lightweight owner-scoped badge contract. It counts
   active FileOperation, SyncRun, and grouped scheduler rows without loading terminal history. Web/Desktop
   continuously poll only this compact summary for the shared Task Center badge; the detailed task list remains
@@ -342,8 +346,8 @@ and then advances `applied_epoch`. A newer request arriving during invalidation 
 the next generation instead of being lost or overwritten by an older task.
 
 Photo Intelligence exposes safe `reanalyze` control capability in the background-task read model for the
-owner and for administrators. Owner cancellation for `media.index` and Photo Intelligence is durable and
-cross-Server: every owner+kind generation captures the current cancel epoch, lease acquisition and heartbeat
+owner and for administrators. Owner or administrator cancellation for `media.index` and Photo Intelligence
+is durable and cross-Server: every owner+kind generation captures the current cancel epoch, lease acquisition and heartbeat
 fence older generations, and Photo Intelligence rolls any cancelled `running` analysis state back to
 `stale` before the generation completes.
 

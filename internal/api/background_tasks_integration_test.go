@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -47,6 +48,7 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		&meta.SystemMaintenanceRun{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
+		&meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -180,6 +182,12 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Create(&opB).Error; err != nil {
+		t.Fatal(err)
+	}
+	opAdmin := opA
+	opAdmin.ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	opAdmin.OwnerID = userB.ID
+	if err := db.Create(&opAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -385,13 +393,23 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 			if task.OwnerUsername != userB.Username {
 				t.Fatalf("admin task owner username=%q want=%q: %+v", task.OwnerUsername, userB.Username, task)
 			}
-			if len(task.ControlActions) != 0 {
-				t.Fatalf("admin unexpectedly received cross-user controls: %+v", task)
-			}
 		}
 	}
 	if !seenA || !seenB {
 		t.Fatalf("admin visibility missing owners: seenA=%v seenB=%v tasks=%+v", seenA, seenB, adminTasks)
+	}
+	if !backgroundTaskHasControl(adminTasks, "file-operation:"+opAdmin.ID, "cancel") {
+		t.Fatal("admin global task view did not expose cross-user file-operation cancel")
+	}
+	if backgroundTaskHasControl(adminTasks, "file-operation:"+opB.ID, "retry") {
+		t.Fatal("admin global task view unexpectedly exposed cross-user file-operation retry")
+	}
+	if !backgroundTaskHasControl(adminTasks, "sync-run:"+runA.ID, "cancel") {
+		t.Fatal("admin global task view did not expose cross-user sync-run cancel")
+	}
+	runtimeBID := fmt.Sprintf("runtime:user:%d:media.index", userB.ID)
+	if !backgroundTaskHasControl(adminTasks, runtimeBID, "cancel") {
+		t.Fatal("admin global task view did not expose cross-user runtime cancel")
 	}
 	janitorTask := backgroundTaskByID(
 		adminTasks,
@@ -457,7 +475,26 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		adminToken,
 		strings.NewReader(fmt.Sprintf(
 			`{"id":"file-operation:%s","action":"cancel"}`,
-			opA.ID,
+			opAdmin.ID,
+		)),
+		http.StatusAccepted,
+	)
+	var adminCancelledOperation meta.FileOperation
+	if err := db.Where("id = ?", opAdmin.ID).First(&adminCancelledOperation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if adminCancelledOperation.Status != meta.FileOperationStatusCancelRequested {
+		t.Fatalf("admin-controlled file operation status=%q want cancel_requested", adminCancelledOperation.Status)
+	}
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/admin/background-tasks/control",
+		adminToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"file-operation:%s","action":"cancel"}`,
+			opAdmin.ID,
 		)),
 		http.StatusConflict,
 	)
@@ -548,6 +585,35 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	if len(userBSnapshots) == 0 {
 		t.Fatal("cancelling user A runtime task also cancelled user B work")
 	}
+	request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/admin/background-tasks/control",
+		adminToken,
+		strings.NewReader(fmt.Sprintf(
+			`{"id":"%s","action":"cancel"}`,
+			runtimeBID,
+		)),
+		http.StatusAccepted,
+	)
+	deadline = time.Now().Add(time.Second)
+	for {
+		active := false
+		for _, snapshot := range scheduler.TaskSnapshots(&userB.ID) {
+			if snapshot.Kind == "media.index" {
+				active = true
+				break
+			}
+		}
+		if !active {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("admin-cancelled user B runtime task did not drain: %+v", scheduler.TaskSnapshots(&userB.ID))
+		}
+		time.Sleep(time.Millisecond)
+	}
 	cancelledTasksResponse := request(
 		t,
 		router,
@@ -616,7 +682,62 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		)
 	}
 
-	_ = admin
+	var adminControlEvents []meta.AuditEvent
+	if err := db.Where(
+		"action = ? AND actor_user_id = ?",
+		auditpkg.ActionAdminTaskControl,
+		admin.ID,
+	).Order("id ASC").Find(&adminControlEvents).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(adminControlEvents) < 3 {
+		t.Fatalf("admin background-task controls were not fully audited: %+v", adminControlEvents)
+	}
+	successTargets := map[string]bool{}
+	failureTargets := map[string]bool{}
+	for _, event := range adminControlEvents {
+		if event.TargetType != "background_task" {
+			t.Fatalf("unexpected admin background-task audit target type: %+v", event)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal([]byte(event.Metadata), &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if metadata["control_action"] != "cancel" {
+			t.Fatalf("admin background-task audit metadata=%+v", metadata)
+		}
+		if metadata["owner_id"] != float64(userB.ID) {
+			t.Fatalf("admin background-task audit owner metadata=%+v want owner=%d", metadata, userB.ID)
+		}
+		if metadata["domain"] == "" || metadata["kind"] == "" {
+			t.Fatalf("admin background-task audit missing domain/kind: %+v", metadata)
+		}
+		switch event.Result {
+		case auditpkg.ResultSuccess:
+			successTargets[event.TargetID] = true
+			if metadata["result_task_id"] == "" {
+				t.Fatalf("successful admin background-task audit missing result task: %+v", metadata)
+			}
+		case auditpkg.ResultFailure:
+			failureTargets[event.TargetID] = true
+			if metadata["reason"] != "rejected" {
+				t.Fatalf("failed admin background-task audit missing rejection reason: %+v", metadata)
+			}
+		default:
+			t.Fatalf("unexpected admin background-task audit result: %+v", event)
+		}
+	}
+	for _, target := range []string{
+		"file-operation:" + opAdmin.ID,
+		runtimeBID,
+	} {
+		if !successTargets[target] {
+			t.Fatalf("missing successful admin background-task audit target %q: %+v", target, adminControlEvents)
+		}
+	}
+	if !failureTargets["file-operation:"+opAdmin.ID] {
+		t.Fatalf("missing rejected admin background-task audit: %+v", adminControlEvents)
+	}
 }
 
 func backgroundTaskByID(tasks []backgroundTaskDTO, id string) *backgroundTaskDTO {
@@ -669,5 +790,38 @@ func TestBackgroundFileOperationControlActionsIncludeUndoRedo(t *testing.T) {
 	actions = backgroundFileOperationControlActions(redoable, viewerID, false)
 	if !backgroundTaskActionAllowed(actions, backgroundTaskActionRedo) {
 		t.Fatalf("redoable actions=%v missing redo", actions)
+	}
+}
+
+func TestBackgroundAdminControlActionsAreOperationalOnly(t *testing.T) {
+	const ownerID = uint64(42)
+	const adminID = uint64(99)
+
+	running := meta.FileOperation{
+		OwnerID: ownerID,
+		Type:    meta.FileOperationTypeCopy,
+		Status:  meta.FileOperationStatusRunning,
+	}
+	if actions := backgroundFileOperationControlActions(running, adminID, true); !backgroundTaskActionAllowed(actions, backgroundTaskActionCancel) {
+		t.Fatalf("admin running file-operation actions=%v missing cancel", actions)
+	}
+
+	failed := running
+	failed.Status = meta.FileOperationStatusFailed
+	failed.FailureCode = "internal_error"
+	if actions := backgroundFileOperationControlActions(failed, adminID, true); backgroundTaskActionAllowed(actions, backgroundTaskActionRetry) {
+		t.Fatalf("admin failed cross-user file-operation actions=%v unexpectedly include retry", actions)
+	}
+
+	undoable := running
+	undoable.Status = meta.FileOperationStatusCompleted
+	undoable.UndoPlanJSON = `{"kind":"copy","copy_roots":[{"root":{"id":1,"revision":1},"name":"x","nodes":[{"id":1,"revision":1}]}]}`
+	if actions := backgroundFileOperationControlActions(undoable, adminID, true); backgroundTaskActionAllowed(actions, backgroundTaskActionUndo) {
+		t.Fatalf("admin cross-user file-operation actions=%v unexpectedly include undo", actions)
+	}
+
+	run := meta.SyncRun{Status: meta.SyncRunStatusRunning}
+	if actions := backgroundSourceRunControlActions(ownerID, run, adminID, true); !backgroundTaskActionAllowed(actions, backgroundTaskActionCancel) {
+		t.Fatalf("admin sync-run actions=%v missing cancel", actions)
 	}
 }

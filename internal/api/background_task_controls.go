@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
@@ -35,6 +36,12 @@ type backgroundTaskControlResponse struct {
 	Accepted     bool   `json:"accepted"`
 }
 
+type backgroundTaskControlOutcome struct {
+	ResultTaskID string
+	OwnerID      uint64
+	Kind         string
+}
+
 type backgroundTaskRef struct {
 	domain  string
 	key     string
@@ -55,9 +62,10 @@ func backgroundTaskActionAllowed(actions []string, action string) bool {
 func backgroundFileOperationControlActions(
 	operation meta.FileOperation,
 	viewerID uint64,
-	_ bool,
+	admin bool,
 ) []string {
-	if operation.OwnerID != viewerID {
+	owner := operation.OwnerID == viewerID
+	if !owner && !admin {
 		return nil
 	}
 	actions := make([]string, 0, 4)
@@ -66,13 +74,13 @@ func backgroundFileOperationControlActions(
 		meta.FileOperationStatusRunning:
 		actions = append(actions, backgroundTaskActionCancel)
 	}
-	if fileOperationRetryable(operation) {
+	if owner && fileOperationRetryable(operation) {
 		actions = append(actions, backgroundTaskActionRetry)
 	}
-	if fileOperationUndoable(operation) {
+	if owner && fileOperationUndoable(operation) {
 		actions = append(actions, backgroundTaskActionUndo)
 	}
-	if fileOperationRedoable(operation) {
+	if owner && fileOperationRedoable(operation) {
 		actions = append(actions, backgroundTaskActionRedo)
 	}
 	return actions
@@ -82,9 +90,9 @@ func backgroundSourceRunControlActions(
 	ownerID uint64,
 	run meta.SyncRun,
 	viewerID uint64,
-	_ bool,
+	admin bool,
 ) []string {
-	if ownerID != viewerID ||
+	if (ownerID != viewerID && !admin) ||
 		run.Status != meta.SyncRunStatusRunning ||
 		run.CancelRequestedAt != nil {
 		return nil
@@ -102,7 +110,7 @@ func backgroundRuntimeControlActions(
 		return nil
 	}
 	actions := make([]string, 0, 2)
-	if ownerID == viewerID {
+	if ownerID == viewerID || admin {
 		switch kind {
 		case "media.index",
 			"photo.face",
@@ -168,6 +176,12 @@ func (s *Server) adminControlBackgroundTask(c *gin.Context) {
 func (s *Server) controlBackgroundTaskForViewer(c *gin.Context, admin bool) {
 	var req backgroundTaskControlRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		if admin {
+			s.recordBackgroundTaskControlAudit(
+				c, "", "", backgroundTaskRef{}, backgroundTaskControlOutcome{},
+				auditpkg.ResultFailure, "invalid_request",
+			)
+		}
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
@@ -175,17 +189,34 @@ func (s *Server) controlBackgroundTaskForViewer(c *gin.Context, admin bool) {
 	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
 	ref, ok := parseBackgroundTaskRef(req.ID)
 	if !ok || req.Action == "" {
+		if admin {
+			s.recordBackgroundTaskControlAudit(
+				c, req.ID, req.Action, ref, backgroundTaskControlOutcome{},
+				auditpkg.ResultFailure, "invalid_control",
+			)
+		}
 		fail(c, http.StatusBadRequest, "invalid background task control")
 		return
 	}
 
-	resultTaskID, err := s.dispatchBackgroundTaskControl(
+	outcome, err := s.dispatchBackgroundTaskControl(
 		c.Request.Context(),
 		ref,
 		req.Action,
 		userID(c),
 		admin,
 	)
+	if admin {
+		result := auditpkg.ResultSuccess
+		reason := ""
+		if err != nil {
+			result = auditpkg.ResultFailure
+			reason = "rejected"
+		}
+		s.recordBackgroundTaskControlAudit(
+			c, req.ID, req.Action, ref, outcome, result, reason,
+		)
+	}
 	if err != nil {
 		writeBackgroundTaskControlError(c, err)
 		return
@@ -193,9 +224,53 @@ func (s *Server) controlBackgroundTaskForViewer(c *gin.Context, admin bool) {
 	c.JSON(http.StatusAccepted, backgroundTaskControlResponse{
 		TaskID:       req.ID,
 		Action:       req.Action,
-		ResultTaskID: resultTaskID,
+		ResultTaskID: outcome.ResultTaskID,
 		Accepted:     true,
 	})
+}
+
+func (s *Server) recordBackgroundTaskControlAudit(
+	c *gin.Context,
+	taskID, controlAction string,
+	ref backgroundTaskRef,
+	outcome backgroundTaskControlOutcome,
+	result, reason string,
+) {
+	metadata := map[string]any{
+		"domain": ref.domain,
+	}
+	if controlAction != "" {
+		metadata["control_action"] = controlAction
+	}
+	ownerID := outcome.OwnerID
+	if ownerID == 0 {
+		ownerID = ref.ownerID
+	}
+	if ownerID != 0 {
+		metadata["owner_id"] = ownerID
+	}
+	kind := outcome.Kind
+	if kind == "" {
+		kind = ref.kind
+	}
+	if kind != "" {
+		metadata["kind"] = kind
+	}
+	if outcome.ResultTaskID != "" {
+		metadata["result_task_id"] = outcome.ResultTaskID
+	}
+	if reason != "" {
+		metadata["reason"] = reason
+	}
+	s.recordAuditBestEffort(c, auditEventFromContext(
+		c,
+		auditpkg.ActionAdminTaskControl,
+		"background_task",
+		taskID,
+		"",
+		result,
+		metadata,
+	))
 }
 
 func (s *Server) dispatchBackgroundTaskControl(
@@ -204,7 +279,7 @@ func (s *Server) dispatchBackgroundTaskControl(
 	action string,
 	viewerID uint64,
 	admin bool,
-) (string, error) {
+) (backgroundTaskControlOutcome, error) {
 	switch ref.domain {
 	case "file_operation":
 		return s.controlBackgroundFileOperation(
@@ -231,7 +306,7 @@ func (s *Server) dispatchBackgroundTaskControl(
 			admin,
 		)
 	default:
-		return "", errBackgroundTaskControlUnavailable
+		return backgroundTaskControlOutcome{}, errBackgroundTaskControlUnavailable
 	}
 }
 
@@ -240,18 +315,22 @@ func (s *Server) controlBackgroundFileOperation(
 	operationID, action string,
 	viewerID uint64,
 	admin bool,
-) (string, error) {
+) (backgroundTaskControlOutcome, error) {
 	var operation meta.FileOperation
 	query := s.DB.WithContext(ctx).Where("id = ?", operationID)
 	if !admin {
 		query = query.Where("owner_id = ?", viewerID)
 	}
 	if err := query.First(&operation).Error; err != nil {
-		return "", err
+		return backgroundTaskControlOutcome{}, err
+	}
+	outcome := backgroundTaskControlOutcome{
+		OwnerID: operation.OwnerID,
+		Kind:    operation.Type,
 	}
 	actions := backgroundFileOperationControlActions(operation, viewerID, admin)
 	if !backgroundTaskActionAllowed(actions, action) {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 
 	switch action {
@@ -261,9 +340,10 @@ func (s *Server) controlBackgroundFileOperation(
 			operation.OwnerID,
 			operation.ID,
 		); err != nil {
-			return "", err
+			return outcome, err
 		}
-		return "file-operation:" + operation.ID, nil
+		outcome.ResultTaskID = "file-operation:" + operation.ID
+		return outcome, nil
 	case backgroundTaskActionRetry:
 		next, err := s.enqueueFileOperationRetry(
 			ctx,
@@ -271,9 +351,10 @@ func (s *Server) controlBackgroundFileOperation(
 			operation.ID,
 		)
 		if err != nil {
-			return "", err
+			return outcome, err
 		}
-		return "file-operation:" + next.ID, nil
+		outcome.ResultTaskID = "file-operation:" + next.ID
+		return outcome, nil
 	case backgroundTaskActionUndo:
 		next, err := s.enqueueFileOperationUndo(
 			ctx,
@@ -281,9 +362,10 @@ func (s *Server) controlBackgroundFileOperation(
 			operation.ID,
 		)
 		if err != nil {
-			return "", err
+			return outcome, err
 		}
-		return "file-operation:" + next.ID, nil
+		outcome.ResultTaskID = "file-operation:" + next.ID
+		return outcome, nil
 	case backgroundTaskActionRedo:
 		next, err := s.enqueueFileOperationRedo(
 			ctx,
@@ -291,11 +373,12 @@ func (s *Server) controlBackgroundFileOperation(
 			operation.ID,
 		)
 		if err != nil {
-			return "", err
+			return outcome, err
 		}
-		return "file-operation:" + next.ID, nil
+		outcome.ResultTaskID = "file-operation:" + next.ID
+		return outcome, nil
 	default:
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 }
 
@@ -304,16 +387,16 @@ func (s *Server) controlBackgroundSyncRun(
 	runID, action string,
 	viewerID uint64,
 	admin bool,
-) (string, error) {
+) (backgroundTaskControlOutcome, error) {
 	canonicalID, ok := canonicalRunID(runID)
 	if !ok {
-		return "", gorm.ErrRecordNotFound
+		return backgroundTaskControlOutcome{}, gorm.ErrRecordNotFound
 	}
 	var run meta.SyncRun
 	if err := s.DB.WithContext(ctx).
 		Where("id = ?", canonicalID).
 		First(&run).Error; err != nil {
-		return "", err
+		return backgroundTaskControlOutcome{}, err
 	}
 	var source meta.Source
 	query := s.DB.WithContext(ctx).Where("id = ?", run.SourceID)
@@ -321,7 +404,11 @@ func (s *Server) controlBackgroundSyncRun(
 		query = query.Where("owner_id = ?", viewerID)
 	}
 	if err := query.First(&source).Error; err != nil {
-		return "", err
+		return backgroundTaskControlOutcome{}, err
+	}
+	outcome := backgroundTaskControlOutcome{
+		OwnerID: source.OwnerID,
+		Kind:    "source.sync",
 	}
 	actions := backgroundSourceRunControlActions(
 		source.OwnerID,
@@ -330,10 +417,10 @@ func (s *Server) controlBackgroundSyncRun(
 		admin,
 	)
 	if !backgroundTaskActionAllowed(actions, action) {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 	if action != backgroundTaskActionCancel {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 	if _, _, err := s.requestSourceRunCancel(
 		ctx,
@@ -341,9 +428,10 @@ func (s *Server) controlBackgroundSyncRun(
 		source.ID,
 		run.ID,
 	); err != nil {
-		return "", err
+		return outcome, err
 	}
-	return "sync-run:" + run.ID, nil
+	outcome.ResultTaskID = "sync-run:" + run.ID
+	return outcome, nil
 }
 
 func photoIntelligenceKindFromBackgroundKind(
@@ -496,7 +584,11 @@ func (s *Server) controlBackgroundRuntimeTask(
 	action string,
 	viewerID uint64,
 	admin bool,
-) (string, error) {
+) (backgroundTaskControlOutcome, error) {
+	outcome := backgroundTaskControlOutcome{
+		OwnerID: ref.ownerID,
+		Kind:    ref.kind,
+	}
 	actions := backgroundRuntimeControlActions(
 		ref.kind,
 		ref.scope,
@@ -505,15 +597,15 @@ func (s *Server) controlBackgroundRuntimeTask(
 		admin,
 	)
 	if !backgroundTaskActionAllowed(actions, action) {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 	if action == backgroundTaskActionCancel {
 		available, err := s.backgroundRuntimeTaskCancellableNow(ctx, ref)
 		if err != nil {
-			return "", err
+			return outcome, err
 		}
 		if !available {
-			return "", errBackgroundTaskControlUnavailable
+			return outcome, errBackgroundTaskControlUnavailable
 		}
 		initiator := background.InitiatorUser
 		if admin {
@@ -526,19 +618,20 @@ func (s *Server) controlBackgroundRuntimeTask(
 			viewerID,
 		)
 		if err != nil {
-			return "", err
+			return outcome, err
 		}
 		if !cancelled {
-			return "", errBackgroundTaskControlUnavailable
+			return outcome, errBackgroundTaskControlUnavailable
 		}
-		return runtimeBackgroundTaskID(ref), nil
+		outcome.ResultTaskID = runtimeBackgroundTaskID(ref)
+		return outcome, nil
 	}
 	if action != backgroundTaskActionReanalyze {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 	kind, ok := photoIntelligenceKindFromBackgroundKind(ref.kind)
 	if !ok {
-		return "", errBackgroundTaskControlUnavailable
+		return outcome, errBackgroundTaskControlUnavailable
 	}
 	if admin && ref.ownerID != viewerID {
 		var user meta.User
@@ -548,7 +641,7 @@ func (s *Server) controlBackgroundRuntimeTask(
 				ref.ownerID,
 			).
 			First(&user).Error; err != nil {
-			return "", err
+			return outcome, err
 		}
 	}
 
@@ -566,9 +659,10 @@ func (s *Server) controlBackgroundRuntimeTask(
 		initiator,
 		viewerID,
 	); err != nil {
-		return "", err
+		return outcome, err
 	}
-	return runtimeBackgroundTaskID(ref), nil
+	outcome.ResultTaskID = runtimeBackgroundTaskID(ref)
+	return outcome, nil
 }
 
 func writeBackgroundTaskControlError(c *gin.Context, err error) {
