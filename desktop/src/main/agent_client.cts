@@ -538,6 +538,7 @@ export type AgentCloudChildrenPage = {
 export type AgentCloudChildrenRange = {
   items: AgentCloudNode[]
   total_count: number
+  total_count_included?: boolean
   offset: number
   limit: number
   sort: 'name' | 'updated' | 'size' | 'type'
@@ -1553,6 +1554,7 @@ export class AgentIPCClient {
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    includeCount = true,
   ) {
     const query = new URLSearchParams({
       parent_id: String(parentID),
@@ -1561,6 +1563,7 @@ export class AgentIPCClient {
       sort,
       order,
     })
+    if (!includeCount) query.set('include_count', 'false')
     return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 

@@ -122,6 +122,30 @@ test('cloud children range preserves offset zero and total count', async (t) => 
 })
 
 
+test('cloud children range can skip the already-known total count', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/children')
+    assert.equal(url.searchParams.get('parent_id'), '42')
+    assert.equal(url.searchParams.get('offset'), '200')
+    assert.equal(url.searchParams.get('include_count'), 'false')
+    json(res, 200, {
+      items: [{ id: 10, name: 'next.bin', type: 'file', size: 88, revision: 1 }],
+      total_count: 0,
+      total_count_included: false,
+      offset: 200,
+      limit: 200,
+      sort: 'name',
+      order: 'asc',
+    })
+  })
+  const range = await client.cloudChildrenRange(42, 200, 200, 'name', 'asc', false)
+  assert.equal(range.total_count, 0)
+  assert.equal(range.total_count_included, false)
+  assert.equal(range.offset, 200)
+  assert.equal(range.items[0].id, 10)
+})
+
 test('file availability batch posts one local Agent request', async (t) => {
   const { client } = await fixture(t, async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')

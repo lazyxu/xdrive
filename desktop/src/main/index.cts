@@ -2660,6 +2660,7 @@ function registerIPCHandlers() {
     limit: unknown,
     sort: unknown,
     order: unknown,
+    includeCount: unknown,
   ) => runAgentAction<AgentCloudChildrenRange>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
@@ -2680,12 +2681,17 @@ function registerIPCHandlers() {
         !['asc', 'desc'].includes(String(normalizedOrder))) {
       throw new AgentIPCError('invalid_input', 0, 'Invalid directory range sort options.')
     }
+    const normalizedIncludeCount = includeCount === undefined ? true : includeCount
+    if (typeof normalizedIncludeCount !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Directory range includeCount must be boolean.')
+    }
     return requireAgentClient().cloudChildrenRange(
       parentID,
       offset,
       normalizedLimit,
       normalizedSort as 'name' | 'updated' | 'size' | 'type',
       normalizedOrder as 'asc' | 'desc',
+      normalizedIncludeCount,
     )
   }, false))
 

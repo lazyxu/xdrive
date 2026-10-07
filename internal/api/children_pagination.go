@@ -27,22 +27,24 @@ type childrenPageDTO struct {
 }
 
 type childrenRangeDTO struct {
-	Items      []nodeDTO `json:"items"`
-	TotalCount int64     `json:"total_count"`
-	Offset     int       `json:"offset"`
-	Limit      int       `json:"limit"`
-	Sort       string    `json:"sort"`
-	Order      string    `json:"order"`
+	Items              []nodeDTO `json:"items"`
+	TotalCount         int64     `json:"total_count"`
+	TotalCountIncluded bool      `json:"total_count_included"`
+	Offset             int       `json:"offset"`
+	Limit              int       `json:"limit"`
+	Sort               string    `json:"sort"`
+	Order              string    `json:"order"`
 }
 
 type childrenPageOptions struct {
-	Limit  int
-	Cursor string
-	Offset *int
-	Sort   string
-	Order  string
-	Name   string
-	NameCI string
+	Limit        int
+	Cursor       string
+	Offset       *int
+	Sort         string
+	Order        string
+	Name         string
+	NameCI       string
+	IncludeCount bool
 }
 
 type childrenPageRow struct {
@@ -77,7 +79,7 @@ type childrenCursor struct {
 
 func childrenPaginationRequested(c *gin.Context) bool {
 	query := c.Request.URL.Query()
-	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name", "name_ci"} {
+	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name", "name_ci", "include_count"} {
 		if _, ok := query[key]; ok {
 			return true
 		}
@@ -87,12 +89,13 @@ func childrenPaginationRequested(c *gin.Context) bool {
 
 func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 	options := childrenPageOptions{
-		Limit:  childrenDefaultLimit,
-		Cursor: strings.TrimSpace(c.Query("cursor")),
-		Sort:   strings.TrimSpace(strings.ToLower(c.Query("sort"))),
-		Order:  strings.TrimSpace(strings.ToLower(c.Query("order"))),
-		Name:   c.Query("name"),
-		NameCI: c.Query("name_ci"),
+		Limit:        childrenDefaultLimit,
+		Cursor:       strings.TrimSpace(c.Query("cursor")),
+		Sort:         strings.TrimSpace(strings.ToLower(c.Query("sort"))),
+		Order:        strings.TrimSpace(strings.ToLower(c.Query("order"))),
+		Name:         c.Query("name"),
+		NameCI:       c.Query("name_ci"),
+		IncludeCount: true,
 	}
 	if options.Sort == "" {
 		options.Sort = "name"
@@ -124,6 +127,25 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 			return childrenPageOptions{}, false
 		}
 		options.Offset = &value
+	}
+	if rawValues, exists := c.Request.URL.Query()["include_count"]; exists {
+		raw := ""
+		if len(rawValues) > 0 {
+			raw = strings.TrimSpace(strings.ToLower(rawValues[0]))
+		}
+		switch raw {
+		case "true":
+			options.IncludeCount = true
+		case "false":
+			options.IncludeCount = false
+		default:
+			fail(c, http.StatusBadRequest, "include_count must be true or false")
+			return childrenPageOptions{}, false
+		}
+		if options.Offset == nil {
+			fail(c, http.StatusBadRequest, "include_count requires offset")
+			return childrenPageOptions{}, false
+		}
 	}
 	if options.Name != "" && options.NameCI != "" {
 		fail(c, http.StatusBadRequest, "name and name_ci are mutually exclusive")
@@ -241,12 +263,15 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 
 	if options.Offset != nil {
 		var rows []childrenPageRow
-		rangeQuery := query.Select(`xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
+		selectClause := `xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
 			xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
 			COALESCE(child_file.size, 0) AS file_size,
-			COALESCE(child_file.sha256, '') AS file_sha256,
-			COUNT(*) OVER() AS total_count`)
-		if err := rangeQuery.
+			COALESCE(child_file.sha256, '') AS file_sha256`
+		if options.IncludeCount {
+			selectClause += ", COUNT(*) OVER() AS total_count"
+		}
+		if err := query.
+			Select(selectClause).
 			Order(orderBy).
 			Offset(*options.Offset).
 			Limit(options.Limit).
@@ -256,26 +281,36 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		}
 
 		var totalCount int64
-		if len(rows) > 0 {
-			totalCount = rows[0].TotalCount
-		} else {
-			countQuery := s.DB.
-				Table("xd_nodes").
-				Joins(`JOIN xd_nodes AS parent_node
-					ON parent_node.id = ?
-					AND parent_node.owner_id = ?
-					AND parent_node.type = ?
-					AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
-				Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
-			if err := countQuery.Count(&totalCount).Error; err != nil {
-				fail(c, http.StatusInternalServerError, "count children failed")
-				return
-			}
-			if totalCount == 0 {
-				if _, err := s.ownedDirectory(uid, parentID); err != nil {
-					fail(c, statusForLookup(err), "directory not found")
+		if options.IncludeCount {
+			if len(rows) > 0 {
+				totalCount = rows[0].TotalCount
+			} else {
+				countQuery := s.DB.
+					Table("xd_nodes").
+					Joins(`JOIN xd_nodes AS parent_node
+						ON parent_node.id = ?
+						AND parent_node.owner_id = ?
+						AND parent_node.type = ?
+						AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
+					Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
+				if err := countQuery.Count(&totalCount).Error; err != nil {
+					fail(c, http.StatusInternalServerError, "count children failed")
 					return
 				}
+				if totalCount == 0 {
+					if _, err := s.ownedDirectory(uid, parentID); err != nil {
+						fail(c, statusForLookup(err), "directory not found")
+						return
+					}
+				}
+			}
+		} else if len(rows) == 0 {
+			// Count-free ranges still preserve existing-directory vs 404
+			// semantics. The active VirtualCollection generation already owns
+			// the authoritative total count and reacquires it on reset/refresh.
+			if _, err := s.ownedDirectory(uid, parentID); err != nil {
+				fail(c, statusForLookup(err), "directory not found")
+				return
 			}
 		}
 
@@ -285,12 +320,13 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		}
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, childrenRangeDTO{
-			Items:      out,
-			TotalCount: totalCount,
-			Offset:     *options.Offset,
-			Limit:      options.Limit,
-			Sort:       options.Sort,
-			Order:      options.Order,
+			Items:              out,
+			TotalCount:         totalCount,
+			TotalCountIncluded: options.IncludeCount,
+			Offset:             *options.Offset,
+			Limit:              options.Limit,
+			Sort:               options.Sort,
+			Order:              options.Order,
 		})
 		return
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,7 +24,8 @@ import (
 
 type childrenRangeQueryCounter struct {
 	logger.Interface
-	count atomic.Int64
+	count   atomic.Int64
+	lastSQL atomic.Value
 }
 
 func newChildrenRangeQueryCounter() *childrenRangeQueryCounter {
@@ -35,18 +37,29 @@ func newChildrenRangeQueryCounter() *childrenRangeQueryCounter {
 func (counter *childrenRangeQueryCounter) Trace(
 	_ context.Context,
 	_ time.Time,
-	_ func() (string, int64),
+	fc func() (string, int64),
 	_ error,
 ) {
+	sql, _ := fc()
+	counter.lastSQL.Store(sql)
 	counter.count.Add(1)
 }
 
 func (counter *childrenRangeQueryCounter) reset() {
 	counter.count.Store(0)
+	counter.lastSQL.Store("")
 }
 
 func (counter *childrenRangeQueryCounter) value() int64 {
 	return counter.count.Load()
+}
+
+func (counter *childrenRangeQueryCounter) sql() string {
+	value := counter.lastSQL.Load()
+	if value == nil {
+		return ""
+	}
+	return value.(string)
 }
 
 func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
@@ -161,6 +174,37 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		t.Fatalf("range performance optimized SQL queries=%d want=1", got)
 	}
 	t.Logf("PERF children_range_nonempty_sql_queries=%d", queryCounter.value())
+	if !strings.Contains(strings.ToUpper(queryCounter.sql()), "COUNT(*) OVER()") {
+		t.Fatalf("counted range SQL must include window count: %s", queryCounter.sql())
+	}
+
+	queryCounter.reset()
+	noCountRecorder := httptest.NewRecorder()
+	noCountContext, _ := gin.CreateTestContext(noCountRecorder)
+	noCountContext.Request = httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&sort=name&order=asc&include_count=false", rootA.ID),
+		nil,
+	)
+	noCountContext.Set("userID", alice.ID)
+	server.childrenPage(noCountContext, rootA.ID)
+	if noCountRecorder.Code != http.StatusOK {
+		t.Fatalf("count-free range status=%d body=%s", noCountRecorder.Code, noCountRecorder.Body.String())
+	}
+	if got := queryCounter.value(); got != 1 {
+		t.Fatalf("count-free range SQL queries=%d want=1", got)
+	}
+	if strings.Contains(strings.ToUpper(queryCounter.sql()), "COUNT(*) OVER()") {
+		t.Fatalf("count-free range SQL must omit window count: %s", queryCounter.sql())
+	}
+	var noCountProbe childrenRangeDTO
+	if err := json.Unmarshal(noCountRecorder.Body.Bytes(), &noCountProbe); err != nil {
+		t.Fatalf("decode count-free range: %v body=%s", err, noCountRecorder.Body.String())
+	}
+	if noCountProbe.TotalCountIncluded || noCountProbe.TotalCount != 0 || len(noCountProbe.Items) != 3 {
+		t.Fatalf("unexpected count-free probe: %+v", noCountProbe)
+	}
+	t.Logf("PERF children_range_count_free_sql_queries=%d", queryCounter.value())
 
 	legacy := request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children", rootA.ID), tokenA, nil, http.StatusOK)
 	var legacyItems []nodeDTO
@@ -274,7 +318,8 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 		"/api/v1/nodes/%d/children?offset=0&limit=3&sort=name&order=asc",
 		rootA.ID,
 	), http.StatusOK)
-	if range1.TotalCount != 8 || range1.Offset != 0 || range1.Limit != 3 ||
+	if range1.TotalCount != 8 || !range1.TotalCountIncluded ||
+		range1.Offset != 0 || range1.Limit != 3 ||
 		range1.Sort != "name" || range1.Order != "asc" {
 		t.Fatalf("unexpected range1 metadata: %+v", range1)
 	}
@@ -292,6 +337,17 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	if got := []string{range2.Items[0].Name, range2.Items[1].Name, range2.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"a.txt", "b.txt", "c.pdf"}) {
 		t.Fatalf("range2 order=%v", got)
 	}
+	countFreeRange2 := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=3&limit=3&sort=name&order=asc&include_count=false",
+		rootA.ID,
+	), http.StatusOK)
+	if countFreeRange2.TotalCountIncluded || countFreeRange2.TotalCount != 0 ||
+		countFreeRange2.Offset != 3 || countFreeRange2.Limit != 3 {
+		t.Fatalf("unexpected count-free range2 metadata: %+v", countFreeRange2)
+	}
+	if got := []string{countFreeRange2.Items[0].Name, countFreeRange2.Items[1].Name, countFreeRange2.Items[2].Name}; fmt.Sprint(got) != fmt.Sprint([]string{"a.txt", "b.txt", "c.pdf"}) {
+		t.Fatalf("count-free range2 order=%v", got)
+	}
 
 	lastRange := readRange(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?offset=7&limit=3&sort=name&order=asc",
@@ -308,6 +364,15 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	), http.StatusOK)
 	if pastEnd.TotalCount != 8 || pastEnd.Offset != 20 || pastEnd.Limit != 3 || len(pastEnd.Items) != 0 {
 		t.Fatalf("out-of-range window must preserve total and requested width: %+v", pastEnd)
+	}
+	countFreePastEnd := readRange(fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=20&limit=3&sort=name&order=asc&include_count=false",
+		rootA.ID,
+	), http.StatusOK)
+	if countFreePastEnd.TotalCountIncluded || countFreePastEnd.TotalCount != 0 ||
+		countFreePastEnd.Offset != 20 || countFreePastEnd.Limit != 3 ||
+		len(countFreePastEnd.Items) != 0 {
+		t.Fatalf("count-free out-of-range window must preserve requested width without inventing a count: %+v", countFreePastEnd)
 	}
 
 	emptyRange := readRange(fmt.Sprintf(
@@ -336,6 +401,8 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	), http.StatusBadRequest)
 	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=0", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=-1&limit=3", rootA.ID), http.StatusBadRequest)
+	readRange(fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=3&include_count=maybe", rootA.ID), http.StatusBadRequest)
+	readPage(fmt.Sprintf("/api/v1/nodes/%d/children?limit=3&include_count=false", rootA.ID), http.StatusBadRequest)
 	readRange(fmt.Sprintf(
 		"/api/v1/nodes/%d/children?offset=0&limit=3&cursor=%s",
 		rootA.ID, url.QueryEscape(page1.NextCursor),
@@ -350,4 +417,5 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	), http.StatusBadRequest)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2&include_count=false", rootB.ID), tokenA, nil, http.StatusNotFound)
 }

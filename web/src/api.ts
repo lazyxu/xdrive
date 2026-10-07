@@ -1120,6 +1120,7 @@ export class XDriveApi {
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    includeCount = true,
   ) {
     const query = new URLSearchParams({
       offset: String(Math.max(0, Math.trunc(offset))),
@@ -1127,6 +1128,7 @@ export class XDriveApi {
       sort,
       order,
     })
+    if (!includeCount) query.set('include_count', 'false')
     return this.request<XDriveCloudFilesRange<Node>>(
       `/api/v1/nodes/${parentID}/children?${query.toString()}`,
     )

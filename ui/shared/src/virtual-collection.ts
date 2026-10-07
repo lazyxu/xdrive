@@ -11,7 +11,7 @@ export type XDriveVirtualCollectionPage<TItem> = {
   items: readonly TItem[]
   offset: number
   limit: number
-  totalCount: number
+  totalCount: number | null
 }
 
 export type XDriveVirtualCollectionSnapshot<TItem> = {
@@ -110,7 +110,11 @@ export function xDriveVirtualCollectionApplyPage<TItem>(
 ): XDriveVirtualCollectionSnapshot<TItem> {
   if (generation !== current.generation) return current
 
-  const totalCount = nonNegativeInteger(page.totalCount)
+  const totalCount = page.totalCount === null
+    ? current.totalCount
+    : nonNegativeInteger(page.totalCount)
+  if (totalCount === null) return current
+
   const offset = nonNegativeInteger(page.offset)
   const limit = positiveInteger(page.limit, page.items.length || 1)
   const items = new Map(current.items)

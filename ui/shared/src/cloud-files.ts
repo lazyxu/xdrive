@@ -27,6 +27,7 @@ export type XDriveCloudFilesPage<TNode extends { id: number }> = {
 export type XDriveCloudFilesRange<TNode extends { id: number }> = {
   items: TNode[]
   total_count: number
+  total_count_included?: boolean
   offset: number
   limit: number
   sort: XDriveCloudFilesSortKey
@@ -87,6 +88,7 @@ export interface XDriveCloudFilesPort<
     offset: number,
     limit: number,
     sort: TSort,
+    includeCount: boolean,
   ) => Promise<XDriveCloudFilesRange<TNode>>
   getQuota: () => Promise<TQuota>
 }

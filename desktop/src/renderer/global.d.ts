@@ -503,6 +503,7 @@ declare global {
           limit?: number,
           sort?: 'name' | 'updated' | 'size' | 'type',
           order?: 'asc' | 'desc',
+          includeCount?: boolean,
         ) => Promise<DesktopResult<AgentCloudChildrenRange>>
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>

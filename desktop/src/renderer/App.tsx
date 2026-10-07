@@ -318,13 +318,14 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    getRange: async (parentID, offset, limit, sort) => {
+    getRange: async (parentID, offset, limit, sort, includeCount) => {
       const result = await window.xdriveDesktop.agent.cloudChildrenRange(
         parentID,
         offset,
         limit,
         sort.key,
         sort.direction,
+        includeCount,
       )
       if (!result.ok) throw new Error(result.error.message)
       return result.data

@@ -11,7 +11,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Work item | Status | Measurement state | Current evidence |
 | --- | --- | --- | --- |
 | Sparse paged directory SQL | **Merged** | Measured | Non-empty sparse reads: **2 -> 1 SQL round-trip**. |
-| Sparse range count reuse at 100k | **Measured / production follow-up approved (#739)** | Paired SQL A/B | Broad-offset rows-only: **2040.550 -> 1259.486 ms (-38.28%)** per 20 ranges; sequential count-once session: **1782.320 -> 1077.919 ms (-39.52%)**. #739 remains benchmark-only. |
+| Sparse range count reuse at 100k | **Accepted / production validated (#750)** | Paired SQL A/B + production contract CI | #739 established the direction; #750 production validation preserved the same result: broad-offset **3885.236 -> 2136.375 ms (-45.01%)** and sequential **3480.204 -> 1695.987 ms (-51.27%)**. First range remains authoritative-counted; later ranges reuse that generation's count. |
 | Search candidate-first / sparse range | **Merged** | Measured | 100k range/cursor workloads: **2.38x to 5.67x faster** depending on access pattern. |
 | Directory sort at 100k | **Measured baseline** | Measured | name/updated/size/type baselines recorded below; type is currently slowest. |
 | Sparse VirtualCollection CPU at 100k | **Accepted structural baseline / no optimization (PR #708)** | Measured | Three CI CPU medians: **126.877 / 160.081 / 161.319 ms per sweep** (**50.751 / 64.032 / 64.528 us per viewport**); hosted-runner timing is diagnostic only, while structural counts are stable at **500 page loads / 800 peak / 600 final retained**. |
@@ -31,7 +31,7 @@ This table is the durable status index for the FileExplorer performance track. A
 
 - Directory listing uses cursor pagination with 200 items per page.
 - Non-empty paged directory reads fetch node and file metadata in one joined DB query; empty/terminal pages perform a fallback parent validation only to preserve 200-vs-404 semantics.
-- Non-empty sparse range reads fetch rows and `total_count` in **1 SQL round-trip** via `COUNT(*) OVER()` (baseline: **2 SQL round-trips**, COUNT + rows); empty/out-of-range windows retain the fallback count/404 path.
+- The first sparse range of each FileExplorer directory generation fetches rows and authoritative `total_count` in **1 SQL round-trip** via `COUNT(*) OVER()`. After that count is primed, subsequent viewport ranges send `include_count=false` and execute the same ordered row query without the window count; count-free empty windows still validate the parent to preserve 200-vs-404 semantics.
 - Details view windows large directories once 240 items are loaded.
 - Details scroll-window state is updated at most once per animation frame and only when the effective row boundary changes.
 - Grid view windows large directories once 400 items are loaded, with deterministic row geometry and three overscan rows.
@@ -409,15 +409,46 @@ The production follow-up must preserve these semantics:
 - empty/out-of-range and 404 distinction must remain correct;
 - Web and Desktop must consume one shared contract rather than inventing platform-specific count reuse.
 
-The final #739 CI rerun is a validation sample of this unchanged benchmark. If it materially contradicts the first paired result, keep the optimization in benchmarking state instead of proceeding.
+Two later #739 validation samples confirmed the same direction despite hosted-runner wall-clock variation:
+
+- validation sample 2: broad **3223.987 -> 1748.068 ms (-45.78%)**; sequential **2900.027 -> 1382.164 ms (-52.34%)**;
+- validation sample 3: broad **3853.494 -> 2088.390 ms (-45.81%)**; sequential **3444.787 -> 1636.225 ms (-52.50%)**.
+
+The absolute times moved with runner load, while the paired reduction stayed large across all three samples. That is sufficient evidence to proceed with the production contract without promoting raw wall time into a merge gate.
+
+### Production count-once contract
+
+Status: **Accepted / validated on #750**.
+
+The production implementation keeps the optimization policy in the shared Cloud Files / VirtualCollection layer so Web and Desktop cannot drift:
+
+- a new navigation, sort, explicit refresh, or other VirtualCollection generation requests its first range with an authoritative count;
+- later viewport ranges request `include_count=false`;
+- Server responses carry `total_count_included` so `total_count=0` is never ambiguous with “not computed”;
+- the Go client treats an absent `total_count_included` field as counted, preserving compatibility with older Servers;
+- Web and Desktop only serialize the shared controller's `includeCount` decision;
+- a count-free page reuses the current generation's already-known total and cannot establish a fresh collection by itself;
+- empty count-free ranges still validate the parent directory so 404 behavior is unchanged.
+
+This is a production realization of the measured #739 candidate, not a separate speedup claim. The production-branch validation reran the same 100k paired workload and reproduced the benefit despite different hosted-runner absolute timing:
+
+| Validation workload | Count every range | Count once / later ranges count-free | Paired reduction |
+| --- | ---: | ---: | ---: |
+| 20 broad-offset ranges | **3885.236 ms** | **2136.375 ms** | **-45.01%** |
+| Counted first range + 20 sequential ranges | **3480.204 ms** | **1695.987 ms** | **-51.27%** |
+
+The same production tree passed the shared Desktop controller/VirtualCollection tests, Web lint/build, Server deployment validation, API race suite, and the branch-scoped 100k benchmark before the final documentation-only rerun. Ordinary Go race also passed before that rerun. Absolute hosted-runner wall time remains diagnostic; the stable paired direction from #739 and #750 is the evidence.
+
+Decision: **accept the production count-once contract.** Keep `total_count_included` as the explicit wire signal, keep old-Server compatibility by treating a missing flag as counted, and keep generation ownership in shared Cloud Files / VirtualCollection rather than duplicating policy in Web/Desktop adapters.
+
 
 
 ## Next work
 
 1. **No further thumbnail or marquee production tuning from #734.** Keep the current **80 ms scroll-settle**, **6-request thumbnail concurrency**, **96-entry FileExplorer cache**, video icon fallback, and virtual-geometry marquee implementation.
 2. **Measured / accepted direction:** #739 shows a **38.28% broad-offset** and **39.52% sequential-session** reduction when later ranges stop recomputing `COUNT(*) OVER()`. Keep #739 benchmark-only.
-3. Next production PR: implement an explicit **count-once / count-free subsequent-range** contract across Server -> Go client -> Desktop Agent/Web adapters -> shared CloudFiles/VirtualCollection, with generation reset and exact-count correctness tests before any timing claim.
-4. Keep a combined browser-to-real-Server trace as optional validation if field behavior later disagrees with the separate backend and Chromium measurements; do not build it merely to chase hosted-runner timing.
+3. **Accepted / implemented:** the production **count-once / count-free subsequent-range** contract is complete across Server -> Go client -> xdrive-agent/Electron/Web -> shared Cloud Files/VirtualCollection. Keep #739 as the decision benchmark and #750 as the production validation.
+4. **No further FileExplorer production optimization is selected from the current evidence.** Keep a combined browser-to-real-Server trace optional only if field behavior later disagrees with the separate backend and Chromium measurements; do not build it merely to chase hosted-runner timing.
 5. Warm FileExplorer video posters remain blocked until the product has a real derived/cached poster contract.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.

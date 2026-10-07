@@ -360,7 +360,7 @@ jobs:
         run: node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
 
   file-explorer-range-count-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-range-count-100k'
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/file-explorer-range-count-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
