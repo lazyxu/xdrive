@@ -431,6 +431,22 @@ func (f *fakeDesktopIPCController) CloudBackgroundTaskActiveSummary(
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudBackgroundTaskPage(
+	context.Context,
+	bool,
+	int,
+	string,
+) (client.BackgroundTaskPage, error) {
+	return client.BackgroundTaskPage{
+		CurrentItems: []client.BackgroundTask{{
+			ID: "runtime:user:1:media.index", Kind: "media.index",
+			Domain: "scheduler", Scope: "user", OwnerID: 1,
+			State: "running", UpdatedAt: time.Now().UTC(),
+		}},
+		NextCursor: "cursor",
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error) {
 	return []client.BackgroundTask{{
 		ID: "runtime:user:1:media.index", Kind: "media.index", Domain: "scheduler",

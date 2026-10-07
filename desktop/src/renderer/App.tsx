@@ -492,14 +492,22 @@ export default function App({
           return result.data
         }
       : undefined,
-    loadMine: async (limit: number) => {
-      const result = await window.xdriveDesktop.agent.cloudBackgroundTasks(false, limit)
+    loadMinePage: async (limit: number, cursor?: string) => {
+      const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+        false,
+        limit,
+        cursor ?? '',
+      )
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    loadGlobal: status?.role === 'admin'
-      ? async (limit: number) => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTasks(true, limit)
+    loadGlobalPage: status?.role === 'admin'
+      ? async (limit: number, cursor?: string) => {
+          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+            true,
+            limit,
+            cursor ?? '',
+          )
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }

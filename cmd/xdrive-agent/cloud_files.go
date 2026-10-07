@@ -387,6 +387,19 @@ func (c *agentController) CloudBackgroundTaskActiveSummary(
 	return cli.BackgroundTaskActiveSummary(ctx)
 }
 
+func (c *agentController) CloudBackgroundTaskPage(
+	ctx context.Context,
+	global bool,
+	limit int,
+	cursor string,
+) (client.BackgroundTaskPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.BackgroundTaskPage{}, err
+	}
+	return cli.BackgroundTaskPage(ctx, limit, cursor, global)
+}
+
 func (c *agentController) CloudBackgroundTasks(ctx context.Context, global bool, limit int) ([]client.BackgroundTask, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

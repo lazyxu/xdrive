@@ -450,6 +450,12 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentBackgroundTaskPage = {
+  current_items: AgentBackgroundTask[]
+  history_items: AgentBackgroundTask[]
+  next_cursor?: string
+}
+
 export type AgentBackgroundTaskActiveSummary = {
   active_total: number
   file_operation: number
@@ -1640,6 +1646,18 @@ export class AgentIPCClient {
     return this.request<AgentBackgroundTaskActiveSummary>(
       'GET',
       '/v1/cloud/background-task-summary',
+    )
+  }
+
+  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '') {
+    const query = new URLSearchParams({
+      limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
+      ...(global ? { global: 'true' } : {}),
+    })
+    if (cursor.trim()) query.set('cursor', cursor.trim())
+    return this.request<AgentBackgroundTaskPage>(
+      'GET',
+      `/v1/cloud/background-task-page?${query.toString()}`,
     )
   }
 

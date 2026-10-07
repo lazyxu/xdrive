@@ -178,6 +178,12 @@ type BackgroundTaskControlResult struct {
 	Accepted     bool   `json:"accepted"`
 }
 
+type BackgroundTaskPage struct {
+	CurrentItems []BackgroundTask `json:"current_items"`
+	HistoryItems []BackgroundTask `json:"history_items"`
+	NextCursor   string           `json:"next_cursor,omitempty"`
+}
+
 type BackgroundTaskActiveSummary struct {
 	ActiveTotal   int `json:"active_total"`
 	FileOperation int `json:"file_operation"`
@@ -715,6 +721,38 @@ func (c *Client) BackgroundTaskActiveSummary(
 		ctx,
 		http.MethodGet,
 		"/api/v1/background-tasks/active-summary",
+		nil,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) BackgroundTaskPage(
+	ctx context.Context,
+	limit int,
+	cursor string,
+	admin bool,
+) (BackgroundTaskPage, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	endpoint := "/api/v1/background-tasks/page"
+	if admin {
+		endpoint = "/api/v1/admin/background-tasks/page"
+	}
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	var out BackgroundTaskPage
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		endpoint+"?"+query.Encode(),
 		nil,
 		&out,
 	)

@@ -50,6 +50,7 @@ import type {
   XDriveBackgroundTaskActiveSummary,
   XDriveBackgroundTaskControlAction,
   XDriveBackgroundTaskControlResult,
+  XDriveBackgroundTaskPage,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
   XDriveFileTextPreview,
@@ -1461,6 +1462,24 @@ export class XDriveApi {
   backgroundTasks(limit = 100) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     return this.request<XDriveBackgroundTask[]>(`/api/v1/background-tasks?limit=${bounded}`)
+  }
+
+  backgroundTaskPage(limit = 50, cursor = '') {
+    const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
+    const query = new URLSearchParams({ limit: String(bounded) })
+    if (cursor.trim()) query.set('cursor', cursor.trim())
+    return this.request<XDriveBackgroundTaskPage>(
+      `/api/v1/background-tasks/page?${query.toString()}`,
+    )
+  }
+
+  adminBackgroundTaskPage(limit = 50, cursor = '') {
+    const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
+    const query = new URLSearchParams({ limit: String(bounded) })
+    if (cursor.trim()) query.set('cursor', cursor.trim())
+    return this.request<XDriveBackgroundTaskPage>(
+      `/api/v1/admin/background-tasks/page?${query.toString()}`,
+    )
   }
 
   adminBackgroundTasks(limit = 100) {

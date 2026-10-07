@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  XDRIVE_BACKGROUND_TASK_LIMIT,
+  XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
   xDriveActiveFileOperationCount,
   xDriveBackgroundTaskPollIntervalMs,
   xDriveBackgroundTaskSummaryPollIntervalMs,
@@ -10,6 +10,7 @@ import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskActiveSummary,
   XDriveBackgroundTaskControlAction,
+  XDriveBackgroundTaskPage,
   XDriveFileOperation,
   XDriveFileOperationConflictResolution,
 } from '..'
@@ -38,13 +39,63 @@ export type XDriveBackgroundTaskScope = 'mine' | 'global'
 
 export type XDriveBackgroundTaskPort = {
   loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>
-  loadMine: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
-  loadGlobal?: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
+  loadMinePage: (
+    limit: number,
+    cursor?: string,
+  ) => Promise<XDriveBackgroundTaskPage>
+  loadGlobalPage?: (
+    limit: number,
+    cursor?: string,
+  ) => Promise<XDriveBackgroundTaskPage>
   control?: (
     taskID: string,
     action: XDriveBackgroundTaskControlAction,
     global: boolean,
   ) => Promise<unknown>
+}
+
+type XDriveBackgroundTaskPageState = {
+  current: XDriveBackgroundTask[]
+  history: XDriveBackgroundTask[]
+  nextCursor: string
+  loadedMore: boolean
+}
+
+function emptyBackgroundTaskPageState(): XDriveBackgroundTaskPageState {
+  return {
+    current: [],
+    history: [],
+    nextCursor: '',
+    loadedMore: false,
+  }
+}
+
+function mergeBackgroundTaskHistory(
+  fresh: readonly XDriveBackgroundTask[],
+  existing: readonly XDriveBackgroundTask[],
+) {
+  const seen = new Set<string>()
+  const out: XDriveBackgroundTask[] = []
+  for (const task of [...fresh, ...existing]) {
+    if (seen.has(task.id)) continue
+    seen.add(task.id)
+    out.push(task)
+  }
+  return out
+}
+
+function appendBackgroundTaskHistory(
+  existing: readonly XDriveBackgroundTask[],
+  page: readonly XDriveBackgroundTask[],
+) {
+  const seen = new Set(existing.map((task) => task.id))
+  const out = [...existing]
+  for (const task of page) {
+    if (seen.has(task.id)) continue
+    seen.add(task.id)
+    out.push(task)
+  }
+  return out
 }
 
 function useXDriveBackgroundTaskActiveSummary({
@@ -101,51 +152,115 @@ function useXDriveBackgroundTasks({
   scope: XDriveBackgroundTaskScope
   onError?: (error: unknown) => void
 }) {
-  const [mine, setMine] = useState<XDriveBackgroundTask[]>([])
-  const [globalTasks, setGlobalTasks] = useState<XDriveBackgroundTask[]>([])
+  const [mine, setMine] = useState<XDriveBackgroundTaskPageState>(
+    emptyBackgroundTaskPageState,
+  )
+  const [globalTasks, setGlobalTasks] = useState<XDriveBackgroundTaskPageState>(
+    emptyBackgroundTaskPageState,
+  )
   const [mineLoading, setMineLoading] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(false)
+  const [mineLoadingMore, setMineLoadingMore] = useState(false)
+  const [globalLoadingMore, setGlobalLoadingMore] = useState(false)
 
   const effectiveScope: XDriveBackgroundTaskScope =
-    scope === 'global' && globalEnabled && port?.loadGlobal ? 'global' : 'mine'
+    scope === 'global' && globalEnabled && port?.loadGlobalPage ? 'global' : 'mine'
 
-  const refresh = useCallback(async () => {
-    if (!port || !enabled || !visible) return
-
-    if (effectiveScope === 'global' && port.loadGlobal) {
-      setGlobalLoading(true)
-      try {
-        setGlobalTasks([...(await port.loadGlobal(XDRIVE_BACKGROUND_TASK_LIMIT))])
-      } catch (error) {
-        onError?.(error)
-      } finally {
-        setGlobalLoading(false)
-      }
-      return
-    }
-
-    setMineLoading(true)
-    try {
-      setMine([...(await port.loadMine(XDRIVE_BACKGROUND_TASK_LIMIT))])
-    } catch (error) {
-      onError?.(error)
-    } finally {
-      setMineLoading(false)
-    }
-  }, [effectiveScope, enabled, onError, port, visible])
-
-  const visibleTasks = effectiveScope === 'global' ? globalTasks : mine
+  const visibleState = effectiveScope === 'global' ? globalTasks : mine
+  const visibleTasks = [...visibleState.current, ...visibleState.history]
   const pollIntervalMs = useMemo(
     () => xDriveBackgroundTaskPollIntervalMs(visibleTasks),
     [visibleTasks],
   )
 
+  const refresh = useCallback(async () => {
+    if (!port || !enabled || !visible) return
+
+    const global = effectiveScope === 'global'
+    const load = global ? port.loadGlobalPage : port.loadMinePage
+    if (!load) return
+
+    if (global) setGlobalLoading(true)
+    else setMineLoading(true)
+    try {
+      const page = await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT)
+      const update = (
+        previous: XDriveBackgroundTaskPageState,
+      ): XDriveBackgroundTaskPageState => ({
+        current: [...page.current_items],
+        history: previous.loadedMore
+          ? mergeBackgroundTaskHistory(page.history_items, previous.history)
+          : [...page.history_items],
+        nextCursor: previous.loadedMore
+          ? previous.nextCursor
+          : page.next_cursor ?? '',
+        loadedMore: previous.loadedMore,
+      })
+      if (global) setGlobalTasks(update)
+      else setMine(update)
+    } catch (error) {
+      onError?.(error)
+    } finally {
+      if (global) setGlobalLoading(false)
+      else setMineLoading(false)
+    }
+  }, [effectiveScope, enabled, onError, port, visible])
+
+  const loadMore = useCallback(async () => {
+    if (!port || !enabled || !visible || !visibleState.nextCursor) return
+
+    const global = effectiveScope === 'global'
+    const load = global ? port.loadGlobalPage : port.loadMinePage
+    if (!load) return
+
+    const loadingMore = global ? globalLoadingMore : mineLoadingMore
+    if (loadingMore) return
+
+    if (global) setGlobalLoadingMore(true)
+    else setMineLoadingMore(true)
+    try {
+      const page = await load(
+        XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
+        visibleState.nextCursor,
+      )
+      const update = (
+        previous: XDriveBackgroundTaskPageState,
+      ): XDriveBackgroundTaskPageState => ({
+        ...previous,
+        history: appendBackgroundTaskHistory(
+          previous.history,
+          page.history_items,
+        ),
+        nextCursor: page.next_cursor ?? '',
+        loadedMore: true,
+      })
+      if (global) setGlobalTasks(update)
+      else setMine(update)
+    } catch (error) {
+      onError?.(error)
+    } finally {
+      if (global) setGlobalLoadingMore(false)
+      else setMineLoadingMore(false)
+    }
+  }, [
+    effectiveScope,
+    enabled,
+    globalLoadingMore,
+    mineLoadingMore,
+    onError,
+    port,
+    visible,
+    visibleState.nextCursor,
+  ])
+
   useEffect(() => {
     if (!enabled || !port) {
-      setMine([])
-      setGlobalTasks([])
+      setMine(emptyBackgroundTaskPageState())
+      setGlobalTasks(emptyBackgroundTaskPageState())
       setMineLoading(false)
       setGlobalLoading(false)
+      setMineLoadingMore(false)
+      setGlobalLoadingMore(false)
       return
     }
     if (!visible) return
@@ -155,12 +270,17 @@ function useXDriveBackgroundTasks({
   }, [enabled, pollIntervalMs, port, refresh, visible])
 
   return {
-    mine,
-    globalTasks,
+    mine: [...mine.current, ...mine.history],
+    globalTasks: [...globalTasks.current, ...globalTasks.history],
     mineLoading,
     globalLoading,
     effectiveScope,
     refresh,
+    loadMore,
+    hasMore: Boolean(visibleState.nextCursor),
+    loadingMore: effectiveScope === 'global'
+      ? globalLoadingMore
+      : mineLoadingMore,
   }
 }
 
@@ -263,13 +383,16 @@ export function useXDriveTaskCenterController({
     backgroundTasksLoading: background.mineLoading,
     globalBackgroundTasksLoading: background.globalLoading,
     backgroundTasksAvailable: Boolean(backgroundTaskPort) && backgroundTasksEnabled,
-    globalTasksEnabled: Boolean(backgroundTaskPort?.loadGlobal) && globalTasksEnabled,
+    globalTasksEnabled: Boolean(backgroundTaskPort?.loadGlobalPage) && globalTasksEnabled,
     backgroundScope: background.effectiveScope,
     onBackgroundScopeChange: setBackgroundScope,
     backgroundControlKey,
     onBackgroundTaskControl: backgroundTaskPort?.control
       ? (task, action) => { void controlBackgroundTask(task, action) }
       : undefined,
+    backgroundHasMore: background.hasMore,
+    backgroundLoadingMore: background.loadingMore,
+    onLoadMoreBackground: () => { void background.loadMore() },
     clearHistory: {
       disabled: !hasHistory || externalBusy || operationActions.busy,
       loading: operationActions.clearHistoryLoading,

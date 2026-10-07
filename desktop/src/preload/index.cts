@@ -298,6 +298,8 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudBackgroundTaskActiveSummary: () =>
     ipcRenderer.invoke('agent:cloud-background-task-summary'),
+  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '') =>
+    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor),
   cloudBackgroundTasks: (global = false, limit = 100) => ipcRenderer.invoke('agent:cloud-background-tasks', global, limit),
   cloudBackgroundTaskControl: (id: string, action: string, global = false) =>
     ipcRenderer.invoke('agent:cloud-background-task-control', id, action, global),

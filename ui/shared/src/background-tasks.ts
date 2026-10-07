@@ -1,6 +1,7 @@
 import { formatBytes } from './format'
 
 export const XDRIVE_BACKGROUND_TASK_LIMIT = 200
+export const XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT = 50
 export const XDRIVE_BACKGROUND_TASK_ACTIVE_POLL_MS = 1_500
 export const XDRIVE_BACKGROUND_TASK_VISIBLE_IDLE_POLL_MS = 3_000
 export const XDRIVE_BACKGROUND_TASK_SUMMARY_IDLE_POLL_MS = 3_000
@@ -34,6 +35,12 @@ export type XDriveBackgroundTaskControlResult = {
   action: string
   result_task_id?: string
   accepted: boolean
+}
+
+export type XDriveBackgroundTaskPage = {
+  current_items: XDriveBackgroundTask[]
+  history_items: XDriveBackgroundTask[]
+  next_cursor?: string
 }
 
 export type XDriveBackgroundTask = {

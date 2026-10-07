@@ -119,7 +119,7 @@ test('Desktop delegates shared Task Center composition while retaining native tr
 
 
 test('shared Task Center renders sync folders, background processing and admin global view', () => {
-  for (const token of ['backgroundTaskPort?: XDriveBackgroundTaskPort','backgroundTasksVisible','globalTasksEnabled','loadMine','loadGlobal','xDriveBackgroundTaskPollIntervalMs']) assert.ok(controller.includes(token), 'shared background controller missing: ' + token)
+  for (const token of ['backgroundTaskPort?: XDriveBackgroundTaskPort','backgroundTasksVisible','globalTasksEnabled','loadMinePage','loadGlobalPage','xDriveBackgroundTaskPollIntervalMs']) assert.ok(controller.includes(token), 'shared background controller missing: ' + token)
   for (const token of ['同步文件夹','后台处理','我的任务','全局任务','<XDriveBackgroundTaskList','<XDriveBackgroundTaskTable']) assert.ok(page.includes(token), 'Task Center background UI missing: ' + token)
   for (const token of ['媒体索引','缩略图生成','分析预览','人脸识别','地点识别','人物聚类','owner_username','control_actions']) assert.ok(backgroundModel.includes(token), 'background task model missing: ' + token)
   for (const token of ['用户','任务类型','优先级','资源类','触发方式','控制能力']) assert.ok(backgroundCenter.includes(token), 'global task table missing: ' + token)
@@ -132,8 +132,11 @@ test('Web and Desktop use adapters for the same background-task contract', () =>
   assert.ok(web.includes("globalTasksEnabled: profile?.role === 'admin'"))
   assert.ok(agentIPC.includes('"background-tasks"'))
   assert.ok(agentIPC.includes('GET /v1/cloud/background-tasks'))
+  assert.ok(agentIPC.includes('GET /v1/cloud/background-task-page'))
   assert.ok(agentClient.includes('cloudBackgroundTasks(global = false, limit = 100)'))
+  assert.ok(agentClient.includes('cloudBackgroundTaskPage(global = false, limit = 50, cursor ='))
   assert.ok(desktopPreload.includes('cloudBackgroundTasks: (global = false, limit = 100)'))
+  assert.ok(desktopPreload.includes('cloudBackgroundTaskPage: (global = false, limit = 50, cursor ='))
   assert.ok(desktop.includes('backgroundTasksSupported'))
   assert.ok(desktop.includes("globalTasksEnabled: status?.role === 'admin'"))
 })
@@ -146,8 +149,9 @@ test('background task controls use server capabilities and scope-aware polling',
     "backgroundControlKey",
     "backgroundTaskPort.control(task.id, action, global)",
     "effectiveScope === 'global'",
-    "port.loadGlobal(XDRIVE_BACKGROUND_TASK_LIMIT)",
-    "port.loadMine(XDRIVE_BACKGROUND_TASK_LIMIT)",
+    "loadGlobalPage",
+    "loadMinePage",
+    "XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT",
   ]) assert.ok(controller.includes(token), 'background control controller missing: ' + token)
 
   for (const token of [
@@ -259,4 +263,37 @@ test('Task Center badge includes owner background activity through shared summar
   assert.ok(desktop.includes('backgroundTaskSummarySupported'), 'Desktop summary capability gate missing')
   assert.equal(web.includes('active_total +'), false, 'Web must not own badge arithmetic')
   assert.equal(desktop.includes('active_total +'), false, 'Desktop must not own badge arithmetic')
+})
+
+
+test('background task history uses one shared active-first cursor controller', () => {
+  for (const token of [
+    'loadMinePage',
+    'loadGlobalPage',
+    'nextCursor',
+    'loadedMore',
+    'mergeBackgroundTaskHistory',
+    'appendBackgroundTaskHistory',
+    'backgroundHasMore',
+    'backgroundLoadingMore',
+    'onLoadMoreBackground',
+  ]) assert.ok(controller.includes(token), 'shared cursor controller missing: ' + token)
+
+  for (const token of [
+    'IntersectionObserver',
+    '继续加载任务历史',
+    '<XDriveTaskHistorySentinel',
+  ]) assert.ok(page.includes(token), 'shared history sentinel missing: ' + token)
+
+  assert.ok(webApi.includes('backgroundTaskPage(limit = 50'))
+  assert.ok(webApi.includes('adminBackgroundTaskPage(limit = 50'))
+  assert.ok(web.includes('loadMinePage'))
+  assert.ok(web.includes('loadGlobalPage'))
+  assert.ok(agentIPC.includes('GET /v1/cloud/background-task-page'))
+  assert.ok(agentClient.includes('cloudBackgroundTaskPage(global = false, limit = 50, cursor ='))
+  assert.ok(desktopPreload.includes('cloudBackgroundTaskPage: (global = false, limit = 50, cursor ='))
+  assert.ok(desktop.includes('loadMinePage'))
+  assert.ok(desktop.includes('loadGlobalPage'))
+  assert.equal(web.includes('IntersectionObserver'), false, 'Web must not own history scrolling')
+  assert.equal(desktop.includes('IntersectionObserver'), false, 'Desktop must not own history scrolling')
 })
