@@ -911,6 +911,26 @@ export class XDriveApi {
     )
   }
 
+  setMediaFavoriteBatch(nodeIDs: number[], favorite: boolean) {
+    return this.request<{ updated: number; favorite: boolean }>(
+      '/api/v1/media/batch/favorite',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ node_ids: nodeIDs, favorite }),
+      },
+    )
+  }
+
+  addMediaTagsBatch(nodeIDs: number[], tags: string[]) {
+    return this.request<{ updated: number; tags: string[] }>(
+      '/api/v1/media/batch/tags',
+      {
+        method: 'POST',
+        body: JSON.stringify({ node_ids: nodeIDs, tags }),
+      },
+    )
+  }
+
   setMediaTags(nodeID: number, tags: string[]) {
     return this.request<{ tags: string[] }>(
       `/api/v1/media/items/${nodeID}/tags`,

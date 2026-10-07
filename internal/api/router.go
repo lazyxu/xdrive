@@ -144,6 +144,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id", s.getMediaItem)
 	authed.PATCH("/media/items/:id/favorite", s.setMediaFavorite)
 	authed.PATCH("/media/items/:id/tags", s.setMediaTags)
+	authed.PATCH("/media/batch/favorite", s.setMediaFavoriteBatch)
+	authed.POST("/media/batch/tags", s.addMediaTagsBatch)
 	authed.PATCH("/media/items/:id/people", s.setMediaPeople)
 	authed.PATCH("/media/items/:id/description", s.setMediaDescription)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)

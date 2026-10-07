@@ -105,6 +105,8 @@ import {
   type AgentMediaPersonSplit,
   type AgentMediaQuery,
   type AgentMediaFavorite,
+  type AgentMediaBatchFavorite,
+  type AgentMediaBatchTags,
   type AgentMediaTags,
   type AgentMediaPeople,
   type AgentMediaDescription,
@@ -2330,6 +2332,39 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media node id and favorite state are required.')
     }
     return requireAgentClient().setMediaFavorite(nodeID, favorite)
+  }, false))
+
+  ipcMain.handle('agent:set-media-favorite-batch', (_event, nodeIDs: unknown, favorite: unknown) => runAgentAction<AgentMediaBatchFavorite>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      !Array.isArray(nodeIDs) ||
+      nodeIDs.length === 0 ||
+      nodeIDs.length > 1000 ||
+      !nodeIDs.every((value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0) ||
+      typeof favorite !== 'boolean'
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Up to 1000 media node ids and favorite state are required.')
+    }
+    return requireAgentClient().setMediaFavoriteBatch(nodeIDs, favorite)
+  }, false))
+
+  ipcMain.handle('agent:add-media-tags-batch', (_event, nodeIDs: unknown, tags: unknown) => runAgentAction<AgentMediaBatchTags>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      !Array.isArray(nodeIDs) ||
+      nodeIDs.length === 0 ||
+      nodeIDs.length > 1000 ||
+      !nodeIDs.every((value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0) ||
+      !Array.isArray(tags) ||
+      tags.length === 0 ||
+      tags.length > 32 ||
+      !tags.every((value) => typeof value === 'string')
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node ids and up to 32 tags are required.')
+    }
+    return requireAgentClient().addMediaTagsBatch(nodeIDs, tags)
   }, false))
 
   ipcMain.handle('agent:set-media-tags', (_event, nodeID: unknown, tags: unknown) => runAgentAction<AgentMediaTags>(async () => {

@@ -24,7 +24,7 @@ presentation and product intelligence.
 | --- | --- | --- |
 | 1 | Gallery IA/UI: Library / Memories / People / Places / Albums / Favorites / Media Types; advanced filters in popover | **Current foundation** |
 | 2 | Year / Month / Day semantic timeline + thumbnail density | **Current** |
-| 3 | Multi-select + shared Selection Toolbar | Planned |
+| 3 | Multi-select + shared Selection Toolbar | **Current** |
 | 4 | Gallery Trash + Favorites + media-type smart collections | Planned |
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | Planned |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | Planned |
@@ -89,3 +89,31 @@ minimum tile width used by Grid and Timeline layout calculations; it does not ch
 the query key, reset VirtualCollection, or issue a new Server request. Viewport
 retention and the bounded thumbnail scheduler therefore continue to control memory and
 network work independently from tile size.
+
+
+## Phase 3 — multi-select and shared Selection Toolbar
+
+Gallery selection is owned entirely by the shared Web/Desktop surface. Users can enter
+selection mode explicitly with **选择**, use Ctrl/Cmd to toggle items, and use Shift for
+a bounded range over the currently retained sparse window. Shift selection deliberately
+does not materialize an arbitrarily large logical range: the shared controller caps the
+range walk at 1000 logical indexes and only selects media metadata already present in
+VirtualCollection.
+
+The shared Selection Toolbar supports:
+
+- batch favorite / unfavorite;
+- add selected media to an existing manual album using the existing multi-node album contract;
+- append tags to selected media without replacing existing tags;
+- download one selected item directly or multiple items through durable Archive prepare;
+- delete through the existing durable FileOperation delete contract, so the task remains
+  visible/cancellable in Task Center.
+
+Favorite and tag mutations have owner-scoped batch APIs limited to 1000 unique primary
+media nodes per request. Favorite uses one set-based metadata update. Batch tag updates
+run transactionally and merge normalized tags with each asset's existing local tags.
+
+Selection state is collection-generation local. Changing Gallery section/person/place/
+album/media-type clears the selection, and Escape exits selection mode. Grid and Timeline
+share the same selection state and toolbar; platform adapters only bind the existing
+download/delete transports.

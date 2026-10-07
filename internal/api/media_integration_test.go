@@ -263,6 +263,57 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("captured media timeline group sets=%+v", itemRange.TimelineGroupSets)
 	}
 
+	batchFavoriteResponse := request(
+		t,
+		router,
+		http.MethodPatch,
+		"/api/v1/media/batch/favorite",
+		token,
+		strings.NewReader(fmt.Sprintf(`{"node_ids":[%d,%d],"favorite":true}`, file.ID, file.ID)),
+		http.StatusOK,
+	)
+	var batchFavorite mediaBatchFavoriteDTO
+	if err := json.Unmarshal(batchFavoriteResponse.Body.Bytes(), &batchFavorite); err != nil {
+		t.Fatal(err)
+	}
+	if batchFavorite.Updated != 1 || !batchFavorite.Favorite {
+		t.Fatalf("batch favorite=%+v", batchFavorite)
+	}
+
+	batchTagsResponse := request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/media/batch/tags",
+		token,
+		strings.NewReader(fmt.Sprintf(`{"node_ids":[%d],"tags":["Travel","family"]}`, file.ID)),
+		http.StatusOK,
+	)
+	var batchTags mediaBatchTagsDTO
+	if err := json.Unmarshal(batchTagsResponse.Body.Bytes(), &batchTags); err != nil {
+		t.Fatal(err)
+	}
+	if batchTags.Updated != 1 || strings.Join(batchTags.Tags, "|") != "family|Travel" {
+		t.Fatalf("batch tags=%+v", batchTags)
+	}
+
+	var batchAsset meta.PhotoAsset
+	if err := db.Where("primary_node_id = ?", file.ID).
+		First(&batchAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	var batchMetadata meta.PhotoMetadata
+	if err := db.First(&batchMetadata, "asset_id = ?", batchAsset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	storedTags, err := decodeMediaTags(batchMetadata.TagsJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !batchMetadata.Favorite || strings.Join(storedTags, "|") != "family|Travel" {
+		t.Fatalf("batch metadata favorite=%v tags=%v", batchMetadata.Favorite, storedTags)
+	}
+
 	emptyRangeResponse := request(
 		t,
 		router,

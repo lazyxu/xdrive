@@ -472,6 +472,8 @@ declare global {
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         setMediaFavorite: (nodeID: number, favorite: boolean) => Promise<DesktopResult<{ favorite: boolean }>>
+        setMediaFavoriteBatch: (nodeIDs: number[], favorite: boolean) => Promise<DesktopResult<{ updated: number; favorite: boolean }>>
+        addMediaTagsBatch: (nodeIDs: number[], tags: string[]) => Promise<DesktopResult<{ updated: number; tags: string[] }>>
         setMediaTags: (nodeID: number, tags: string[]) => Promise<DesktopResult<{ tags: string[] }>>
         setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>
         setMediaDescription: (nodeID: number, description: string) => Promise<DesktopResult<AgentMediaDescription>>

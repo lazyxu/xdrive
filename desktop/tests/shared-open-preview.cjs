@@ -61,13 +61,16 @@ test('Desktop FileExplorer Open previews while system shell open remains explici
   assert.ok(actions.includes("label: systemOpenLabel"), 'system-open label must remain adapter-configurable')
 })
 
-test('Gallery single click keeps media details while double click opens media preview', () => {
+test('Gallery single click keeps media details while selection gestures stay distinct', () => {
   for (const token of [
     'const clickTimerRef = useRef<number | null>(null)',
     'const openDetails = () =>',
     'const openPreview = () =>',
-    'onClick={openDetails}',
+    'onClick={(event) =>',
+    'if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey)',
+    'openDetails()',
     'onDoubleClick={(event) =>',
+    'if (!selectionMode) openPreview()',
     'onPreview(item)',
     'const [selected, setSelected] = useState<MediaItem | null>(null)',
     'const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)',

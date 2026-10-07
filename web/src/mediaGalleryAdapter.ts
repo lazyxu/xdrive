@@ -34,6 +34,15 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     loadLivePhotoMotion: (nodeID) => api.mediaLivePhotoMotion(nodeID),
     loadPreviewURL: (nodeID, _kind) => api.filePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),
+    setFavoriteBatch: (nodeIDs, favorite) => api.setMediaFavoriteBatch(nodeIDs, favorite),
+    addTagsBatch: (nodeIDs, tags) => api.addMediaTagsBatch(nodeIDs, tags),
+    deleteItems: (items) => api.createFileOperation(
+      'delete',
+      items.map((item) => ({ id: item.node.id, revision: item.node.revision })),
+    ),
+    downloadItems: (items) => items.length === 1
+      ? api.download(items[0].node)
+      : api.downloadArchive(items.map((item) => item.node.id), 'xdrive-photos.zip'),
     setTags: (nodeID, tags) => api.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => api.setMediaPeople(nodeID, people),
     setDescription: (nodeID, description) => api.setMediaDescription(nodeID, description),

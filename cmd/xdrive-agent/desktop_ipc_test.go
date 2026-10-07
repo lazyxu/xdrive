@@ -1013,6 +1013,22 @@ func (f *fakeDesktopIPCController) CloudSetMediaFavorite(
 	return client.MediaFavorite{Favorite: favorite}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudSetMediaFavoriteBatch(
+	_ context.Context,
+	nodeIDs []uint64,
+	favorite bool,
+) (client.MediaBatchFavorite, error) {
+	return client.MediaBatchFavorite{Updated: len(nodeIDs), Favorite: favorite}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudAddMediaTagsBatch(
+	_ context.Context,
+	nodeIDs []uint64,
+	tags []string,
+) (client.MediaBatchTags, error) {
+	return client.MediaBatchTags{Updated: len(nodeIDs), Tags: append([]string(nil), tags...)}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudSetMediaTags(
 	_ context.Context,
 	_ uint64,
@@ -2106,6 +2122,32 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"favorite":true`) {
 		t.Fatalf("media favorite status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/media/favorites",
+		`{"node_ids":[31,32],"favorite":true}`,
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), `"updated":2`) ||
+		!strings.Contains(res.Body.String(), `"favorite":true`) {
+		t.Fatalf("media favorite batch status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/tags/batch",
+		`{"node_ids":[31,32],"tags":["Family","Travel"]}`,
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), `"updated":2`) ||
+		!strings.Contains(res.Body.String(), `"tags":["Family","Travel"]`) {
+		t.Fatalf("media tags batch status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	res = desktopIPCRequest(

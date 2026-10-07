@@ -35,6 +35,15 @@ export function createDesktopMediaGalleryDataSource(
     loadLivePhotoMotion: (nodeID) => agent.getMediaLivePhotoMotion(nodeID),
     loadPreviewURL: (nodeID, _kind) => agent.cloudFilePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
+    setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),
+    addTagsBatch: (nodeIDs, tags) => agent.addMediaTagsBatch(nodeIDs, tags),
+    deleteItems: (items) => agent.cloudCreateFileOperation(
+      'delete',
+      items.map((item) => ({ id: item.node.id, revision: item.node.revision })),
+    ),
+    downloadItems: (items) => items.length === 1
+      ? agent.cloudDownload(items[0].node.id, items[0].node.name)
+      : agent.cloudDownloadArchive(items.map((item) => item.node.id)),
     setTags: (nodeID, tags) => agent.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => agent.setMediaPeople(nodeID, people),
     setDescription: (nodeID, description) => agent.setMediaDescription(nodeID, description),
