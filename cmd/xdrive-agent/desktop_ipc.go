@@ -2305,8 +2305,8 @@ func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) 
 	limit := 24
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
-		if err != nil || value < 1 || value > 100 {
-			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_limit", "limit must be between 1 and 100")
+		if err != nil || value < 1 || value > 1000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_limit", "limit must be between 1 and 1000")
 			return
 		}
 		limit = value

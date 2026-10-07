@@ -49,3 +49,12 @@ func TestMediaPlaceBoundsAndCenter(t *testing.T) {
 		t.Fatalf("name=%q", got)
 	}
 }
+
+func TestMediaPlaceMapFacetLimit(t *testing.T) {
+	if mediaPlaceDefaultLimit != 24 {
+		t.Fatalf("default limit=%d want 24", mediaPlaceDefaultLimit)
+	}
+	if mediaPlaceMaxLimit != 1000 {
+		t.Fatalf("max limit=%d want 1000", mediaPlaceMaxLimit)
+	}
+}

@@ -28,7 +28,7 @@ presentation and product intelligence.
 | 4 | Gallery Trash + Favorites + media-type smart collections | **Current** |
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | **Current** |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | **Current** |
-| 7 | Map Places | Planned |
+| 7 | Map Places | **Current** |
 | 8 | Smart Search: object/scene + OCR, then semantic search | Planned |
 | 9 | Memories / Recent Days / Trips / On This Day | Planned |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | Planned |
@@ -220,3 +220,30 @@ mutations and original Preview remain unavailable.
 
 Phase 7 should build Places on the existing local GPS/GeoNames projection and keep map
 presentation in the shared Gallery layer.
+
+
+## Phase 7 — privacy-safe Map Places
+
+Places now has one shared Web/Desktop map surface over the existing local GPS/GeoNames
+facet projection. Entering **地点** expands only the compact place-facet query from the
+normal 24-card preview to at most 1000 facets; it does not fetch or materialize photo
+rows. The card list remains capped to the first 24 entries for a compact, accessible
+list alongside the spatial view.
+
+Map interaction and clustering live entirely in `ui/shared`:
+
+- longitude wrapping and fit-to-data handle collections around the ±180° dateline;
+- zoom-level grid clustering operates on compact `MediaPlaceFacet` values;
+- pointer drag, wheel/button zoom, reset-to-fit, keyboard cluster activation, and
+  direct opening of a single Place reuse the existing Place filter contract;
+- clicking a multi-place cluster zooms the map instead of issuing a media query.
+
+The initial basemap is an embedded simplified geographic layer with graticules. It does
+not request Google Maps, Mapbox, OpenStreetMap, or another online tile service, so
+opening a user's GPS photo library does not disclose the viewed photo locations to an
+external map provider. A future self-hosted/local tile provider may be added behind a
+shared provider adapter without changing Gallery Place identity or platform adapters.
+
+Server and Desktop Agent accept up to 1000 compact Place facets for this surface while
+keeping the ordinary default at 24. Web/Desktop transport code remains otherwise
+unchanged.
