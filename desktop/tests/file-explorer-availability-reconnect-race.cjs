@@ -2451,3 +2451,550 @@ test('reconnect handshake debounce survives navigation that starts after schedul
     global.window = originalWindow
   }
 })
+
+
+test('debounced node-change refresh survives a navigation that starts later and then fails', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    const debounceMs = 10
+    let alphaFresh = false
+    let holdNextBetaLoad = false
+    let rejectPendingBeta
+    let changeCalls = 0
+    const changeCursorArgs = []
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: alphaFresh ? 'alpha-new.txt' : 'alpha-old.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve, reject) => {
+            rejectPendingBeta = () => reject(new Error('simulated Beta load failure'))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+      async getChanges(cursor) {
+        changeCursorArgs.push(cursor)
+        if (changeCalls === 0) {
+          changeCalls += 1
+          return {
+            changes: [],
+            next_cursor: 1,
+            latest_cursor: 1,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        if (cursor === 1) {
+          changeCalls += 1
+          return {
+            changes: [{
+              id: 1,
+              kind: 'updated',
+              affected_parent_ids: [alpha.id],
+            }],
+            next_cursor: 2,
+            latest_cursor: 2,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        changeCalls += 1
+        return {
+          changes: [],
+          next_cursor: 2,
+          latest_cursor: 2,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        changePollIntervalMs: 0,
+        changeDebounceMs: debounceMs,
+        preserveStateOnDisable: true,
+        onError: () => {},
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'change-debounce-failed-navigation',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.cloud.items[0]?.name, 'alpha-old.txt')
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+
+    // Establish cursor=1 and allow the handshake refresh to finish before the
+    // actual race. Alpha is still serving the old snapshot at this point.
+    await app.cloud.refreshChanges()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+    assert.equal(changeCursorArgs.at(-1), 0)
+    assert.equal(app.cloud.items[0]?.name, 'alpha-old.txt')
+
+    // The Server now has newer Alpha contents. Consume the Alpha event and
+    // schedule its debounced refresh, which advances the cursor to 2.
+    alphaFresh = true
+    assert.equal(await app.cloud.refreshChanges(), true)
+    app = render()
+    assert.equal(changeCursorArgs.at(-1), 1)
+
+    // Before Alpha's timer fires, a newer Beta navigation starts. The refresh
+    // correctly yields while a directory request is in flight.
+    holdNextBetaLoad = true
+    const pendingBeta = app.navigation.navigateTo([root, beta])
+    await flushAsync()
+    assert.equal(typeof rejectPendingBeta, 'function')
+
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+
+    // Beta then fails. Alpha remains authoritative, so the already-consumed
+    // Alpha change must still force a retry instead of disappearing forever.
+    rejectPendingBeta()
+    await pendingBeta
+    await flushAsync()
+    app = render()
+
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+
+    // A later poll is already at cursor=2 and has no change to replay. The
+    // retained refresh intent itself must therefore make Alpha authoritative.
+    await app.cloud.refreshChanges()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+
+    assert.equal(
+      changeCursorArgs.at(-1),
+      2,
+      'the Alpha event is already behind the committed change cursor',
+    )
+    assert.equal(
+      app.cloud.items[0]?.name,
+      'alpha-new.txt',
+      'an ordinary debounced change refresh must survive a later navigation that fails after the event cursor already advanced',
+    )
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+
+test('parent-scoped debounced change refresh does not reload a different committed directory', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    const debounceMs = 10
+    let alphaFresh = false
+    let holdNextBetaLoad = false
+    let releasePendingBeta
+    let changeCalls = 0
+    let betaRangeCalls = 0
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: alphaFresh ? 'alpha-new.txt' : 'alpha-old.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id) betaRangeCalls += 1
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(page(parentID, offset, limit))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+      async getChanges(cursor) {
+        if (changeCalls === 0) {
+          changeCalls += 1
+          return {
+            changes: [],
+            next_cursor: 1,
+            latest_cursor: 1,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        if (cursor === 1) {
+          changeCalls += 1
+          return {
+            changes: [{
+              id: 1,
+              kind: 'updated',
+              affected_parent_ids: [alpha.id],
+            }],
+            next_cursor: 2,
+            latest_cursor: 2,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        changeCalls += 1
+        return {
+          changes: [],
+          next_cursor: 2,
+          latest_cursor: 2,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        changePollIntervalMs: 0,
+        changeDebounceMs: debounceMs,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'change-debounce-parent-scope',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    await app.cloud.refreshChanges()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+
+    alphaFresh = true
+    assert.equal(await app.cloud.refreshChanges(), true)
+
+    holdNextBetaLoad = true
+    const pendingBeta = app.navigation.navigateTo([root, beta])
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    // Let the already-scheduled Alpha refresh lose to the in-flight Beta load.
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+
+    releasePendingBeta()
+    await pendingBeta
+    await flushAsync()
+    app = render()
+
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+    assert.equal(app.cloud.items[0]?.name, 'beta.txt')
+    const committedBetaRangeCalls = betaRangeCalls
+
+    // Cursor=2 has no Beta event. The retained Alpha obligation must not be
+    // projected onto the different current parent.
+    assert.equal(await app.cloud.refreshChanges(), false)
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+
+    assert.equal(
+      betaRangeCalls,
+      committedBetaRangeCalls,
+      'a pending Alpha refresh must not trigger an unrelated Beta reload',
+    )
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+    assert.equal(app.cloud.items[0]?.name, 'beta.txt')
+
+    // Returning to Alpha performs an authoritative load and naturally clears
+    // the old Alpha refresh obligation.
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.cloud.items[0]?.name, 'alpha-new.txt')
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+
+test('debounced reset-required refresh survives a navigation that starts later and then fails', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    const debounceMs = 10
+    let alphaFresh = false
+    let holdNextBetaLoad = false
+    let rejectPendingBeta
+    let changeCalls = 0
+    const changeCursorArgs = []
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: alphaFresh ? 'alpha-reset-new.txt' : 'alpha-reset-old.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve, reject) => {
+            rejectPendingBeta = () => reject(new Error('simulated Beta load failure'))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+      async getChanges(cursor) {
+        changeCursorArgs.push(cursor)
+        if (changeCalls === 0) {
+          changeCalls += 1
+          return {
+            changes: [],
+            next_cursor: 1,
+            latest_cursor: 1,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        if (cursor === 1) {
+          changeCalls += 1
+          return {
+            changes: [],
+            next_cursor: 2,
+            latest_cursor: 2,
+            has_more: false,
+            reset_required: true,
+          }
+        }
+        changeCalls += 1
+        return {
+          changes: [],
+          next_cursor: 2,
+          latest_cursor: 2,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        changePollIntervalMs: 0,
+        changeDebounceMs: debounceMs,
+        preserveStateOnDisable: true,
+        onError: () => {},
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'change-debounce-reset-failed-navigation',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.cloud.items[0]?.name, 'alpha-reset-old.txt')
+
+    // Finish the initial handshake before reproducing the reset race.
+    await app.cloud.refreshChanges()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+
+    // A reset means the previous cursor history cannot be replayed. The
+    // current directory therefore needs one authoritative refresh.
+    alphaFresh = true
+    assert.equal(await app.cloud.refreshChanges(), true)
+    assert.equal(changeCursorArgs.at(-1), 1)
+
+    holdNextBetaLoad = true
+    const pendingBeta = app.navigation.navigateTo([root, beta])
+    await flushAsync()
+    assert.equal(typeof rejectPendingBeta, 'function')
+
+    // The scheduled Alpha refresh yields to the in-flight Beta request.
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+
+    // Beta fails, so Alpha remains authoritative after the reset cursor has
+    // already advanced to 2.
+    rejectPendingBeta()
+    await pendingBeta
+    await flushAsync()
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+
+    await app.cloud.refreshChanges()
+    await new Promise((resolve) => setTimeout(resolve, debounceMs * 3))
+    await flushAsync()
+    app = render()
+
+    assert.equal(changeCursorArgs.at(-1), 2)
+    assert.equal(
+      app.cloud.items[0]?.name,
+      'alpha-reset-new.txt',
+      'a debounced reset-required refresh must survive a later failed navigation after the reset cursor already advanced',
+    )
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+  } finally {
+    global.window = originalWindow
+  }
+})
