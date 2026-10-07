@@ -578,6 +578,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/media/people", h.mediaPeople)
 	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
+	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
 	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
@@ -2953,6 +2954,10 @@ func (h *desktopIPCHandler) mediaDescription(w http.ResponseWriter, r *http.Requ
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
+type desktopIPCMediaVideoPosterController interface {
+	CloudPutMediaVideoPoster(context.Context, uint64, uint64, []byte) error
+}
+
 func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Request) {
 	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
 	if !ok {
@@ -2971,6 +2976,42 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Length", strconv.Itoa(len(thumbnail.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(thumbnail.Data)
+}
+
+func (h *desktopIPCHandler) mediaVideoPoster(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	revision, ok := desktopIPCUint64Query(w, r, "revision")
+	if !ok {
+		return
+	}
+	controller, ok := h.ctrl.(desktopIPCMediaVideoPosterController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "unsupported", "video poster cache is not supported")
+		return
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]))
+	if contentType != "image/jpeg" {
+		writeDesktopIPCError(w, http.StatusUnsupportedMediaType, "invalid_video_poster", "video poster must be image/jpeg")
+		return
+	}
+	const maxPosterBytes = 4 << 20
+	data, err := io.ReadAll(io.LimitReader(r.Body, maxPosterBytes+1))
+	if err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_video_poster", "unable to read video poster")
+		return
+	}
+	if len(data) == 0 || len(data) > maxPosterBytes {
+		writeDesktopIPCError(w, http.StatusRequestEntityTooLarge, "invalid_video_poster", "video poster size is invalid")
+		return
+	}
+	if err := controller.CloudPutMediaVideoPoster(r.Context(), nodeID, revision, data); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.Request) {

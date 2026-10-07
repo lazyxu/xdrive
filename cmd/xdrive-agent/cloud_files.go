@@ -2235,6 +2235,18 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 	})
 }
 
+func (c *agentController) CloudPutMediaVideoPoster(
+	ctx context.Context,
+	nodeID, revision uint64,
+	data []byte,
+) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.PutMediaVideoPoster(ctx, nodeID, revision, data)
+}
+
 func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID uint64) (agentMediaMotion, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

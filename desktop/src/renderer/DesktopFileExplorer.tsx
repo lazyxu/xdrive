@@ -43,6 +43,8 @@ import {
   useXDriveFileExplorerUploadController,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
+  xDriveCaptureVideoPosterBlob,
+  xDriveFileKind,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerExternalDropPayload,
@@ -627,11 +629,32 @@ export default function DesktopFileExplorer({
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
     const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
-    if (!result.ok) return null
-    const contentType = result.data.content_type || 'image/jpeg'
-    const blob = new Blob([result.data.data], { type: contentType })
-    return URL.createObjectURL(blob)
-  }, [])
+    if (result.ok) {
+      const contentType = result.data.content_type || 'image/jpeg'
+      const blob = new Blob([result.data.data], { type: contentType })
+      return URL.createObjectURL(blob)
+    }
+    if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
+
+    const preview = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
+    if (!preview.ok) return null
+    const poster = await xDriveCaptureVideoPosterBlob(preview.data)
+    if (!poster) return null
+    const revision = Number(item.revision)
+    if (Number.isSafeInteger(revision) && revision > 0) {
+      try {
+        await window.xdriveDesktop.agent.putMediaVideoPoster(
+          Number(item.id),
+          revision,
+          await poster.arrayBuffer(),
+        )
+      } catch {
+        // Keep the locally decoded poster even when the shared Server cache
+        // loses a revision race or is temporarily unavailable.
+      }
+    }
+    return URL.createObjectURL(poster)
+  }, [previewStreamSupported])
 
   const loadLivePhotoMotion = useCallback(async (
     item: XDriveFileExplorerItem,
