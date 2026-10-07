@@ -7,6 +7,8 @@ const repoRoot = path.join(__dirname, '..', '..')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 const cloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const cloudStorageAdapter = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStorageAdapter.ts'), 'utf8')
+const storageInventory = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'StorageInventorySection.tsx'), 'utf8')
+const storageDistribution = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'StorageDistributionChart.tsx'), 'utf8')
 const sidebarStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
@@ -22,8 +24,8 @@ const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'ren
 
 test('Web global storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
-  assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 27)
-  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 6)
+  assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 28)
+  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 8)
   assert.equal(storageStats.includes('function StorageStatGrid'), false)
   assert.equal(storageStats.includes('function StorageStat('), false)
   assert.equal(storageStats.includes('function SectionTitle'), false)
@@ -33,21 +35,25 @@ test('Web global storage statistics use shared metric primitives', () => {
   assert.ok(sectionHeader.includes("level === 'h3'"))
 })
 
-test('Cloud storage is one shared Web/Desktop workspace', () => {
+test('Cloud storage is one shared Web/Desktop current-account workspace', () => {
   assert.ok(cloudStorage.includes('export function XDriveCloudStoragePage'))
   assert.ok(cloudStorage.includes('title="云端存储"'))
-  assert.equal((cloudStorage.match(/<XDriveMetricGrid\b/g) || []).length, 3)
-  assert.equal((cloudStorage.match(/<XDriveMetricCard\b/g) || []).length, 21)
+  assert.equal((cloudStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
+  assert.equal((cloudStorage.match(/<XDriveMetricCard\b/g) || []).length, 11)
+  assert.ok(cloudStorage.includes('title="范围：当前账号"'))
+  assert.ok(cloudStorage.includes('title="账号容量"'))
+  assert.ok(cloudStorage.includes('title="文件大小分布"'))
+  assert.ok(cloudStorage.includes('<XDriveStorageDistributionChart'))
+  assert.equal(cloudStorage.includes('CAS 全局物理对象'), false)
+  assert.equal(cloudStorage.includes('宿主机绝对路径'), false)
+  assert.equal(cloudStorage.includes('cleanupCache'), false)
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
   assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
   assert.ok(cloudStorageAdapter.includes('export function createXDriveCloudStorageDataSource'))
   assert.ok(cloudStorageAdapter.includes('resolveXDriveTransport'))
   assert.ok(cloudStorageAdapter.includes('tolerateStatsError = false'))
   assert.ok(cloudStorageAdapter.includes('onQuota?.(quota)'))
-  assert.ok(cloudStorage.includes('宿主机绝对路径'))
-  assert.ok(cloudStorage.includes('cleanupCache'))
-  assert.ok(cloudStorage.includes('清理全部可回收缓存'))
-  assert.ok(cloudStorageAdapter.includes('cleanupCache: port.cleanupCache'))
+  assert.equal(cloudStorageAdapter.includes('cleanupCache'), false)
   assert.ok(webApp.includes('createXDriveCloudStorageDataSource({'))
   assert.ok(webApp.includes('tolerateStatsError: true'))
   assert.ok(desktopApp.includes('createXDriveCloudStorageDataSource({'))
@@ -55,6 +61,21 @@ test('Cloud storage is one shared Web/Desktop workspace', () => {
   assert.equal(webApp.includes('api.storageStats().catch(() => null)'), false)
   assert.equal(desktopApp.includes('if (!quotaResult.ok) throw new Error(quotaResult.error.message)'), false)
   assert.equal(webApp.includes('scope="self"'), false, 'Web must not keep a second account-storage presentation')
+})
+
+test('Global storage owns physical CAS distribution, inventory and cache cleanup', () => {
+  for (const token of [
+    'title="范围：全实例"',
+    'title="CAS 全局物理对象"',
+    'title="CAS Blob 尺寸分布"',
+    'title="未引用 Blob"',
+    '<XDriveStorageDistributionChart',
+    '<XDriveStorageInventorySection',
+    'api.adminCleanupStorageCache(kind)',
+  ]) assert.ok(storageStats.includes(token), 'global storage contract missing: ' + token)
+  assert.ok(storageInventory.includes('title="物理存储组成与缓存"'))
+  assert.ok(storageInventory.includes('清理全部可回收缓存'))
+  assert.ok(storageDistribution.includes("value: XDriveStorageDistributionValue"))
 })
 
 test('Local storage is a Desktop-only page and reuses shared metric primitives', () => {

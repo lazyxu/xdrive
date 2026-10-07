@@ -190,19 +190,28 @@ export interface StorageStats {
   xdrive_physical_bytes?: number
   upload_staging?: UploadStagingStats
   inventory?: StorageInventory
-  cas_blob_count: number
-  cas_physical_bytes: number
-  cas_logical_referenced_bytes: number
-  cas_dedup_saved_bytes: number
-  cas_dedup_ratio: number
-  cas_savings_ratio: number
-  average_blob_size_bytes: number
-  p50_blob_size_bytes: number
-  p90_blob_size_bytes: number
-  p99_blob_size_bytes: number
-  legacy_blob_count: number
-  legacy_physical_bytes: number
-  buckets: StorageSizeBucket[]
+  file_count?: number
+  logical_file_bytes?: number
+  average_file_size_bytes?: number
+  p50_file_size_bytes?: number
+  p90_file_size_bytes?: number
+  p99_file_size_bytes?: number
+  file_buckets?: StorageSizeBucket[]
+  cas_blob_count?: number
+  cas_physical_bytes?: number
+  unreferenced_blob_count?: number
+  unreferenced_blob_bytes?: number
+  cas_logical_referenced_bytes?: number
+  cas_dedup_saved_bytes?: number
+  cas_dedup_ratio?: number
+  cas_savings_ratio?: number
+  average_blob_size_bytes?: number
+  p50_blob_size_bytes?: number
+  p90_blob_size_bytes?: number
+  p99_blob_size_bytes?: number
+  legacy_blob_count?: number
+  legacy_physical_bytes?: number
+  buckets?: StorageSizeBucket[]
   generated_at: string
 }
 

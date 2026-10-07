@@ -533,14 +533,11 @@ function FileManager({
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => api.quota(),
     getStats: () => api.storageStats(),
-    cleanupCache: profile?.role === 'admin'
-      ? (kind) => api.adminCleanupStorageCache(kind)
-      : undefined,
   }, {
     onQuota: applyQuota,
     tolerateStatsError: true,
-    statsUnavailableMessage: '当前服务端未提供云端存储情报。',
-  }), [api, applyQuota, profile?.role])
+    statsUnavailableMessage: '当前服务端未提供账号文件大小分布。',
+  }), [api, applyQuota])
 
   useEffect(() => {
     let active = true

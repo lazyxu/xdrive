@@ -108,53 +108,75 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	rootB := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenB, nil, http.StatusOK)
 	uploadTestFile(t, router, tokenB, rootB.ID, "same.txt", "abc")
 
+	selfBody := request(t, router, http.MethodGet, "/api/v1/me/storage", tokenA, nil, http.StatusOK).Body.String()
+	for _, forbidden := range []string{"cas_blob_count", "cas_physical_bytes", "buckets", "inventory", "disk_total_bytes"} {
+		if strings.Contains(selfBody, `"`+forbidden+`"`) {
+			t.Fatalf("self storage response leaked global/CAS field %q: %s", forbidden, selfBody)
+		}
+	}
 	statsA := requestStorageStats(t, router, "/api/v1/me/storage", tokenA, http.StatusOK)
 	if statsA.Scope != "self" {
 		t.Fatalf("scope=%q", statsA.Scope)
 	}
 	if statsA.DiskTotalBytes != nil || statsA.DiskUsedBytes != nil || statsA.DiskAvailableBytes != nil ||
-		statsA.XDrivePhysicalBytes != nil || statsA.UploadStaging != nil {
-		t.Fatalf("self storage stats leaked global disk/staging capacity: %#v", statsA)
-	}
-	if statsA.CASBlobCount != 2 {
-		t.Fatalf("user A CAS blob count=%d want=2", statsA.CASBlobCount)
+		statsA.XDrivePhysicalBytes != nil || statsA.UploadStaging != nil || statsA.Inventory != nil {
+		t.Fatalf("self storage stats leaked global physical state: %#v", statsA)
 	}
 	wantPhysical := int64(3 + len(large))
 	wantLogical := int64(6 + len(large))
-	if statsA.CASPhysicalBytes != wantPhysical || statsA.CASLogicalReferencedBytes != wantLogical {
-		t.Fatalf("user A bytes physical=%d logical=%d want physical=%d logical=%d", statsA.CASPhysicalBytes, statsA.CASLogicalReferencedBytes, wantPhysical, wantLogical)
+	if statsA.FileCount != 3 || statsA.LogicalFileBytes != wantLogical {
+		t.Fatalf("user A file stats count=%d logical=%d want count=3 logical=%d", statsA.FileCount, statsA.LogicalFileBytes, wantLogical)
 	}
-	if statsA.CASDedupSavedBytes != 3 {
-		t.Fatalf("user A dedup saved=%d want=3", statsA.CASDedupSavedBytes)
+	if statsA.CASBlobCount != 0 || statsA.CASPhysicalBytes != 0 || len(statsA.Buckets) != 0 {
+		t.Fatalf("self storage stats exposed CAS data: %#v", statsA)
 	}
-	if statsA.CASDedupRatio <= 1 || statsA.CASSavingsRatio <= 0 {
-		t.Fatalf("user A dedup ratios=%f/%f", statsA.CASDedupRatio, statsA.CASSavingsRatio)
+	bucketA := storageFileBucketByKey(statsA, "lt_16_kib")
+	if bucketA.Count != 2 || bucketA.Bytes != 6 {
+		t.Fatalf("user <16 KiB file bucket=%#v", bucketA)
 	}
-	if statsA.LegacyBlobCount != 0 || statsA.LegacyPhysicalBytes != 0 {
-		t.Fatalf("unexpected legacy usage: %#v", statsA)
-	}
-	bucketA := storageBucketByKey(statsA, "lt_16_kib")
-	if bucketA.Count != 1 || bucketA.Bytes != 3 {
-		t.Fatalf("<16 KiB bucket=%#v", bucketA)
-	}
-	bucketLarge := storageBucketByKey(statsA, "16_64_kib")
+	bucketLarge := storageFileBucketByKey(statsA, "16_64_kib")
 	if bucketLarge.Count != 1 || bucketLarge.Bytes != int64(len(large)) {
-		t.Fatalf("16-64 KiB bucket=%#v", bucketLarge)
+		t.Fatalf("user 16-64 KiB file bucket=%#v", bucketLarge)
 	}
-	if statsA.P50BlobSizeBytes <= 0 || statsA.P90BlobSizeBytes < statsA.P50BlobSizeBytes || statsA.P99BlobSizeBytes < statsA.P90BlobSizeBytes {
-		t.Fatalf("unexpected percentiles p50=%d p90=%d p99=%d", statsA.P50BlobSizeBytes, statsA.P90BlobSizeBytes, statsA.P99BlobSizeBytes)
+	if statsA.P50FileSizeBytes <= 0 || statsA.P90FileSizeBytes < statsA.P50FileSizeBytes || statsA.P99FileSizeBytes < statsA.P90FileSizeBytes {
+		t.Fatalf("unexpected file percentiles p50=%d p90=%d p99=%d", statsA.P50FileSizeBytes, statsA.P90FileSizeBytes, statsA.P99FileSizeBytes)
 	}
 
 	statsB := requestStorageStats(t, router, "/api/v1/me/storage", tokenB, http.StatusOK)
-	if statsB.CASBlobCount != 1 || statsB.CASPhysicalBytes != 3 || statsB.CASLogicalReferencedBytes != 3 {
-		t.Fatalf("user B leaked cross-user statistics: %#v", statsB)
+	if statsB.FileCount != 1 || statsB.LogicalFileBytes != 3 || statsB.CASBlobCount != 0 {
+		t.Fatalf("user B storage stats leaked cross-user/global statistics: %#v", statsB)
 	}
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/health", tokenA, nil, http.StatusForbidden)
+	unreferencedKey := storage.ContentBlobDir + "/sha256/ff/" + strings.Repeat("f", 64)
+	if err := db.Create(&meta.ContentBlob{
+		SHA256:     strings.Repeat("f", 64),
+		StorageKey: unreferencedKey,
+		Size:       9,
+		RefCount:   0,
+		State:      meta.ContentBlobStateDeleting,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), unreferencedKey, strings.NewReader("123456789")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256:     strings.Repeat("e", 64),
+		StorageKey: storage.ContentBlobDir + "/sha256/ee/" + strings.Repeat("e", 64),
+		Size:       123,
+		RefCount:   0,
+		State:      meta.ContentBlobStateDeleting,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	global := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
 	if global.Scope != "global" || global.CASBlobCount != 2 {
 		t.Fatalf("global stats=%#v", global)
+	}
+	if global.UnreferencedBlobCount != 1 || global.UnreferencedBlobBytes != 9 {
+		t.Fatalf("physical unreferenced blobs count=%d bytes=%d want 1/9", global.UnreferencedBlobCount, global.UnreferencedBlobBytes)
 	}
 	if global.DiskTotalBytes == nil || global.DiskUsedBytes == nil || global.DiskAvailableBytes == nil || global.XDrivePhysicalBytes == nil {
 		t.Fatalf("global stats missing disk capacity: %#v", global)
@@ -169,8 +191,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if global.CASPhysicalBytes != wantPhysical || global.CASLogicalReferencedBytes != wantGlobalLogical || global.CASDedupSavedBytes != 6 {
 		t.Fatalf("global bytes physical=%d logical=%d saved=%d", global.CASPhysicalBytes, global.CASLogicalReferencedBytes, global.CASDedupSavedBytes)
 	}
-	if *global.XDrivePhysicalBytes != global.CASPhysicalBytes+global.LegacyPhysicalBytes {
-		t.Fatalf("xdrive physical=%d want=%d", *global.XDrivePhysicalBytes, global.CASPhysicalBytes+global.LegacyPhysicalBytes)
+	wantXDrivePhysical := global.CASPhysicalBytes + global.LegacyPhysicalBytes + global.UnreferencedBlobBytes
+	if *global.XDrivePhysicalBytes != wantXDrivePhysical {
+		t.Fatalf("xdrive physical=%d want=%d", *global.XDrivePhysicalBytes, wantXDrivePhysical)
 	}
 	if global.Inventory == nil {
 		t.Fatal("global storage stats missing physical inventory")
@@ -268,7 +291,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if globalWithStaging.UploadStaging == nil || globalWithStaging.UploadStaging.StagingBytes != 28 {
 		t.Fatalf("global stats missing staging: %#v", globalWithStaging)
 	}
-	wantWithStaging := globalWithStaging.CASPhysicalBytes + globalWithStaging.LegacyPhysicalBytes + 28
+	wantWithStaging := globalWithStaging.CASPhysicalBytes + globalWithStaging.LegacyPhysicalBytes + globalWithStaging.UnreferencedBlobBytes + 28
 	if globalWithStaging.XDrivePhysicalBytes == nil || *globalWithStaging.XDrivePhysicalBytes != wantWithStaging {
 		t.Fatalf("xdrive physical with staging=%v want=%d", globalWithStaging.XDrivePhysicalBytes, wantWithStaging)
 	}
@@ -454,6 +477,15 @@ func storageInventoryItemByKey(inventory storageInventoryDTO, key string) storag
 
 func storageBucketByKey(stats storageStatsDTO, key string) storageSizeBucketDTO {
 	for _, bucket := range stats.Buckets {
+		if bucket.Key == key {
+			return bucket
+		}
+	}
+	return storageSizeBucketDTO{}
+}
+
+func storageFileBucketByKey(stats storageStatsDTO, key string) storageSizeBucketDTO {
+	for _, bucket := range stats.FileBuckets {
 		if bucket.Key == key {
 			return bucket
 		}

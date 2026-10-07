@@ -100,19 +100,22 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop Search must not truncate the logical result set')
 })
 
-test('Desktop cloud capacity and CAS intelligence live in the shared Cloud Storage workspace', () => {
-  assert.equal(filesPage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy the Files workspace')
-  assert.equal(localStoragePage.includes('CAS 存储情报'), false, 'CAS intelligence must not occupy local storage')
+test('Desktop Cloud Storage stays current-account scoped and excludes global CAS inventory', () => {
+  assert.equal(filesPage.includes('CAS 全局物理对象'), false, 'global CAS intelligence must not occupy the Files workspace')
+  assert.equal(localStoragePage.includes('CAS 全局物理对象'), false, 'global CAS intelligence must not occupy local storage')
   assert.ok(cloudStoragePage.includes('title="云端存储"'), 'shared Cloud Storage workspace is missing its title')
-  assert.ok(cloudStoragePage.includes('云端容量'), 'shared Cloud Storage workspace is missing cloud capacity metrics')
-  assert.ok(cloudStoragePage.includes('CAS 存储情报'), 'shared Cloud Storage workspace is missing CAS intelligence')
+  assert.ok(cloudStoragePage.includes('title="账号容量"'), 'shared Cloud Storage workspace is missing account capacity metrics')
+  assert.ok(cloudStoragePage.includes('title="文件大小分布"'), 'shared Cloud Storage workspace is missing current-file distribution')
+  assert.equal(cloudStoragePage.includes('CAS 全局物理对象'), false, 'shared Cloud Storage must not expose global CAS intelligence')
+  assert.equal(cloudStoragePage.includes('宿主机绝对路径'), false, 'shared Cloud Storage must not expose global host paths')
+  assert.equal(cloudStoragePage.includes('cleanupCache'), false, 'shared Cloud Storage must not expose global cache cleanup')
   assert.ok(app.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render the shared Cloud Storage workspace')
 })
 
-test('Desktop Cloud Storage adapter owns cloud quota and storage intelligence refresh', () => {
+test('Desktop Cloud Storage adapter owns cloud quota and account file-distribution refresh', () => {
   assert.ok(app.includes('createXDriveCloudStorageDataSource({'), 'Desktop is missing the shared Cloud Storage data-source factory')
   assert.ok(app.includes("getQuota: () => window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage port should retrieve cloud quota')
-  assert.ok(app.includes('getStats: storageStatsSupported'), 'Cloud Storage port should capability-gate CAS storage intelligence')
+  assert.ok(app.includes('getStats: storageStatsSupported'), 'Cloud Storage port should capability-gate account file distribution')
   assert.ok(app.includes('onQuota: applyCloudQuota'), 'Cloud Storage factory should update shared Cloud Files quota state')
 })
 

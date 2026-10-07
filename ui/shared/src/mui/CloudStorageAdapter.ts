@@ -1,7 +1,5 @@
 import type {
   QuotaUsage,
-  StorageCacheCleanup,
-  StorageCacheCleanupKind,
   StorageStats,
 } from '../models'
 import {
@@ -16,9 +14,6 @@ import type {
 export interface XDriveCloudStoragePort {
   getQuota: () => Promise<XDriveTransportResult<QuotaUsage>>
   getStats?: () => Promise<XDriveTransportResult<StorageStats | null>>
-  cleanupCache?: (
-    kind: StorageCacheCleanupKind,
-  ) => Promise<XDriveTransportResult<StorageCacheCleanup>>
 }
 
 export type XDriveCloudStorageDataSourceOptions = {
@@ -36,9 +31,6 @@ export function createXDriveCloudStorageDataSource(
   }: XDriveCloudStorageDataSourceOptions = {},
 ): XDriveCloudStorageDataSource {
   return {
-    cleanupCache: port.cleanupCache
-      ? async (kind) => resolveXDriveTransport(port.cleanupCache!(kind))
-      : undefined,
     load: async (): Promise<XDriveCloudStorageSnapshot> => {
       const statsPromise = port.getStats
         ? tolerateStatsError

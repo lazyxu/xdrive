@@ -28,6 +28,8 @@ import {
   XDriveSectionHeader,
   XDriveStatePanel,
   XDriveStatusAlert,
+  XDriveStorageDistributionChart,
+  XDriveStorageInventorySection,
   XDriveTableSurface,
   XDriveWorkspaceSurface,
   XDriveStatusBadge,
@@ -238,6 +240,21 @@ export default function StorageStatsPanel({
   const otherDiskUsed = stats?.disk_used_bytes !== undefined && stats?.xdrive_physical_bytes !== undefined
     ? Math.max(0, stats.disk_used_bytes - stats.xdrive_physical_bytes)
     : undefined
+  const casBlobCount = stats?.cas_blob_count ?? 0
+  const casPhysicalBytes = stats?.cas_physical_bytes ?? 0
+  const unreferencedBlobCount = stats?.unreferenced_blob_count ?? 0
+  const unreferencedBlobBytes = stats?.unreferenced_blob_bytes ?? 0
+  const casLogicalReferencedBytes = stats?.cas_logical_referenced_bytes ?? 0
+  const casDedupSavedBytes = stats?.cas_dedup_saved_bytes ?? 0
+  const casDedupRatio = stats?.cas_dedup_ratio ?? 0
+  const casSavingsRatio = stats?.cas_savings_ratio ?? 0
+  const averageBlobSizeBytes = stats?.average_blob_size_bytes ?? 0
+  const p50BlobSizeBytes = stats?.p50_blob_size_bytes ?? 0
+  const p90BlobSizeBytes = stats?.p90_blob_size_bytes ?? 0
+  const p99BlobSizeBytes = stats?.p99_blob_size_bytes ?? 0
+  const legacyBlobCount = stats?.legacy_blob_count ?? 0
+  const legacyPhysicalBytes = stats?.legacy_physical_bytes ?? 0
+  const casBuckets = stats?.buckets ?? []
 
   return (
     <>
@@ -246,8 +263,8 @@ export default function StorageStatsPanel({
         title={scope === 'global' ? '全局存储' : '存储'}
         subtitle={
           scope === 'global'
-            ? '查看服务器磁盘、CAS 健康、上传临时空间与历史趋势。'
-            : '查看当前账户的物理占用、逻辑引用与去重统计。'
+            ? '查看全实例磁盘、CAS 物理对象、缓存、数据库、备份、上传临时空间与历史趋势。'
+            : '查看当前账户存储统计。'
         }
         pageActions={
           <XDriveActionButton
@@ -261,6 +278,12 @@ export default function StorageStatsPanel({
         }
       >
           {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
+
+          {scope === 'global' && (
+            <XDriveStatusAlert tone="neutral" title="范围：全实例" sx={{ mb: 2 }}>
+              CAS Blob 是去重后的共享物理对象，可能同时被多个用户引用，因此这里只按整个实例统计，不把 Blob 强行归属给某个账号。
+            </XDriveStatusAlert>
+          )}
 
           {!stats && !error ? (
             <XDriveStatePanel variant="plain" loading={loading} message={loading ? '正在加载存储统计…' : '暂无存储统计'} />
@@ -295,6 +318,14 @@ export default function StorageStatsPanel({
                     </XDriveMetricGrid>
                   </Stack>
                 )}
+
+              {scope === 'global' && stats.inventory && (
+                <XDriveStorageInventorySection
+                  inventory={stats.inventory}
+                  cleanupCache={(kind) => api.adminCleanupStorageCache(kind)}
+                  onCleanupComplete={() => setReloadKey((value) => value + 1)}
+                />
+              )}
 
               {scope === 'global' && staging && (
                 <Stack spacing={1.5}>
@@ -504,53 +535,93 @@ export default function StorageStatsPanel({
                 </Stack>
               )}
 
-              <XDriveMetricGrid>
-                <XDriveMetricCard title="CAS Blob" value={stats.cas_blob_count} />
-                <XDriveMetricCard title="CAS 物理容量" value={formatBytes(stats.cas_physical_bytes)} />
-                <XDriveMetricCard title="逻辑引用容量" value={formatBytes(stats.cas_logical_referenced_bytes)} />
-                <XDriveMetricCard title="去重节省" value={formatBytes(stats.cas_dedup_saved_bytes)} />
-                <XDriveMetricCard title="去重倍率" value={`${stats.cas_dedup_ratio.toFixed(2)}×`} />
-                <XDriveMetricCard title="节省比例" value={`${(stats.cas_savings_ratio * 100).toFixed(1)}%`} />
-                <XDriveMetricCard title="平均 Blob" value={formatBytes(stats.average_blob_size_bytes)} />
-                <XDriveMetricCard title="P50 / P90 / P99" value={`${formatBytes(stats.p50_blob_size_bytes)} / ${formatBytes(stats.p90_blob_size_bytes)} / ${formatBytes(stats.p99_blob_size_bytes)}`} />
-              </XDriveMetricGrid>
+              {scope === 'global' && (
+                <Stack spacing={1.5}>
+                  <XDriveSectionHeader
+                    level="h3"
+                    title="CAS 全局物理对象"
+                    subtitle="去重后的 CAS Blob 属于全实例物理层；用户页只显示账号逻辑文件分布。"
+                  />
+                  <XDriveMetricGrid>
+                    <XDriveMetricCard title="CAS Blob" value={casBlobCount.toLocaleString()} />
+                    <XDriveMetricCard title="CAS 物理容量" value={formatBytes(casPhysicalBytes)} />
+                    <XDriveMetricCard
+                      title="未引用 Blob"
+                      value={unreferencedBlobCount.toLocaleString()}
+                      suffix={`${formatBytes(unreferencedBlobBytes)} · ref_count = 0`}
+                    />
+                    <XDriveMetricCard title="逻辑引用容量" value={formatBytes(casLogicalReferencedBytes)} />
+                    <XDriveMetricCard title="去重节省" value={formatBytes(casDedupSavedBytes)} />
+                    <XDriveMetricCard title="去重倍率" value={`${casDedupRatio.toFixed(2)}×`} />
+                    <XDriveMetricCard title="节省比例" value={`${(casSavingsRatio * 100).toFixed(1)}%`} />
+                    <XDriveMetricCard title="平均 Blob" value={formatBytes(averageBlobSizeBytes)} />
+                    <XDriveMetricCard title="P50 / P90 / P99" value={`${formatBytes(p50BlobSizeBytes)} / ${formatBytes(p90BlobSizeBytes)} / ${formatBytes(p99BlobSizeBytes)}`} />
+                  </XDriveMetricGrid>
 
-              {stats.legacy_blob_count > 0 && (
-                <XDriveStatusAlert tone="neutral">
-                  {`仍有 ${stats.legacy_blob_count.toLocaleString()} 个 legacy 对象，共 ${formatBytes(stats.legacy_physical_bytes)}。它们不计入 CAS 尺寸分布。`}
-                </XDriveStatusAlert>
+                  {legacyBlobCount > 0 && (
+                    <XDriveStatusAlert tone="neutral">
+                      {`仍有 ${legacyBlobCount.toLocaleString()} 个 legacy 对象，共 ${formatBytes(legacyPhysicalBytes)}。它们不计入 CAS 尺寸分布。`}
+                    </XDriveStatusAlert>
+                  )}
+
+                  <Stack spacing={1}>
+                    <XDriveSectionHeader
+                      level="h3"
+                      title="CAS Blob 尺寸分布"
+                      subtitle="范围：全实例。数量图用于观察小对象压力，字节图用于判断真正占用磁盘的尺寸区间。"
+                    />
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
+                        gap: 2,
+                      }}
+                    >
+                      <XDriveStorageDistributionChart
+                        title="按 Blob 数量"
+                        subtitle="每个尺寸区间包含多少个唯一物理对象"
+                        buckets={casBuckets}
+                        value="count"
+                      />
+                      <XDriveStorageDistributionChart
+                        title="按物理字节"
+                        subtitle="每个尺寸区间贡献多少 CAS 实际占用"
+                        buckets={casBuckets}
+                        value="bytes"
+                      />
+                    </Box>
+
+                    <XDriveSectionHeader level="h3" title="精确分布明细" />
+                    <Typography variant="body2" color="text.secondary">
+                      区间按 [下界, 上界) 统计，用于判断后续 CDC 与 small-file packing 的实际收益。
+                    </Typography>
+                    <XDriveTableSurface>
+                      <Table size="small" aria-label="CAS Blob 尺寸分布明细">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Blob 大小</TableCell>
+                            <TableCell align="right">数量</TableCell>
+                            <TableCell align="right">物理容量</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {casBuckets.map((bucket) => (
+                            <TableRow key={bucket.key} hover>
+                              <TableCell>{bucket.label}</TableCell>
+                              <TableCell align="right">{bucket.count.toLocaleString()}</TableCell>
+                              <TableCell align="right">{formatBytes(bucket.bytes)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </XDriveTableSurface>
+                  </Stack>
+
+                  <Typography variant="caption" color="text.secondary">
+                    生成时间：{new Date(stats.generated_at).toLocaleString()}
+                  </Typography>
+                </Stack>
               )}
-
-              <Stack spacing={1}>
-                <XDriveSectionHeader level="h3" title="CAS Blob 尺寸分布" />
-                <Typography variant="body2" color="text.secondary">
-                  区间按 [下界, 上界) 统计，用于判断后续 CDC 与 small-file packing 的实际收益。
-                </Typography>
-                <XDriveTableSurface>
-                  <Table size="small" aria-label="CAS Blob 尺寸分布">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Blob 大小</TableCell>
-                        <TableCell align="right">数量</TableCell>
-                        <TableCell align="right">物理容量</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {stats.buckets.map((bucket) => (
-                        <TableRow key={bucket.key} hover>
-                          <TableCell>{bucket.label}</TableCell>
-                          <TableCell align="right">{bucket.count.toLocaleString()}</TableCell>
-                          <TableCell align="right">{formatBytes(bucket.bytes)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </XDriveTableSurface>
-              </Stack>
-
-              <Typography variant="caption" color="text.secondary">
-                生成时间：{new Date(stats.generated_at).toLocaleString()}
-              </Typography>
             </Stack>
           )}
       </XDriveWorkspaceSurface>

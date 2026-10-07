@@ -208,8 +208,9 @@ requireText(cloudStorage, [
   'XDriveWorkspaceSurface',
   'presentation="page"',
   'title="云端存储"',
-  'title="云端容量"',
-  'title="CAS 存储情报"',
+  'title="范围：当前账号"',
+  'title="账号容量"',
+  'title="文件大小分布"',
 ], 'Shared CloudStorage')
 
 requireText(adminUsers, [
