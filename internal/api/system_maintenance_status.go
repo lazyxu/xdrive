@@ -127,6 +127,8 @@ func (s *Server) beginSystemMaintenanceRun(
 		Kind:       kind,
 		Status:     meta.SystemMaintenanceStatusRunning,
 		Phase:      meta.SystemMaintenancePhaseStarting,
+		Trigger:    string(background.TriggerSchedule),
+		Initiator:  string(background.InitiatorSystem),
 		TotalSteps: totalSteps,
 		StartedAt:  now,
 	}
@@ -232,29 +234,34 @@ func (s *Server) backgroundSystemMaintenanceTasks(
 		return nil, err
 	}
 
-	out := make([]backgroundTaskDTO, 0, len(runs))
+	out := make([]backgroundTaskDTO, 0, len(runs)+1)
+	seen := make(map[string]struct{}, len(runs))
 	for _, run := range runs {
+		seen[run.Kind] = struct{}{}
 		priority := uint8(background.PriorityP4)
 		state := run.Status
 		errorText := run.Error
 		switch run.Status {
 		case meta.SystemMaintenanceStatusSuccess:
 			state = "completed"
+		case meta.SystemMaintenanceStatusIssues:
+			state = "issues"
+		case meta.SystemMaintenanceStatusCancelRequested:
+			state = "cancelling"
+		case meta.SystemMaintenanceStatusCancelled:
+			state = "cancelled"
 		case meta.SystemMaintenanceStatusRunning:
 			state = "running"
+		case meta.SystemMaintenanceStatusQueued:
+			state = "queued"
 		case meta.SystemMaintenanceStatusPartial:
 			state = "partial"
 		case meta.SystemMaintenanceStatusFailed:
 			state = "failed"
 		}
-		if run.Status == meta.SystemMaintenanceStatusRunning {
-			key := ""
-			switch run.Kind {
-			case meta.SystemMaintenanceKindJanitor:
-				key = maintenanceLeaderJanitor
-			case meta.SystemMaintenanceKindStorageSampler:
-				key = maintenanceLeaderStorageSampler
-			}
+		if run.Status == meta.SystemMaintenanceStatusRunning ||
+			run.Status == meta.SystemMaintenanceStatusCancelRequested {
+			key := systemMaintenanceLeaderKey(run.Kind)
 			if key != "" {
 				held, err := sourceaccount.IsHeld(ctx, s.DB, key)
 				if err != nil {
@@ -264,7 +271,7 @@ func (s *Server) backgroundSystemMaintenanceTasks(
 						"maintenance", run.Kind,
 						"error", err,
 					)
-				} else if !held {
+				} else if !held && run.Status == meta.SystemMaintenanceStatusRunning {
 					state = "failed"
 					if errorText == "" {
 						errorText = "interrupted before completion"
@@ -272,27 +279,58 @@ func (s *Server) backgroundSystemMaintenanceTasks(
 				}
 			}
 		}
-		startedAt := run.StartedAt
+		trigger := strings.TrimSpace(run.Trigger)
+		if trigger == "" {
+			trigger = string(background.TriggerSchedule)
+		}
+		initiator := strings.TrimSpace(run.Initiator)
+		if initiator == "" {
+			initiator = string(background.InitiatorSystem)
+		}
+		var startedAt *time.Time
+		if run.Status != meta.SystemMaintenanceStatusQueued {
+			value := run.StartedAt
+			startedAt = &value
+		}
 		out = append(out, backgroundTaskDTO{
-			ID:        "system-maintenance:" + run.Kind,
+			ID:        systemMaintenanceTaskCenterID(run.Kind),
 			Kind:      "system.maintenance." + run.Kind,
 			Domain:    "system_maintenance",
 			Scope:     string(background.ScopeSystem),
 			State:     state,
-			Trigger:   string(background.TriggerSchedule),
-			Initiator: string(background.InitiatorSystem),
+			Trigger:   trigger,
+			Initiator: initiator,
 			Priority:  &priority,
 			Resource:  string(background.ResourceMaintenanceIO),
 			Progress: backgroundTaskProgressDTO{
-				Phase:   run.Phase,
-				Current: int64(run.CompletedSteps),
-				Total:   int64(run.TotalSteps),
-				Unit:    "step",
+				Phase:       run.Phase,
+				Current:     int64(run.CompletedSteps),
+				Total:       int64(run.TotalSteps),
+				Unit:        "step",
+				CurrentItem: run.Summary,
 			},
-			StartedAt:  &startedAt,
-			UpdatedAt:  run.UpdatedAt,
-			FinishedAt: run.FinishedAt,
-			Error:      errorText,
+			ControlActions: systemMaintenanceControlActions(run.Kind, run.Status),
+			StartedAt:      startedAt,
+			UpdatedAt:      run.UpdatedAt,
+			FinishedAt:     run.FinishedAt,
+			Error:          errorText,
+		})
+	}
+	for _, kind := range systemMaintenanceInteractiveKinds() {
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		priority := uint8(background.PriorityP4)
+		out = append(out, backgroundTaskDTO{
+			ID:             systemMaintenanceTaskCenterID(kind),
+			Kind:           "system.maintenance." + kind,
+			Domain:         "system_maintenance",
+			Scope:          string(background.ScopeSystem),
+			State:          "idle",
+			Priority:       &priority,
+			Resource:       string(background.ResourceMaintenanceIO),
+			Progress:       backgroundTaskProgressDTO{},
+			ControlActions: systemMaintenanceControlActions(kind, ""),
 		})
 	}
 	return out, nil

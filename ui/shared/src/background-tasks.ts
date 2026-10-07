@@ -99,6 +99,7 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'photo.person_cluster': return '人物聚类'
     case 'system.maintenance.janitor': return 'Janitor'
     case 'system.maintenance.storage_sampler': return 'Storage sampler'
+    case 'system.maintenance.source_verify': return '同步文件夹一致性校验'
     case 'file_operation.copy': return '文件操作 · 复制'
     case 'file_operation.move': return '文件操作 · 移动'
     case 'file_operation.delete': return '文件操作 · 删除'
@@ -110,12 +111,14 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
 
 export function xDriveBackgroundTaskStateLabel(state: string) {
   switch (state) {
+    case 'idle': return '未运行'
     case 'queued': return '等待执行'
     case 'running': return '进行中'
     case 'cancelling':
     case 'cancel_requested': return '正在取消'
     case 'completed': return '已完成'
     case 'partial': return '部分完成'
+    case 'issues': return '发现问题'
     case 'cancelled': return '已取消'
     case 'failed': return '失败'
     default: return state || '未知'
@@ -153,6 +156,7 @@ export function xDriveBackgroundTaskControlLabel(action: string) {
     case 'undo': return '撤销'
     case 'redo': return '重做'
     case 'reanalyze': return '重新分析'
+    case 'run': return '运行'
     default: return action
   }
 }
@@ -171,6 +175,8 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'cleanup_history_retention': return '清理历史保留'
     case 'maintenance_run_retention': return '维护历史保留'
     case 'storage_sample': return '存储采样'
+    case 'queued': return '等待执行'
+    case 'source_verify': return '正在校验同步文件夹'
     case 'waiting_for_cluster_lease': return '等待其他服务器'
     case 'reanalyze_queued': return '重新分析已排队'
     case 'reanalyze_applying': return '正在准备重新分析'

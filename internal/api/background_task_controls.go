@@ -20,6 +20,7 @@ const (
 	backgroundTaskActionUndo      = "undo"
 	backgroundTaskActionRedo      = "redo"
 	backgroundTaskActionReanalyze = "reanalyze"
+	backgroundTaskActionRun       = "run"
 )
 
 var errBackgroundTaskControlUnavailable = errors.New("background task control is unavailable")
@@ -137,6 +138,14 @@ func parseBackgroundTaskRef(raw string) (backgroundTaskRef, bool) {
 	case strings.HasPrefix(value, "sync-run:"):
 		key := strings.TrimSpace(strings.TrimPrefix(value, "sync-run:"))
 		return backgroundTaskRef{domain: "sync_run", key: key}, key != ""
+	case strings.HasPrefix(value, "system-maintenance:"):
+		kind := strings.TrimSpace(strings.TrimPrefix(value, "system-maintenance:"))
+		return backgroundTaskRef{
+			domain: "system_maintenance",
+			key:    kind,
+			scope:  background.ScopeSystem,
+			kind:   kind,
+		}, kind != ""
 	case strings.HasPrefix(value, "runtime:"):
 		parts := strings.SplitN(strings.TrimPrefix(value, "runtime:"), ":", 3)
 		if len(parts) != 3 {
@@ -299,6 +308,14 @@ func (s *Server) dispatchBackgroundTaskControl(
 		)
 	case "scheduler":
 		return s.controlBackgroundRuntimeTask(
+			ctx,
+			ref,
+			action,
+			viewerID,
+			admin,
+		)
+	case "system_maintenance":
+		return s.controlBackgroundSystemMaintenance(
 			ctx,
 			ref,
 			action,

@@ -169,12 +169,18 @@ func (BackgroundRuntimePresence) TableName() string {
 const (
 	SystemMaintenanceKindJanitor        = "janitor"
 	SystemMaintenanceKindStorageSampler = "storage_sampler"
+	SystemMaintenanceKindSourceVerify   = "source_verify"
 
-	SystemMaintenanceStatusRunning = "running"
-	SystemMaintenanceStatusSuccess = "success"
-	SystemMaintenanceStatusPartial = "partial"
-	SystemMaintenanceStatusFailed  = "failed"
+	SystemMaintenanceStatusQueued          = "queued"
+	SystemMaintenanceStatusRunning         = "running"
+	SystemMaintenanceStatusCancelRequested = "cancel_requested"
+	SystemMaintenanceStatusCancelled       = "cancelled"
+	SystemMaintenanceStatusSuccess         = "success"
+	SystemMaintenanceStatusIssues          = "issues"
+	SystemMaintenanceStatusPartial         = "partial"
+	SystemMaintenanceStatusFailed          = "failed"
 
+	SystemMaintenancePhaseQueued                  = "queued"
 	SystemMaintenancePhaseStarting                = "starting"
 	SystemMaintenancePhaseStagingCleanup          = "staging_cleanup"
 	SystemMaintenancePhaseContentBlobGC           = "content_blob_gc"
@@ -182,21 +188,27 @@ const (
 	SystemMaintenancePhaseCleanupHistoryRetention = "cleanup_history_retention"
 	SystemMaintenancePhaseMaintenanceRunRetention = "maintenance_run_retention"
 	SystemMaintenancePhaseStorageSample           = "storage_sample"
+	SystemMaintenancePhaseSourceVerify            = "source_verify"
 	SystemMaintenancePhaseFinished                = "finished"
 )
 
 type SystemMaintenanceRun struct {
-	ID             uint64     `gorm:"primaryKey"`
-	Kind           string     `gorm:"size:32;not null;index"`
-	Status         string     `gorm:"size:16;not null;index"`
-	Phase          string     `gorm:"size:64;not null"`
-	CompletedSteps int        `gorm:"not null;default:0"`
-	TotalSteps     int        `gorm:"not null;default:0"`
-	Error          string     `gorm:"type:text"`
-	StartedAt      time.Time  `gorm:"not null;index"`
-	FinishedAt     *time.Time `gorm:"index"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                uint64     `gorm:"primaryKey"`
+	Kind              string     `gorm:"size:32;not null;index"`
+	Status            string     `gorm:"size:24;not null;index"`
+	Phase             string     `gorm:"size:64;not null"`
+	Trigger           string     `gorm:"size:32;not null;default:schedule;index"`
+	Initiator         string     `gorm:"size:16;not null;default:system"`
+	InitiatorID       uint64     `gorm:"not null;default:0"`
+	CompletedSteps    int        `gorm:"not null;default:0"`
+	TotalSteps        int        `gorm:"not null;default:0"`
+	Summary           string     `gorm:"type:text"`
+	Error             string     `gorm:"type:text"`
+	CancelRequestedAt *time.Time `gorm:"index"`
+	StartedAt         time.Time  `gorm:"not null;index"`
+	FinishedAt        *time.Time `gorm:"index"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (SystemMaintenanceRun) TableName() string {
