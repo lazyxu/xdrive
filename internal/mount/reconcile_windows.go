@@ -480,13 +480,9 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
 	}
 
-	remoteNow, err := p.cli.Walk(ctx)
+	current, err := p.refreshConflictSourceNode(ctx, base.node.ID)
 	if err != nil {
 		return err
-	}
-	current, ok := findNodeByID(remoteNow, base.node.ID)
-	if !ok {
-		return fmt.Errorf("conflict source node %d disappeared", base.node.ID)
 	}
 	_ = os.Remove(absPath)
 	if err := cfCreatePlaceholder(filepath.Dir(absPath), filepath.Base(absPath), current.ID, current.Size, current.UpdatedAt.UnixNano(), false); err != nil {
@@ -496,6 +492,14 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		baseline[rel] = winState{node: current, localModTime: st.ModTime(), localSize: st.Size()}
 	}
 	return nil
+}
+
+func (p *winProvider) refreshConflictSourceNode(ctx context.Context, nodeID uint64) (client.Node, error) {
+	current, err := p.cli.Node(ctx, nodeID)
+	if err != nil {
+		return client.Node{}, fmt.Errorf("refresh conflict source node %d: %w", nodeID, err)
+	}
+	return current, nil
 }
 
 func (p *winProvider) bootstrapRemoteJournal(ctx context.Context) {

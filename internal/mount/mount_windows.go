@@ -549,13 +549,9 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				local[conflictRel] = localEntry{isDir: false, size: st.Size(), modTime: st.ModTime()}
 				baseline[conflictRel] = winState{node: conflictNode, localModTime: st.ModTime(), localSize: st.Size()}
 			}
-			remoteNow, err := p.cli.Walk(ctx)
+			current, err := p.refreshConflictSourceNode(ctx, base.node.ID)
 			if err != nil {
 				return err
-			}
-			current, ok := findNodeByID(remoteNow, base.node.ID)
-			if !ok {
-				return fmt.Errorf("conflict source node %d disappeared", base.node.ID)
 			}
 			_ = os.Remove(abs)
 			if err := cfCreatePlaceholder(filepath.Dir(abs), filepath.Base(abs), current.ID, current.Size, current.UpdatedAt.UnixNano(), false); err != nil {

@@ -71,6 +71,13 @@ func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && path == "/nodes/root":
 		a.writeNode(w, 1)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/nodes/") && !strings.HasSuffix(path, "/children"):
+		id, ok := parseE2EID(strings.TrimPrefix(path, "/nodes/"))
+		if !ok {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+		a.writeNode(w, id)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/nodes/") && strings.HasSuffix(path, "/children"):
 		id, ok := parseE2EID(strings.TrimSuffix(strings.TrimPrefix(path, "/nodes/"), "/children"))
 		if !ok {
