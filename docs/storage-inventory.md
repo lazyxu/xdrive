@@ -107,7 +107,7 @@ The sampler runs at most once per UTC day (with an hourly due-check for restart 
 in the daily `xd_storage_samples` row, and is visible/controllable in the administrator global Task Center.
 
 The persisted snapshot includes CAS distribution, physically present zero-reference CAS totals, legacy totals, upload
-staging summary, and the complete storage inventory. `GET /api/v1/admin/storage/stats` reads that latest snapshot and
+staging summary, and the complete storage inventory. `GET /api/v1/admin/storage` reads that latest snapshot and
 may refresh only O(1) disk-capacity information. If no snapshot exists yet, the endpoint may return database-only CAS
 statistics, but it must **not** fall back to an object-store walk merely because an administrator opened or refreshed
 the page. Staging orphan file details remain an explicit on-demand inspection action rather than an automatic page-load scan.
@@ -119,6 +119,22 @@ The PostgreSQL row displays the resolved `XD_POSTGRES_DATA_DIR`.
 Host Control measures the physical PostgreSQL data directory. When that host snapshot is temporarily unavailable, the Server may fall back to PostgreSQL's `pg_database_size(current_database())` for a database-byte estimate.
 
 Database storage is always read-only in the global-storage cleanup surface.
+
+### Legacy and pending-GC diagnostics
+
+The daily snapshot owns aggregate legacy and zero-reference counts/bytes. Detailed object inspection is deliberately
+lazy and paged so opening 全局存储 never becomes an O(N) physical walk.
+
+- `GET /api/v1/admin/storage/legacy` groups non-CAS `xd_files` / `xd_file_versions` references by storage key and
+  reports current-file refs, historical-version refs, size, and the last reference timestamp. A referenced legacy
+  object is canonical data and is never presented as directly deletable.
+- `GET /api/v1/admin/storage/unreferenced-blobs` pages `ref_count = 0` metadata rows and performs physical
+  `Open + Stat` only for that bounded page. It also groups reused resumable-upload guards by
+  `source_storage_key`.
+- Pending-GC status is explicit: `awaiting_gc`, `blocked_by_upload`, `physical_missing`, or
+  `metadata_inconsistent`. These labels explain state; they do not create a second GC path. Physical deletion
+  remains Janitor-owned.
+
 
 ### Backups
 

@@ -169,6 +169,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/storage", suite: "storage-intelligence"},
 		{method: "GET", path: "/api/v1/admin/storage/health", suite: "storage-intelligence"},
 		{method: "GET", path: "/api/v1/admin/storage/history", suite: "storage-intelligence"},
+		{method: "GET", path: "/api/v1/admin/storage/legacy", suite: "storage-intelligence"},
+		{method: "GET", path: "/api/v1/admin/storage/unreferenced-blobs", suite: "storage-intelligence"},
 		{method: "GET", path: "/api/v1/admin/storage/staging", suite: "storage-intelligence"},
 		{method: "POST", path: "/api/v1/admin/storage/staging/cleanup", suite: "storage-intelligence"},
 		{method: "POST", path: "/api/v1/admin/storage/cache/cleanup", suite: "storage-intelligence"},

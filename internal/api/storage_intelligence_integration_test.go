@@ -98,6 +98,10 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	adminToken := loginTestUser(t, router, "storage-admin", "admin-password", http.StatusOK).AccessToken
 
 	tokenA := createTestUser(t, db, router, "storage-a", "password-a")
+	var storageUserA meta.User
+	if err := db.First(&storageUserA, "username = ?", "storage-a").Error; err != nil {
+		t.Fatal(err)
+	}
 	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
 	smallA := uploadTestFile(t, router, tokenA, rootA.ID, "small-a.txt", "abc")
 	uploadTestFile(t, router, tokenA, rootA.ID, "small-b.txt", "abc")
@@ -149,6 +153,35 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/health", tokenA, nil, http.StatusForbidden)
+	request(t, router, http.MethodGet, "/api/v1/admin/storage/legacy", tokenA, nil, http.StatusForbidden)
+	request(t, router, http.MethodGet, "/api/v1/admin/storage/unreferenced-blobs", tokenA, nil, http.StatusForbidden)
+
+	legacyParentID := rootA.ID
+	legacyNode := meta.Node{
+		ParentID: &legacyParentID,
+		Name:     "legacy-nine.bin",
+		Type:     meta.NodeTypeFile,
+		OwnerID:  storageUserA.ID,
+		Revision: 2,
+	}
+	if err := db.Create(&legacyNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyKey := "legacy/manual-nine"
+	if err := db.Create(&meta.File{
+		NodeID: legacyNode.ID, Size: 9, StorageKey: legacyKey,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.FileVersion{
+		NodeID: legacyNode.ID, Revision: 1, Size: 9, StorageKey: legacyKey,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), legacyKey, strings.NewReader("123456789")); err != nil {
+		t.Fatal(err)
+	}
+
 	initialGlobal := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
 	if initialGlobal.PhysicalSnapshotAt != nil || initialGlobal.Inventory != nil ||
 		initialGlobal.UploadStaging != nil || initialGlobal.UnreferencedBlobCount != 0 {
@@ -168,15 +201,89 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if _, err := store.Put(context.Background(), unreferencedKey, strings.NewReader("123456789")); err != nil {
 		t.Fatal(err)
 	}
+	missingUnreferencedKey := storage.ContentBlobDir + "/sha256/ee/" + strings.Repeat("e", 64)
 	if err := db.Create(&meta.ContentBlob{
 		SHA256:     strings.Repeat("e", 64),
-		StorageKey: storage.ContentBlobDir + "/sha256/ee/" + strings.Repeat("e", 64),
+		StorageKey: missingUnreferencedKey,
 		Size:       123,
 		RefCount:   0,
 		State:      meta.ContentBlobStateDeleting,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+
+	legacyDetailsRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/legacy?limit=20", adminToken, nil, http.StatusOK)
+	var legacyDetails storageLegacyObjectPageDTO
+	if err := json.Unmarshal(legacyDetailsRes.Body.Bytes(), &legacyDetails); err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyDetails.Items) != 1 ||
+		legacyDetails.Items[0].StorageKey != legacyKey ||
+		legacyDetails.Items[0].Size != 9 ||
+		legacyDetails.Items[0].CurrentFileRefs != 1 ||
+		legacyDetails.Items[0].HistoryVersionRefs != 1 {
+		t.Fatalf("unexpected legacy storage details: %+v", legacyDetails)
+	}
+
+	unreferencedDetailsRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/unreferenced-blobs?limit=20", adminToken, nil, http.StatusOK)
+	var unreferencedDetails storageUnreferencedBlobPageDTO
+	if err := json.Unmarshal(unreferencedDetailsRes.Body.Bytes(), &unreferencedDetails); err != nil {
+		t.Fatal(err)
+	}
+	if len(unreferencedDetails.Items) != 2 {
+		t.Fatalf("unexpected unreferenced detail count: %+v", unreferencedDetails)
+	}
+	var physicalDetail, missingDetail *storageUnreferencedBlobDTO
+	for index := range unreferencedDetails.Items {
+		item := &unreferencedDetails.Items[index]
+		switch item.StorageKey {
+		case unreferencedKey:
+			physicalDetail = item
+		case missingUnreferencedKey:
+			missingDetail = item
+		}
+	}
+	if physicalDetail == nil || !physicalDetail.PhysicalExists || physicalDetail.PhysicalSize != 9 ||
+		physicalDetail.GCStatus != "awaiting_gc" {
+		t.Fatalf("unexpected physical unreferenced detail: %+v", physicalDetail)
+	}
+	if missingDetail == nil || missingDetail.PhysicalExists || missingDetail.GCStatus != "physical_missing" {
+		t.Fatalf("unexpected missing unreferenced detail: %+v", missingDetail)
+	}
+
+	reuseGuard := meta.UploadPart{
+		SessionID:        "storage-detail-reuse",
+		PartIndex:        0,
+		Size:             1,
+		SHA256:           strings.Repeat("d", 64),
+		StorageKey:       storage.UploadStagingDir + "/storage-detail-reuse/0",
+		Reused:           true,
+		SourceStorageKey: unreferencedKey,
+	}
+	if err := db.Create(&reuseGuard).Error; err != nil {
+		t.Fatal(err)
+	}
+	blockedRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/unreferenced-blobs?limit=20", adminToken, nil, http.StatusOK)
+	var blocked storageUnreferencedBlobPageDTO
+	if err := json.Unmarshal(blockedRes.Body.Bytes(), &blocked); err != nil {
+		t.Fatal(err)
+	}
+	foundBlocked := false
+	for _, item := range blocked.Items {
+		if item.StorageKey == unreferencedKey {
+			foundBlocked = true
+			if item.GCStatus != "blocked_by_upload" || item.ReusedUploadParts != 1 {
+				t.Fatalf("unexpected blocked GC detail: %+v", item)
+			}
+		}
+	}
+	if !foundBlocked {
+		t.Fatal("blocked GC detail missing")
+	}
+	if err := db.Delete(&reuseGuard).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	if err := server.captureStorageSample(context.Background(), sampleNow, true); err != nil {
 		t.Fatal(err)
 	}
