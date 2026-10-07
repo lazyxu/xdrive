@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Box, CircularProgress, Stack, Typography } from '@mui/material'
+import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from 'react'
+import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
+import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
+import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
+import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import {
   xDriveClassifyFilePreview,
 } from '../file-preview'
@@ -40,6 +43,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   minHeight?: number
   maxHeight?: number
   imageFit?: 'contain' | 'cover'
+  interactiveImage?: boolean
 }
 
 function revokePreviewURL(value: string) {
@@ -56,6 +60,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   minHeight = 176,
   maxHeight = 420,
   imageFit = 'contain',
+  interactiveImage = false,
 }: XDriveFilePreviewSurfaceProps<T>) {
   const previewKind = useMemo(
     () => target ? xDriveClassifyFilePreview(target) : 'none',
@@ -81,6 +86,77 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [usingImageFallback, setUsingImageFallback] = useState(false)
   const previewURLRef = useRef('')
   const previewGenerationRef = useRef(0)
+  const imageDragRef = useRef<{
+    pointerID: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  } | null>(null)
+  const [imageScale, setImageScale] = useState(1)
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
+
+  const resetImageViewport = useCallback(() => {
+    imageDragRef.current = null
+    setImageScale(1)
+    setImageOffset({ x: 0, y: 0 })
+  }, [])
+
+  const setImageZoom = useCallback((value: number) => {
+    const next = Math.min(6, Math.max(1, Math.round(value * 100) / 100))
+    setImageScale(next)
+    if (next === 1) setImageOffset({ x: 0, y: 0 })
+  }, [])
+
+  useEffect(() => {
+    resetImageViewport()
+  }, [resetImageViewport, target?.id, target?.revision])
+
+  const handleImagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (!interactiveImage || imageScale <= 1 || event.button !== 0) return
+    event.preventDefault()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture is best-effort across browsers and Electron.
+    }
+    imageDragRef.current = {
+      pointerID: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: imageOffset.x,
+      originY: imageOffset.y,
+    }
+  }, [imageOffset.x, imageOffset.y, imageScale, interactiveImage])
+
+  const handleImagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = imageDragRef.current
+    if (!drag || drag.pointerID !== event.pointerId) return
+    event.preventDefault()
+    setImageOffset({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    })
+  }, [])
+
+  const handleImagePointerRelease = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = imageDragRef.current
+    if (!drag || drag.pointerID !== event.pointerId) return
+    imageDragRef.current = null
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // Ignore renderers that already released pointer capture.
+    }
+  }, [])
+
+  const handleImageWheel = useCallback((event: WheelEvent<HTMLElement>) => {
+    if (!interactiveImage) return
+    event.preventDefault()
+    setImageZoom(imageScale * (event.deltaY < 0 ? 1.15 : 1 / 1.15))
+  }, [imageScale, interactiveImage, setImageZoom])
 
   const assignPreviewURL = useCallback((value: string) => {
     const previous = previewURLRef.current
@@ -280,13 +356,105 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (previewKind === 'image') {
       return (
         <Box
-          component="img"
-          src={previewURL}
-          alt={target?.name || ''}
-          draggable={false}
-          onError={loadImageFallback}
-          sx={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
-        />
+          data-xdrive-preview-zoom={interactiveImage || undefined}
+          onWheel={handleImageWheel}
+          onDoubleClick={() => {
+            if (!interactiveImage) return
+            setImageZoom(imageScale > 1 ? 1 : 2)
+          }}
+          onPointerDown={handleImagePointerDown}
+          onPointerMove={handleImagePointerMove}
+          onPointerUp={handleImagePointerRelease}
+          onPointerCancel={handleImagePointerRelease}
+          onLostPointerCapture={() => { imageDragRef.current = null }}
+          sx={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden',
+            touchAction: interactiveImage ? 'none' : 'auto',
+            cursor: interactiveImage
+              ? imageScale > 1 ? 'grab' : 'zoom-in'
+              : 'default',
+          }}
+        >
+          <Box
+            component="img"
+            src={previewURL}
+            alt={target?.name || ''}
+            draggable={false}
+            onError={loadImageFallback}
+            sx={{
+              width: '100%',
+              height: '100%',
+              objectFit: imageFit,
+              display: 'block',
+              transform: `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`,
+              transformOrigin: 'center',
+              transition: imageDragRef.current ? 'none' : 'transform 100ms ease-out',
+              userSelect: 'none',
+            }}
+          />
+          {interactiveImage ? (
+            <Stack
+              direction="row"
+              spacing={0.25}
+              alignItems="center"
+              data-xdrive-preview-zoom-controls
+              onPointerDown={(event) => event.stopPropagation()}
+              sx={{
+                position: 'absolute',
+                right: 12,
+                bottom: 12,
+                px: 0.5,
+                py: 0.25,
+                borderRadius: 2,
+                bgcolor: 'rgba(0,0,0,.68)',
+                color: '#fff',
+              }}
+            >
+              <Tooltip title="缩小">
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="缩小预览"
+                    disabled={imageScale <= 1}
+                    onClick={() => setImageZoom(imageScale / 1.25)}
+                    sx={{ color: 'inherit' }}
+                  >
+                    <ZoomOutRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Typography variant="caption" sx={{ minWidth: 42, textAlign: 'center' }}>
+                {Math.round(imageScale * 100)}%
+              </Typography>
+              <Tooltip title="放大">
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="放大预览"
+                    disabled={imageScale >= 6}
+                    onClick={() => setImageZoom(imageScale * 1.25)}
+                    sx={{ color: 'inherit' }}
+                  >
+                    <ZoomInRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="适合窗口">
+                <IconButton
+                  size="small"
+                  aria-label="适合窗口"
+                  onClick={resetImageViewport}
+                  sx={{ color: 'inherit' }}
+                >
+                  <CenterFocusStrongRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          ) : null}
+        </Box>
       )
     }
     if (previewKind === 'video') {
