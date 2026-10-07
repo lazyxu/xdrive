@@ -16,11 +16,12 @@ const (
 )
 
 type nodeChangeDTO struct {
-	Cursor    uint64   `json:"cursor"`
-	NodeID    uint64   `json:"node_id"`
-	Operation string   `json:"operation"`
-	Path      string   `json:"path,omitempty"`
-	Node      *nodeDTO `json:"node,omitempty"`
+	Cursor            uint64   `json:"cursor"`
+	NodeID            uint64   `json:"node_id"`
+	Operation         string   `json:"operation"`
+	AffectedParentIDs []uint64 `json:"affected_parent_ids,omitempty"`
+	Path              string   `json:"path,omitempty"`
+	Node              *nodeDTO `json:"node,omitempty"`
 }
 
 type nodeChangePageDTO struct {
@@ -79,18 +80,33 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	}
 
 	nextCursor := rows[len(rows)-1].ID
-	latestByNode := make(map[uint64]uint64, len(rows))
-	for _, row := range rows {
-		latestByNode[row.NodeID] = row.ID
-	}
 	type dirtyNode struct {
-		NodeID uint64
-		Cursor uint64
+		NodeID            uint64
+		Cursor            uint64
+		AffectedParentIDs map[uint64]struct{}
+	}
+	latestByNode := make(map[uint64]*dirtyNode, len(rows))
+	for _, row := range rows {
+		item := latestByNode[row.NodeID]
+		if item == nil {
+			item = &dirtyNode{
+				NodeID:            row.NodeID,
+				AffectedParentIDs: make(map[uint64]struct{}, 2),
+			}
+			latestByNode[row.NodeID] = item
+		}
+		item.Cursor = row.ID
+		if row.ParentID != nil && *row.ParentID != 0 {
+			item.AffectedParentIDs[*row.ParentID] = struct{}{}
+		}
+		if row.PreviousParentID != nil && *row.PreviousParentID != 0 {
+			item.AffectedParentIDs[*row.PreviousParentID] = struct{}{}
+		}
 	}
 	dirty := make([]dirtyNode, 0, len(latestByNode))
 	nodeIDs := make([]uint64, 0, len(latestByNode))
-	for nodeID, cursor := range latestByNode {
-		dirty = append(dirty, dirtyNode{NodeID: nodeID, Cursor: cursor})
+	for nodeID, item := range latestByNode {
+		dirty = append(dirty, *item)
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	sort.Slice(dirty, func(i, j int) bool { return dirty[i].Cursor < dirty[j].Cursor })
@@ -115,10 +131,16 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 
 	changes := make([]nodeChangeDTO, 0, len(dirty))
 	for _, item := range dirty {
+		affectedParentIDs := make([]uint64, 0, len(item.AffectedParentIDs))
+		for parentID := range item.AffectedParentIDs {
+			affectedParentIDs = append(affectedParentIDs, parentID)
+		}
+		sort.Slice(affectedParentIDs, func(i, j int) bool { return affectedParentIDs[i] < affectedParentIDs[j] })
 		node, exists := nodes[item.NodeID]
 		if !exists {
 			changes = append(changes, nodeChangeDTO{
 				Cursor: item.Cursor, NodeID: item.NodeID, Operation: "delete",
+				AffectedParentIDs: affectedParentIDs,
 			})
 			continue
 		}
@@ -129,7 +151,8 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 		}
 		dto := toNodeDTO(node)
 		changes = append(changes, nodeChangeDTO{
-			Cursor: item.Cursor, NodeID: item.NodeID, Operation: "upsert", Path: path, Node: &dto,
+			Cursor: item.Cursor, NodeID: item.NodeID, Operation: "upsert",
+			AffectedParentIDs: affectedParentIDs, Path: path, Node: &dto,
 		})
 	}
 

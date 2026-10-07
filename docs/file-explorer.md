@@ -76,6 +76,54 @@ Group headers are part of the real scroll geometry. Shared layout code maps `sta
 
 Do not insert group headers into the item array, do not renumber filesystem items, and do not make one pseudo-item per header. The logical item indexes remain Server indexes; group headers are presentation geometry only.
 
+## Real-time directory invalidation
+
+FileExplorer directory freshness is driven by the Server node-change journal, not by renderer-side guesses and not by repeatedly reloading every visible directory.
+
+The canonical flow is:
+
+```text
+xd_nodes INSERT / UPDATE / DELETE
+        ↓
+xd_node_changes durable cursor journal
+        ↓
+Web REST / Desktop Agent IPC change page
+        ↓
+shared CloudFiles controller
+        ↓
+affected current parent?
+        ↓
+debounced loadDirectory(current id, latest crumbs, latest sort, latest grouping)
+        ↓
+new VirtualCollection generation + viewport range refill
+```
+
+### Parent-aware journal contract
+
+Every journal row records both the current parent and previous parent when available. The change API coalesces repeated writes for one node inside a cursor window but unions every parent touched by those rows into:
+
+```text
+affected_parent_ids[]
+```
+
+This is required for correctness. For example, if a file moves from directory A to B and is renamed in B before a client polls again, the coalesced change must still invalidate both A and B. A delete must retain the deleted node's old parent even though the active node can no longer be materialized.
+
+The journal remains owner-scoped and durable. `next_cursor / latest_cursor / has_more / reset_required` remain the synchronization boundary; Web/Desktop must not synthesize cursors locally.
+
+### Client refresh behavior
+
+- Web and Desktop use the same shared change-feed controller.
+- The initial feed handshake snapshots `latest_cursor` and then refreshes the current directory once, closing the race between the initial directory range and cursor acquisition.
+- Idle polling is incremental and bounded; when `has_more` is true the controller catches up consecutive pages before returning to the normal interval.
+- Multiple relevant changes are debounced into one current-directory refresh.
+- Only a change whose `affected_parent_ids` contains the currently active directory triggers the directory refresh. Unrelated directories do not cause work.
+- The refresh uses the **latest** breadcrumbs, sort, and grouping. A late event/request from a directory that the user has already left must never navigate or refresh the new directory.
+- A reset-required page conservatively refreshes the current directory and adopts the Server's latest cursor.
+- Agent disconnect/reconnect resets the local cursor handshake. Desktop keeps its existing preserved directory/sort/grouping state and reacquires the feed after reconnect.
+- The change feed is an invalidation signal only. It never patches sparse item pages directly. Authoritative items, count, group indexes, permissions, and ordering are reacquired through the normal Server range API.
+
+Current-directory invalidation does not turn the navigation tree into a globally live replicated tree. Tree nodes continue to load through their existing paged contract; tree-specific invalidation should be added only when its own correctness contract is defined.
+
 ## Navigation tree drag and drop
 
 The shared left folder tree is a first-class drop target, not navigation-only chrome.

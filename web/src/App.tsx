@@ -508,6 +508,7 @@ function FileManager({
       includeCount,
       grouping,
     ),
+    getChanges: (after, limit) => api.nodeChanges(after, limit),
     getQuota: () => api.quota(),
   }), [api])
 

@@ -59,6 +59,7 @@ import type {
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
+  XDriveCloudFilesChangePage,
   XDriveCloudFilesSearchRange,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
@@ -1156,6 +1157,16 @@ export class XDriveApi {
     appendFileExplorerGrouping(query, grouping)
     return this.request<XDriveCloudFilesRange<Node>>(
       `/api/v1/nodes/${parentID}/children?${query.toString()}`,
+    )
+  }
+
+  nodeChanges(after = 0, limit = 200) {
+    const query = new URLSearchParams({
+      after: String(Math.max(0, Math.trunc(after))),
+      limit: String(Math.min(1000, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<XDriveCloudFilesChangePage<Node>>(
+      `/api/v1/changes?${query.toString()}`,
     )
   }
 

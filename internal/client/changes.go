@@ -9,11 +9,12 @@ import (
 )
 
 type NodeChange struct {
-	Cursor    uint64 `json:"cursor"`
-	NodeID    uint64 `json:"node_id"`
-	Operation string `json:"operation"`
-	Path      string `json:"path,omitempty"`
-	Node      *Node  `json:"node,omitempty"`
+	Cursor            uint64   `json:"cursor"`
+	NodeID            uint64   `json:"node_id"`
+	Operation         string   `json:"operation"`
+	AffectedParentIDs []uint64 `json:"affected_parent_ids,omitempty"`
+	Path              string   `json:"path,omitempty"`
+	Node              *Node    `json:"node,omitempty"`
 }
 
 type NodeChangePage struct {

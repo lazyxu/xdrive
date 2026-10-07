@@ -28,6 +28,8 @@ test('shared cloud files port owns the transport-neutral read contract', () => {
     'getRoot: () => Promise<TNode>',
     'getPage: (',
     'XDriveFileExplorerPageRequestOptions<TSort>',
+    'XDriveCloudFilesChangePage<TNode',
+    'getChanges?: (',
     'getQuota: () => Promise<TQuota>',
   ]) {
     assert.ok(contract.includes(token), `shared cloud files contract missing: ${token}`)
@@ -50,8 +52,12 @@ test('shared cloud files controller owns sparse range loading, quota and initial
     'loadedItems: virtualCollection.loadedItems',
     'ensureViewport: virtualCollection.ensureViewport',
     'quotaRefreshIntervalMs = 60_000',
+    'changePollIntervalMs = 1_500',
+    'changeDebounceMs = 120',
     'applyQuota',
     'refreshQuota',
+    'refreshChanges',
+    'xDriveCloudFilesChangeAffectsParent',
     'loadDirectory',
     'if (!enabled) {',
     "virtualCollection.reset('cloud-files:virtual:disabled')",
@@ -180,9 +186,16 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
     assert.ok(contract.includes(token), `shared Cloud Files range contract missing: ${token}`)
   }
   assert.ok(webApi.includes('listRange('), 'Web API must expose children range transport')
+  assert.ok(webApi.includes('nodeChanges(after = 0, limit = 200)'), 'Web API must expose durable node-change transport')
   assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping) => api.listRange('), 'Web shared port must wire count reuse and grouping')
+  assert.ok(webApp.includes('getChanges: (after, limit) => api.nodeChanges(after, limit)'), 'Web shared port must wire the node-change feed')
   assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping) =>'), 'Desktop shared port must wire count reuse and grouping')
   assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
+  assert.ok(desktopApp.includes("capabilities.includes('cloud-change-feed')"), 'Desktop must capability-gate the change feed')
+  assert.ok(desktopApp.includes('cloudChanges(after, limit)'), 'Desktop shared port must use Agent change transport')
+  assert.ok(desktopTypes.includes('cloudChanges: ('), 'Desktop renderer bridge must expose node changes')
+  assert.ok(desktopPreload.includes("'agent:cloud-changes'"), 'Desktop preload must expose node-change IPC')
+  assert.ok(desktopMain.includes("ipcMain.handle('agent:cloud-changes'"), 'Electron main must validate node-change IPC')
   assert.ok(webApi.includes("query.set('include_count', 'false')"), 'Web transport must serialize count-free ranges')
   assert.ok(desktopPreload.includes('includeCount = true'), 'Desktop preload must default legacy callers to counted ranges')
   assert.ok(desktopMain.includes('normalizedIncludeCount'), 'Desktop main IPC must validate and forward includeCount')

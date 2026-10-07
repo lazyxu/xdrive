@@ -166,6 +166,30 @@ test('cloud children range can skip the already-known total count', async (t) =>
   assert.equal(range.items[0].id, 10)
 })
 
+test('cloud change feed preserves cursor and affected parent ids', async (t) => {
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/cloud/changes')
+    assert.equal(url.searchParams.get('after'), '41')
+    assert.equal(url.searchParams.get('limit'), '25')
+    json(res, 200, {
+      changes: [{
+        cursor: 42,
+        node_id: 7,
+        operation: 'upsert',
+        affected_parent_ids: [2, 9],
+      }],
+      next_cursor: 42,
+      latest_cursor: 42,
+      has_more: false,
+    })
+  })
+
+  const page = await client.cloudChanges(41, 25)
+  assert.equal(page.next_cursor, 42)
+  assert.deepEqual(page.changes[0].affected_parent_ids, [2, 9])
+})
+
 test('file availability batch posts one local Agent request', async (t) => {
   const { client } = await fixture(t, async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')

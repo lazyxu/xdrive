@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QuotaUsage } from '../models'
+import {
+  xDriveCloudFilesChangeAffectsParent,
+} from '../cloud-files'
 import type {
   XDriveCloudFilesCrumb,
   XDriveCloudFilesPort,
@@ -49,6 +52,8 @@ export type XDriveCloudFilesControllerOptions<
   defaultSort: TSort
   rootLabel?: string
   quotaRefreshIntervalMs?: number
+  changePollIntervalMs?: number
+  changeDebounceMs?: number
   preserveStateOnDisable?: boolean
   onError: (error: unknown) => void
 }
@@ -79,6 +84,8 @@ export function useXDriveCloudFilesController<
   defaultSort,
   rootLabel = '我的文件',
   quotaRefreshIntervalMs = 60_000,
+  changePollIntervalMs = 1_500,
+  changeDebounceMs = 120,
   preserveStateOnDisable = false,
   onError,
 }: XDriveCloudFilesControllerOptions<TNode, TQuota, TSort>) {
@@ -89,6 +96,11 @@ export function useXDriveCloudFilesController<
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
   const quotaRequestRef = useRef(0)
+  const changeCursorRef = useRef<number | null>(null)
+  const changeRequestRef = useRef(0)
+  const changePollRunningRef = useRef(false)
+  const changeHandshakeRefreshRef = useRef(false)
+  const changeRefreshTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const enabledRef = useRef(enabled)
   const crumbsRef = useRef(crumbs)
   const virtualTargetRef = useRef(virtualTarget)
@@ -172,6 +184,10 @@ export function useXDriveCloudFilesController<
       offset: firstRange.offset,
       limit: firstRange.limit,
     })
+    // State commits on the next render, but async change-feed work can resume
+    // immediately after this directory load. Publish the authoritative target
+    // to the ref synchronously so stale events cannot observe the old parent.
+    virtualTargetRef.current = target
     setVirtualTarget(target)
   }, [virtualCollection.primePage, virtualCollection.reset])
 
@@ -240,7 +256,11 @@ export function useXDriveCloudFilesController<
       )
       if (requestID !== directoryRequestRef.current) return false
       setItems([...range.items])
-      if (nextCrumbs) setCrumbs([...nextCrumbs])
+      if (nextCrumbs) {
+        const copiedCrumbs = [...nextCrumbs]
+        crumbsRef.current = copiedCrumbs
+        setCrumbs(copiedCrumbs)
+      }
       activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
       return true
     } catch (error) {
@@ -255,6 +275,119 @@ export function useXDriveCloudFilesController<
     port,
     reportError,
   ])
+
+  const refreshChangedDirectory = useCallback(async (
+    expectedParentID?: number,
+  ) => {
+    const target = virtualTargetRef.current
+    const latestCrumbs = crumbsRef.current
+    if (
+      !enabledRef.current ||
+      !target ||
+      (expectedParentID !== undefined && target.parentID !== expectedParentID) ||
+      latestCrumbs.at(-1)?.id !== target.parentID
+    ) return false
+    return loadDirectory(
+      target.parentID,
+      latestCrumbs,
+      target.sort,
+      target.grouping,
+    )
+  }, [loadDirectory])
+
+  const scheduleChangedDirectoryRefresh = useCallback(async () => {
+    if (changeRefreshTimerRef.current !== null) {
+      globalThis.clearTimeout(changeRefreshTimerRef.current)
+      changeRefreshTimerRef.current = null
+    }
+    const scheduledParentID = virtualTargetRef.current?.parentID
+    if (scheduledParentID === undefined) return false
+    if (changeDebounceMs <= 0) {
+      return refreshChangedDirectory(scheduledParentID)
+    }
+    changeRefreshTimerRef.current = globalThis.setTimeout(() => {
+      changeRefreshTimerRef.current = null
+      void refreshChangedDirectory(scheduledParentID)
+    }, changeDebounceMs)
+    return true
+  }, [changeDebounceMs, refreshChangedDirectory])
+
+  const refreshChanges = useCallback(async () => {
+    const getChanges = port.getChanges
+    if (
+      !enabledRef.current ||
+      !getChanges ||
+      changePollRunningRef.current
+    ) return false
+
+    changePollRunningRef.current = true
+    const requestID = changeRequestRef.current + 1
+    changeRequestRef.current = requestID
+    try {
+      if (changeCursorRef.current === null) {
+        const snapshot = await getChanges(0, 1)
+        if (
+          requestID !== changeRequestRef.current ||
+          !enabledRef.current
+        ) return false
+        changeCursorRef.current = snapshot.latest_cursor
+        changeHandshakeRefreshRef.current = true
+        if (virtualTargetRef.current) {
+          changeHandshakeRefreshRef.current = false
+          await scheduleChangedDirectoryRefresh()
+        }
+        return false
+      }
+
+      let cursor = changeCursorRef.current
+      let affected = false
+      for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+        const page = await getChanges(cursor, 200)
+        if (
+          requestID !== changeRequestRef.current ||
+          !enabledRef.current
+        ) return false
+
+        if (page.reset_required) {
+          cursor = page.latest_cursor
+          affected = true
+          break
+        }
+
+        const activeParentID = virtualTargetRef.current?.parentID
+        if (
+          activeParentID !== undefined &&
+          page.changes.some((change) => (
+            xDriveCloudFilesChangeAffectsParent(change, activeParentID)
+          ))
+        ) {
+          affected = true
+        }
+
+        const nextCursor = page.next_cursor
+        cursor = nextCursor
+        if (!page.has_more || nextCursor >= page.latest_cursor) break
+      }
+
+      changeCursorRef.current = cursor
+      if (changeHandshakeRefreshRef.current && virtualTargetRef.current) {
+        changeHandshakeRefreshRef.current = false
+        affected = true
+      }
+      if (affected) await scheduleChangedDirectoryRefresh()
+      return affected
+    } catch (error) {
+      if (
+        requestID === changeRequestRef.current &&
+        enabledRef.current
+      ) reportError(error)
+      return false
+    } finally {
+      if (requestID === changeRequestRef.current) {
+        changePollRunningRef.current = false
+      }
+    }
+  }, [port, reportError, scheduleChangedDirectoryRefresh])
 
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
@@ -280,7 +413,9 @@ export function useXDriveCloudFilesController<
         quotaRequestID === quotaRequestRef.current &&
         enabledRef.current
       ) setQuota(quotaValue)
-      setCrumbs([{ id: root.id, name: rootLabel }])
+      const rootCrumbs = [{ id: root.id, name: rootLabel }]
+      crumbsRef.current = rootCrumbs
+      setCrumbs(rootCrumbs)
       setItems([...range.items])
       activateVirtualDirectory(
         root.id,
@@ -300,6 +435,14 @@ export function useXDriveCloudFilesController<
     if (!enabled) {
       directoryRequestRef.current += 1
       quotaRequestRef.current += 1
+      changeRequestRef.current += 1
+      changeCursorRef.current = null
+      changePollRunningRef.current = false
+      changeHandshakeRefreshRef.current = false
+      if (changeRefreshTimerRef.current !== null) {
+        globalThis.clearTimeout(changeRefreshTimerRef.current)
+        changeRefreshTimerRef.current = null
+      }
       if (preserveStateOnDisable) {
         // Desktop keeps the current directory and grouping across a temporary
         // Agent transport outage. Abort stale range work without discarding
@@ -341,6 +484,45 @@ export function useXDriveCloudFilesController<
   ])
 
   useEffect(() => {
+    if (
+      !enabled ||
+      !virtualTarget ||
+      !changeHandshakeRefreshRef.current
+    ) return
+    changeHandshakeRefreshRef.current = false
+    void scheduleChangedDirectoryRefresh()
+  }, [
+    enabled,
+    scheduleChangedDirectoryRefresh,
+    virtualTarget,
+  ])
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !port.getChanges ||
+      changePollIntervalMs <= 0
+    ) return
+
+    let stopped = false
+    let timer: ReturnType<typeof globalThis.setTimeout> | null = null
+    const poll = async () => {
+      await refreshChanges()
+      if (stopped) return
+      timer = globalThis.setTimeout(() => {
+        void poll()
+      }, changePollIntervalMs)
+    }
+    void poll()
+    return () => {
+      stopped = true
+      if (timer !== null) globalThis.clearTimeout(timer)
+      changeRequestRef.current += 1
+      changePollRunningRef.current = false
+    }
+  }, [changePollIntervalMs, enabled, port, refreshChanges])
+
+  useEffect(() => {
     if (!enabled || quotaRefreshIntervalMs <= 0) return
     const timer = globalThis.setInterval(() => {
       void refreshQuota()
@@ -359,6 +541,7 @@ export function useXDriveCloudFilesController<
     virtualDirectory,
     applyQuota,
     refreshQuota,
+    refreshChanges,
     loadInitial,
     loadDirectory,
   }

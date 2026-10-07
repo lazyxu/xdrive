@@ -290,6 +290,8 @@ export default function App({
   })
   const serverUpdateSupported =
     agent.hello?.capabilities.includes('server-update') ?? false
+  const cloudChangeFeedSupported =
+    agent.hello?.capabilities.includes('cloud-change-feed') ?? false
   const serverUpdatePort = useMemo(() => ({
     getState: () => window.xdriveDesktop.agent.getServerUpdate(),
     startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
@@ -331,12 +333,19 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    getChanges: cloudChangeFeedSupported
+      ? async (after, limit) => {
+          const result = await window.xdriveDesktop.agent.cloudChanges(after, limit)
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
     getQuota: async () => {
       const result = await window.xdriveDesktop.agent.cloudQuota()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-  }), [])
+  }), [cloudChangeFeedSupported])
   const handleCloudFilesError = useCallback((cloudError: unknown) => {
     setError(cloudError instanceof Error ? cloudError.message : String(cloudError))
   }, [])

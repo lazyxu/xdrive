@@ -184,6 +184,17 @@ func (c *agentController) CloudListRange(ctx context.Context, parentID uint64, o
 	return cli.ListRange(ctx, parentID, options)
 }
 
+func (c *agentController) CloudNodeChanges(ctx context.Context, after uint64, limit int) (client.NodeChangePage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.NodeChangePage{}, err
+	}
+	if limit <= 0 || limit > 1000 {
+		return client.NodeChangePage{}, fmt.Errorf("change limit must be between 1 and 1000")
+	}
+	return cli.NodeChanges(ctx, after, limit)
+}
+
 func (c *agentController) CloudFileQuickAccess(ctx context.Context) ([]client.FileQuickAccessItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

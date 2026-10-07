@@ -25,7 +25,7 @@ func TestNodeChanges(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(NodeChangePage{
 			Changes: []NodeChange{{
-				Cursor: 42, NodeID: 7, Operation: "upsert", Path: "docs/report.txt",
+				Cursor: 42, NodeID: 7, Operation: "upsert", AffectedParentIDs: []uint64{2, 9}, Path: "docs/report.txt",
 				Node: &Node{ID: 7, ParentID: uint64Ptr(2), Name: "report.txt", Type: "file", Revision: 3, Size: 99},
 			}},
 			NextCursor: 42, LatestCursor: 42,
@@ -41,7 +41,9 @@ func TestNodeChanges(t *testing.T) {
 		t.Fatalf("page=%+v", page)
 	}
 	change := page.Changes[0]
-	if change.Operation != "upsert" || change.Path != "docs/report.txt" || change.Node == nil || change.Node.Revision != 3 {
+	if change.Operation != "upsert" || change.Path != "docs/report.txt" ||
+		change.Node == nil || change.Node.Revision != 3 ||
+		len(change.AffectedParentIDs) != 2 || change.AffectedParentIDs[0] != 2 || change.AffectedParentIDs[1] != 9 {
 		t.Fatalf("change=%+v", change)
 	}
 }
