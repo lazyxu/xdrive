@@ -176,3 +176,152 @@ test('Desktop folder upload uses Agent transfer lifecycle instead of duplicate r
   }
   assert.ok(desktopApp.includes("capabilities.includes('transfer-lifecycle')"), 'Desktop must capability-gate hierarchical upload')
 })
+
+
+function loadUploadController(react) {
+  const ts = require('typescript')
+  const filename = path.join(
+    repo,
+    'ui',
+    'shared',
+    'src',
+    'mui',
+    'FileExplorerUploadController.ts',
+  )
+  const source = fs.readFileSync(filename, 'utf8')
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+
+  const mod = { exports: {} }
+  let batchActive = false
+  const localRequire = (request) => {
+    if (request === 'react') return react
+    if (request === '../upload-conflicts') {
+      return {
+        xDriveUploadBatchSummary: () => '',
+        xDriveUploadConflictCanOverwrite: () => false,
+      }
+    }
+    if (request === './UploadConflictDialog') {
+      return {
+        useXDriveUploadConflictResolver: () => ({
+          beginBatch() {
+            if (batchActive) return false
+            batchActive = true
+            return true
+          },
+          endBatch() {
+            batchActive = false
+          },
+          resolveConflict: async () => 'cancel',
+          dialogProps: {},
+        }),
+      }
+    }
+    return require(request)
+  }
+  new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
+  return mod.exports.useXDriveFileExplorerUploadController
+}
+
+function createUploadHookRuntime() {
+  const slots = []
+  let cursor = 0
+  const react = {
+    useState(initialValue) {
+      const index = cursor++
+      if (!slots[index]) {
+        slots[index] = {
+          value: typeof initialValue === 'function' ? initialValue() : initialValue,
+        }
+      }
+      const setValue = (nextValue) => {
+        const current = slots[index].value
+        slots[index].value = typeof nextValue === 'function'
+          ? nextValue(current)
+          : nextValue
+      }
+      return [slots[index].value, setValue]
+    },
+    useRef(initialValue) {
+      const index = cursor++
+      if (!slots[index]) slots[index] = { value: { current: initialValue } }
+      return slots[index].value
+    },
+  }
+  return {
+    react,
+    render(factory) {
+      cursor = 0
+      return factory()
+    },
+  }
+}
+
+test('folder upload group creation is synchronously fenced before transfer lifecycle starts', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  let startGroupCalls = 0
+  let releaseFirstGroup
+  const firstGroupGate = new Promise((resolve) => {
+    releaseFirstGroup = resolve
+  })
+
+  const transferLifecycle = {
+    async startGroup() {
+      startGroupCalls += 1
+      if (startGroupCalls === 1) await firstGroupGate
+      return 'group-' + startGroupCalls
+    },
+    async startChild() {
+      throw new Error('empty folder race test must not create children')
+    },
+    async begin() {},
+    async progress() {},
+    async updateGroup() {},
+    async finish() {},
+  }
+
+  const render = () => runtime.render(() => useUploadController({
+    fileName: (file) => file.name,
+    fileSize: () => 0,
+    preflight: async () => ({ conflict: false }),
+    upload: async () => ({ skipped: false }),
+    transferLifecycle,
+    onError: (error) => { throw error },
+    onFeedback: () => {},
+  }))
+
+  const uploadController = render()
+  const first = uploadController.runGroup({
+    label: 'Folder',
+    itemsTotal: 0,
+    bytesTotal: 0,
+    resolveTargets: async () => [],
+  })
+  const duplicate = uploadController.runGroup({
+    label: 'Folder',
+    itemsTotal: 0,
+    bytesTotal: 0,
+    resolveTargets: async () => [],
+  })
+
+  await Promise.resolve()
+  await Promise.resolve()
+
+  assert.equal(
+    startGroupCalls,
+    1,
+    'same-tick folder uploads must not create duplicate transfer groups before React rerenders',
+  )
+
+  releaseFirstGroup()
+  const [firstResult, duplicateResult] = await Promise.all([first, duplicate])
+  assert.equal(firstResult.started, true)
+  assert.equal(duplicateResult.started, false)
+})

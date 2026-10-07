@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   xDriveUploadBatchSummary,
   xDriveUploadConflictCanOverwrite,
@@ -150,14 +150,19 @@ export function useXDriveFileExplorerUploadController<TFile>({
 }) {
   const conflicts = useXDriveUploadConflictResolver()
   const [busyAction, setBusyAction] = useState<XDriveFileExplorerUploadBusyAction>('')
+  const busyActionRef = useRef<XDriveFileExplorerUploadBusyAction>('')
   const [progress, setProgress] = useState<number | null>(null)
 
   const runTargets = async (
     targets: readonly XDriveFileExplorerUploadTarget<TFile>[],
     action: Exclude<XDriveFileExplorerUploadBusyAction, ''> = 'upload',
   ): Promise<XDriveFileExplorerUploadBatchResult> => {
-    if (targets.length === 0 || disabled || busyAction) return idleResult()
-    if (!conflicts.beginBatch()) return idleResult(false, true)
+    if (targets.length === 0 || disabled || busyActionRef.current) return idleResult()
+    busyActionRef.current = action
+    if (!conflicts.beginBatch()) {
+      busyActionRef.current = ''
+      return idleResult(false, true)
+    }
 
     setBusyAction(action)
     let uploaded = 0
@@ -218,6 +223,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       }
     } finally {
       conflicts.endBatch()
+      busyActionRef.current = ''
       setBusyAction('')
       if (trackProgress) setProgress(null)
     }
@@ -248,7 +254,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
     bytesTotal = 0,
     resolveTargets,
   }: XDriveFileExplorerUploadGroupInput<TFile>): Promise<XDriveFileExplorerUploadBatchResult> => {
-    if (disabled || busyAction) return idleResult()
+    if (disabled || busyActionRef.current) return idleResult()
 
     const knownItems = Math.max(0, itemsTotal)
     const knownBytes = Math.max(0, bytesTotal)
@@ -261,6 +267,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       }
     }
 
+    busyActionRef.current = action
     setBusyAction(action)
     let groupID = ''
     const childIDs: string[] = []
@@ -525,6 +532,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       }
     } finally {
       if (batchStarted) conflicts.endBatch()
+      busyActionRef.current = ''
       setBusyAction('')
       if (trackProgress) setProgress(null)
     }
