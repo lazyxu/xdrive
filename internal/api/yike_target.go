@@ -24,11 +24,37 @@ func yikeManagedTargetInSubtreeDB(ctx context.Context, db *gorm.DB, ownerID, nod
 	if db == nil || ownerID == 0 || nodeID == 0 {
 		return false, nil
 	}
-	ids, err := activeSubtreeIDsDB(db.WithContext(ctx), ownerID, nodeID)
-	if err != nil {
+	scoped := db.WithContext(ctx)
+	// Some core-only deployments/tests intentionally create the node schema
+	// without enabling external Sources. Managed-target protection is only
+	// meaningful when the Sources table exists; ordinary node mutations must
+	// remain independent of that optional schema.
+	if !scoped.Migrator().HasTable(&meta.Source{}) {
+		return false, nil
+	}
+
+	var protected bool
+	row := scoped.Raw(`
+WITH RECURSIVE subtree AS (
+	SELECT id
+	FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT child.id
+	FROM xd_nodes AS child
+	JOIN subtree AS parent ON child.parent_id = parent.id
+	WHERE child.owner_id = ? AND child.deleted_at IS NULL
+)
+SELECT EXISTS (
+	SELECT 1
+	FROM xd_sources AS source
+	JOIN subtree ON subtree.id = source.target_node_id
+	WHERE source.owner_id = ? AND source.kind = ?
+)`, nodeID, ownerID, ownerID, ownerID, yikeSourceKind).Row()
+	if err := row.Scan(&protected); err != nil {
 		return false, err
 	}
-	return yikeManagedTargetInIDsDB(ctx, db, ownerID, ids)
+	return protected, nil
 }
 
 func yikeManagedTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64, ids []uint64) (bool, error) {
