@@ -66,6 +66,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"package-windows-client":         "windows",
 		"server-validation":              "linux",
 		"server-image":                   "linux",
+		"photo-face-image":               "linux",
 		"caddy-image":                    "linux",
 		"server-backup":                  "linux",
 		"test-linux-artifact":            "linux",
@@ -91,6 +92,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"package-windows-client":         "",
 		"server-validation":              "$XDRIVE_CI_GO_IMAGE",
 		"server-image":                   "$XDRIVE_CI_GO_IMAGE",
+		"photo-face-image":               "$XDRIVE_CI_GO_IMAGE",
 		"caddy-image":                    "$XDRIVE_CI_GO_IMAGE",
 		"server-backup":                  "$XDRIVE_CI_GO_IMAGE",
 		"test-linux-artifact":            "$XDRIVE_CI_GO_IMAGE",
@@ -108,6 +110,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabCache(t, gitlab, "desktop-windows",
 		"xdrive-desktop-windows-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/npm/", ".cache/electron/", ".cache/electron-builder/"},
+	)
+	assertGitLabCache(t, gitlab, "photo-face-image",
+		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -1460,14 +1466,28 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 		}
 	}
 
+	cacheKeyScript := readFile(t, filepath.Join(root, "scripts", "ci", "photo-face-runtime-cache-key.sh"))
+	githubCI := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	gitlabCI := readFile(t, filepath.Join(root, ".gitlab-ci.yml"))
+	requireRaw(t, "Photo Face runtime cache identity", cacheKeyScript,
+		`sed '/^FROM runtime AS final$/,$d' "$dockerfile"`,
+		`cat "$analyzer_dir/requirements.txt"`,
+		`cat "$analyzer_dir/fetch_models.py"`,
+	)
+
 	requireRaw(t, "Photo Face mounted-source test script", testScript,
 		`runtime_image="xdrive/photo-face:test-runtime"`,
+		`runtime_contract_hash="$(bash scripts/ci/photo-face-runtime-cache-key.sh)"`,
+		`runtime_archive="$runtime_cache_dir/$runtime_contract_hash.tar.gz"`,
+		`gzip -dc "$runtime_archive" | docker load`,
 		`--target runtime`,
+		`--build-arg BUILDKIT_INLINE_CACHE=1`,
 		`runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"`,
 		`--mount "$runtime_mount"`,
 		`python -m unittest discover -s tests -v`,
 		`python analyzer.py --self-test`,
 		`python analyzer.py --benchmark --iterations 1`,
+		`--cache-from "$runtime_image"`,
 		`--target final`,
 		`docker run --rm "$final_image" --self-test`,
 		`bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"`,
@@ -1480,6 +1500,16 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 			t.Errorf("Photo Face tests must not rebuild a business-code test image containing %q", forbidden)
 		}
 	}
+
+	requireRaw(t, "GitHub Photo Face runtime cache", githubCI,
+		`bash scripts/ci/photo-face-runtime-cache-key.sh`,
+		`path: .cache/photo-face-runtime`,
+		`photo-face-runtime-v2-${{ runner.os }}-${{ steps.photo-face-runtime-cache.outputs.hash }}`,
+	)
+	requireRaw(t, "GitLab Photo Face runtime cache", gitlabCI,
+		`key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"`,
+		`- .cache/photo-face-runtime/`,
+	)
 }
 
 func collectYAMLStrings(value any) string {

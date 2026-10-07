@@ -135,6 +135,8 @@ The `runtime` Docker target contains only the stable Photo Face execution enviro
 
 The ordinary analyzer unit tests, self-test, and benchmark run from that runtime image with `services/photo-face-analyzer` bind-mounted read-only at `/workspace`. A business-source or test-only change therefore does not create a different test-runtime image; Docker can reuse the runtime layers while the mounted checkout supplies the current code.
 
+The runtime image is also persisted across CI runs as a compressed Docker image archive. Its content identity is derived only from the Dockerfile `runtime` stage, `requirements.txt`, and `fetch_models.py`; `analyzer.py`, `tests/`, commit metadata, and the Dockerfile `final` stage are intentionally excluded. GitHub keys its immutable Actions cache by that identity, while GitLab keeps a mutable v2 cache namespace whose archive filename carries the same content hash. A source/test-only change therefore loads the existing runtime image instead of rebuilding it.
+
 The `final` Docker target is separate. It packages `analyzer.py`, adds build version/revision labels, runs exact-image self-test/benchmark without source overrides, and is then exported as the release artifact. This preserves **Build Once / Test Exact Artifact / Publish Exact Artifact** while keeping ordinary source tests independent from the release image contents.
 
 Stable OpenCV/native dependencies and verified third-party face models remain in the reusable runtime target because they are runtime dependencies rather than mutable xDrive business source. Changing those inputs is a valid reason to rebuild the runtime layers.

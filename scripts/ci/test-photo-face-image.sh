@@ -10,14 +10,42 @@ artifact_dir="${1:-dist/photo-face-image}"
 runtime_image="xdrive/photo-face:test-runtime"
 final_image="xdrive/photo-face:test"
 analyzer_dir="$ROOT/services/photo-face-analyzer"
+runtime_cache_dir="${XDRIVE_PHOTO_FACE_RUNTIME_CACHE_DIR:-$ROOT/.cache/photo-face-runtime}"
+runtime_contract_hash="$(bash scripts/ci/photo-face-runtime-cache-key.sh)"
+runtime_archive="$runtime_cache_dir/$runtime_contract_hash.tar.gz"
+mkdir -p "$runtime_cache_dir"
 
 # The runtime image contains only stable interpreter/native/dependency/model
 # inputs. Current xDrive business code and tests are mounted read-only below.
-docker build \
-  --target runtime \
-  -f services/photo-face-analyzer/Dockerfile \
-  -t "$runtime_image" \
-  services/photo-face-analyzer
+if [[ -f "$runtime_archive" ]]; then
+  if gzip -t "$runtime_archive" && gzip -dc "$runtime_archive" | docker load >/dev/null; then
+    echo "[photo-face] restored reusable runtime image $runtime_image ($runtime_contract_hash)"
+  else
+    echo "[photo-face] cached runtime archive is invalid; rebuilding" >&2
+    rm -f "$runtime_archive"
+  fi
+fi
+
+if ! docker image inspect "$runtime_image" >/dev/null 2>&1; then
+  echo "[photo-face] building reusable runtime image $runtime_image ($runtime_contract_hash)"
+  docker build \
+    --target runtime \
+    --build-arg BUILDKIT_INLINE_CACHE=1 \
+    -f services/photo-face-analyzer/Dockerfile \
+    -t "$runtime_image" \
+    services/photo-face-analyzer
+fi
+
+if [[ ! -f "$runtime_archive" ]]; then
+  tmp_archive="$runtime_archive.tmp"
+  rm -f "$tmp_archive"
+  docker save "$runtime_image" | gzip -1 >"$tmp_archive"
+  gzip -t "$tmp_archive"
+  mv "$tmp_archive" "$runtime_archive"
+fi
+
+# GitLab uses a mutable cache namespace; retain only the current environment.
+find "$runtime_cache_dir" -maxdepth 1 -type f -name '*.tar.gz' ! -name "$runtime_contract_hash.tar.gz" -delete
 
 runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"
 docker run --rm \
@@ -41,6 +69,7 @@ docker run --rm \
 # The final image is the release artifact. Build and validate it separately so
 # bind mounts never mask the packaged business code that will be published.
 docker build \
+  --cache-from "$runtime_image" \
   --target final \
   --build-arg "VERSION=$XDRIVE_BUILD_VERSION" \
   --build-arg "BUILD_COMMIT=$XDRIVE_BUILD_COMMIT" \
