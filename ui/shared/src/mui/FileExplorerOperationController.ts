@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
@@ -54,13 +54,15 @@ export function useXDriveFileExplorerOperationController<
   onError: (error: unknown) => void
 }) {
   const [busyAction, setBusyAction] = useState<XDriveFileExplorerQueuedOperationAction>('')
+  const busyActionRef = useRef<XDriveFileExplorerQueuedOperationAction>('')
 
   const runPlan = async (
     action: Exclude<XDriveFileExplorerQueuedOperationAction, ''>,
     plan: XDriveFileExplorerQueuedOperationPlan,
     onComplete: () => void,
   ) => {
-    if (disabled || busyAction) return false
+    if (disabled || busyActionRef.current) return false
+    busyActionRef.current = action
     setBusyAction(action)
     try {
       return await xDriveFileExplorerRunQueuedOperation({
@@ -72,6 +74,7 @@ export function useXDriveFileExplorerOperationController<
         onError,
       })
     } finally {
+      busyActionRef.current = ''
       setBusyAction('')
     }
   }
