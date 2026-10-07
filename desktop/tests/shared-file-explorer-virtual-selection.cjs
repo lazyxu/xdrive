@@ -226,3 +226,43 @@ test('interaction-scope change abandons stale address-bar edit state', () => {
     'stale address editing must end as part of scope invalidation before the new workspace publishes interaction state',
   )
 })
+
+
+test('interaction-scope change invalidates an in-flight inline rename submission', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'renameIntentRef.current += 1',
+    'renameSubmittingRef.current = false',
+    'setRenameSubmitting(false)',
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'scope change must release and invalidate the old inline-rename submit lifecycle: ' + token,
+    )
+  }
+
+  const submitStart = explorer.indexOf('const submitRename = async')
+  const submitEnd = explorer.indexOf('useEffect(() => {', submitStart)
+  assert.ok(submitStart >= 0 && submitEnd > submitStart, 'inline rename submit function is missing')
+  const submitBlock = explorer.slice(submitStart, submitEnd)
+
+  assert.ok(
+    submitBlock.includes('const renameIntent = ++renameIntentRef.current'),
+    'each inline rename submit must own a monotonic intent token',
+  )
+  assert.ok(
+    submitBlock.includes('if (renameIntentRef.current !== renameIntent) return'),
+    'a rename completion from the old workspace must stop before publishing success/error UI into the new workspace',
+  )
+  assert.ok(
+    submitBlock.includes('if (renameIntentRef.current === renameIntent)'),
+    'stale rename finally work must not clear submitting state owned by a newer rename session',
+  )
+})
