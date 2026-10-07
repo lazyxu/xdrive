@@ -185,7 +185,7 @@ test('FileExplorer projection builds large paged view-models in one node pass', 
 
 test('FileExplorer search keeps file matches out of descendant recursion', () => {
   assert.ok(serverSearch.includes('const componentSearch = `WITH RECURSIVE matching_nodes AS ('), 'component match set is missing')
-  assert.ok(serverSearch.includes('AND strpos(lower(n.name), lower(?)) > 0'), 'component search must seed on matching node names')
+  assert.ok(serverSearch.includes("AND (? = '' OR strpos(lower(n.name), lower(?)) > 0)"), 'component search must seed on matching node names while allowing filter-only Search')
   assert.ok(serverSearch.includes('descendant_tree AS ('), 'directory descendant expansion is missing')
   assert.ok(serverSearch.includes("ON matched.type = 'dir' AND n.parent_id = matched.id"), 'only matching directories should seed descendant recursion')
   assert.ok(serverSearch.includes("ON parent.type = 'dir' AND n.parent_id = parent.id"), 'only directory descendants should continue recursion')
@@ -196,7 +196,7 @@ test('FileExplorer search keeps file matches out of descendant recursion', () =>
   assert.ok(serverSearch.includes('directory_tree AS ('), 'directory path state must be built separately from candidate files')
   assert.ok(serverSearch.includes('LEFT JOIN directory_tree parent_dir'), 'file results must reuse parent directory path state')
   assert.ok(serverSearch.includes('const recursivePathSearch = `WITH RECURSIVE tree AS ('), 'full-path fallback must remain available')
-  assert.ok(serverSearch.includes('if strings.Contains(query, "/") {'), 'slash-containing queries must retain cross-component path semantics')
+  assert.ok(serverSearch.includes('if query == "" || strings.Contains(query, "/") {'), 'filter-only Search and slash-containing queries must retain recursive path semantics')
 })
 
 

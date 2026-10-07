@@ -345,14 +345,16 @@ const agent = Object.freeze({
     cursor = '',
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
-  ) => ipcRenderer.invoke('agent:cloud-search', query, cursor, sort, order),
+    filters: Record<string, unknown> = {},
+  ) => ipcRenderer.invoke('agent:cloud-search', query, cursor, sort, order, filters),
   cloudSearchRange: (
     query: string,
     offset: number,
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
-  ) => ipcRenderer.invoke('agent:cloud-search-range', query, offset, limit, sort, order),
+    filters: Record<string, unknown> = {},
+  ) => ipcRenderer.invoke('agent:cloud-search-range', query, offset, limit, sort, order, filters),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>

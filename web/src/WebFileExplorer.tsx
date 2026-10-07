@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
@@ -6,6 +6,7 @@ import {
   XDriveFilePreviewSurface,
   XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
+  XDriveFileExplorerSearchFilters,
   XDriveFileExplorerTrashCommandButton,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
@@ -36,6 +37,7 @@ import type {
   Node,
   XDriveCloudFilesSearchResult,
   XDriveFileOperation,
+  XDriveFileExplorerSearchSourceOption,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
@@ -108,6 +110,17 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
+  useEffect(() => {
+    let active = true
+    void api.sources().then((sources) => {
+      if (active) setSearchSourceOptions(sources.map((source) => ({ id: source.id, name: source.name })))
+    }).catch(onError)
+    return () => {
+      active = false
+    }
+  }, [api, onError])
+
   const recent = useXDriveFileExplorerRecent<Node>({
     loadItems: () => api.fileRecent(16),
     touchItem: (nodeID) => api.touchFileRecent(nodeID),
@@ -116,8 +129,10 @@ export default function WebFileExplorer({
 
   const {
     searchValue,
+    searchFilters,
     searchLoading,
     changeSearchValue,
+    changeSearchFilters,
     clearSearch,
     submitSearch,
     nodeByID,
@@ -166,9 +181,10 @@ export default function WebFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
     onLoadDirectory,
-    loadSearchRange: async (query, searchSort, offset, limit) => {
+    loadSearchRange: async (query, filters, searchSort, offset, limit) => {
       const page = await api.searchRange(
         query,
+        filters,
         offset,
         limit,
         searchSort.key,
@@ -497,6 +513,13 @@ export default function WebFileExplorer({
         onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
         onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
+        commandBarEnd={(
+          <XDriveFileExplorerSearchFilters
+            filters={searchFilters}
+            sourceOptions={searchSourceOptions}
+            onChange={changeSearchFilters}
+          />
+        )}
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}

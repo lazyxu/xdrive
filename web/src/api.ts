@@ -53,6 +53,7 @@ import type {
   XDriveBackgroundTaskPage,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
+  XDriveFileExplorerSearchFilters,
   XDriveFileTextPreview,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
@@ -235,6 +236,18 @@ export function sessionFromAuth(result: AuthResult): AuthSession {
     refreshToken: result.refresh_token,
     accessExpiresAt: Date.now() + Math.max(0, result.expires_in) * 1000,
   }
+}
+
+function appendFileExplorerSearchFilters(
+  params: URLSearchParams,
+  filters: XDriveFileExplorerSearchFilters = {},
+) {
+  if (filters.kind) params.set('kind', filters.kind)
+  if (filters.modifiedFrom) params.set('modified_from', filters.modifiedFrom)
+  if (filters.modifiedTo) params.set('modified_to', filters.modifiedTo)
+  if (filters.minSize !== undefined) params.set('min_size', String(Math.max(0, Math.trunc(filters.minSize))))
+  if (filters.maxSize !== undefined) params.set('max_size', String(Math.max(0, Math.trunc(filters.maxSize))))
+  if (filters.sourceID) params.set('source_id', String(Math.max(1, Math.trunc(filters.sourceID))))
 }
 
 export class XDriveApi {
@@ -1171,6 +1184,7 @@ export class XDriveApi {
     cursor = '',
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    filters: XDriveFileExplorerSearchFilters = {},
   ) {
     const params = new URLSearchParams({
       q: query.trim(),
@@ -1179,11 +1193,13 @@ export class XDriveApi {
       order,
     })
     if (cursor.trim()) params.set('cursor', cursor.trim())
+    appendFileExplorerSearchFilters(params, filters)
     return this.request<SearchPage>(`/api/v1/search?${params.toString()}`)
   }
 
   async searchRange(
     query: string,
+    filters: XDriveFileExplorerSearchFilters,
     offset: number,
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
@@ -1196,6 +1212,7 @@ export class XDriveApi {
       sort,
       order,
     })
+    appendFileExplorerSearchFilters(params, filters)
     const page = await this.request<{
       items: SearchResult[]
       total_count: number

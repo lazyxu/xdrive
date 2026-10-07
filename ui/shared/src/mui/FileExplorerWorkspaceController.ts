@@ -1,6 +1,10 @@
 import { useMemo, useRef } from 'react'
 import type { Node } from '../models'
 import {
+  xDriveFileExplorerSearchFilterCount,
+  xDriveFileExplorerSearchFiltersSignature,
+} from '../file-explorer-search'
+import {
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerSubmitPath,
@@ -120,6 +124,7 @@ export function useXDriveFileExplorerWorkspace<
     navigation.activeTabID,
     crumbs.at(-1)?.id ?? 0,
     search.searchResults === null ? '' : search.searchState.query,
+    search.searchResults === null ? '' : xDriveFileExplorerSearchFiltersSignature(search.searchState.filters),
     navigation.sort.key,
     navigation.sort.direction,
   ].join(':')
@@ -282,7 +287,12 @@ export function useXDriveFileExplorerWorkspace<
     explorerVirtualCollection,
     externallySorted: search.searchResults === null || search.searchSortMatches,
     searchStatusText: search.searchResults
-      ? `搜索“${search.searchState.query}”`
+      ? [
+          search.searchState.query ? `搜索“${search.searchState.query}”` : '筛选结果',
+          xDriveFileExplorerSearchFilterCount(search.searchState.filters) > 0
+            ? `· ${xDriveFileExplorerSearchFilterCount(search.searchState.filters)} 个筛选`
+            : '',
+        ].filter(Boolean).join(' ')
       : undefined,
   }
 }

@@ -92,6 +92,7 @@ import {
   type AgentCreatedCloudShare,
   type AgentCloudSearchPage,
   type AgentCloudSearchRange,
+  type AgentCloudSearchFilters,
   type AgentMediaItem,
   type AgentMediaItemRange,
   type AgentMediaAlbum,
@@ -3293,11 +3294,71 @@ function registerIPCHandlers() {
     return requireAgentClient().openPath(relativePath, revealValue === true)
   }, false))
 
-  ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown, sort: unknown, order: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
+  const normalizeCloudSearchFilters = (value: unknown): AgentCloudSearchFilters => {
+    if (value === undefined || value === null) return {}
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Search filters must be an object.')
+    }
+    const raw = value as Record<string, unknown>
+    const out: AgentCloudSearchFilters = {}
+    const kinds = new Set([
+      'folder', 'file', 'image', 'video', 'audio', 'pdf', 'document',
+      'spreadsheet', 'presentation', 'archive', 'code', 'text', 'other',
+    ])
+    if (raw.kind !== undefined) {
+      if (typeof raw.kind !== 'string' || !kinds.has(raw.kind)) {
+        throw new AgentIPCError('invalid_input', 0, 'Search kind filter is invalid.')
+      }
+      out.kind = raw.kind as AgentCloudSearchFilters['kind']
+    }
+    for (const [sourceKey, targetKey] of [
+      ['modifiedFrom', 'modifiedFrom'],
+      ['modifiedTo', 'modifiedTo'],
+    ] as const) {
+      const item = raw[sourceKey]
+      if (item !== undefined) {
+        if (typeof item !== 'string' || !item.trim()) {
+          throw new AgentIPCError('invalid_input', 0, 'Search time filter is invalid.')
+        }
+        out[targetKey] = item.trim()
+      }
+    }
+    for (const [sourceKey, targetKey] of [
+      ['minSize', 'minSize'],
+      ['maxSize', 'maxSize'],
+    ] as const) {
+      const item = raw[sourceKey]
+      if (item !== undefined) {
+        if (typeof item !== 'number' || !Number.isSafeInteger(item) || item < 0) {
+          throw new AgentIPCError('invalid_input', 0, 'Search size filter is invalid.')
+        }
+        out[targetKey] = item
+      }
+    }
+    if (raw.sourceID !== undefined) {
+      if (typeof raw.sourceID !== 'number' || !Number.isSafeInteger(raw.sourceID) || raw.sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Search synchronization-folder filter is invalid.')
+      }
+      out.sourceID = raw.sourceID
+    }
+    return out
+  }
+  const cloudSearchFiltersActive = (filters: AgentCloudSearchFilters) => (
+    filters.kind !== undefined ||
+    filters.modifiedFrom !== undefined ||
+    filters.modifiedTo !== undefined ||
+    filters.minSize !== undefined ||
+    filters.maxSize !== undefined ||
+    filters.sourceID !== undefined
+  )
+
+  ipcMain.handle('agent:cloud-search', (_event, query: unknown, cursor: unknown, sort: unknown, order: unknown, filtersValue: unknown) => runAgentAction<AgentCloudSearchPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
-    if (typeof query !== 'string' || query.trim().length < 2) {
-      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters.')
+    const filters = normalizeCloudSearchFilters(filtersValue)
+    if (typeof query !== 'string' ||
+        (query.trim().length < 2 && !(query.trim().length === 0 && cloudSearchFiltersActive(filters)))) {
+      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters or a structured filter.')
     }
     if (cursor !== undefined && typeof cursor !== 'string') {
       throw new AgentIPCError('invalid_input', 0, 'Search cursor must be a string.')
@@ -3315,6 +3376,7 @@ function registerIPCHandlers() {
       typeof cursor === 'string' ? cursor.trim() : '',
       sortKey,
       sortOrder,
+      filters,
     )
   }, false))
   ipcMain.handle('agent:cloud-search-range', (
@@ -3324,11 +3386,14 @@ function registerIPCHandlers() {
     limit: unknown,
     sort: unknown,
     order: unknown,
+    filtersValue: unknown,
   ) => runAgentAction<AgentCloudSearchRange>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
-    if (typeof query !== 'string' || query.trim().length < 2) {
-      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters.')
+    const filters = normalizeCloudSearchFilters(filtersValue)
+    if (typeof query !== 'string' ||
+        (query.trim().length < 2 && !(query.trim().length === 0 && cloudSearchFiltersActive(filters)))) {
+      throw new AgentIPCError('invalid_input', 0, 'Search requires at least 2 characters or a structured filter.')
     }
     if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
       throw new AgentIPCError('invalid_input', 0, 'Search range offset must be zero or greater.')
@@ -3352,6 +3417,7 @@ function registerIPCHandlers() {
       normalizedLimit,
       sortKey,
       sortOrder,
+      filters,
     )
   }, false))
   ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {

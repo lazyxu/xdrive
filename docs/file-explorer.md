@@ -9,6 +9,35 @@ This document is the canonical **non-performance** FileExplorer design contract 
 - Server is authoritative for filesystem semantics that require the full namespace. Clients must not reconstruct recursive filesystem state by paginating/traversing the tree in the renderer.
 - New FileExplorer features should preserve Web/Desktop behavior parity unless the feature is inherently platform-specific.
 
+## Structured Search and filters
+
+FileExplorer Search is a Server-side logical collection. Web/Desktop must never implement a structured filter by filtering only the currently retained VirtualCollection pages.
+
+### Canonical filters
+
+The shared Search contract supports these Server-owned filters:
+
+- **类型**: folder, all files, image, video, audio, PDF, document, spreadsheet, presentation, archive, code, text, and other files. File-category classification follows the same extension families as the shared FileExplorer presentation classifier.
+- **修改时间**: inclusive `modified_from` and exclusive `modified_to` RFC3339 bounds on `xd_nodes.updated_at`.
+- **大小**: `min_size` / `max_size` byte bounds. Once a size bound is present, directories do not match.
+- **同步文件夹**: `source_id`, resolved by owner-scoped `SourceItem -> Source` identity. The filter is provenance only; connector-specific media semantics must not leak into FileExplorer Search.
+
+A text query is optional when at least one structured filter is active. A non-empty text query still requires at least two Unicode characters.
+
+Structured filters are part of the Search generation/cursor identity. Changing any filter invalidates in-flight range work exactly like changing the query, tab, or sort. A stale result from an older filter set must never mutate the active logical collection.
+
+Web REST, Desktop renderer, Electron/Agent IPC, Go client, and Server carry one shared filter contract. Platform adapters serialize/validate transport only; they do not apply result filtering locally.
+
+### Availability filter boundary
+
+File availability is **device-scoped state**, not Server namespace state. Windows CfAPI pin/online-only/syncing information can differ between two Desktop devices and has no meaningful Server-global value for Web.
+
+Therefore the availability chip must not be implemented as renderer-side filtering over retained Search pages, and the Server must not invent a global availability field. Its implementation belongs to the Desktop Agent query boundary, backed by an Agent-local availability index/query contract capable of filtering before pagination. Until that dedicated contract exists, Web omits availability and Desktop continues to show availability as item metadata rather than pretending it is a Server filter.
+
+### Search filter UI
+
+Web and Desktop reuse the shared MUI filter-chip surface. Type, modified time, size, and synchronization-folder chips mutate shared Search-controller state. Filter-only Search is valid. Clearing the last filter with an empty query exits Search and returns to the current directory.
+
 ## Navigation tree drag and drop
 
 The shared left folder tree is a first-class drop target, not navigation-only chrome.

@@ -48,14 +48,131 @@ type searchRangeDTO struct {
 }
 
 type searchCursor struct {
-	Query string `json:"q"`
-	Type  string `json:"type,omitempty"`
-	Sort  string `json:"sort"`
-	Order string `json:"order"`
-	Rank  int    `json:"rank"`
-	Value string `json:"value"`
-	Path  string `json:"path"`
-	ID    uint64 `json:"id"`
+	Query   string `json:"q"`
+	Type    string `json:"type,omitempty"`
+	Filters string `json:"filters,omitempty"`
+	Sort    string `json:"sort"`
+	Order   string `json:"order"`
+	Rank    int    `json:"rank"`
+	Value   string `json:"value"`
+	Path    string `json:"path"`
+	ID      uint64 `json:"id"`
+}
+
+type searchFilters struct {
+	Kind         string
+	ModifiedFrom *time.Time
+	ModifiedTo   *time.Time
+	MinSize      *int64
+	MaxSize      *int64
+	SourceID     uint64
+}
+
+func (filters searchFilters) active() bool {
+	return filters.Kind != "" ||
+		filters.ModifiedFrom != nil ||
+		filters.ModifiedTo != nil ||
+		filters.MinSize != nil ||
+		filters.MaxSize != nil ||
+		filters.SourceID != 0
+}
+
+func (filters searchFilters) signature() string {
+	modifiedFrom := ""
+	if filters.ModifiedFrom != nil {
+		modifiedFrom = filters.ModifiedFrom.UTC().Format(time.RFC3339Nano)
+	}
+	modifiedTo := ""
+	if filters.ModifiedTo != nil {
+		modifiedTo = filters.ModifiedTo.UTC().Format(time.RFC3339Nano)
+	}
+	minSize := ""
+	if filters.MinSize != nil {
+		minSize = strconv.FormatInt(*filters.MinSize, 10)
+	}
+	maxSize := ""
+	if filters.MaxSize != nil {
+		maxSize = strconv.FormatInt(*filters.MaxSize, 10)
+	}
+	return strings.Join([]string{
+		filters.Kind,
+		modifiedFrom,
+		modifiedTo,
+		minSize,
+		maxSize,
+		strconv.FormatUint(filters.SourceID, 10),
+	}, "|")
+}
+
+func parseSearchFilters(c *gin.Context) (searchFilters, bool) {
+	filters := searchFilters{Kind: strings.TrimSpace(strings.ToLower(c.Query("kind")))}
+	switch filters.Kind {
+	case "", "folder", "file", "image", "video", "audio", "pdf", "document",
+		"spreadsheet", "presentation", "archive", "code", "text", "other":
+	default:
+		fail(c, http.StatusBadRequest, "kind is invalid")
+		return searchFilters{}, false
+	}
+
+	parseTime := func(name string) (*time.Time, bool) {
+		raw := strings.TrimSpace(c.Query(name))
+		if raw == "" {
+			return nil, true
+		}
+		value, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, name+" must be RFC3339")
+			return nil, false
+		}
+		value = value.UTC()
+		return &value, true
+	}
+	var ok bool
+	if filters.ModifiedFrom, ok = parseTime("modified_from"); !ok {
+		return searchFilters{}, false
+	}
+	if filters.ModifiedTo, ok = parseTime("modified_to"); !ok {
+		return searchFilters{}, false
+	}
+	if filters.ModifiedFrom != nil && filters.ModifiedTo != nil &&
+		filters.ModifiedFrom.After(*filters.ModifiedTo) {
+		fail(c, http.StatusBadRequest, "modified_from must not be after modified_to")
+		return searchFilters{}, false
+	}
+
+	parseSize := func(name string) (*int64, bool) {
+		raw := strings.TrimSpace(c.Query(name))
+		if raw == "" {
+			return nil, true
+		}
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value < 0 {
+			fail(c, http.StatusBadRequest, name+" must be zero or greater")
+			return nil, false
+		}
+		return &value, true
+	}
+	if filters.MinSize, ok = parseSize("min_size"); !ok {
+		return searchFilters{}, false
+	}
+	if filters.MaxSize, ok = parseSize("max_size"); !ok {
+		return searchFilters{}, false
+	}
+	if filters.MinSize != nil && filters.MaxSize != nil &&
+		*filters.MinSize > *filters.MaxSize {
+		fail(c, http.StatusBadRequest, "min_size must not exceed max_size")
+		return searchFilters{}, false
+	}
+
+	if raw := strings.TrimSpace(c.Query("source_id")); raw != "" {
+		sourceID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || sourceID == 0 {
+			fail(c, http.StatusBadRequest, "source_id must be a positive integer")
+			return searchFilters{}, false
+		}
+		filters.SourceID = sourceID
+	}
+	return filters, true
 }
 
 type searchRow struct {
@@ -75,8 +192,9 @@ type searchRow struct {
 
 func (s *Server) searchNodes(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
-	if !utf8.ValidString(query) || utf8.RuneCountInString(query) < 2 || len([]byte(query)) > maxSearchQuerySize {
-		fail(c, http.StatusBadRequest, "q must contain at least 2 characters and at most 256 UTF-8 bytes")
+	if !utf8.ValidString(query) || len([]byte(query)) > maxSearchQuerySize ||
+		(query != "" && utf8.RuneCountInString(query) < 2) {
+		fail(c, http.StatusBadRequest, "q must be empty or contain at least 2 characters and at most 256 UTF-8 bytes")
 		return
 	}
 
@@ -86,6 +204,14 @@ func (s *Server) searchNodes(c *gin.Context) {
 	}
 	if nodeType != "" && nodeType != meta.NodeTypeFile && nodeType != meta.NodeTypeDir {
 		fail(c, http.StatusBadRequest, "type must be file or dir")
+		return
+	}
+	filters, ok := parseSearchFilters(c)
+	if !ok {
+		return
+	}
+	if query == "" && nodeType == "" && !filters.active() {
+		fail(c, http.StatusBadRequest, "q or at least one structured filter is required")
 		return
 	}
 
@@ -146,8 +272,9 @@ func (s *Server) searchNodes(c *gin.Context) {
 				return
 			}
 			if decoded.Query != query || decoded.Type != nodeType ||
+				decoded.Filters != filters.signature() ||
 				decoded.Sort != sortKey || decoded.Order != order {
-				fail(c, http.StatusBadRequest, "cursor does not match q/type/sort/order")
+				fail(c, http.StatusBadRequest, "cursor does not match q/type/filters/sort/order")
 				return
 			}
 			cursor = decoded
@@ -159,7 +286,7 @@ func (s *Server) searchNodes(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	if rangeRequested {
-		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, offset, limit, sortKey, order)
+		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, filters, offset, limit, sortKey, order)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "search failed")
 			return
@@ -168,17 +295,17 @@ func (s *Server) searchNodes(c *gin.Context) {
 		return
 	}
 
-	page, err := s.searchNodePage(ctx, userID(c), query, nodeType, limit, sortKey, order, cursor)
+	page, err := s.searchNodePage(ctx, userID(c), query, nodeType, filters, limit, sortKey, order, cursor)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "search failed")
 		return
 	}
 	c.JSON(http.StatusOK, page)
 }
-
 func searchNodeBaseQuery(
 	ownerID uint64,
 	query, nodeType string,
+	filters searchFilters,
 ) (string, []any) {
 	const recursivePathSearch = `WITH RECURSIVE tree AS (
   SELECT
@@ -216,7 +343,7 @@ search_rows AS (
   FROM tree
   LEFT JOIN xd_files f ON f.node_id = tree.id
   WHERE tree.parent_id IS NOT NULL
-    AND strpos(lower(tree.path), lower(?)) > 0
+    AND (? = '' OR strpos(lower(tree.path), lower(?)) > 0)
 )
 SELECT *
 FROM search_rows
@@ -229,7 +356,7 @@ WHERE (? = '' OR search_rows.type = ?)
   WHERE n.owner_id = ?
     AND n.parent_id IS NOT NULL
     AND n.deleted_at IS NULL
-    AND strpos(lower(n.name), lower(?)) > 0
+    AND (? = '' OR strpos(lower(n.name), lower(?)) > 0)
 ),
 descendant_tree AS (
   SELECT n.id, n.parent_id, n.type
@@ -331,17 +458,94 @@ FROM search_rows
 WHERE (? = '' OR search_rows.type = ?)
 `
 
-	if strings.Contains(query, "/") {
-		return recursivePathSearch, []any{ownerID, ownerID, query, nodeType, nodeType}
+	filterSQL, filterArgs := searchNodeStructuredFilterSQL(ownerID, filters)
+	if query == "" || strings.Contains(query, "/") {
+		args := []any{ownerID, ownerID, query, query, nodeType, nodeType}
+		return recursivePathSearch + filterSQL, append(args, filterArgs...)
 	}
-	return componentSearch, []any{
-		ownerID, query, ownerID,
+	args := []any{
+		ownerID, query, query, ownerID,
 		ownerID, ownerID,
 		ownerID, ownerID,
 		ownerID, nodeType, nodeType,
 	}
+	return componentSearch + filterSQL, append(args, filterArgs...)
 }
 
+func searchNodeStructuredFilterSQL(ownerID uint64, filters searchFilters) (string, []any) {
+	extensionExpr := `(CASE
+		WHEN strpos(search_rows.name, '.') > 1 AND right(search_rows.name, 1) <> '.'
+			THEN lower(reverse(split_part(reverse(search_rows.name), '.', 1)))
+		ELSE ''
+	END)`
+	kindExpr := fmt.Sprintf(`(CASE
+		WHEN search_rows.type = 'dir' THEN 'folder'
+		WHEN %s IN ('avif','bmp','gif','heic','heif','jpeg','jpg','png','tif','tiff','webp') THEN 'image'
+		WHEN %s IN ('avi','m4v','mkv','mov','mp4','mpeg','mpg','webm') THEN 'video'
+		WHEN %s IN ('aac','flac','m4a','mp3','ogg','wav','wma') THEN 'audio'
+		WHEN %s = 'pdf' THEN 'pdf'
+		WHEN %s IN ('doc','docx','odt','rtf') THEN 'document'
+		WHEN %s IN ('csv','ods','xls','xlsx') THEN 'spreadsheet'
+		WHEN %s IN ('odp','ppt','pptx') THEN 'presentation'
+		WHEN %s IN ('7z','bz2','gz','rar','tar','tgz','xz','zip') THEN 'archive'
+		WHEN %s IN ('c','cc','cpp','css','go','h','hpp','html','java','js','json','jsx','kt','md','php','py','rb','rs','sh','sql','swift','toml','ts','tsx','xml','yaml','yml') THEN 'code'
+		WHEN %s IN ('ini','log','text','txt') THEN 'text'
+		ELSE 'other'
+	END)`,
+		extensionExpr, extensionExpr, extensionExpr, extensionExpr, extensionExpr,
+		extensionExpr, extensionExpr, extensionExpr, extensionExpr, extensionExpr,
+	)
+	modifiedFrom := time.Time{}
+	if filters.ModifiedFrom != nil {
+		modifiedFrom = *filters.ModifiedFrom
+	}
+	modifiedTo := time.Time{}
+	if filters.ModifiedTo != nil {
+		modifiedTo = *filters.ModifiedTo
+	}
+	minSize := int64(0)
+	if filters.MinSize != nil {
+		minSize = *filters.MinSize
+	}
+	maxSize := int64(0)
+	if filters.MaxSize != nil {
+		maxSize = *filters.MaxSize
+	}
+	sqlText := fmt.Sprintf(`
+  AND (
+    ? = ''
+    OR (? = 'folder' AND search_rows.type = 'dir')
+    OR (? = 'file' AND search_rows.type = 'file')
+    OR (search_rows.type = 'file' AND ? NOT IN ('folder', 'file') AND %s = ?)
+  )
+  AND (? = FALSE OR search_rows.updated_at >= ?)
+  AND (? = FALSE OR search_rows.updated_at < ?)
+  AND (? = FALSE OR (search_rows.type = 'file' AND search_rows.size >= ?))
+  AND (? = FALSE OR (search_rows.type = 'file' AND search_rows.size <= ?))
+`, kindExpr)
+	args := []any{
+		filters.Kind, filters.Kind, filters.Kind, filters.Kind, filters.Kind,
+		filters.ModifiedFrom != nil, modifiedFrom,
+		filters.ModifiedTo != nil, modifiedTo,
+		filters.MinSize != nil, minSize,
+		filters.MaxSize != nil, maxSize,
+	}
+	if filters.SourceID != 0 {
+		sqlText += `
+  AND EXISTS (
+    SELECT 1
+    FROM xd_source_items source_item
+    JOIN xd_sources source
+      ON source.id = source_item.source_id
+     AND source.owner_id = ?
+    WHERE source_item.node_id = search_rows.id
+      AND source_item.source_id = ?
+  )
+`
+		args = append(args, ownerID, filters.SourceID)
+	}
+	return sqlText, args
+}
 func searchNodeOrderExpressions(alias, sortKey, order string) (
 	rankExpr, sortExpr, pathExpr, direction string,
 ) {
@@ -390,11 +594,12 @@ func (s *Server) searchNodePage(
 	ctx context.Context,
 	ownerID uint64,
 	query, nodeType string,
+	filters searchFilters,
 	limit int,
 	sortKey, order string,
 	cursor searchCursor,
 ) (searchPageDTO, error) {
-	sqlText, args := searchNodeBaseQuery(ownerID, query, nodeType)
+	sqlText, args := searchNodeBaseQuery(ownerID, query, nodeType, filters)
 	rankExpr, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
 		"search_rows",
 		sortKey,
@@ -463,14 +668,15 @@ func (s *Server) searchNodePage(
 			rank = 0
 		}
 		page.NextCursor = encodeSearchCursor(searchCursor{
-			Query: query,
-			Type:  nodeType,
-			Sort:  sortKey,
-			Order: order,
-			Rank:  rank,
-			Value: searchRowCursorValue(last, sortKey),
-			Path:  last.Path,
-			ID:    last.ID,
+			Query:   query,
+			Type:    nodeType,
+			Filters: filters.signature(),
+			Sort:    sortKey,
+			Order:   order,
+			Rank:    rank,
+			Value:   searchRowCursorValue(last, sortKey),
+			Path:    last.Path,
+			ID:      last.ID,
 		})
 	}
 	return page, nil
@@ -480,10 +686,11 @@ func (s *Server) searchNodeRange(
 	ctx context.Context,
 	ownerID uint64,
 	query, nodeType string,
+	filters searchFilters,
 	offset, limit int,
 	sortKey, order string,
 ) (searchRangeDTO, error) {
-	baseSQL, baseArgs := searchNodeBaseQuery(ownerID, query, nodeType)
+	baseSQL, baseArgs := searchNodeBaseQuery(ownerID, query, nodeType, filters)
 	rankExpr, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
 		"search_page",
 		sortKey,
@@ -582,7 +789,8 @@ func decodeSearchCursor(raw string) (searchCursor, error) {
 		return searchCursor{}, err
 	}
 	if cursor.ID == 0 || (cursor.Rank != 0 && cursor.Rank != 1) ||
-		strings.TrimSpace(cursor.Query) == "" || strings.TrimSpace(cursor.Path) == "" ||
+		(strings.TrimSpace(cursor.Query) == "" && strings.TrimSpace(cursor.Type) == "" && strings.TrimSpace(cursor.Filters) == "") ||
+		strings.TrimSpace(cursor.Path) == "" ||
 		(cursor.Sort != "name" && cursor.Sort != "updated" && cursor.Sort != "size" && cursor.Sort != "type") ||
 		(cursor.Order != "asc" && cursor.Order != "desc") {
 		return searchCursor{}, errors.New("invalid search cursor")

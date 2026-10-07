@@ -92,22 +92,42 @@ type FileRecentItem struct {
 	AccessedAt time.Time          `json:"accessed_at"`
 }
 
+type SearchFilters struct {
+	Kind         string
+	ModifiedFrom string
+	ModifiedTo   string
+	MinSize      *int64
+	MaxSize      *int64
+	SourceID     uint64
+}
+
+func (filters SearchFilters) Active() bool {
+	return strings.TrimSpace(filters.Kind) != "" ||
+		strings.TrimSpace(filters.ModifiedFrom) != "" ||
+		strings.TrimSpace(filters.ModifiedTo) != "" ||
+		filters.MinSize != nil ||
+		filters.MaxSize != nil ||
+		filters.SourceID != 0
+}
+
 type SearchOptions struct {
-	Query  string
-	Type   string
-	Limit  int
-	Cursor string
-	Sort   string
-	Order  string
+	Query   string
+	Type    string
+	Filters SearchFilters
+	Limit   int
+	Cursor  string
+	Sort    string
+	Order   string
 }
 
 type SearchRangeOptions struct {
-	Query  string
-	Type   string
-	Limit  int
-	Offset int
-	Sort   string
-	Order  string
+	Query   string
+	Type    string
+	Filters SearchFilters
+	Limit   int
+	Offset  int
+	Sort    string
+	Order   string
 }
 
 type ChildrenOptions struct {
@@ -522,12 +542,34 @@ func (c *Client) ListRange(ctx context.Context, parentID uint64, options Childre
 	return out, err
 }
 
+func appendSearchFilters(values url.Values, filters SearchFilters) {
+	if value := strings.TrimSpace(filters.Kind); value != "" {
+		values.Set("kind", value)
+	}
+	if value := strings.TrimSpace(filters.ModifiedFrom); value != "" {
+		values.Set("modified_from", value)
+	}
+	if value := strings.TrimSpace(filters.ModifiedTo); value != "" {
+		values.Set("modified_to", value)
+	}
+	if filters.MinSize != nil {
+		values.Set("min_size", strconv.FormatInt(*filters.MinSize, 10))
+	}
+	if filters.MaxSize != nil {
+		values.Set("max_size", strconv.FormatInt(*filters.MaxSize, 10))
+	}
+	if filters.SourceID != 0 {
+		values.Set("source_id", strconv.FormatUint(filters.SourceID, 10))
+	}
+}
+
 func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage, error) {
 	values := url.Values{}
 	values.Set("q", options.Query)
 	if strings.TrimSpace(options.Type) != "" {
 		values.Set("type", options.Type)
 	}
+	appendSearchFilters(values, options.Filters)
 	if options.Limit > 0 {
 		values.Set("limit", strconv.Itoa(options.Limit))
 	}
@@ -554,6 +596,7 @@ func (c *Client) SearchRange(ctx context.Context, options SearchRangeOptions) (S
 	if strings.TrimSpace(options.Type) != "" {
 		values.Set("type", options.Type)
 	}
+	appendSearchFilters(values, options.Filters)
 	if options.Limit > 0 {
 		values.Set("limit", strconv.Itoa(options.Limit))
 	}

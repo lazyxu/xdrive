@@ -33,6 +33,18 @@ func TestSearchUsesServerPaginationAndFilters(t *testing.T) {
 		if got := r.URL.Query().Get("order"); got != "desc" {
 			t.Fatalf("order=%q", got)
 		}
+		if got := r.URL.Query().Get("kind"); got != "pdf" {
+			t.Fatalf("kind=%q", got)
+		}
+		if got := r.URL.Query().Get("modified_from"); got != "2026-10-01T00:00:00Z" {
+			t.Fatalf("modified_from=%q", got)
+		}
+		if got := r.URL.Query().Get("min_size"); got != "10" {
+			t.Fatalf("min_size=%q", got)
+		}
+		if got := r.URL.Query().Get("source_id"); got != "7" {
+			t.Fatalf("source_id=%q", got)
+		}
 		seenAuthorization = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SearchPage{
@@ -51,8 +63,14 @@ func TestSearchUsesServerPaginationAndFilters(t *testing.T) {
 	defer server.Close()
 
 	cli := New(server.URL, "token")
+	minSize := int64(10)
 	page, err := cli.Search(context.Background(), SearchOptions{
-		Query: "report 2026", Type: "file", Limit: 25, Cursor: "next-token", Sort: "size", Order: "desc",
+		Query: "report 2026", Type: "file",
+		Filters: SearchFilters{
+			Kind: "pdf", ModifiedFrom: "2026-10-01T00:00:00Z",
+			MinSize: &minSize, SourceID: 7,
+		},
+		Limit: 25, Cursor: "next-token", Sort: "size", Order: "desc",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,6 +112,9 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 		if got := r.URL.Query().Get("cursor"); got != "" {
 			t.Fatalf("cursor must be absent, got=%q", got)
 		}
+		if got := r.URL.Query().Get("max_size"); got != "1000" {
+			t.Fatalf("max_size=%q", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SearchRange{
 			Items:      []SearchResult{},
@@ -107,13 +128,15 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 	defer server.Close()
 
 	cli := New(server.URL, "token")
+	maxSize := int64(1000)
 	rangePage, err := cli.SearchRange(context.Background(), SearchRangeOptions{
-		Query:  "report 2026",
-		Type:   "file",
-		Limit:  100,
-		Offset: 200,
-		Sort:   "updated",
-		Order:  "asc",
+		Query:   "report 2026",
+		Type:    "file",
+		Filters: SearchFilters{MaxSize: &maxSize},
+		Limit:   100,
+		Offset:  200,
+		Sort:    "updated",
+		Order:   "asc",
 	})
 	if err != nil {
 		t.Fatal(err)

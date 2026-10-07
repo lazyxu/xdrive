@@ -51,6 +51,7 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
+		&meta.Source{}, &meta.SourceItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +107,28 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	_ = formatPDF
 	_ = formatTXT
 
+	var alice meta.User
+	if err := db.Where("username = ?", "search-a").First(&alice).Error; err != nil {
+		t.Fatal(err)
+	}
+	source := meta.Source{
+		OwnerID: alice.ID, Name: "测试同步文件夹", Kind: "synology_files",
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
+		TargetNodeID: &rootA.ID,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.SourceItem{
+		SourceID: source.ID, ExternalID: "beta-report", NodeID: &beta.ID,
+		NodeRevision: beta.Revision, Kind: meta.SourceItemKindFile,
+		Path: "Reports/Beta Report.pdf", Size: 20, State: meta.SourceItemStateSynced,
+		LastSeenAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	deletedAt := time.Now().UTC()
 	deleted := createSearchFile(t, db, projects.ID, "Deleted Report.pdf", 40)
 	if err := db.Model(&meta.Node{}).Where("id = ?", deleted.ID).Update("deleted_at", deletedAt).Error; err != nil {
@@ -153,6 +176,36 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 	if len(rangePage.Items) != 1 || rangePage.Items[0].Node.ID != beta.ID {
 		t.Fatalf("unexpected search range items: %+v", rangePage.Items)
+	}
+
+	structuredURL := fmt.Sprintf(
+		"/api/v1/search?q=report&kind=pdf&modified_from=%s&min_size=15&max_size=25&source_id=%d&offset=0&limit=10&sort=name&order=asc",
+		url.QueryEscape(sortBase.Add(150*time.Second).Format(time.RFC3339)),
+		source.ID,
+	)
+	res = request(t, router, http.MethodGet, structuredURL, tokenA, nil, http.StatusOK)
+	var structured searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &structured); err != nil {
+		t.Fatal(err)
+	}
+	if structured.TotalCount != 1 || len(structured.Items) != 1 || structured.Items[0].Node.ID != beta.ID {
+		t.Fatalf("structured filters=%+v", structured)
+	}
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?kind=pdf&min_size=20&offset=0&limit=10&sort=name&order=asc",
+		tokenA, nil, http.StatusOK)
+	var filterOnly searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &filterOnly); err != nil {
+		t.Fatal(err)
+	}
+	if filterOnly.TotalCount != 2 {
+		t.Fatalf("filter-only total=%d want=2 items=%+v", filterOnly.TotalCount, filterOnly.Items)
+	}
+	for _, item := range filterOnly.Items {
+		if item.Node.Type != meta.NodeTypeFile || !strings.HasSuffix(strings.ToLower(item.Node.Name), ".pdf") || item.Node.Size < 20 {
+			t.Fatalf("filter-only leaked item=%+v", item)
+		}
 	}
 
 	res = request(t, router, http.MethodGet,
@@ -249,6 +302,9 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 		"/api/v1/search?q=other&type=file&limit=2&cursor="+url.QueryEscape(first.NextCursor),
 		tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&kind=pdf&limit=2&cursor="+url.QueryEscape(first.NextCursor),
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
 		"/api/v1/search?q=report&type=file&sort=size&order=asc&limit=2&cursor="+url.QueryEscape(first.NextCursor),
 		tokenA, nil, http.StatusBadRequest)
 
@@ -308,8 +364,13 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 		t.Fatalf("active child below deleted ancestor must stay unreachable: %+v", detached.Items)
 	}
 
+	request(t, router, http.MethodGet, "/api/v1/search", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=x", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&type=other", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?kind=unknown", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?kind=pdf&min_size=-1", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?kind=pdf&min_size=20&max_size=10", tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet, "/api/v1/search?kind=pdf&modified_from=bad", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&limit=201", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&sort=other", tokenA, nil, http.StatusBadRequest)
 	request(t, router, http.MethodGet, "/api/v1/search?q=report&order=sideways", tokenA, nil, http.StatusBadRequest)
