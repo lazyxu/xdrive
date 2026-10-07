@@ -316,7 +316,12 @@ The server exposes background work as a read model without introducing a generic
   lifecycle, filesystem-root capability, and `media-integrity` lease; verify and repair may queue but never
   execute concurrently. The Task Center repair path runs only deterministic `RepairMedia(..., false)`;
   thumbnail GC and Photo Intelligence GC remain separate maintenance actions and are never implicit side
-  effects of media repair.
+  effects of media repair. Full `storage.verify` is also a durable maintenance task: it uses the existing
+  filesystem-root-aware storage verifier, but through a context-aware entry point so directory walking and
+  per-object SHA-256 hashing stop cooperatively on Task Center cancellation. It reuses the existing Janitor
+  cluster lease so the full scan cannot race CAS GC/state transitions; a Janitor pass skips while the verifier
+  owns the lease, and the verifier defer-retries while Janitor owns it. Valid shared CAS references remain
+  informational rather than integrity failures.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
   active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable

@@ -1,8 +1,10 @@
 package maintenance
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -268,5 +270,27 @@ func TestVerifyAcceptsSharedCASReferences(t *testing.T) {
 	}
 	if report.OK() || len(report.ContentRefMismatch) == 0 {
 		t.Fatalf("refcount drift was not detected: %+v", report)
+	}
+}
+
+func TestVerifyWithContextRejectsCancelledWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := VerifyWithContext(ctx, nil, t.TempDir())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("verify error=%v want context.Canceled", err)
+	}
+}
+
+func TestHashFileWithContextRejectsCancelledWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "blob")
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 1024)), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := hashFileWithContext(ctx, path)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("hash error=%v want context.Canceled", err)
 	}
 }

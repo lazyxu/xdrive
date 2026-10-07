@@ -393,7 +393,10 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 The current durable repair model is complete for Source bindings/runs and media-derived state, including explicit orphan-thumbnail-file GC. The Admin global Task Center now runs Source verify/repair plus storage-aware media verify/repair through durable P4 maintenance tasks. Media verify uses the same filesystem-root-aware verifier as the server CLI and remains cancellable during thumbnail-cache traversal; media repair calls the same deterministic `RepairMedia(ctx, db, root, false)` implementation and shares the `media-integrity` lease with verify. Thumbnail GC and Photo Intelligence GC remain explicit separate operations and are never implicit repair side effects. Remaining integrity work is verification-oriented:
 
-- Node -> File -> CAS presence and storage SHA integrity through the existing storage verifier boundary;
+- Node -> File -> CAS presence and storage SHA integrity now runs through the Admin global Task Center as
+  durable cancellable `storage.verify`; it reuses the Janitor/CAS maintenance lease so full hashing cannot
+  race CAS GC. Deterministic CAS metadata repair is the next storage-maintenance action to move onto the same
+  exclusion boundary;
 - verified digest-alias consistency and any future repair only after a deterministic ownership/provenance contract exists.
 
 There is currently no durable migration journal/state machine to repair. Schema migration is idempotent and the root-to-user migration rolls back before writing its completion marker, so xDrive must not invent a fake “stale migration” state. If a future migration subsystem adds a durable journal, that journal must define explicit verifier and deterministic recovery semantics first.

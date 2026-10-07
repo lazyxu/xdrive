@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -100,7 +101,24 @@ type blobReference struct {
 }
 
 func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
+	return VerifyWithContext(context.Background(), db, storageRoot)
+}
+
+func VerifyWithContext(
+	ctx context.Context,
+	db *gorm.DB,
+	storageRoot string,
+) (VerifyReport, error) {
 	var report VerifyReport
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
+	if db == nil {
+		return report, fmt.Errorf("storage verify database is unavailable")
+	}
 	root, err := filepath.Abs(storageRoot)
 	if err != nil {
 		return report, err
@@ -109,6 +127,7 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 		return report, err
 	}
 
+	db = db.WithContext(ctx)
 	var files []meta.File
 	if err := db.Order("node_id ASC").Find(&files).Error; err != nil {
 		return report, fmt.Errorf("query file metadata: %w", err)
@@ -123,14 +142,33 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	references := make(map[string][]blobReference, len(files)+len(versions))
 	inspections := make(map[string]*blobInspection, len(files)+len(versions))
 	for _, file := range files {
-		addReference(&report, references, inspections, root, file.StorageKey, blobReference{
-			NodeID: file.NodeID, Size: file.Size, SHA256: file.SHA256,
-		})
+		if err := addReference(
+			ctx,
+			&report,
+			references,
+			inspections,
+			root,
+			file.StorageKey,
+			blobReference{NodeID: file.NodeID, Size: file.Size, SHA256: file.SHA256},
+		); err != nil {
+			return report, err
+		}
 	}
 	for _, version := range versions {
-		addReference(&report, references, inspections, root, version.StorageKey, blobReference{
-			NodeID: version.NodeID, VersionID: version.ID, Size: version.Size, SHA256: version.SHA256,
-		})
+		if err := addReference(
+			ctx,
+			&report,
+			references,
+			inspections,
+			root,
+			version.StorageKey,
+			blobReference{
+				NodeID: version.NodeID, VersionID: version.ID,
+				Size: version.Size, SHA256: version.SHA256,
+			},
+		); err != nil {
+			return report, err
+		}
 	}
 	for key, refs := range references {
 		if len(refs) <= 1 {
@@ -187,6 +225,9 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 	}
 
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return walkErr
 		}
@@ -266,18 +307,22 @@ func Verify(db *gorm.DB, storageRoot string) (VerifyReport, error) {
 }
 
 func addReference(
+	ctx context.Context,
 	report *VerifyReport,
 	references map[string][]blobReference,
 	inspections map[string]*blobInspection,
 	root, rawKey string,
 	ref blobReference,
-) {
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	key, err := cleanStorageKey(rawKey)
 	if err != nil {
 		report.Missing = append(report.Missing, MissingBlob{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: rawKey, Expected: ref.Size, Reason: "invalid_storage_key",
 		})
-		return
+		return nil
 	}
 	references[key] = append(references[key], ref)
 	inspection := inspections[key]
@@ -301,13 +346,13 @@ func addReference(
 		report.Missing = append(report.Missing, MissingBlob{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: reason,
 		})
-		return
+		return nil
 	}
 	if !inspection.Regular {
 		report.Missing = append(report.Missing, MissingBlob{
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key, Expected: ref.Size, Reason: "not_regular_file",
 		})
-		return
+		return nil
 	}
 	if inspection.Size != ref.Size {
 		report.SizeMismatches = append(report.SizeMismatches, SizeMismatch{
@@ -315,25 +360,19 @@ func addReference(
 		})
 	}
 	if ref.SHA256 == "" {
-		return
+		return nil
 	}
 	if !inspection.HashComputed {
 		full := filepath.Join(root, filepath.FromSlash(key))
-		file, openErr := os.Open(full)
-		if openErr != nil {
-			inspection.Err = openErr
-		} else {
-			h := sha256.New()
-			_, copyErr := io.Copy(h, file)
-			closeErr := file.Close()
-			if copyErr != nil {
-				inspection.Err = copyErr
-			} else if closeErr != nil {
-				inspection.Err = closeErr
-			} else {
-				inspection.Hash = hex.EncodeToString(h.Sum(nil))
-				inspection.HashComputed = true
+		hash, hashErr := hashFileWithContext(ctx, full)
+		if hashErr != nil {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
+			inspection.Err = hashErr
+		} else {
+			inspection.Hash = hash
+			inspection.HashComputed = true
 		}
 	}
 	if inspection.Err != nil {
@@ -341,7 +380,7 @@ func addReference(
 			NodeID: ref.NodeID, VersionID: ref.VersionID, StorageKey: key,
 			Expected: ref.Size, Reason: inspection.Err.Error(),
 		})
-		return
+		return nil
 	}
 	if !strings.EqualFold(inspection.Hash, ref.SHA256) {
 		report.HashMismatches = append(report.HashMismatches, HashMismatch{
@@ -349,6 +388,40 @@ func addReference(
 			Expected: ref.SHA256, Actual: inspection.Hash,
 		})
 	}
+	return nil
+}
+
+func hashFileWithContext(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	buf := make([]byte, 128*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = file.Close()
+			return "", err
+		}
+		n, readErr := file.Read(buf)
+		if n > 0 {
+			if _, writeErr := h.Write(buf[:n]); writeErr != nil {
+				_ = file.Close()
+				return "", writeErr
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			_ = file.Close()
+			return "", readErr
+		}
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func cleanStorageKey(key string) (string, error) {

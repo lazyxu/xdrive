@@ -173,6 +173,7 @@ const (
 	SystemMaintenanceKindSourceRepair   = "source_repair"
 	SystemMaintenanceKindMediaVerify    = "media_verify"
 	SystemMaintenanceKindMediaRepair    = "media_repair"
+	SystemMaintenanceKindStorageVerify  = "storage_verify"
 
 	SystemMaintenanceStatusQueued          = "queued"
 	SystemMaintenanceStatusRunning         = "running"
@@ -195,6 +196,7 @@ const (
 	SystemMaintenancePhaseSourceRepair            = "source_repair"
 	SystemMaintenancePhaseMediaVerify             = "media_verify"
 	SystemMaintenancePhaseMediaRepair             = "media_repair"
+	SystemMaintenancePhaseStorageVerify           = "storage_verify"
 	SystemMaintenancePhaseFinished                = "finished"
 )
 

@@ -16,6 +16,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceaccount"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -94,6 +95,18 @@ type immediateSystemMaintenanceMediaRepairRunner struct {
 func (r *immediateSystemMaintenanceMediaRepairRunner) RepairMedia(
 	context.Context,
 ) (maintenance.MediaRepairReport, error) {
+	r.calls.Add(1)
+	return r.report, nil
+}
+
+type immediateSystemMaintenanceStorageVerifyRunner struct {
+	report maintenance.VerifyReport
+	calls  atomic.Int32
+}
+
+func (r *immediateSystemMaintenanceStorageVerifyRunner) VerifyStorage(
+	context.Context,
+) (maintenance.VerifyReport, error) {
 	r.calls.Add(1)
 	return r.report, nil
 }
@@ -673,6 +686,127 @@ func TestMediaRepairMaintenanceWaitsForIntegrityLeaseAndReportsResidualIssues(t 
 	}
 }
 
+func TestStorageVerifyMaintenanceWaitsForJanitorLease(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
+	runner := &immediateSystemMaintenanceStorageVerifyRunner{
+		report: maintenance.VerifyReport{},
+	}
+	server := &Server{
+		DB:                             db,
+		BackgroundScheduler:            scheduler,
+		systemMaintenanceStorageVerify: runner,
+		systemMaintenanceHeartbeat:     20 * time.Millisecond,
+	}
+
+	janitorLease, err := sourceaccount.Acquire(
+		ctx,
+		db,
+		maintenanceLeaderJanitor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := server.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindStorageVerify,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		janitorLease.Close()
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := runner.calls.Load(); got != 0 {
+		janitorLease.Close()
+		t.Fatalf("storage verify ran while Janitor lease was held: calls=%d", got)
+	}
+
+	janitorLease.Close()
+	waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		run.ID,
+		meta.SystemMaintenanceStatusSuccess,
+	)
+	if got := runner.calls.Load(); got != 1 {
+		t.Fatalf("storage verify calls=%d want=1 after Janitor lease release", got)
+	}
+}
+
+func TestStorageVerifyMaintenanceUsesDurableContractAndReportsFindings(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
+	runner := &immediateSystemMaintenanceStorageVerifyRunner{
+		report: maintenance.VerifyReport{
+			ReferencedFiles:    10,
+			ReferencedVersions: 4,
+			BlobFiles:          9,
+			Missing: []maintenance.MissingBlob{
+				{NodeID: 1, StorageKey: "missing", Reason: "not_found"},
+			},
+			HashMismatches: []maintenance.HashMismatch{
+				{NodeID: 2, StorageKey: "bad-hash"},
+			},
+		},
+	}
+	server := &Server{
+		DB:                             db,
+		BackgroundScheduler:            scheduler,
+		systemMaintenanceStorageVerify: runner,
+		systemMaintenanceHeartbeat:     20 * time.Millisecond,
+	}
+
+	run, err := server.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindStorageVerify,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		run.ID,
+		meta.SystemMaintenanceStatusIssues,
+	)
+	if runner.calls.Load() != 1 {
+		t.Fatalf("storage verify calls=%d want=1", runner.calls.Load())
+	}
+	for _, want := range []string{
+		"10 个文件引用",
+		"4 个版本引用",
+		"9 个物理对象",
+		"发现 2 个一致性问题",
+	} {
+		if !strings.Contains(finished.Summary, want) {
+			t.Fatalf("storage verify summary=%q missing %q", finished.Summary, want)
+		}
+	}
+
+	tasks, err := server.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindStorageVerify),
+	)
+	if task == nil ||
+		task.State != "issues" ||
+		task.Progress.CurrentItem != finished.Summary ||
+		!backgroundTaskActionAllowed(
+			task.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected storage verify Task Center row: %+v", task)
+	}
+}
+
 func TestMediaVerifyMaintenanceRequiresFilesystemStorageCapability(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	server := &Server{DB: db}
@@ -690,6 +824,7 @@ func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
+		meta.SystemMaintenanceKindStorageVerify,
 	} {
 		_, err := server.requestSystemMaintenanceRun(
 			context.Background(),
