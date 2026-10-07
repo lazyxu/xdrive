@@ -58,7 +58,7 @@ import {
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
-import { XDriveMediaDetailsDialog } from './MediaGalleryDetails'
+import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
 import { XDriveShareDialog } from './ShareDialog'
 import type { XDriveShareDialogAdapter } from './ShareDialog'
@@ -2671,7 +2671,14 @@ export function XDriveMediaGallery({
   const collectionPreviewURL = isTrashSection ? undefined : loadPreviewURL
 
   return (
-    <Stack spacing={2} sx={{ minWidth: 0 }}>
+    <Stack
+      spacing={2}
+      sx={{
+        minWidth: 0,
+        pr: { lg: selected ? '380px' : 0 },
+        transition: 'padding-right 160ms ease',
+      }}
+    >
       <Stack direction="row" spacing={1} alignItems="center">
         {canBack && onBack ? (
           <Tooltip title="返回上一级">
@@ -3469,7 +3476,7 @@ export function XDriveMediaGallery({
         onClose={closeMediaPreview}
       />
 
-      <XDriveMediaDetailsDialog
+      <XDriveMediaDetailsInspector
         item={selected}
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={isTrashSection ? undefined : loadLivePhotoMotion}
@@ -3478,7 +3485,7 @@ export function XDriveMediaGallery({
         currentAlbum={currentAlbum}
         onAddToAlbum={isTrashSection ? undefined : onAddToAlbum}
         onRemoveFromAlbum={isTrashSection ? undefined : onRemoveFromAlbum}
-        onSetFavorite={onSetFavorite ? async (item, favorite) => {
+        onSetFavorite={!isTrashSection && onSetFavorite ? async (item, favorite) => {
           await onSetFavorite(item, favorite)
           setSelected((current) => (
             current?.node.id === item.node.id

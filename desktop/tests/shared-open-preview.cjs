@@ -79,7 +79,7 @@ test('Gallery single click keeps media details while selection gestures stay dis
     'const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)',
     'onOpen={openMediaItem}',
     'onPreview={openMediaPreview}',
-    '<XDriveMediaDetailsDialog',
+    '<XDriveMediaDetailsInspector',
     '<XDriveMediaGalleryViewer',
   ]) {
     assert.ok(gallery.includes(token), 'Gallery open/details split missing: ' + token)

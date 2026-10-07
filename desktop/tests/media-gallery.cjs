@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
+const sharedGalleryInspector = read('ui', 'shared', 'src', 'mui', 'MediaGalleryInspector.tsx')
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
@@ -22,6 +23,7 @@ const sharedVirtualCollectionController = read('ui', 'shared', 'src', 'mui', 'Vi
 const sharedGallery = [
   sharedGalleryMain,
   sharedGalleryDetails,
+  sharedGalleryInspector,
   sharedGalleryPreview,
   sharedGalleryUtils,
   sharedGalleryFilters,
@@ -663,10 +665,26 @@ test('Web exposes files, Gallery, Sync Folders, and Cloud Storage as first-class
 })
 
 
-test('Gallery delegates MediaDetails and preview-media helpers to internal modules', () => {
-  assert.ok(sharedGalleryMain.includes('<XDriveMediaDetailsDialog'), 'Gallery must render the internal media-details dialog')
-  assert.ok(sharedGalleryDetails.includes('export function XDriveMediaDetailsDialog'), 'missing MediaGallery details module')
-  assert.equal(sharedGalleryMain.includes('function MediaDetails('), false, 'MediaDetails implementation must not remain inline')
+test('Gallery media details use shared responsive Inspector and Drawer instead of a modal', () => {
+  assert.ok(sharedGalleryMain.includes('<XDriveMediaDetailsInspector'), 'Gallery must render the shared media inspector')
+  assert.ok(sharedGalleryDetails.includes('export function XDriveMediaDetailsContent'), 'missing reusable MediaGallery details content')
+  assert.equal(sharedGalleryDetails.includes('<Dialog'), false, 'MediaGallery details content must not own a modal Dialog')
+  assert.equal(sharedGalleryMain.includes('<XDriveMediaDetailsDialog'), false, 'legacy media-details Dialog must be removed')
+  assert.match(sharedGalleryMain, /pr: \{ lg: selected \? '380px' : 0 \}/)
+  assert.match(sharedGalleryMain, /onSetFavorite=\{!isTrashSection && onSetFavorite/)
+
+  for (const token of [
+    'export function XDriveMediaDetailsInspector',
+    "theme.breakpoints.up('lg')",
+    'data-xdrive-media-inspector',
+    '<Drawer',
+    'anchor="bottom"',
+    'data-xdrive-media-details-drawer',
+    '<XDriveMediaDetailsContent',
+  ]) {
+    assert.ok(sharedGalleryInspector.includes(token), `Gallery Inspector missing: ${token}`)
+  }
+
   for (const token of [
     'XDriveFilePreviewSurface',
     'XDriveLivePhotoSurface',

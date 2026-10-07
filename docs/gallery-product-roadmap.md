@@ -27,7 +27,7 @@ presentation and product intelligence.
 | 3 | Multi-select + shared Selection Toolbar | **Current** |
 | 4 | Gallery Trash + Favorites + media-type smart collections | **Current** |
 | 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | **Current** |
-| 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | Planned |
+| 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | **Current** |
 | 7 | Map Places | Planned |
 | 8 | Smart Search: object/scene + OCR, then semantic search | Planned |
 | 9 | Memories / Recent Days / Trips / On This Day | Planned |
@@ -194,3 +194,29 @@ filmstrip renders only already available entries around the active item (current
 
 No new preview endpoint, media token, Gallery-only raw stream, or persistent preview
 cache is introduced by Viewer 2.0.
+
+
+## Phase 6 — responsive media Inspector
+
+Media details no longer own a modal Dialog. Shared Gallery presentation is split into
+two responsibilities:
+
+- `XDriveMediaDetailsContent` owns the reusable photo/media information and editing
+  surface: Preview Engine presentation, Favorite, tags, manual people labels,
+  description, album membership, EXIF/GPS/video fields, and logical asset resources.
+- `XDriveMediaDetailsInspector` owns responsive presentation only. At `lg` and
+  wider it is a non-modal 360 px right-side Inspector; Gallery reserves horizontal
+  space so the photo collection remains usable while information is open. Narrower
+  layouts use a bottom MUI Drawer with the same content and business semantics.
+
+Viewer **Info** continues to exit the immersive Viewer and opens this Inspector/Drawer.
+There is no Web/Desktop details fork: both clients consume the same shared content and
+responsive container, while Preview transport remains platform-specific through the
+existing adapters.
+
+Gallery Trash keeps its Phase-4 capability boundary in the new Inspector. Deleted media
+may show thumbnails and indexed metadata, but Favorite/tag/people/description/album
+mutations and original Preview remain unavailable.
+
+Phase 7 should build Places on the existing local GPS/GeoNames projection and keep map
+presentation in the shared Gallery layer.
