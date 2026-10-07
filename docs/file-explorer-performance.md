@@ -28,6 +28,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
+| Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
@@ -183,6 +184,41 @@ Decision: **Accepted.** This removes range-count-scaled large response allocatio
 Regression budget: explicit hydration payload buffers must remain **O(1) per fetch callback**, capped at **4 MiB**; do not replace this with full-file buffering.
 
 Next action: continue the basic-path performance audit at FileOperation Copy/Move execution and FileExplorer thumbnail/cache transport; only optimize when a deterministic structural or measured hotspot is found.
+
+### Linux FUSE read destination-buffer reuse
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Linux FUSE file-handle read callback backed by the existing local temp file;
+- stable structural workload: **1 GiB sequential read** at **128 KiB per FUSE callback** = **8,192 callbacks**;
+- evidence method: source-level payload-buffer allocation count plus a regression that verifies the returned `ReadResult` aliases the incoming go-fuse `dest` buffer;
+- no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- every `linuxHandle.Read` allocates `make([]byte, len(dest))`;
+- the callback reads into that new slice and returns it through `fuse.ReadResultData`;
+- the named workload therefore creates **8,192 explicit payload buffers**, with **1 GiB cumulative requested payload allocation volume** across the sequence.
+
+AFTER / current:
+
+- `ReadAt` fills the go-fuse-provided `dest` slice directly;
+- `fuse.ReadResultData(dest[:n])` returns the same backing array;
+- explicit xDrive payload-buffer allocations in the callback are **8,192 -> 0** for the named workload;
+- this is cumulative allocation traffic, not 1 GiB of simultaneously retained memory;
+- the file handle mutex, offset semantics, partial EOF reads, backing temp file and returned payload bytes are unchanged.
+
+Decision: **Accepted.** go-fuse v2.5.1 explicitly permits constructing the read result from the incoming `dest` buffer, so the old copy buffer is unnecessary work on every Linux FUSE read.
+
+Regression budget: `linuxHandle.Read` must not allocate a second payload-sized read buffer. Returned non-empty data must alias the incoming `dest` backing array.
+
+Regression command:
+
+- `go test ./internal/mount -run '^TestLinuxHandleReadReusesFuseDestinationBuffer$' -count=1`.
+
+Next action: continue the basic sync/delete/download audit and only change paths with another deterministic SQL, request, allocation, or I/O multiplier.
 
 ### Windows change-journal baseline index contract
 

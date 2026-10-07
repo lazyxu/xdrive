@@ -302,12 +302,11 @@ func newLinuxHandle(ctx context.Context, cli *client.Client, node client.Node, f
 func (h *linuxHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	buf := make([]byte, len(dest))
-	n, err := h.file.ReadAt(buf, off)
+	n, err := h.file.ReadAt(dest, off)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, errno(err)
 	}
-	return fuse.ReadResultData(buf[:n]), 0
+	return fuse.ReadResultData(dest[:n]), 0
 }
 
 func (h *linuxHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
