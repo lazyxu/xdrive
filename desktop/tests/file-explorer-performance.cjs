@@ -406,6 +406,9 @@ test('FileExplorer 100k media renderer trace uses real Web/Desktop Chromium surf
   assert.ok(mediaTraceHarness.includes('peakRetainedItemsRef.current'), 'renderer trace must record retained sparse metadata')
   assert.ok(mediaTraceHarness.includes('for (const ratio of [0.5, 1, 0])'), 'renderer trace must cover midpoint/end/top jumps')
   assert.ok(mediaTraceHarness.includes('for (let step = 1; step <= 36; step += 1)'), 'renderer trace must cover continuous scrolling')
+  assert.ok(mediaTraceHarness.includes('__xdriveFileExplorerPerfMarqueeRequest'), 'renderer trace must request a real marquee interaction')
+  assert.ok(mediaTraceHarness.includes('marqueeDurationMs'), 'renderer trace must record marquee duration')
+  assert.ok(mediaTraceHarness.includes('marqueePeakSelectedItemsRef.current'), 'renderer trace must record marquee selection size')
 
   for (const [label, source] of [['Desktop', desktopRendererMain], ['Web', webRendererMain]]) {
     assert.ok(source.includes("VITE_XDRIVE_FILE_EXPLORER_PERF === '1'"), `${label} perf mode must be build-time gated`)
@@ -422,6 +425,8 @@ test('FileExplorer 100k media renderer trace uses real Web/Desktop Chromium surf
   assert.ok(mediaTraceRunner.includes("hasExplorer: Boolean(document.querySelector('[data-xdrive-file-explorer]'))"), 'Electron trace timeout diagnostics must report whether the FileExplorer mounted')
   assert.ok(mediaTraceRunner.includes("win.webContents.on('did-fail-load'"), 'Electron trace runner must expose load failures')
   assert.ok(mediaTraceRunner.includes('app.getAppMetrics()'), 'Electron trace runner must capture renderer process memory')
+  assert.ok(mediaTraceRunner.includes('win.webContents.sendInputEvent'), 'Electron trace runner must drive marquee through real Chromium mouse input')
+  assert.ok(mediaTraceRunner.includes('combined.marqueeSelectionChangeCount < 1'), 'trace runner must fail when marquee selection is not exercised')
   assert.ok(mediaTraceRunner.includes('combined.maxMountedItems >= 1000'), 'trace runner must enforce a bounded mounted-item budget')
   assert.ok(mediaTraceRunner.includes('combined.peakRetainedItems > 1200'), 'trace runner must enforce a bounded sparse-metadata budget')
   assert.ok(mediaTraceRunner.includes('combined.peakThumbnailInFlight > 6'), 'trace runner must enforce thumbnail concurrency <= 6')

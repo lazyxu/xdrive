@@ -28,6 +28,61 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('no-sandbox')
 
+async function driveMarqueeSelection(win, request) {
+  const startX = Math.round(request.startX)
+  const startY = Math.round(request.startY)
+  const endX = Math.round(request.endX)
+  const endY = Math.round(request.endY)
+  const steps = Math.max(1, Math.min(60, Math.round(request.steps || 1)))
+
+  win.webContents.sendInputEvent({
+    type: 'mouseMove',
+    x: startX,
+    y: startY,
+    movementX: 0,
+    movementY: 0,
+  })
+  win.webContents.sendInputEvent({
+    type: 'mouseDown',
+    x: startX,
+    y: startY,
+    button: 'left',
+    clickCount: 1,
+  })
+
+  let previousX = startX
+  let previousY = startY
+  for (let step = 1; step <= steps; step += 1) {
+    const ratio = step / steps
+    const x = Math.round(startX + (endX - startX) * ratio)
+    const y = Math.round(startY + (endY - startY) * ratio)
+    win.webContents.sendInputEvent({
+      type: 'mouseMove',
+      x,
+      y,
+      button: 'left',
+      movementX: x - previousX,
+      movementY: y - previousY,
+    })
+    previousX = x
+    previousY = y
+    await new Promise((resolve) => setTimeout(resolve, 16))
+  }
+
+  win.webContents.sendInputEvent({
+    type: 'mouseUp',
+    x: endX,
+    y: endY,
+    button: 'left',
+    clickCount: 1,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await win.webContents.executeJavaScript(
+    'window.__xdriveFileExplorerPerfMarqueeDone = true',
+    true,
+  )
+}
+
 async function waitForResult(win) {
   const deadline = Date.now() + 60_000
   let lastState = null
@@ -43,6 +98,8 @@ async function waitForResult(win) {
         readyState: document.readyState,
         hasExplorer: Boolean(document.querySelector('[data-xdrive-file-explorer]')),
         rootChildren: document.getElementById('root')?.childElementCount ?? -1,
+        marqueeRequest: window.__xdriveFileExplorerPerfMarqueeRequest || null,
+        marqueeDone: window.__xdriveFileExplorerPerfMarqueeDone || false,
       })`,
       true,
     )
@@ -52,6 +109,10 @@ async function waitForResult(win) {
     }
     if (state.error) {
       throw new Error(`${surface}/${scenario} renderer error: ${state.error}`)
+    }
+    if (state.marqueeRequest && !state.marqueeDone) {
+      await driveMarqueeSelection(win, state.marqueeRequest)
+      continue
     }
     if (state.result) return state.result
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -125,6 +186,11 @@ app.whenReady().then(async () => {
     }
     if (combined.peakThumbnailInFlight > 6) {
       throw new Error(`Thumbnail concurrency exceeded: ${combined.peakThumbnailInFlight}`)
+    }
+    if (combined.marqueeSelectionChangeCount < 1 || combined.marqueePeakSelectedItems < 1) {
+      throw new Error(
+        `Marquee trace did not select items: changes=${combined.marqueeSelectionChangeCount} peak=${combined.marqueePeakSelectedItems}`,
+      )
     }
     if (scenario === 'video-icons' && combined.thumbnailRequests !== 0) {
       throw new Error(`Video icon scenario unexpectedly requested ${combined.thumbnailRequests} thumbnails.`)
