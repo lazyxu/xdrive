@@ -473,6 +473,7 @@ function FileManager({
   }, [onAuthExpired])
 
   const fileUploads = useXDriveFileExplorerUploadController<File>({
+    lifecycleKey: username,
     trackProgress: true,
     fileName: (file) => file.name,
     fileSize: (file) => file.size,

@@ -98,6 +98,16 @@ export function useXDriveUploadConflictResolver() {
     pending?.resolve(decision)
   }, [])
 
+  const reset = useCallback(() => {
+    pendingRef.current?.resolve('cancel')
+    pendingRef.current = null
+    batchActiveRef.current = false
+    stickyPolicyRef.current = null
+    setFileName('')
+    setCanOverwrite(false)
+    setApplyToRemaining(false)
+  }, [])
+
   const beginBatch = useCallback(() => {
     if (batchActiveRef.current) return false
     batchActiveRef.current = true
@@ -133,14 +143,13 @@ export function useXDriveUploadConflictResolver() {
   }, [applyToRemaining, finish])
 
   useEffect(() => () => {
-    pendingRef.current?.resolve('cancel')
-    pendingRef.current = null
-    batchActiveRef.current = false
-  }, [])
+    reset()
+  }, [reset])
 
   return {
     beginBatch,
     endBatch,
+    reset,
     resolveConflict,
     dialogProps: {
       open: Boolean(fileName),
