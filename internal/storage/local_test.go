@@ -35,6 +35,29 @@ func TestLocalPutOpenDelete(t *testing.T) {
 	}
 }
 
+func TestLocalStatReadsMetadataWithoutOpeningPayload(t *testing.T) {
+	s, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(context.Background(), "7/docs/blob", strings.NewReader("hello")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := s.Stat(context.Background(), "7/docs/blob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size != 5 {
+		t.Fatalf("stat size=%d want=5", info.Size)
+	}
+	if info.ModifiedAt.IsZero() {
+		t.Fatal("stat modified time is zero")
+	}
+	if _, err := s.Stat(context.Background(), "7/docs/missing"); err == nil {
+		t.Fatal("expected missing stat to fail")
+	}
+}
+
 func TestLocalRejectsTraversal(t *testing.T) {
 	s, err := NewLocal(t.TempDir())
 	if err != nil {

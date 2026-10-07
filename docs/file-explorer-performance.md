@@ -32,6 +32,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
+| Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
@@ -73,6 +74,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Upload finalize keeps a reused source object open across fixed-block overwrite parts with the same source storage key. Interleaved newly uploaded staging chunks do not force that source handle to reopen; staging parts keep their existing per-object open/close behavior.
 - Multi-file and folder uploads batch conflict preflight for unique destination names, with at most **200 targets per request**. Shared orchestration consumes results in original file order, excludes duplicate destination names from upfront batching, and falls back to the legacy per-file preflight when the batch transport is unavailable or fails.
 - Archive prepare loads every descendant of a selected top-level directory with one owner-scoped recursive CTE per root, joining `xd_files` metadata in the same statement. Manifest DFS order, duplicate-root naming, stored-object validation, entry caps, and ZIP streaming remain unchanged.
+- Archive prepare stored-object validation uses `storage.ObjectStatProvider` when available. Production `storage.Local` validates existence and size with metadata-only `os.Stat` instead of opening/closing each payload before download; backends without metadata stat retain the existing `Open -> Stat -> Close` fallback.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
@@ -341,7 +343,38 @@ Decision: **Accepted.** This removes directory-count-scaled manifest SQL without
 
 Regression budget: each selected top-level directory root may use at most **1 recursive subtree SQL statement** regardless of descendant directory count; no reintroduction of per-directory child queries.
 
-Next action: continue with sync/delete basic-path performance and only change paths with deterministic request, SQL, allocation, or I/O amplification.
+Next action: archive prepare payload-handle amplification is handled by the metadata-stat contract below; continue basic download/sync/delete audits after that.
+
+### Archive prepare local metadata-stat contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- production `storage.Local` backend;
+- archive manifest containing **1,000 files** whose metadata sizes already exist in `xd_files`;
+- prepare still verifies every stored object exists and has the expected size before the ZIP data plane starts;
+- evidence method: deterministic provider fast-path test plus Local storage metadata test; wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- each file validation calls `Store.Open`, then `File.Stat`, then `File.Close`;
+- 1,000-file prepare therefore performs **1,000 payload-handle opens + 1,000 stats + 1,000 closes**;
+- ZIP streaming later opens each of the same 1,000 payload objects again to copy bytes.
+
+AFTER / current:
+
+- `storage.ObjectStatProvider` exposes metadata-only object inspection without changing the base `Store` interface;
+- production `storage.Local` implements it with one resolved-path `os.Stat`;
+- 1,000-file prepare performs **0 payload-handle opens + 1,000 stats + 0 payload-handle closes**;
+- actual ZIP streaming remains **1,000 payload opens** and still verifies the bytes written equal the prepared size;
+- backends that do not implement metadata stat keep the old `Open -> Stat -> Close` validation fallback.
+
+Decision: **Accepted.** This removes file-count-scaled payload-handle churn from archive preparation while preserving pre-stream existence/size validation and the existing ZIP data plane.
+
+Regression budget: on `storage.Local`, archive prepare must perform **zero payload opens for stored-object metadata validation**. Do not remove the existence/size check, and do not change the fallback contract for backends without `ObjectStatProvider`.
+
+Next action: continue the basic download path audit, then sync/delete, prioritizing deterministic repeated I/O or unbounded response work.
 
 ## Measured baselines and accepted/rejected changes
 
