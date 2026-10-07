@@ -146,7 +146,7 @@ export default function DesktopFileExplorer({
     crumbs: AgentCloudCrumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void

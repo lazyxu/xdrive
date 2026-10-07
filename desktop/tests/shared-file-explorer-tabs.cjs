@@ -32,7 +32,8 @@ test('shared navigation controller owns independent tab workspaces', () => {
     'const activateTab = async (id: string) =>',
     'const closeTab = async (id = activeTabID) =>',
     'const cycleTab = async (delta: -1 | 1) =>',
-    'await onLoadDirectory(target.id, targetCrumbs, targetTab.sort, targetTab.grouping)',
+    'const committed = await onLoadDirectory(',
+    'committed === false || !isNavigationCurrent(requestID)',
     'canNewTab: tabs.length < maxTabs',
     'canCloseTab: tabs.length > 1',
   ]) {

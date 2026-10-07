@@ -238,12 +238,14 @@ export function useXDriveCloudFilesController<
         true,
         effectiveGrouping,
       )
-      if (requestID !== directoryRequestRef.current) return
+      if (requestID !== directoryRequestRef.current) return false
       setItems([...range.items])
       if (nextCrumbs) setCrumbs([...nextCrumbs])
       activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
+      return true
     } catch (error) {
       if (requestID === directoryRequestRef.current) reportError(error)
+      return false
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }

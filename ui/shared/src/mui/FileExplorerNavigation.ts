@@ -60,7 +60,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     crumbs: TCrumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   onAfterNavigate?: (crumbs: TCrumb[]) => void
   maxTabs?: number
 }) {
@@ -190,8 +190,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!target) return
     const requestID = navigationIntentID ?? beginNavigation(activeTabID)
     if (!isNavigationCurrent(requestID)) return
-    await onLoadDirectory(target.id, nextCrumbs, sort, grouping)
-    if (!isNavigationCurrent(requestID)) return
+    const committed = await onLoadDirectory(target.id, nextCrumbs, sort, grouping)
+    if (committed === false || !isNavigationCurrent(requestID)) return
     if (record) recordHistory(nextCrumbs)
     finishNavigation(nextCrumbs)
   }
@@ -203,8 +203,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = next?.at(-1)
     if (!target) return
     const requestID = beginNavigation(activeTabID)
-    await onLoadDirectory(target.id, next, sort, grouping)
-    if (!isNavigationCurrent(requestID)) return
+    const committed = await onLoadDirectory(target.id, next, sort, grouping)
+    if (committed === false || !isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
   }
@@ -216,8 +216,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = next?.at(-1)
     if (!target) return
     const requestID = beginNavigation(activeTabID)
-    await onLoadDirectory(target.id, next, sort, grouping)
-    if (!isNavigationCurrent(requestID)) return
+    const committed = await onLoadDirectory(target.id, next, sort, grouping)
+    if (committed === false || !isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
   }
@@ -239,8 +239,13 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const id = `tab-${nextTabIDRef.current++}`
     const nextTab = createNavigationTab<TCrumb>(id, viewMode, nextCrumbs)
     const requestID = beginNavigation(id)
-    await onLoadDirectory(target.id, nextCrumbs, nextTab.sort, nextTab.grouping)
-    if (!isNavigationCurrent(requestID)) return false
+    const committed = await onLoadDirectory(
+      target.id,
+      nextCrumbs,
+      nextTab.sort,
+      nextTab.grouping,
+    )
+    if (committed === false || !isNavigationCurrent(requestID)) return false
     setTabs((currentTabs) => [...currentTabs, nextTab])
     setActiveTabID(id)
     return true
@@ -260,8 +265,13 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = targetCrumbs?.at(-1)
     if (!target || !targetCrumbs) return
     const requestID = beginNavigation(id)
-    await onLoadDirectory(target.id, targetCrumbs, targetTab.sort, targetTab.grouping)
-    if (!isNavigationCurrent(requestID)) return
+    const committed = await onLoadDirectory(
+      target.id,
+      targetCrumbs,
+      targetTab.sort,
+      targetTab.grouping,
+    )
+    if (committed === false || !isNavigationCurrent(requestID)) return
     setActiveTabID(id)
     finishNavigation(targetCrumbs)
   }
@@ -286,8 +296,13 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     if (!targetTab || !target || !targetCrumbs) return
 
     const requestID = beginNavigation(targetTab.id)
-    await onLoadDirectory(target.id, targetCrumbs, targetTab.sort, targetTab.grouping)
-    if (!isNavigationCurrent(requestID)) return
+    const committed = await onLoadDirectory(
+      target.id,
+      targetCrumbs,
+      targetTab.sort,
+      targetTab.grouping,
+    )
+    if (committed === false || !isNavigationCurrent(requestID)) return
     setTabs((currentTabs) => currentTabs.filter((tab) => tab.id !== id))
     setActiveTabID(targetTab.id)
   }

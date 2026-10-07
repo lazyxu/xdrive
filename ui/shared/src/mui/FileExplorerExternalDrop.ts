@@ -34,7 +34,7 @@ export type XDriveFileExplorerExternalDropControllerOptions<
     crumbs: TCrumb[],
     sort: TSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
 }
 
 export function useXDriveFileExplorerExternalDropController<

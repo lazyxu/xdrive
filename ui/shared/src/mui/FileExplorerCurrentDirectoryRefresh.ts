@@ -20,7 +20,7 @@ export function useXDriveFileExplorerCurrentDirectoryRefresh<
     crumbs: TCrumb[],
     sort: TSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
 }) {
   const contextRef = useRef({
     currentID,
