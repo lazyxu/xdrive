@@ -1190,7 +1190,7 @@ export default function App({
       items: [
         {
           key: 'overview',
-          label: '概览',
+          label: '主页',
           icon: <DashboardRoundedIcon fontSize="small" />,
         },
       ],
@@ -1834,11 +1834,19 @@ export default function App({
         {view === 'overview' && (
           <DesktopOverviewPage
             status={status}
-            hello={agent.hello}
+            quota={cloudQuota}
+            activeTaskCount={taskCenter.badge ?? 0}
+            recentSupported={fileRecentSupported}
+            favoritesSupported={fileFavoritesSupported}
             openFolderLoading={busy === 'folder'}
             onOpenFolder={() => {
               void run('folder', () => window.xdriveDesktop.agent.openFolder())
             }}
+            onOpenFiles={() => setView('files')}
+            onOpenGallery={() => setView('gallery')}
+            onOpenTransfers={() => setView('transfers')}
+            onOpenConflicts={() => setView('conflicts')}
+            onError={setError}
           />
         )}
 

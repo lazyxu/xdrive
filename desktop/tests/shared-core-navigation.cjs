@@ -103,7 +103,8 @@ test('Web and Desktop consume the same shared WorkspaceSidebar', () => {
 
 test('Desktop extension destinations all flow through section models', () => {
   assert.ok(desktop.includes('const desktopSidebarSections: XDriveSidebarSectionModel[] = ['))
-  assert.ok(desktop.includes("key: 'overview',\n      placement: 'before-core'"), 'Overview should inject before the shared core')
+  assert.ok(desktop.includes("key: 'overview',\n      placement: 'before-core'"), 'Home should inject before the shared core')
+  assert.ok(desktop.includes("label: '主页'"), 'Desktop overview route should present as 主页')
   assert.ok(desktop.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Conflicts should inject after the shared core')
   assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Diagnostics should inject into the bottom extension slot')
   assert.equal(desktop.includes('leadingItems='), false, 'Desktop should not use a parallel leading-items contract')

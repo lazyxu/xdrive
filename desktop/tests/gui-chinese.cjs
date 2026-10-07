@@ -104,7 +104,7 @@ test('desktop renderer default export is the full App root, not a helper compone
 
 test('desktop GUI defaults to Chinese', () => {
   for (const text of [
-    '概览',
+    '主页',
     '云端文件',
     '同步文件夹',
     '立即扫描',
@@ -228,7 +228,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.ok(rendererApp.includes("key: 'overview',\n      placement: 'before-core'"), 'Desktop overview should be injected before shared core navigation')
   assert.ok(rendererApp.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Desktop conflicts should be injected after shared core navigation')
   assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Desktop diagnostics should use the bottom extension slot')
-  assert.ok(rendererApp.includes("label: '概览'"), 'Desktop overview extension is missing')
+  assert.ok(rendererApp.includes("label: '主页'"), 'Desktop home extension is missing')
   assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
   assert.ok(rendererApp.includes("label: '诊断'"), 'Desktop diagnostics extension is missing')
   assert.ok(rendererApp.includes('badge: status?.conflict_count'), 'Desktop conflict badge is missing')
