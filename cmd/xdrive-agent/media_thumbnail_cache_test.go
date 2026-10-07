@@ -19,7 +19,7 @@ func TestAgentMediaThumbnailCacheKeyIncludesDerivativeVersion(t *testing.T) {
 		SessionID: "session",
 	}
 	if got, want := agentMediaThumbnailCacheKey(cfg, 7),
-		"https://drive.example.test\x00alice\x00session\x00v2\x007"; got != want {
+		"https://drive.example.test\x00alice\x00session\x00v3\x007"; got != want {
 		t.Fatalf("cache key=%q want=%q", got, want)
 	}
 }

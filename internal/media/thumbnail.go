@@ -15,8 +15,8 @@ const (
 	MaxThumbnailPixels     = 100_000_000
 	DefaultThumbnailEdge   = 512
 	AnalysisPreviewEdge    = 1280
-	ThumbnailVersion       = 2
-	AnalysisPreviewVersion = 2
+	ThumbnailVersion       = 3
+	AnalysisPreviewVersion = 3
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
 )
 
@@ -145,6 +145,7 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 		int64(cfg.Width)*int64(cfg.Height) > MaxThumbnailPixels {
 		return out, errors.New("image dimensions exceed thumbnail safety limit")
 	}
+	orientation = thumbnailSourceOrientation(r, format, orientation)
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return out, err
 	}
@@ -152,7 +153,7 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 	if err != nil {
 		return out, err
 	}
-	src = orientImage(src, thumbnailDecodeOrientation(format, orientation))
+	src = orientImage(src, orientation)
 
 	bounds := src.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
@@ -201,6 +202,20 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 		SourceKind: format,
 	}
 	return out, nil
+}
+
+func thumbnailSourceOrientation(
+	r io.ReadSeeker,
+	format string,
+	orientation int,
+) int {
+	orientation = thumbnailDecodeOrientation(format, orientation)
+	if strings.EqualFold(strings.TrimSpace(format), "avif") {
+		if containerOrientation := avifContainerOrientation(r); containerOrientation > 1 {
+			return containerOrientation
+		}
+	}
+	return orientation
 }
 
 func thumbnailDecodeOrientation(format string, orientation int) int {

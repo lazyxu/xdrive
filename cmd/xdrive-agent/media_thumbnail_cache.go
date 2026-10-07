@@ -16,7 +16,7 @@ const (
 	agentMediaThumbnailCacheMaxEntries = 256
 	agentMediaThumbnailCacheMaxBytes   = int64(32 << 20)
 	// Bump when thumbnail pixels can change without a Node revision change.
-	agentMediaThumbnailCacheVersion = "v2"
+	agentMediaThumbnailCacheVersion = "v3"
 )
 
 type agentMediaThumbnailFetch struct {
