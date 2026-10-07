@@ -11,6 +11,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceaccount"
+	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
 )
 
@@ -18,6 +19,7 @@ const (
 	systemMaintenanceReconcileInterval        = 30 * time.Second
 	systemMaintenanceDefaultHeartbeatInterval = 5 * time.Second
 	maintenanceLeaderSourceIntegrity          = "system-maintenance:source-integrity"
+	maintenanceLeaderMediaIntegrity           = "system-maintenance:media-integrity"
 )
 
 var errSystemMaintenanceUnsupported = errors.New("system maintenance task is unsupported")
@@ -30,17 +32,23 @@ type systemMaintenanceSourceRepairRunner interface {
 	RepairSources(context.Context) (maintenance.SourceRepairReport, error)
 }
 
+type systemMaintenanceMediaVerifyRunner interface {
+	VerifyMedia(context.Context) (maintenance.MediaVerifyReport, error)
+}
+
 func systemMaintenanceInteractiveKinds() []string {
 	return []string{
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
+		meta.SystemMaintenanceKindMediaVerify,
 	}
 }
 
 func systemMaintenanceInteractiveKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
 	case meta.SystemMaintenanceKindSourceVerify,
-		meta.SystemMaintenanceKindSourceRepair:
+		meta.SystemMaintenanceKindSourceRepair,
+		meta.SystemMaintenanceKindMediaVerify:
 		return true
 	default:
 		return false
@@ -53,6 +61,8 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseSourceVerify
 	case meta.SystemMaintenanceKindSourceRepair:
 		return meta.SystemMaintenancePhaseSourceRepair
+	case meta.SystemMaintenanceKindMediaVerify:
+		return meta.SystemMaintenancePhaseMediaVerify
 	default:
 		return ""
 	}
@@ -71,6 +81,8 @@ func systemMaintenanceLeaderKey(kind string) string {
 	case meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair:
 		return maintenanceLeaderSourceIntegrity
+	case meta.SystemMaintenanceKindMediaVerify:
+		return maintenanceLeaderMediaIntegrity
 	default:
 		return ""
 	}
@@ -535,6 +547,24 @@ func (s *Server) executeSystemMaintenanceTask(
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
+	case meta.SystemMaintenanceKindMediaVerify:
+		report, err := s.verifyMediaForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		summary := fmt.Sprintf(
+			"%d 个媒体元数据 · %d 个分组 · %d 个派生资源 · %d 个缩略图 · 发现 %d 个一致性问题",
+			report.Metadata,
+			report.Groups,
+			report.DerivedResources,
+			report.Thumbnails,
+			len(report.Issues),
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if len(report.Issues) != 0 {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
 	default:
 		return "", "", errSystemMaintenanceUnsupported
 	}
@@ -556,6 +586,39 @@ func (s *Server) repairSourcesForSystemMaintenance(
 		return s.systemMaintenanceSourceRepair.RepairSources(ctx)
 	}
 	return maintenance.RepairSources(ctx, s.DB, false)
+}
+
+func (s *Server) verifyMediaForSystemMaintenance(
+	ctx context.Context,
+) (maintenance.MediaVerifyReport, error) {
+	if s.systemMaintenanceMediaVerify != nil {
+		return s.systemMaintenanceMediaVerify.VerifyMedia(ctx)
+	}
+	root, err := s.systemMaintenanceFilesystemRoot()
+	if err != nil {
+		return maintenance.MediaVerifyReport{}, err
+	}
+	return maintenance.VerifyMediaWithStorageRoot(
+		s.DB.WithContext(ctx),
+		root,
+	)
+}
+
+func (s *Server) systemMaintenanceFilesystemRoot() (string, error) {
+	if s == nil || s.Store == nil {
+		return "", errors.New("system maintenance storage is unavailable")
+	}
+	provider, ok := s.Store.(storage.FilesystemRootProvider)
+	if !ok {
+		return "", errors.New(
+			"system maintenance requires a filesystem-backed storage root",
+		)
+	}
+	root := strings.TrimSpace(provider.FilesystemRoot())
+	if root == "" {
+		return "", errors.New("system maintenance filesystem root is unavailable")
+	}
+	return root, nil
 }
 
 func (s *Server) finishSystemMaintenanceState(

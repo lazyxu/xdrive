@@ -309,7 +309,10 @@ The server exposes background work as a read model without introducing a generic
   for `system.maintenance.*` is intentionally hidden from Task Center because the durable maintenance row is
   authoritative and must not be duplicated by an ephemeral runtime row. Source verify and repair share one
   cluster-wide `source-integrity` lease, so a repair can queue behind a verify (or vice versa) but the two
-  never execute concurrently against the same Source/SourceItem/SyncRun integrity domain.
+  never execute concurrently against the same Source/SourceItem/SyncRun integrity domain. `media.verify`
+  uses the same durable lifecycle with its own cluster-wide `media-integrity` lease and requires a storage
+  backend that explicitly exposes a local filesystem root, preserving the CLI verifier's byte/cache checks
+  instead of silently degrading to database-only verification.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
   active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable

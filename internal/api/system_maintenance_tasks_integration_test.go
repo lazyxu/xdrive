@@ -59,6 +59,18 @@ func (r *immediateSystemMaintenanceSourceRepairRunner) RepairSources(
 	return r.report, nil
 }
 
+type immediateSystemMaintenanceMediaVerifyRunner struct {
+	report maintenance.MediaVerifyReport
+	calls  atomic.Int32
+}
+
+func (r *immediateSystemMaintenanceMediaVerifyRunner) VerifyMedia(
+	context.Context,
+) (maintenance.MediaVerifyReport, error) {
+	r.calls.Add(1)
+	return r.report, nil
+}
+
 func newSystemMaintenanceTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -431,12 +443,92 @@ func TestSourceRepairMaintenanceWaitsForIntegrityLeaseAndReportsResidualIssues(t
 	}
 }
 
+func TestMediaVerifyMaintenanceUsesDurableContractAndReportsFindings(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
+	runner := &immediateSystemMaintenanceMediaVerifyRunner{
+		report: maintenance.MediaVerifyReport{
+			Metadata:         8,
+			Groups:           2,
+			DerivedResources: 3,
+			Thumbnails:       5,
+			Issues: []maintenance.MediaIntegrityIssue{
+				{NodeID: 11, Reason: "thumbnail_storage_missing"},
+			},
+		},
+	}
+	server := &Server{
+		DB:                           db,
+		BackgroundScheduler:          scheduler,
+		systemMaintenanceMediaVerify: runner,
+		systemMaintenanceHeartbeat:   20 * time.Millisecond,
+	}
+
+	run, err := server.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindMediaVerify,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		run.ID,
+		meta.SystemMaintenanceStatusIssues,
+	)
+	if runner.calls.Load() != 1 {
+		t.Fatalf("media verify calls=%d want=1", runner.calls.Load())
+	}
+	for _, want := range []string{
+		"8 个媒体元数据",
+		"2 个分组",
+		"3 个派生资源",
+		"5 个缩略图",
+		"发现 1 个一致性问题",
+	} {
+		if !strings.Contains(finished.Summary, want) {
+			t.Fatalf("media verify summary=%q missing %q", finished.Summary, want)
+		}
+	}
+
+	tasks, err := server.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindMediaVerify),
+	)
+	if task == nil ||
+		task.State != "issues" ||
+		task.Progress.CurrentItem != finished.Summary ||
+		!backgroundTaskActionAllowed(
+			task.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected media verify Task Center row: %+v", task)
+	}
+}
+
+func TestMediaVerifyMaintenanceRequiresFilesystemStorageCapability(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	server := &Server{DB: db}
+	_, err := server.verifyMediaForSystemMaintenance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "storage") {
+		t.Fatalf("media verify storage capability error=%v", err)
+	}
+}
+
 func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	server := &Server{DB: db}
 	for _, kind := range []string{
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
+		meta.SystemMaintenanceKindMediaVerify,
 	} {
 		_, err := server.requestSystemMaintenanceRun(
 			context.Background(),

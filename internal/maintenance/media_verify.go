@@ -184,9 +184,16 @@ func verifyMedia(db *gorm.DB, storageRoot string) (MediaVerifyReport, error) {
 	}
 
 	if storageRoot != "" {
-		verifyThumbnailStorage(storageRoot, metadata, func(issue MediaIntegrityIssue) {
-			report.Issues = append(report.Issues, issue)
-		})
+		if err := verifyThumbnailStorage(
+			ctx,
+			storageRoot,
+			metadata,
+			func(issue MediaIntegrityIssue) {
+				report.Issues = append(report.Issues, issue)
+			},
+		); err != nil {
+			return report, err
+		}
 	}
 	sortMediaIntegrityIssues(report.Issues)
 	return report, nil
@@ -771,11 +778,15 @@ func verifyThumbnailMetadata(
 }
 
 func verifyThumbnailStorage(
+	ctx context.Context,
 	root string,
 	metadata []meta.MediaMetadata,
 	add func(MediaIntegrityIssue),
-) {
+) error {
 	for _, row := range metadata {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		rawKey := strings.TrimSpace(row.ThumbnailKey)
 		if rawKey == "" {
 			continue
@@ -848,4 +859,5 @@ func verifyThumbnailStorage(
 			add(issue)
 		}
 	}
+	return nil
 }

@@ -178,8 +178,8 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 4 {
-		t.Fatalf("maintenance tasks=%d want=4: %+v", len(tasks), tasks)
+	if len(tasks) != 5 {
+		t.Fatalf("maintenance tasks=%d want=5: %+v", len(tasks), tasks)
 	}
 	janitor := backgroundTaskByID(
 		tasks,
@@ -220,6 +220,17 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 			backgroundTaskActionRun,
 		) {
 		t.Fatalf("unexpected source repair capability row: %+v", sourceRepair)
+	}
+	mediaVerify := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindMediaVerify),
+	)
+	if mediaVerify == nil || mediaVerify.State != "idle" ||
+		!backgroundTaskActionAllowed(
+			mediaVerify.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected media verify capability row: %+v", mediaVerify)
 	}
 
 	oldFinished := time.Now().UTC().Add(

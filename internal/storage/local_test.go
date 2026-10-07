@@ -195,3 +195,19 @@ func TestLocalWalkStagingIsLexicalAndStopsEarly(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalReportsFilesystemRoot(t *testing.T) {
+	root := t.TempDir()
+	local, err := NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var provider FilesystemRootProvider = local
+	if got := provider.FilesystemRoot(); got != want {
+		t.Fatalf("filesystem root=%q want=%q", got, want)
+	}
+}

@@ -171,6 +171,7 @@ const (
 	SystemMaintenanceKindStorageSampler = "storage_sampler"
 	SystemMaintenanceKindSourceVerify   = "source_verify"
 	SystemMaintenanceKindSourceRepair   = "source_repair"
+	SystemMaintenanceKindMediaVerify    = "media_verify"
 
 	SystemMaintenanceStatusQueued          = "queued"
 	SystemMaintenanceStatusRunning         = "running"
@@ -191,6 +192,7 @@ const (
 	SystemMaintenancePhaseStorageSample           = "storage_sample"
 	SystemMaintenancePhaseSourceVerify            = "source_verify"
 	SystemMaintenancePhaseSourceRepair            = "source_repair"
+	SystemMaintenancePhaseMediaVerify             = "media_verify"
 	SystemMaintenancePhaseFinished                = "finished"
 )
 

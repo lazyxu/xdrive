@@ -1,6 +1,8 @@
 package maintenance
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -241,9 +243,16 @@ func TestVerifyThumbnailStorageChecksPresenceAndJPEGMagic(t *testing.T) {
 	}
 	check := func() []MediaIntegrityIssue {
 		var issues []MediaIntegrityIssue
-		verifyThumbnailStorage(root, []meta.MediaMetadata{row}, func(issue MediaIntegrityIssue) {
-			issues = append(issues, issue)
-		})
+		if err := verifyThumbnailStorage(
+			context.Background(),
+			root,
+			[]meta.MediaMetadata{row},
+			func(issue MediaIntegrityIssue) {
+				issues = append(issues, issue)
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
 		return issues
 	}
 
@@ -295,5 +304,23 @@ func TestVerifyMediaStateRejectsLegacyLivePhotoEvidenceKey(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("legacy live photo evidence key was not rejected: %+v", report.Issues)
+	}
+}
+
+func TestVerifyThumbnailStorageHonorsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := verifyThumbnailStorage(
+		ctx,
+		t.TempDir(),
+		[]meta.MediaMetadata{{
+			OwnerID:      1,
+			NodeID:       2,
+			ThumbnailKey: ".xdrive-media/thumbnails/aa/test-512.jpg",
+		}},
+		func(MediaIntegrityIssue) {},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("verify thumbnail storage error=%v want context.Canceled", err)
 	}
 }
