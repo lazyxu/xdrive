@@ -1256,6 +1256,30 @@ func (c *Client) DownloadRange(ctx context.Context, id uint64, offset, length in
 	return io.ReadAll(io.LimitReader(resp.Body, length))
 }
 
+func (c *Client) DownloadRangeInto(ctx context.Context, id uint64, offset int64, dst []byte) (int, error) {
+	if len(dst) == 0 {
+		return 0, nil
+	}
+	req, err := c.request(ctx, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/content", id), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, offset+int64(len(dst))-1))
+	resp, err := c.do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+		return 0, responseError(resp)
+	}
+	n, readErr := io.ReadFull(resp.Body, dst)
+	if readErr == nil || errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+		return n, nil
+	}
+	return n, readErr
+}
+
 const walkChildrenPageLimit = 500
 
 func (c *Client) Walk(ctx context.Context) (map[string]Node, error) {
