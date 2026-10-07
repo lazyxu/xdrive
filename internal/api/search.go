@@ -39,12 +39,13 @@ type searchPageDTO struct {
 }
 
 type searchRangeDTO struct {
-	Items      []searchResultDTO `json:"items"`
-	TotalCount int64             `json:"total_count"`
-	Offset     int               `json:"offset"`
-	Limit      int               `json:"limit"`
-	Sort       string            `json:"sort"`
-	Order      string            `json:"order"`
+	Items      []searchResultDTO           `json:"items"`
+	TotalCount int64                       `json:"total_count"`
+	Offset     int                         `json:"offset"`
+	Limit      int                         `json:"limit"`
+	Sort       string                      `json:"sort"`
+	Order      string                      `json:"order"`
+	Groups     []fileExplorerGroupIndexDTO `json:"groups,omitempty"`
 }
 
 type searchCursor struct {
@@ -263,6 +264,11 @@ func (s *Server) searchNodes(c *gin.Context) {
 		}
 	}
 
+	grouping, ok := parseFileExplorerGrouping(c, rangeRequested)
+	if !ok {
+		return
+	}
+
 	var cursor searchCursor
 	if !rangeRequested {
 		if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
@@ -286,7 +292,7 @@ func (s *Server) searchNodes(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	if rangeRequested {
-		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, filters, offset, limit, sortKey, order)
+		page, err := s.searchNodeRange(ctx, userID(c), query, nodeType, filters, grouping, offset, limit, sortKey, order)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "search failed")
 			return
@@ -687,26 +693,37 @@ func (s *Server) searchNodeRange(
 	ownerID uint64,
 	query, nodeType string,
 	filters searchFilters,
+	grouping fileExplorerGrouping,
 	offset, limit int,
 	sortKey, order string,
 ) (searchRangeDTO, error) {
 	baseSQL, baseArgs := searchNodeBaseQuery(ownerID, query, nodeType, filters)
-	rankExpr, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
+	_, sortExpr, pathExpr, direction := searchNodeOrderExpressions(
 		"search_page",
 		sortKey,
 		order,
+	)
+	groupFields := fileExplorerGroupFields{
+		Type:    "search_page.type",
+		Name:    "search_page.name",
+		Updated: "search_page.updated_at",
+		Size:    "search_page.size",
+	}
+	orderBy := fmt.Sprintf(
+		"%s%s %s, %s ASC, search_page.id ASC",
+		fileExplorerItemOrderPrefix(groupFields, grouping),
+		sortExpr,
+		direction,
+		pathExpr,
 	)
 	sqlText := fmt.Sprintf(`SELECT search_page.*, COUNT(*) OVER() AS total_count
 FROM (
 %s
 ) AS search_page
-ORDER BY %s ASC, %s %s, %s ASC, search_page.id ASC
+ORDER BY %s
 OFFSET ? LIMIT ?`,
 		baseSQL,
-		rankExpr,
-		sortExpr,
-		direction,
-		pathExpr,
+		orderBy,
 	)
 	args := append(append([]any{}, baseArgs...), offset, limit)
 
@@ -732,6 +749,33 @@ OFFSET ? LIMIT ?`,
 		totalCount = count.TotalCount
 	}
 
+	var groups []fileExplorerGroupIndexDTO
+	if offset == 0 && grouping.Group != "none" {
+		groupFields := fileExplorerGroupFields{
+			Type:    "search_group.type",
+			Name:    "search_group.name",
+			Updated: "search_group.updated_at",
+			Size:    "search_group.size",
+		}
+		groupKey := fileExplorerGroupKeyExpr(groupFields, grouping)
+		groupSQL := fmt.Sprintf(`SELECT %s AS group_key, COUNT(*) AS item_count
+FROM (
+%s
+) AS search_group
+GROUP BY %s
+ORDER BY %s`,
+			groupKey,
+			baseSQL,
+			groupKey,
+			fileExplorerGroupOrder(groupFields, grouping),
+		)
+		var groupRows []fileExplorerGroupRow
+		if err := s.DB.WithContext(ctx).Raw(groupSQL, baseArgs...).Scan(&groupRows).Error; err != nil {
+			return searchRangeDTO{}, err
+		}
+		groups = fileExplorerGroupIndexes(groupRows)
+	}
+
 	items, err := searchRowsToResults(rows)
 	if err != nil {
 		return searchRangeDTO{}, err
@@ -743,6 +787,7 @@ OFFSET ? LIMIT ?`,
 		Limit:      limit,
 		Sort:       sortKey,
 		Order:      order,
+		Groups:     groups,
 	}, nil
 }
 

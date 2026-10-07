@@ -48,7 +48,10 @@ import type {
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
 } from '@xdrive/ui/mui'
-import type { XDriveFileExplorerSearchSourceOption } from '@xdrive/shared'
+import type {
+  XDriveFileExplorerGrouping,
+  XDriveFileExplorerSearchSourceOption,
+} from '@xdrive/shared'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
@@ -138,7 +141,12 @@ export default function DesktopFileExplorer({
   crumbs: AgentCloudCrumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<AgentCloudNode> | null
   loading: boolean
-  onLoadDirectory: (id: number, crumbs: AgentCloudCrumb[], sort: XDriveFileExplorerSort) => Promise<void>
+  onLoadDirectory: (
+    id: number,
+    crumbs: AgentCloudCrumb[],
+    sort: XDriveFileExplorerSort,
+    grouping: XDriveFileExplorerGrouping,
+  ) => Promise<void>
   onOpenTrash: () => void
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
@@ -228,6 +236,8 @@ export default function DesktopFileExplorer({
     setViewMode,
     sort,
     changeSort,
+    grouping,
+    changeGrouping,
     refresh,
     beginNavigationIntent,
     isNavigationIntentCurrent,
@@ -260,7 +270,7 @@ export default function DesktopFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     onLoadDirectory,
-    loadSearchRange: async (query, filters, searchSort, offset, limit) => {
+    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
       const result = await window.xdriveDesktop.agent.cloudSearchRange(
         query,
         offset,
@@ -268,6 +278,7 @@ export default function DesktopFileExplorer({
         searchSort.key,
         searchSort.direction,
         filters,
+        searchGrouping,
       )
       if (!result.ok) throw new Error(result.error.message)
       return {
@@ -275,6 +286,7 @@ export default function DesktopFileExplorer({
         totalCount: result.data.total_count,
         offset: result.data.offset,
         limit: result.data.limit,
+        groups: result.data.groups,
       }
     },
     loadRoot: async () => {
@@ -300,6 +312,7 @@ export default function DesktopFileExplorer({
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,
+    currentGrouping: grouping,
     refreshDirectory: onLoadDirectory,
   })
 
@@ -1038,6 +1051,7 @@ export default function DesktopFileExplorer({
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,
+    currentGrouping: grouping,
     nodeByID,
     disabled: explorerActionBusy,
     folderDropEnabled: uploadConflictSupported,
@@ -1170,6 +1184,8 @@ export default function DesktopFileExplorer({
         onViewModeChange={setViewMode}
         sort={sort}
         onSortChange={changeSort}
+        grouping={grouping}
+        onGroupingChange={changeGrouping}
         externallySorted={externallySorted}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}

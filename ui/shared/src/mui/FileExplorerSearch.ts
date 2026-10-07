@@ -10,6 +10,13 @@ import {
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
 } from '../file-explorer-search'
+import {
+  xDriveFileExplorerGroupingSignature,
+} from '../file-explorer-grouping'
+import type {
+  XDriveFileExplorerGroupIndex,
+  XDriveFileExplorerGrouping,
+} from '../file-explorer-grouping'
 import type {
   XDriveFileExplorerSearchFilters,
 } from '../file-explorer-search'
@@ -27,6 +34,7 @@ export type XDriveFileExplorerSearchRange<
   totalCount: number
   offset: number
   limit: number
+  groups?: readonly XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveFileExplorerSearchLoader<
@@ -34,6 +42,7 @@ export type XDriveFileExplorerSearchLoader<
 > = (
   query: string,
   filters: XDriveFileExplorerSearchFilters,
+  grouping: XDriveFileExplorerGrouping,
   sort: XDriveFileExplorerSort,
   offset: number,
   limit: number,
@@ -43,6 +52,7 @@ type XDriveFileExplorerWorkspaceSearchEntry = {
   value: string
   query: string
   filters: XDriveFileExplorerSearchFilters
+  groups: readonly XDriveFileExplorerGroupIndex[]
   sortSignature: string
   loading: boolean
 }
@@ -52,6 +62,8 @@ type XDriveFileExplorerSearchTarget = {
   query: string
   filters: XDriveFileExplorerSearchFilters
   filterSignature: string
+  grouping: XDriveFileExplorerGrouping
+  groupingSignature: string
   sort: XDriveFileExplorerSort
   sortSignature: string
   requestID: number
@@ -62,6 +74,7 @@ function idleWorkspaceSearchEntry(): XDriveFileExplorerWorkspaceSearchEntry {
     value: '',
     query: '',
     filters: {},
+    groups: [],
     sortSignature: '',
     loading: false,
   }
@@ -74,6 +87,7 @@ function searchQueryKey(target: XDriveFileExplorerSearchTarget | null) {
     target.workspaceKey,
     target.query,
     target.filterSignature,
+    target.groupingSignature,
     target.sortSignature,
     target.requestID,
   ].join(':')
@@ -84,11 +98,13 @@ export function useXDriveFileExplorerSearch<
 >({
   loadRange,
   sort,
+  grouping,
   onError,
   workspaceKey = 'default',
 }: {
   loadRange: XDriveFileExplorerSearchLoader<TResult>
   sort: XDriveFileExplorerSort
+  grouping: XDriveFileExplorerGrouping
   onError: (error: unknown) => void
   workspaceKey?: string
 }) {
@@ -101,6 +117,7 @@ export function useXDriveFileExplorerSearch<
   const searchValue = entry.value
   const sortSignature = searchSortSignature(sort)
   const filterSignature = xDriveFileExplorerSearchFiltersSignature(entry.filters)
+  const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
   const filterActive = xDriveFileExplorerSearchFiltersActive(entry.filters)
   const searchActive = Boolean(entry.query || filterActive)
 
@@ -143,6 +160,7 @@ export function useXDriveFileExplorerSearch<
     return loadRange(
       active.query,
       active.filters,
+      active.grouping,
       active.sort,
       range.offset,
       range.limit,
@@ -160,6 +178,7 @@ export function useXDriveFileExplorerSearch<
     key: string,
     query: string,
     filters: XDriveFileExplorerSearchFilters,
+    targetGrouping: XDriveFileExplorerGrouping,
     targetSort: XDriveFileExplorerSort,
   ) => {
     const requestID = nextRequestID(key)
@@ -168,6 +187,8 @@ export function useXDriveFileExplorerSearch<
       query,
       filters: { ...filters },
       filterSignature: xDriveFileExplorerSearchFiltersSignature(filters),
+      grouping: { ...targetGrouping },
+      groupingSignature: xDriveFileExplorerGroupingSignature(targetGrouping),
       sort: targetSort,
       sortSignature: searchSortSignature(targetSort),
       requestID,
@@ -180,6 +201,7 @@ export function useXDriveFileExplorerSearch<
       value: current.value || query,
       query,
       filters: { ...filters },
+      groups: [],
       sortSignature: nextTarget.sortSignature,
       loading: true,
     }))
@@ -188,12 +210,17 @@ export function useXDriveFileExplorerSearch<
       const page = await loadRange(
         query,
         filters,
+        targetGrouping,
         targetSort,
         0,
         XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
       )
       if (!targetIsCurrent(nextTarget)) return
       virtualCollection.primePage(page)
+      updateEntry(key, (current) => ({
+        ...current,
+        groups: page.groups ? [...page.groups] : [],
+      }))
     } catch (error) {
       if (targetIsCurrent(nextTarget)) onError(error)
     } finally {
@@ -274,7 +301,7 @@ export function useXDriveFileExplorerSearch<
     const trimmed = rawQuery.trim()
     if (!trimmed) {
       if (filterActive) {
-        await executeSearch(workspaceKey, '', entry.filters, sort)
+        await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
       }
@@ -283,7 +310,7 @@ export function useXDriveFileExplorerSearch<
     const decision = xDriveFileExplorerSearchDecision(rawQuery)
     if (decision.kind === 'clear') {
       if (filterActive) {
-        await executeSearch(workspaceKey, '', entry.filters, sort)
+        await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
       }
@@ -293,12 +320,13 @@ export function useXDriveFileExplorerSearch<
       onError(new Error(decision.message))
       return
     }
-    await executeSearch(workspaceKey, decision.query, entry.filters, sort)
+    await executeSearch(workspaceKey, decision.query, entry.filters, grouping, sort)
   }, [
     clearSearch,
     entry.filters,
     executeSearch,
     filterActive,
+    grouping,
     onError,
     sort,
     workspaceKey,
@@ -318,14 +346,17 @@ export function useXDriveFileExplorerSearch<
       active?.workspaceKey === workspaceKey &&
       active.query === entry.query &&
       active.filterSignature === filterSignature &&
+      active.groupingSignature === groupingSignature &&
       active.sortSignature === sortSignature
     ) return
-    void executeSearch(workspaceKey, entry.query, entry.filters, sort)
+    void executeSearch(workspaceKey, entry.query, entry.filters, grouping, sort)
   }, [
     entry.filters,
     entry.query,
     executeSearch,
     filterSignature,
+    grouping,
+    groupingSignature,
     searchActive,
     sort,
     sort.direction,
@@ -339,6 +370,7 @@ export function useXDriveFileExplorerSearch<
     target?.workspaceKey === workspaceKey &&
     target.query === entry.query &&
     target.filterSignature === filterSignature &&
+    target.groupingSignature === groupingSignature &&
     target.sortSignature === sortSignature
   )
   const searchVirtualItems = activeTarget
@@ -360,12 +392,14 @@ export function useXDriveFileExplorerSearch<
         itemAt: virtualCollection.itemAt,
         ensureViewport: virtualCollection.ensureViewport,
         collectRange: virtualCollection.collectRange,
+        groups: entry.groups,
       }
     : null
 
   const searchState = {
     query: entry.query,
     filters: entry.filters,
+    groups: entry.groups,
     results: searchResults,
     loading: entry.loading,
   }

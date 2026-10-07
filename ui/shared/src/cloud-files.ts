@@ -1,5 +1,9 @@
 import type { QuotaUsage } from './models'
 import type {
+  XDriveFileExplorerGroupIndex,
+  XDriveFileExplorerGrouping,
+} from './file-explorer-grouping'
+import type {
   XDriveFileExplorerPageRequestOptions,
   XDriveFileExplorerPageSort,
 } from './file-explorer-controller'
@@ -22,6 +26,7 @@ export type XDriveCloudFilesPage<TNode extends { id: number }> = {
   has_more: boolean
   sort: XDriveCloudFilesSortKey
   order: XDriveCloudFilesSortDirection
+  groups?: XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveCloudFilesRange<TNode extends { id: number }> = {
@@ -57,6 +62,7 @@ export type XDriveCloudFilesSearchRange<TNode extends { id: number }> = {
   limit: number
   sort: XDriveCloudFilesSortKey
   order: XDriveCloudFilesSortDirection
+  groups?: XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
@@ -89,6 +95,7 @@ export interface XDriveCloudFilesPort<
     limit: number,
     sort: TSort,
     includeCount: boolean,
+    grouping: XDriveFileExplorerGrouping,
   ) => Promise<XDriveCloudFilesRange<TNode>>
   getQuota: () => Promise<TQuota>
 }

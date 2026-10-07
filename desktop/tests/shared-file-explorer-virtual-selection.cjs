@@ -134,7 +134,7 @@ test('FileExplorer design makes VirtualCollection interaction parity normative',
     'Type-to-select',
     'Quick Look',
     'File operations from a virtual selection',
-    'Directory/search/tab/sort generation changes',
+    'Directory/search/tab/sort/grouping generation changes',
   ]) {
     assert.ok(design.includes(phrase), 'FileExplorer design missing VirtualCollection rule: ' + phrase)
   }

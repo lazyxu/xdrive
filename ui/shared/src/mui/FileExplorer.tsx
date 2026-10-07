@@ -26,6 +26,7 @@ import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
+import ViewAgendaRoundedIcon from '@mui/icons-material/ViewAgendaRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
@@ -65,6 +66,14 @@ import {
   xDriveFileExplorerPrimaryModifierActive,
 } from '../file-explorer-keyboard'
 import type { XDriveFileExplorerKeyboardProfile } from '../file-explorer-keyboard'
+import {
+  XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+  xDriveFileExplorerGroupingSignature,
+} from '../file-explorer-grouping'
+import type {
+  XDriveFileExplorerGroupIndex,
+  XDriveFileExplorerGrouping,
+} from '../file-explorer-grouping'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
@@ -79,6 +88,11 @@ import {
   xDriveFileExplorerGridVirtualWindow,
   xDriveFileExplorerVirtualWindowSlots,
 } from './FileExplorerVirtualSurface'
+import {
+  xDriveCreateFileExplorerGroupLayout,
+  xDriveFileExplorerGroupedItemTop,
+  xDriveFileExplorerVisibleGroupSegments,
+} from './FileExplorerGroupingLayout'
 
 export type XDriveFileExplorerID = string | number
 export type XDriveFileExplorerViewMode = 'details' | 'grid'
@@ -304,6 +318,7 @@ export type XDriveFileExplorerVirtualCollection = {
     endIndex: number,
   ) => Promise<readonly XDriveFileExplorerItem[] | null>
   retainInteractionIDs?: (ids: readonly XDriveFileExplorerID[]) => void
+  groups?: readonly XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveFileExplorerSort = {
@@ -802,6 +817,8 @@ export function XDriveFileExplorer({
   onViewModeChange,
   sort: controlledSort,
   onSortChange,
+  grouping: controlledGrouping,
+  onGroupingChange,
   commandBarStart,
   commandBarEnd,
   navigationPane,
@@ -875,6 +892,8 @@ export function XDriveFileExplorer({
   onViewModeChange?: (mode: XDriveFileExplorerViewMode) => void
   sort?: XDriveFileExplorerSort
   onSortChange?: (sort: XDriveFileExplorerSort) => void
+  grouping?: XDriveFileExplorerGrouping
+  onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => void
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
   navigationPane?: ReactNode
@@ -900,12 +919,16 @@ export function XDriveFileExplorer({
   const [pathDraft, setPathDraft] = useState(derivedPath)
   const [internalViewMode, setInternalViewMode] = useState<XDriveFileExplorerViewMode>('details')
   const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
+  const [internalGrouping, setInternalGrouping] = useState<XDriveFileExplorerGrouping>(
+    () => ({ ...XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING }),
+  )
   const [internalSelectedIDs, setInternalSelectedIDs] = useState<XDriveFileExplorerID[]>([...defaultSelectedIDs])
   const [selectionAnchorID, setSelectionAnchorID] = useState<XDriveFileExplorerID | null>(null)
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
   const [activeItemID, setActiveItemID] = useState<XDriveFileExplorerID | null>(null)
   const [activeLogicalIndex, setActiveLogicalIndex] = useState<number | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
+  const [groupAnchor, setGroupAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [viewPreferencesAnchor, setViewPreferencesAnchor] = useState<HTMLElement | null>(null)
   const [draggedDetailsColumn, setDraggedDetailsColumn] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
@@ -960,6 +983,8 @@ export function XDriveFileExplorer({
 
   const viewMode = controlledViewMode ?? internalViewMode
   const sort = controlledSort ?? internalSort
+  const grouping = controlledGrouping ?? internalGrouping
+  const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
   const detailsRowHeight = viewPreferences.detailsDensity === 'compact'
     ? detailsCompactRowHeight
     : detailsNormalRowHeight
@@ -1094,6 +1119,62 @@ export function XDriveFileExplorer({
   const logicalItemCount = virtualCollectionEnabled
     ? Math.max(0, Math.trunc(virtualCollection.itemCount) || 0)
     : visibleItems.length
+  const groupIndex = virtualCollection?.groups ?? []
+  const groupedDetailsLayout = useMemo(
+    () => xDriveCreateFileExplorerGroupLayout({
+      groups: groupIndex,
+      groupBy: grouping.groupBy,
+      itemCount: logicalItemCount,
+      rowHeight: detailsRowHeight,
+      groupHeaderHeight: 30,
+      groupGap: 6,
+    }),
+    [detailsRowHeight, groupIndex, grouping.groupBy, logicalItemCount],
+  )
+  const groupedGridLayout = useMemo(
+    () => xDriveCreateFileExplorerGroupLayout({
+      groups: groupIndex,
+      groupBy: grouping.groupBy,
+      itemCount: logicalItemCount,
+      columns: gridColumns,
+      rowHeight: gridMetrics.estimatedRowHeight,
+      rowGap: gridGapPx,
+      padding: gridPaddingPx,
+      groupHeaderHeight: 30,
+      groupGap: gridGapPx,
+    }),
+    [
+      gridColumns,
+      gridGapPx,
+      gridMetrics.estimatedRowHeight,
+      gridPaddingPx,
+      groupIndex,
+      grouping.groupBy,
+      logicalItemCount,
+    ],
+  )
+  const groupedDetailsSegments = useMemo(
+    () => groupedDetailsLayout
+      ? xDriveFileExplorerVisibleGroupSegments(
+          groupedDetailsLayout,
+          Math.max(0, scrollTop - detailsHeaderHeight),
+          Math.max(1, viewportHeight - detailsHeaderHeight),
+          detailsOverscan * detailsRowHeight,
+        )
+      : [],
+    [detailsRowHeight, groupedDetailsLayout, scrollTop, viewportHeight],
+  )
+  const groupedGridSegments = useMemo(
+    () => groupedGridLayout
+      ? xDriveFileExplorerVisibleGroupSegments(
+          groupedGridLayout,
+          scrollTop,
+          Math.max(1, viewportHeight),
+          gridOverscanRows * gridRowStep,
+        )
+      : [],
+    [gridRowStep, groupedGridLayout, scrollTop, viewportHeight],
+  )
 
   const visibleItemProjection = useMemo(() => {
     const indexByKey = new Map<string, number>()
@@ -1317,17 +1398,34 @@ export function XDriveFileExplorer({
       const top = Math.min(session.startContentY, currentContentY)
       const bottom = Math.max(session.startContentY, currentContentY)
       if (bottom > detailsHeaderHeight && logicalItemCount > 0) {
-        const first = Math.max(
-          0,
-          Math.floor((Math.max(detailsHeaderHeight, top) - detailsHeaderHeight) / detailsRowHeight),
-        )
-        const last = Math.min(
-          logicalItemCount - 1,
-          Math.floor((Math.max(detailsHeaderHeight, bottom - 0.001) - detailsHeaderHeight) / detailsRowHeight),
-        )
-        for (let index = first; index <= last; index += 1) {
-          const item = logicalItemAt(index)
-          if (item) selected.set(explorerIDKey(item.id), item.id)
+        if (groupedDetailsLayout) {
+          const bodyTop = Math.max(0, Math.max(detailsHeaderHeight, top) - detailsHeaderHeight)
+          const bodyBottom = Math.max(bodyTop, bottom - detailsHeaderHeight)
+          const segments = xDriveFileExplorerVisibleGroupSegments(
+            groupedDetailsLayout,
+            bodyTop,
+            Math.max(1, bodyBottom - bodyTop),
+            0,
+          )
+          for (const segment of segments) {
+            for (let index = segment.startIndex; index < segment.endIndex; index += 1) {
+              const item = logicalItemAt(index)
+              if (item) selected.set(explorerIDKey(item.id), item.id)
+            }
+          }
+        } else {
+          const first = Math.max(
+            0,
+            Math.floor((Math.max(detailsHeaderHeight, top) - detailsHeaderHeight) / detailsRowHeight),
+          )
+          const last = Math.min(
+            logicalItemCount - 1,
+            Math.floor((Math.max(detailsHeaderHeight, bottom - 0.001) - detailsHeaderHeight) / detailsRowHeight),
+          )
+          for (let index = first; index <= last; index += 1) {
+            const item = logicalItemAt(index)
+            if (item) selected.set(explorerIDKey(item.id), item.id)
+          }
         }
       }
       return [...selected.values()]
@@ -1342,26 +1440,54 @@ export function XDriveFileExplorer({
       ? Math.max(gridMetrics.minColumnWidth, (available - gridGapPx * (gridColumns - 1)) / gridColumns)
       : gridMetrics.minColumnWidth
     const itemWidth = Math.min(cellWidth, gridMetrics.maxItemWidth)
-    const firstRow = Math.max(0, Math.floor((top - gridPaddingPx) / gridRowStep))
-    const lastRow = Math.min(
-      Math.max(0, Math.ceil(logicalItemCount / gridColumns) - 1),
-      Math.floor((Math.max(top, bottom - 0.001) - gridPaddingPx) / gridRowStep),
-    )
-    for (let row = firstRow; row <= lastRow; row += 1) {
-      for (let column = 0; column < gridColumns; column += 1) {
-        const index = row * gridColumns + column
-        if (index >= logicalItemCount) break
-        const item = logicalItemAt(index)
-        if (!item) continue
-        const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
-        const itemTop = gridPaddingPx + row * gridRowStep
-        if (
-          itemLeft + itemWidth >= left &&
-          itemLeft <= right &&
-          itemTop + gridMetrics.estimatedRowHeight >= top &&
-          itemTop <= bottom
-        ) {
-          selected.set(explorerIDKey(item.id), item.id)
+    if (groupedGridLayout) {
+      const segments = xDriveFileExplorerVisibleGroupSegments(
+        groupedGridLayout,
+        top,
+        Math.max(1, bottom - top),
+        0,
+      )
+      for (const segment of segments) {
+        for (let index = segment.startIndex; index < segment.endIndex; index += 1) {
+          const item = logicalItemAt(index)
+          if (!item) continue
+          const offset = index - segment.group.startIndex
+          const row = Math.floor(offset / gridColumns)
+          const column = offset % gridColumns
+          const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
+          const itemTop = segment.group.itemsTop + row * gridRowStep
+          if (
+            itemLeft + itemWidth >= left &&
+            itemLeft <= right &&
+            itemTop + gridMetrics.estimatedRowHeight >= top &&
+            itemTop <= bottom
+          ) {
+            selected.set(explorerIDKey(item.id), item.id)
+          }
+        }
+      }
+    } else {
+      const firstRow = Math.max(0, Math.floor((top - gridPaddingPx) / gridRowStep))
+      const lastRow = Math.min(
+        Math.max(0, Math.ceil(logicalItemCount / gridColumns) - 1),
+        Math.floor((Math.max(top, bottom - 0.001) - gridPaddingPx) / gridRowStep),
+      )
+      for (let row = firstRow; row <= lastRow; row += 1) {
+        for (let column = 0; column < gridColumns; column += 1) {
+          const index = row * gridColumns + column
+          if (index >= logicalItemCount) break
+          const item = logicalItemAt(index)
+          if (!item) continue
+          const itemLeft = gridPaddingPx + column * (cellWidth + gridGapPx)
+          const itemTop = gridPaddingPx + row * gridRowStep
+          if (
+            itemLeft + itemWidth >= left &&
+            itemLeft <= right &&
+            itemTop + gridMetrics.estimatedRowHeight >= top &&
+            itemTop <= bottom
+          ) {
+            selected.set(explorerIDKey(item.id), item.id)
+          }
         }
       }
     }
@@ -1487,7 +1613,12 @@ export function XDriveFileExplorer({
   const focusItemAtIndex = (index: number) => {
     const host = scrollHostRef.current
     if (host && viewMode === 'details') {
-      const top = detailsHeaderHeight + index * detailsRowHeight
+      const groupedTop = groupedDetailsLayout
+        ? xDriveFileExplorerGroupedItemTop(groupedDetailsLayout, index)
+        : null
+      const top = detailsHeaderHeight + (
+        groupedTop ?? index * detailsRowHeight
+      )
       const bottom = top + detailsRowHeight
       if (top < host.scrollTop + detailsHeaderHeight) {
         host.scrollTop = Math.max(0, top - detailsHeaderHeight)
@@ -1495,8 +1626,11 @@ export function XDriveFileExplorer({
         host.scrollTop = Math.max(0, bottom - host.clientHeight)
       }
     } else if (host && viewMode === 'grid') {
+      const groupedTop = groupedGridLayout
+        ? xDriveFileExplorerGroupedItemTop(groupedGridLayout, index)
+        : null
       const row = Math.floor(index / gridColumns)
-      const top = gridPaddingPx + row * gridRowStep
+      const top = groupedTop ?? gridPaddingPx + row * gridRowStep
       const bottom = top + gridMetrics.estimatedRowHeight
       if (top < host.scrollTop) {
         host.scrollTop = Math.max(0, top - gridPaddingPx)
@@ -2115,6 +2249,12 @@ export function XDriveFileExplorer({
     if (controlledSort === undefined) setInternalSort(next)
     onSortChange?.(next)
     setSortAnchor(null)
+  }
+
+  const setGrouping = (next: XDriveFileExplorerGrouping) => {
+    if (controlledGrouping === undefined) setInternalGrouping(next)
+    onGroupingChange?.(next)
+    setGroupAnchor(null)
   }
 
   const chooseDetailsDensity = (detailsDensity: XDriveFileExplorerDetailsDensity) => {
@@ -2862,6 +3002,231 @@ export function XDriveFileExplorer({
     [selectedItems],
   )
 
+  const renderDetailsLogicalItem = (
+    item: XDriveFileExplorerItem | undefined,
+    index: number,
+  ) => {
+    if (!item) {
+      return (
+        <Box
+          key={`virtual-detail-placeholder-${index}`}
+          role="row"
+          aria-hidden
+          data-xdrive-file-explorer-placeholder
+          sx={{
+            minHeight: detailsRowHeight,
+            display: 'grid',
+            gridTemplateColumns: detailsGridTemplate,
+            alignItems: 'center',
+            px: 1.5,
+          }}
+        >
+          <Box sx={{ width: '44%', height: 10, borderRadius: 0.5, bgcolor: 'action.hover' }} />
+        </Box>
+      )
+    }
+    const selected = selectedKeySet.has(explorerIDKey(item.id))
+    const active = activeItemID === null
+      ? index === 0
+      : explorerIDKey(activeItemID) === explorerIDKey(item.id)
+    const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
+    return (
+      <ButtonBase
+        key={item.id}
+        ref={(element) => {
+          const key = explorerIDKey(item.id)
+          if (element) itemElementRefs.current.set(key, element)
+          else itemElementRefs.current.delete(key)
+        }}
+        component="div"
+        role="row"
+        data-xdrive-file-explorer-item
+        tabIndex={active ? 0 : -1}
+        aria-selected={selected}
+        draggable={Boolean(onDropItemsToFolder) && !renaming}
+        onDragStart={(event) => startItemDrag(event, item)}
+        onDragEnd={endItemDrag}
+        onDragOver={(event) => dragOverFolder(event, item)}
+        onDragLeave={() => {
+          if (
+            dropTargetID !== null &&
+            explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+          ) setDropTargetID(null)
+        }}
+        onDrop={(event) => dropOnFolder(event, item)}
+        onClick={(event) => selectItem(event, item, index)}
+        onDoubleClick={() => {
+          if (!renaming) onOpenItem?.(item)
+        }}
+        onContextMenu={(event) => openItemContextMenu(event, item)}
+        onFocus={() => {
+          setActiveItemID(item.id)
+          setActiveLogicalIndex(index)
+        }}
+        onKeyDown={(event) => itemKeyDown(event, item)}
+        sx={{
+          width: '100%',
+          display: 'grid',
+          gridTemplateColumns: detailsGridTemplate,
+          minHeight: detailsRowHeight,
+          alignItems: 'center',
+          justifyContent: 'start',
+          px: 1.5,
+          textAlign: 'left',
+          borderRadius: '4px',
+          bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+            ? 'action.hover'
+            : selected ? 'action.selected' : 'transparent',
+          outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+            ? '2px solid'
+            : undefined,
+          outlineColor: 'primary.main',
+          outlineOffset: -2,
+          '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: -2,
+          },
+        }}
+      >
+        {visibleDetailsColumns.map((key) => (
+          <Box key={key} role="cell" sx={{ minWidth: 0, overflow: 'hidden' }}>
+            {key === 'name' ? (
+              <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
+                {defaultItemIcon(item)}
+                <Box sx={{ minWidth: 0 }}>
+                  {renderItemName(item, false)}
+                  {viewPreferences.detailsDensity === 'normal' && item.secondaryLabel ? (
+                    <Typography variant="caption" color="text.secondary" noWrap display="block">
+                      {item.secondaryLabel}
+                    </Typography>
+                  ) : null}
+                </Box>
+                {availabilityIndicator(item)}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {detailsColumnText(item, key)}
+              </Typography>
+            )}
+          </Box>
+        ))}
+      </ButtonBase>
+    )
+  }
+
+  const renderGridLogicalItem = (
+    item: XDriveFileExplorerItem | undefined,
+    index: number,
+  ) => {
+    if (!item) {
+      return (
+        <Box
+          key={`virtual-grid-placeholder-${index}`}
+          role="listitem"
+          aria-hidden
+          data-xdrive-file-explorer-placeholder
+          sx={{
+            minWidth: 0,
+            minHeight: gridMetrics.minItemHeight,
+            maxWidth: gridMetrics.maxItemWidth,
+            borderRadius: 1,
+            p: gridMetrics.itemPadding,
+            bgcolor: 'action.hover',
+            opacity: 0.55,
+          }}
+        />
+      )
+    }
+    const selected = selectedKeySet.has(explorerIDKey(item.id))
+    const active = activeItemID === null
+      ? index === 0
+      : explorerIDKey(activeItemID) === explorerIDKey(item.id)
+    const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
+    return (
+      <ButtonBase
+        key={item.id}
+        ref={(element) => {
+          const key = explorerIDKey(item.id)
+          if (element) itemElementRefs.current.set(key, element)
+          else itemElementRefs.current.delete(key)
+        }}
+        component="div"
+        role="listitem"
+        data-xdrive-file-explorer-item
+        tabIndex={active ? 0 : -1}
+        aria-selected={selected}
+        draggable={Boolean(onDropItemsToFolder) && !renaming}
+        onDragStart={(event) => startItemDrag(event, item)}
+        onDragEnd={endItemDrag}
+        onDragOver={(event) => dragOverFolder(event, item)}
+        onDragLeave={() => {
+          if (
+            dropTargetID !== null &&
+            explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+          ) setDropTargetID(null)
+        }}
+        onDrop={(event) => dropOnFolder(event, item)}
+        onClick={(event) => selectItem(event, item, index)}
+        onDoubleClick={() => {
+          if (!renaming) onOpenItem?.(item)
+        }}
+        onContextMenu={(event) => openItemContextMenu(event, item)}
+        onFocus={() => {
+          setActiveItemID(item.id)
+          setActiveLogicalIndex(index)
+        }}
+        onKeyDown={(event) => itemKeyDown(event, item)}
+        sx={{
+          minWidth: 0,
+          minHeight: gridMetrics.minItemHeight,
+          maxWidth: gridMetrics.maxItemWidth,
+          borderRadius: 1,
+          p: gridMetrics.itemPadding,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-start',
+          gap: gridMetrics.itemGap,
+          textAlign: 'center',
+          bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+            ? 'action.hover'
+            : selected ? 'action.selected' : 'transparent',
+          outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
+            ? '2px solid'
+            : undefined,
+          outlineColor: 'primary.main',
+          outlineOffset: -2,
+          contentVisibility: 'auto',
+          containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`,
+          '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: -2,
+          },
+        }}
+      >
+        <Box
+          sx={{
+            width: gridMetrics.thumbnailWidth,
+            height: gridMetrics.thumbnailHeight,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            borderRadius: 1,
+            position: 'relative',
+          }}
+        >
+          {thumbnailForItem(item)}
+          {availabilityIndicator(item, true)}
+        </Box>
+        {renderItemName(item, true)}
+      </ButtonBase>
+    )
+  }
+
   const virtualizeDetails = (
     viewMode === 'details' &&
     (virtualCollectionEnabled || visibleItems.length >= detailsVirtualizationThreshold)
@@ -2984,10 +3349,31 @@ export function XDriveFileExplorer({
   useEffect(() => {
     const onRangeChange = virtualCollection?.onRangeChange
     if (!onRangeChange || logicalItemCount <= 0) return
+    const groupedSegments = viewMode === 'details'
+      ? groupedDetailsLayout ? groupedDetailsSegments : null
+      : groupedGridLayout ? groupedGridSegments : null
+    if (groupedSegments) {
+      const populated = groupedSegments.filter((segment) => segment.endIndex > segment.startIndex)
+      if (populated.length === 0) return
+      const start = Math.min(...populated.map((segment) => segment.startIndex))
+      const end = Math.max(...populated.map((segment) => segment.endIndex))
+      onRangeChange(start, Math.max(start, end - 1))
+      return
+    }
     const window = viewMode === 'details' ? detailsWindow : gridWindow
     if (window.end <= window.start) return
     onRangeChange(window.start, window.end - 1)
-  }, [detailsWindow, gridWindow, logicalItemCount, viewMode, virtualCollection?.onRangeChange])
+  }, [
+    detailsWindow,
+    gridWindow,
+    groupedDetailsLayout,
+    groupedDetailsSegments,
+    groupedGridLayout,
+    groupedGridSegments,
+    logicalItemCount,
+    viewMode,
+    virtualCollection?.onRangeChange,
+  ])
 
   useEffect(() => {
     const host = scrollHostRef.current
@@ -2995,7 +3381,7 @@ export function XDriveFileExplorer({
     host.scrollTop = 0
     pendingScrollTopRef.current = 0
     setScrollTop(0)
-  }, [derivedPath, sort.key, sort.direction, viewMode])
+  }, [derivedPath, groupingSignature, sort.key, sort.direction, viewMode])
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
@@ -3005,11 +3391,16 @@ export function XDriveFileExplorer({
       const updateVirtualWindow = () => {
         scrollFrameRef.current = null
         const raw = pendingScrollTopRef.current
-        const snapped = virtualizeDetails
-          ? raw <= detailsHeaderHeight
-            ? 0
-            : detailsHeaderHeight + Math.floor((raw - detailsHeaderHeight) / detailsRowHeight) * detailsRowHeight
-          : Math.floor(Math.max(0, raw - gridPaddingPx) / gridRowStep) * gridRowStep + gridPaddingPx
+        const grouped = viewMode === 'details'
+          ? Boolean(groupedDetailsLayout)
+          : Boolean(groupedGridLayout)
+        const snapped = grouped
+          ? raw
+          : virtualizeDetails
+            ? raw <= detailsHeaderHeight
+              ? 0
+              : detailsHeaderHeight + Math.floor((raw - detailsHeaderHeight) / detailsRowHeight) * detailsRowHeight
+            : Math.floor(Math.max(0, raw - gridPaddingPx) / gridRowStep) * gridRowStep + gridPaddingPx
         setScrollTop((current) => current === snapped ? current : snapped)
       }
       if (typeof window === 'undefined') updateVirtualWindow()
@@ -3442,6 +3833,46 @@ export function XDriveFileExplorer({
           ))}
         </Menu>
 
+        <XDriveFileExplorerCommandButton
+          startIcon={<ViewAgendaRoundedIcon />}
+          onClick={(event) => setGroupAnchor(event.currentTarget)}
+          aria-haspopup="menu"
+          aria-expanded={Boolean(groupAnchor)}
+        >
+          分组
+        </XDriveFileExplorerCommandButton>
+        <Menu anchorEl={groupAnchor} open={Boolean(groupAnchor)} onClose={() => setGroupAnchor(null)}>
+          {([
+            ['none', '不分组'],
+            ['type', '类型'],
+            ['modified', '修改日期'],
+            ['size', '大小'],
+          ] as const).map(([groupBy, label]) => (
+            <MenuItem
+              key={groupBy}
+              selected={grouping.groupBy === groupBy}
+              onClick={() => setGrouping({ ...grouping, groupBy })}
+            >
+              <Box component="span" sx={{ width: 20, color: 'text.secondary' }}>
+                {grouping.groupBy === groupBy ? '✓' : ''}
+              </Box>
+              {label}
+            </MenuItem>
+          ))}
+          <Divider />
+          <MenuItem
+            onClick={() => setGrouping({
+              ...grouping,
+              foldersFirst: !grouping.foldersFirst,
+            })}
+          >
+            <Box component="span" sx={{ width: 20, color: 'text.secondary' }}>
+              {grouping.foldersFirst ? '✓' : ''}
+            </Box>
+            文件夹优先
+          </MenuItem>
+        </Menu>
+
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -3619,116 +4050,78 @@ export function XDriveFileExplorer({
                 </Box>
               ))}
             </Box>
-            {virtualizeDetails && detailsWindow.before > 0 ? (
-              <Box role="presentation" aria-hidden sx={{ height: detailsWindow.before }} />
-            ) : null}
-            {detailItems.map((item, windowIndex) => {
-              const index = virtualizeDetails ? detailsWindow.start + windowIndex : windowIndex
-              if (!item) {
-                return (
-                  <Box
-                    key={`virtual-detail-placeholder-${index}`}
-                    role="row"
-                    aria-hidden
-                    data-xdrive-file-explorer-placeholder
-                    sx={{
-                      minHeight: detailsRowHeight,
-                      display: 'grid',
-                      gridTemplateColumns: detailsGridTemplate,
-                      alignItems: 'center',
-                      px: 1.5,
-                    }}
-                  >
-                    <Box sx={{ width: '44%', height: 10, borderRadius: 0.5, bgcolor: 'action.hover' }} />
-                  </Box>
-                )
-              }
-              const selected = selectedKeySet.has(explorerIDKey(item.id))
-              const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
-              const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
-              return (
-              <ButtonBase
-                key={item.id}
-                ref={(element) => {
-                  const key = explorerIDKey(item.id)
-                  if (element) itemElementRefs.current.set(key, element)
-                  else itemElementRefs.current.delete(key)
-                }}
-                component="div"
-                role="row"
-                data-xdrive-file-explorer-item
-                tabIndex={active ? 0 : -1}
-                aria-selected={selected}
-                draggable={Boolean(onDropItemsToFolder) && !renaming}
-                onDragStart={(event) => startItemDrag(event, item)}
-                onDragEnd={endItemDrag}
-                onDragOver={(event) => dragOverFolder(event, item)}
-                onDragLeave={() => {
-                  if (dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)) setDropTargetID(null)
-                }}
-                onDrop={(event) => dropOnFolder(event, item)}
-                onClick={(event) => selectItem(event, item, index)}
-                onDoubleClick={() => {
-                  if (!renaming) onOpenItem?.(item)
-                }}
-                onContextMenu={(event) => openItemContextMenu(event, item)}
-                onFocus={() => {
-                  setActiveItemID(item.id)
-                  setActiveLogicalIndex(index)
-                }}
-                onKeyDown={(event) => itemKeyDown(event, item)}
+            {groupedDetailsLayout ? (
+              <Box
+                role="rowgroup"
+                data-xdrive-file-explorer-groups
                 sx={{
-                  width: '100%',
-                  display: 'grid',
-                  gridTemplateColumns: detailsGridTemplate,
-                  minHeight: detailsRowHeight,
-                  alignItems: 'center',
-                  justifyContent: 'start',
-                  px: 1.5,
-                  textAlign: 'left',
-                  borderRadius: '4px',
-                  bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-                    ? 'action.hover'
-                    : selected ? 'action.selected' : 'transparent',
-                  outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? '2px solid' : undefined,
-                  outlineColor: 'primary.main',
-                  outlineOffset: -2,
-                  '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
-                  '&:focus-visible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: -2,
-                  },
+                  position: 'relative',
+                  height: groupedDetailsLayout.totalHeight,
                 }}
               >
-                {visibleDetailsColumns.map((key) => (
-                  <Box key={key} role="cell" sx={{ minWidth: 0, overflow: 'hidden' }}>
-                    {key === 'name' ? (
-                      <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
-                        {defaultItemIcon(item)}
-                        <Box sx={{ minWidth: 0 }}>
-                          {renderItemName(item, false)}
-                          {viewPreferences.detailsDensity === 'normal' && item.secondaryLabel ? (
-                            <Typography variant="caption" color="text.secondary" noWrap display="block">
-                              {item.secondaryLabel}
-                            </Typography>
-                          ) : null}
-                        </Box>
-                        {availabilityIndicator(item)}
-                      </Stack>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary" noWrap>
-                        {detailsColumnText(item, key)}
-                      </Typography>
-                    )}
-                  </Box>
+                {groupedDetailsSegments.map((segment) => (
+                  <Fragment key={segment.group.key}>
+                    {segment.headerVisible ? (
+                      <Box
+                        role="row"
+                        data-xdrive-file-explorer-group-header
+                        aria-label={segment.group.label}
+                        sx={{
+                          position: 'absolute',
+                          top: segment.group.top,
+                          left: 0,
+                          right: 0,
+                          height: segment.group.headerHeight,
+                          px: 1.5,
+                          display: 'flex',
+                          alignItems: 'center',
+                          bgcolor: 'background.paper',
+                          borderBottom: 1,
+                          borderColor: 'divider',
+                          zIndex: 1,
+                        }}
+                      >
+                        <Typography variant="caption" fontWeight={700} color="text.secondary">
+                          {segment.group.label} · {segment.group.itemCount}
+                        </Typography>
+                      </Box>
+                    ) : null}
+                    {segment.endIndex > segment.startIndex ? (
+                      <Box
+                        role="presentation"
+                        sx={{
+                          position: 'absolute',
+                          top: segment.itemsTop,
+                          left: 0,
+                          right: 0,
+                        }}
+                      >
+                        {Array.from(
+                          { length: segment.endIndex - segment.startIndex },
+                          (_unused, offset) => {
+                            const index = segment.startIndex + offset
+                            return renderDetailsLogicalItem(logicalItemAt(index), index)
+                          },
+                        )}
+                      </Box>
+                    ) : null}
+                  </Fragment>
                 ))}
-              </ButtonBase>
-              )
-            })}
-            {virtualizeDetails && detailsWindow.after > 0 ? (
-              <Box role="presentation" aria-hidden sx={{ height: detailsWindow.after }} />
-            ) : null}
+              </Box>
+            ) : (
+              <>
+                {virtualizeDetails && detailsWindow.before > 0 ? (
+                  <Box role="presentation" aria-hidden sx={{ height: detailsWindow.before }} />
+                ) : null}
+                {detailItems.map((item, windowIndex) => {
+                  const index = virtualizeDetails ? detailsWindow.start + windowIndex : windowIndex
+                  return renderDetailsLogicalItem(item, index)
+                })}
+                {virtualizeDetails && detailsWindow.after > 0 ? (
+                  <Box role="presentation" aria-hidden sx={{ height: detailsWindow.after }} />
+                ) : null}
+              </>
+            )}
           </Box>
         ) : (
           <Box
@@ -3736,128 +4129,86 @@ export function XDriveFileExplorer({
             aria-label="文件图标"
             sx={{
               position: 'relative',
-              height: virtualizeGrid ? gridWindow.totalHeight : undefined,
-              p: virtualizeGrid ? 0 : gridMetrics.padding,
+              height: groupedGridLayout
+                ? groupedGridLayout.totalHeight
+                : virtualizeGrid ? gridWindow.totalHeight : undefined,
+              p: groupedGridLayout || virtualizeGrid ? 0 : gridMetrics.padding,
             }}
           >
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`,
-                gridAutoRows: virtualizeGrid ? `${gridMetrics.estimatedRowHeight}px` : undefined,
-                gap: gridMetrics.gap,
-                p: virtualizeGrid ? 0 : undefined,
-                position: virtualizeGrid ? 'absolute' : undefined,
-                left: virtualizeGrid ? gridPaddingPx : undefined,
-                right: virtualizeGrid ? gridPaddingPx : undefined,
-                top: virtualizeGrid
-                  ? gridPaddingPx + gridWindow.startRow * gridRowStep
-                  : undefined,
-                alignContent: 'start',
-              }}
-            >
-            {gridItems.map((item, windowIndex) => {
-              const index = virtualizeGrid ? gridWindow.start + windowIndex : windowIndex
-              if (!item) {
-                return (
-                  <Box
-                    key={`virtual-grid-placeholder-${index}`}
-                    role="listitem"
-                    aria-hidden
-                    data-xdrive-file-explorer-placeholder
-                    sx={{
-                      minWidth: 0,
-                      minHeight: gridMetrics.minItemHeight,
-                      maxWidth: gridMetrics.maxItemWidth,
-                      borderRadius: 1,
-                      p: gridMetrics.itemPadding,
-                      bgcolor: 'action.hover',
-                      opacity: 0.55,
-                    }}
-                  />
-                )
-              }
-              const selected = selectedKeySet.has(explorerIDKey(item.id))
-              const active = activeItemID === null ? index === 0 : explorerIDKey(activeItemID) === explorerIDKey(item.id)
-              const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
-              return (
-              <ButtonBase
-                key={item.id}
-                ref={(element) => {
-                  const key = explorerIDKey(item.id)
-                  if (element) itemElementRefs.current.set(key, element)
-                  else itemElementRefs.current.delete(key)
-                }}
-                component="div"
-                role="listitem"
-                data-xdrive-file-explorer-item
-                tabIndex={active ? 0 : -1}
-                aria-selected={selected}
-                draggable={Boolean(onDropItemsToFolder) && !renaming}
-                onDragStart={(event) => startItemDrag(event, item)}
-                onDragEnd={endItemDrag}
-                onDragOver={(event) => dragOverFolder(event, item)}
-                onDragLeave={() => {
-                  if (dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)) setDropTargetID(null)
-                }}
-                onDrop={(event) => dropOnFolder(event, item)}
-                onClick={(event) => selectItem(event, item, index)}
-                onDoubleClick={() => {
-                  if (!renaming) onOpenItem?.(item)
-                }}
-                onContextMenu={(event) => openItemContextMenu(event, item)}
-                onFocus={() => {
-                  setActiveItemID(item.id)
-                  setActiveLogicalIndex(index)
-                }}
-                onKeyDown={(event) => itemKeyDown(event, item)}
+            {groupedGridLayout ? (
+              groupedGridSegments.map((segment) => (
+                <Fragment key={segment.group.key}>
+                  {segment.headerVisible ? (
+                    <Box
+                      data-xdrive-file-explorer-group-header
+                      aria-label={segment.group.label}
+                      sx={{
+                        position: 'absolute',
+                        top: segment.group.top,
+                        left: gridPaddingPx,
+                        right: gridPaddingPx,
+                        height: segment.group.headerHeight,
+                        display: 'flex',
+                        alignItems: 'center',
+                        borderBottom: 1,
+                        borderColor: 'divider',
+                        bgcolor: 'background.paper',
+                        zIndex: 1,
+                      }}
+                    >
+                      <Typography variant="caption" fontWeight={700} color="text.secondary">
+                        {segment.group.label} · {segment.group.itemCount}
+                      </Typography>
+                    </Box>
+                  ) : null}
+                  {segment.endIndex > segment.startIndex ? (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: segment.itemsTop,
+                        left: gridPaddingPx,
+                        right: gridPaddingPx,
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                        gridAutoRows: `${gridMetrics.estimatedRowHeight}px`,
+                        gap: gridMetrics.gap,
+                        alignContent: 'start',
+                      }}
+                    >
+                      {Array.from(
+                        { length: segment.endIndex - segment.startIndex },
+                        (_unused, offset) => {
+                          const index = segment.startIndex + offset
+                          return renderGridLogicalItem(logicalItemAt(index), index)
+                        },
+                      )}
+                    </Box>
+                  ) : null}
+                </Fragment>
+              ))
+            ) : (
+              <Box
                 sx={{
-                  minWidth: 0,
-                  minHeight: gridMetrics.minItemHeight,
-                  maxWidth: gridMetrics.maxItemWidth,
-                  borderRadius: 1,
-                  p: gridMetrics.itemPadding,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'flex-start',
-                  gap: gridMetrics.itemGap,
-                  textAlign: 'center',
-                  bgcolor: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id)
-                    ? 'action.hover'
-                    : selected ? 'action.selected' : 'transparent',
-                  outline: dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? '2px solid' : undefined,
-                  outlineColor: 'primary.main',
-                  outlineOffset: -2,
-                  contentVisibility: 'auto',
-                  containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`,
-                  '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
-                  '&:focus-visible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: -2,
-                  },
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`,
+                  gridAutoRows: virtualizeGrid ? `${gridMetrics.estimatedRowHeight}px` : undefined,
+                  gap: gridMetrics.gap,
+                  p: virtualizeGrid ? 0 : undefined,
+                  position: virtualizeGrid ? 'absolute' : undefined,
+                  left: virtualizeGrid ? gridPaddingPx : undefined,
+                  right: virtualizeGrid ? gridPaddingPx : undefined,
+                  top: virtualizeGrid
+                    ? gridPaddingPx + gridWindow.startRow * gridRowStep
+                    : undefined,
+                  alignContent: 'start',
                 }}
               >
-                <Box
-                  sx={{
-                    width: gridMetrics.thumbnailWidth,
-                    height: gridMetrics.thumbnailHeight,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                    borderRadius: 1,
-                    position: 'relative',
-                  }}
-                >
-                  {thumbnailForItem(item)}
-                  {availabilityIndicator(item, true)}
-                </Box>
-                {renderItemName(item, true)}
-              </ButtonBase>
-              )
-            })}
-            </Box>
+                {gridItems.map((item, windowIndex) => {
+                  const index = virtualizeGrid ? gridWindow.start + windowIndex : windowIndex
+                  return renderGridLogicalItem(item, index)
+                })}
+              </Box>
+            )}
           </Box>
         )}
 

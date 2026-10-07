@@ -225,6 +225,15 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	request(t, router, http.MethodGet,
 		"/api/v1/search?q=report&type=file&offset=0&limit=1&cursor="+url.QueryEscape(first.NextCursor),
 		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&limit=1&group=type",
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=0&limit=1&group=unknown",
+		tokenA, nil, http.StatusBadRequest)
+	request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=0&limit=1&folders_first=maybe",
+		tokenA, nil, http.StatusBadRequest)
 
 	secondURL := "/api/v1/search?q=report&type=file&limit=2&cursor=" + url.QueryEscape(first.NextCursor)
 	res = request(t, router, http.MethodGet, secondURL, tokenA, nil, http.StatusOK)
@@ -296,6 +305,42 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 	if len(typesAsc.Items) != 2 || typesAsc.Items[0].Node.ID != formatPDF.ID || typesAsc.Items[1].Node.ID != formatTXT.ID {
 		t.Fatalf("type-asc results=%+v", typesAsc.Items)
+	}
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=format&type=file&offset=0&limit=10&sort=name&order=asc&group=type&folders_first=true",
+		tokenA, nil, http.StatusOK)
+	var groupedFormats searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &groupedFormats); err != nil {
+		t.Fatal(err)
+	}
+	if len(groupedFormats.Items) != 2 || len(groupedFormats.Groups) != 2 {
+		t.Fatalf("grouped format results=%+v", groupedFormats)
+	}
+	if groupedFormats.Items[0].Node.ID != formatPDF.ID || groupedFormats.Items[1].Node.ID != formatTXT.ID {
+		t.Fatalf("grouped format item order=%+v", groupedFormats.Items)
+	}
+	if groupedFormats.Groups[0].Key != "ext:pdf" ||
+		groupedFormats.Groups[0].StartIndex != 0 ||
+		groupedFormats.Groups[0].ItemCount != 1 ||
+		groupedFormats.Groups[1].Key != "ext:txt" ||
+		groupedFormats.Groups[1].StartIndex != 1 ||
+		groupedFormats.Groups[1].ItemCount != 1 {
+		t.Fatalf("grouped format indexes=%+v", groupedFormats.Groups)
+	}
+
+	res = request(t, router, http.MethodGet,
+		"/api/v1/search?q=report&type=file&offset=0&limit=10&sort=name&order=asc&group=size",
+		tokenA, nil, http.StatusOK)
+	var groupedReports searchRangeDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &groupedReports); err != nil {
+		t.Fatal(err)
+	}
+	if len(groupedReports.Groups) != 1 ||
+		groupedReports.Groups[0].Key != "tiny" ||
+		groupedReports.Groups[0].ItemCount != 3 ||
+		groupedReports.Groups[0].StartIndex != 0 {
+		t.Fatalf("size grouped reports=%+v", groupedReports)
 	}
 
 	request(t, router, http.MethodGet,

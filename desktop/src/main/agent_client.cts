@@ -535,6 +535,17 @@ export type AgentCloudChildrenPage = {
   order: 'asc' | 'desc'
 }
 
+export type AgentFileExplorerGroupIndex = {
+  key: string
+  item_count: number
+  start_index: number
+}
+
+export type AgentFileExplorerGrouping = {
+  groupBy: 'none' | 'type' | 'modified' | 'size'
+  foldersFirst: boolean
+}
+
 export type AgentCloudChildrenRange = {
   items: AgentCloudNode[]
   total_count: number
@@ -543,6 +554,7 @@ export type AgentCloudChildrenRange = {
   limit: number
   sort: 'name' | 'updated' | 'size' | 'type'
   order: 'asc' | 'desc'
+  groups?: AgentFileExplorerGroupIndex[]
 }
 
 export type AgentMediaMetadata = {
@@ -857,6 +869,7 @@ export type AgentCloudSearchRange = {
   limit: number
   sort: 'name' | 'updated' | 'size' | 'type'
   order: 'asc' | 'desc'
+  groups?: AgentFileExplorerGroupIndex[]
 }
 
 export type AgentCloudSearchFilters = {
@@ -867,6 +880,15 @@ export type AgentCloudSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
+}
+
+function appendAgentFileExplorerGrouping(
+  query: URLSearchParams,
+  grouping: AgentFileExplorerGrouping | undefined,
+) {
+  if (!grouping) return
+  if (grouping.groupBy !== 'none') query.set('group', grouping.groupBy)
+  if (!grouping.foldersFirst) query.set('folders_first', 'false')
 }
 
 function appendAgentCloudSearchFilters(
@@ -1577,6 +1599,7 @@ export class AgentIPCClient {
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
     includeCount = true,
+    grouping?: AgentFileExplorerGrouping,
   ) {
     const query = new URLSearchParams({
       parent_id: String(parentID),
@@ -1586,6 +1609,7 @@ export class AgentIPCClient {
       order,
     })
     if (!includeCount) query.set('include_count', 'false')
+    appendAgentFileExplorerGrouping(query, grouping)
     return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`)
   }
 
@@ -1827,6 +1851,7 @@ export class AgentIPCClient {
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
     filters: AgentCloudSearchFilters = {},
+    grouping?: AgentFileExplorerGrouping,
   ) {
     const query = new URLSearchParams({
       q: queryText,
@@ -1836,6 +1861,7 @@ export class AgentIPCClient {
       order,
     })
     appendAgentCloudSearchFilters(query, filters)
+    appendAgentFileExplorerGrouping(query, grouping)
     return this.request<AgentCloudSearchRange>(
       'GET',
       `/v1/cloud/search?${query.toString()}`,

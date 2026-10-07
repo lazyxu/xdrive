@@ -22,6 +22,7 @@ test('shared navigation controller owns independent tab workspaces', () => {
     'history: TCrumb[][]',
     'historyIndex: number',
     'sort: XDriveFileExplorerSort',
+    'grouping: XDriveFileExplorerGrouping',
     'viewMode: XDriveFileExplorerViewMode',
     'const [tabs, setTabs]',
     'const [activeTabID, setActiveTabID]',
@@ -31,7 +32,7 @@ test('shared navigation controller owns independent tab workspaces', () => {
     'const activateTab = async (id: string) =>',
     'const closeTab = async (id = activeTabID) =>',
     'const cycleTab = async (delta: -1 | 1) =>',
-    'await onLoadDirectory(target.id, targetCrumbs, targetTab.sort)',
+    'await onLoadDirectory(target.id, targetCrumbs, targetTab.sort, targetTab.grouping)',
     'canNewTab: tabs.length < maxTabs',
     'canCloseTab: tabs.length > 1',
   ]) {
@@ -52,7 +53,8 @@ test('shared search controller preserves range search state per workspace tab', 
     assert.ok(search.includes(token), 'tab search-state contract missing: ' + token)
   }
   assert.ok(workspace.includes('workspaceKey: navigation.activeTabID'), 'workspace must bind search state to the active tab')
-  assert.ok(workspace.includes('searchActive: () => searchActiveRef.current'), 'navigation sort behavior must observe the active tab search state')
+  assert.ok(workspace.includes('searchActive: () => searchActiveRef.current'), 'navigation sort/group behavior must observe the active tab search state')
+  assert.ok(search.includes('groupingSignature'), 'search tab state must bind ranges to grouping identity')
 })
 
 test('shared FileExplorer renders a reusable tab bar and keyboard tab commands', () => {

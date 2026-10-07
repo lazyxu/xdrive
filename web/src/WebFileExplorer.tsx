@@ -38,6 +38,7 @@ import type {
   Node,
   XDriveCloudFilesSearchResult,
   XDriveFileOperation,
+  XDriveFileExplorerGrouping,
   XDriveFileExplorerSearchSourceOption,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
@@ -87,7 +88,12 @@ export default function WebFileExplorer({
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
   uploadProgress: number | null
-  onLoadDirectory: (id: number, crumbs: Crumb[], sort: XDriveFileExplorerSort) => Promise<void>
+  onLoadDirectory: (
+    id: number,
+    crumbs: Crumb[],
+    sort: XDriveFileExplorerSort,
+    grouping: XDriveFileExplorerGrouping,
+  ) => Promise<void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadFolderFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
@@ -150,6 +156,8 @@ export default function WebFileExplorer({
     setViewMode,
     sort,
     changeSort,
+    grouping,
+    changeGrouping,
     refresh,
     beginNavigationIntent,
     isNavigationIntentCurrent,
@@ -182,7 +190,7 @@ export default function WebFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
     onLoadDirectory,
-    loadSearchRange: async (query, filters, searchSort, offset, limit) => {
+    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
       const page = await api.searchRange(
         query,
         filters,
@@ -190,12 +198,14 @@ export default function WebFileExplorer({
         limit,
         searchSort.key,
         searchSort.direction,
+        searchGrouping,
       )
       return {
         items: page.items,
         totalCount: page.total_count,
         offset: page.offset,
         limit: page.limit,
+        groups: page.groups,
       }
     },
     loadRoot: () => api.root(),
@@ -216,6 +226,7 @@ export default function WebFileExplorer({
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,
+    currentGrouping: grouping,
     refreshDirectory: onLoadDirectory,
   })
 
@@ -397,6 +408,7 @@ export default function WebFileExplorer({
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,
+    currentGrouping: grouping,
     nodeByID,
     uploadFilesToParent: onUploadDroppedFiles,
     uploadFolderEntriesToParent: onUploadDroppedFolderEntries,
@@ -478,6 +490,8 @@ export default function WebFileExplorer({
         onViewModeChange={setViewMode}
         sort={sort}
         onSortChange={changeSort}
+        grouping={grouping}
+        onGroupingChange={changeGrouping}
         externallySorted={externallySorted}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}

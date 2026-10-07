@@ -54,6 +54,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
   XDriveFileExplorerSearchFilters,
+  XDriveFileExplorerGrouping,
   XDriveFileTextPreview,
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
@@ -236,6 +237,15 @@ export function sessionFromAuth(result: AuthResult): AuthSession {
     refreshToken: result.refresh_token,
     accessExpiresAt: Date.now() + Math.max(0, result.expires_in) * 1000,
   }
+}
+
+function appendFileExplorerGrouping(
+  params: URLSearchParams,
+  grouping: XDriveFileExplorerGrouping | undefined,
+) {
+  if (!grouping) return
+  if (grouping.groupBy !== 'none') params.set('group', grouping.groupBy)
+  if (!grouping.foldersFirst) params.set('folders_first', 'false')
 }
 
 function appendFileExplorerSearchFilters(
@@ -1134,6 +1144,7 @@ export class XDriveApi {
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
     includeCount = true,
+    grouping?: XDriveFileExplorerGrouping,
   ) {
     const query = new URLSearchParams({
       offset: String(Math.max(0, Math.trunc(offset))),
@@ -1142,6 +1153,7 @@ export class XDriveApi {
       order,
     })
     if (!includeCount) query.set('include_count', 'false')
+    appendFileExplorerGrouping(query, grouping)
     return this.request<XDriveCloudFilesRange<Node>>(
       `/api/v1/nodes/${parentID}/children?${query.toString()}`,
     )
@@ -1206,6 +1218,7 @@ export class XDriveApi {
     limit = 200,
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
+    grouping?: XDriveFileExplorerGrouping,
   ): Promise<XDriveCloudFilesSearchRange<Node>> {
     const params = new URLSearchParams({
       q: query.trim(),
@@ -1215,6 +1228,7 @@ export class XDriveApi {
       order,
     })
     appendFileExplorerSearchFilters(params, filters)
+    appendFileExplorerGrouping(params, grouping)
     const page = await this.request<{
       items: SearchResult[]
       total_count: number
@@ -1222,6 +1236,7 @@ export class XDriveApi {
       limit: number
       sort: 'name' | 'updated' | 'size' | 'type'
       order: 'asc' | 'desc'
+      groups?: XDriveCloudFilesSearchRange<Node>['groups']
     }>(`/api/v1/search?${params.toString()}`)
     return {
       items: page.items.map((item) => ({
@@ -1234,6 +1249,7 @@ export class XDriveApi {
       limit: page.limit,
       sort: page.sort,
       order: page.order,
+      groups: page.groups,
     }
   }
 

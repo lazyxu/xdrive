@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import type { Node } from '../models'
+import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
 import { xDriveFileExplorerExternalDropParentID } from '../file-explorer-controller'
 import type {
   XDriveFileExplorerFolderUploadEntry,
@@ -19,6 +20,7 @@ export type XDriveFileExplorerExternalDropControllerOptions<
   currentID?: number
   currentCrumbs: readonly TCrumb[]
   sort: TSort
+  currentGrouping: XDriveFileExplorerGrouping
   nodeByID: ReadonlyMap<number, TNode>
   disabled?: boolean
   folderDropEnabled?: boolean
@@ -27,7 +29,12 @@ export type XDriveFileExplorerExternalDropControllerOptions<
     parentID: number,
     payload: XDriveFileExplorerExternalDropPayload,
   ) => Promise<boolean | void>
-  refreshDirectory: (id: number, crumbs: TCrumb[], sort: TSort) => Promise<void>
+  refreshDirectory: (
+    id: number,
+    crumbs: TCrumb[],
+    sort: TSort,
+    grouping: XDriveFileExplorerGrouping,
+  ) => Promise<void>
 }
 
 export function useXDriveFileExplorerExternalDropController<
@@ -38,6 +45,7 @@ export function useXDriveFileExplorerExternalDropController<
   currentID,
   currentCrumbs,
   sort,
+  currentGrouping,
   nodeByID,
   disabled = false,
   folderDropEnabled = true,
@@ -49,11 +57,13 @@ export function useXDriveFileExplorerExternalDropController<
     currentID,
     currentCrumbs,
     sort,
+    grouping: currentGrouping,
   })
   currentContextRef.current = {
     currentID,
     currentCrumbs,
     sort,
+    grouping: currentGrouping,
   }
 
   const refreshCurrentDirectory = useCallback(async (
@@ -68,6 +78,7 @@ export function useXDriveFileExplorerExternalDropController<
       latest.currentID,
       [...latest.currentCrumbs],
       latest.sort,
+      latest.grouping,
     )
   }, [refreshDirectory])
 

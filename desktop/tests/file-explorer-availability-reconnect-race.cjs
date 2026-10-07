@@ -134,6 +134,15 @@ function loadCloudFilesHook(react) {
       '../file-explorer-controller': {
         XDRIVE_FILE_EXPLORER_PAGE_SIZE: 200,
       },
+      '../file-explorer-grouping': {
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING: {
+          groupBy: 'none',
+          foldersFirst: true,
+        },
+        xDriveFileExplorerGroupingSignature: (grouping) => (
+          `${grouping.groupBy}:${grouping.foldersFirst ? 'folders-first' : 'mixed'}`
+        ),
+      },
       './VirtualCollectionController': virtualController,
     },
   ).useXDriveCloudFilesController

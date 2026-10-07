@@ -5,6 +5,13 @@ import {
   xDriveFileExplorerSearchFiltersSignature,
 } from '../file-explorer-search'
 import {
+  xDriveFileExplorerGroupingSignature,
+} from '../file-explorer-grouping'
+import type {
+  XDriveFileExplorerGroupIndex,
+  XDriveFileExplorerGrouping,
+} from '../file-explorer-grouping'
+import {
   xDriveFileExplorerDirectoryCrumbs,
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerSubmitPath,
@@ -48,6 +55,7 @@ export type XDriveFileExplorerWorkspaceVirtualDirectory<
   itemAt: (index: number) => TNode | undefined
   ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
   collectRange: (startIndex: number, endIndex: number) => Promise<TNode[] | null>
+  groups: readonly XDriveFileExplorerGroupIndex[]
 }
 
 export type XDriveFileExplorerWorkspaceSearchResult<
@@ -79,6 +87,7 @@ export function useXDriveFileExplorerWorkspace<
     id: number,
     crumbs: XDriveFileExplorerWorkspaceCrumb[],
     sort: XDriveFileExplorerSort,
+    grouping: XDriveFileExplorerGrouping,
   ) => Promise<void>
   loadSearchRange: XDriveFileExplorerSearchLoader<TSearch>
   loadRoot: () => Promise<{ id: number }>
@@ -111,6 +120,7 @@ export function useXDriveFileExplorerWorkspace<
   const search = useXDriveFileExplorerSearch<TSearch>({
     loadRange: loadSearchRange,
     sort: navigation.sort,
+    grouping: navigation.grouping,
     onError,
     workspaceKey: navigation.activeTabID,
   })
@@ -125,6 +135,7 @@ export function useXDriveFileExplorerWorkspace<
     crumbs.at(-1)?.id ?? 0,
     search.searchResults === null ? '' : search.searchState.query,
     search.searchResults === null ? '' : xDriveFileExplorerSearchFiltersSignature(search.searchState.filters),
+    xDriveFileExplorerGroupingSignature(navigation.grouping),
     navigation.sort.key,
     navigation.sort.direction,
   ].join(':')
@@ -167,6 +178,7 @@ export function useXDriveFileExplorerWorkspace<
     return {
       interactionKey: interactionCacheKey,
       itemCount: activeCollection.itemCount,
+      groups: activeCollection.groups ?? [],
       loadedItems,
       itemAt: (index) => loadedItems.get(index),
       onRangeChange: (startIndex, endIndex) => (

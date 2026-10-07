@@ -56,7 +56,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'loadSearchRange: async (query, filters, searchSort, offset, limit) =>',
+    'loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
@@ -91,6 +91,9 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.ok(explorer.includes('<XDriveFileExplorerSearchFilters'), 'Desktop must render shared structured filter chips')
   assert.ok(explorer.includes('searchSort.key'), 'Desktop Search range must forward sort key')
   assert.ok(explorer.includes('searchSort.direction'), 'Desktop Search range must forward sort direction')
+  assert.ok(explorer.includes('searchGrouping,'), 'Desktop Search must forward grouping through Agent IPC')
+  assert.ok(explorer.includes('grouping={grouping}'), 'Desktop grouping must come from shared tab state')
+  assert.ok(explorer.includes('onGroupingChange={changeGrouping}'), 'Desktop grouping changes must reload Server ranges')
   assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')
   assert.equal(explorer.includes('window.xdriveDesktop.agent.cloudSearch('), false, 'Desktop Explorer must not use cursor Search after migration')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own Search request sequencing')

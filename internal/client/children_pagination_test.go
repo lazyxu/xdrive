@@ -73,6 +73,9 @@ func TestListRangeCanOmitTotalCount(t *testing.T) {
 		if query.Get("offset") != "400" || query.Get("include_count") != "false" {
 			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
 		}
+		if query.Get("group") != "size" || query.Get("folders_first") != "false" {
+			t.Fatalf("grouping query: %s", r.URL.RawQuery)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[{"id":9,"name":"late.bin","type":"file","size":99,"revision":1,"created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z"}],"total_count":0,"total_count_included":false,"offset":400,"limit":200,"sort":"updated","order":"desc"}`))
 	}))
@@ -80,8 +83,10 @@ func TestListRangeCanOmitTotalCount(t *testing.T) {
 
 	cli := New(server.URL, "")
 	cli.HTTP = server.Client()
+	foldersFirst := false
 	page, err := cli.ListRange(context.Background(), 42, ChildrenRangeOptions{
 		Limit: 200, Offset: 400, Sort: "updated", Order: "desc", OmitTotalCount: true,
+		Grouping: FileExplorerGroupingOptions{Group: "size", FoldersFirst: &foldersFirst},
 	})
 	if err != nil {
 		t.Fatal(err)

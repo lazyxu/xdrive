@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 const (
@@ -27,13 +28,14 @@ type childrenPageDTO struct {
 }
 
 type childrenRangeDTO struct {
-	Items              []nodeDTO `json:"items"`
-	TotalCount         int64     `json:"total_count"`
-	TotalCountIncluded bool      `json:"total_count_included"`
-	Offset             int       `json:"offset"`
-	Limit              int       `json:"limit"`
-	Sort               string    `json:"sort"`
-	Order              string    `json:"order"`
+	Items              []nodeDTO                   `json:"items"`
+	TotalCount         int64                       `json:"total_count"`
+	TotalCountIncluded bool                        `json:"total_count_included"`
+	Offset             int                         `json:"offset"`
+	Limit              int                         `json:"limit"`
+	Sort               string                      `json:"sort"`
+	Order              string                      `json:"order"`
+	Groups             []fileExplorerGroupIndexDTO `json:"groups,omitempty"`
 }
 
 type childrenPageOptions struct {
@@ -45,6 +47,7 @@ type childrenPageOptions struct {
 	Name         string
 	NameCI       string
 	IncludeCount bool
+	Grouping     fileExplorerGrouping
 }
 
 type childrenPageRow struct {
@@ -79,7 +82,7 @@ type childrenCursor struct {
 
 func childrenPaginationRequested(c *gin.Context) bool {
 	query := c.Request.URL.Query()
-	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name", "name_ci", "include_count"} {
+	for _, key := range []string{"limit", "cursor", "offset", "sort", "order", "name", "name_ci", "include_count", "group", "folders_first"} {
 		if _, ok := query[key]; ok {
 			return true
 		}
@@ -147,6 +150,12 @@ func parseChildrenPageOptions(c *gin.Context) (childrenPageOptions, bool) {
 			return childrenPageOptions{}, false
 		}
 	}
+	grouping, ok := parseFileExplorerGrouping(c, options.Offset != nil)
+	if !ok {
+		return childrenPageOptions{}, false
+	}
+	options.Grouping = grouping
+
 	if options.Name != "" && options.NameCI != "" {
 		fail(c, http.StatusBadRequest, "name and name_ci are mutually exclusive")
 		return childrenPageOptions{}, false
@@ -183,6 +192,12 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 	rankExpr := "(CASE WHEN xd_nodes.type = 'dir' THEN 0 ELSE 1 END)"
 	nameExpr := "lower(xd_nodes.name)"
 	sortExpr := nameExpr
+	groupFields := fileExplorerGroupFields{
+		Type:    "xd_nodes.type",
+		Name:    "xd_nodes.name",
+		Updated: "xd_nodes.updated_at",
+		Size:    "COALESCE(child_file.size, 0)",
+	}
 	switch options.Sort {
 	case "updated":
 		sortExpr = "xd_nodes.updated_at"
@@ -193,30 +208,33 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 	}
 
 	uid := userID(c)
-	query := s.DB.
-		Table("xd_nodes").
-		Select(`xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
-			xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
-			COALESCE(child_file.size, 0) AS file_size,
-			COALESCE(child_file.sha256, '') AS file_sha256`).
-		Joins("LEFT JOIN xd_files AS child_file ON child_file.node_id = xd_nodes.id").
-		Joins(`JOIN xd_nodes AS parent_node
-			ON parent_node.id = ?
-			AND parent_node.owner_id = ?
-			AND parent_node.type = ?
-			AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
-		Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
-
-	if options.Name != "" {
-		query = query.Where(
-			"lower(xd_nodes.name) = lower(?) AND xd_nodes.name = ?",
-			options.Name,
-			options.Name,
-		)
+	baseSelect := `xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
+		xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
+		COALESCE(child_file.size, 0) AS file_size,
+		COALESCE(child_file.sha256, '') AS file_sha256`
+	newChildrenQuery := func() *gorm.DB {
+		query := s.DB.
+			Table("xd_nodes").
+			Joins("LEFT JOIN xd_files AS child_file ON child_file.node_id = xd_nodes.id").
+			Joins(`JOIN xd_nodes AS parent_node
+				ON parent_node.id = ?
+				AND parent_node.owner_id = ?
+				AND parent_node.type = ?
+				AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
+			Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
+		if options.Name != "" {
+			query = query.Where(
+				"lower(xd_nodes.name) = lower(?) AND xd_nodes.name = ?",
+				options.Name,
+				options.Name,
+			)
+		}
+		if options.NameCI != "" {
+			query = query.Where("lower(xd_nodes.name) = lower(?)", options.NameCI)
+		}
+		return query
 	}
-	if options.NameCI != "" {
-		query = query.Where("lower(xd_nodes.name) = lower(?)", options.NameCI)
-	}
+	query := newChildrenQuery().Select(baseSelect)
 
 	if options.Cursor != "" {
 		cursor, err := decodeChildrenCursor(options.Cursor)
@@ -260,19 +278,25 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		direction = "DESC"
 	}
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
+	rangeOrderBy := fmt.Sprintf(
+		"%s%s %s, %s %s, xd_nodes.id %s",
+		fileExplorerItemOrderPrefix(groupFields, options.Grouping),
+		sortExpr,
+		direction,
+		nameExpr,
+		direction,
+		direction,
+	)
 
 	if options.Offset != nil {
 		var rows []childrenPageRow
-		selectClause := `xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
-			xd_nodes.revision, xd_nodes.created_at, xd_nodes.updated_at,
-			COALESCE(child_file.size, 0) AS file_size,
-			COALESCE(child_file.sha256, '') AS file_sha256`
+		selectClause := baseSelect
 		if options.IncludeCount {
 			selectClause += ", COUNT(*) OVER() AS total_count"
 		}
 		if err := query.
 			Select(selectClause).
-			Order(orderBy).
+			Order(rangeOrderBy).
 			Offset(*options.Offset).
 			Limit(options.Limit).
 			Scan(&rows).Error; err != nil {
@@ -285,15 +309,7 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			if len(rows) > 0 {
 				totalCount = rows[0].TotalCount
 			} else {
-				countQuery := s.DB.
-					Table("xd_nodes").
-					Joins(`JOIN xd_nodes AS parent_node
-						ON parent_node.id = ?
-						AND parent_node.owner_id = ?
-						AND parent_node.type = ?
-						AND parent_node.deleted_at IS NULL`, parentID, uid, meta.NodeTypeDir).
-					Where("xd_nodes.owner_id = ? AND xd_nodes.parent_id = ? AND xd_nodes.deleted_at IS NULL", uid, parentID)
-				if err := countQuery.Count(&totalCount).Error; err != nil {
+				if err := newChildrenQuery().Count(&totalCount).Error; err != nil {
 					fail(c, http.StatusInternalServerError, "count children failed")
 					return
 				}
@@ -314,6 +330,21 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			}
 		}
 
+		var groups []fileExplorerGroupIndexDTO
+		if options.IncludeCount && *options.Offset == 0 && options.Grouping.Group != "none" {
+			groupKey := fileExplorerGroupKeyExpr(groupFields, options.Grouping)
+			var groupRows []fileExplorerGroupRow
+			if err := newChildrenQuery().
+				Select(fmt.Sprintf("%s AS group_key, COUNT(*) AS item_count", groupKey)).
+				Group(groupKey).
+				Order(fileExplorerGroupOrder(groupFields, options.Grouping)).
+				Scan(&groupRows).Error; err != nil {
+				fail(c, http.StatusInternalServerError, "group children failed")
+				return
+			}
+			groups = fileExplorerGroupIndexes(groupRows)
+		}
+
 		out := make([]nodeDTO, 0, len(rows))
 		for _, row := range rows {
 			out = append(out, row.dto())
@@ -327,6 +358,7 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 			Limit:              options.Limit,
 			Sort:               options.Sort,
 			Order:              options.Order,
+			Groups:             groups,
 		})
 		return
 	}

@@ -104,6 +104,8 @@ test('cloud children range preserves offset zero and total count', async (t) => 
     assert.equal(url.searchParams.get('limit'), '200')
     assert.equal(url.searchParams.get('sort'), 'name')
     assert.equal(url.searchParams.get('order'), 'asc')
+    assert.equal(url.searchParams.get('group'), 'type')
+    assert.equal(url.searchParams.get('folders_first'), 'false')
     assert.equal(url.searchParams.get('cursor'), null)
     json(res, 200, {
       items: [{ id: 9, name: 'first.bin', type: 'file', size: 99, revision: 1 }],
@@ -114,7 +116,15 @@ test('cloud children range preserves offset zero and total count', async (t) => 
       order: 'asc',
     })
   })
-  const range = await client.cloudChildrenRange(42, 0, 200, 'name', 'asc')
+  const range = await client.cloudChildrenRange(
+    42,
+    0,
+    200,
+    'name',
+    'asc',
+    true,
+    { groupBy: 'type', foldersFirst: false },
+  )
   assert.equal(range.total_count, 640)
   assert.equal(range.offset, 0)
   assert.equal(range.limit, 200)
@@ -129,6 +139,8 @@ test('cloud children range can skip the already-known total count', async (t) =>
     assert.equal(url.searchParams.get('parent_id'), '42')
     assert.equal(url.searchParams.get('offset'), '200')
     assert.equal(url.searchParams.get('include_count'), 'false')
+    assert.equal(url.searchParams.get('group'), 'size')
+    assert.equal(url.searchParams.get('folders_first'), null)
     json(res, 200, {
       items: [{ id: 10, name: 'next.bin', type: 'file', size: 88, revision: 1 }],
       total_count: 0,
@@ -139,7 +151,15 @@ test('cloud children range can skip the already-known total count', async (t) =>
       order: 'asc',
     })
   })
-  const range = await client.cloudChildrenRange(42, 200, 200, 'name', 'asc', false)
+  const range = await client.cloudChildrenRange(
+    42,
+    200,
+    200,
+    'name',
+    'asc',
+    false,
+    { groupBy: 'size', foldersFirst: true },
+  )
   assert.equal(range.total_count, 0)
   assert.equal(range.total_count_included, false)
   assert.equal(range.offset, 200)
@@ -251,6 +271,8 @@ test('cloud search range preserves offset zero and total count', async (t) => {
     assert.equal(url.searchParams.get('limit'), '200')
     assert.equal(url.searchParams.get('sort'), 'updated')
     assert.equal(url.searchParams.get('order'), 'desc')
+    assert.equal(url.searchParams.get('group'), 'type')
+    assert.equal(url.searchParams.get('folders_first'), 'false')
     assert.equal(url.searchParams.get('cursor'), null)
     json(res, 200, {
       items: [{
@@ -272,6 +294,7 @@ test('cloud search range preserves offset zero and total count', async (t) => {
     'updated',
     'desc',
     { kind: 'pdf', minSize: 10, sourceID: 7 },
+    { groupBy: 'type', foldersFirst: false },
   )
   assert.equal(range.total_count, 640)
   assert.equal(range.offset, 0)

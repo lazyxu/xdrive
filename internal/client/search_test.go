@@ -115,6 +115,12 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 		if got := r.URL.Query().Get("max_size"); got != "1000" {
 			t.Fatalf("max_size=%q", got)
 		}
+		if got := r.URL.Query().Get("group"); got != "type" {
+			t.Fatalf("group=%q", got)
+		}
+		if got := r.URL.Query().Get("folders_first"); got != "false" {
+			t.Fatalf("folders_first=%q", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SearchRange{
 			Items:      []SearchResult{},
@@ -129,14 +135,18 @@ func TestSearchRangeUsesOffsetAndReturnsTotalCount(t *testing.T) {
 
 	cli := New(server.URL, "token")
 	maxSize := int64(1000)
+	foldersFirst := false
 	rangePage, err := cli.SearchRange(context.Background(), SearchRangeOptions{
 		Query:   "report 2026",
 		Type:    "file",
 		Filters: SearchFilters{MaxSize: &maxSize},
-		Limit:   100,
-		Offset:  200,
-		Sort:    "updated",
-		Order:   "asc",
+		Grouping: FileExplorerGroupingOptions{
+			Group: "type", FoldersFirst: &foldersFirst,
+		},
+		Limit:  100,
+		Offset: 200,
+		Sort:   "updated",
+		Order:  "asc",
 	})
 	if err != nil {
 		t.Fatal(err)

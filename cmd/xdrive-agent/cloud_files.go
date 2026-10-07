@@ -41,12 +41,13 @@ type agentCloudSearchPage struct {
 }
 
 type agentCloudSearchRange struct {
-	Items      []agentCloudSearchResult `json:"items"`
-	TotalCount int64                    `json:"total_count"`
-	Offset     int                      `json:"offset"`
-	Limit      int                      `json:"limit"`
-	Sort       string                   `json:"sort"`
-	Order      string                   `json:"order"`
+	Items      []agentCloudSearchResult        `json:"items"`
+	TotalCount int64                           `json:"total_count"`
+	Offset     int                             `json:"offset"`
+	Limit      int                             `json:"limit"`
+	Sort       string                          `json:"sort"`
+	Order      string                          `json:"order"`
+	Groups     []client.FileExplorerGroupIndex `json:"groups,omitempty"`
 }
 
 type agentCloudUploadResult struct {
@@ -1476,6 +1477,7 @@ func (c *agentController) CloudSearchRange(
 	offset, limit int,
 	sortKey, order string,
 	filters client.SearchFilters,
+	grouping client.FileExplorerGroupingOptions,
 ) (agentCloudSearchRange, error) {
 	query = strings.TrimSpace(query)
 	if (query == "" && !filters.Active()) || (query != "" && len([]rune(query)) < 2) {
@@ -1492,12 +1494,13 @@ func (c *agentController) CloudSearchRange(
 		return agentCloudSearchRange{}, err
 	}
 	page, err := cli.SearchRange(ctx, client.SearchRangeOptions{
-		Query:   query,
-		Filters: filters,
-		Limit:   limit,
-		Offset:  offset,
-		Sort:    strings.TrimSpace(sortKey),
-		Order:   strings.TrimSpace(order),
+		Query:    query,
+		Filters:  filters,
+		Grouping: grouping,
+		Limit:    limit,
+		Offset:   offset,
+		Sort:     strings.TrimSpace(sortKey),
+		Order:    strings.TrimSpace(order),
 	})
 	if err != nil {
 		return agentCloudSearchRange{}, err
@@ -1515,6 +1518,7 @@ func (c *agentController) CloudSearchRange(
 		Limit:      page.Limit,
 		Sort:       page.Sort,
 		Order:      page.Order,
+		Groups:     page.Groups,
 	}, nil
 }
 

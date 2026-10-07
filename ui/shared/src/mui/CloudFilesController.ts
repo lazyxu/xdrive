@@ -7,6 +7,14 @@ import type {
 import {
   XDRIVE_FILE_EXPLORER_PAGE_SIZE,
 } from '../file-explorer-controller'
+import {
+  XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+  xDriveFileExplorerGroupingSignature,
+} from '../file-explorer-grouping'
+import type {
+  XDriveFileExplorerGroupIndex,
+  XDriveFileExplorerGrouping,
+} from '../file-explorer-grouping'
 import type {
   XDriveFileExplorerPageSort,
 } from '../file-explorer-controller'
@@ -18,6 +26,7 @@ export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   itemAt: (index: number) => TNode | undefined
   ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
   collectRange: (startIndex: number, endIndex: number) => Promise<TNode[] | null>
+  groups: readonly XDriveFileExplorerGroupIndex[]
 }
 
 type XDriveCloudFilesVirtualTarget<
@@ -25,6 +34,8 @@ type XDriveCloudFilesVirtualTarget<
 > = {
   parentID: number
   sort: TSort
+  grouping: XDriveFileExplorerGrouping
+  groups: readonly XDriveFileExplorerGroupIndex[]
   requestID: number
 }
 
@@ -53,6 +64,7 @@ function xDriveCloudFilesVirtualQueryKey<
     target.parentID,
     target.sort.key,
     target.sort.direction,
+    xDriveFileExplorerGroupingSignature(target.grouping),
     target.requestID,
   ].join(':')
 }
@@ -110,6 +122,7 @@ export function useXDriveCloudFilesController<
       range.limit,
       target.sort,
       false,
+      target.grouping,
     )
     return {
       items: page.items,
@@ -130,6 +143,7 @@ export function useXDriveCloudFilesController<
   const activateVirtualDirectory = useCallback((
     parentID: number,
     sort: TSort,
+    grouping: XDriveFileExplorerGrouping,
     requestID: number,
     firstRange: {
       items: readonly TNode[]
@@ -137,12 +151,19 @@ export function useXDriveCloudFilesController<
       total_count_included?: boolean
       offset: number
       limit: number
+      groups?: readonly XDriveFileExplorerGroupIndex[]
     },
   ) => {
     if (firstRange.total_count_included === false) {
       throw new Error('Initial directory range must include total_count.')
     }
-    const target = { parentID, sort, requestID }
+    const target = {
+      parentID,
+      sort,
+      grouping: { ...grouping },
+      groups: firstRange.groups ? [...firstRange.groups] : [],
+      requestID,
+    }
     const nextKey = xDriveCloudFilesVirtualQueryKey(target)
     virtualCollection.reset(nextKey)
     virtualCollection.primePage({
@@ -162,6 +183,7 @@ export function useXDriveCloudFilesController<
       itemAt: virtualCollection.itemAt,
       ensureViewport: virtualCollection.ensureViewport,
       collectRange: virtualCollection.collectRange,
+      groups: virtualTarget.groups,
     }
   }, [
     items.length,
@@ -200,8 +222,10 @@ export function useXDriveCloudFilesController<
     id: number,
     nextCrumbs?: readonly XDriveCloudFilesCrumb[],
     sort?: TSort,
+    grouping?: XDriveFileExplorerGrouping,
   ) => {
     const effectiveSort = sort ?? virtualTargetRef.current?.sort ?? defaultSort
+    const effectiveGrouping = grouping ?? virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     setLoading(true)
@@ -212,17 +236,23 @@ export function useXDriveCloudFilesController<
         XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         effectiveSort,
         true,
+        effectiveGrouping,
       )
       if (requestID !== directoryRequestRef.current) return
       setItems([...range.items])
       if (nextCrumbs) setCrumbs([...nextCrumbs])
-      activateVirtualDirectory(id, effectiveSort, requestID, range)
+      activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
     } catch (error) {
       if (requestID === directoryRequestRef.current) reportError(error)
     } finally {
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, port, reportError])
+  }, [
+    activateVirtualDirectory,
+    defaultSort,
+    port,
+    reportError,
+  ])
 
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
@@ -241,6 +271,7 @@ export function useXDriveCloudFilesController<
         XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         defaultSort,
         true,
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
       )
       if (requestID !== directoryRequestRef.current) return
       if (
@@ -249,7 +280,13 @@ export function useXDriveCloudFilesController<
       ) setQuota(quotaValue)
       setCrumbs([{ id: root.id, name: rootLabel }])
       setItems([...range.items])
-      activateVirtualDirectory(root.id, defaultSort, requestID, range)
+      activateVirtualDirectory(
+        root.id,
+        defaultSort,
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+        requestID,
+        range,
+      )
     } catch (error) {
       if (requestID === directoryRequestRef.current) reportError(error)
     } finally {
@@ -262,9 +299,9 @@ export function useXDriveCloudFilesController<
       directoryRequestRef.current += 1
       quotaRequestRef.current += 1
       if (preserveStateOnDisable) {
-        // Desktop keeps the current directory across a temporary Agent
-        // transport outage. Abort stale virtual-range work without discarding
-        // the navigation state that should be resumed after reconnect.
+        // Desktop keeps the current directory and grouping across a temporary
+        // Agent transport outage. Abort stale range work without discarding
+        // navigation state that should be resumed after reconnect.
         virtualCollection.reset()
         setLoading(false)
         return
@@ -286,6 +323,7 @@ export function useXDriveCloudFilesController<
           target.id,
           preservedCrumbs,
           virtualTargetRef.current?.sort ?? defaultSort,
+          virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
         )
         return
       }
@@ -314,6 +352,7 @@ export function useXDriveCloudFilesController<
     crumbs,
     current,
     sort: virtualTarget?.sort ?? defaultSort,
+    grouping: virtualTarget?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
     loading,
     virtualDirectory,
     applyQuota,
