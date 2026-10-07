@@ -17,11 +17,12 @@ import (
 const (
 	storageTempReclaimableAge = time.Hour
 
-	storageCleanupThumbnail = "media_thumbnail"
-	storageCleanupAnalysis  = "analysis_preview"
-	storageCleanupStaging   = "upload_staging"
-	storageCleanupTemp      = "storage_temp"
-	storageCleanupAll       = "all"
+	storageCleanupThumbnail   = "media_thumbnail"
+	storageCleanupVideoPoster = "video_poster"
+	storageCleanupAnalysis    = "analysis_preview"
+	storageCleanupStaging     = "upload_staging"
+	storageCleanupTemp        = "storage_temp"
+	storageCleanupAll         = "all"
 )
 
 type storageInventoryItemDTO struct {
@@ -122,6 +123,12 @@ func storageInventoryCategory(key string) string {
 	if strings.HasPrefix(key, storage.UploadStagingDir+"/") {
 		return "upload_staging"
 	}
+	if strings.HasPrefix(key, media.VideoPosterStoragePrefix) {
+		if strings.HasSuffix(key, "-"+strconv.Itoa(media.VideoPosterEdge)+".jpg") {
+			return "video_poster"
+		}
+		return "media_other"
+	}
 	if strings.HasPrefix(key, media.ThumbnailStoragePrefix) {
 		switch {
 		case strings.HasSuffix(key, "-"+strconv.Itoa(media.DefaultThumbnailEdge)+".jpg"):
@@ -151,7 +158,7 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 
 	counters := map[string]*storageInventoryCounter{}
 	for _, key := range []string{
-		"cas", "legacy", "upload_staging", "media_thumbnail", "analysis_preview",
+		"cas", "legacy", "upload_staging", "media_thumbnail", "video_poster", "analysis_preview",
 		"media_other", "write_temp", "readiness_temp", "unclassified",
 	} {
 		counters[key] = &storageInventoryCounter{}
@@ -171,7 +178,7 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 		counter.files++
 		counter.bytes += file.Size
 		switch category {
-		case "media_thumbnail", "analysis_preview":
+		case "media_thumbnail", "video_poster", "analysis_preview":
 			counter.reclaimableFiles++
 			counter.reclaimableBytes += file.Size
 		case "write_temp", "readiness_temp":
@@ -242,6 +249,7 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 		item("legacy", "Legacy 文件数据", "primary", filesRoot, "active", false, ""),
 		item("upload_staging", "上传临时文件", "temporary", storageHostJoin(filesRoot, storage.UploadStagingDir), "active", true, storageCleanupStaging),
 		item("media_thumbnail", "图片缩略图 · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-512.jpg"), "regenerable", true, storageCleanupThumbnail),
+		item("video_poster", "视频 Poster · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/posters/*-512.jpg"), "regenerable", true, storageCleanupVideoPoster),
 		item("analysis_preview", "Photo Intelligence 分析预览 · 1280px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-1280.jpg"), "regenerable", true, storageCleanupAnalysis),
 		item("media_other", "其他媒体派生文件", "cache", storageHostJoin(filesRoot, ".xdrive-media"), "unknown", false, ""),
 		item("write_temp", "写入临时文件", "temporary", storageHostPattern(filesRoot, "**/.xdrive-upload-*"), "reclaimable_by_age", true, storageCleanupTemp),
@@ -250,10 +258,6 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 		{
 			Key: "preview_cache", Label: "普通预览缓存", Category: "cache",
 			Path: storageHostJoin(filesRoot, ".xdrive-media", "previews"), Status: "not_enabled",
-		},
-		{
-			Key: "video_poster", Label: "视频 Poster", Category: "cache",
-			Path: storageHostJoin(filesRoot, ".xdrive-media", "posters"), Status: "not_enabled",
 		},
 		{
 			Key: "video_transcode", Label: "视频转码 / Proxy", Category: "cache",
@@ -280,7 +284,7 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 
 	var storageRootBytes, reclaimableBytes int64
 	for _, key := range []string{
-		"cas", "legacy", "upload_staging", "media_thumbnail", "analysis_preview",
+		"cas", "legacy", "upload_staging", "media_thumbnail", "video_poster", "analysis_preview",
 		"media_other", "write_temp", "readiness_temp", "unclassified",
 	} {
 		storageRootBytes += counters[key].bytes

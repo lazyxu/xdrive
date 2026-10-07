@@ -23,7 +23,7 @@ type storageCacheCleanupDTO struct {
 
 func storageCleanupKindValid(kind string) bool {
 	switch kind {
-	case storageCleanupThumbnail, storageCleanupAnalysis, storageCleanupStaging, storageCleanupTemp, storageCleanupAll:
+	case storageCleanupThumbnail, storageCleanupVideoPoster, storageCleanupAnalysis, storageCleanupStaging, storageCleanupTemp, storageCleanupAll:
 		return true
 	default:
 		return false
@@ -35,6 +35,8 @@ func storageCleanupMatches(kind string, file storage.ManagedFile, cutoff time.Ti
 	switch kind {
 	case storageCleanupThumbnail:
 		return category == "media_thumbnail"
+	case storageCleanupVideoPoster:
+		return category == "video_poster"
 	case storageCleanupAnalysis:
 		return category == "analysis_preview"
 	case storageCleanupTemp:
@@ -42,6 +44,7 @@ func storageCleanupMatches(kind string, file storage.ManagedFile, cutoff time.Ti
 			file.ModifiedAt.Before(cutoff)
 	case storageCleanupAll:
 		return category == "media_thumbnail" ||
+			category == "video_poster" ||
 			category == "analysis_preview" ||
 			((category == "write_temp" || category == "readiness_temp") &&
 				file.ModifiedAt.Before(cutoff))

@@ -3,12 +3,12 @@ const path = require('node:path')
 const { app, BrowserWindow, contentTracing } = require('electron')
 
 const surfaces = new Set(['desktop', 'web'])
-const scenarios = new Set(['image-cold', 'image-warm', 'video-icons'])
+const scenarios = new Set(['image-cold', 'image-warm', 'video-poster-cold', 'video-poster-warm'])
 const surface = process.argv.find((value) => surfaces.has(value))
 const scenario = process.argv.find((value) => scenarios.has(value))
 
 if (!surface || !scenario) {
-  console.error('Usage: electron scripts/file-explorer-media-trace-main.cjs <desktop|web> <image-cold|image-warm|video-icons>')
+  console.error('Usage: electron scripts/file-explorer-media-trace-main.cjs <desktop|web> <image-cold|image-warm|video-poster-cold|video-poster-warm>')
   process.exit(2)
 }
 
@@ -192,13 +192,13 @@ app.whenReady().then(async () => {
         `Marquee trace did not select items: changes=${combined.marqueeSelectionChangeCount} peak=${combined.marqueePeakSelectedItems}`,
       )
     }
-    if (scenario === 'video-icons' && combined.thumbnailRequests !== 0) {
-      throw new Error(`Video icon scenario unexpectedly requested ${combined.thumbnailRequests} thumbnails.`)
+    if (combined.thumbnailRequests === 0) {
+      throw new Error(`Media scenario ${scenario} did not request any thumbnails.`)
     }
-    if (scenario !== 'video-icons' && combined.thumbnailRequests === 0) {
-      throw new Error('Image scenario did not request any thumbnails.')
-    }
-    if (scenario === 'image-warm' && combined.thumbnailRequests > 600) {
+    if (
+      (scenario === 'image-warm' || scenario === 'video-poster-warm') &&
+      combined.thumbnailRequests > 600
+    ) {
       throw new Error(`Warm thumbnail admission budget exceeded: ${combined.thumbnailRequests} requests.`)
     }
 

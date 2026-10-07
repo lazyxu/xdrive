@@ -143,6 +143,7 @@ export interface StagingCleanupFailure {
 
 export type StorageCacheCleanupKind =
   | 'media_thumbnail'
+  | 'video_poster'
   | 'analysis_preview'
   | 'upload_staging'
   | 'storage_temp'

@@ -375,7 +375,7 @@ export type XDriveFileExplorerMenuItem = {
 }
 
 const imageExtensions = new Set(['avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'livp', 'png', 'tif', 'tiff', 'webp'])
-const videoExtensions = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm'])
+const videoExtensions = new Set(['3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'])
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
 const documentExtensions = new Set(['doc', 'docx', 'odt', 'rtf'])
 const spreadsheetExtensions = new Set(['csv', 'ods', 'xls', 'xlsx'])
@@ -431,7 +431,8 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
 }
 
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
-  return xDriveFileKind(name, kind) === 'image'
+  const fileKind = xDriveFileKind(name, kind)
+  return fileKind === 'image' || fileKind === 'video'
 }
 
 function fileExplorerShortcutTitle(

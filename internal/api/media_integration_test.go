@@ -1071,6 +1071,63 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("media trash item=%+v range=%+v", trashItem, trashRange)
 	}
 
+	videoNode := uploadTestFile(
+		t,
+		router,
+		token,
+		folder.ID,
+		"poster.mov",
+		string(testLIVPMOV("poster-cache-test")),
+	)
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail", videoNode.ID),
+		token,
+		nil,
+		http.StatusNotFound,
+	)
+	posterBytes := testLIVPJPEG(t, "poster-cache-test")
+	requestWithHeaders(
+		t,
+		router,
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/media/items/%d/video-poster", videoNode.ID),
+		token,
+		bytes.NewReader(posterBytes),
+		http.StatusNoContent,
+		map[string]string{
+			"Content-Type": "image/jpeg",
+			"If-Match":     fmt.Sprintf("\"%d\"", videoNode.Revision),
+		},
+	)
+	posterResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail", videoNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	if !bytes.Equal(posterResponse.Body.Bytes(), posterBytes) {
+		t.Fatal("cached video poster bytes changed")
+	}
+	requestWithHeaders(
+		t,
+		router,
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/media/items/%d/video-poster", videoNode.ID),
+		token,
+		bytes.NewReader(posterBytes),
+		http.StatusConflict,
+		map[string]string{
+			"Content-Type": "image/jpeg",
+			"If-Match":     fmt.Sprintf("\"%d\"", videoNode.Revision+1),
+		},
+	)
+
 	// Only thumbnail reads are Trash-aware. Analysis preview remains an
 	// active-media API and must not expose deleted nodes.
 	request(

@@ -486,6 +486,7 @@ declare global {
         setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>
         setMediaDescription: (nodeID: number, description: string) => Promise<DesktopResult<AgentMediaDescription>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
+        putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>
         getMediaLivePhotoMotion: (
           nodeID: number,
           onProgress?: XDriveByteProgressHandler,

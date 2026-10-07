@@ -6,7 +6,7 @@ import {
 } from '@mui/icons-material'
 import { Box, CircularProgress } from '@mui/material'
 import type { MediaMetadata } from '../models'
-import { xDriveMediaVideoPosterGeometry } from './MediaGalleryVideoPoster'
+import { xDriveCaptureVideoPosterBlob } from './MediaGalleryVideoPoster'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 type MediaPreviewURLLoader = (
@@ -110,69 +110,18 @@ async function captureVideoPoster(
   const source = await loadPreviewURL(nodeID, 'video')
   if (!source) return null
 
-  return new Promise<string | null>((resolve) => {
-    const video = document.createElement('video')
-    let settled = false
-    const finish = (value: string | null) => {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timer)
-      video.removeAttribute('src')
-      video.load()
-      revokeIfBlob(source)
-      resolve(value)
-    }
-    const timer = window.setTimeout(() => finish(null), 15_000)
-
-    video.crossOrigin = 'anonymous'
-    video.muted = true
-    video.playsInline = true
-    video.preload = 'auto'
-    video.addEventListener('loadeddata', () => {
-      try {
-        if (video.videoWidth < 1 || video.videoHeight < 1) {
-          finish(null)
-          return
-        }
-        const geometry = xDriveMediaVideoPosterGeometry(
-          video.videoWidth,
-          video.videoHeight,
-          sourceWidth,
-          sourceHeight,
-          rotationDegrees,
-          512,
-        )
-        const canvas = document.createElement('canvas')
-        canvas.width = geometry.canvasWidth
-        canvas.height = geometry.canvasHeight
-        const context = canvas.getContext('2d')
-        if (!context) {
-          finish(null)
-          return
-        }
-        if (geometry.manualRotation === 90) {
-          context.translate(canvas.width, 0)
-          context.rotate(Math.PI / 2)
-        } else if (geometry.manualRotation === 270) {
-          context.translate(0, canvas.height)
-          context.rotate(-Math.PI / 2)
-        }
-        context.drawImage(
-          video,
-          0,
-          0,
-          geometry.drawWidth,
-          geometry.drawHeight,
-        )
-        finish(canvas.toDataURL('image/jpeg', 0.82))
-      } catch {
-        finish(null)
-      }
-    }, { once: true })
-    video.addEventListener('error', () => finish(null), { once: true })
-    video.src = source
-    video.load()
-  })
+  try {
+    const poster = await xDriveCaptureVideoPosterBlob(
+      source,
+      rotationDegrees,
+      sourceWidth,
+      sourceHeight,
+      512,
+    )
+    return poster ? URL.createObjectURL(poster) : null
+  } finally {
+    revokeIfBlob(source)
+  }
 }
 
 export function XDriveMediaAsyncVideoPoster({
@@ -216,6 +165,7 @@ export function XDriveMediaAsyncVideoPoster({
 
   useEffect(() => {
     let active = true
+    let resolved = ''
     setSrc('')
     if (!visible) return () => { active = false }
 
@@ -227,12 +177,16 @@ export function XDriveMediaAsyncVideoPoster({
       sourceHeight,
     ))
       .then((value) => {
-        if (active && value) setSrc(value)
+        if (!value) return
+        resolved = value
+        if (active) setSrc(value)
+        else revokeIfBlob(value)
       })
       .catch(() => undefined)
 
     return () => {
       active = false
+      if (resolved) revokeIfBlob(resolved)
     }
   }, [
     loadPreviewURL,

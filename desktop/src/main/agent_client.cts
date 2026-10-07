@@ -824,6 +824,7 @@ export type AgentCloudQuota = {
 
 export type AgentStorageCacheCleanupKind =
   | 'media_thumbnail'
+  | 'video_poster'
   | 'analysis_preview'
   | 'upload_staging'
   | 'storage_temp'
@@ -1533,6 +1534,18 @@ export class AgentIPCClient {
     )
   }
 
+  mediaVideoPoster(nodeID: number, revision: number, data: ArrayBuffer) {
+    const query = new URLSearchParams({
+      node_id: String(nodeID),
+      revision: String(revision),
+    })
+    return this.requestBinaryUpload(
+      `/v1/media/video-poster?${query.toString()}`,
+      data,
+      45_000,
+    )
+  }
+
   mediaLivePhotoMotion(
     nodeID: number,
     onProgress?: AgentBinaryProgressHandler,
@@ -2222,6 +2235,70 @@ export class AgentIPCClient {
     const discovery = validateDiscovery(value)
     this.discovery = discovery
     return discovery
+  }
+
+  private async requestBinaryUpload(
+    endpoint: string,
+    data: ArrayBuffer,
+    timeoutMs = 10_000,
+  ): Promise<void> {
+    let lastError: unknown
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const discovery = await this.loadDiscovery(attempt > 0)
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+      try {
+        const response = await fetch(new URL(endpoint, discovery.base_url), {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${discovery.token}`,
+            Accept: 'application/json',
+            'Content-Type': 'image/jpeg',
+          },
+          body: data,
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (response.ok) return
+
+        const raw = await response.text()
+        let payload: unknown = {}
+        if (raw) {
+          try {
+            payload = JSON.parse(raw)
+          } catch {
+            payload = {}
+          }
+        }
+        const errorPayload = payload as { error?: unknown; message?: unknown; detail?: unknown }
+        const code = typeof errorPayload.error === 'string' ? errorPayload.error : 'agent_error'
+        const message = typeof errorPayload.message === 'string'
+          ? errorPayload.message
+          : `xdrive-agent request failed with HTTP ${response.status}.`
+        const detail = typeof errorPayload.detail === 'string' ? errorPayload.detail : undefined
+        const apiError = new AgentIPCError(code, response.status, message, detail)
+        if (response.status === 401 && attempt === 0) {
+          this.invalidate()
+          lastError = apiError
+          continue
+        }
+        throw apiError
+      } catch (error) {
+        if (error instanceof AgentIPCError) throw error
+        lastError = error
+        this.invalidate()
+        if (attempt === 0) continue
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    throw new AgentIPCError(
+      'agent_unavailable',
+      0,
+      lastError instanceof Error ? `xdrive-agent is not reachable: ${lastError.message}` : 'xdrive-agent is not reachable.',
+    )
   }
 
   private async requestBinary(

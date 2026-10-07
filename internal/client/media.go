@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -951,6 +952,33 @@ func (c *Client) MediaThumbnail(
 		return nil, "", fmt.Errorf("unexpected thumbnail not-modified response")
 	}
 	return response.Data, response.ContentType, nil
+}
+
+func (c *Client) PutMediaVideoPoster(
+	ctx context.Context,
+	nodeID, revision uint64,
+	data []byte,
+) error {
+	req, err := c.request(
+		ctx,
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/media/items/%d/video-poster", nodeID),
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "image/jpeg")
+	req.Header.Set("If-Match", fmt.Sprintf("\"%d\"", revision))
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
 }
 
 func (c *Client) MediaAnalysisPreview(
