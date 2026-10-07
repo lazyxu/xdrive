@@ -568,7 +568,8 @@ bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-run.out" 2>"$TMP/con
 CONTROL_TEST_PID=$!
 
 for _ in $(seq 1 50); do
-  if grep -q '"state":"idle"' "$TMP/home/state/control/status.json" 2>/dev/null; then
+  if grep -q '"state":"idle"' "$TMP/home/state/control/status.json" 2>/dev/null &&
+     [[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]; then
     break
   fi
   kill -0 "$CONTROL_TEST_PID" 2>/dev/null || {
@@ -580,6 +581,14 @@ done
 grep -q '"state":"idle"' "$TMP/home/state/control/status.json"
 [[ -f "$TMP/home/state/control/heartbeat" ]]
 grep -Eq '^[0-9]+$' "$TMP/home/state/control/runner.pid"
+
+[[ -f "$TMP/home/state/control/storage-host-inventory.env" ]]
+grep -Eq '^generated_at=[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$TMP/home/state/control/storage-host-inventory.env"
+grep -Eq '^database_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
+grep -Eq '^backup_root_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
+grep -Eq '^config_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
+grep -Eq '^logs_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
+grep -Eq '^state_bytes=[0-9]+$' "$TMP/home/state/control/storage-host-inventory.env"
 
 request_tmp="$TMP/home/state/control/.request-test.tmp"
 cat > "$request_tmp" <<EOF

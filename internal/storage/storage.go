@@ -80,3 +80,13 @@ type StagingInspector interface {
 type StagingWalker interface {
 	WalkStaging(context.Context, func(StagingFile) error) error
 }
+
+type ManagedFile struct {
+	Key        string
+	Size       int64
+	ModifiedAt time.Time
+}
+
+type ManagedFileWalker interface {
+	WalkManagedFiles(context.Context, func(ManagedFile) error) error
+}

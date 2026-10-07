@@ -134,6 +134,14 @@ They remain valid for:
 Original image preview should be attempted first in details/Inspector surfaces when the
 format is supported by the Preview Engine.
 
+### Persistent preview/cache storage accounting
+
+Server-side preview/derivative storage is governed by `docs/storage-inventory.md`.
+
+The current Preview Engine does **not** persist an ordinary Image/PDF/Video/Audio preview cache: ordinary preview streams the canonical file through the signed preview contract. The storage inventory therefore reports the reserved ordinary-preview path as zero / not enabled until such a derivative pipeline actually exists.
+
+If video transcoding/proxy generation or a persistent poster/preview cache is added later, that change must register its physical path, accounting semantics, regeneration contract, and cleanup safety in the storage inventory in the same change. Do not create an unreported `.xdrive-media` subtree.
+
 ## Security contract
 
 Preview tickets must remain narrowly scoped.

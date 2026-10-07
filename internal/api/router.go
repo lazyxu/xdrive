@@ -31,6 +31,12 @@ type Server struct {
 	PhotoFaceAnalyzer           photointelligence.FaceAnalyzer
 	PhotoFacePreviewBaseURL     string
 	HostControlDir              string
+	FilesDataHostPath           string
+	PostgresDataHostPath        string
+	BackupRootHostPath          string
+	XDriveHomeHostPath          string
+	CaddyDataHostPath           string
+	CaddyConfigHostPath         string
 	BackgroundScheduler         *background.Scheduler
 	BackgroundRuntimeInstanceID string
 	MediaIndexWakeups           <-chan uint64
@@ -208,6 +214,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage/history", s.adminStorageHistory)
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
+	admin.POST("/storage/cache/cleanup", s.adminCleanupStorageCache)
 	admin.GET("/storage/staging/cleanup-runs", s.adminStagingCleanupRuns)
 	admin.GET("/storage/staging/cleanup-runs/:runID/failures", s.adminStagingCleanupFailures)
 	admin.POST("/users", s.adminCreateUser)

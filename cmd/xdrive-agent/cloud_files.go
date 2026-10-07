@@ -1532,6 +1532,14 @@ func (c *agentController) CloudStorageStats(ctx context.Context) (client.Storage
 	return cli.StorageStats(ctx)
 }
 
+func (c *agentController) CloudCleanupStorageCache(ctx context.Context, kind string) (client.StorageCacheCleanup, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.StorageCacheCleanup{}, err
+	}
+	return cli.CleanupStorageCache(ctx, kind)
+}
+
 func (c *agentController) CloudTrash(ctx context.Context) ([]client.Node, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

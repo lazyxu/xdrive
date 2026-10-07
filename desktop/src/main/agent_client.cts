@@ -732,12 +732,54 @@ export type AgentCloudQuota = {
   over_quota: boolean
 }
 
+export type AgentStorageCacheCleanupKind =
+  | 'media_thumbnail'
+  | 'analysis_preview'
+  | 'upload_staging'
+  | 'storage_temp'
+  | 'all'
+
+export type AgentStorageInventoryItem = {
+  key: string
+  label: string
+  category: string
+  path: string
+  files: number
+  bytes: number
+  reclaimable_files: number
+  reclaimable_bytes: number
+  deletable: boolean
+  cleanup_kind?: AgentStorageCacheCleanupKind
+  status: string
+}
+
+export type AgentStorageInventory = {
+  items: AgentStorageInventoryItem[]
+  storage_root_bytes: number
+  database_bytes: number
+  backup_bytes: number
+  host_service_bytes: number
+  total_managed_bytes: number
+  reclaimable_bytes: number
+  unclassified_bytes: number
+  generated_at: string
+}
+
+export type AgentStorageCacheCleanup = {
+  kind: AgentStorageCacheCleanupKind
+  deleted_files: number
+  deleted_bytes: number
+  failed_files: number
+  inventory: AgentStorageInventory
+}
+
 export type AgentCloudStorageStats = {
   scope: 'self' | 'global'
   disk_total_bytes?: number
   disk_used_bytes?: number
   disk_available_bytes?: number
   xdrive_physical_bytes?: number
+  inventory?: AgentStorageInventory
   cas_blob_count: number
   cas_physical_bytes: number
   cas_logical_referenced_bytes: number
@@ -1759,6 +1801,15 @@ export class AgentIPCClient {
 
   cloudStorageStats() {
     return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats')
+  }
+
+  cloudCleanupStorageCache(kind: AgentStorageCacheCleanupKind) {
+    return this.request<AgentStorageCacheCleanup>(
+      'POST',
+      '/v1/cloud/storage-cache/cleanup',
+      { kind },
+      130_000,
+    )
   }
 
   cloudTrash() {

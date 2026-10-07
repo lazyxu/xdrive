@@ -78,6 +78,39 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 	return written, nil
 }
 
+func (l *Local) WalkManagedFiles(ctx context.Context, visit func(ManagedFile) error) error {
+	return filepath.WalkDir(l.root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if path == l.root || entry.IsDir() {
+			return nil
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		rel, err := filepath.Rel(l.root, path)
+		if err != nil {
+			return err
+		}
+		return visit(ManagedFile{
+			Key:        filepath.ToSlash(rel),
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime(),
+		})
+	})
+}
+
 func (l *Local) Open(_ context.Context, key string) (*os.File, error) {
 	full, err := l.resolve(key)
 	if err != nil {

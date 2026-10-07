@@ -524,18 +524,22 @@ export default function App({
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
   const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
+  const storageCleanupSupported = agent.hello?.capabilities.includes('storage-cache-cleanup') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => window.xdriveDesktop.agent.cloudQuota(),
     getStats: storageStatsSupported
       ? () => window.xdriveDesktop.agent.cloudStorageStats()
       : undefined,
+    cleanupCache: status?.role === 'admin' && storageCleanupSupported
+      ? (kind) => window.xdriveDesktop.agent.cloudCleanupStorageCache(kind)
+      : undefined,
   }, {
     onQuota: applyCloudQuota,
     statsUnavailableMessage: storageStatsSupported
       ? undefined
       : '当前 xdrive-agent 不支持云端存储情报，请更新客户端核心组件。',
-  }), [applyCloudQuota, storageStatsSupported])
+  }), [applyCloudQuota, status?.role, storageCleanupSupported, storageStatsSupported])
   const localStorageSource = useMemo<DesktopLocalStorageDataSource>(() => ({
     load: async () => {
       const [treeResult, cacheResult] = await Promise.all([

@@ -83,6 +83,8 @@ import {
   type AgentCloudRecentItem,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
+  type AgentStorageCacheCleanup,
+  type AgentStorageCacheCleanupKind,
   type AgentCloudVersion,
   type AgentCloudShare,
   type AgentCreatedCloudShare,
@@ -3348,6 +3350,14 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'storage-intelligence')
     return requireAgentClient().cloudStorageStats()
+  }, false))
+  ipcMain.handle('agent:cloud-storage-cache-cleanup', (_event, kind: AgentStorageCacheCleanupKind) => runAgentAction<AgentStorageCacheCleanup>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'storage-cache-cleanup')
+    if (!['media_thumbnail', 'analysis_preview', 'upload_staging', 'storage_temp', 'all'].includes(kind)) {
+      throw new AgentIPCError('invalid_input', 0, 'Storage cleanup kind is invalid.')
+    }
+    return requireAgentClient().cloudCleanupStorageCache(kind)
   }, false))
   ipcMain.handle('agent:cloud-trash', () => runAgentAction<AgentCloudNode[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
