@@ -469,12 +469,18 @@ server-image:
 
 photo-face-image:
   image: $XDRIVE_CI_GO_IMAGE
-  extends: .ci-tools-cache
   stage: test
   needs: []
   resource_group: xdrive-photo-face-image
   tags:
     - linux
+  cache:
+    key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"
+    paths:
+      - .cache/ci-tools/
+      - .cache/photo-face-runtime/
+    policy: pull-push
+    when: always
   before_script:
     - *ensure_linux_fetch_tools
     - *install_docker_cli_only
