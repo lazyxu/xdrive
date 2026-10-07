@@ -18,7 +18,7 @@ import (
 const (
 	mediaPlaceCellScale    int64 = 100
 	mediaPlaceDefaultLimit       = 24
-	mediaPlaceMaxLimit           = 100
+	mediaPlaceMaxLimit           = 1000
 )
 
 type mediaPlaceCell struct {
@@ -91,7 +91,7 @@ func (s *Server) listMediaPlaces(c *gin.Context) {
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
 		if err != nil || value < 1 || value > mediaPlaceMaxLimit {
-			fail(c, http.StatusBadRequest, "limit must be between 1 and 100")
+			fail(c, http.StatusBadRequest, "limit must be between 1 and 1000")
 			return
 		}
 		limit = value

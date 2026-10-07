@@ -56,6 +56,7 @@ import {
   XDriveMediaGalleryNavigation,
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
+import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
@@ -321,6 +322,7 @@ export function XDriveMediaGalleryPage({
   const [smartDialogError, setSmartDialogError] = useState('')
   const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
+  const placesExpandedRef = useRef(false)
   const collectionTargetRef = useRef<MediaGalleryCollectionTarget | null>(null)
   const [collectionTarget, setCollectionTarget] = useState<MediaGalleryCollectionTarget | null>(null)
 
@@ -460,7 +462,9 @@ export function XDriveMediaGalleryPage({
         const [range, nextAlbums, nextPlaces, nextSuggestedPeople, nextPeople] = await Promise.all([
           rangePromise,
           source.listAlbums(),
-          source.listPlaces ? source.listPlaces(24) : Promise.resolve([]),
+          source.listPlaces
+            ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
+            : Promise.resolve([]),
           source.listSuggestedPeople ? source.listSuggestedPeople(24) : Promise.resolve([]),
           listAllPeople(),
         ])
@@ -525,6 +529,7 @@ export function XDriveMediaGalleryPage({
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     if (nextSection === 'memories') return
+    placesExpandedRef.current = nextSection === 'places'
     setSection(nextSection)
     setActiveMediaType('')
     const nextDraft = mediaGallerySectionDraft(nextSection)
@@ -686,6 +691,7 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, query])
 
   const openPlace = useCallback((place: MediaPlaceFacet) => {
+    placesExpandedRef.current = true
     setSection('places')
     setActiveMediaType('')
     const nextDraft: MediaGalleryFilterDraft = {
@@ -2976,12 +2982,11 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPlacesIndex && places.length > 0 ? (
-        <Box>
+        <Stack spacing={2}>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
             spacing={0.75}
             alignItems={{ xs: 'flex-start', sm: 'baseline' }}
-            sx={{ mb: 1.25 }}
           >
             <Typography variant="subtitle1" fontWeight={700}>
               地点
@@ -2992,59 +2997,71 @@ export function XDriveMediaGallery({
                 : '按本地 GPS 坐标近似聚合，不使用在线地理服务'}
             </Typography>
           </Stack>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: 1.5,
-            }}
-          >
-            {places.map((place) => (
-              <Paper
-                key={place.id}
-                variant="outlined"
-                role={onOpenPlace ? 'button' : undefined}
-                tabIndex={onOpenPlace ? 0 : undefined}
-                onClick={() => onOpenPlace?.(place)}
-                onKeyDown={(event) => {
-                  if (onOpenPlace) keyboardActivate(event, () => onOpenPlace(place))
-                }}
-                sx={{
-                  overflow: 'hidden',
-                  cursor: onOpenPlace ? 'pointer' : 'default',
-                  borderColor: activePlaceID === place.id ? 'primary.main' : 'divider',
-                  transition: 'transform 120ms ease, box-shadow 120ms ease',
-                  '&:hover': onOpenPlace
-                    ? { transform: 'translateY(-1px)', boxShadow: 2 }
-                    : undefined,
-                  '&:focus-visible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: 2,
-                  },
-                }}
-              >
-                <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-                  <XDriveMediaAsyncThumbnail
-                    nodeID={place.cover_node_id}
-                    alt={place.name}
-                    loadThumbnail={loadThumbnail}
-                    fallback={xDriveMediaFallback('image')}
-                  />
-                </Box>
-                <Box sx={{ px: 1.5, py: 1.2 }}>
-                  <Typography variant="body2" fontWeight={650} noWrap>
-                    {place.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {place.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS
-                    {place.attribution ? ` · ${place.attribution}` : ''}
-                  </Typography>
-                </Box>
-              </Paper>
-            ))}
+
+          <XDriveMediaGalleryPlacesMap
+            places={places}
+            activePlaceID={activePlaceID}
+            onOpenPlace={onOpenPlace}
+          />
+
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.25 }}>
+              地点列表
+            </Typography>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                gap: 1.5,
+              }}
+            >
+              {places.slice(0, 24).map((place) => (
+                <Paper
+                  key={place.id}
+                  variant="outlined"
+                  role={onOpenPlace ? 'button' : undefined}
+                  tabIndex={onOpenPlace ? 0 : undefined}
+                  onClick={() => onOpenPlace?.(place)}
+                  onKeyDown={(event) => {
+                    if (onOpenPlace) keyboardActivate(event, () => onOpenPlace(place))
+                  }}
+                  sx={{
+                    overflow: 'hidden',
+                    cursor: onOpenPlace ? 'pointer' : 'default',
+                    borderColor: activePlaceID === place.id ? 'primary.main' : 'divider',
+                    transition: 'transform 120ms ease, box-shadow 120ms ease',
+                    '&:hover': onOpenPlace
+                      ? { transform: 'translateY(-1px)', boxShadow: 2 }
+                      : undefined,
+                    '&:focus-visible': {
+                      outline: '2px solid',
+                      outlineColor: 'primary.main',
+                      outlineOffset: 2,
+                    },
+                  }}
+                >
+                  <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
+                    <XDriveMediaAsyncThumbnail
+                      nodeID={place.cover_node_id}
+                      alt={place.name}
+                      loadThumbnail={loadThumbnail}
+                      fallback={xDriveMediaFallback('image')}
+                    />
+                  </Box>
+                  <Box sx={{ px: 1.5, py: 1.2 }}>
+                    <Typography variant="body2" fontWeight={650} noWrap>
+                      {place.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {place.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS
+                      {place.attribution ? ` · ${place.attribution}` : ''}
+                    </Typography>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
           </Box>
-        </Box>
+        </Stack>
       ) : null}
 
       {showPeopleIndex && people.length > 0 ? (

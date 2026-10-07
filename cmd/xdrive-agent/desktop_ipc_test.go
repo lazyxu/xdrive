@@ -2033,7 +2033,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media albums status=%d body=%s", res.Code, res.Body.String())
 	}
 
-	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/places?limit=12", "")
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/places?limit=1000", "")
 	if res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), "\"place:135:10381\"") ||
 		!strings.Contains(res.Body.String(), "\"item_count\":2") {
@@ -2294,6 +2294,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?tag=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		"/v1/media/items?place=invalid",
 		"/v1/media/places?limit=0",
+		"/v1/media/places?limit=1001",
 		"/v1/media/people/suggestions?limit=0",
 		"/v1/media/people/suggestion-items?person_id=invalid",
 		"/v1/media/people/identity-items?person_id=invalid",

@@ -13,6 +13,8 @@ const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPre
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
+const sharedGalleryPlacesMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMap.tsx')
+const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMapModel.ts')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
@@ -28,6 +30,8 @@ const sharedGallery = [
   sharedGalleryUtils,
   sharedGalleryFilters,
   sharedGalleryNavigation,
+  sharedGalleryPlacesMap,
+  sharedGalleryPlacesMapModel,
   sharedGallerySelectionToolbar,
   sharedGalleryFilmstrip,
   sharedGalleryViewer,
@@ -289,6 +293,47 @@ test('Gallery Trash and reliable media collections stay shared and evidence-base
       `${guessed} must not be exposed before deterministic local evidence exists`,
     )
   }
+})
+
+test('Gallery Places map is shared, local-first, and bounded to compact facets', () => {
+  for (const token of [
+    '<XDriveMediaGalleryPlacesMap',
+    'placesExpandedRef',
+    'source.listPlaces(placesExpandedRef.current ? 1000 : 24)',
+    'places.slice(0, 24)',
+    '地点列表',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery map wiring missing: ${token}`)
+  }
+
+  for (const token of [
+    'data-xdrive-gallery-places-map',
+    '本地 GPS 聚合',
+    '不请求在线地图瓦片',
+    'xDriveMediaPlacesCluster',
+    'xDriveMediaPlacesFitViewport',
+    'xDriveMediaPlacesPanViewport',
+    'ResizeObserver',
+    'onPointerDown',
+    'onWheel',
+  ]) {
+    assert.ok(sharedGalleryPlacesMap.includes(token), `shared Places map missing: ${token}`)
+  }
+
+  for (const token of [
+    'xDriveMediaPlacesProject',
+    'xDriveMediaPlacesCluster',
+    'xDriveMediaPlacesFitViewport',
+    'xDriveMediaPlacesNormalizeLongitude',
+  ]) {
+    assert.ok(sharedGalleryPlacesMapModel.includes(token), `Places map model missing: ${token}`)
+  }
+
+  assert.equal(sharedGalleryPlacesMap.includes('tile.openstreetmap'), false)
+  assert.equal(sharedGalleryPlacesMap.includes('maps.google'), false)
+  assert.equal(sharedGalleryPlacesMap.includes('mapbox'), false)
+  assert.equal(sharedGalleryPlacesMap.includes('https://'), false)
+  assert.equal(sharedGalleryPlacesMap.includes('http://'), false)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {
