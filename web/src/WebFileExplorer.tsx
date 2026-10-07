@@ -42,6 +42,7 @@ import type {
   XDriveFileOperation,
   XDriveFileExplorerGrouping,
   XDriveFileExplorerSearchSourceOption,
+  XDriveByteProgressHandler,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
@@ -319,13 +320,16 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const loadLivePhotoMotion = useCallback(async (item: XDriveFileExplorerItem) => {
+  const loadLivePhotoMotion = useCallback(async (
+    item: XDriveFileExplorerItem,
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
     if (
       item.kind !== 'file' ||
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
     try {
-      const blob = await api.mediaLivePhotoMotion(Number(item.id))
+      const blob = await api.mediaLivePhotoMotion(Number(item.id), onProgress)
       return URL.createObjectURL(blob)
     } catch {
       return null

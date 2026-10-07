@@ -9,6 +9,7 @@ import type {
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
 } from '../models'
+import type { XDriveByteProgressHandler } from '../file-preview'
 import { resolveXDriveTransport } from '../transport-result'
 import type {
   XDriveTransportError,
@@ -113,6 +114,7 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
   loadLivePhotoMotion?: (
     nodeID: number,
+    onProgress?: XDriveByteProgressHandler,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
   loadPreviewURL?: (
     nodeID: number,
@@ -272,8 +274,8 @@ export function createXDriveMediaGalleryDataSource(
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion
-      ? async (nodeID) => mediaResourceURL(
-          await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID)),
+      ? async (nodeID, onProgress) => mediaResourceURL(
+          await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID, onProgress)),
           'video/quicktime',
         )
       : undefined,

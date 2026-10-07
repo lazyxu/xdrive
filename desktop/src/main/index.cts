@@ -2427,7 +2427,11 @@ function registerIPCHandlers() {
     return requireAgentClient().mediaThumbnail(nodeID)
   }, false))
 
-  ipcMain.handle('agent:get-media-live-photo-motion', (_event, nodeID: unknown) => runAgentAction<AgentMediaMotion>(async () => {
+  ipcMain.handle('agent:get-media-live-photo-motion', (
+    event,
+    nodeID: unknown,
+    progressRequestID: unknown,
+  ) => runAgentAction<AgentMediaMotion>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
     if (
@@ -2437,7 +2441,21 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
     }
-    return requireAgentClient().mediaLivePhotoMotion(nodeID)
+    const requestID = typeof progressRequestID === 'string' && progressRequestID.length <= 128
+      ? progressRequestID
+      : ''
+    return requireAgentClient().mediaLivePhotoMotion(
+      nodeID,
+      requestID
+        ? (loadedBytes, totalBytes) => {
+            event.sender.send('agent:media-live-photo-motion-progress', {
+              request_id: requestID,
+              loaded_bytes: loadedBytes,
+              total_bytes: totalBytes,
+            })
+          }
+        : undefined,
+    )
   }, false))
 
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {

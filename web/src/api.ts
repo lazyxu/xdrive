@@ -48,6 +48,7 @@ import type {
   XDriveTransferTask,
   XDriveBackgroundTask,
   XDriveBackgroundTaskActiveSummary,
+  XDriveByteProgressHandler,
   XDriveBackgroundTaskControlAction,
   XDriveBackgroundTaskControlResult,
   XDriveBackgroundTaskPage,
@@ -218,6 +219,46 @@ export class ApiError extends Error {
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? ''
+
+async function responseBlobWithProgress(
+  response: Response,
+  onProgress?: XDriveByteProgressHandler,
+) {
+  if (!onProgress) return response.blob()
+
+  const rawTotal = Number(response.headers.get('content-length') || '')
+  const totalBytes = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : undefined
+  onProgress(0, totalBytes)
+
+  if (!response.body) {
+    const blob = await response.blob()
+    onProgress(blob.size, totalBytes ?? blob.size)
+    return blob
+  }
+
+  const contentType =
+    response.headers.get('content-type')?.split(';', 1)[0]?.trim() ||
+    'application/octet-stream'
+  let loadedBytes = 0
+  let lastProgressAt = 0
+  const stream = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      loadedBytes += chunk.byteLength
+      const now = Date.now()
+      if (now - lastProgressAt >= 100) {
+        lastProgressAt = now
+        onProgress(loadedBytes, totalBytes)
+      }
+      controller.enqueue(chunk)
+    },
+    flush() {
+      onProgress(loadedBytes, totalBytes)
+    },
+  }))
+  return new Response(stream, {
+    headers: { 'Content-Type': contentType },
+  }).blob()
+}
 
 function appendMediaGalleryQuery(
   values: URLSearchParams,
@@ -984,7 +1025,10 @@ export class XDriveApi {
     return response.blob()
   }
 
-  async mediaLivePhotoMotion(nodeID: number): Promise<Blob> {
+  async mediaLivePhotoMotion(
+    nodeID: number,
+    onProgress?: XDriveByteProgressHandler,
+  ): Promise<Blob> {
     await this.ensureFresh()
     const path = `/api/v1/media/items/${nodeID}/live-photo-motion`
     let response = await fetch(`${API_BASE}${path}`, {
@@ -1004,7 +1048,7 @@ export class XDriveApi {
         response.statusText || 'Live Photo motion unavailable',
       )
     }
-    return response.blob()
+    return responseBlobWithProgress(response, onProgress)
   }
 
   sources() {

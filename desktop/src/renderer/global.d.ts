@@ -40,6 +40,7 @@ import type {
   XDriveCloudFilesSearchResult,
   XDriveBackgroundTask,
   XDriveBackgroundTaskPage,
+  XDriveByteProgressHandler,
   XDriveBackgroundTaskActiveSummary,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
@@ -478,7 +479,10 @@ declare global {
         setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>
         setMediaDescription: (nodeID: number, description: string) => Promise<DesktopResult<AgentMediaDescription>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
-        getMediaLivePhotoMotion: (nodeID: number) => Promise<DesktopResult<AgentMediaMotion>>
+        getMediaLivePhotoMotion: (
+          nodeID: number,
+          onProgress?: XDriveByteProgressHandler,
+        ) => Promise<DesktopResult<AgentMediaMotion>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

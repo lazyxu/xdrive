@@ -106,8 +106,17 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
 
   for (const source of [web, desktop]) {
     assert.ok(source.includes('const loadLivePhotoMotion = useCallback'), 'FileExplorer adapter must load LIVP motion')
+    assert.ok(source.includes('onProgress?: XDriveByteProgressHandler'), 'FileExplorer LIVP loader must expose byte progress')
     assert.ok(source.includes('loadLivePhotoMotion={loadLivePhotoMotion}'), 'FileExplorer must pass LIVP motion into shared preview')
   }
+  assert.ok(
+    preview.includes('loadLivePhotoMotion(target, onProgress)'),
+    'shared FilePreviewSurface must forward byte progress into LIVP transport',
+  )
+  assert.ok(
+    livePhoto.includes('loadMotion(onProgress)') && livePhoto.includes('按住加载并播放'),
+    'shared Live Photo surface must fetch motion only after the first hold',
+  )
   assert.ok(
     docs.includes('validated `.livp`') && docs.includes('FileExplorer'),
     'Preview Engine design must document the LIVP FileExplorer exception',

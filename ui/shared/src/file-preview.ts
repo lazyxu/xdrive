@@ -4,6 +4,11 @@ export type XDriveFileTextPreview = {
   size: number
 }
 
+export type XDriveByteProgressHandler = (
+  loadedBytes: number,
+  totalBytes?: number,
+) => void
+
 export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'live_photo'
 
 export type XDriveFilePreviewTarget = {

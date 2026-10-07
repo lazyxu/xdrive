@@ -6,6 +6,7 @@ import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import { Box } from '@mui/material'
 import {
+  type XDriveByteProgressHandler,
   type XDriveFileExplorerKeyboardProfile,
   xDriveFileExplorerCopyPath,
   xDriveFileExplorerPathLookupPageOptions,
@@ -619,12 +620,15 @@ export default function DesktopFileExplorer({
     return URL.createObjectURL(blob)
   }, [])
 
-  const loadLivePhotoMotion = useCallback(async (item: XDriveFileExplorerItem) => {
+  const loadLivePhotoMotion = useCallback(async (
+    item: XDriveFileExplorerItem,
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
     if (
       item.kind !== 'file' ||
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
-    const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id))
+    const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id), onProgress)
     if (!result.ok) return null
     const contentType = result.data.content_type || 'video/quicktime'
     return URL.createObjectURL(new Blob([result.data.data], { type: contentType }))

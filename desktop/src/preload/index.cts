@@ -1,5 +1,8 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
+type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number) => void
+let mediaLivePhotoMotionRequestSequence = 0
+
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
@@ -223,7 +226,35 @@ const agent = Object.freeze({
   setMediaPeople: (nodeID: number, people: string[]) => ipcRenderer.invoke('agent:set-media-people', nodeID, people),
   setMediaDescription: (nodeID: number, description: string) => ipcRenderer.invoke('agent:set-media-description', nodeID, description),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
-  getMediaLivePhotoMotion: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID),
+  getMediaLivePhotoMotion: (
+    nodeID: number,
+    onProgress?: XDriveByteProgressCallback,
+  ) => {
+    const requestID = `motion-${Date.now()}-${++mediaLivePhotoMotionRequestSequence}`
+    const channel = 'agent:media-live-photo-motion-progress'
+    const listener = (_event: unknown, payload: unknown) => {
+      if (!onProgress || !payload || typeof payload !== 'object') return
+      const value = payload as {
+        request_id?: unknown
+        loaded_bytes?: unknown
+        total_bytes?: unknown
+      }
+      if (
+        value.request_id !== requestID ||
+        typeof value.loaded_bytes !== 'number' ||
+        !Number.isFinite(value.loaded_bytes)
+      ) return
+      const totalBytes = typeof value.total_bytes === 'number' && Number.isFinite(value.total_bytes)
+        ? value.total_bytes
+        : undefined
+      onProgress(value.loaded_bytes, totalBytes)
+    }
+    if (onProgress) ipcRenderer.on(channel, listener)
+    return ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID, requestID)
+      .finally(() => {
+        if (onProgress) ipcRenderer.removeListener(channel, listener)
+      })
+  },
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),
