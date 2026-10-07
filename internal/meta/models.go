@@ -170,6 +170,7 @@ const (
 	SystemMaintenanceKindJanitor        = "janitor"
 	SystemMaintenanceKindStorageSampler = "storage_sampler"
 	SystemMaintenanceKindSourceVerify   = "source_verify"
+	SystemMaintenanceKindSourceRepair   = "source_repair"
 
 	SystemMaintenanceStatusQueued          = "queued"
 	SystemMaintenanceStatusRunning         = "running"
@@ -189,6 +190,7 @@ const (
 	SystemMaintenancePhaseMaintenanceRunRetention = "maintenance_run_retention"
 	SystemMaintenancePhaseStorageSample           = "storage_sample"
 	SystemMaintenancePhaseSourceVerify            = "source_verify"
+	SystemMaintenancePhaseSourceRepair            = "source_repair"
 	SystemMaintenancePhaseFinished                = "finished"
 )
 

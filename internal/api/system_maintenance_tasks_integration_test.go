@@ -47,6 +47,18 @@ func (r *immediateSystemMaintenanceSourceVerifyRunner) VerifySources(
 	return r.report, nil
 }
 
+type immediateSystemMaintenanceSourceRepairRunner struct {
+	report maintenance.SourceRepairReport
+	calls  atomic.Int32
+}
+
+func (r *immediateSystemMaintenanceSourceRepairRunner) RepairSources(
+	context.Context,
+) (maintenance.SourceRepairReport, error) {
+	r.calls.Add(1)
+	return r.report, nil
+}
+
 func newSystemMaintenanceTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -294,16 +306,146 @@ func TestSourceVerifyMaintenanceCompletesWithFindingsAndRecoversQueuedRun(t *tes
 	}
 }
 
+func TestSourceRepairMaintenanceWaitsForIntegrityLeaseAndReportsResidualIssues(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	schedulerA, ctx := newSystemMaintenanceTaskScheduler(t)
+	schedulerB, _ := newSystemMaintenanceTaskScheduler(t)
+	verifyRunner := &blockingSystemMaintenanceSourceVerifyRunner{
+		started: make(chan struct{}),
+	}
+	repairRunner := &immediateSystemMaintenanceSourceRepairRunner{
+		report: maintenance.SourceRepairReport{
+			Actions: []maintenance.SourceRepairAction{
+				{SourceID: 1, SourceItemID: 1, Applied: true},
+				{SourceID: 1, SourceItemID: 2, Applied: true},
+			},
+			RunActions: []maintenance.SourceRunRepairAction{
+				{SourceID: 1, Applied: true},
+			},
+			Skipped: []maintenance.SourceBindingIssue{
+				{SourceID: 1, Reason: "target_node_missing"},
+			},
+			After: maintenance.SourceVerifyReport{
+				Issues: []maintenance.SourceBindingIssue{
+					{SourceID: 1, Reason: "target_node_missing"},
+				},
+			},
+		},
+	}
+	serverA := &Server{
+		DB:                            db,
+		BackgroundScheduler:           schedulerA,
+		systemMaintenanceSourceVerify: verifyRunner,
+		systemMaintenanceHeartbeat:    20 * time.Millisecond,
+	}
+	serverB := &Server{
+		DB:                            db,
+		BackgroundScheduler:           schedulerB,
+		systemMaintenanceSourceRepair: repairRunner,
+		systemMaintenanceHeartbeat:    20 * time.Millisecond,
+	}
+
+	verifyRun, err := serverA.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindSourceVerify,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-verifyRunner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("source verify runner did not start")
+	}
+	waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		verifyRun.ID,
+		meta.SystemMaintenanceStatusRunning,
+	)
+
+	repairRun, err := serverB.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindSourceRepair,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := repairRunner.calls.Load(); got != 0 {
+		t.Fatalf("source repair ran concurrently with source verify: calls=%d", got)
+	}
+
+	if _, err := serverB.requestSystemMaintenanceCancel(
+		ctx,
+		meta.SystemMaintenanceKindSourceVerify,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		verifyRun.ID,
+		meta.SystemMaintenanceStatusCancelled,
+	)
+	finished := waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		repairRun.ID,
+		meta.SystemMaintenanceStatusIssues,
+	)
+	if repairRunner.calls.Load() != 1 {
+		t.Fatalf("source repair calls=%d want=1", repairRunner.calls.Load())
+	}
+	for _, want := range []string{
+		"修复 2 个绑定",
+		"处理 1 个过期同步任务",
+		"跳过 1 项",
+		"剩余 1 个一致性问题",
+	} {
+		if !strings.Contains(finished.Summary, want) {
+			t.Fatalf("source repair summary=%q missing %q", finished.Summary, want)
+		}
+	}
+
+	tasks, err := serverB.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairTask := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindSourceRepair),
+	)
+	if repairTask == nil ||
+		repairTask.State != "issues" ||
+		repairTask.Progress.CurrentItem != finished.Summary ||
+		!backgroundTaskActionAllowed(
+			repairTask.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected source repair Task Center row: %+v", repairTask)
+	}
+}
+
 func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	server := &Server{DB: db}
-	_, err := server.requestSystemMaintenanceRun(
-		context.Background(),
+	for _, kind := range []string{
 		meta.SystemMaintenanceKindSourceVerify,
-		background.InitiatorUser,
-		42,
-	)
-	if !errors.Is(err, errBackgroundTaskControlUnavailable) {
-		t.Fatalf("non-admin source verify error=%v", err)
+		meta.SystemMaintenanceKindSourceRepair,
+	} {
+		_, err := server.requestSystemMaintenanceRun(
+			context.Background(),
+			kind,
+			background.InitiatorUser,
+			42,
+		)
+		if !errors.Is(err, errBackgroundTaskControlUnavailable) {
+			t.Fatalf("non-admin %s error=%v", kind, err)
+		}
 	}
 }

@@ -301,12 +301,15 @@ The server exposes background work as a read model without introducing a generic
 - The Web/Desktop shared controller owns cursor state, de-duplication, polling refresh, and automatic
   IntersectionObserver history admission. There is no platform-local or user-facing “load more” control.
 - Operator-driven system maintenance is represented by a durable domain row rather than scheduler memory.
-  `source.verify` is the first template: the admin global Task Center always exposes a stable idle/latest-result
-  row; `run` first persists a queued `SystemMaintenanceRun`; P4/`maintenance_io` execution uses a
+  `source.verify` is the first template and `source.repair` reuses the same contract: the admin global Task
+  Center always exposes stable idle/latest-result rows; `run` first persists a queued `SystemMaintenanceRun`;
+  P4/`maintenance_io` execution uses a
   cross-Server advisory lease; startup/30-second reconciliation resubmits queued or interrupted work; and
   cancellation is durable through `cancel_requested` plus lease-heartbeat fencing. Scheduler runtime presence
   for `system.maintenance.*` is intentionally hidden from Task Center because the durable maintenance row is
-  authoritative and must not be duplicated by an ephemeral runtime row.
+  authoritative and must not be duplicated by an ephemeral runtime row. Source verify and repair share one
+  cluster-wide `source-integrity` lease, so a repair can queue behind a verify (or vice versa) but the two
+  never execute concurrently against the same Source/SourceItem/SyncRun integrity domain.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
   active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable

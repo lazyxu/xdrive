@@ -17,7 +17,7 @@ import (
 const (
 	systemMaintenanceReconcileInterval        = 30 * time.Second
 	systemMaintenanceDefaultHeartbeatInterval = 5 * time.Second
-	maintenanceLeaderSourceVerify             = "system-maintenance:source-verify"
+	maintenanceLeaderSourceIntegrity          = "system-maintenance:source-integrity"
 )
 
 var errSystemMaintenanceUnsupported = errors.New("system maintenance task is unsupported")
@@ -26,8 +26,36 @@ type systemMaintenanceSourceVerifyRunner interface {
 	VerifySources(context.Context) (maintenance.SourceVerifyReport, error)
 }
 
+type systemMaintenanceSourceRepairRunner interface {
+	RepairSources(context.Context) (maintenance.SourceRepairReport, error)
+}
+
 func systemMaintenanceInteractiveKinds() []string {
-	return []string{meta.SystemMaintenanceKindSourceVerify}
+	return []string{
+		meta.SystemMaintenanceKindSourceVerify,
+		meta.SystemMaintenanceKindSourceRepair,
+	}
+}
+
+func systemMaintenanceInteractiveKind(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case meta.SystemMaintenanceKindSourceVerify,
+		meta.SystemMaintenanceKindSourceRepair:
+		return true
+	default:
+		return false
+	}
+}
+
+func systemMaintenancePhase(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case meta.SystemMaintenanceKindSourceVerify:
+		return meta.SystemMaintenancePhaseSourceVerify
+	case meta.SystemMaintenanceKindSourceRepair:
+		return meta.SystemMaintenancePhaseSourceRepair
+	default:
+		return ""
+	}
 }
 
 func systemMaintenanceTaskCenterID(kind string) string {
@@ -40,15 +68,16 @@ func systemMaintenanceLeaderKey(kind string) string {
 		return maintenanceLeaderJanitor
 	case meta.SystemMaintenanceKindStorageSampler:
 		return maintenanceLeaderStorageSampler
-	case meta.SystemMaintenanceKindSourceVerify:
-		return maintenanceLeaderSourceVerify
+	case meta.SystemMaintenanceKindSourceVerify,
+		meta.SystemMaintenanceKindSourceRepair:
+		return maintenanceLeaderSourceIntegrity
 	default:
 		return ""
 	}
 }
 
 func systemMaintenanceControlActions(kind, status string) []string {
-	if kind != meta.SystemMaintenanceKindSourceVerify {
+	if !systemMaintenanceInteractiveKind(kind) {
 		return nil
 	}
 	switch status {
@@ -229,7 +258,7 @@ func (s *Server) requestSystemMaintenanceRun(
 ) (meta.SystemMaintenanceRun, error) {
 	var run meta.SystemMaintenanceRun
 	kind = strings.TrimSpace(kind)
-	if s == nil || s.DB == nil || kind != meta.SystemMaintenanceKindSourceVerify {
+	if s == nil || s.DB == nil || !systemMaintenanceInteractiveKind(kind) {
 		return run, errSystemMaintenanceUnsupported
 	}
 	if initiator != background.InitiatorAdmin || initiatorID == 0 {
@@ -393,7 +422,8 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 	default:
 		return nil
 	}
-	if run.Kind != meta.SystemMaintenanceKindSourceVerify {
+	phase := systemMaintenancePhase(run.Kind)
+	if phase == "" {
 		return errSystemMaintenanceUnsupported
 	}
 
@@ -410,7 +440,7 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 		).
 		Updates(map[string]any{
 			"status":      meta.SystemMaintenanceStatusRunning,
-			"phase":       meta.SystemMaintenancePhaseSourceVerify,
+			"phase":       phase,
 			"started_at":  now,
 			"finished_at": nil,
 			"error":       "",
@@ -433,11 +463,11 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 	}
 
 	background.ReportProgress(ctx, background.TaskProgress{
-		Phase: meta.SystemMaintenancePhaseSourceVerify,
+		Phase: phase,
 		Total: 1,
 		Unit:  "step",
 	})
-	report, err := s.verifySourcesForSystemMaintenance(ctx)
+	summary, state, err := s.executeSystemMaintenanceTask(ctx, run.Kind)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 			s.finishSystemMaintenanceCancelled(run.ID)
@@ -453,17 +483,6 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 		)
 		return err
 	}
-
-	summary := fmt.Sprintf(
-		"%d 个同步文件夹 · %d 项 · 发现 %d 个一致性问题",
-		report.Sources,
-		report.Items,
-		len(report.Issues),
-	)
-	state := meta.SystemMaintenanceStatusSuccess
-	if len(report.Issues) != 0 {
-		state = meta.SystemMaintenanceStatusIssues
-	}
 	if !s.finishSystemMaintenanceState(run.ID, state, 1, 1, summary, "") {
 		s.finishSystemMaintenanceCancelled(run.ID)
 		return context.Canceled
@@ -478,6 +497,49 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 	return nil
 }
 
+func (s *Server) executeSystemMaintenanceTask(
+	ctx context.Context,
+	kind string,
+) (string, string, error) {
+	switch kind {
+	case meta.SystemMaintenanceKindSourceVerify:
+		report, err := s.verifySourcesForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		summary := fmt.Sprintf(
+			"%d 个同步文件夹 · %d 项 · 发现 %d 个一致性问题",
+			report.Sources,
+			report.Items,
+			len(report.Issues),
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if len(report.Issues) != 0 {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
+	case meta.SystemMaintenanceKindSourceRepair:
+		report, err := s.repairSourcesForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		summary := fmt.Sprintf(
+			"修复 %d 个绑定 · 处理 %d 个过期同步任务 · 跳过 %d 项 · 剩余 %d 个一致性问题",
+			len(report.Actions),
+			len(report.RunActions),
+			len(report.Skipped),
+			len(report.After.Issues),
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if len(report.After.Issues) != 0 {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
+	default:
+		return "", "", errSystemMaintenanceUnsupported
+	}
+}
+
 func (s *Server) verifySourcesForSystemMaintenance(
 	ctx context.Context,
 ) (maintenance.SourceVerifyReport, error) {
@@ -485,6 +547,15 @@ func (s *Server) verifySourcesForSystemMaintenance(
 		return s.systemMaintenanceSourceVerify.VerifySources(ctx)
 	}
 	return maintenance.VerifySources(s.DB.WithContext(ctx))
+}
+
+func (s *Server) repairSourcesForSystemMaintenance(
+	ctx context.Context,
+) (maintenance.SourceRepairReport, error) {
+	if s.systemMaintenanceSourceRepair != nil {
+		return s.systemMaintenanceSourceRepair.RepairSources(ctx)
+	}
+	return maintenance.RepairSources(ctx, s.DB, false)
 }
 
 func (s *Server) finishSystemMaintenanceState(
@@ -554,7 +625,7 @@ func (s *Server) requestSystemMaintenanceCancel(
 ) (meta.SystemMaintenanceRun, error) {
 	var run meta.SystemMaintenanceRun
 	kind = strings.TrimSpace(kind)
-	if s == nil || s.DB == nil || kind != meta.SystemMaintenanceKindSourceVerify {
+	if s == nil || s.DB == nil || !systemMaintenanceInteractiveKind(kind) {
 		return run, errSystemMaintenanceUnsupported
 	}
 	requestLease, err := sourceaccount.Acquire(ctx, s.DB, "system-maintenance-request:"+kind)
