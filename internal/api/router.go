@@ -231,6 +231,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)
 	admin.GET("/storage/history", s.adminStorageHistory)
+	admin.GET("/storage/legacy", s.adminStorageLegacyObjects)
+	admin.GET("/storage/unreferenced-blobs", s.adminStorageUnreferencedBlobs)
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
 	admin.POST("/storage/cache/cleanup", s.adminCleanupStorageCache)

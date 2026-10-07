@@ -6,6 +6,8 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +23,38 @@ type storageSizeBucketDTO struct {
 	Label string `json:"label"`
 	Count int64  `json:"count"`
 	Bytes int64  `json:"bytes"`
+}
+
+type storageLegacyObjectDTO struct {
+	StorageKey         string    `json:"storage_key"`
+	Size               int64     `json:"size"`
+	CurrentFileRefs    int64     `json:"current_file_refs"`
+	HistoryVersionRefs int64     `json:"history_version_refs"`
+	LastReferencedAt   time.Time `json:"last_referenced_at"`
+}
+
+type storageLegacyObjectPageDTO struct {
+	Items      []storageLegacyObjectDTO `json:"items"`
+	HasMore    bool                     `json:"has_more"`
+	NextCursor string                   `json:"next_cursor,omitempty"`
+}
+
+type storageUnreferencedBlobDTO struct {
+	SHA256            string    `json:"sha256"`
+	StorageKey        string    `json:"storage_key"`
+	MetadataSize      int64     `json:"metadata_size"`
+	PhysicalSize      int64     `json:"physical_size"`
+	PhysicalExists    bool      `json:"physical_exists"`
+	State             string    `json:"state"`
+	ReusedUploadParts int64     `json:"reused_upload_parts"`
+	GCStatus          string    `json:"gc_status"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type storageUnreferencedBlobPageDTO struct {
+	Items      []storageUnreferencedBlobDTO `json:"items"`
+	HasMore    bool                         `json:"has_more"`
+	NextCursor string                       `json:"next_cursor,omitempty"`
 }
 
 type storageStatsDTO struct {
@@ -131,6 +165,181 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	stats.DiskAvailableBytes = &diskAvailable
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
+}
+
+func storageDiagnosticPageParams(c *gin.Context) (int, string, bool) {
+	limit := 20
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			fail(c, http.StatusBadRequest, "limit must be between 1 and 100")
+			return 0, "", false
+		}
+		limit = value
+	}
+	return limit, strings.TrimSpace(c.Query("cursor")), true
+}
+
+func (s *Server) adminStorageLegacyObjects(c *gin.Context) {
+	limit, cursor, ok := storageDiagnosticPageParams(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	const query = `WITH refs AS (
+  SELECT storage_key, size,
+         1::bigint AS current_file_refs,
+         0::bigint AS history_version_refs,
+         updated_at AS referenced_at
+  FROM xd_files
+  WHERE storage_key NOT LIKE ?
+  UNION ALL
+  SELECT storage_key, size,
+         0::bigint AS current_file_refs,
+         1::bigint AS history_version_refs,
+         created_at AS referenced_at
+  FROM xd_file_versions
+  WHERE storage_key NOT LIKE ?
+)
+SELECT storage_key,
+       MAX(size) AS size,
+       SUM(current_file_refs) AS current_file_refs,
+       SUM(history_version_refs) AS history_version_refs,
+       MAX(referenced_at) AS last_referenced_at
+FROM refs
+WHERE (? = '' OR storage_key > ?)
+GROUP BY storage_key
+ORDER BY storage_key ASC
+LIMIT ?`
+
+	var items []storageLegacyObjectDTO
+	if err := s.DB.WithContext(ctx).Raw(
+		query,
+		casStorageLikePattern,
+		casStorageLikePattern,
+		cursor,
+		cursor,
+		limit+1,
+	).Scan(&items).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "load legacy storage objects failed")
+		return
+	}
+
+	page := storageLegacyObjectPageDTO{Items: items}
+	if len(page.Items) > limit {
+		page.HasMore = true
+		page.Items = page.Items[:limit]
+		page.NextCursor = page.Items[len(page.Items)-1].StorageKey
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, page)
+}
+
+func (s *Server) adminStorageUnreferencedBlobs(c *gin.Context) {
+	limit, cursor, ok := storageDiagnosticPageParams(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	query := s.DB.WithContext(ctx).
+		Where("ref_count = 0").
+		Order("storage_key ASC").
+		Limit(limit + 1)
+	if cursor != "" {
+		query = query.Where("storage_key > ?", cursor)
+	}
+	var blobs []meta.ContentBlob
+	if err := query.Find(&blobs).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "load unreferenced content blobs failed")
+		return
+	}
+
+	hasMore := len(blobs) > limit
+	if hasMore {
+		blobs = blobs[:limit]
+	}
+
+	keys := make([]string, 0, len(blobs))
+	for _, blob := range blobs {
+		keys = append(keys, blob.StorageKey)
+	}
+	reusedCounts := make(map[string]int64, len(keys))
+	if len(keys) > 0 {
+		var rows []struct {
+			SourceStorageKey string `gorm:"column:source_storage_key"`
+			Count            int64  `gorm:"column:count"`
+		}
+		if err := s.DB.WithContext(ctx).
+			Model(&meta.UploadPart{}).
+			Select("source_storage_key, COUNT(*) AS count").
+			Where("reused = ? AND source_storage_key IN ?", true, keys).
+			Group("source_storage_key").
+			Scan(&rows).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "load content blob reuse guards failed")
+			return
+		}
+		for _, row := range rows {
+			reusedCounts[row.SourceStorageKey] = row.Count
+		}
+	}
+
+	items := make([]storageUnreferencedBlobDTO, 0, len(blobs))
+	for _, blob := range blobs {
+		item := storageUnreferencedBlobDTO{
+			SHA256:            blob.SHA256,
+			StorageKey:        blob.StorageKey,
+			MetadataSize:      blob.Size,
+			State:             blob.State,
+			ReusedUploadParts: reusedCounts[blob.StorageKey],
+			UpdatedAt:         blob.UpdatedAt,
+		}
+		file, err := s.Store.Open(ctx, blob.StorageKey)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				fail(c, http.StatusInternalServerError, "inspect unreferenced content blob failed")
+				return
+			}
+		} else {
+			info, statErr := file.Stat()
+			closeErr := file.Close()
+			if statErr != nil {
+				fail(c, http.StatusInternalServerError, "inspect unreferenced content blob failed")
+				return
+			}
+			if closeErr != nil {
+				fail(c, http.StatusInternalServerError, "close unreferenced content blob failed")
+				return
+			}
+			item.PhysicalExists = true
+			item.PhysicalSize = info.Size()
+		}
+
+		switch {
+		case !item.PhysicalExists:
+			item.GCStatus = "physical_missing"
+		case blob.State != meta.ContentBlobStateDeleting:
+			item.GCStatus = "metadata_inconsistent"
+		case item.ReusedUploadParts > 0:
+			item.GCStatus = "blocked_by_upload"
+		default:
+			item.GCStatus = "awaiting_gc"
+		}
+		items = append(items, item)
+	}
+
+	page := storageUnreferencedBlobPageDTO{
+		Items:   items,
+		HasMore: hasMore,
+	}
+	if hasMore && len(items) > 0 {
+		page.NextCursor = items[len(items)-1].StorageKey
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, page)
 }
 
 func (s *Server) adminStorageHealth(c *gin.Context) {

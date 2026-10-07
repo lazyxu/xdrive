@@ -182,6 +182,44 @@ export interface StorageCacheCleanup {
   inventory: StorageInventory
 }
 
+export interface StorageLegacyObject {
+  storage_key: string
+  size: number
+  current_file_refs: number
+  history_version_refs: number
+  last_referenced_at: string
+}
+
+export interface StorageLegacyObjectPage {
+  items: StorageLegacyObject[]
+  has_more: boolean
+  next_cursor?: string
+}
+
+export type StorageUnreferencedBlobGCStatus =
+  | 'awaiting_gc'
+  | 'blocked_by_upload'
+  | 'physical_missing'
+  | 'metadata_inconsistent'
+
+export interface StorageUnreferencedBlob {
+  sha256: string
+  storage_key: string
+  metadata_size: number
+  physical_size: number
+  physical_exists: boolean
+  state: string
+  reused_upload_parts: number
+  gc_status: StorageUnreferencedBlobGCStatus
+  updated_at: string
+}
+
+export interface StorageUnreferencedBlobPage {
+  items: StorageUnreferencedBlob[]
+  has_more: boolean
+  next_cursor?: string
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number

@@ -34,6 +34,8 @@ import type {
   QuotaUsage,
   StorageHealth,
   StorageHistory,
+  StorageLegacyObjectPage,
+  StorageUnreferencedBlobPage,
   StorageStats,
   StorageCacheCleanup,
   StorageCacheCleanupKind,
@@ -531,6 +533,22 @@ export class XDriveApi {
 
   adminStorageHistory(days = 30) {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
+  }
+
+  adminStorageLegacyObjects(limit = 20, cursor = '') {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    if (cursor) query.set('cursor', cursor)
+    return this.request<StorageLegacyObjectPage>(`/api/v1/admin/storage/legacy?${query.toString()}`)
+  }
+
+  adminStorageUnreferencedBlobs(limit = 20, cursor = '') {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    if (cursor) query.set('cursor', cursor)
+    return this.request<StorageUnreferencedBlobPage>(`/api/v1/admin/storage/unreferenced-blobs?${query.toString()}`)
   }
 
   adminUploadStaging(limit = 50, cursor = '', fresh = false) {

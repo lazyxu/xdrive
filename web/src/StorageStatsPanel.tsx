@@ -39,6 +39,9 @@ import type {
   StorageDecision,
   StorageHealth,
   StorageHistory,
+  StorageLegacyObjectPage,
+  StorageUnreferencedBlob,
+  StorageUnreferencedBlobPage,
   StorageStats,
   StagingCleanupFailure,
   StagingCleanupRun,
@@ -48,6 +51,20 @@ import { formatBytes, formatSignedBytes } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
 const STAGING_PAGE_SIZE = 20
+const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
+
+function unreferencedBlobStatus(blob: StorageUnreferencedBlob) {
+  switch (blob.gc_status) {
+    case 'awaiting_gc':
+      return { label: '等待 Janitor', tone: 'busy' as const }
+    case 'blocked_by_upload':
+      return { label: '恢复上传占用', tone: 'warning' as const }
+    case 'physical_missing':
+      return { label: '仅剩元数据', tone: 'warning' as const }
+    case 'metadata_inconsistent':
+      return { label: '元数据状态异常', tone: 'bad' as const }
+  }
+}
 
 function decisionMessage(decision: StorageDecision) {
   switch (decision.priority) {
@@ -104,6 +121,14 @@ export default function StorageStatsPanel({
   const [cleanupRuns, setCleanupRuns] = useState<StagingCleanupRun[]>([])
   const [cleanupFailures, setCleanupFailures] = useState<Record<number, StagingCleanupFailure[]>>({})
   const [cleanupFailureLoading, setCleanupFailureLoading] = useState<number | null>(null)
+  const [legacyPage, setLegacyPage] = useState<StorageLegacyObjectPage | null>(null)
+  const [legacyPageNumber, setLegacyPageNumber] = useState(1)
+  const [legacyCursors, setLegacyCursors] = useState<string[]>([''])
+  const [legacyLoading, setLegacyLoading] = useState(false)
+  const [unreferencedPage, setUnreferencedPage] = useState<StorageUnreferencedBlobPage | null>(null)
+  const [unreferencedPageNumber, setUnreferencedPageNumber] = useState(1)
+  const [unreferencedCursors, setUnreferencedCursors] = useState<string[]>([''])
+  const [unreferencedLoading, setUnreferencedLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
@@ -124,6 +149,12 @@ export default function StorageStatsPanel({
     setCleanupResultWarning('')
     setCleanupRuns([])
     setCleanupFailures({})
+    setLegacyPage(null)
+    setLegacyPageNumber(1)
+    setLegacyCursors([''])
+    setUnreferencedPage(null)
+    setUnreferencedPageNumber(1)
+    setUnreferencedCursors([''])
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
     const healthRequest = scope === 'global'
       ? api.adminStorageHealth().catch(() => null)
@@ -167,6 +198,52 @@ export default function StorageStatsPanel({
       setError(err instanceof Error ? err.message : '加载上传临时空间失败')
     } finally {
       setStagingLoading(false)
+    }
+  }
+
+  const loadLegacyPage = async (page: number) => {
+    if (scope !== 'global') return
+    const nextPage = Math.max(1, Math.trunc(page))
+    const cursor = nextPage === 1 ? '' : legacyCursors[nextPage - 1]
+    if (cursor === undefined) return
+    setLegacyLoading(true)
+    try {
+      const value = await api.adminStorageLegacyObjects(STORAGE_DIAGNOSTIC_PAGE_SIZE, cursor)
+      setLegacyPage(value)
+      setLegacyPageNumber(nextPage)
+      setLegacyCursors((current) => {
+        const next = [...current]
+        next[nextPage - 1] = cursor
+        if (value.next_cursor) next[nextPage] = value.next_cursor
+        return next.slice(0, value.next_cursor ? nextPage + 1 : nextPage)
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载 legacy 对象明细失败')
+    } finally {
+      setLegacyLoading(false)
+    }
+  }
+
+  const loadUnreferencedPage = async (page: number) => {
+    if (scope !== 'global') return
+    const nextPage = Math.max(1, Math.trunc(page))
+    const cursor = nextPage === 1 ? '' : unreferencedCursors[nextPage - 1]
+    if (cursor === undefined) return
+    setUnreferencedLoading(true)
+    try {
+      const value = await api.adminStorageUnreferencedBlobs(STORAGE_DIAGNOSTIC_PAGE_SIZE, cursor)
+      setUnreferencedPage(value)
+      setUnreferencedPageNumber(nextPage)
+      setUnreferencedCursors((current) => {
+        const next = [...current]
+        next[nextPage - 1] = cursor
+        if (value.next_cursor) next[nextPage] = value.next_cursor
+        return next.slice(0, value.next_cursor ? nextPage + 1 : nextPage)
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载待 GC Blob 明细失败')
+    } finally {
+      setUnreferencedLoading(false)
     }
   }
 
@@ -575,10 +652,131 @@ export default function StorageStatsPanel({
                     <XDriveMetricCard title="P50 / P90 / P99" value={`${formatBytes(p50BlobSizeBytes)} / ${formatBytes(p90BlobSizeBytes)} / ${formatBytes(p99BlobSizeBytes)}`} />
                   </XDriveMetricGrid>
 
+                  {unreferencedBlobCount > 0 && (
+                    <Accordion
+                      disableGutters
+                      onChange={(_, expanded) => {
+                        if (expanded && !unreferencedPage) void loadUnreferencedPage(1)
+                      }}
+                    >
+                      <AccordionSummary>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} sx={{ width: '100%' }}>
+                          <Typography variant="body2" fontWeight={600}>待 GC Blob 明细</Typography>
+                          <Chip size="small" variant="outlined" label={`${unreferencedBlobCount.toLocaleString()} 个 · ${formatBytes(unreferencedBlobBytes)}`} />
+                          <Typography variant="caption" color="text.secondary">
+                            按需检查当前页物理对象；不会重新扫描全部 Blob。
+                          </Typography>
+                        </Stack>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {unreferencedLoading && !unreferencedPage ? (
+                          <XDriveStatePanel variant="plain" loading message="正在加载待 GC Blob…" />
+                        ) : unreferencedPage ? (
+                          <Stack spacing={1}>
+                            {unreferencedLoading ? <LinearProgress /> : null}
+                            <XDriveTableSurface>
+                              <Table size="small" aria-label="待 GC Blob 明细" sx={{ minWidth: 980 }}>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Storage key</TableCell>
+                                    <TableCell align="right">元数据大小</TableCell>
+                                    <TableCell align="right">物理大小</TableCell>
+                                    <TableCell>State</TableCell>
+                                    <TableCell align="right">Reused Part</TableCell>
+                                    <TableCell>GC 状态</TableCell>
+                                    <TableCell>更新时间</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {unreferencedPage.items.map((blob) => {
+                                    const status = unreferencedBlobStatus(blob)
+                                    return (
+                                      <TableRow key={blob.sha256} hover>
+                                        <TableCell sx={{ maxWidth: 360, overflowWrap: 'anywhere' }}>{blob.storage_key}</TableCell>
+                                        <TableCell align="right">{formatBytes(blob.metadata_size)}</TableCell>
+                                        <TableCell align="right">{blob.physical_exists ? formatBytes(blob.physical_size) : '不存在'}</TableCell>
+                                        <TableCell>{blob.state}</TableCell>
+                                        <TableCell align="right">{blob.reused_upload_parts.toLocaleString()}</TableCell>
+                                        <TableCell><XDriveStatusBadge tone={status.tone} label={status.label} /></TableCell>
+                                        <TableCell>{new Date(blob.updated_at).toLocaleString()}</TableCell>
+                                      </TableRow>
+                                    )
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </XDriveTableSurface>
+                            <XDrivePaginationControls
+                              page={unreferencedPageNumber}
+                              pageSize={STORAGE_DIAGNOSTIC_PAGE_SIZE}
+                              hasNext={unreferencedPage.has_more}
+                              loading={unreferencedLoading}
+                              onPrevious={() => void loadUnreferencedPage(unreferencedPageNumber - 1)}
+                              onNext={() => void loadUnreferencedPage(unreferencedPageNumber + 1)}
+                            />
+                          </Stack>
+                        ) : null}
+                      </AccordionDetails>
+                    </Accordion>
+                  )}
+
                   {legacyBlobCount > 0 && (
-                    <XDriveStatusAlert tone="neutral">
-                      {`仍有 ${legacyBlobCount.toLocaleString()} 个 legacy 对象，共 ${formatBytes(legacyPhysicalBytes)}。它们不计入 CAS 尺寸分布。`}
-                    </XDriveStatusAlert>
+                    <Accordion
+                      disableGutters
+                      onChange={(_, expanded) => {
+                        if (expanded && !legacyPage) void loadLegacyPage(1)
+                      }}
+                    >
+                      <AccordionSummary>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} sx={{ width: '100%' }}>
+                          <Typography variant="body2" fontWeight={600}>Legacy 对象明细</Typography>
+                          <Chip size="small" variant="outlined" label={`${legacyBlobCount.toLocaleString()} 个 · ${formatBytes(legacyPhysicalBytes)}`} />
+                          <Typography variant="caption" color="text.secondary">
+                            这些对象仍被当前文件或历史版本引用，不能作为垃圾直接删除。
+                          </Typography>
+                        </Stack>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        {legacyLoading && !legacyPage ? (
+                          <XDriveStatePanel variant="plain" loading message="正在加载 legacy 对象…" />
+                        ) : legacyPage ? (
+                          <Stack spacing={1}>
+                            {legacyLoading ? <LinearProgress /> : null}
+                            <XDriveTableSurface>
+                              <Table size="small" aria-label="Legacy 对象明细" sx={{ minWidth: 900 }}>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Storage key</TableCell>
+                                    <TableCell align="right">大小</TableCell>
+                                    <TableCell align="right">当前文件引用</TableCell>
+                                    <TableCell align="right">历史版本引用</TableCell>
+                                    <TableCell>最后引用</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {legacyPage.items.map((item) => (
+                                    <TableRow key={item.storage_key} hover>
+                                      <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{item.storage_key}</TableCell>
+                                      <TableCell align="right">{formatBytes(item.size)}</TableCell>
+                                      <TableCell align="right">{item.current_file_refs.toLocaleString()}</TableCell>
+                                      <TableCell align="right">{item.history_version_refs.toLocaleString()}</TableCell>
+                                      <TableCell>{new Date(item.last_referenced_at).toLocaleString()}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </XDriveTableSurface>
+                            <XDrivePaginationControls
+                              page={legacyPageNumber}
+                              pageSize={STORAGE_DIAGNOSTIC_PAGE_SIZE}
+                              hasNext={legacyPage.has_more}
+                              loading={legacyLoading}
+                              onPrevious={() => void loadLegacyPage(legacyPageNumber - 1)}
+                              onNext={() => void loadLegacyPage(legacyPageNumber + 1)}
+                            />
+                          </Stack>
+                        ) : null}
+                      </AccordionDetails>
+                    </Accordion>
                   )}
 
                   <Stack spacing={1}>

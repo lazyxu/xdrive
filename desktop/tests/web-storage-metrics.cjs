@@ -123,6 +123,19 @@ test('unlimited cloud storage distinguishes xDrive bytes from other disk usage',
 })
 
 
+test('global storage exposes paged legacy and pending-GC diagnostics on demand', () => {
+  for (const token of [
+    '待 GC Blob 明细',
+    'Legacy 对象明细',
+    'adminStorageUnreferencedBlobs',
+    'adminStorageLegacyObjects',
+    'reused_upload_parts',
+    'current_file_refs',
+    'history_version_refs',
+    '不会重新扫描全部 Blob',
+  ]) assert.ok(storageStats.includes(token), 'storage object diagnostics missing: ' + token)
+})
+
 test('global storage page reads daily physical snapshot without scanning staging on mount', () => {
   assert.match(storageStats, /physical_snapshot_at/)
   assert.match(storageStats, /每日后台任务更新/)
