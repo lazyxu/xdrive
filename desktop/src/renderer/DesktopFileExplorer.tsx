@@ -552,6 +552,7 @@ export default function DesktopFileExplorer({
     dropItemsToFolder,
     dropItemsToCrumb,
   } = useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     nodeByID,
     currentID: current?.id,
     disabled: Boolean(actionBusy) || uploadBusy,

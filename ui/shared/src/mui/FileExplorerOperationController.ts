@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   xDriveFileExplorerDropItemsPlan,
   xDriveFileExplorerDropItemsToParentPlan,
@@ -30,6 +30,7 @@ export function useXDriveFileExplorerOperationController<
   TNode extends XDriveFileExplorerOperationNode & Pick<Node, 'type'>,
   TQueued,
 >({
+  lifecycleKey,
   nodeByID,
   currentID,
   disabled = false,
@@ -42,6 +43,7 @@ export function useXDriveFileExplorerOperationController<
   onFeedback,
   onError,
 }: {
+  lifecycleKey: string
   nodeByID: ReadonlyMap<number, TNode>
   currentID?: number | null
   disabled?: boolean
@@ -59,6 +61,17 @@ export function useXDriveFileExplorerOperationController<
 }) {
   const [busyAction, setBusyAction] = useState<XDriveFileExplorerQueuedOperationAction>('')
   const busyActionRef = useRef<XDriveFileExplorerQueuedOperationAction>('')
+  const lifecycleGenerationRef = useRef(1)
+
+  useEffect(() => {
+    lifecycleGenerationRef.current += 1
+    busyActionRef.current = ''
+    setBusyAction('')
+    return () => {
+      lifecycleGenerationRef.current += 1
+      busyActionRef.current = ''
+    }
+  }, [lifecycleKey])
 
   const runPlan = async (
     action: Exclude<XDriveFileExplorerQueuedOperationAction, ''>,
@@ -66,20 +79,33 @@ export function useXDriveFileExplorerOperationController<
     onComplete: () => void,
   ) => {
     if (disabled || busyActionRef.current) return false
+    const generation = lifecycleGenerationRef.current
+    const isCurrent = () => generation === lifecycleGenerationRef.current
     busyActionRef.current = action
     setBusyAction(action)
     try {
-      return await xDriveFileExplorerRunQueuedOperation({
+      const completed = await xDriveFileExplorerRunQueuedOperation({
         plan,
         submit: () => submitOperation(plan),
-        onQueued,
-        onFeedback,
-        onComplete,
-        onError,
+        onQueued: (queued) => {
+          if (isCurrent()) onQueued(queued)
+        },
+        onFeedback: (tone, message) => {
+          if (isCurrent()) onFeedback(tone, message)
+        },
+        onComplete: () => {
+          if (isCurrent()) onComplete()
+        },
+        onError: (error) => {
+          if (isCurrent()) onError(error)
+        },
       })
+      return completed && isCurrent()
     } finally {
-      busyActionRef.current = ''
-      setBusyAction('')
+      if (isCurrent()) {
+        busyActionRef.current = ''
+        setBusyAction('')
+      }
     }
   }
 
