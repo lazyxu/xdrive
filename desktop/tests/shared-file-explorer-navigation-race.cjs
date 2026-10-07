@@ -183,6 +183,20 @@ function loadOperationHook(react) {
   ).useXDriveFileExplorerOperationController
 }
 
+function loadExternalDropHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'],
+    react,
+    {
+      '../file-explorer-controller': {
+        xDriveFileExplorerExternalDropParentID: (currentID, target) => (
+          target?.kind === 'dir' ? Number(target.id) : currentID
+        ),
+      },
+    },
+  ).useXDriveFileExplorerExternalDropController
+}
+
 function loadSearchHook(react) {
   const controller = loadFileExplorerController()
   const virtualCore = loadTypeScriptModule(
@@ -1239,4 +1253,97 @@ test('FileExplorer operation controller blocks same-tick duplicate paste submiss
     2,
     'the synchronous operation fence must release after the first operation settles',
   )
+})
+
+
+test('stale external-drop completion cannot refresh a directory after navigation moved away', async () => {
+  const runtime = createHookRuntime()
+  const useExternalDrop = loadExternalDropHook(runtime.react)
+  let currentID = 1
+  let currentCrumbs = [{ id: 1, name: 'A' }]
+  let sort = { key: 'name', direction: 'asc' }
+  let releaseUpload
+  const refreshCalls = []
+
+  const renderDrop = () => runtime.render(() => useExternalDrop({
+    currentID,
+    currentCrumbs,
+    sort,
+    nodeByID: new Map(),
+    uploadFilesToParent: () => new Promise((resolve) => {
+      releaseUpload = () => resolve(true)
+    }),
+    uploadFolderEntriesToParent: async () => true,
+    refreshDirectory: async (id, crumbs, refreshSort) => {
+      refreshCalls.push({
+        id,
+        crumbs: crumbs.map((crumb) => ({ ...crumb })),
+        sort: { ...refreshSort },
+      })
+    },
+  }))
+
+  const externalDrop = renderDrop()
+  const pending = externalDrop.dropFiles([{}], undefined)
+  await flushAsync()
+  assert.equal(typeof releaseUpload, 'function')
+
+  currentID = 2
+  currentCrumbs = [{ id: 2, name: 'B' }]
+  sort = { key: 'updated', direction: 'desc' }
+  renderDrop()
+
+  releaseUpload()
+  await pending
+
+  assert.deepEqual(
+    refreshCalls,
+    [],
+    'an upload started in A must not refresh A after the workspace has navigated to B',
+  )
+})
+
+test('external-drop completion refreshes the same directory using its latest crumbs and sort', async () => {
+  const runtime = createHookRuntime()
+  const useExternalDrop = loadExternalDropHook(runtime.react)
+  let currentID = 1
+  let currentCrumbs = [{ id: 1, name: 'A' }]
+  let sort = { key: 'name', direction: 'asc' }
+  let releaseUpload
+  const refreshCalls = []
+
+  const renderDrop = () => runtime.render(() => useExternalDrop({
+    currentID,
+    currentCrumbs,
+    sort,
+    nodeByID: new Map(),
+    uploadFilesToParent: () => new Promise((resolve) => {
+      releaseUpload = () => resolve(true)
+    }),
+    uploadFolderEntriesToParent: async () => true,
+    refreshDirectory: async (id, crumbs, refreshSort) => {
+      refreshCalls.push({
+        id,
+        crumbs: crumbs.map((crumb) => ({ ...crumb })),
+        sort: { ...refreshSort },
+      })
+    },
+  }))
+
+  const externalDrop = renderDrop()
+  const pending = externalDrop.dropFiles([{}], undefined)
+  await flushAsync()
+
+  currentCrumbs = [{ id: 1, name: 'A renamed' }]
+  sort = { key: 'updated', direction: 'desc' }
+  renderDrop()
+
+  releaseUpload()
+  await pending
+
+  assert.deepEqual(refreshCalls, [{
+    id: 1,
+    crumbs: [{ id: 1, name: 'A renamed' }],
+    sort: { key: 'updated', direction: 'desc' },
+  }])
 })
