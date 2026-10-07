@@ -853,6 +853,8 @@ export function XDriveFileExplorer({
     if (interactionScopeKeyRef.current === interactionScopeKey) return
 
     interactionScopeKeyRef.current = interactionScopeKey
+    setEditingPath(false)
+    setPathDraft(derivedPath)
     if (typeof window !== 'undefined' && marqueeFrameRef.current !== null) {
       window.cancelAnimationFrame(marqueeFrameRef.current)
       marqueeFrameRef.current = null
@@ -877,7 +879,7 @@ export function XDriveFileExplorer({
     setQuickLookLogicalIndex(null)
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs([])
     onSelectionChange?.([])
-  }, [controlledSelectedIDs, interactionScopeKey, onSelectionChange])
+  }, [controlledSelectedIDs, derivedPath, interactionScopeKey, onSelectionChange])
 
   useEffect(() => {
     if (!editingPath) setPathDraft(derivedPath)

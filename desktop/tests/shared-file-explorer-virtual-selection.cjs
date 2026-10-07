@@ -199,3 +199,30 @@ test('interaction-scope change closes stale item-bound menu and rename sessions'
     'stale item menu must close as part of the same scope invalidation before the new selection state is published',
   )
 })
+
+
+test('interaction-scope change abandons stale address-bar edit state', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'setEditingPath(false)',
+    'setPathDraft(derivedPath)',
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'a tab/directory/search/sort/grouping scope change must abandon the old address-bar draft before it can be submitted in the new workspace: ' + token,
+    )
+  }
+
+  assert.ok(
+    scopeBlock.indexOf('setEditingPath(false)') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'stale address editing must end as part of scope invalidation before the new workspace publishes interaction state',
+  )
+})
