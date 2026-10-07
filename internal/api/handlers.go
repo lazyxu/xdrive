@@ -481,6 +481,28 @@ func (s *Server) copyNodeTxWithHooks(
 	relativePath string,
 	hooks *copyNodeTxHooks,
 ) (meta.Node, error) {
+	return s.copyNodeTxWithHooksLoaded(
+		tx,
+		uid,
+		source,
+		parentID,
+		name,
+		relativePath,
+		hooks,
+		nil,
+	)
+}
+
+func (s *Server) copyNodeTxWithHooksLoaded(
+	tx *gorm.DB,
+	uid uint64,
+	source meta.Node,
+	parentID uint64,
+	name string,
+	relativePath string,
+	hooks *copyNodeTxHooks,
+	childrenByParent map[uint64][]meta.Node,
+) (meta.Node, error) {
 	if hooks != nil && hooks.BeforeNode != nil {
 		if err := hooks.BeforeNode(source, relativePath); err != nil {
 			return meta.Node{}, err
@@ -536,19 +558,28 @@ func (s *Server) copyNodeTxWithHooks(
 		return copied, nil
 	}
 
-	var children []meta.Node
-	if err := tx.Preload("File").
-		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", uid, source.ID).
-		Order("type ASC, name ASC").
-		Find(&children).Error; err != nil {
-		return meta.Node{}, err
+	if childrenByParent == nil {
+		var err error
+		childrenByParent, err = loadFileOperationCopySubtree(tx, uid, source.ID)
+		if err != nil {
+			return meta.Node{}, err
+		}
 	}
-	for _, child := range children {
+	for _, child := range childrenByParent[source.ID] {
 		childPath := child.Name
 		if relativePath != "" {
 			childPath = relativePath + "/" + child.Name
 		}
-		if _, err := s.copyNodeTxWithHooks(tx, uid, child, copied.ID, child.Name, childPath, hooks); err != nil {
+		if _, err := s.copyNodeTxWithHooksLoaded(
+			tx,
+			uid,
+			child,
+			copied.ID,
+			child.Name,
+			childPath,
+			hooks,
+			childrenByParent,
+		); err != nil {
 			return meta.Node{}, err
 		}
 	}
