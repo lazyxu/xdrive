@@ -69,6 +69,12 @@ import type {
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
+import {
+  xDriveAbortWebDownloadSink,
+  xDriveOpenWebDownloadSink,
+  xDriveWriteWebDownloadToSink,
+} from './downloadSink'
+import type { XDriveWebActiveDownloadSink } from './downloadSink'
 
 export type {
   XDriveUploadConflictPolicy,
@@ -1713,17 +1719,35 @@ export class XDriveApi {
   }
 
   async downloadVersion(node: Node, version: FileVersion) {
+    const downloadSink = await xDriveOpenWebDownloadSink(node.name)
+    if (downloadSink.kind === 'cancelled') return false
     await this.downloadAuthenticated(
       `/api/v1/files/${node.id}/versions/${version.id}/content`,
       node.name,
+      {},
+      true,
+      downloadSink,
     )
+    return true
   }
 
   async download(node: Node) {
-    await this.downloadAuthenticated(`/api/v1/files/${node.id}/content`, node.name)
+    const downloadSink = await xDriveOpenWebDownloadSink(node.name)
+    if (downloadSink.kind === 'cancelled') return false
+    await this.downloadAuthenticated(
+      `/api/v1/files/${node.id}/content`,
+      node.name,
+      {},
+      true,
+      downloadSink,
+    )
+    return true
   }
 
   async downloadArchive(ids: number[], filename: string) {
+    const downloadSink = await xDriveOpenWebDownloadSink(filename)
+    if (downloadSink.kind === 'cancelled') return false
+
     const groupID = this.startTransferGroup({
       fileName: filename,
       path: filename,
@@ -1830,7 +1854,7 @@ export class XDriveApi {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
-        }, false)
+        }, false, downloadSink)
       } finally {
         stopPolling = true
         await polling
@@ -1863,6 +1887,7 @@ export class XDriveApi {
         itemsQueued: 0,
       })
       this.finishTransfer(groupID, { state: 'completed' })
+      return true
     } catch (error) {
       stopPolling = true
       if (polling) await polling
@@ -1884,6 +1909,7 @@ export class XDriveApi {
     filename: string,
     init: { method?: string; headers?: Record<string, string>; body?: string } = {},
     trackTransfer = true,
+    downloadSink: XDriveWebActiveDownloadSink = { kind: 'blob' },
   ) {
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
@@ -1910,41 +1936,54 @@ export class XDriveApi {
 
       const contentLength = Number(response.headers.get('Content-Length') || '0')
       const total = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0
-      const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
-      let blob: Blob
       let completed = 0
 
-      if (response.body) {
-        const reader = response.body.getReader()
-        const chunks: BlobPart[] = []
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          if (!value) continue
-          completed += value.byteLength
-          chunks.push(value as BlobPart)
-          if (trackTransfer) webTransferStore.progress(transferID, completed, total)
-        }
-        blob = new Blob(chunks, { type: contentType })
+      if (downloadSink.kind === 'file-system') {
+        completed = await xDriveWriteWebDownloadToSink(
+          response.body,
+          downloadSink,
+          () => response.blob(),
+          (done) => {
+            if (trackTransfer) webTransferStore.progress(transferID, done, total)
+          },
+        )
       } else {
-        blob = await response.blob()
-        completed = blob.size
-        if (trackTransfer) webTransferStore.progress(transferID, completed, total || completed)
+        const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
+        let blob: Blob
+        if (response.body) {
+          const reader = response.body.getReader()
+          const chunks: BlobPart[] = []
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (!value) continue
+            completed += value.byteLength
+            chunks.push(value as BlobPart)
+            if (trackTransfer) webTransferStore.progress(transferID, completed, total)
+          }
+          blob = new Blob(chunks, { type: contentType })
+        } else {
+          blob = await response.blob()
+          completed = blob.size
+          if (trackTransfer) webTransferStore.progress(transferID, completed, total || completed)
+        }
+
+        const url = URL.createObjectURL(blob)
+        try {
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+        } finally {
+          URL.revokeObjectURL(url)
+        }
       }
 
-      const url = URL.createObjectURL(blob)
-      try {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-      } finally {
-        URL.revokeObjectURL(url)
-      }
       if (trackTransfer) webTransferStore.complete(transferID, completed, total || completed)
     } catch (error) {
+      await xDriveAbortWebDownloadSink(downloadSink, error)
       if (trackTransfer) webTransferStore.fail(transferID, error)
       throw error
     }

@@ -35,7 +35,7 @@ test('Web archive download creates one download group and one child per prepared
     'this.progressTransfer(childID, file.done, file.size)',
     'this.updateTransferGroup(groupID',
     'JSON.stringify({ ids, transfer_id: prepared.transfer_id })',
-    '}, false)',
+    '}, false, downloadSink)',
     "this.finishTransfer(groupID, { state: 'completed' })",
   ]) {
     assert.ok(api.includes(token), 'Web archive hierarchy missing: ' + token)
@@ -70,7 +70,7 @@ test('archive prepare/progress routes are optional and legacy archive downloads 
   assert.ok(router.includes('POST("/download/archive", s.downloadArchive)'), 'legacy archive route missing')
   assert.ok(server.includes('TransferID string   `json:"transfer_id,omitempty"`'), 'archive transfer ticket must remain optional')
   assert.ok(api.includes('async download(node: Node)'), 'single-file Web download compatibility was removed')
-  assert.ok(api.includes('await this.downloadAuthenticated(`/api/v1/files/${node.id}/content`, node.name)'), 'single-file download must still use normal leaf transfer tracking')
+  assert.ok(api.includes('xDriveOpenWebDownloadSink(node.name)'), 'single-file download must select the direct-to-disk sink before transport')
 })
 
 test('archive transport does not create a second leaf transfer when externally managed by the group', () => {

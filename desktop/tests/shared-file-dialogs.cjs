@@ -61,7 +61,8 @@ test('Web renders Trash as FileExplorer workspace and keeps Version History shar
     'createXDriveVersionHistoryDialogAdapter({',
     'listVersions: (nodeID) => api.versions(nodeID)',
     'api.restoreVersion(nodeID, revision, versionID)',
-    'downloadVersion: (node, version) => api.downloadVersion(node, version)',
+    'downloadVersion: (node, version) =>',
+    'api.downloadVersion(node, version).then(() => undefined)',
   ]) {
     assert.ok(webAdapters.includes(token), `Web file-dialog port mapping missing: ${token}`)
   }

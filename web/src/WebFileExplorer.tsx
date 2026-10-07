@@ -380,9 +380,11 @@ export default function WebFileExplorer({
     if (plan.kind === 'none') return
     try {
       if (plan.kind === 'file') {
-        await api.download(plan.file)
+        const saved = await api.download(plan.file)
+        if (!saved) return
       } else {
-        await api.downloadArchive(plan.ids, plan.filename)
+        const saved = await api.downloadArchive(plan.ids, plan.filename)
+        if (!saved) return
       }
       const feedback = xDriveFileExplorerWebDownloadFeedback(plan)
       onFeedback(feedback.tone, feedback.message)
