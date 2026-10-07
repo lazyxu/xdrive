@@ -47,6 +47,8 @@ export function useXDriveFileExplorerQuickAccess<
   const unpinItemRef = useRef(unpinItem)
   const onErrorRef = useRef(onError)
   const loadRequestRef = useRef(0)
+  const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
+  const pendingMutationCountRef = useRef(0)
 
   loadItemsRef.current = loadItems
   pinItemRef.current = pinItem
@@ -88,43 +90,67 @@ export function useXDriveFileExplorerQuickAccess<
     [items],
   )
 
-  const pin = useCallback(async (nodeID: number) => {
-    if (!enabled || busyID !== null || nodeID <= 0) return false
+  const enqueueMutation = useCallback(<T,>(
+    nodeID: number,
+    operation: () => Promise<T>,
+  ) => {
     loadRequestRef.current += 1
     setLoading(false)
-    setBusyID(nodeID)
-    try {
-      const pinned = projectQuickAccessItem(await pinItemRef.current(nodeID))
-      setItems((current) => (
-        current.some((item) => item.id === pinned.id)
-          ? current.map((item) => item.id === pinned.id ? pinned : item)
-          : [...current, pinned]
-      ))
-      return true
-    } catch (error) {
-      onErrorRef.current(error)
-      return false
-    } finally {
-      setBusyID(null)
-    }
-  }, [busyID, enabled])
+    pendingMutationCountRef.current += 1
+    if (pendingMutationCountRef.current === 1) setBusyID(nodeID)
 
-  const unpin = useCallback(async (nodeID: number) => {
-    if (!enabled || busyID !== null || nodeID <= 0) return false
-    loadRequestRef.current += 1
-    setLoading(false)
-    setBusyID(nodeID)
-    try {
-      await unpinItemRef.current(nodeID)
-      setItems((current) => current.filter((item) => item.id !== nodeID))
-      return true
-    } catch (error) {
-      onErrorRef.current(error)
-      return false
-    } finally {
-      setBusyID(null)
-    }
-  }, [busyID, enabled])
+    const queued = mutationTailRef.current.then(async () => {
+      setBusyID(nodeID)
+      return operation()
+    }, async () => {
+      setBusyID(nodeID)
+      return operation()
+    })
+    const tracked = queued.finally(() => {
+      pendingMutationCountRef.current = Math.max(
+        0,
+        pendingMutationCountRef.current - 1,
+      )
+      if (pendingMutationCountRef.current === 0) setBusyID(null)
+    })
+    mutationTailRef.current = tracked.then(
+      () => undefined,
+      () => undefined,
+    )
+    return tracked
+  }, [])
+
+  const pin = useCallback((nodeID: number) => {
+    if (!enabled || nodeID <= 0) return Promise.resolve(false)
+    return enqueueMutation(nodeID, async () => {
+      try {
+        const pinned = projectQuickAccessItem(await pinItemRef.current(nodeID))
+        setItems((current) => (
+          current.some((item) => item.id === pinned.id)
+            ? current.map((item) => item.id === pinned.id ? pinned : item)
+            : [...current, pinned]
+        ))
+        return true
+      } catch (error) {
+        onErrorRef.current(error)
+        return false
+      }
+    })
+  }, [enabled, enqueueMutation])
+
+  const unpin = useCallback((nodeID: number) => {
+    if (!enabled || nodeID <= 0) return Promise.resolve(false)
+    return enqueueMutation(nodeID, async () => {
+      try {
+        await unpinItemRef.current(nodeID)
+        setItems((current) => current.filter((item) => item.id !== nodeID))
+        return true
+      } catch (error) {
+        onErrorRef.current(error)
+        return false
+      }
+    })
+  }, [enabled, enqueueMutation])
 
   const toggle = useCallback(
     (nodeID: number) => pinnedIDs.has(nodeID) ? unpin(nodeID) : pin(nodeID),
