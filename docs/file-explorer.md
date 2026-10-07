@@ -208,6 +208,20 @@ Existing cancellation/control behavior already implemented for those subsystems 
 
 ## Tests
 
+### Basic lifecycle regression
+
+FileExplorer's foundational user workflow must retain at least one real Server + storage + Go client integration chain rather than relying only on renderer wiring assertions or isolated endpoint tests. The chain must exercise the same contracts consumed by Web/Desktop:
+
+- range-backed directory listing with an authoritative first-range count;
+- directory creation and file upload;
+- single-file download with byte-for-byte validation;
+- folder/archive download including empty-directory preservation;
+- durable Copy and Move operations with final namespace/content validation;
+- durable Delete to Trash followed by Restore;
+- a second client observing create/upload/copy/move/delete/restore through the owner-scoped node-change feed, including both previous and current parent IDs for a move.
+
+Dedicated upload, archive, FileOperation, sync, and race suites remain authoritative for subsystem-specific edge cases. The basic lifecycle test exists to catch integration regressions where those individually correct subsystems stop composing into a usable FileExplorer workflow.
+
 Folder Properties coverage must include:
 
 - recursive size and file/folder counts;
