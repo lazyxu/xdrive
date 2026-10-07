@@ -47,8 +47,9 @@ test('Version History dialog owns loading, download and restore UI', () => {
   }
 })
 
-test('Web delegates Trash and Version History to shared dialogs', () => {
-  assert.ok(webApp.includes('<XDriveTrashDialog'), 'Web must render shared Trash dialog')
+test('Web renders Trash as FileExplorer workspace and keeps Version History shared', () => {
+  assert.equal(webApp.includes('<XDriveTrashDialog'), false, 'Web Trash must not fall back to a dialog')
+  assert.ok(webApp.includes('trashActive={trashOpen}'), 'Web must route Trash through FileExplorer workspace state')
   assert.ok(webApp.includes('<XDriveVersionHistoryDialog'), 'Web must render shared Version History dialog')
   assert.equal(webApp.includes('setTrashItems('), false, 'Web must not keep local Trash list state')
   assert.equal(webApp.includes('setVersions('), false, 'Web must not keep local Version list state')
@@ -66,8 +67,9 @@ test('Web delegates Trash and Version History to shared dialogs', () => {
   }
 })
 
-test('Desktop delegates Trash and Version History to shared dialogs and IPC adapters', () => {
-  assert.ok(desktopCloud.includes('<XDriveTrashDialog'), 'Desktop must render shared Trash dialog')
+test('Desktop renders Trash as FileExplorer workspace and keeps Version History shared', () => {
+  assert.equal(desktopCloud.includes('<XDriveTrashDialog'), false, 'Desktop Trash must not fall back to a dialog')
+  assert.ok(desktopCloud.includes('trashActive={trashOpen}'), 'Desktop must route Trash through FileExplorer workspace state')
   assert.ok(desktopCloud.includes('<XDriveVersionHistoryDialog'), 'Desktop must render shared Version History dialog')
   assert.equal(desktopApp.includes('setCloudTrash('), false, 'Desktop must not keep local Trash list state')
   assert.equal(desktopApp.includes('setCloudVersions('), false, 'Desktop must not keep local Version list state')

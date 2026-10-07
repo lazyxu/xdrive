@@ -163,7 +163,13 @@ func (s *Server) generateMediaDerivative(
 	key string,
 	edge int,
 ) error {
-	current, err := s.currentMediaDerivativeInput(ctx, node, metadata)
+	allowDeleted := kind == mediaDerivativeThumbnail && node.DeletedAt != nil
+	current, err := s.currentMediaDerivativeInput(
+		ctx,
+		node,
+		metadata,
+		allowDeleted,
+	)
 	if err != nil {
 		return err
 	}
@@ -196,7 +202,12 @@ func (s *Server) generateMediaDerivative(
 		return fmt.Errorf("%w: %v", errMediaDerivativeUnsupported, err)
 	}
 
-	if _, err := s.currentMediaDerivativeInput(ctx, node, metadata); err != nil {
+	if _, err := s.currentMediaDerivativeInput(
+		ctx,
+		node,
+		metadata,
+		allowDeleted,
+	); err != nil {
 		return err
 	}
 	if _, err := s.Store.Put(ctx, key, bytes.NewReader(preview.Data)); err != nil {
@@ -235,17 +246,21 @@ func (s *Server) currentMediaDerivativeInput(
 	ctx context.Context,
 	expected meta.Node,
 	metadata meta.MediaMetadata,
+	allowDeleted bool,
 ) (meta.Node, error) {
 	var current meta.Node
-	err := s.DB.WithContext(ctx).
+	query := s.DB.WithContext(ctx).
 		Preload("File").
 		Where(
-			"id = ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+			"id = ? AND owner_id = ? AND type = ?",
 			expected.ID,
 			expected.OwnerID,
 			meta.NodeTypeFile,
-		).
-		First(&current).Error
+		)
+	if !allowDeleted {
+		query = query.Where("deleted_at IS NULL")
+	}
+	err := query.First(&current).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return meta.Node{}, errMediaDerivativeSourceMissing

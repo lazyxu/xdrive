@@ -159,8 +159,8 @@ test('FileExplorer supports Redo through the shared keyboard command resolver wi
     ['Desktop', desktopApp, desktopExplorer],
   ]) {
     assert.ok(app.includes('xDriveLatestRedoableFileOperation'), label + ' must select redo from shared operation history')
-    assert.ok(adapter.includes('canRedo={canRedo}'), label + ' Explorer must receive shared redo availability')
-    assert.ok(adapter.includes('onRedo={onRedo}'), label + ' Explorer must receive shared redo action')
+    assert.ok(adapter.includes('canRedo={!trashActive && canRedo}'), label + ' Explorer must receive shared redo availability')
+    assert.ok(adapter.includes('onRedo={trashActive ? undefined : onRedo}'), label + ' Explorer must receive shared redo action')
   }
   assert.ok(webApp.includes('redoOperation: (id) => api.redoFileOperation(id)'), 'Web must keep only the REST redo adapter')
   assert.ok(desktopApp.includes("capabilities.includes('file-operation-redo')"), 'Desktop must gate redo on Agent capability')

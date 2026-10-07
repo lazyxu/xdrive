@@ -258,3 +258,14 @@ The change must define:
 7. tests proving cleanup cannot cross into canonical data.
 
 Do not leave a newly introduced xDrive-reserved path permanently hidden from storage accounting.
+
+
+## Sidebar physical-capacity breakdown
+
+When an account has no explicit quota and physical disk totals are available, the shared sidebar storage summary renders a stacked physical-capacity bar:
+
+- **My xDrive storage** uses the primary accent;
+- **other disk usage** uses a distinct secondary accent;
+- free disk remains the track background.
+
+Other disk usage is physical disk used bytes minus the current account's xDrive physical bytes, clamped at zero. Explicit user quotas keep their existing quota-progress semantics instead of mixing quota and physical-disk accounting.

@@ -28,7 +28,8 @@ import {
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
   XDriveFileNameDialog,
-  XDriveFileExplorerTrashCommandButton,
+  XDriveFileExplorerTrashDeleteDialog,
+  useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
@@ -47,6 +48,7 @@ import type {
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
+  XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerGrouping,
@@ -113,6 +115,10 @@ export default function DesktopFileExplorer({
   loading,
   onLoadDirectory,
   onOpenTrash,
+  trashActive,
+  trashAdapter,
+  onCloseTrash,
+  onTrashChanged,
   onOpenHistory,
   onOpenShares,
   onDelete,
@@ -148,6 +154,10 @@ export default function DesktopFileExplorer({
     grouping: XDriveFileExplorerGrouping,
   ) => Promise<void>
   onOpenTrash: () => void
+  trashActive: boolean
+  trashAdapter: XDriveTrashDialogAdapter
+  onCloseTrash: () => void
+  onTrashChanged: () => void | Promise<void>
   onOpenHistory: (node: AgentCloudNode, crumbs: AgentCloudCrumb[]) => void
   onOpenShares: (node: AgentCloudNode) => void
   onDelete: (node: AgentCloudNode) => void
@@ -175,6 +185,14 @@ export default function DesktopFileExplorer({
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+  const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
+  const trash = useXDriveFileExplorerTrash({
+    enabled: trashActive,
+    adapter: trashAdapter,
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+    onFeedback: (message) => onFeedback('good', message),
+    onChanged: onTrashChanged,
+  })
   const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
   useEffect(() => {
     let active = true
@@ -1151,74 +1169,77 @@ export default function DesktopFileExplorer({
       <XDriveFileExplorer
         presentation="workspace"
         keyboardProfile={keyboardProfile}
-        items={explorerItems}
-        crumbs={explorerCrumbs}
-        virtualCollection={explorerVirtualCollection}
-        loading={loading || searchLoading || explorerActionBusy}
+        items={trashActive ? trash.items : explorerItems}
+        crumbs={trashActive ? trash.crumbs : explorerCrumbs}
+        virtualCollection={trashActive ? undefined : explorerVirtualCollection}
+        loading={trashActive ? trash.loading : loading || searchLoading || explorerActionBusy}
+        emptyMessage={trashActive ? '回收站为空' : undefined}
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
-        pathValue={pathValue}
-        onPathSubmit={(path) => { void submitPath(path) }}
-        searchValue={searchValue}
+        pathValue={trashActive ? '回收站' : pathValue}
+        onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
+        searchEnabled={!trashActive}
+        searchValue={trashActive ? '' : searchValue}
         onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
-        canGoUp={canGoUp}
+        canGoBack={!trashActive && canGoBack}
+        canGoForward={!trashActive && canGoForward}
+        canGoUp={!trashActive && canGoUp}
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
-        onRefresh={refresh}
-        onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
-        onCreateFolder={() => setCreateOpen(true)}
-        onUpload={() => { void uploadFiles() }}
-        onUploadFolder={uploadConflictSupported
+        onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
+        onCrumbClick={trashActive ? undefined : (_crumb, index) => { void navigateToCrumb(index) }}
+        onCreateFolder={trashActive ? undefined : () => setCreateOpen(true)}
+        onUpload={trashActive ? undefined : () => { void uploadFiles() }}
+        onUploadFolder={!trashActive && uploadConflictSupported
           ? () => folderUploadInputRef.current?.click()
           : undefined}
-        onOpenItem={(item) => { void openWorkspaceItem(item, openPreviewNode) }}
-        onPreviewItem={(item) => { void recent.record(Number(item.id)) }}
+        onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
+        onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        sort={sort}
-        onSortChange={changeSort}
-        grouping={grouping}
-        onGroupingChange={changeGrouping}
-        externallySorted={externallySorted}
+        sort={trashActive ? trashSort : sort}
+        onSortChange={trashActive ? setTrashSort : changeSort}
+        grouping={trashActive ? undefined : grouping}
+        onGroupingChange={trashActive ? undefined : changeGrouping}
+        groupingEnabled={!trashActive}
+        externallySorted={trashActive ? false : externallySorted}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}
-        onCopyItems={copyItems}
-        onCopyPaths={copyItemPaths}
-        onCutItems={cutItems}
-        onPaste={() => { void pasteClipboard() }}
-        canPaste={fileOperationCanPaste}
-        canUndo={canUndo}
-        onUndo={onUndo}
-        canRedo={canRedo}
-        onRedo={onRedo}
-        onDownloadItems={(selected) => { void downloadSelected(selected) }}
-        folderDownloadSupported={folderTreeDownloadSupported || archiveDownloadSupported}
-        onDeleteItems={(selected) => {
+        onCopyItems={trashActive ? undefined : copyItems}
+        onCopyPaths={trashActive ? undefined : copyItemPaths}
+        onCutItems={trashActive ? undefined : cutItems}
+        onPaste={trashActive ? undefined : () => { void pasteClipboard() }}
+        canPaste={!trashActive && fileOperationCanPaste}
+        canUndo={!trashActive && canUndo}
+        onUndo={trashActive ? undefined : onUndo}
+        canRedo={!trashActive && canRedo}
+        onRedo={trashActive ? undefined : onRedo}
+        onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}
+        folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}
+        onDeleteItems={trashActive ? undefined : (selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onDeleteMany(nodes)
         }}
-        onRenameItem={renameItem}
-        renameDisabled={explorerActionBusy}
-        onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
-        onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
-        onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
-        onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
-        onExternalFolderDrop={uploadConflictSupported
+        onRenameItem={trashActive ? undefined : renameItem}
+        renameDisabled={trashActive || explorerActionBusy}
+        onDropItemsToFolder={trashActive ? undefined : (selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onDropItemsToCrumb={trashActive ? undefined : (selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
+        onExternalFilesDrop={trashActive ? undefined : (files, target) => { void dropExternalFiles(files, target) }}
+        onExternalFilesDropToCrumb={trashActive ? undefined : (files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
+        onExternalFolderDrop={!trashActive && uploadConflictSupported
           ? (payload, target) => { void dropExternalFolderEntries(payload, target) }
           : undefined}
-        onExternalFolderDropToCrumb={uploadConflictSupported
+        onExternalFolderDropToCrumb={!trashActive && uploadConflictSupported
           ? (payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }
           : undefined}
-        getItemMenuItems={getItemMenuItems}
-        backgroundMenuItems={backgroundMenuItems}
-        tabBar={(
+        getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}
+        backgroundMenuItems={trashActive ? [] : backgroundMenuItems}
+        tabBar={trashActive ? undefined : (
           <XDriveFileExplorerTabs
             tabs={tabs}
             activeTabID={activeTabID}
@@ -1229,12 +1250,11 @@ export default function DesktopFileExplorer({
             onCloseTab={(id) => { void closeTab(id) }}
           />
         )}
-        onNewTab={canNewTab ? () => { void newTab() } : undefined}
-        onCloseTab={canCloseTab ? () => { void closeTab() } : undefined}
-        onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
-        onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
-        commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
-        commandBarEnd={(
+        onNewTab={!trashActive && canNewTab ? () => { void newTab() } : undefined}
+        onCloseTab={!trashActive && canCloseTab ? () => { void closeTab() } : undefined}
+        onNextTab={!trashActive && tabs.length > 1 ? () => { void nextTab() } : undefined}
+        onPreviousTab={!trashActive && tabs.length > 1 ? () => { void previousTab() } : undefined}
+        commandBarEnd={trashActive ? undefined : (
           <XDriveFileExplorerSearchFilters
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
@@ -1244,9 +1264,14 @@ export default function DesktopFileExplorer({
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}
+            trashActive={trashActive}
+            onNavigateTrash={onOpenTrash}
             loadDirectoryPage={loadTreeDirectoryPage}
-            onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
-            dropDisabled={explorerActionBusy}
+            onNavigate={(nextCrumbs) => {
+              onCloseTrash()
+              void navigateTo(nextCrumbs)
+            }}
+            dropDisabled={trashActive || explorerActionBusy}
             onDropInternalItems={(itemIDs, target, operation) => {
               void dropItemsToCrumb(
                 itemIDs.map((id) => ({ id })),
@@ -1268,6 +1293,7 @@ export default function DesktopFileExplorer({
             quickAccessBusyID={quickAccess.busyID}
             currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
             onNavigateQuickAccess={(nodeID) => {
+              onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
               void quickAccess.navigate(
                 nodeID,
@@ -1282,6 +1308,7 @@ export default function DesktopFileExplorer({
             recentItems={recent.items}
             recentLoading={recent.loading}
             onActivateRecent={(nodeID) => {
+              onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
               void recent.activate(nodeID, {
                 onDirectory: (nextCrumbs) => (
@@ -1298,7 +1325,9 @@ export default function DesktopFileExplorer({
             onError={(error) => onError(error instanceof Error ? error.message : String(error))}
           />
         )}
-        statusText={searchStatusText ?? (
+        statusText={trashActive
+          ? (trash.working ? '正在处理回收站项目…' : `${trash.items.length} 个回收站项目`)
+          : searchStatusText ?? (
           (actionBusy === 'upload' || uploadBusyAction === 'upload')
             ? '正在上传…'
             : fileOperationBusyAction === 'paste'
@@ -1327,6 +1356,12 @@ export default function DesktopFileExplorer({
         )}
       />
 
+      <XDriveFileExplorerTrashDeleteDialog
+        target={trash.deleteTarget}
+        loading={trash.workingKey.startsWith('delete:')}
+        onCancel={trash.cancelPermanentDelete}
+        onConfirm={() => { void trash.confirmPermanentDelete() }}
+      />
       <XDriveOpenPreviewDialog
         open={Boolean(openPreviewItem)}
         title={openPreviewItem?.name ?? ''}

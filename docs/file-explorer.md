@@ -173,3 +173,20 @@ Folder Properties coverage must include:
 - stale completion cannot overwrite a newer Properties request;
 - intentional abort does not surface as an error.
 
+## Shared thumbnails and Trash workspace
+
+FileExplorer item visuals use one shared MUI thumbnail pipeline:
+
+- Details/list, Grid, properties, Quick Access, Recent and Trash consume the same thumbnail provider/cache/scheduler.
+- Platform code only supplies the thumbnail transport adapter; it does not implement separate thumbnail UI, cache, visibility admission or object-URL lifecycle.
+- Thumbnail-eligible image media uses the same path across every FileExplorer surface. Formats without a Server thumbnail contract, including video posters today, fall back to the shared file-kind icon rather than pretending thumbnail support exists.
+- The thumbnail scheduler remains viewport-aware, concurrency-bounded and cancellable before work starts.
+
+Trash is a special FileExplorer directory, not a dialog:
+
+- its navigation entry sits above Quick Access;
+- it uses the normal Details/Grid surface and shared thumbnails;
+- normal upload/copy/cut/paste/move/rename/delete/grouping commands are disabled while Trash is active;
+- its item context menu exposes only Trash-specific actions (Restore and Permanent Delete) plus the standard Properties entry;
+- Web/Desktop keep their transport adapters local but share the Trash controller and presentation.
+- The thumbnail endpoint may read an authenticated owner's deleted file node specifically for Trash thumbnails; other media/gallery/preview APIs remain active-node-only.

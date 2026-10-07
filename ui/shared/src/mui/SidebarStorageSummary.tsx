@@ -30,8 +30,23 @@ export function XDriveSidebarStorageSummary({
   const boundedDiskAvailable = hasDiskAvailable ? Math.max(0, diskAvailableBytes) : null
   const usedLabel = boundedUsed > 0 && boundedUsed < 1024 ? '< 1 KiB' : formatBytes(boundedUsed)
   const percentage = hasQuota ? (boundedUsed / boundedTotal) * 100 : null
-  const diskPercentage = !hasQuota && boundedDiskTotal !== null && boundedDiskAvailable !== null
-    ? ((boundedDiskTotal - Math.min(boundedDiskTotal, boundedDiskAvailable)) / boundedDiskTotal) * 100
+  const diskUsedBytes = !hasQuota && boundedDiskTotal !== null && boundedDiskAvailable !== null
+    ? Math.max(0, boundedDiskTotal - Math.min(boundedDiskTotal, boundedDiskAvailable))
+    : null
+  const diskPercentage = diskUsedBytes !== null && boundedDiskTotal
+    ? (diskUsedBytes / boundedDiskTotal) * 100
+    : null
+  const xdriveDiskUsedBytes = diskUsedBytes === null
+    ? null
+    : Math.min(diskUsedBytes, boundedUsed)
+  const otherDiskUsedBytes = diskUsedBytes === null || xdriveDiskUsedBytes === null
+    ? null
+    : Math.max(0, diskUsedBytes - xdriveDiskUsedBytes)
+  const xdriveDiskPercentage = xdriveDiskUsedBytes !== null && boundedDiskTotal
+    ? (xdriveDiskUsedBytes / boundedDiskTotal) * 100
+    : null
+  const otherDiskPercentage = otherDiskUsedBytes !== null && boundedDiskTotal
+    ? (otherDiskUsedBytes / boundedDiskTotal) * 100
     : null
   const progressPercentage = percentage ?? diskPercentage
   const progress = progressPercentage === null ? 0 : Math.max(0, Math.min(100, progressPercentage))
@@ -95,35 +110,71 @@ export function XDriveSidebarStorageSummary({
       <Typography
         variant="caption"
         sx={{
-          display: 'block',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.6,
           mt: 0.35,
-          color: dark ? '#8291a8' : 'text.secondary',
+          color: hasQuota
+            ? (dark ? '#8291a8' : 'text.secondary')
+            : (dark ? 'primary.light' : 'primary.main'),
           overflowWrap: 'anywhere',
         }}
       >
-        已使用 {usedLabel}{hasQuota ? ` / ${formatBytes(boundedTotal)}` : ''}
+        {!hasQuota ? (
+          <Box
+            component="span"
+            aria-hidden
+            sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'primary.main', flex: '0 0 auto' }}
+          />
+        ) : null}
+        <Box component="span">
+          已使用 {usedLabel}{hasQuota ? ` / ${formatBytes(boundedTotal)}` : ''}
+        </Box>
       </Typography>
       {boundedDiskAvailable !== null ? (
         <Typography
           variant="caption"
+          component="div"
           sx={{
-            display: 'block',
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            columnGap: 0.6,
+            rowGap: 0.1,
             mt: 0.1,
             color: dark ? '#8291a8' : 'text.secondary',
             overflowWrap: 'anywhere',
           }}
         >
-          {diskPercentageLabel
-            ? `磁盘占用 ${diskPercentageLabel} · 可用 ${formatBytes(boundedDiskAvailable)}`
-            : `磁盘可用 ${formatBytes(boundedDiskAvailable)}`}
+          {!hasQuota && otherDiskUsedBytes !== null ? (
+            <>
+              <Box
+                component="span"
+                aria-hidden
+                sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'secondary.main', flex: '0 0 auto' }}
+              />
+              <Box component="span" sx={{ color: dark ? 'secondary.light' : 'secondary.main' }}>
+                其他占用 {formatBytes(otherDiskUsedBytes)}
+              </Box>
+              <Box component="span">
+                · 磁盘占用 {diskPercentageLabel} · 可用 {formatBytes(boundedDiskAvailable)}
+              </Box>
+            </>
+          ) : (
+            <Box component="span">
+              {diskPercentageLabel
+                ? `磁盘占用 ${diskPercentageLabel} · 可用 ${formatBytes(boundedDiskAvailable)}`
+                : `磁盘可用 ${formatBytes(boundedDiskAvailable)}`}
+            </Box>
+          )}
         </Typography>
       ) : null}
-      {progressPercentage !== null ? (
+      {percentage !== null ? (
         <LinearProgress
           variant="determinate"
           value={progress}
           color={progressColor}
-          aria-label={hasQuota ? `${label}使用率 ${usageLabel}` : `磁盘占用 ${diskPercentageLabel}`}
+          aria-label={`${label}使用率 ${usageLabel}`}
           sx={{
             mt: 0.75,
             height: 4,
@@ -132,6 +183,37 @@ export function XDriveSidebarStorageSummary({
             '& .MuiLinearProgress-bar': { borderRadius: 999 },
           }}
         />
+      ) : diskPercentage !== null ? (
+        <Box
+          data-xdrive-storage-breakdown
+          role="img"
+          aria-label={`磁盘占用 ${diskPercentageLabel}，我的存储 ${usedLabel}，其他占用 ${otherDiskUsedBytes === null ? '未知' : formatBytes(otherDiskUsedBytes)}`}
+          sx={{
+            mt: 0.75,
+            height: 4,
+            borderRadius: 999,
+            overflow: 'hidden',
+            display: 'flex',
+            bgcolor: dark ? 'rgba(255,255,255,.10)' : 'action.selected',
+          }}
+        >
+          <Box
+            data-xdrive-storage-segment="mine"
+            sx={{
+              width: `${Math.max(0, Math.min(100, xdriveDiskPercentage ?? 0))}%`,
+              bgcolor: 'primary.main',
+              flexShrink: 0,
+            }}
+          />
+          <Box
+            data-xdrive-storage-segment="other"
+            sx={{
+              width: `${Math.max(0, Math.min(100, otherDiskPercentage ?? 0))}%`,
+              bgcolor: 'secondary.main',
+              flexShrink: 0,
+            }}
+          />
+        </Box>
       ) : null}
     </Box>
   )

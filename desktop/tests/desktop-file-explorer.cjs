@@ -36,10 +36,10 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
     'cloudUploadFiles(expectedCurrentID)',
     'cloudRename(node.id, node.revision, name)',
     'refreshCurrentDirectoryIfCurrent(expectedCurrentID)',
-    'onRenameItem={renameItem}',
+    'onRenameItem={trashActive ? undefined : renameItem}',
     'cloudDownload(node.id, node.name)',
-    'getItemMenuItems={getItemMenuItems}',
-    'backgroundMenuItems={backgroundMenuItems}',
+    'getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}',
+    'backgroundMenuItems={trashActive ? [] : backgroundMenuItems}',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer operation: ${token}`)
   }
@@ -51,9 +51,9 @@ test('Desktop FileExplorer wires real cloud mutations and native transfers', () 
 test('Desktop FileExplorer provides system-style navigation, search, and persistent view mode', () => {
   for (const token of [
     'useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({',
-    'canGoBack={canGoBack}',
-    'canGoForward={canGoForward}',
-    'canGoUp={canGoUp}',
+    'canGoBack={!trashActive && canGoBack}',
+    'canGoForward={!trashActive && canGoForward}',
+    'canGoUp={!trashActive && canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
     'loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>',
@@ -75,9 +75,9 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(explorer.includes('void openLocalNode(node)'), 'Desktop system Open must keep native execution local')
   assert.ok(workspaceController.includes('navigate: navigation.navigateTo'), 'shared workspace should dispatch search-directory navigation through shared navigation')
   assert.ok(explorer.includes('viewModeStorageKey: DESKTOP_FILE_VIEW_KEY'), 'Desktop Explorer should pass its view-mode storage key to the shared controller')
-  assert.ok(explorer.includes('pathValue={pathValue}'), 'Desktop Explorer path display must come from shared navigation')
+  assert.ok(explorer.includes("pathValue={trashActive ? '回收站' : pathValue}"), 'Desktop Explorer path display must come from shared navigation')
   assert.ok(explorer.includes('navigateToCrumb(index)'), 'Desktop breadcrumb clicks must use shared navigation')
-  assert.ok(explorer.includes('onRefresh={refresh}'), 'Desktop Explorer refresh must use shared navigation')
+  assert.ok(explorer.includes('onRefresh={trashActive ? () => { void trash.refresh() } : refresh}'), 'Desktop Explorer refresh must use shared navigation')
   assert.ok(explorer.includes('onRefresh: refresh'), 'Desktop background refresh must use shared navigation')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
@@ -92,9 +92,9 @@ test('Desktop FileExplorer virtualizes server Search ranges through Agent transp
   assert.ok(explorer.includes('searchSort.key'), 'Desktop Search range must forward sort key')
   assert.ok(explorer.includes('searchSort.direction'), 'Desktop Search range must forward sort direction')
   assert.ok(explorer.includes('searchGrouping,'), 'Desktop Search must forward grouping through Agent IPC')
-  assert.ok(explorer.includes('grouping={grouping}'), 'Desktop grouping must come from shared tab state')
-  assert.ok(explorer.includes('onGroupingChange={changeGrouping}'), 'Desktop grouping changes must reload Server ranges')
-  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')
+  assert.ok(explorer.includes('grouping={trashActive ? undefined : grouping}'), 'Desktop grouping must come from shared tab state')
+  assert.ok(explorer.includes('onGroupingChange={trashActive ? undefined : changeGrouping}'), 'Desktop grouping changes must reload Server ranges')
+  assert.ok(explorer.includes('virtualCollection={trashActive ? undefined : explorerVirtualCollection}'), 'Desktop Search must reuse the shared sparse surface')
   assert.equal(explorer.includes('window.xdriveDesktop.agent.cloudSearch('), false, 'Desktop Explorer must not use cursor Search after migration')
   assert.equal(explorer.includes('searchRequestRef'), false, 'Desktop must not own Search request sequencing')
   assert.equal(explorer.includes('最多显示 200 个结果'), false, 'Desktop Search must not truncate the logical result set')
@@ -164,10 +164,10 @@ test('Desktop FileExplorer queues copy/cut/paste through the shared operation co
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop must consume the shared queued-operation controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep persistent-operation transport local')
   assert.ok(explorer.includes('onQueued: onOperationQueued'), 'Desktop must surface queued operations immediately')
-  assert.ok(explorer.includes('canPaste={fileOperationCanPaste}'), 'Desktop paste availability must come from the shared operation controller')
-  assert.ok(explorer.includes('onCopyItems={copyItems}'), 'Desktop shared copy adapter is missing')
-  assert.ok(explorer.includes('onCutItems={cutItems}'), 'Desktop shared cut adapter is missing')
-  assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
+  assert.ok(explorer.includes('canPaste={!trashActive && fileOperationCanPaste}'), 'Desktop paste availability must come from the shared operation controller')
+  assert.ok(explorer.includes('onCopyItems={trashActive ? undefined : copyItems}'), 'Desktop shared copy adapter is missing')
+  assert.ok(explorer.includes('onCutItems={trashActive ? undefined : cutItems}'), 'Desktop shared cut adapter is missing')
+  assert.ok(explorer.includes('onPaste={trashActive ? undefined : () => { void pasteClipboard() }}'), 'Desktop shared paste adapter is missing')
   assert.ok(operationController.includes("await runPlan('paste', plan"), 'shared controller must execute paste plans')
   assert.equal(explorer.includes('const plan = planPaste(current.id)'), false, 'Desktop must not execute paste planning locally')
 })
@@ -176,7 +176,7 @@ test('Desktop FileExplorer supports bulk download and shared delete-to-trash orc
   assert.ok(explorer.includes('async function downloadSelected(selected: XDriveFileExplorerItem[]) {'), 'Desktop bulk download helper is missing')
   assert.ok(explorer.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop bulk download must use shared download planning')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)'), 'Desktop bulk download bridge is missing')
-  assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
+  assert.ok(explorer.includes('onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}'), 'Desktop shared bulk download adapter is missing')
   assert.ok(explorer.includes('onDeleteMany(nodes)'), 'Desktop shared bulk delete adapter is missing')
   assert.ok(app.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete confirmation and queue flow must be shared')
   assert.ok(app.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete transport must stay local to Agent IPC')
@@ -202,7 +202,7 @@ test('Desktop FileExplorer supports shared internal drag operations and local ex
   assert.equal(explorer.includes('const targetNode = nodeByID.get(Number(target.id))'), false, 'Desktop internal drag must not resolve drop targets locally')
   assert.ok(explorer.includes('useXDriveFileExplorerExternalDropController<'), 'Desktop external drop should delegate target and refresh orchestration to the shared controller')
   assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop external drop upload bridge is missing')
-  assert.ok(explorer.includes('onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
+  assert.ok(explorer.includes('onExternalFilesDrop={trashActive ? undefined : (files, target) => { void dropExternalFiles(files, target) }}'), 'Desktop external drop is not wired to shared FileExplorer')
 })
 
 test('Desktop uses a dedicated persistent FileExplorer details-column layout', () => {
@@ -251,9 +251,9 @@ test('Desktop FileExplorer uses shared range-backed directory sorting', () => {
   assert.equal(app.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own directory pagination eligibility')
   assert.equal(app.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'Desktop App must not own directory page transitions')
   assert.ok(explorer.includes('directoryVirtualCollection: virtualDirectory'), 'Desktop Explorer must delegate sparse directory state to the shared workspace')
-  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Desktop Explorer must activate the shared sparse surface')
-  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Desktop directory ranges should consume shared workspace sorting state')
-  assert.ok(explorer.includes('onSortChange={changeSort}'), 'Desktop sort changes should reload server-sorted ranges')
+  assert.ok(explorer.includes('virtualCollection={trashActive ? undefined : explorerVirtualCollection}'), 'Desktop Explorer must activate the shared sparse surface')
+  assert.ok(explorer.includes('externallySorted={trashActive ? false : externallySorted}'), 'Desktop directory ranges should consume shared workspace sorting state')
+  assert.ok(explorer.includes('onSortChange={trashActive ? setTrashSort : changeSort}'), 'Desktop sort changes should reload server-sorted ranges')
 })
 
 test('Desktop multi-select mutations use persistent operations instead of renderer-side batch execution', () => {
@@ -325,7 +325,7 @@ test('Desktop FileExplorer uploads selected folders through the shared hierarchy
     'runUploadGroup({',
     'relativePath,',
     'transferLifecycleSupported',
-    'onUploadFolder={uploadConflictSupported',
+    'onUploadFolder={!trashActive && uploadConflictSupported',
     '正在上传文件夹…',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop folder-upload support: ${token}`)
@@ -340,7 +340,7 @@ test('Desktop FileExplorer recursively uploads dropped folders through shared pa
     'payload.files',
     'payload.directories',
     'onExternalFolderDrop={uploadConflictSupported',
-    'onExternalFolderDropToCrumb={uploadConflictSupported',
+    'onExternalFolderDropToCrumb={!trashActive && uploadConflictSupported',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop dropped-folder support: ${token}`)
   }

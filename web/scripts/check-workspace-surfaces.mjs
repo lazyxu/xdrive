@@ -13,6 +13,7 @@ const workspaceContent = readRepo('ui/shared/src/mui/WorkspaceContent.tsx')
 const workspaceSidebar = readRepo('ui/shared/src/mui/WorkspaceSidebar.tsx')
 const fileExplorer = readRepo('ui/shared/src/mui/FileExplorer.tsx')
 const fileExplorerActions = readRepo('ui/shared/src/mui/FileExplorerActions.tsx')
+const fileExplorerNavigationPane = readRepo('ui/shared/src/mui/FileExplorerNavigationPane.tsx')
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
 const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
@@ -109,7 +110,6 @@ if (/fileKind === 'folder'.*warning\.main/.test(fileExplorer)) {
 }
 
 requireText(fileExplorerActions, [
-  'XDriveFileExplorerTrashCommandButton',
   'xDriveFileExplorerBackgroundMenuItems',
   'xDriveFileExplorerStandardItemMenuItems',
   '<XDriveFileExplorerCommandButton',
@@ -117,20 +117,28 @@ requireText(fileExplorerActions, [
 
 requireText(webFileExplorer, [
   'presentation="workspace"',
-  'XDriveFileExplorerTrashCommandButton',
+  'onNavigateTrash={onOpenTrash}',
+  'trashActive ? trash.items : explorerItems',
   'xDriveFileExplorerBackgroundMenuItems({',
   'xDriveFileExplorerStandardItemMenuItems({',
 ], 'Web FileExplorer workspace presentation')
 
 requireText(desktopFileExplorer, [
   'presentation="workspace"',
-  'XDriveFileExplorerTrashCommandButton',
+  'onNavigateTrash={onOpenTrash}',
+  'trashActive ? trash.items : explorerItems',
   'xDriveFileExplorerBackgroundMenuItems({',
   'xDriveFileExplorerStandardItemMenuItems({',
 ], 'Desktop FileExplorer workspace presentation')
 
-if (webFileExplorer.includes('<XDriveActionButton compact startIcon={<RestoreFromTrashRoundedIcon />}') || desktopFileExplorer.includes('<XDriveActionButton compact onClick={onOpenTrash}>')) {
-  throw new Error('FileExplorer command bar extensions must use shared neutral command chrome')
+requireText(fileExplorerNavigationPane, [
+  'aria-label="回收站"',
+  'selected={trashActive}',
+  'onNavigateTrash',
+], 'Shared FileExplorer Trash navigation')
+
+if (webFileExplorer.includes('XDriveFileExplorerTrashCommandButton') || desktopFileExplorer.includes('XDriveFileExplorerTrashCommandButton')) {
+  throw new Error('Trash must be a FileExplorer navigation workspace, not a command-bar dialog action')
 }
 
 requireText(app, [

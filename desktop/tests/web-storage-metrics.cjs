@@ -7,6 +7,7 @@ const repoRoot = path.join(__dirname, '..', '..')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 const cloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const cloudStorageAdapter = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStorageAdapter.ts'), 'utf8')
+const sidebarStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
 const localStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
@@ -81,4 +82,21 @@ test('Local storage is a Desktop-only page and reuses shared metric primitives',
   assert.ok(desktopApp.includes('tone="bad"'))
   assert.ok(metricCards.includes('tone?: XDriveStatusTone'))
   assert.ok(metricCards.includes('metricValueColor(tone)'))
+})
+
+
+test('unlimited cloud storage distinguishes xDrive bytes from other disk usage', () => {
+  for (const token of [
+    'data-xdrive-storage-breakdown',
+    'data-xdrive-storage-segment="mine"',
+    'data-xdrive-storage-segment="other"',
+    "bgcolor: 'primary.main'",
+    "bgcolor: 'secondary.main'",
+    'otherDiskUsedBytes',
+    '其他占用',
+  ]) assert.ok(sidebarStorage.includes(token), 'storage usage color contract missing: ' + token)
+  assert.ok(
+    sidebarStorage.includes('Math.max(0, diskUsedBytes - xdriveDiskUsedBytes)'),
+    'other disk usage must exclude current xDrive storage',
+  )
 })
