@@ -1473,11 +1473,11 @@ export default function DesktopFileExplorer({
                 onDirectory: (nextCrumbs) => (
                   navigateTo(nextCrumbs, true, navigationIntentID)
                 ),
-                onFile: (item) => (
-                  isNavigationIntentCurrent(navigationIntentID)
-                    ? openLocalNode(item.node)
-                    : undefined
-                ),
+                onFile: (item) => {
+                  if (!isNavigationIntentCurrent(navigationIntentID)) return false
+                  openLocalNode(item.node)
+                  return true
+                },
               })
             }}
             onClearRecent={() => { void recent.clear() }}

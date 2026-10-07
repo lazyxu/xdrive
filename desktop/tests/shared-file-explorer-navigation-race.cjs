@@ -2330,3 +2330,85 @@ test('disabling Recent invalidates a pending record completion', async () => {
     'a Recent record started before disable must not repopulate disabled state after its touch request completes',
   )
 })
+
+
+test('stale Recent file activation cannot record access after a newer navigation intent', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderB = { id: 2, name: 'B' }
+  const fileA = { id: 10, name: 'A.txt', type: 'file' }
+  const recentItem = {
+    node: fileA,
+    path: '/A.txt',
+    crumbs: [root],
+    accessed_at: '2026-10-06T00:00:00Z',
+  }
+
+  const driver = createDirectoryDriver([root])
+  const navigationHarness = createNavigationHarness(driver)
+  const recentRuntime = createHookRuntime()
+  const useRecent = loadRecentHook(recentRuntime.react)
+
+  let controlled = false
+  let releaseLookup
+  let touchCalls = 0
+  let opened = false
+
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([recentItem])
+    return new Promise((resolve) => {
+      releaseLookup = () => resolve([recentItem])
+    })
+  }
+
+  const renderRecent = () => recentRuntime.render(() => useRecent({
+    loadItems,
+    touchItem: async () => {
+      touchCalls += 1
+      return {
+        ...recentItem,
+        accessed_at: '2026-10-07T00:00:00Z',
+      }
+    },
+    clearItems: async () => undefined,
+  }))
+
+  navigationHarness.render()
+  let navigation = navigationHarness.render()
+  renderRecent()
+  await flushAsync()
+  const recent = renderRecent()
+
+  controlled = true
+  const navigationIntentID = navigation.beginNavigationIntent()
+  const staleRecent = recent.activate(fileA.id, {
+    onDirectory: async () => {
+      throw new Error('unexpected directory activation')
+    },
+    onFile: async () => {
+      if (!navigation.isNavigationIntentCurrent(navigationIntentID)) return false
+      opened = true
+      return true
+    },
+  })
+  await flushAsync()
+  assert.equal(typeof releaseLookup, 'function')
+
+  await navigation.navigateTo([root, folderB])
+  navigation = navigationHarness.render()
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+  assert.equal(navigation.pathValue, '我的文件/B')
+
+  releaseLookup()
+  assert.equal(
+    await staleRecent,
+    false,
+    'a Recent file activation rejected by a newer navigation intent must report that it did not activate',
+  )
+
+  assert.equal(opened, false, 'stale Recent file must not open after newer navigation')
+  assert.equal(
+    touchCalls,
+    0,
+    'stale Recent file activation must not record access after its open was rejected',
+  )
+})

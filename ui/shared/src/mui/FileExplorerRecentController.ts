@@ -183,8 +183,12 @@ export function useXDriveFileExplorerRecent<
   const activate = useCallback(async (
     nodeID: number,
     handlers: {
-      onDirectory: (crumbs: XDriveCloudFilesCrumb[]) => void | Promise<void>
-      onFile: (item: XDriveFileRecentItem<TNode>) => void | Promise<void>
+      onDirectory: (
+        crumbs: XDriveCloudFilesCrumb[],
+      ) => boolean | void | Promise<boolean | void>
+      onFile: (
+        item: XDriveFileRecentItem<TNode>,
+      ) => boolean | void | Promise<boolean | void>
     },
   ) => {
     if (!enabled || nodeID <= 0) return false
@@ -197,9 +201,11 @@ export function useXDriveFileExplorerRecent<
       const target = latest.find((item) => item.node.id === nodeID)
       if (!target) return false
       if (target.node.type === 'dir') {
-        await handlers.onDirectory(target.crumbs)
+        const activated = await handlers.onDirectory(target.crumbs)
+        if (activated === false) return false
       } else {
-        await handlers.onFile(target)
+        const activated = await handlers.onFile(target)
+        if (activated === false) return false
         await record(nodeID)
       }
       return true

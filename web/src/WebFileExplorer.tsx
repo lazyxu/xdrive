@@ -678,11 +678,11 @@ export default function WebFileExplorer({
                 onDirectory: (nextCrumbs) => (
                   navigateTo(nextCrumbs, true, navigationIntentID)
                 ),
-                onFile: (item) => (
-                  isNavigationIntentCurrent(navigationIntentID)
-                    ? openWebNode(item.node)
-                    : undefined
-                ),
+                onFile: (item) => {
+                  if (!isNavigationIntentCurrent(navigationIntentID)) return false
+                  openWebNode(item.node)
+                  return true
+                },
               })
             }}
             onClearRecent={() => { void recent.clear() }}
