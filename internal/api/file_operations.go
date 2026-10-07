@@ -665,6 +665,91 @@ LEFT JOIN xd_files f ON f.node_id = tree.id`, node.ID, uid, uid).Scan(&row).Erro
 	return row.Bytes, err
 }
 
+type fileOperationMoveRootBytes struct {
+	Bytes       int64
+	MissingFile bool
+}
+
+func fileOperationMoveRootBytesTx(
+	tx *gorm.DB,
+	uid uint64,
+	refs []batchNodeRef,
+) (map[uint64]fileOperationMoveRootBytes, error) {
+	if len(refs) == 0 {
+		return map[uint64]fileOperationMoveRootBytes{}, nil
+	}
+	ids := make([]uint64, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+	var rows []struct {
+		RootID      uint64 `gorm:"column:root_id"`
+		Bytes       int64  `gorm:"column:bytes"`
+		Overflow    bool   `gorm:"column:overflow"`
+		MissingFile bool   `gorm:"column:missing_file"`
+	}
+	err := tx.Raw(`
+WITH RECURSIVE roots AS (
+	SELECT id, type
+	FROM xd_nodes
+	WHERE id IN ? AND owner_id = ? AND deleted_at IS NULL
+),
+tree AS (
+	SELECT roots.id AS root_id, roots.id AS id
+	FROM roots
+	UNION ALL
+	SELECT tree.root_id, child.id
+	FROM tree
+	JOIN xd_nodes AS child ON child.parent_id = tree.id
+	WHERE child.owner_id = ? AND child.deleted_at IS NULL
+),
+totals AS (
+	SELECT tree.root_id, COALESCE(SUM(file.size), 0)::numeric AS bytes
+	FROM tree
+	LEFT JOIN xd_files AS file ON file.node_id = tree.id
+	GROUP BY tree.root_id
+)
+SELECT
+	roots.id AS root_id,
+	CASE
+		WHEN totals.bytes > 9223372036854775807 THEN 9223372036854775807
+		WHEN totals.bytes < -9223372036854775808 THEN -9223372036854775808
+		ELSE totals.bytes
+	END::bigint AS bytes,
+	(totals.bytes > 9223372036854775807 OR totals.bytes < -9223372036854775808) AS overflow,
+	(roots.type = ? AND root_file.node_id IS NULL) AS missing_file
+FROM roots
+JOIN totals ON totals.root_id = roots.id
+LEFT JOIN xd_files AS root_file ON root_file.node_id = roots.id
+ORDER BY roots.id
+`, ids, uid, uid, meta.NodeTypeFile).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint64]fileOperationMoveRootBytes, len(rows))
+	for _, row := range rows {
+		if row.Overflow {
+			return nil, errors.New("file operation size overflow")
+		}
+		out[row.RootID] = fileOperationMoveRootBytes{
+			Bytes:       row.Bytes,
+			MissingFile: row.MissingFile,
+		}
+	}
+	return out, nil
+}
+
+func fileOperationMoveNodeBytes(
+	byRoot map[uint64]fileOperationMoveRootBytes,
+	node meta.Node,
+) (int64, error) {
+	info, ok := byRoot[node.ID]
+	if !ok || (node.Type == meta.NodeTypeFile && info.MissingFile) {
+		return 0, gorm.ErrRecordNotFound
+	}
+	return info.Bytes, nil
+}
+
 func (s *Server) loadOwnedFileOperation(ctx context.Context, uid uint64, id string) (meta.FileOperation, error) {
 	var operation meta.FileOperation
 	err := s.DB.WithContext(ctx).
@@ -1138,8 +1223,19 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
 		replaceOrMerge := false
+		var rootBytes map[uint64]fileOperationMoveRootBytes
+		moveNodeBytes := func(node meta.Node) (int64, error) {
+			if rootBytes == nil {
+				var err error
+				rootBytes, err = fileOperationMoveRootBytesTx(tx, uid, refs)
+				if err != nil {
+					return 0, err
+				}
+			}
+			return fileOperationMoveNodeBytes(rootBytes, node)
+		}
 		for index, ref := range refs {
-			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
+			node, err := batchLoadNodeTx(tx, uid, ref, index, false)
 			if err != nil {
 				return err
 			}
@@ -1176,7 +1272,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 					policy = meta.DefaultFileOperationConflictPolicy(operation.Type)
 				}
 				if policy == meta.FileOperationConflictPolicyReplace {
-					size, err := fileOperationNodeBytesTx(tx, uid, node)
+					size, err := moveNodeBytes(node)
 					if err != nil {
 						return err
 					}
@@ -1207,7 +1303,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				if exists {
 					switch policy {
 					case meta.FileOperationConflictPolicySkip:
-						size, err := fileOperationNodeBytesTx(tx, uid, node)
+						size, err := moveNodeBytes(node)
 						if err != nil {
 							return err
 						}
@@ -1255,7 +1351,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 					Name:     originalName,
 				})
 			}
-			size, err := fileOperationNodeBytesTx(tx, uid, node)
+			size, err := moveNodeBytes(node)
 			if err != nil {
 				return err
 			}
