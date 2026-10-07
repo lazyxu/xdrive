@@ -69,8 +69,13 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	authManager := auth.New("archive-download-test-secret", time.Hour)
 	router := (&Server{
-		DB: db, Store: store, Auth: auth.New("archive-download-test-secret", time.Hour),
+		DB: db, Store: store, Auth: authManager,
+		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
+	}).Router()
+	peerRouter := (&Server{
+		DB: db, Store: store, Auth: authManager,
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost", MaxUploadBytes: 10 << 20,
 	}).Router()
 
@@ -156,6 +161,64 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 		"/api/v1/download/archive/progress/"+prepared.TransferID,
 		tokenB, nil, http.StatusNotFound,
 	)
+
+	// Archive progress is only a side channel. A prepared transfer may be
+	// downloaded by another Server instance that shares DB/storage but not
+	// the process-local progress map. That must not make the payload fail.
+	crossPreparedResponse := request(
+		t, router, http.MethodPost, "/api/v1/download/archive/prepare", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d]}`, hello.ID)),
+		http.StatusOK,
+	)
+	var crossPrepared archiveDownloadPrepareResponse
+	if err := json.Unmarshal(crossPreparedResponse.Body.Bytes(), &crossPrepared); err != nil {
+		t.Fatal(err)
+	}
+	crossServerResponse := request(
+		t, peerRouter, http.MethodPost, "/api/v1/download/archive", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d],"transfer_id":%q}`, hello.ID, crossPrepared.TransferID)),
+		http.StatusOK,
+	)
+	crossEntries := readArchiveTestEntries(t, crossServerResponse.Body.Bytes())
+	if crossEntries["hello.txt"] != "hello world" {
+		t.Fatalf("cross-server archive payload mismatch: %v", crossEntries)
+	}
+
+	// A local progress record that exists but belongs to a different manifest
+	// is still a contract error; only genuinely unavailable local state degrades.
+	request(
+		t, router, http.MethodPost, "/api/v1/download/archive", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d],"transfer_id":%q}`, docs.ID, crossPrepared.TransferID)),
+		http.StatusConflict,
+	)
+
+	// Reusing another owner's transfer id must never mutate that owner's
+	// process-local progress state. The requested nodes remain authoritative.
+	otherRoot := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenB, nil, http.StatusOK)
+	otherOwned := uploadTestFile(t, router, tokenB, otherRoot.ID, "other-owner.txt", "other owner")
+	crossOwnerResponse := request(
+		t, router, http.MethodPost, "/api/v1/download/archive", tokenB,
+		strings.NewReader(fmt.Sprintf(`{"ids":[%d],"transfer_id":%q}`, otherOwned.ID, crossPrepared.TransferID)),
+		http.StatusOK,
+	)
+	crossOwnerEntries := readArchiveTestEntries(t, crossOwnerResponse.Body.Bytes())
+	if crossOwnerEntries["other-owner.txt"] != "other owner" {
+		t.Fatalf("cross-owner fallback archive payload mismatch: %v", crossOwnerEntries)
+	}
+	untouchedProgressResponse := request(
+		t, router, http.MethodGet,
+		"/api/v1/download/archive/progress/"+crossPrepared.TransferID,
+		tokenA, nil, http.StatusOK,
+	)
+	var untouchedProgress archiveDownloadProgressResponse
+	if err := json.Unmarshal(untouchedProgressResponse.Body.Bytes(), &untouchedProgress); err != nil {
+		t.Fatal(err)
+	}
+	if untouchedProgress.State != "queued" || untouchedProgress.BytesDone != 0 ||
+		untouchedProgress.ItemsCompleted != 0 || untouchedProgress.ItemsRunning != 0 ||
+		untouchedProgress.ItemsQueued != 1 {
+		t.Fatalf("another owner mutated archive progress: %+v", untouchedProgress)
+	}
 
 	other := requestNode(t, router, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), tokenA, strings.NewReader(`{"name":"other"}`), http.StatusCreated)
 	otherHello := uploadTestFile(t, router, tokenA, other.ID, "hello.txt", "other hello")

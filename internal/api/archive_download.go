@@ -84,13 +84,19 @@ func (s *Server) downloadArchive(c *gin.Context) {
 		if err := s.beginArchiveDownloadProgress(userID(c), transferID, ids, manifest); err != nil {
 			switch {
 			case errors.Is(err, errArchiveProgressNotFound):
-				fail(c, http.StatusNotFound, "archive transfer not found")
+				// Archive progress is an optional process-local side channel. A
+				// load-balanced payload request may land on another Server instance,
+				// so missing local progress state must not fail the authenticated
+				// download. Clear the correlation before streaming so this request
+				// cannot update an unrelated local transfer with the same ID.
+				transferID = ""
 			case errors.Is(err, errArchiveProgressMismatch):
 				fail(c, http.StatusConflict, err.Error())
+				return
 			default:
 				fail(c, http.StatusInternalServerError, "start archive progress failed")
+				return
 			}
-			return
 		}
 	}
 
