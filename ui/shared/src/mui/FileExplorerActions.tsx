@@ -10,6 +10,8 @@ import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
+import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
+import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import TabRoundedIcon from '@mui/icons-material/TabRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
@@ -24,6 +26,9 @@ export function xDriveFileExplorerStandardItemMenuItems({
   onToggleQuickAccess,
   quickAccessPinned = false,
   quickAccessDisabled = false,
+  onToggleFavorite,
+  favorite = false,
+  favoriteDisabled = false,
   onSystemOpen,
   systemOpenLabel = '使用系统打开',
   onDownload,
@@ -42,6 +47,9 @@ export function xDriveFileExplorerStandardItemMenuItems({
   onToggleQuickAccess?: () => void
   quickAccessPinned?: boolean
   quickAccessDisabled?: boolean
+  onToggleFavorite?: () => void
+  favorite?: boolean
+  favoriteDisabled?: boolean
   onSystemOpen?: () => void
   systemOpenLabel?: string
   onDownload?: () => void
@@ -100,6 +108,17 @@ export function xDriveFileExplorerStandardItemMenuItems({
         icon: <VisibilityRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
         onSelect: onOpen,
+      })
+    }
+    if (onToggleFavorite) {
+      items.push({
+        id: 'toggle-favorite',
+        label: favorite ? '取消收藏' : '添加到收藏',
+        icon: favorite
+          ? <StarRoundedIcon fontSize="small" />
+          : <StarBorderRoundedIcon fontSize="small" />,
+        disabled: primaryDisabled || favoriteDisabled,
+        onSelect: onToggleFavorite,
       })
     }
     if (onSystemOpen) {

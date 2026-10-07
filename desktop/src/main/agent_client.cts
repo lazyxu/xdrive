@@ -931,6 +931,13 @@ export type AgentCloudQuickAccessItem = {
   pinned_at: string
 }
 
+export type AgentCloudFavoriteItem = {
+  node: AgentCloudNode
+  path: string
+  crumbs: AgentCloudCrumb[]
+  favorited_at: string
+}
+
 export type AgentCloudRecentItem = {
   node: AgentCloudNode
   path: string
@@ -1652,6 +1659,18 @@ export class AgentIPCClient {
 
   cloudUnpinFileQuickAccess(nodeID: number) {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/quick-access/unpin', { id: nodeID })
+  }
+
+  cloudFileFavorites() {
+    return this.request<AgentCloudFavoriteItem[]>('GET', '/v1/cloud/favorites')
+  }
+
+  cloudFavoriteFile(nodeID: number) {
+    return this.request<AgentCloudFavoriteItem>('POST', '/v1/cloud/favorites/favorite', { id: nodeID })
+  }
+
+  cloudUnfavoriteFile(nodeID: number) {
+    return this.request<{ ok: boolean }>('POST', '/v1/cloud/favorites/unfavorite', { id: nodeID })
   }
 
   cloudFileRecent(limit = 16) {

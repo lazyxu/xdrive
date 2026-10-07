@@ -225,6 +225,36 @@ func (c *agentController) CloudUnpinFileQuickAccess(ctx context.Context, nodeID 
 	return cli.UnpinFileQuickAccess(ctx, nodeID)
 }
 
+func (c *agentController) CloudFileFavorites(ctx context.Context) ([]client.FileFavoriteItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileFavorites(ctx)
+}
+
+func (c *agentController) CloudFavoriteFile(ctx context.Context, nodeID uint64) (client.FileFavoriteItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileFavoriteItem{}, err
+	}
+	if nodeID == 0 {
+		return client.FileFavoriteItem{}, fmt.Errorf("node id is required")
+	}
+	return cli.FavoriteFile(ctx, nodeID)
+}
+
+func (c *agentController) CloudUnfavoriteFile(ctx context.Context, nodeID uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	if nodeID == 0 {
+		return fmt.Errorf("node id is required")
+	}
+	return cli.UnfavoriteFile(ctx, nodeID)
+}
+
 func (c *agentController) CloudFileRecent(ctx context.Context, limit int) ([]client.FileRecentItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

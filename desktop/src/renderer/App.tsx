@@ -426,6 +426,8 @@ export default function App({
     agent.hello?.capabilities.includes('file-operation-redo') ?? false
   const fileQuickAccessSupported =
     agent.hello?.capabilities.includes('file-quick-access') ?? false
+  const fileFavoritesSupported =
+    agent.hello?.capabilities.includes('file-favorites') ?? false
   const fileRecentSupported =
     agent.hello?.capabilities.includes('file-recent') ?? false
   const filePropertiesStatsSupported =
@@ -1904,6 +1906,7 @@ export default function App({
               propertiesStatsSupported: filePropertiesStatsSupported,
               fileAvailabilitySupported,
               quickAccessSupported: fileQuickAccessSupported,
+              favoritesSupported: fileFavoritesSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               keyboardProfile: fileExplorerKeyboardProfile,

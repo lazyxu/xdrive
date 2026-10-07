@@ -7,6 +7,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
+import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Box,
@@ -31,6 +32,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
 } from './FileExplorerExternalDrop'
 import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
+import type { XDriveFileExplorerFavoriteNavigationEntry } from './FileExplorerFavoriteController'
 import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
 import { XDriveFileExplorerThumbnail } from './FileExplorerThumbnail'
 import { xDriveFileSupportsThumbnail } from './FileExplorer'
@@ -76,6 +78,12 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess,
   onToggleCurrentQuickAccess,
   onUnpinQuickAccess,
+  favoritesEnabled = false,
+  favoriteItems = [],
+  favoritesLoading = false,
+  favoriteBusyID = null,
+  onActivateFavorite,
+  onUnfavorite,
   recentEnabled = false,
   recentItems = [],
   recentLoading = false,
@@ -113,6 +121,12 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess?: (nodeID: number) => void | Promise<void>
   onToggleCurrentQuickAccess?: () => void | Promise<void>
   onUnpinQuickAccess?: (nodeID: number) => void | Promise<void>
+  favoritesEnabled?: boolean
+  favoriteItems?: readonly XDriveFileExplorerFavoriteNavigationEntry[]
+  favoritesLoading?: boolean
+  favoriteBusyID?: number | null
+  onActivateFavorite?: (nodeID: number) => void | Promise<void>
+  onUnfavorite?: (nodeID: number) => void | Promise<void>
   recentEnabled?: boolean
   recentItems?: readonly XDriveFileExplorerRecentEntry[]
   recentLoading?: boolean
@@ -593,6 +607,79 @@ export function XDriveFileExplorerNavigationPane({
       ) : null}
 
       {quickAccessEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
+
+      {favoritesEnabled ? (
+        <Box component="nav" aria-label="收藏" sx={{ px: 0.75, pb: 0.75 }}>
+          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minHeight: 30, pl: 0.75 }}>
+            <StarRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            <Typography variant="caption" fontWeight={700} color="text.secondary">
+              收藏
+            </Typography>
+          </Stack>
+          {favoritesLoading && favoriteItems.length === 0 ? (
+            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={14} />
+            </Box>
+          ) : favoriteItems.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+              暂无收藏文件
+            </Typography>
+          ) : (
+            <Stack spacing={0.25}>
+              {favoriteItems.map((item) => (
+                <Box
+                  key={item.id}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) 28px',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ListItemButton
+                    title={item.path || item.name}
+                    onClick={() => { void onActivateFavorite?.(item.id) }}
+                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                  >
+                    <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0.75 }}>
+                      <XDriveFileExplorerThumbnail
+                        item={{
+                          id: item.id,
+                          name: item.name,
+                          kind: 'file',
+                          size: item.size,
+                          revision: item.revision,
+                          updatedAt: item.updatedAt,
+                          path: item.path,
+                        }}
+                        eligible={xDriveFileSupportsThumbnail(item.name, 'file')}
+                        fallback={<InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+                      />
+                    </Box>
+                    <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                      {item.name}
+                    </Typography>
+                  </ListItemButton>
+                  <Tooltip title="取消收藏">
+                    <span>
+                      <IconButton
+                        size="small"
+                        aria-label={`取消收藏 ${item.name}`}
+                        disabled={favoriteBusyID !== null}
+                        onClick={() => { void onUnfavorite?.(item.id) }}
+                        sx={{ width: 26, height: 26, borderRadius: 1 }}
+                      >
+                        <StarRoundedIcon sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+
+      {favoritesEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
 
       {recentEnabled ? (
         <Box component="nav" aria-label="最近使用" sx={{ px: 0.75, pb: 0.75 }}>

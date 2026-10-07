@@ -76,6 +76,17 @@ Group headers are part of the real scroll geometry. Shared layout code maps `sta
 
 Do not insert group headers into the item array, do not renumber filesystem items, and do not make one pseudo-item per header. The logical item indexes remain Server indexes; group headers are presentation geometry only.
 
+## File favorites and Quick Access
+
+FileExplorer keeps **folder pinning** and **file favorites** as separate concepts:
+
+- **Quick Access** pins non-root folders only. It is navigation-oriented and is backed by `xd_file_quick_access`.
+- **Favorites** stars files only. It is backed by the independent owner-scoped `xd_file_favorites` relation and must not be stored in Quick Access.
+- FileExplorer favorites are also independent from Gallery / Photo Intelligence `PhotoMetadata.favorite`; starring a document or arbitrary file must not require media indexing.
+- Both relations use stable Node identity. Rename/move resolves live path and breadcrumbs on read; a trashed node is hidden while the relation remains so restore can surface it again.
+- Web and Desktop share the favorite state/controller and navigation UI. Platform code remains transport-only (Web REST versus Desktop Agent IPC).
+- The navigation pane renders Quick Access and Favorites as distinct sections. File context menus expose `添加到收藏 / 取消收藏`; folders continue to expose `固定到快速访问 / 从快速访问取消固定`.
+
 ## Real-time directory invalidation
 
 FileExplorer directory freshness is driven by the Server node-change journal, not by renderer-side guesses and not by repeatedly reloading every visible directory.

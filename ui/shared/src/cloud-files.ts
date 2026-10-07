@@ -72,6 +72,13 @@ export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
   pinned_at: string
 }
 
+export type XDriveFileFavoriteItem<TNode extends { id: number }> = {
+  node: TNode
+  path: string
+  crumbs: XDriveCloudFilesCrumb[]
+  favorited_at: string
+}
+
 export type XDriveFileRecentItem<TNode extends { id: number }> = {
   node: TNode
   path: string

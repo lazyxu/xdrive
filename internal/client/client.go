@@ -97,6 +97,13 @@ type FileQuickAccessItem struct {
 	PinnedAt time.Time          `json:"pinned_at"`
 }
 
+type FileFavoriteItem struct {
+	Node        Node               `json:"node"`
+	Path        string             `json:"path"`
+	Crumbs      []SearchBreadcrumb `json:"crumbs"`
+	FavoritedAt time.Time          `json:"favorited_at"`
+}
+
 type FileRecentItem struct {
 	Node       Node               `json:"node"`
 	Path       string             `json:"path"`
@@ -671,6 +678,34 @@ func (c *Client) PinFileQuickAccess(ctx context.Context, nodeID uint64) (FileQui
 
 func (c *Client) UnpinFileQuickAccess(ctx context.Context, nodeID uint64) error {
 	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-quick-access/%d", nodeID), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return responseError(resp)
+	}
+	return nil
+}
+
+func (c *Client) FileFavorites(ctx context.Context) ([]FileFavoriteItem, error) {
+	var out []FileFavoriteItem
+	err := c.json(ctx, http.MethodGet, "/api/v1/file-favorites", nil, &out)
+	return out, err
+}
+
+func (c *Client) FavoriteFile(ctx context.Context, nodeID uint64) (FileFavoriteItem, error) {
+	var out FileFavoriteItem
+	err := c.json(ctx, http.MethodPut, fmt.Sprintf("/api/v1/file-favorites/%d", nodeID), nil, &out)
+	return out, err
+}
+
+func (c *Client) UnfavoriteFile(ctx context.Context, nodeID uint64) error {
+	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-favorites/%d", nodeID), nil)
 	if err != nil {
 		return err
 	}

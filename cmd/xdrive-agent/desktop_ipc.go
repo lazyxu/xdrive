@@ -83,6 +83,7 @@ var desktopIPCCapabilities = []string{
 	"file-operation-undo",
 	"file-operation-redo",
 	"file-quick-access",
+	"file-favorites",
 	"file-recent",
 	"file-properties-stats",
 	"upload-conflict-preflight",
@@ -184,6 +185,9 @@ type desktopIPCController interface {
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
 	CloudUnpinFileQuickAccess(context.Context, uint64) error
+	CloudFileFavorites(context.Context) ([]client.FileFavoriteItem, error)
+	CloudFavoriteFile(context.Context, uint64) (client.FileFavoriteItem, error)
+	CloudUnfavoriteFile(context.Context, uint64) error
 	CloudFileRecent(context.Context, int) ([]client.FileRecentItem, error)
 	CloudTouchFileRecent(context.Context, uint64) (client.FileRecentItem, error)
 	CloudClearFileRecent(context.Context) error
@@ -481,6 +485,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/unpin", h.cloudUnpinFileQuickAccess)
+	mux.HandleFunc("GET /v1/cloud/favorites", h.cloudFileFavorites)
+	mux.HandleFunc("POST /v1/cloud/favorites/favorite", h.cloudFavoriteFile)
+	mux.HandleFunc("POST /v1/cloud/favorites/unfavorite", h.cloudUnfavoriteFile)
 	mux.HandleFunc("GET /v1/cloud/recent", h.cloudFileRecent)
 	mux.HandleFunc("POST /v1/cloud/recent/touch", h.cloudTouchFileRecent)
 	mux.HandleFunc("DELETE /v1/cloud/recent", h.cloudClearFileRecent)
@@ -1115,6 +1122,52 @@ func (h *desktopIPCHandler) cloudUnpinFileQuickAccess(w http.ResponseWriter, r *
 		return
 	}
 	if err := h.ctrl.CloudUnpinFileQuickAccess(r.Context(), input.ID); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudFileFavorites(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudFileFavorites(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudFavoriteFile(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_favorite", "id is required")
+		return
+	}
+	item, err := h.ctrl.CloudFavoriteFile(r.Context(), input.ID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudUnfavoriteFile(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID uint64 `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_favorite", "id is required")
+		return
+	}
+	if err := h.ctrl.CloudUnfavoriteFile(r.Context(), input.ID); err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}

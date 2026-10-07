@@ -83,6 +83,7 @@ import {
   type AgentCloudChildrenRange,
   type AgentCloudNodeChangePage,
   type AgentCloudQuickAccessItem,
+  type AgentCloudFavoriteItem,
   type AgentCloudRecentItem,
   type AgentCloudQuota,
   type AgentCloudStorageStats,
@@ -2768,6 +2769,27 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
     }
     return requireAgentClient().cloudUnpinFileQuickAccess(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-favorites', () => runAgentAction<AgentCloudFavoriteItem[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-favorites')
+    return requireAgentClient().cloudFileFavorites()
+  }, false))
+  ipcMain.handle('agent:cloud-favorite', (_event, nodeID: unknown) => runAgentAction<AgentCloudFavoriteItem>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-favorites')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudFavoriteFile(nodeID)
+  }, false))
+  ipcMain.handle('agent:cloud-unfavorite', (_event, nodeID: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-favorites')
+    if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Node id is required.')
+    }
+    return requireAgentClient().cloudUnfavoriteFile(nodeID)
   }, false))
   ipcMain.handle('agent:cloud-recent', (_event, limit: unknown) => runAgentAction<AgentCloudRecentItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

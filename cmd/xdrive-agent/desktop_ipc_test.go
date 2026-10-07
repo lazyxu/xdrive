@@ -357,6 +357,28 @@ func (f *fakeDesktopIPCController) CloudUnpinFileQuickAccess(context.Context, ui
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudFileFavorites(context.Context) ([]client.FileFavoriteItem, error) {
+	return []client.FileFavoriteItem{{
+		Node:        client.Node{ID: 14, Name: "Favorite.txt", Type: "file", Revision: 1},
+		Path:        "Favorite.txt",
+		Crumbs:      []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: 14, Name: "Favorite.txt"}},
+		FavoritedAt: time.Unix(1, 0).UTC(),
+	}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFavoriteFile(_ context.Context, nodeID uint64) (client.FileFavoriteItem, error) {
+	return client.FileFavoriteItem{
+		Node:        client.Node{ID: nodeID, Name: "Favorite.txt", Type: "file", Revision: 1},
+		Path:        "Favorite.txt",
+		Crumbs:      []client.SearchBreadcrumb{{ID: 1, Name: ""}, {ID: nodeID, Name: "Favorite.txt"}},
+		FavoritedAt: time.Unix(1, 0).UTC(),
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUnfavoriteFile(context.Context, uint64) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileRecent(context.Context, int) ([]client.FileRecentItem, error) {
 	return []client.FileRecentItem{{
 		Node:       client.Node{ID: 13, Name: "Recent.txt", Type: "file", Revision: 1},

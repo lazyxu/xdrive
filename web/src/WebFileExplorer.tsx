@@ -13,6 +13,7 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
@@ -253,6 +254,13 @@ export default function WebFileExplorer({
     onError,
   })
 
+  const favorites = useXDriveFileExplorerFavorites<Node>({
+    loadItems: () => api.fileFavorites(),
+    favoriteItem: (nodeID) => api.favoriteFile(nodeID),
+    unfavoriteItem: (nodeID) => api.unfavoriteFile(nodeID),
+    onError,
+  })
+
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
@@ -392,6 +400,11 @@ export default function WebFileExplorer({
         : undefined,
       quickAccessPinned: quickAccess.pinnedIDs.has(node.id),
       quickAccessDisabled: quickAccess.busyID !== null,
+      onToggleFavorite: node.type === 'file'
+        ? () => { void favorites.toggle(node.id) }
+        : undefined,
+      favorite: favorites.favoriteIDs.has(node.id),
+      favoriteDisabled: favorites.busyID !== null,
       onDownload: () => { void downloadSelected([item]) },
       onShare: node.type === 'file' ? () => onShare(node) : undefined,
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
@@ -601,6 +614,18 @@ export default function WebFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            favoritesEnabled
+            favoriteItems={favorites.items}
+            favoritesLoading={favorites.loading}
+            favoriteBusyID={favorites.busyID}
+            onActivateFavorite={(nodeID) => {
+              onCloseTrash()
+              void favorites.activate(nodeID, (node) => {
+                void recent.record(node.id)
+                openWebNode(node)
+              })
+            }}
+            onUnfavorite={(nodeID) => { void favorites.unfavorite(nodeID) }}
             recentEnabled
             recentItems={recent.items}
             recentLoading={recent.loading}
