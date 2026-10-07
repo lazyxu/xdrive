@@ -36,6 +36,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
+| CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
@@ -76,6 +77,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
 - Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
+- CAS physical deletion checks temporary reused upload ranges with `SELECT EXISTS` against the partial index `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`. The guard remains inside the existing per-blob transaction before `Store.Delete`, so active resumable overwrite ranges still keep the old content alive.
 - FileOperation Copy/Move target-descendant validation walks the target's active ancestor chain in PostgreSQL and returns one scalar `EXISTS` result instead of materializing the source subtree IDs in Go. Managed-source subtree protection likewise stays inside PostgreSQL as a recursive CTE joined directly to `xd_sources`, while Delete keeps its existing ID materialization because those IDs are required for share revocation and Trash updates.
 - FileOperation Move obtains logical byte totals for all selected roots with one lazily executed grouped recursive CTE, then reuses the per-root totals for normal, skipped, and replace/merge progress. Move root nodes are loaded without the unused `File` preload; Copy keeps file preloads because recursive copy hooks need file metadata, and Delete keeps its subtree summary contract.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
@@ -244,7 +246,39 @@ Decision: **Accepted.** This removes unique-content-count-scaled DB round trips 
 
 Regression budget: reference release must use at most **3 × ceil(unique CAS blobs / 200) SQL statements**, with exactly three statements for each non-empty batch; advisory locks must remain deterministically ordered and batches must stay parameter-bounded.
 
-Next action: audit the physical finalize phase separately. Per-object `Store.Delete` is inherent, so only optimize if the DB/upload-part safety checks show deterministic amplification.
+Next action: physical object deletion itself remains per-object by storage backend contract; continue download/basic-path performance audit after the reused-source guard is indexed.
+
+### CAS physical-delete reused-source guard contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one `xd_content_blobs` row in `deleting` state with `ref_count=0`;
+- **128 reused upload parts** temporarily reference the blob through the same `source_storage_key`;
+- evidence method: query-shape and schema-index contract plus the existing dedup integration lifecycle that verifies reused ranges keep the blob alive;
+- samples: n/a for the structural result.
+
+BEFORE:
+
+- the finalizer issues `COUNT(*)` with `reused = TRUE AND source_storage_key = ?`;
+- `xd_upload_parts` has the primary `(session_id, part_index)` key and an index on `reused`, but **no index on `source_storage_key`**;
+- boolean safety only needs to know whether one matching reused range exists, but `COUNT(*)` must consume all **128 matching rows** in this workload before returning the count.
+
+AFTER / current:
+
+- migration installs `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`;
+- the finalizer issues `SELECT EXISTS (...)` with the partial-index predicate written as the SQL literal `reused = TRUE`;
+- the exact source-storage-key probe can use the dedicated partial index and may stop after the first matching entry;
+- the existing transaction order remains advisory lock -> content row `FOR UPDATE` -> reused-source guard -> physical `Store.Delete` -> content-row delete;
+- no change to physical object deletion cardinality or upload-session semantics.
+
+Decision: **Accepted.** The guard now matches its boolean intent and has an index aligned with its exact lookup key, without weakening the temporary-reference keepalive rule.
+
+Regression budget: the finalizer guard must remain a single exact-key `EXISTS` probe backed by a partial index on reused upload parts; do not regress to counting all matches or scanning reused rows by boolean flag alone.
+
+Next action: continue the basic download path audit; physical `Store.Delete` remains intentionally one call per object until storage backends expose a safe bulk-delete contract.
+
 
 ### Upload conflict preflight batching contract
 
