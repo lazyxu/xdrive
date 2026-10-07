@@ -1256,6 +1256,8 @@ func (c *Client) DownloadRange(ctx context.Context, id uint64, offset, length in
 	return io.ReadAll(io.LimitReader(resp.Body, length))
 }
 
+const walkChildrenPageLimit = 500
+
 func (c *Client) Walk(ctx context.Context) (map[string]Node, error) {
 	root, err := c.Root(ctx)
 	if err != nil {
@@ -1264,21 +1266,37 @@ func (c *Client) Walk(ctx context.Context) (map[string]Node, error) {
 	out := map[string]Node{"": root}
 	var walk func(Node, string) error
 	walk = func(parent Node, prefix string) error {
-		children, err := c.List(ctx, parent.ID)
-		if err != nil {
-			return err
-		}
-		for _, child := range children {
-			rel := child.Name
-			if prefix != "" {
-				rel = prefix + "/" + child.Name
+		cursor := ""
+		for {
+			page, err := c.ListPage(ctx, parent.ID, ChildrenOptions{
+				Limit:  walkChildrenPageLimit,
+				Cursor: cursor,
+				Sort:   "name",
+				Order:  "asc",
+			})
+			if err != nil {
+				return err
 			}
-			out[rel] = child
-			if child.Type == "dir" {
-				if err := walk(child, rel); err != nil {
-					return err
+			for _, child := range page.Items {
+				rel := child.Name
+				if prefix != "" {
+					rel = prefix + "/" + child.Name
+				}
+				out[rel] = child
+				if child.Type == "dir" {
+					if err := walk(child, rel); err != nil {
+						return err
+					}
 				}
 			}
+			if !page.HasMore {
+				break
+			}
+			nextCursor := strings.TrimSpace(page.NextCursor)
+			if nextCursor == "" || nextCursor == cursor {
+				return fmt.Errorf("children pagination did not advance for node %d", parent.ID)
+			}
+			cursor = nextCursor
 		}
 		return nil
 	}

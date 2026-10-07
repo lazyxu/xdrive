@@ -57,7 +57,7 @@ func TestWindowsRemoteJournal404FallsBackToFullWalk(t *testing.T) {
 			rootCalls.Add(1)
 			_ = json.NewEncoder(w).Encode(client.Node{ID: 1, Type: "dir", Revision: 1})
 		case "/api/v1/nodes/1/children":
-			_ = json.NewEncoder(w).Encode([]client.Node{})
+			writeEmptyWindowsWalkChildrenPage(t, w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -89,7 +89,7 @@ func TestWindowsRemoteJournalResetFallsBackAndAdvancesCheckpoint(t *testing.T) {
 		case "/api/v1/nodes/root":
 			_ = json.NewEncoder(w).Encode(client.Node{ID: 1, Type: "dir", Revision: 1})
 		case "/api/v1/nodes/1/children":
-			_ = json.NewEncoder(w).Encode([]client.Node{})
+			writeEmptyWindowsWalkChildrenPage(t, w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -152,6 +152,20 @@ func TestWindowsRemoteJournalBootstrapCapturesCheckpoint(t *testing.T) {
 	if !enabled || cursor != 44 {
 		t.Fatalf("journal enabled=%t cursor=%d want=true,44", enabled, cursor)
 	}
+}
+
+func writeEmptyWindowsWalkChildrenPage(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	query := r.URL.Query()
+	if query.Get("limit") != "500" || query.Get("sort") != "name" || query.Get("order") != "asc" {
+		t.Errorf("full walk children query=%q", r.URL.RawQuery)
+	}
+	_ = json.NewEncoder(w).Encode(client.ChildrenPage{
+		Items:   []client.Node{},
+		HasMore: false,
+		Sort:    "name",
+		Order:   "asc",
+	})
 }
 
 func newRemoteJournalTestProvider(t *testing.T, serverURL string) *winProvider {
