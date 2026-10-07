@@ -55,6 +55,8 @@ export function useXDriveFileExplorerQuickAccess<
   if (enabledRef.current !== enabled) {
     enabledRef.current = enabled
     lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
+    pendingMutationCountRef.current = 0
   }
 
   loadItemsRef.current = loadItems
@@ -93,6 +95,13 @@ export function useXDriveFileExplorerQuickAccess<
     void refresh()
   }, [refresh])
 
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
+    pendingMutationCountRef.current = 0
+  }, [])
+
   const pinnedIDs = useMemo(
     () => new Set(items.map((item) => item.id)),
     [items],
@@ -118,6 +127,7 @@ export function useXDriveFileExplorerQuickAccess<
     }
     const queued = mutationTailRef.current.then(run, run)
     const tracked = queued.finally(() => {
+      if (generation !== lifecycleGenerationRef.current) return
       pendingMutationCountRef.current = Math.max(
         0,
         pendingMutationCountRef.current - 1,

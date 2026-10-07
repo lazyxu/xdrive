@@ -73,6 +73,7 @@ export function useXDriveFileExplorerRecent<
   if (enabledRef.current !== enabled) {
     enabledRef.current = enabled
     lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
   }
 
   loadItemsRef.current = loadItems
@@ -115,6 +116,7 @@ export function useXDriveFileExplorerRecent<
   useEffect(() => () => {
     loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
+    mutationTailRef.current = Promise.resolve()
   }, [])
 
   const enqueueMutation = useCallback((
