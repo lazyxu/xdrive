@@ -741,6 +741,48 @@ func (c *Client) SetMediaFavorite(
 	return out, err
 }
 
+type MediaBatchFavorite struct {
+	Updated  int  `json:"updated"`
+	Favorite bool `json:"favorite"`
+}
+
+func (c *Client) SetMediaFavoriteBatch(
+	ctx context.Context,
+	nodeIDs []uint64,
+	favorite bool,
+) (MediaBatchFavorite, error) {
+	var out MediaBatchFavorite
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		"/api/v1/media/batch/favorite",
+		map[string]any{"node_ids": nodeIDs, "favorite": favorite},
+		&out,
+	)
+	return out, err
+}
+
+type MediaBatchTags struct {
+	Updated int      `json:"updated"`
+	Tags    []string `json:"tags"`
+}
+
+func (c *Client) AddMediaTagsBatch(
+	ctx context.Context,
+	nodeIDs []uint64,
+	tags []string,
+) (MediaBatchTags, error) {
+	var out MediaBatchTags
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/batch/tags",
+		map[string]any{"node_ids": nodeIDs, "tags": tags},
+		&out,
+	)
+	return out, err
+}
+
 type MediaTags struct {
 	Tags []string `json:"tags"`
 }

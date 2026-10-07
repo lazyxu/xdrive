@@ -753,6 +753,16 @@ export type AgentMediaFavorite = {
   favorite: boolean
 }
 
+export type AgentMediaBatchFavorite = {
+  updated: number
+  favorite: boolean
+}
+
+export type AgentMediaBatchTags = {
+  updated: number
+  tags: string[]
+}
+
 export type AgentMediaTags = {
   tags: string[]
 }
@@ -1434,6 +1444,22 @@ export class AgentIPCClient {
       'PATCH',
       '/v1/media/favorite',
       { node_id: nodeID, favorite },
+    )
+  }
+
+  setMediaFavoriteBatch(nodeIDs: number[], favorite: boolean) {
+    return this.request<AgentMediaBatchFavorite>(
+      'PATCH',
+      '/v1/media/favorites',
+      { node_ids: nodeIDs, favorite },
+    )
+  }
+
+  addMediaTagsBatch(nodeIDs: number[], tags: string[]) {
+    return this.request<AgentMediaBatchTags>(
+      'POST',
+      '/v1/media/tags/batch',
+      { node_ids: nodeIDs, tags },
     )
   }
 

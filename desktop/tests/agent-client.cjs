@@ -469,6 +469,40 @@ test('media favorite uses the scoped Agent API', async (t) => {
   assert.equal(result.favorite, true)
 })
 
+test('media favorite batch uses the scoped Agent API', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    assert.equal(req.method, 'PATCH')
+    assert.equal(req.url, '/v1/media/favorites')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), {
+      node_ids: [31, 32],
+      favorite: true,
+    })
+    json(res, 200, { updated: 2, favorite: true })
+  })
+  const result = await client.setMediaFavoriteBatch([31, 32], true)
+  assert.equal(result.updated, 2)
+  assert.equal(result.favorite, true)
+})
+
+test('media tag batch uses the scoped Agent API', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    assert.equal(req.method, 'POST')
+    assert.equal(req.url, '/v1/media/tags/batch')
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), {
+      node_ids: [31, 32],
+      tags: ['Family', 'Travel'],
+    })
+    json(res, 200, { updated: 2, tags: ['Family', 'Travel'] })
+  })
+  const result = await client.addMediaTagsBatch([31, 32], ['Family', 'Travel'])
+  assert.equal(result.updated, 2)
+  assert.deepEqual(result.tags, ['Family', 'Travel'])
+})
+
 test('media tags use the scoped Agent API', async (t) => {
   const { client } = await fixture(t, async (req, res) => {
     assert.equal(req.method, 'PATCH')

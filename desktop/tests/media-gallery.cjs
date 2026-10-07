@@ -12,6 +12,7 @@ const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPre
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
+const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
@@ -23,6 +24,7 @@ const sharedGallery = [
   sharedGalleryUtils,
   sharedGalleryFilters,
   sharedGalleryNavigation,
+  sharedGallerySelectionToolbar,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -130,6 +132,59 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   assert.match(sharedGalleryMain, /mediaGalleryMediaTypes/)
   assert.match(sharedGalleryMain, /你收藏的照片和视频/)
   assert.match(sharedGalleryMain, /按媒体资产类型快速进入照片集合/)
+})
+
+test('Gallery multi-select and Selection Toolbar stay shared across Web and Desktop', () => {
+  for (const token of [
+    'selectionMode',
+    'selectedMediaItems',
+    'selectionAnchorIndex',
+    'handleMediaSelect',
+    'rangeDistance <= 1000',
+    'selectedNodeIDs',
+    '<XDriveMediaGallerySelectionToolbar',
+    'data-xdrive-gallery-selection-toolbar',
+    'onSetFavoriteBatch',
+    'onAddTagsBatch',
+    'onAddItemsToAlbum',
+    'onDeleteItems',
+    'onDownloadItems',
+  ]) {
+    assert.ok(sharedGallery.includes(token), `Gallery selection contract missing: ${token}`)
+  }
+
+  for (const token of [
+    '已选择',
+    '添加到相册',
+    '标签',
+    '下载',
+    '删除',
+    '不会覆盖已有标签',
+    '任务中心查看和取消',
+  ]) {
+    assert.ok(sharedGallerySelectionToolbar.includes(token), `Selection Toolbar missing: ${token}`)
+  }
+
+  assert.match(sharedGalleryAdapter, /setFavoriteBatch\?:/)
+  assert.match(sharedGalleryAdapter, /addTagsBatch\?:/)
+  assert.match(sharedGalleryAdapter, /deleteItems\?:/)
+  assert.match(sharedGalleryAdapter, /downloadItems\?:/)
+
+  assert.match(webAPI, /setMediaFavoriteBatch\(/)
+  assert.match(webAPI, /addMediaTagsBatch\(/)
+  assert.match(webAdapter, /api\.createFileOperation\(\s*'delete'/)
+  assert.match(webAdapter, /api\.downloadArchive\(/)
+  assert.match(desktopAdapter, /agent\.cloudCreateFileOperation\(\s*'delete'/)
+  assert.match(desktopAdapter, /agent\.cloudDownloadArchive\(/)
+
+  assert.match(preload, /setMediaFavoriteBatch:/)
+  assert.match(preload, /addMediaTagsBatch:/)
+  assert.match(agentClient, /setMediaFavoriteBatch\(/)
+  assert.match(agentClient, /addMediaTagsBatch\(/)
+  assert.match(desktopMain, /agent:set-media-favorite-batch/)
+  assert.match(desktopMain, /agent:add-media-tags-batch/)
+  assert.match(desktopIPC, /PATCH \/v1\/media\/favorites/)
+  assert.match(desktopIPC, /POST \/v1\/media\/tags\/batch/)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {

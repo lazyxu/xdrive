@@ -2109,6 +2109,30 @@ func (c *agentController) CloudSetMediaFavorite(
 	return cli.SetMediaFavorite(ctx, nodeID, favorite)
 }
 
+func (c *agentController) CloudSetMediaFavoriteBatch(
+	ctx context.Context,
+	nodeIDs []uint64,
+	favorite bool,
+) (client.MediaBatchFavorite, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBatchFavorite{}, err
+	}
+	return cli.SetMediaFavoriteBatch(ctx, nodeIDs, favorite)
+}
+
+func (c *agentController) CloudAddMediaTagsBatch(
+	ctx context.Context,
+	nodeIDs []uint64,
+	tags []string,
+) (client.MediaBatchTags, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBatchTags{}, err
+	}
+	return cli.AddMediaTagsBatch(ctx, nodeIDs, tags)
+}
+
 func (c *agentController) CloudSetMediaTags(
 	ctx context.Context,
 	nodeID uint64,

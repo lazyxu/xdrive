@@ -262,6 +262,8 @@ type desktopIPCController interface {
 	CloudMediaAlbumItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaAlbumItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudSetMediaFavorite(context.Context, uint64, bool) (client.MediaFavorite, error)
+	CloudSetMediaFavoriteBatch(context.Context, []uint64, bool) (client.MediaBatchFavorite, error)
+	CloudAddMediaTagsBatch(context.Context, []uint64, []string) (client.MediaBatchTags, error)
 	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
 	CloudSetMediaPeople(context.Context, uint64, []string) (client.MediaPeople, error)
 	CloudSetMediaDescription(context.Context, uint64, string) (client.MediaDescription, error)
@@ -556,6 +558,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("DELETE /v1/media/album/item", h.removeMediaAlbumItem)
 	mux.HandleFunc("GET /v1/media/albums/items", h.mediaAlbumItems)
 	mux.HandleFunc("PATCH /v1/media/favorite", h.mediaFavorite)
+	mux.HandleFunc("PATCH /v1/media/favorites", h.mediaFavoriteBatch)
+	mux.HandleFunc("POST /v1/media/tags/batch", h.mediaTagsBatch)
 	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)
 	mux.HandleFunc("PATCH /v1/media/people", h.mediaPeople)
 	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
@@ -2780,6 +2784,46 @@ func (h *desktopIPCHandler) mediaFavorite(w http.ResponseWriter, r *http.Request
 		return
 	}
 	result, err := h.ctrl.CloudSetMediaFavorite(r.Context(), input.NodeID, *input.Favorite)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaFavoriteBatch(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeIDs  []uint64 `json:"node_ids"`
+		Favorite *bool    `json:"favorite"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if len(input.NodeIDs) == 0 || len(input.NodeIDs) > 1000 || input.Favorite == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_favorites", "node_ids and favorite are required")
+		return
+	}
+	result, err := h.ctrl.CloudSetMediaFavoriteBatch(r.Context(), input.NodeIDs, *input.Favorite)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaTagsBatch(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		NodeIDs []uint64 `json:"node_ids"`
+		Tags    []string `json:"tags"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if len(input.NodeIDs) == 0 || len(input.NodeIDs) > 1000 || len(input.Tags) == 0 || len(input.Tags) > 32 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_tags_batch", "node_ids and up to 32 tags are required")
+		return
+	}
+	result, err := h.ctrl.CloudAddMediaTagsBatch(r.Context(), input.NodeIDs, input.Tags)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

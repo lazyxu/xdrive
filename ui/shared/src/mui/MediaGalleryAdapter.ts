@@ -122,6 +122,20 @@ export interface XDriveMediaGalleryPort {
     nodeID: number,
     favorite: boolean,
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  setFavoriteBatch?: (
+    nodeIDs: number[],
+    favorite: boolean,
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  addTagsBatch?: (
+    nodeIDs: number[],
+    tags: string[],
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  deleteItems?: (
+    items: MediaItem[],
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  downloadItems?: (
+    items: MediaItem[],
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setTags?: (
     nodeID: number,
     tags: string[],
@@ -269,6 +283,26 @@ export function createXDriveMediaGalleryDataSource(
     setFavorite: port.setFavorite
       ? async (nodeID, favorite) => {
           await resolveXDriveTransport(port.setFavorite!(nodeID, favorite))
+        }
+      : undefined,
+    setFavoriteBatch: port.setFavoriteBatch
+      ? async (nodeIDs, favorite) => {
+          await resolveXDriveTransport(port.setFavoriteBatch!(nodeIDs, favorite))
+        }
+      : undefined,
+    addTagsBatch: port.addTagsBatch
+      ? async (nodeIDs, tags) => {
+          await resolveXDriveTransport(port.addTagsBatch!(nodeIDs, tags))
+        }
+      : undefined,
+    deleteItems: port.deleteItems
+      ? async (items) => {
+          await resolveXDriveTransport(port.deleteItems!(items))
+        }
+      : undefined,
+    downloadItems: port.downloadItems
+      ? async (items) => {
+          await resolveXDriveTransport(port.downloadItems!(items))
         }
       : undefined,
     setTags: port.setTags

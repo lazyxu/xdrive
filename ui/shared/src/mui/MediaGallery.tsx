@@ -55,6 +55,7 @@ import {
   XDriveMediaGalleryNavigation,
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
+import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsDialog } from './MediaGalleryDetails'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
@@ -180,6 +181,10 @@ export interface MediaGalleryDataSource {
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
+  setFavoriteBatch?: (nodeIDs: number[], favorite: boolean) => Promise<void>
+  addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
+  deleteItems?: (items: MediaItem[]) => Promise<void>
+  downloadItems?: (items: MediaItem[]) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
   setDescription?: (nodeID: number, description: string) => Promise<string>
@@ -927,6 +932,121 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
+
+  const setFavoriteBatch = useCallback(async (
+    selectedItems: MediaItem[],
+    favorite: boolean,
+  ) => {
+    if (!source.setFavoriteBatch || selectedItems.length === 0) return
+    setError('')
+    try {
+      const nodeIDs = selectedItems.map((item) => item.node.id)
+      await source.setFavoriteBatch(nodeIDs, favorite)
+      const selectedIDs = new Set(nodeIDs)
+      setItems((current) => current.map((item) => (
+        selectedIDs.has(item.node.id) ? { ...item, favorite } : item
+      )))
+      virtualCollection.updateLoadedItems((item) => (
+        selectedIDs.has(item.node.id) ? { ...item, favorite } : item
+      ))
+      if (
+        query.favorite !== undefined ||
+        (currentAlbum?.kind === 'smart' && currentAlbum.query?.favorite !== undefined)
+      ) {
+        await loadFirstPage(
+          currentAlbum,
+          currentAlbum?.kind === 'smart' ? {} : query,
+          currentSuggestedPerson,
+          currentPerson,
+        )
+      }
+    } catch (favoriteError) {
+      setError(xDriveMediaGalleryErrorMessage(favoriteError))
+      onError?.(favoriteError)
+      throw favoriteError
+    }
+  }, [
+    currentAlbum,
+    currentPerson,
+    currentSuggestedPerson,
+    loadFirstPage,
+    onError,
+    query,
+    source,
+    virtualCollection.updateLoadedItems,
+  ])
+
+  const addTagsBatch = useCallback(async (
+    selectedItems: MediaItem[],
+    tags: string[],
+  ) => {
+    if (!source.addTagsBatch || selectedItems.length === 0) return
+    setError('')
+    try {
+      await source.addTagsBatch(selectedItems.map((item) => item.node.id), tags)
+      await loadFirstPage(
+        currentAlbum,
+        currentAlbum?.kind === 'smart' ? {} : query,
+        currentSuggestedPerson,
+        currentPerson,
+      )
+    } catch (tagError) {
+      setError(xDriveMediaGalleryErrorMessage(tagError))
+      onError?.(tagError)
+      throw tagError
+    }
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+
+  const addItemsToAlbum = useCallback(async (
+    album: MediaAlbum,
+    selectedItems: MediaItem[],
+  ) => {
+    if (!source.addToAlbum || !album.revision || selectedItems.length === 0) return
+    setError('')
+    try {
+      const updated = await source.addToAlbum(
+        album.id,
+        album.revision,
+        selectedItems.map((item) => item.node.id),
+      )
+      replaceAlbum(updated)
+    } catch (albumError) {
+      setError(xDriveMediaGalleryErrorMessage(albumError))
+      onError?.(albumError)
+      throw albumError
+    }
+  }, [onError, replaceAlbum, source])
+
+  const deleteItems = useCallback(async (selectedItems: MediaItem[]) => {
+    if (!source.deleteItems || selectedItems.length === 0) return
+    setError('')
+    try {
+      await source.deleteItems(selectedItems)
+      await loadFirstPage(
+        currentAlbum,
+        currentAlbum?.kind === 'smart' ? {} : query,
+        currentSuggestedPerson,
+        currentPerson,
+      )
+    } catch (deleteError) {
+      setError(xDriveMediaGalleryErrorMessage(deleteError))
+      onError?.(deleteError)
+      throw deleteError
+    }
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+
+  const downloadItems = useCallback(async (selectedItems: MediaItem[]) => {
+    if (!source.downloadItems || selectedItems.length === 0) return
+    setError('')
+    try {
+      await source.downloadItems(selectedItems)
+    } catch (downloadError) {
+      setError(xDriveMediaGalleryErrorMessage(downloadError))
+      onError?.(downloadError)
+      throw downloadError
+    }
+  }, [onError, source])
+
   useEffect(() => {
     void loadFirstPage(null, {})
     return () => {
@@ -939,6 +1059,7 @@ export function XDriveMediaGalleryPage({
       <XDriveMediaGallery
         items={items}
         virtualCollection={galleryVirtualCollection}
+        collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         albums={albums}
         places={places}
         suggestedPeople={suggestedPeople}
@@ -985,6 +1106,11 @@ export function XDriveMediaGalleryPage({
         loadLivePhotoMotion={source.loadLivePhotoMotion}
         loadPreviewURL={source.loadPreviewURL}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
+        onSetFavoriteBatch={source.setFavoriteBatch ? setFavoriteBatch : undefined}
+        onAddTagsBatch={source.addTagsBatch ? addTagsBatch : undefined}
+        onAddItemsToAlbum={source.addToAlbum ? addItemsToAlbum : undefined}
+        onDeleteItems={source.deleteItems ? deleteItems : undefined}
+        onDownloadItems={source.downloadItems ? downloadItems : undefined}
         onSetTags={source.setTags ? setTags : undefined}
         onSetPeople={source.setPeople ? setPeople : undefined}
         onSetDescription={source.setDescription ? setDescription : undefined}
@@ -1110,6 +1236,7 @@ export type XDriveMediaGalleryVirtualCollection = {
 export interface XDriveMediaGalleryProps {
   items: MediaItem[]
   virtualCollection?: XDriveMediaGalleryVirtualCollection
+  collectionKey?: string
   albums?: MediaAlbum[]
   places?: MediaPlaceFacet[]
   suggestedPeople?: MediaSuggestedPerson[]
@@ -1128,6 +1255,11 @@ export interface XDriveMediaGalleryProps {
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
+  onSetFavoriteBatch?: (items: MediaItem[], favorite: boolean) => Promise<void>
+  onAddTagsBatch?: (items: MediaItem[], tags: string[]) => Promise<void>
+  onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
+  onDeleteItems?: (items: MediaItem[]) => Promise<void>
+  onDownloadItems?: (items: MediaItem[]) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
@@ -1208,6 +1340,7 @@ type MediaTimelineGroup = {
   key: string
   label: string
   items: MediaItem[]
+  startIndex: number
 }
 
 function mediaTimelineDate(item: MediaItem) {
@@ -1250,11 +1383,17 @@ function mediaTimelineGroups(
       key,
       label: new Intl.DateTimeFormat('zh-CN', formatOptions).format(date),
       items: [item],
+      startIndex: 0,
     })
   }
   const ordered = Array.from(groups.values()).sort((a, b) => b.key.localeCompare(a.key))
+  let startIndex = 0
+  for (const group of ordered) {
+    group.startIndex = startIndex
+    startIndex += group.items.length
+  }
   if (unknown.length > 0) {
-    ordered.push({ key: 'unknown', label: '日期未知', items: unknown })
+    ordered.push({ key: 'unknown', label: '日期未知', items: unknown, startIndex })
   }
   return ordered
 }
@@ -1269,8 +1408,22 @@ function keyboardActivate(
   }
 }
 
+type MediaSelectionModifiers = {
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+}
+
 type MediaTileProps = {
   item: MediaItem
+  logicalIndex: number
+  selectionMode: boolean
+  selectedForAction: boolean
+  onSelect: (
+    item: MediaItem,
+    index: number,
+    modifiers: MediaSelectionModifiers,
+  ) => void
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler?: XDriveMediaThumbnailScheduler
   thumbnailPriority?: XDriveMediaThumbnailPriority
@@ -1284,6 +1437,10 @@ type MediaTileProps = {
 
 function MediaTile({
   item,
+  logicalIndex,
+  selectionMode,
+  selectedForAction,
+  onSelect,
   loadThumbnail,
   thumbnailScheduler,
   thumbnailPriority = 1,
@@ -1330,18 +1487,45 @@ function MediaTile({
       variant="outlined"
       role="button"
       tabIndex={0}
-      onClick={openDetails}
+      onClick={(event) => {
+        if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey) {
+          if (clickTimerRef.current !== null) {
+            window.clearTimeout(clickTimerRef.current)
+            clickTimerRef.current = null
+          }
+          onSelect(item, logicalIndex, {
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            shiftKey: event.shiftKey,
+          })
+          return
+        }
+        openDetails()
+      }}
       onDoubleClick={(event) => {
         event.preventDefault()
-        openPreview()
+        if (!selectionMode) openPreview()
       }}
-      onKeyDown={(event) => keyboardActivate(event, () => onOpen(item))}
+      onKeyDown={(event) => {
+        if (selectionMode && (event.key === ' ' || event.key === 'Enter')) {
+          event.preventDefault()
+          onSelect(item, logicalIndex, {
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            shiftKey: event.shiftKey,
+          })
+          return
+        }
+        keyboardActivate(event, () => onOpen(item))
+      }}
       sx={{
         position: 'relative',
         overflow: 'hidden',
         aspectRatio: '1 / 1',
         cursor: 'pointer',
         bgcolor: 'action.hover',
+        borderColor: selectedForAction ? 'primary.main' : 'divider',
+        boxShadow: selectedForAction ? 2 : 0,
         '&:hover .media-name': { opacity: 1 },
         '&:focus-visible': {
           outline: '2px solid',
@@ -1369,6 +1553,34 @@ function MediaTile({
           revokeOnDispose={!thumbnailScheduler}
         />
       )}
+      {(selectionMode || selectedForAction) ? (
+        <Checkbox
+          size="small"
+          checked={selectedForAction}
+          aria-label={selectedForAction ? '取消选择' : '选择'}
+          onClick={(event) => {
+            event.stopPropagation()
+            onSelect(item, logicalIndex, {
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              shiftKey: event.shiftKey,
+            })
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+          sx={{
+            position: 'absolute',
+            top: 4,
+            left: 4,
+            zIndex: 3,
+            p: 0.5,
+            bgcolor: 'rgba(0,0,0,.58)',
+            color: '#fff',
+            borderRadius: 1,
+            '&.Mui-checked': { color: 'primary.light' },
+            '&:hover': { bgcolor: 'rgba(0,0,0,.72)' },
+          }}
+        />
+      ) : null}
       {onSetFavorite ? (
         <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
           <IconButton
@@ -1383,7 +1595,7 @@ function MediaTile({
             sx={{
               position: 'absolute',
               top: 8,
-              left: 8,
+              left: selectionMode || selectedForAction ? 42 : 8,
               bgcolor: 'rgba(0,0,0,.66)',
               color: item.favorite ? 'warning.main' : '#fff',
               '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
@@ -1460,12 +1672,20 @@ function MediaTileGrid({
   loadPreviewURL,
   onSetFavorite,
   onSetCover,
+  selectionMode,
+  selectedNodeIDs,
+  onSelect,
   onOpen,
   onPreview,
   onToggleFavorite,
+  indexOffset = 0,
 }: {
   items: MediaItem[]
   minTileWidth: number
+  selectionMode: boolean
+  selectedNodeIDs: ReadonlySet<number>
+  onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
+  indexOffset?: number
   loadThumbnail: MediaThumbnailLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
@@ -1482,10 +1702,14 @@ function MediaTileGrid({
         gap: 1,
       }}
     >
-      {items.map((item) => (
+      {items.map((item, index) => (
         <MediaTile
           key={item.node.id}
           item={item}
+          logicalIndex={indexOffset + index}
+          selectionMode={selectionMode}
+          selectedForAction={selectedNodeIDs.has(item.node.id)}
+          onSelect={onSelect}
           loadThumbnail={loadThumbnail}
           loadPreviewURL={loadPreviewURL}
           onSetFavorite={onSetFavorite}
@@ -1517,12 +1741,18 @@ function MediaVirtualTileGrid({
   loadPreviewURL,
   onSetFavorite,
   onSetCover,
+  selectionMode,
+  selectedNodeIDs,
+  onSelect,
   onOpen,
   onPreview,
   onToggleFavorite,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
+  selectionMode: boolean
+  selectedNodeIDs: ReadonlySet<number>
+  onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
@@ -1655,6 +1885,10 @@ function MediaVirtualTileGrid({
         <MediaTile
           key={item.node.id}
           item={item}
+          logicalIndex={index}
+          selectionMode={selectionMode}
+          selectedForAction={selectedNodeIDs.has(item.node.id)}
+          onSelect={onSelect}
           loadThumbnail={loadThumbnail}
           thumbnailScheduler={thumbnailScheduler}
           thumbnailPriority={thumbnailPriority}
@@ -1737,6 +1971,9 @@ function MediaVirtualTimeline({
   loadPreviewURL,
   onSetFavorite,
   onSetCover,
+  selectionMode,
+  selectedNodeIDs,
+  onSelect,
   onOpen,
   onPreview,
   onToggleFavorite,
@@ -1744,6 +1981,9 @@ function MediaVirtualTimeline({
   groups: MediaTimelineGroupIndex[]
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
+  selectionMode: boolean
+  selectedNodeIDs: ReadonlySet<number>
+  onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
@@ -1891,6 +2131,10 @@ function MediaVirtualTimeline({
               <MediaTile
                 key={item.node.id}
                 item={item}
+                logicalIndex={index}
+                selectionMode={selectionMode}
+                selectedForAction={selectedNodeIDs.has(item.node.id)}
+                onSelect={onSelect}
                 loadThumbnail={loadThumbnail}
                 thumbnailScheduler={thumbnailScheduler}
                 thumbnailPriority={thumbnailPriority}
@@ -1971,6 +2215,7 @@ function MediaVirtualTimeline({
 export function XDriveMediaGallery({
   items,
   virtualCollection,
+  collectionKey = '',
   albums = [],
   places = [],
   suggestedPeople = [],
@@ -1989,6 +2234,11 @@ export function XDriveMediaGallery({
   loadLivePhotoMotion,
   loadPreviewURL,
   onSetFavorite,
+  onSetFavoriteBatch,
+  onAddTagsBatch,
+  onAddItemsToAlbum,
+  onDeleteItems,
+  onDownloadItems,
   onSetTags,
   onSetPeople,
   onSetDescription,
@@ -2026,6 +2276,12 @@ export function XDriveMediaGallery({
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [timeScale, setTimeScale] = useState<MediaGalleryTimeScale>('all')
   const [minTileWidth, setMinTileWidth] = useState(150)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectionBusy, setSelectionBusy] = useState(false)
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
+  const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
+    () => new Map(),
+  )
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
   const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
@@ -2145,6 +2401,89 @@ export function XDriveMediaGallery({
   const toggleMediaFavorite = useCallback((item: MediaItem) => {
     void toggleFavorite(item).catch(() => undefined)
   }, [toggleFavorite])
+
+  const selectedMedia = useMemo(
+    () => Array.from(selectedMediaItems.values()),
+    [selectedMediaItems],
+  )
+  const selectedNodeIDs = useMemo(
+    () => new Set(selectedMediaItems.keys()),
+    [selectedMediaItems],
+  )
+  const allSelectedFavorite = selectedMedia.length > 0 &&
+    selectedMedia.every((item) => Boolean(item.favorite))
+
+  const clearMediaSelection = useCallback(() => {
+    setSelectedMediaItems(new Map())
+    setSelectionAnchorIndex(null)
+    setSelectionMode(false)
+  }, [])
+
+  const handleMediaSelect = useCallback((
+    item: MediaItem,
+    index: number,
+    modifiers: MediaSelectionModifiers,
+  ) => {
+    setSelectionMode(true)
+    setSelectedMediaItems((current) => {
+      const next = new Map(current)
+      const rangeDistance = selectionAnchorIndex === null
+        ? 0
+        : Math.abs(index - selectionAnchorIndex)
+      if (modifiers.shiftKey && selectionAnchorIndex !== null && rangeDistance <= 1000) {
+        const start = Math.min(index, selectionAnchorIndex)
+        const end = Math.max(index, selectionAnchorIndex)
+        for (let logicalIndex = start; logicalIndex <= end; logicalIndex += 1) {
+          const value = virtualCollection?.itemAt(logicalIndex) ?? items[logicalIndex]
+          if (value) next.set(value.node.id, value)
+        }
+      } else if (next.has(item.node.id)) {
+        next.delete(item.node.id)
+      } else {
+        next.set(item.node.id, item)
+      }
+      return next
+    })
+    setSelectionAnchorIndex(index)
+  }, [items, selectionAnchorIndex, virtualCollection])
+
+  const runSelectionAction = useCallback(async (
+    action: (selectedItems: MediaItem[]) => Promise<void>,
+    clearAfter = true,
+  ) => {
+    if (selectedMedia.length === 0 || selectionBusy) return
+    setSelectionBusy(true)
+    try {
+      await action(selectedMedia)
+      if (clearAfter) clearMediaSelection()
+    } finally {
+      setSelectionBusy(false)
+    }
+  }, [clearMediaSelection, selectedMedia, selectionBusy])
+
+  useEffect(() => {
+    clearMediaSelection()
+  }, [
+    activeMediaType,
+    activePlaceID,
+    collectionKey,
+    clearMediaSelection,
+    currentAlbum?.id,
+    currentPerson?.id,
+    currentSuggestedPerson?.id,
+    section,
+  ])
+
+  useEffect(() => {
+    if (!selectionMode) return
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      clearMediaSelection()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [clearMediaSelection, selectionMode])
 
   const activePlace = activePlaceID
     ? places.find((place) => place.id === activePlaceID)
@@ -2305,6 +2644,18 @@ export function XDriveMediaGallery({
           </Button>
         ) : null}
         {showPhotoCollection ? (
+          <Button
+            size="small"
+            variant={selectionMode ? 'contained' : 'text'}
+            onClick={() => {
+              if (selectionMode) clearMediaSelection()
+              else setSelectionMode(true)
+            }}
+          >
+            {selectionMode ? '完成' : '选择'}
+          </Button>
+        ) : null}
+        {showPhotoCollection ? (
           <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
             {([
               ['year', '年'],
@@ -2345,6 +2696,37 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPhotoCollection ? filters : null}
+
+      {showPhotoCollection && selectionMode ? (
+        <XDriveMediaGallerySelectionToolbar
+          selectedCount={selectedMedia.length}
+          allFavorite={allSelectedFavorite}
+          albums={albums}
+          busy={selectionBusy}
+          onFavorite={onSetFavoriteBatch
+            ? (favorite) => runSelectionAction(
+                (selectedItems) => onSetFavoriteBatch(selectedItems, favorite),
+              )
+            : undefined}
+          onAddToAlbum={onAddItemsToAlbum
+            ? (album) => runSelectionAction(
+                (selectedItems) => onAddItemsToAlbum(album, selectedItems),
+              )
+            : undefined}
+          onAddTags={onAddTagsBatch
+            ? (tags) => runSelectionAction(
+                (selectedItems) => onAddTagsBatch(selectedItems, tags),
+              )
+            : undefined}
+          onDownload={onDownloadItems
+            ? () => runSelectionAction(onDownloadItems, false)
+            : undefined}
+          onDelete={onDeleteItems
+            ? () => runSelectionAction(onDeleteItems)
+            : undefined}
+          onClear={clearMediaSelection}
+        />
+      ) : null}
 
       {showPhotoCollection ? (
         <Stack
@@ -2824,6 +3206,9 @@ export function XDriveMediaGallery({
                   ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
                   : undefined
               }
+              selectionMode={selectionMode}
+              selectedNodeIDs={selectedNodeIDs}
+              onSelect={handleMediaSelect}
               onOpen={openMediaItem}
               onPreview={openMediaPreview}
               onToggleFavorite={toggleMediaFavorite}
@@ -2848,6 +3233,10 @@ export function XDriveMediaGallery({
                   <MediaTileGrid
                     items={group.items}
                     minTileWidth={minTileWidth}
+                    indexOffset={group.startIndex}
+                    selectionMode={selectionMode}
+                    selectedNodeIDs={selectedNodeIDs}
+                    onSelect={handleMediaSelect}
                     loadThumbnail={loadThumbnail}
                     loadPreviewURL={loadPreviewURL}
                     onSetFavorite={onSetFavorite}
@@ -2868,6 +3257,9 @@ export function XDriveMediaGallery({
           <MediaVirtualTileGrid
             collection={virtualCollection}
             minTileWidth={minTileWidth}
+            selectionMode={selectionMode}
+            selectedNodeIDs={selectedNodeIDs}
+            onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
             loadPreviewURL={loadPreviewURL}
@@ -2885,6 +3277,9 @@ export function XDriveMediaGallery({
           <MediaTileGrid
             items={items}
             minTileWidth={minTileWidth}
+            selectionMode={selectionMode}
+            selectedNodeIDs={selectedNodeIDs}
+            onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             loadPreviewURL={loadPreviewURL}
             onSetFavorite={onSetFavorite}
