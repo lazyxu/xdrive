@@ -45,6 +45,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
   XDriveFileExplorerMenuItem,
+  XDriveFileExplorerNavigationState,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
   XDriveTrashDialogAdapter,
@@ -114,6 +115,8 @@ export default function DesktopFileExplorer({
   loading,
   onLoadDirectory,
   onRefreshCurrentDirectoryIfIdle,
+  navigationState,
+  onNavigationStateChange,
   onOpenTrash,
   trashActive,
   trashAdapter,
@@ -156,6 +159,10 @@ export default function DesktopFileExplorer({
   onRefreshCurrentDirectoryIfIdle: (
     expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
+  navigationState?: XDriveFileExplorerNavigationState<AgentCloudCrumb>
+  onNavigationStateChange?: (
+    state: XDriveFileExplorerNavigationState<AgentCloudCrumb>,
+  ) => void
   onOpenTrash: () => void
   trashActive: boolean
   trashAdapter: XDriveTrashDialogAdapter
@@ -291,6 +298,8 @@ export default function DesktopFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: DESKTOP_FILE_VIEW_KEY,
     onLoadDirectory,
+    initialNavigationState: navigationState,
+    onNavigationStateChange,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
       const result = await window.xdriveDesktop.agent.cloudSearchRange(
         query,
