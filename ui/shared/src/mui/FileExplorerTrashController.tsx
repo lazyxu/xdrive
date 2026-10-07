@@ -140,11 +140,15 @@ export function useXDriveFileExplorerTrash({
     const workingGeneration = beginWorking(`delete:${node.id}`)
     try {
       await adapter.deleteTrash(node)
-      setDeleteTarget(null)
-      onFeedbackRef.current?.('已永久删除')
+      if (workingGeneration === workingGenerationRef.current) {
+        setDeleteTarget(null)
+        onFeedbackRef.current?.('已永久删除')
+      }
       await changed()
     } catch (error) {
-      onErrorRef.current(error)
+      if (workingGeneration === workingGenerationRef.current) {
+        onErrorRef.current(error)
+      }
     } finally {
       finishWorking(workingGeneration)
     }
