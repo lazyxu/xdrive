@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { DragEvent as ReactDragEvent } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
@@ -17,7 +18,17 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import {
+  XDRIVE_FILE_EXPLORER_DRAG_MIME,
+  xDriveFileExplorerDecodeDragIDs,
+} from '../file-explorer-drag'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
+import {
+  xDriveFileExplorerReadExternalDrop,
+} from './FileExplorerExternalDrop'
+import type {
+  XDriveFileExplorerExternalDropPayload,
+} from './FileExplorerExternalDrop'
 import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
 import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
 
@@ -48,6 +59,10 @@ export function XDriveFileExplorerNavigationPane({
   currentCrumbs,
   loadDirectoryPage,
   onNavigate,
+  dropDisabled = false,
+  onDropInternalItems,
+  onExternalFilesDrop,
+  onExternalFolderDrop,
   quickAccessEnabled = false,
   quickAccessItems = [],
   quickAccessLoading = false,
@@ -69,6 +84,20 @@ export function XDriveFileExplorerNavigationPane({
     cursor?: string,
   ) => Promise<XDriveFileExplorerNavigationTreePage>
   onNavigate: (crumbs: XDriveFileExplorerNavigationTreeCrumb[]) => void | Promise<void>
+  dropDisabled?: boolean
+  onDropInternalItems?: (
+    itemIDs: readonly (string | number)[],
+    target: XDriveFileExplorerNavigationTreeCrumb,
+    operation: 'move' | 'copy',
+  ) => void | Promise<void>
+  onExternalFilesDrop?: (
+    files: File[],
+    target: XDriveFileExplorerNavigationTreeCrumb,
+  ) => void | Promise<void>
+  onExternalFolderDrop?: (
+    payload: XDriveFileExplorerExternalDropPayload,
+    target: XDriveFileExplorerNavigationTreeCrumb,
+  ) => void | Promise<void>
   quickAccessEnabled?: boolean
   quickAccessItems?: readonly XDriveFileExplorerQuickAccessEntry[]
   quickAccessLoading?: boolean
@@ -94,6 +123,7 @@ export function XDriveFileExplorerNavigationPane({
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
   const [loadingIDs, setLoadingIDs] = useState<Set<number>>(() => new Set())
   const loadingIDsRef = useRef(new Set<number>())
+  const [dropTargetID, setDropTargetID] = useState<number | null>(null)
 
   const pathNodes = useMemo(
     () => currentCrumbs.map((crumb, index) => ({
@@ -215,6 +245,79 @@ export function XDriveFileExplorerNavigationPane({
     if (!expanded) void loadChildren(node)
   }
 
+  const dragOverNode = (
+    event: ReactDragEvent<HTMLElement>,
+    node: XDriveFileExplorerNavigationTreeNode,
+  ) => {
+    if (dropDisabled) return
+    const types = Array.from(event.dataTransfer.types)
+    const internal = types.includes(XDRIVE_FILE_EXPLORER_DRAG_MIME) &&
+      Boolean(onDropInternalItems)
+    const external = types.includes('Files') &&
+      Boolean(onExternalFilesDrop || onExternalFolderDrop)
+    if (!internal && !external) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = internal && (event.ctrlKey || event.metaKey)
+      ? 'copy'
+      : external ? 'copy' : 'move'
+    setDropTargetID(node.id)
+  }
+
+  const leaveDropTarget = (
+    event: ReactDragEvent<HTMLElement>,
+    nodeID: number,
+  ) => {
+    const related = event.relatedTarget
+    if (
+      related instanceof Node &&
+      event.currentTarget.contains(related)
+    ) return
+    setDropTargetID((current) => current === nodeID ? null : current)
+  }
+
+  const dropOnNode = async (
+    event: ReactDragEvent<HTMLElement>,
+    node: XDriveFileExplorerNavigationTreeNode,
+  ) => {
+    if (dropDisabled) return
+    event.preventDefault()
+    event.stopPropagation()
+    const dataTransfer = event.dataTransfer
+    const target = { id: node.id, name: node.name }
+    try {
+      if (dataTransfer.types.includes('Files')) {
+        if (onExternalFolderDrop) {
+          const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+          if (payload.directories.length > 0) {
+            await onExternalFolderDrop(payload, target)
+            return
+          }
+        }
+        const droppedFiles = Array.from(dataTransfer.files)
+        if (droppedFiles.length > 0 && onExternalFilesDrop) {
+          await onExternalFilesDrop(droppedFiles, target)
+          return
+        }
+      }
+
+      if (onDropInternalItems) {
+        const itemIDs = xDriveFileExplorerDecodeDragIDs(
+          dataTransfer.getData(XDRIVE_FILE_EXPLORER_DRAG_MIME),
+        )
+        if (itemIDs.length > 0) {
+          await onDropInternalItems(
+            itemIDs,
+            target,
+            event.ctrlKey || event.metaKey ? 'copy' : 'move',
+          )
+        }
+      }
+    } finally {
+      setDropTargetID(null)
+    }
+  }
+
   const renderNode = (node: XDriveFileExplorerNavigationTreeNode, depth: number) => {
     const children = childrenFor(node)
     const page = pageByParent[String(node.id)]
@@ -267,6 +370,9 @@ export function XDriveFileExplorerNavigationPane({
           <ListItemButton
             selected={selected}
             aria-label={node.name}
+            onDragOver={(event) => dragOverNode(event, node)}
+            onDragLeave={(event) => leaveDropTarget(event, node.id)}
+            onDrop={(event) => { void dropOnNode(event, node) }}
             onClick={() => {
               if (!selected) void onNavigate(node.crumbs)
             }}
@@ -277,6 +383,10 @@ export function XDriveFileExplorerNavigationPane({
               px: 0.75,
               borderRadius: 1,
               gap: 0.75,
+              bgcolor: dropTargetID === node.id ? 'action.hover' : undefined,
+              outline: dropTargetID === node.id ? '2px solid' : undefined,
+              outlineColor: dropTargetID === node.id ? 'primary.main' : undefined,
+              outlineOffset: -2,
             }}
           >
             <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />

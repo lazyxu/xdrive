@@ -55,6 +55,10 @@ import type { ButtonProps } from '@mui/material'
 import { formatBytes } from '../format'
 import type { XDriveFileTextPreview } from '../file-preview'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
+import {
+  XDRIVE_FILE_EXPLORER_DRAG_MIME,
+  xDriveFileExplorerEncodeDragItems,
+} from '../file-explorer-drag'
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import {
   xDriveFileExplorerKeyboardCommand,
@@ -1986,7 +1990,10 @@ export function XDriveFileExplorer({
     }
     setDraggedItems(selection)
     event.dataTransfer.effectAllowed = 'copyMove'
-    event.dataTransfer.setData('application/x-xdrive-fileexplorer', '1')
+    event.dataTransfer.setData(
+      XDRIVE_FILE_EXPLORER_DRAG_MIME,
+      xDriveFileExplorerEncodeDragItems(selection),
+    )
     setFileExplorerDragImage(event, selection)
   }
 
