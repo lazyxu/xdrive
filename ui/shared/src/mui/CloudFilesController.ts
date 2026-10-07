@@ -96,6 +96,7 @@ export function useXDriveCloudFilesController<
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
   const directoryInFlightRequestRef = useRef<number | null>(null)
+  const directoryInFlightParentIDRef = useRef<number | null>(null)
   const quotaRequestRef = useRef(0)
   const changeCursorRef = useRef<number | null>(null)
   const changeRequestRef = useRef(0)
@@ -246,6 +247,7 @@ export function useXDriveCloudFilesController<
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     directoryInFlightRequestRef.current = requestID
+    directoryInFlightParentIDRef.current = id
     setLoading(true)
     try {
       const range = await port.getRange(
@@ -271,6 +273,7 @@ export function useXDriveCloudFilesController<
     } finally {
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightRequestRef.current = null
+        directoryInFlightParentIDRef.current = null
       }
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
@@ -354,6 +357,23 @@ export function useXDriveCloudFilesController<
           !enabledRef.current
         ) return false
 
+        const inFlightParentID = directoryInFlightParentIDRef.current
+        if (
+          inFlightParentID !== null &&
+          (
+            page.reset_required ||
+            page.changes.some((change) => (
+              xDriveCloudFilesChangeAffectsParent(change, inFlightParentID)
+            ))
+          )
+        ) {
+          // Keep this page replayable until the directory range that it can
+          // invalidate has finished loading. Once that navigation commits,
+          // the next poll sees the same event with the target as current and
+          // can refresh it without background work superseding navigation.
+          return false
+        }
+
         if (page.reset_required) {
           cursor = page.latest_cursor
           affected = true
@@ -399,6 +419,7 @@ export function useXDriveCloudFilesController<
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     directoryInFlightRequestRef.current = requestID
+    directoryInFlightParentIDRef.current = null
     const quotaRequestID = quotaRequestRef.current + 1
     quotaRequestRef.current = quotaRequestID
     setLoading(true)
@@ -407,6 +428,9 @@ export function useXDriveCloudFilesController<
         port.getQuota(),
         port.getRoot(),
       ])
+      if (directoryInFlightRequestRef.current === requestID) {
+        directoryInFlightParentIDRef.current = root.id
+      }
       const range = await port.getRange(
         root.id,
         0,
@@ -436,6 +460,7 @@ export function useXDriveCloudFilesController<
     } finally {
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightRequestRef.current = null
+        directoryInFlightParentIDRef.current = null
       }
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
@@ -445,6 +470,7 @@ export function useXDriveCloudFilesController<
     if (!enabled) {
       directoryRequestRef.current += 1
       directoryInFlightRequestRef.current = null
+      directoryInFlightParentIDRef.current = null
       quotaRequestRef.current += 1
       changeRequestRef.current += 1
       changeCursorRef.current = null
