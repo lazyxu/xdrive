@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -186,12 +185,7 @@ func (s *Server) backgroundTasks(
 		}
 	}
 
-	sort.SliceStable(out, func(i, j int) bool {
-		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
-			return out[i].UpdatedAt.After(out[j].UpdatedAt)
-		}
-		return out[i].ID < out[j].ID
-	})
+	sortBackgroundTasksActiveFirst(out)
 	if len(out) > limit {
 		out = out[:limit]
 	}

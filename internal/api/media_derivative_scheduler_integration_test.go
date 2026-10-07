@@ -353,6 +353,10 @@ func assertMediaDerivativeResponses(
 
 func resetMediaDerivativeTestSchema(db *gorm.DB) error {
 	if err := db.Migrator().DropTable(
+		&meta.BackgroundRuntimePresence{},
+		&meta.SystemMaintenanceRun{},
+		&meta.FileOperation{},
+		&meta.SyncRun{},
 		&meta.BackgroundOwnerCancellation{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.PhotoPersonClusterState{},

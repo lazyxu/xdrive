@@ -195,6 +195,7 @@ type desktopIPCController interface {
 	CloudFilePropertiesStats(context.Context, []client.BatchNodeRef) (client.FilePropertiesStats, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
 	CloudBackgroundTaskActiveSummary(context.Context) (client.BackgroundTaskActiveSummary, error)
+	CloudBackgroundTaskPage(context.Context, bool, int, string) (client.BackgroundTaskPage, error)
 	CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error)
 	CloudControlBackgroundTask(context.Context, bool, string, string) (client.BackgroundTaskControlResult, error)
 	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
@@ -489,6 +490,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/properties/stats", h.cloudFilePropertiesStats)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
+	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
 	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
@@ -1271,6 +1273,41 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+func (h *desktopIPCHandler) cloudBackgroundTaskPage(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_background_task_limit",
+				"limit must be between 1 and 200",
+			)
+			return
+		}
+		limit = parsed
+	}
+	global := strings.EqualFold(
+		strings.TrimSpace(r.URL.Query().Get("global")),
+		"true",
+	)
+	page, err := h.ctrl.CloudBackgroundTaskPage(
+		r.Context(),
+		global,
+		limit,
+		strings.TrimSpace(r.URL.Query().Get("cursor")),
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) cloudBackgroundTasks(w http.ResponseWriter, r *http.Request) {

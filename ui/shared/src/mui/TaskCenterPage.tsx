@@ -1,5 +1,6 @@
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { Box, Divider, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Box, CircularProgress, Divider, Stack, Tab, Tabs, Typography } from '@mui/material'
 import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskControlAction,
@@ -12,6 +13,47 @@ import { XDriveBackgroundTaskList, XDriveBackgroundTaskTable } from './Backgroun
 import { XDriveFileOperationCenter } from './FileOperationCenter'
 import { XDriveTransferCenter } from './TransferCenter'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+
+function XDriveTaskHistorySentinel({
+  hasMore,
+  loading,
+  onLoadMore,
+}: {
+  hasMore: boolean
+  loading: boolean
+  onLoadMore?: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!hasMore || loading || !onLoadMore || !ref.current) return
+    if (typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onLoadMore()
+      },
+      { rootMargin: '600px 0px' },
+    )
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [hasMore, loading, onLoadMore])
+
+  if (!hasMore) return null
+  return (
+    <Box
+      ref={ref}
+      aria-label="继续加载任务历史"
+      sx={{
+        minHeight: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {loading ? <CircularProgress size={18} /> : null}
+    </Box>
+  )
+}
 
 export interface XDriveTaskCenterClearHistory {
   disabled?: boolean
@@ -35,6 +77,9 @@ export interface XDriveTaskCenterPageProps {
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
   ) => void
+  backgroundHasMore?: boolean
+  backgroundLoadingMore?: boolean
+  onLoadMoreBackground?: () => void
   subtitle?: ReactNode
   pageActions?: ReactNode
   clearHistory?: XDriveTaskCenterClearHistory
@@ -68,6 +113,9 @@ export function XDriveTaskCenterPage({
   onBackgroundScopeChange,
   backgroundControlKey = '',
   onBackgroundTaskControl,
+  backgroundHasMore = false,
+  backgroundLoadingMore = false,
+  onLoadMoreBackground,
   subtitle = '统一查看文件操作、上传下载、同步文件夹和后台处理状态。',
   pageActions,
   clearHistory,
@@ -137,6 +185,11 @@ export function XDriveTaskCenterPage({
               controlKey={backgroundControlKey}
               onControl={onBackgroundTaskControl}
             />
+            <XDriveTaskHistorySentinel
+              hasMore={backgroundHasMore}
+              loading={backgroundLoadingMore}
+              onLoadMore={onLoadMoreBackground}
+            />
           </Box>
         ) : (
           <>
@@ -200,6 +253,11 @@ export function XDriveTaskCenterPage({
                     onControl={onBackgroundTaskControl}
                   />
                 </Box>
+                <XDriveTaskHistorySentinel
+                  hasMore={backgroundHasMore}
+                  loading={backgroundLoadingMore}
+                  onLoadMore={onLoadMoreBackground}
+                />
               </>
             ) : null}
           </>

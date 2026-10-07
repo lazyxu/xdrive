@@ -601,9 +601,11 @@ function FileManager({
 
   const backgroundTaskPort = useMemo(() => ({
     loadActiveSummary: () => api.backgroundTaskActiveSummary(),
-    loadMine: (limit: number) => api.backgroundTasks(limit),
-    loadGlobal: profile?.role === 'admin'
-      ? (limit: number) => api.adminBackgroundTasks(limit)
+    loadMinePage: (limit: number, cursor?: string) =>
+      api.backgroundTaskPage(limit, cursor),
+    loadGlobalPage: profile?.role === 'admin'
+      ? (limit: number, cursor?: string) =>
+          api.adminBackgroundTaskPage(limit, cursor)
       : undefined,
     control: (id: string, action: string, global: boolean) =>
       api.controlBackgroundTask(id, action, global),

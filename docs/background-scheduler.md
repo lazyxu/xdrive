@@ -270,6 +270,15 @@ The server exposes background work as a read model without introducing a generic
   face/place micro-jobs do not create thousands of Task Center rows.
 - `GET /api/v1/background-tasks` returns only the authenticated user's work.
 - `GET /api/v1/admin/background-tasks` returns the global user/system view and requires the admin role.
+- The shared Task Center uses `/background-tasks/page` and `/admin/background-tasks/page` for active-first
+  cursor paging. The first page carries `current_items` separately from terminal `history_items`, so queued,
+  running, cancelling, pending-intent, cancellation-state, and current maintenance rows are never displaced by
+  recent terminal history. The opaque `next_cursor` advances only terminal history using
+  `updated_at + domain + id` keyset ordering. Ordinary-user history pages contain SyncRun history because
+  FileOperation history is already rendered by its dedicated shared surface; admin global history merges
+  FileOperation and SyncRun terminal rows. Later cursor pages do not repeat current items.
+- The Web/Desktop shared controller owns cursor state, de-duplication, polling refresh, and automatic
+  IntersectionObserver history admission. There is no platform-local or user-facing “load more” control.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user admin controls are deliberately empty until the corresponding domain explicitly defines
   and authorizes them.
