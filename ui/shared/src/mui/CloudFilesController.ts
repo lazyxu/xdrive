@@ -74,7 +74,10 @@ export function useXDriveCloudFilesController<
   const [loading, setLoading] = useState(true)
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
+  const quotaRequestRef = useRef(0)
+  const enabledRef = useRef(enabled)
   const onErrorRef = useRef(onError)
+  enabledRef.current = enabled
   onErrorRef.current = onError
   const reportError = useCallback((error: unknown) => {
     onErrorRef.current(error)
@@ -165,14 +168,25 @@ export function useXDriveCloudFilesController<
   ])
 
   const applyQuota = useCallback((value: TQuota) => {
-    setQuota(value)
+    quotaRequestRef.current += 1
+    if (enabledRef.current) setQuota(value)
   }, [])
 
   const refreshQuota = useCallback(async () => {
+    if (!enabledRef.current) return
+    const requestID = quotaRequestRef.current + 1
+    quotaRequestRef.current = requestID
     try {
-      setQuota(await port.getQuota())
+      const value = await port.getQuota()
+      if (
+        requestID === quotaRequestRef.current &&
+        enabledRef.current
+      ) setQuota(value)
     } catch (error) {
-      reportError(error)
+      if (
+        requestID === quotaRequestRef.current &&
+        enabledRef.current
+      ) reportError(error)
     }
   }, [port, reportError])
 
@@ -207,6 +221,8 @@ export function useXDriveCloudFilesController<
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
+    const quotaRequestID = quotaRequestRef.current + 1
+    quotaRequestRef.current = quotaRequestID
     setLoading(true)
     try {
       const [quotaValue, root] = await Promise.all([
@@ -221,7 +237,10 @@ export function useXDriveCloudFilesController<
         true,
       )
       if (requestID !== directoryRequestRef.current) return
-      setQuota(quotaValue)
+      if (
+        quotaRequestID === quotaRequestRef.current &&
+        enabledRef.current
+      ) setQuota(quotaValue)
       setCrumbs([{ id: root.id, name: rootLabel }])
       setItems([...range.items])
       activateVirtualDirectory(root.id, defaultSort, requestID, range)
@@ -235,6 +254,7 @@ export function useXDriveCloudFilesController<
   useEffect(() => {
     if (!enabled) {
       directoryRequestRef.current += 1
+      quotaRequestRef.current += 1
       virtualCollection.reset('cloud-files:virtual:disabled')
       setVirtualTarget(null)
       setQuota(null)
