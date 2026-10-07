@@ -44,6 +44,10 @@ type systemMaintenanceStorageVerifyRunner interface {
 	VerifyStorage(context.Context) (maintenance.VerifyReport, error)
 }
 
+type systemMaintenanceStorageRepairRunner interface {
+	RepairStorage(context.Context) (maintenance.CASRepairReport, error)
+}
+
 func systemMaintenanceInteractiveKinds() []string {
 	return []string{
 		meta.SystemMaintenanceKindSourceVerify,
@@ -51,6 +55,7 @@ func systemMaintenanceInteractiveKinds() []string {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageRepair,
 	}
 }
 
@@ -60,7 +65,8 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
-		meta.SystemMaintenanceKindStorageVerify:
+		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageRepair:
 		return true
 	default:
 		return false
@@ -79,6 +85,8 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseMediaRepair
 	case meta.SystemMaintenanceKindStorageVerify:
 		return meta.SystemMaintenancePhaseStorageVerify
+	case meta.SystemMaintenanceKindStorageRepair:
+		return meta.SystemMaintenancePhaseStorageRepair
 	default:
 		return ""
 	}
@@ -100,8 +108,9 @@ func systemMaintenanceLeaderKey(kind string) string {
 	case meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair:
 		return maintenanceLeaderMediaIntegrity
-	case meta.SystemMaintenanceKindStorageVerify:
-		// Full storage verification hashes managed content and must not race
+	case meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageRepair:
+		// Full verification and deterministic CAS metadata repair must not race
 		// the Janitor's CAS GC/state transitions.
 		return maintenanceLeaderJanitor
 	default:
@@ -631,6 +640,29 @@ func (s *Server) executeSystemMaintenanceTask(
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
+	case meta.SystemMaintenanceKindStorageRepair:
+		report, err := s.repairStorageForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		remaining := report.After.MissingMetadata +
+			report.After.RefCountMismatches +
+			report.After.StateMismatches +
+			report.After.SizeMismatches +
+			report.After.KeyHashMismatches +
+			report.After.InvalidStates
+		summary := fmt.Sprintf(
+			"修复 %d 个 CAS 元数据项 · 跳过 %d 项 · 剩余 %d 个一致性问题 · 待 GC %d 个",
+			len(report.Actions),
+			len(report.Skipped),
+			remaining,
+			report.After.StaleDeletingBlobs,
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if !report.After.Healthy {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
 	default:
 		return "", "", errSystemMaintenanceUnsupported
 	}
@@ -694,6 +726,19 @@ func (s *Server) verifyStorageForSystemMaintenance(
 		return maintenance.VerifyReport{}, err
 	}
 	return maintenance.VerifyWithContext(ctx, s.DB, root)
+}
+
+func (s *Server) repairStorageForSystemMaintenance(
+	ctx context.Context,
+) (maintenance.CASRepairReport, error) {
+	if s.systemMaintenanceStorageRepair != nil {
+		return s.systemMaintenanceStorageRepair.RepairStorage(ctx)
+	}
+	root, err := s.systemMaintenanceFilesystemRoot()
+	if err != nil {
+		return maintenance.CASRepairReport{}, err
+	}
+	return maintenance.RepairCASMetadata(ctx, s.DB, root, false)
 }
 
 func (s *Server) systemMaintenanceFilesystemRoot() (string, error) {

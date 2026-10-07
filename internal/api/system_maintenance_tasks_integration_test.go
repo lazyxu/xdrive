@@ -111,6 +111,18 @@ func (r *immediateSystemMaintenanceStorageVerifyRunner) VerifyStorage(
 	return r.report, nil
 }
 
+type immediateSystemMaintenanceStorageRepairRunner struct {
+	report maintenance.CASRepairReport
+	calls  atomic.Int32
+}
+
+func (r *immediateSystemMaintenanceStorageRepairRunner) RepairStorage(
+	context.Context,
+) (maintenance.CASRepairReport, error) {
+	r.calls.Add(1)
+	return r.report, nil
+}
+
 func newSystemMaintenanceTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -807,6 +819,98 @@ func TestStorageVerifyMaintenanceUsesDurableContractAndReportsFindings(t *testin
 	}
 }
 
+func TestStorageRepairMaintenanceWaitsForJanitorLeaseAndReportsResidualIssues(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
+	runner := &immediateSystemMaintenanceStorageRepairRunner{
+		report: maintenance.CASRepairReport{
+			Actions: []maintenance.CASRepairAction{
+				{Kind: "reconcile_metadata", StorageKey: "a", Applied: true},
+				{Kind: "mark_deleting", StorageKey: "b", Applied: true},
+			},
+			Skipped: []maintenance.CASRepairSkip{
+				{StorageKey: "c", Reason: "physical_blob_not_verified"},
+			},
+			After: maintenance.CASHealthReport{
+				Status:             "fail",
+				Healthy:            false,
+				MissingMetadata:    1,
+				RefCountMismatches: 1,
+				StaleDeletingBlobs: 2,
+			},
+		},
+	}
+	server := &Server{
+		DB:                             db,
+		BackgroundScheduler:            scheduler,
+		systemMaintenanceStorageRepair: runner,
+		systemMaintenanceHeartbeat:     20 * time.Millisecond,
+	}
+
+	janitorLease, err := sourceaccount.Acquire(
+		ctx,
+		db,
+		maintenanceLeaderJanitor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := server.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindStorageRepair,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		janitorLease.Close()
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := runner.calls.Load(); got != 0 {
+		janitorLease.Close()
+		t.Fatalf("storage repair ran while Janitor lease was held: calls=%d", got)
+	}
+
+	janitorLease.Close()
+	finished := waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		run.ID,
+		meta.SystemMaintenanceStatusIssues,
+	)
+	if runner.calls.Load() != 1 {
+		t.Fatalf("storage repair calls=%d want=1", runner.calls.Load())
+	}
+	for _, want := range []string{
+		"修复 2 个 CAS 元数据项",
+		"跳过 1 项",
+		"剩余 2 个一致性问题",
+		"待 GC 2 个",
+	} {
+		if !strings.Contains(finished.Summary, want) {
+			t.Fatalf("storage repair summary=%q missing %q", finished.Summary, want)
+		}
+	}
+
+	tasks, err := server.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindStorageRepair),
+	)
+	if task == nil ||
+		task.State != "issues" ||
+		task.Progress.CurrentItem != finished.Summary ||
+		!backgroundTaskActionAllowed(
+			task.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected storage repair Task Center row: %+v", task)
+	}
+}
+
 func TestMediaVerifyMaintenanceRequiresFilesystemStorageCapability(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	server := &Server{DB: db}
@@ -825,6 +929,7 @@ func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageRepair,
 	} {
 		_, err := server.requestSystemMaintenanceRun(
 			context.Background(),

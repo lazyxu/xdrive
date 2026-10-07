@@ -2,6 +2,7 @@ package maintenance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -239,5 +240,39 @@ func writeCASMaintenanceBlob(t *testing.T, root, key, content string) {
 	}
 	if err := os.WriteFile(full, []byte(content), 0o640); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVerifyCASObjectWithContextRejectsCancelledWork(t *testing.T) {
+	content := strings.Repeat("x", 1024)
+	root := t.TempDir()
+	hash := verifyTestHash(content)
+	key, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCASMaintenanceBlob(t, root, key, content)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = verifyCASObjectWithContext(
+		ctx,
+		root,
+		key,
+		int64(len(content)),
+		hash,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("verify CAS object error=%v want context.Canceled", err)
+	}
+}
+
+func TestRepairCASMetadataRejectsCancelledWork(t *testing.T) {
+	db := newCASMaintenanceTestDB(t, "cas_repair_cancelled")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := RepairCASMetadata(ctx, db, t.TempDir(), false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("repair CAS metadata error=%v want context.Canceled", err)
 	}
 }
