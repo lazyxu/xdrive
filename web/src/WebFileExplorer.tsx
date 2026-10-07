@@ -288,6 +288,7 @@ export default function WebFileExplorer({
     dropItemsToFolder,
     dropItemsToCrumb,
   } = useXDriveFileExplorerOperationController<Node, XDriveFileOperation>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     nodeByID,
     currentID: current?.id,
     planPaste,
