@@ -1247,6 +1247,9 @@ function MediaTile({
           nodeID={item.node.id}
           alt={item.node.name}
           loadPreviewURL={loadPreviewURL}
+          rotationDegrees={item.metadata.rotation_degrees}
+          sourceWidth={item.metadata.width}
+          sourceHeight={item.metadata.height}
           fallback={xDriveMediaFallback(item.metadata.media_kind)}
         />
       ) : (

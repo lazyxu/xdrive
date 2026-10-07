@@ -15,7 +15,8 @@ const (
 	MaxThumbnailPixels     = 100_000_000
 	DefaultThumbnailEdge   = 512
 	AnalysisPreviewEdge    = 1280
-	AnalysisPreviewVersion = 1
+	ThumbnailVersion       = 2
+	AnalysisPreviewVersion = 2
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
 )
 
@@ -56,24 +57,56 @@ func ThumbnailStorageKey(
 	sha256 string,
 	maxEdge int,
 ) string {
+	return thumbnailStorageKey(
+		nodeID,
+		nodeRevision,
+		sha256,
+		ThumbnailVersion,
+		maxEdge,
+	)
+}
+
+func AnalysisPreviewStorageKey(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	return thumbnailStorageKey(
+		nodeID,
+		nodeRevision,
+		sha256,
+		AnalysisPreviewVersion,
+		AnalysisPreviewEdge,
+	)
+}
+
+func thumbnailStorageKey(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+	version, maxEdge int,
+) string {
+	if version <= 0 {
+		version = 1
+	}
 	if maxEdge <= 0 {
 		maxEdge = DefaultThumbnailEdge
 	}
 	sha := strings.ToLower(strings.TrimSpace(sha256))
 	if len(sha) >= 2 {
 		return fmt.Sprintf(
-			"%s%s/%s-%d.jpg",
+			"%s%s/%s-v%d-%d.jpg",
 			ThumbnailStoragePrefix,
 			sha[:2],
 			sha,
+			version,
 			maxEdge,
 		)
 	}
 	return fmt.Sprintf(
-		"%snode/%d-%d-%d.jpg",
+		"%snode/%d-%d-v%d-%d.jpg",
 		ThumbnailStoragePrefix,
 		nodeID,
 		nodeRevision,
+		version,
 		maxEdge,
 	)
 }
@@ -119,7 +152,7 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 	if err != nil {
 		return out, err
 	}
-	src = orientImage(src, orientation)
+	src = orientImage(src, thumbnailDecodeOrientation(format, orientation))
 
 	bounds := src.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
@@ -168,6 +201,19 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 		SourceKind: format,
 	}
 	return out, nil
+}
+
+func thumbnailDecodeOrientation(format string, orientation int) int {
+	if orientation < 2 || orientation > 8 {
+		return 1
+	}
+	// github.com/gen2brain/heic applies HEIF container transforms and EXIF
+	// orientation while decoding. Applying the stored EXIF orientation again
+	// here would rotate/mirror HEIC thumbnails twice.
+	if strings.EqualFold(strings.TrimSpace(format), "heic") {
+		return 1
+	}
+	return orientation
 }
 
 func orientImage(src image.Image, orientation int) image.Image {

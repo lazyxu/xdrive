@@ -55,8 +55,8 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	potentialKey := mediapkg.ThumbnailStorageKey(
 		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.DefaultThumbnailEdge,
 	)
-	analysisKey := mediapkg.ThumbnailStorageKey(
-		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.AnalysisPreviewEdge,
+	analysisKey := mediapkg.AnalysisPreviewStorageKey(
+		nodes[1].ID, nodes[1].Revision, shaB,
 	)
 	videoKey := mediapkg.ThumbnailStorageKey(
 		nodes[2].ID, nodes[2].Revision, shaC, mediapkg.DefaultThumbnailEdge,
