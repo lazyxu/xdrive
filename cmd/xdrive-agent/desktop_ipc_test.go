@@ -310,13 +310,19 @@ func (f *fakeDesktopIPCController) CloudListPage(_ context.Context, _ uint64, op
 
 func (f *fakeDesktopIPCController) CloudListRange(_ context.Context, _ uint64, options client.ChildrenRangeOptions) (client.ChildrenRange, error) {
 	f.cloudChildrenRangeOptions = options
+	included := !options.OmitTotalCount
+	totalCount := int64(640)
+	if options.OmitTotalCount {
+		totalCount = 0
+	}
 	return client.ChildrenRange{
-		Items:      append([]client.Node(nil), f.cloudChildren...),
-		TotalCount: 640,
-		Offset:     options.Offset,
-		Limit:      options.Limit,
-		Sort:       options.Sort,
-		Order:      options.Order,
+		Items:              append([]client.Node(nil), f.cloudChildren...),
+		TotalCount:         totalCount,
+		TotalCountIncluded: &included,
+		Offset:             options.Offset,
+		Limit:              options.Limit,
+		Sort:               options.Sort,
+		Order:              options.Order,
 	}, f.err
 }
 
@@ -1610,6 +1616,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name=Projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&limit=1&sort=name&order=asc&name_ci=projects", "", "\"next_cursor\":\"next-page\""},
 		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc", "", "\"total_count\":640"},
+		{http.MethodGet, "/v1/cloud/children?parent_id=1&offset=400&limit=200&sort=updated&order=desc&include_count=false", "", "\"total_count_included\":false"},
 		{http.MethodPost, "/v1/cloud/directories", `{"parent_id":1,"name":"New Folder"}`, "\"New Folder\""},
 		{http.MethodPatch, "/v1/cloud/nodes", `{"id":3,"revision":2,"name":"renamed.pdf"}`, "\"renamed.pdf\""},
 		{http.MethodPost, "/v1/cloud/copy", `{"id":3,"parent_id":8}`, "\"id\":10"},
@@ -1653,12 +1660,22 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, res.Code, res.Body.String())
 		}
 	}
+	for _, path := range []string{
+		"/v1/cloud/children?parent_id=1&offset=400&limit=200&include_count=maybe",
+		"/v1/cloud/children?parent_id=1&limit=200&include_count=false",
+	} {
+		res := desktopIPCRequest(t, handler, http.MethodGet, path, "")
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("invalid include_count path=%s status=%d body=%s", path, res.Code, res.Body.String())
+		}
+	}
 	if ctrl.cloudChildrenOptions.Limit != 1 || ctrl.cloudChildrenOptions.Sort != "name" ||
 		ctrl.cloudChildrenOptions.Order != "asc" || ctrl.cloudChildrenOptions.NameCI != "projects" {
 		t.Fatalf("cloud children options not forwarded: %+v", ctrl.cloudChildrenOptions)
 	}
 	if ctrl.cloudChildrenRangeOptions.Offset != 400 || ctrl.cloudChildrenRangeOptions.Limit != 200 ||
-		ctrl.cloudChildrenRangeOptions.Sort != "updated" || ctrl.cloudChildrenRangeOptions.Order != "desc" {
+		ctrl.cloudChildrenRangeOptions.Sort != "updated" || ctrl.cloudChildrenRangeOptions.Order != "desc" ||
+		!ctrl.cloudChildrenRangeOptions.OmitTotalCount {
 		t.Fatalf("cloud children range options not forwarded: %+v", ctrl.cloudChildrenRangeOptions)
 	}
 	if ctrl.cloudSearchCursor != "search-cursor" {

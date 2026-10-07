@@ -205,6 +205,103 @@ test('VirtualCollection can evict metadata outside retained page ranges', () => 
   assert.deepEqual(snapshot.items.get(3), { id: 4 })
 })
 
+test('VirtualCollection preserves an authoritative total across count-free pages', () => {
+  const {
+    xDriveCreateVirtualCollectionSnapshot,
+    xDriveVirtualCollectionApplyPage,
+  } = loadVirtualCollection()
+
+  let snapshot = xDriveCreateVirtualCollectionSnapshot('directory', 1)
+  snapshot = xDriveVirtualCollectionApplyPage(snapshot, 1, {
+    offset: 0,
+    limit: 2,
+    totalCount: 6,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  snapshot = xDriveVirtualCollectionApplyPage(snapshot, 1, {
+    offset: 2,
+    limit: 2,
+    totalCount: null,
+    items: [{ id: 3 }, { id: 4 }],
+  })
+
+  assert.equal(snapshot.totalCount, 6)
+  assert.deepEqual(snapshot.items.get(0), { id: 1 })
+  assert.deepEqual(snapshot.items.get(1), { id: 2 })
+  assert.deepEqual(snapshot.items.get(2), { id: 3 })
+  assert.deepEqual(snapshot.items.get(3), { id: 4 })
+
+  const unknown = xDriveCreateVirtualCollectionSnapshot('fresh', 2)
+  const rejected = xDriveVirtualCollectionApplyPage(unknown, 2, {
+    offset: 200,
+    limit: 2,
+    totalCount: null,
+    items: [{ id: 7 }, { id: 8 }],
+  })
+  assert.equal(rejected, unknown)
+  assert.equal(rejected.totalCount, null)
+  assert.equal(rejected.items.size, 0)
+})
+
+
+test('VirtualCollection does not cache count-free pages before a generation has a total', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const errors = []
+  let calls = 0
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'unprimed',
+    loadRange: async (range) => {
+      calls += 1
+      return {
+        offset: range.offset,
+        limit: range.limit,
+        totalCount: null,
+        items: [{ id: 1 }],
+      }
+    },
+    onError: (error) => errors.push(error),
+    pageSize: 2,
+    overscanPages: 0,
+  }))
+
+  let collection = render()
+  await collection.ensureViewport(0, 1)
+  collection = render()
+
+  assert.equal(errors.length, 1)
+  assert.match(String(errors[0]), /authoritative total count/)
+  assert.equal(collection.totalCount, null)
+  assert.equal(collection.loadedCount, 0)
+
+  await collection.ensureViewport(0, 1)
+  assert.equal(
+    calls,
+    2,
+    'a rejected count-free page must not be marked loaded for the generation',
+  )
+})
+
+test('VirtualCollection refuses to prime a generation without total count', () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const collection = runtime.render(() => useVirtualCollection({
+    queryKey: 'unprimed',
+    loadRange: async () => { throw new Error('unexpected range load') },
+    onError: () => {},
+  }))
+
+  assert.throws(
+    () => collection.primePage({
+      offset: 0,
+      limit: 200,
+      totalCount: null,
+      items: [],
+    }),
+    /authoritative total count/,
+  )
+})
+
 test('VirtualCollection ignores stale pages from an older generation', () => {
   const {
     xDriveCreateVirtualCollectionSnapshot,

@@ -82,6 +82,9 @@ export function useXDriveVirtualCollection<TItem>({
   }, [abortInFlight])
 
   const primePage = useCallback((page: XDriveVirtualCollectionPage<TItem>) => {
+    if (page.totalCount === null) {
+      throw new Error('Cannot prime VirtualCollection without an authoritative total count.')
+    }
     const generation = generationRef.current
     const range = { offset: page.offset, limit: page.limit }
     loadedRangeRef.current.add(xDriveVirtualCollectionRangeKey(range))
@@ -171,6 +174,14 @@ export function useXDriveVirtualCollection<TItem>({
             generation !== generationRef.current ||
             queryKeyRef.current !== queryKey
           ) return
+          if (
+            page.totalCount === null &&
+            snapshotRef.current.totalCount === null
+          ) {
+            throw new Error(
+              'Count-free VirtualCollection range requires an authoritative total count for the current generation.',
+            )
+          }
 
           loadedRangeRef.current.add(key)
           commitSnapshot((current) => (

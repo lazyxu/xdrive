@@ -159,11 +159,12 @@ test('CloudFilesController primes range zero and exposes the full logical count'
       pageCalls.push(args)
       throw new Error('directory browsing must not use cursor pages')
     },
-    getRange: async (parentID, offset, limit, requestSort) => {
-      rangeCalls.push({ parentID, offset, limit, requestSort })
+    getRange: async (parentID, offset, limit, requestSort, includeCount) => {
+      rangeCalls.push({ parentID, offset, limit, requestSort, includeCount })
       return {
         items: [node(offset + 1, `item-${offset + 1}`)],
-        total_count: 1000,
+        total_count: includeCount ? 1000 : 0,
+        total_count_included: includeCount,
         offset,
         limit,
         sort: requestSort.key,
@@ -191,6 +192,7 @@ test('CloudFilesController primes range zero and exposes the full logical count'
     offset: 0,
     limit: 200,
     requestSort: sort,
+    includeCount: true,
   })
   assert.equal(controller.virtualDirectory.itemCount, 1000)
   assert.equal(controller.virtualDirectory.loadedItems.size, 1)
@@ -206,6 +208,16 @@ test('CloudFilesController primes range zero and exposes the full logical count'
     rangeCalls.every((call, index) => index === 0 || call.offset > 0),
     'viewport overscan may prefetch later ranges but must not duplicate page zero',
   )
+  assert.ok(
+    rangeCalls.slice(1).every((call) => call.includeCount === false),
+    'subsequent ranges must reuse the generation total instead of recounting',
+  )
+  controller = render()
+  assert.equal(
+    controller.virtualDirectory.itemCount,
+    1000,
+    'count-free range responses must preserve the authoritative generation total',
+  )
 })
 
 test('CloudFilesController ignores an older directory range that resolves after navigation', async () => {
@@ -217,11 +229,13 @@ test('CloudFilesController ignores an older directory range that resolves after 
     getRoot: async () => ({ id: 1 }),
     getQuota: async () => ({ used_bytes: 0, quota_bytes: 0 }),
     getPage: async () => { throw new Error('unexpected cursor page') },
-    getRange: async (parentID, offset, limit, requestSort) => {
+    getRange: async (parentID, offset, limit, requestSort, includeCount) => {
       if (parentID === 1) {
+        assert.equal(includeCount, true)
         return {
           items: [node(1, 'root')],
           total_count: 1,
+          total_count_included: true,
           offset,
           limit,
           sort: requestSort.key,
@@ -229,7 +243,7 @@ test('CloudFilesController ignores an older directory range that resolves after 
         }
       }
       return new Promise((resolve) => {
-        pending.set(parentID, { resolve, offset, limit, requestSort })
+        pending.set(parentID, { resolve, offset, limit, requestSort, includeCount })
       })
     },
   }
@@ -250,6 +264,8 @@ test('CloudFilesController ignores an older directory range that resolves after 
   const newer = controller.loadDirectory(3, [{ id: 1, name: 'root' }, { id: 3, name: 'new' }], sort)
   await flushAsyncWork()
 
+  assert.equal(pending.get(2).includeCount, true)
+  assert.equal(pending.get(3).includeCount, true)
   pending.get(3).resolve({
     items: [node(30, 'new-item')],
     total_count: 400,

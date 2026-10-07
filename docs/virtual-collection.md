@@ -40,17 +40,25 @@ Cursor pagination may remain for compatibility while range APIs are introduced, 
 
 ## FileExplorer directory range transport
 
-The children endpoint supports an explicit range mode when `offset` is present. Range responses return `items`, `total_count`, the requested `offset` and `limit`, plus the stable server sort. The requested limit remains the logical page width even on the final partial page so cache keys do not change after `total_count` becomes known. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.
+The children endpoint supports an explicit range mode when `offset` is present. The first range of a directory generation returns `items`, authoritative `total_count`, `total_count_included=true`, the requested `offset` and `limit`, plus the stable server sort. The requested limit remains the logical page width even on the final partial page so cache keys do not change after the total becomes known.
+
+Once that generation owns an authoritative total, later viewport ranges may send `include_count=false`. The Server then executes the same authorization, joins, ordering, offset, and limit without `COUNT(*) OVER()`, and returns `total_count_included=false`. `total_count=0` in such a response is **not a count** and must never be interpreted as an empty collection. Count-free empty ranges still validate that the parent directory exists so the existing 200-vs-404 contract is preserved.
+
+The flag is additive for compatibility. Old clients omit `include_count` and continue receiving counted ranges. New clients talking to an old Server treat a response with no `total_count_included` field as counted because old Servers always returned an authoritative `total_count`. Cursor and exact-name lookup contracts remain available for existing clients and typed-path resolution.
 
 
 ## FileExplorer range transport
 
-The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort)` while retaining `getPage` for cursor pagination and exact-name path traversal.
+The range contract is explicit end-to-end rather than overloaded onto cursor pagination. Web uses the children endpoint with `offset/limit`; Desktop exposes a dedicated Agent range action backed by Go client `ListRange`. The shared Cloud Files port exposes `getRange(parentID, offset, limit, sort, includeCount)` while retaining `getPage` for cursor pagination and exact-name path traversal. Web and Desktop do not decide count reuse independently: the shared Cloud Files controller owns that policy and platform adapters only serialize the flag.
 
 
 ## FileExplorer directory activation
 
-Cloud Files directory browsing now uses the range contract from the first read. The first `offset=0` response is primed into VirtualCollection so `total_count` establishes the stable scrollbar immediately and page zero is not fetched twice. Directory viewport changes request aligned ranges through the bounded cache; Search deliberately remains on its existing dense cursor contract until its separate range migration. FileExplorer interaction indexes are built only from retained metadata, so selection, context menus, rename/delete/copy, and raw-node lookup do not materialize the logical directory.
+Cloud Files directory browsing uses the range contract from the first read. A new navigation/sort/refresh generation always requests `offset=0` with `includeCount=true`; that page is primed into VirtualCollection so the authoritative total establishes the stable scrollbar immediately and page zero is not fetched twice. Once primed, viewport-proximate ranges use `includeCount=false` and `VirtualCollectionApplyPage` retains the generation's already-known `totalCount`.
+
+A count-free page cannot establish a fresh VirtualCollection by itself. If its `totalCount` is absent/null while the snapshot also has no authoritative total, the page is not committed. Resetting the query key discards the previous total, so navigation, sorting, explicit refresh, disable/re-enable, and other generation changes must reacquire a counted first page before later count-free ranges are accepted.
+
+Directory viewport changes continue to request aligned ranges through the bounded cache. FileExplorer interaction indexes are built only from retained metadata, so selection, context menus, rename/delete/copy, and raw-node lookup do not materialize the logical directory.
 
 
 ## FileExplorer Search activation

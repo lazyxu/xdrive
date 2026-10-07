@@ -938,6 +938,17 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 			Sort:   strings.TrimSpace(query.Get("sort")),
 			Order:  strings.TrimSpace(query.Get("order")),
 		}
+		if raw := strings.TrimSpace(strings.ToLower(query.Get("include_count"))); raw != "" {
+			switch raw {
+			case "true":
+				options.OmitTotalCount = false
+			case "false":
+				options.OmitTotalCount = true
+			default:
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_include_count", "include_count must be true or false")
+				return
+			}
+		}
 		if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
 			limit, err := strconv.Atoi(raw)
 			if err != nil || limit < 1 || limit > 500 {
@@ -952,6 +963,11 @@ func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeDesktopIPCJSON(w, http.StatusOK, page)
+		return
+	}
+
+	if query.Get("include_count") != "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_children_include_count", "include_count requires offset")
 		return
 	}
 

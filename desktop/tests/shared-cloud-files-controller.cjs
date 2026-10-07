@@ -169,16 +169,21 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
   for (const token of [
     'export type XDriveCloudFilesRange',
     'total_count: number',
+    'total_count_included?: boolean',
     'offset: number',
     'limit: number',
+    'includeCount: boolean',
     'getRange: (',
   ]) {
     assert.ok(contract.includes(token), `shared Cloud Files range contract missing: ${token}`)
   }
   assert.ok(webApi.includes('listRange('), 'Web API must expose children range transport')
-  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort) => api.listRange('), 'Web shared port must wire range transport')
-  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort) =>'), 'Desktop shared port must wire range transport')
+  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount) => api.listRange('), 'Web shared port must wire shared count-reuse decisions')
+  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount) =>'), 'Desktop shared port must wire shared count-reuse decisions')
   assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
+  assert.ok(webApi.includes("query.set('include_count', 'false')"), 'Web transport must serialize count-free ranges')
+  assert.ok(desktopPreload.includes('includeCount = true'), 'Desktop preload must default legacy callers to counted ranges')
+  assert.ok(desktopMain.includes('normalizedIncludeCount'), 'Desktop main IPC must validate and forward includeCount')
   assert.ok(desktopTypes.includes('type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>'), 'Desktop renderer must alias the shared range contract')
 })
 

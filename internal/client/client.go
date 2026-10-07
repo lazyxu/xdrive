@@ -128,19 +128,25 @@ type ChildrenPage struct {
 }
 
 type ChildrenRangeOptions struct {
-	Limit  int
-	Offset int
-	Sort   string
-	Order  string
+	Limit          int
+	Offset         int
+	Sort           string
+	Order          string
+	OmitTotalCount bool
 }
 
 type ChildrenRange struct {
-	Items      []Node `json:"items"`
-	TotalCount int64  `json:"total_count"`
-	Offset     int    `json:"offset"`
-	Limit      int    `json:"limit"`
-	Sort       string `json:"sort"`
-	Order      string `json:"order"`
+	Items              []Node `json:"items"`
+	TotalCount         int64  `json:"total_count"`
+	TotalCountIncluded *bool  `json:"total_count_included,omitempty"`
+	Offset             int    `json:"offset"`
+	Limit              int    `json:"limit"`
+	Sort               string `json:"sort"`
+	Order              string `json:"order"`
+}
+
+func (r ChildrenRange) HasTotalCount() bool {
+	return r.TotalCountIncluded == nil || *r.TotalCountIncluded
 }
 
 type BatchNodeRef struct {
@@ -516,6 +522,9 @@ func (c *Client) ListRange(ctx context.Context, parentID uint64, options Childre
 	}
 	if strings.TrimSpace(options.Order) != "" {
 		values.Set("order", strings.TrimSpace(options.Order))
+	}
+	if options.OmitTotalCount {
+		values.Set("include_count", "false")
 	}
 	var out ChildrenRange
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)

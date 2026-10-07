@@ -92,7 +92,7 @@ export function useXDriveCloudFilesController<
         items: [] as TNode[],
         offset: range.offset,
         limit: range.limit,
-        totalCount: 0,
+        totalCount: null,
       }
     }
     const page = await port.getRange(
@@ -100,12 +100,15 @@ export function useXDriveCloudFilesController<
       range.offset,
       range.limit,
       target.sort,
+      false,
     )
     return {
       items: page.items,
       offset: page.offset,
       limit: page.limit,
-      totalCount: page.total_count,
+      totalCount: page.total_count_included === false
+        ? null
+        : page.total_count,
     }
   }, [port, virtualTarget])
 
@@ -122,10 +125,14 @@ export function useXDriveCloudFilesController<
     firstRange: {
       items: readonly TNode[]
       total_count: number
+      total_count_included?: boolean
       offset: number
       limit: number
     },
   ) => {
+    if (firstRange.total_count_included === false) {
+      throw new Error('Initial directory range must include total_count.')
+    }
     const target = { parentID, sort, requestID }
     const nextKey = xDriveCloudFilesVirtualQueryKey(target)
     virtualCollection.reset(nextKey)
@@ -184,6 +191,7 @@ export function useXDriveCloudFilesController<
         0,
         XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         effectiveSort,
+        true,
       )
       if (requestID !== directoryRequestRef.current) return
       setItems([...range.items])
@@ -210,6 +218,7 @@ export function useXDriveCloudFilesController<
         0,
         XDRIVE_FILE_EXPLORER_PAGE_SIZE,
         defaultSort,
+        true,
       )
       if (requestID !== directoryRequestRef.current) return
       setQuota(quotaValue)

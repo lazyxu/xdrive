@@ -62,6 +62,33 @@ func TestListRangeEncodesStableChildrenWindow(t *testing.T) {
 	if len(page.Items) != 1 || page.Items[0].ID != 9 || page.TotalCount != 1001 || page.Offset != 400 || page.Limit != 200 {
 		t.Fatalf("unexpected range: %+v", page)
 	}
+	if !page.HasTotalCount() {
+		t.Fatalf("legacy range response with total_count must remain authoritative: %+v", page)
+	}
+}
+
+func TestListRangeCanOmitTotalCount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		if query.Get("offset") != "400" || query.Get("include_count") != "false" {
+			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"id":9,"name":"late.bin","type":"file","size":99,"revision":1,"created_at":"2026-10-01T00:00:00Z","updated_at":"2026-10-01T00:00:00Z"}],"total_count":0,"total_count_included":false,"offset":400,"limit":200,"sort":"updated","order":"desc"}`))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "")
+	cli.HTTP = server.Client()
+	page, err := cli.ListRange(context.Background(), 42, ChildrenRangeOptions{
+		Limit: 200, Offset: 400, Sort: "updated", Order: "desc", OmitTotalCount: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.HasTotalCount() || page.TotalCount != 0 || len(page.Items) != 1 || page.Items[0].ID != 9 {
+		t.Fatalf("unexpected count-free range: %+v", page)
+	}
 }
 
 func TestListRangeRejectsNegativeOffset(t *testing.T) {

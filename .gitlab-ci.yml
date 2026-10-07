@@ -347,8 +347,8 @@ file-explorer-range-count-performance:
     - *ensure_linux_fetch_tools
     - *install_postgres_client
   rules:
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-range-count-100k"'
-    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-range-count-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/file-explorer-range-count-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/file-explorer-range-count-/'
   script:
     - go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
