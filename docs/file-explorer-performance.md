@@ -26,6 +26,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Recursive tree scan: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response**. #788 also bounded root lookup before the exact lookup follow-up below. No wall-clock speedup claimed. |
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
+| File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
@@ -68,6 +69,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Folder-upload create conflicts reuse an existing sibling through a case-insensitive indexed name lookup (limit 1) instead of listing and scanning the entire parent directory.
 - Desktop folder-tree download resolves the selected root through an owner-scoped exact node-id lookup and validates its expected parent/type/name; recursive directory enumeration uses cursor-paged children reads capped at **500 nodes per response** and must not use the legacy unpaginated children contract.
 - Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
+- Current-file and historical-version download metadata are each resolved with one owner-scoped active-file JOIN. Current download no longer uses GORM `Preload("File")`, and version download no longer performs a separate owner-node lookup before loading the version row.
 - Windows CfAPI hydration keeps the existing 4 MiB HTTP range granularity but fills one caller-owned buffer through `DownloadRangeInto` for the lifetime of each fetch callback, rather than allocating one response slice per range. The legacy `DownloadRange` API remains unchanged for compatibility.
 - Windows remote change-journal pages build one `nodeID -> baseline path` index per page. File upsert/delete lookup is O(1) after that build; incremental file delete removes the exact baseline entry directly and file rename moves the exact entry directly. Directory create/move/delete continues to use the existing full-reconcile safety path.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
@@ -573,6 +575,36 @@ Decision: **accept** exact root lookup and keep 500-node pagination only for rec
 Regression budget: selected-root resolution must not call `List` or `ListPage`; the exact route remains authenticated, owner-scoped, and active-node-only.
 
 Next action: if very large folder downloads still show Agent memory pressure, benchmark manifest retention and child-transfer creation separately before considering a streaming manifest design.
+
+### File download metadata SQL contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one authenticated current-file download metadata lookup;
+- one authenticated historical-version download metadata lookup;
+- both target one active file owned by the requesting user;
+- evidence method: deterministic GORM SQL trace around each metadata helper; payload streaming is outside the counted region;
+- sample count: n/a for the deterministic SQL-round-trip contract.
+
+BEFORE:
+
+- current-file download calls `ownedNode(..., preload=true)`: one `xd_nodes` query plus one GORM `Preload("File")` query = **2 SQL statements**;
+- historical-version download first owner-validates the active node, then loads `xd_file_versions` separately = **2 SQL statements**.
+
+AFTER / current:
+
+- current-file download selects name, revision, storage key, SHA-256 and file modtime with **1 owner-scoped `xd_nodes JOIN xd_files` statement**;
+- historical-version download selects the active owner file name and requested version metadata with **1 `xd_nodes JOIN xd_file_versions` statement**;
+- owner isolation, active-only visibility and file-type validation remain in SQL;
+- `Store.Open`, `Content-Disposition`, current-file ETag, SHA-256 response header, `http.ServeContent`, Range/seek behavior and payload bytes are unchanged.
+
+Decision: **Accepted.** This removes one metadata DB round trip from every ordinary file download and every historical-version download without changing the data plane.
+
+Regression budget: each current-file or historical-version download metadata lookup must remain **1 SQL statement**, owner-scoped, active-node-only, and file-type constrained. Do not reintroduce GORM Preload or a separate ownership query on these hot paths.
+
+Next action: continue basic sync/delete/download audits and only change paths with another deterministic SQL, request, allocation or I/O multiplier.
 
 ### Web direct-to-disk download sink
 
