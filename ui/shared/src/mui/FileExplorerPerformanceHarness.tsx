@@ -11,7 +11,8 @@ import {
 export type XDriveFileExplorerMediaTraceScenario =
   | 'image-cold'
   | 'image-warm'
-  | 'video-icons'
+  | 'video-poster-cold'
+  | 'video-poster-warm'
 
 export type XDriveFileExplorerMediaTraceResult = {
   synthetic: true
@@ -70,7 +71,7 @@ function itemForIndex(
   index: number,
   scenario: XDriveFileExplorerMediaTraceScenario,
 ): XDriveFileExplorerItem {
-  const video = scenario === 'video-icons'
+  const video = scenario.startsWith('video-poster-')
   const sequence = String(index + 1).padStart(6, '0')
   const name = video ? `clip-${sequence}.mp4` : `image-${sequence}.jpg`
   return {
@@ -78,7 +79,6 @@ function itemForIndex(
     name,
     kind: 'file',
     fileKind: video ? 'video' : 'image',
-    thumbnailEligible: !video,
     size: 512_000 + (index % 97) * 4096,
     updatedAt: '2026-10-06T00:00:00.000Z',
     revision: 1,
@@ -147,8 +147,7 @@ export function XDriveFileExplorerPerformanceHarness({
       thumbnailInFlightRef.current,
     )
     try {
-      if (scenario === 'video-icons') return null
-      if (scenario === 'image-cold') await wait(12)
+      if (scenario.endsWith('-cold')) await wait(12)
       const id = Number(item.id) || 0
       const hue = id % 360
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="108" height="96"><rect width="108" height="96" fill="hsl(${hue} 55% 58%)"/><circle cx="54" cy="48" r="20" fill="rgba(255,255,255,.45)"/></svg>`

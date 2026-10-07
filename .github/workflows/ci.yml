@@ -414,7 +414,7 @@ jobs:
           set -euo pipefail
           mkdir -p perf-results
           for surface in desktop web; do
-            for scenario in image-cold image-warm video-icons; do
+            for scenario in image-cold image-warm video-poster-cold video-poster-warm; do
               xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-media-trace-main.cjs "$surface" "$scenario"
             done
           done

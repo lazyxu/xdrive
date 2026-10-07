@@ -1052,6 +1052,31 @@ export class XDriveApi {
     return response.blob()
   }
 
+  async mediaVideoPoster(nodeID: number, revision: number, poster: Blob): Promise<void> {
+    await this.ensureFresh()
+    const path = `/api/v1/media/items/${nodeID}/video-poster`
+    const send = () => fetch(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers: {
+        ...(this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : {}),
+        'Content-Type': 'image/jpeg',
+        'If-Match': `"${revision}"`,
+      },
+      body: poster,
+    })
+    let response = await send()
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true)
+      response = await send()
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        response.statusText || 'Video poster cache update failed',
+      )
+    }
+  }
+
   async mediaLivePhotoMotion(
     nodeID: number,
     onProgress?: XDriveByteProgressHandler,

@@ -10,6 +10,7 @@ const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
 const sharedGalleryInspector = read('ui', 'shared', 'src', 'mui', 'MediaGalleryInspector.tsx')
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
+const sharedGalleryVideoPoster = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVideoPoster.ts')
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
@@ -27,6 +28,7 @@ const sharedGallery = [
   sharedGalleryDetails,
   sharedGalleryInspector,
   sharedGalleryPreview,
+  sharedGalleryVideoPoster,
   sharedGalleryUtils,
   sharedGalleryFilters,
   sharedGalleryNavigation,
@@ -70,7 +72,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.match(sharedGallery, /AsyncVideoPoster/)
   assert.match(sharedGallery, /IntersectionObserver/)
   assert.match(sharedGallery, /drawImage/)
-  assert.match(sharedGallery, /toDataURL\('image\/jpeg'/)
+  assert.match(sharedGallery, /toBlob/)
   assert.match(sharedGallery, /搜索/)
   assert.match(sharedGallery, /资产类型/)
   assert.match(sharedGallery, /拍摄自/)
@@ -658,7 +660,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.equal(agentClient.includes('data_base64'), false)
   assert.equal(agentClient.includes('media_token'), false, 'Desktop discovery must not keep a second media token')
   assert.equal(desktopIPC.includes('"media-video-stream"'), false, 'Agent must expose only the generic file-preview stream capability')
-  assert.equal(desktopIPC.includes('/v1/media/video'), false, 'Agent must not keep the legacy media video stream route')
+  assert.equal(desktopIPC.includes('GET /v1/media/video'), false, 'Agent must not keep the legacy media video stream route')
+  assert.ok(desktopIPC.includes('PUT /v1/media/video-poster'), 'Agent must expose the bounded video-poster cache backfill route')
   assert.equal(preload.includes('getMediaVideoURL'), false, 'Desktop preload must not expose the legacy media video URL bridge')
   assert.match(preload, /agent:get-media-items', kind, limit, offset, query/)
   assert.match(preload, /agent:get-media-item-range', kind, limit, offset, query/)
@@ -747,11 +750,20 @@ test('Gallery media details use shared responsive Inspector and Drawer instead o
     'export function XDriveMediaAsyncThumbnail',
     'export function XDriveMediaAsyncVideoPoster',
     'IntersectionObserver',
-    'drawImage',
-    "toDataURL('image/jpeg'",
+    'xDriveCaptureVideoPosterBlob',
+    'URL.createObjectURL',
+    'revokeIfBlob',
     'export function xDriveMediaFallback',
   ]) {
     assert.ok(sharedGalleryPreview.includes(token), `MediaGalleryPreviewMedia missing: ${token}`)
+  }
+  for (const token of [
+    'export function xDriveCaptureVideoPosterBlob',
+    'xDriveMediaVideoPosterGeometry',
+    'drawImage',
+    'toBlob',
+  ]) {
+    assert.ok(sharedGalleryVideoPoster.includes(token), `MediaGalleryVideoPoster missing: ${token}`)
   }
   assert.ok(sharedGalleryUtils.includes('export function xDriveMediaGalleryErrorMessage'), 'shared Gallery error helper is missing')
   assert.ok(sharedGalleryUtils.includes('export function xDriveMediaFormatDuration'), 'shared Gallery duration helper is missing')
