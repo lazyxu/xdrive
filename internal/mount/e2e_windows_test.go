@@ -85,6 +85,20 @@ func (a *e2eAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		a.mu.Unlock()
+		query := r.URL.Query()
+		if query.Get("limit") != "" {
+			if query.Get("limit") != "500" || query.Get("sort") != "name" || query.Get("order") != "asc" {
+				http.Error(w, "unexpected paged children query", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(client.ChildrenPage{
+				Items:   out,
+				HasMore: false,
+				Sort:    "name",
+				Order:   "asc",
+			})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(out)
 	case r.Method == http.MethodPost && path == "/uploads":
 		var init client.UploadInit

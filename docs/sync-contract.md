@@ -31,6 +31,8 @@ The first journal version is intentionally retention-free. A later retention pol
 
 On Windows, the provider captures a journal checkpoint before its startup full reconciliation. The normal 60-second remote poll then consumes only changes after that cursor. Directory subtree mutations, cursor resets, and servers that do not expose `/api/v1/changes` fall back to the existing full remote reconciliation path. The 15-minute full audit, manual sync, and restart/offline recovery remain unchanged as convergence safety nets.
 
+Full remote reconciliation still builds the complete owner-visible remote path map because convergence requires a whole-tree snapshot, but `Client.Walk()` enumerates every directory through cursor-paged children reads capped at **500 nodes per response**. The walker inserts each page directly into the final path map instead of materializing an additional full sibling slice, and fails if a `has_more` page does not advance its cursor.
+
 Windows baseline persistence uses a V2 framed transaction log at the existing state-file path. Each baseline commit appends only path-level puts/deletes with a CRC-protected frame; a truncated final frame is discarded on restart. Legacy V1 whole-file JSON baselines migrate automatically on first load. The log is compacted atomically after 10,000 appended frames or roughly 64 MiB of delta data.
 
 ## Continuous CI coverage
@@ -54,6 +56,7 @@ Windows baseline persistence uses a V2 framed transaction log at the existing st
 | Linux FUSE operation layer | Web -> Client | newly created file lookup, content refresh, rename visibility | `TestLinuxFUSEBidirectionalMutationContract` |
 | Linux FUSE operation layer | Client -> Web | rename+move, content write/truncate, unlink | `TestLinuxFUSEBidirectionalMutationContract` |
 | Shared resumable-upload client | Client -> Server | interrupted multi-chunk call, new Client instance resumes received chunks and finalizes once | `TestUploadFileResumableResumesAfterInterruptedCallAndClientRestart` |
+| Shared client / Windows full reconcile | Server -> Client | 1,201-sibling remote directory is consumed as 500/500/201 cursor pages; non-advancing cursor fails instead of looping | `TestWalkUsesPagedChildren` / `TestWalkRejectsNonAdvancingChildrenCursor` |
 | Windows CfAPI | Restart / offline | persisted baseline resumes local-only offline edits after provider restart | `TestWindowsCfAPIRestartAndOfflineConflict` |
 | Windows CfAPI | Restart / conflict | local offline edit + Web edit converges to server winner plus conflict copy after restart | `TestWindowsCfAPIRestartAndOfflineConflict` |
 | Windows state | Persistence | baseline round-trip, policy filtering and corrupt-state rejection | `TestWindowsBaselineStateRoundTripAndPolicyFilter` / `TestWindowsBaselineStateRejectsCorruption` |
