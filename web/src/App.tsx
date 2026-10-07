@@ -568,6 +568,7 @@ function FileManager({
     refreshOperations: refreshFileOperations,
   } = useXDriveFileOperationLifecycle<XDriveFileOperation>({
     enabled: Boolean(profile && !profile.must_change_password),
+    lifecycleKey: username,
     taskCenterVisible: appView === 'transfers',
     loadOperations: loadFileOperations,
     onRefreshError: handleError,
@@ -581,6 +582,7 @@ function FileManager({
   })
 
   const fileOperationActions = useXDriveFileOperationActions<XDriveFileOperation>({
+    lifecycleKey: username,
     cancelOperation: (id) => api.cancelFileOperation(id),
     retryOperation: (id) => api.retryFileOperation(id),
     undoOperation: (id) => api.undoFileOperation(id),

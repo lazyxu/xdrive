@@ -154,9 +154,13 @@ test('shared FileOperation action controller owns cancel retry and clear-history
     'type XDriveFileOperationAction =',
     "'clear-history'",
     'const actionRef = useRef<XDriveFileOperationAction>(',
-    'if (actionRef.current) return false',
-    'rememberOperation(await cancelOperation(id))',
+    'lifecycleKey: string',
+    'const lifecycleGenerationRef = useRef(1)',
+    'if (actionRef.current) return null',
+    'const generation = lifecycleGenerationRef.current',
+    'const operation = await cancelOperation(id)',
     'const operation = await retryOperation(id)',
+    'if (!actionIsCurrent(generation)) return false',
     "onFeedback?.('文件操作已重新加入队列。')",
     'await clearOperationHistory()',
     'const transferResult = await clearTransferHistory()',
@@ -183,7 +187,9 @@ test('shared FileOperation action controller owns cancel retry and clear-history
   }
 
   assert.ok(web.includes('useXDriveFileOperationActions<XDriveFileOperation>({'), 'Web must consume the shared operation action controller')
+  assert.ok(web.includes('lifecycleKey: username'), 'Web FileOperation actions must be scoped to the authenticated username lifecycle')
   assert.ok(desktop.includes('useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({'), 'Desktop must consume the shared operation action controller')
+  assert.ok(desktop.includes("lifecycleKey: \`\${status?.server ?? ''}\\n\${status?.username ?? ''}\`"), 'Desktop FileOperation actions must be scoped to Server+username identity')
   assert.ok(web.includes('clearTransferHistory: async () => { api.clearTransferHistory() }'), 'Web must keep local transfer-history clearing in its adapter')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep Agent transfer-history clearing in its adapter')
   assert.ok(desktop.includes('onTransferHistoryCleared: setTransfers'), 'Desktop must apply the Agent transfer-history result locally')

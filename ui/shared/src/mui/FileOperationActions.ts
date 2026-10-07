@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { xDriveFileOperationConflictPolicyLabel } from '../file-operations'
 import type { XDriveFileOperationConflictResolution } from '../file-operations'
 import type { XDriveFileOperationLifecycleItem } from './FileOperationLifecycle'
@@ -16,6 +16,7 @@ export function useXDriveFileOperationActions<
   TOperation extends XDriveFileOperationLifecycleItem,
   TTransferHistory = void,
 >({
+  lifecycleKey,
   cancelOperation,
   retryOperation,
   undoOperation,
@@ -29,6 +30,7 @@ export function useXDriveFileOperationActions<
   onError,
   onFeedback,
 }: {
+  lifecycleKey: string
   cancelOperation: (id: string) => Promise<TOperation>
   retryOperation: (id: string) => Promise<TOperation>
   undoOperation?: (id: string) => Promise<TOperation>
@@ -44,99 +46,136 @@ export function useXDriveFileOperationActions<
 }) {
   const [action, setAction] = useState<XDriveFileOperationAction>('')
   const actionRef = useRef<XDriveFileOperationAction>('')
+  const lifecycleGenerationRef = useRef(1)
 
-  const beginAction = useCallback((nextAction: XDriveFileOperationAction) => {
-    if (actionRef.current) return false
-    actionRef.current = nextAction
-    setAction(nextAction)
-    return true
-  }, [])
-
-  const finishAction = useCallback(() => {
+  useEffect(() => {
+    lifecycleGenerationRef.current += 1
     actionRef.current = ''
     setAction('')
+    return () => {
+      lifecycleGenerationRef.current += 1
+      actionRef.current = ''
+    }
+  }, [lifecycleKey])
+
+  const beginAction = useCallback((nextAction: XDriveFileOperationAction) => {
+    if (actionRef.current) return null
+    const generation = lifecycleGenerationRef.current
+    actionRef.current = nextAction
+    setAction(nextAction)
+    return generation
   }, [])
 
+  const actionIsCurrent = useCallback((generation: number) => (
+    generation === lifecycleGenerationRef.current
+  ), [])
+
+  const finishAction = useCallback((generation: number) => {
+    if (!actionIsCurrent(generation)) return
+    actionRef.current = ''
+    setAction('')
+  }, [actionIsCurrent])
+
   const cancel = useCallback(async (id: string) => {
-    if (!beginAction(`cancel:${id}`)) return false
+    const generation = beginAction(`cancel:${id}`)
+    if (generation === null) return false
     try {
-      rememberOperation(await cancelOperation(id))
+      const operation = await cancelOperation(id)
+      if (!actionIsCurrent(generation)) return false
+      rememberOperation(operation)
       await refreshOperations()
-      return true
+      return actionIsCurrent(generation)
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
-  }, [beginAction, cancelOperation, finishAction, onError, refreshOperations, rememberOperation])
+  }, [actionIsCurrent, beginAction, cancelOperation, finishAction, onError, refreshOperations, rememberOperation])
 
   const retry = useCallback(async (id: string) => {
-    if (!beginAction(`retry:${id}`)) return false
+    const generation = beginAction(`retry:${id}`)
+    if (generation === null) return false
     try {
       const operation = await retryOperation(id)
+      if (!actionIsCurrent(generation)) return false
       rememberOperation(operation)
       onFeedback?.('文件操作已重新加入队列。')
       await refreshOperations()
-      return true
+      return actionIsCurrent(generation)
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
-  }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, retryOperation])
+  }, [actionIsCurrent, beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, retryOperation])
 
   const undo = useCallback(async (id: string) => {
-    if (!undoOperation || !beginAction(`undo:${id}`)) return false
+    if (!undoOperation) return false
+    const generation = beginAction(`undo:${id}`)
+    if (generation === null) return false
     try {
       const operation = await undoOperation(id)
+      if (!actionIsCurrent(generation)) return false
       rememberOperation(operation)
       onFeedback?.('撤销操作已加入队列。')
       await refreshOperations()
-      return true
+      return actionIsCurrent(generation)
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
-  }, [beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, undoOperation])
+  }, [actionIsCurrent, beginAction, finishAction, onError, onFeedback, refreshOperations, rememberOperation, undoOperation])
 
   const redo = useCallback(async (id: string) => {
-    if (!redoOperation || !beginAction(`redo:${id}`)) return false
+    if (!redoOperation) return false
+    const generation = beginAction(`redo:${id}`)
+    if (generation === null) return false
     try {
       const operation = await redoOperation(id)
+      if (!actionIsCurrent(generation)) return false
       rememberOperation(operation)
       onFeedback?.('重做操作已加入队列。')
       await refreshOperations()
-      return true
+      return actionIsCurrent(generation)
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
-  }, [beginAction, finishAction, onError, onFeedback, redoOperation, refreshOperations, rememberOperation])
+  }, [actionIsCurrent, beginAction, finishAction, onError, onFeedback, redoOperation, refreshOperations, rememberOperation])
 
   const resolve = useCallback(async (
     id: string,
     policy: XDriveFileOperationConflictResolution,
   ) => {
-    if (!resolveConflict || !beginAction(`resolve:${policy}:${id}`)) return false
+    if (!resolveConflict) return false
+    const generation = beginAction(`resolve:${policy}:${id}`)
+    if (generation === null) return false
     try {
       const operation = await resolveConflict(id, policy)
+      if (!actionIsCurrent(generation)) return false
       rememberOperation(operation)
       onFeedback?.(`已按“${xDriveFileOperationConflictPolicyLabel(policy)}”重新加入队列。`)
       await refreshOperations()
-      return true
+      return actionIsCurrent(generation)
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
   }, [
+    actionIsCurrent,
     beginAction,
     finishAction,
     onError,
@@ -147,26 +186,34 @@ export function useXDriveFileOperationActions<
   ])
 
   const clearHistory = useCallback(async () => {
-    if (!beginAction('clear-history')) return false
+    const generation = beginAction('clear-history')
+    if (generation === null) return false
     try {
       await clearOperationHistory()
+      if (!actionIsCurrent(generation)) return false
       try {
         const transferResult = await clearTransferHistory()
+        if (!actionIsCurrent(generation)) return false
         onTransferHistoryCleared?.(transferResult)
       } catch (error) {
+        if (!actionIsCurrent(generation)) return false
         await refreshOperations()
+        if (!actionIsCurrent(generation)) return false
         throw error
       }
       await refreshOperations()
+      if (!actionIsCurrent(generation)) return false
       onFeedback?.('已清空已完成、失败和已取消的任务历史。')
       return true
     } catch (error) {
+      if (!actionIsCurrent(generation)) return false
       onError(error)
       return false
     } finally {
-      finishAction()
+      finishAction(generation)
     }
   }, [
+    actionIsCurrent,
     beginAction,
     clearOperationHistory,
     clearTransferHistory,

@@ -405,6 +405,7 @@ export default function App({
     refreshOperations: refreshCloudFileOperations,
   } = useXDriveFileOperationLifecycle<AgentCloudFileOperation>({
     enabled: agent.connected && configured,
+    lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     taskCenterVisible: view === 'transfers',
     loadOperations: loadCloudFileOperations,
     onRefreshError: (operationError) => setError(
@@ -446,6 +447,7 @@ export default function App({
     agent.hello?.capabilities.includes('background-task-summary') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
+    lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     cancelOperation: async (id) => {
       const result = await window.xdriveDesktop.agent.cloudCancelFileOperation(id)
       if (!result.ok) throw new Error(result.error.message)
