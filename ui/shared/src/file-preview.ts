@@ -4,7 +4,7 @@ export type XDriveFileTextPreview = {
   size: number
 }
 
-export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf'
+export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'live_photo'
 
 export type XDriveFilePreviewTarget = {
   id: string | number
@@ -61,6 +61,7 @@ export function xDriveClassifyFilePreview(
   if (xDriveFileSupportsTextPreview(target.name, target.kind)) return 'text'
 
   const extension = xDrivePreviewExtension(target.name)
+  if (extension === 'livp') return 'live_photo'
 
   // Binary previewability must stay aligned with the Server's strict extension
   // allowlist. MIME metadata may describe a file, but must never broaden the
