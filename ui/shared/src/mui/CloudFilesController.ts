@@ -95,6 +95,7 @@ export function useXDriveCloudFilesController<
   const [loading, setLoading] = useState(true)
   const [virtualTarget, setVirtualTarget] = useState<XDriveCloudFilesVirtualTarget<TSort> | null>(null)
   const directoryRequestRef = useRef(0)
+  const directoryInFlightRequestRef = useRef<number | null>(null)
   const quotaRequestRef = useRef(0)
   const changeCursorRef = useRef<number | null>(null)
   const changeRequestRef = useRef(0)
@@ -244,6 +245,7 @@ export function useXDriveCloudFilesController<
     const effectiveGrouping = grouping ?? virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
+    directoryInFlightRequestRef.current = requestID
     setLoading(true)
     try {
       const range = await port.getRange(
@@ -267,6 +269,9 @@ export function useXDriveCloudFilesController<
       if (requestID === directoryRequestRef.current) reportError(error)
       return false
     } finally {
+      if (directoryInFlightRequestRef.current === requestID) {
+        directoryInFlightRequestRef.current = null
+      }
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
   }, [
@@ -283,6 +288,7 @@ export function useXDriveCloudFilesController<
     const latestCrumbs = crumbsRef.current
     if (
       !enabledRef.current ||
+      directoryInFlightRequestRef.current !== null ||
       !target ||
       (expectedParentID !== undefined && target.parentID !== expectedParentID) ||
       latestCrumbs.at(-1)?.id !== target.parentID
@@ -392,6 +398,7 @@ export function useXDriveCloudFilesController<
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
+    directoryInFlightRequestRef.current = requestID
     const quotaRequestID = quotaRequestRef.current + 1
     quotaRequestRef.current = quotaRequestID
     setLoading(true)
@@ -427,6 +434,9 @@ export function useXDriveCloudFilesController<
     } catch (error) {
       if (requestID === directoryRequestRef.current) reportError(error)
     } finally {
+      if (directoryInFlightRequestRef.current === requestID) {
+        directoryInFlightRequestRef.current = null
+      }
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
   }, [activateVirtualDirectory, defaultSort, port, reportError, rootLabel])
@@ -434,6 +444,7 @@ export function useXDriveCloudFilesController<
   useEffect(() => {
     if (!enabled) {
       directoryRequestRef.current += 1
+      directoryInFlightRequestRef.current = null
       quotaRequestRef.current += 1
       changeRequestRef.current += 1
       changeCursorRef.current = null
