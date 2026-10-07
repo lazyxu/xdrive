@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Dialog,
   Stack,
@@ -44,58 +44,91 @@ export function XDriveVersionHistoryDialog({
   const [loading, setLoading] = useState(false)
   const [workingKey, setWorkingKey] = useState('')
   const [restoreTarget, setRestoreTarget] = useState<FileVersion | null>(null)
+  const loadRequestRef = useRef(0)
+  const workGenerationRef = useRef(0)
 
   const load = useCallback(async (nodeID: number) => {
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
     setLoading(true)
     try {
-      setVersions(await adapter.listVersions(nodeID))
+      const next = await adapter.listVersions(nodeID)
+      if (requestID !== loadRequestRef.current) return
+      setVersions(next)
     } catch (error) {
+      if (requestID !== loadRequestRef.current) return
       onError(error)
       setVersions([])
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
   }, [adapter, onError])
 
   useEffect(() => {
+    workGenerationRef.current += 1
+    setWorkingKey('')
     setCurrentNode(node)
     setRestoreTarget(null)
     if (node) {
       void load(node.id)
     } else {
+      loadRequestRef.current += 1
       setVersions([])
+      setLoading(false)
     }
   }, [load, node?.id, node?.revision])
+
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    workGenerationRef.current += 1
+  }, [])
+
+  const beginWork = (key: string) => {
+    const generation = workGenerationRef.current + 1
+    workGenerationRef.current = generation
+    setWorkingKey(key)
+    return generation
+  }
+
+  const workIsCurrent = (generation: number) => (
+    generation === workGenerationRef.current
+  )
+
+  const finishWork = (generation: number) => {
+    if (workIsCurrent(generation)) setWorkingKey('')
+  }
 
   const restore = async () => {
     if (!currentNode || !restoreTarget) return
     const target = restoreTarget
     const key = `restore:${target.id}`
-    setWorkingKey(key)
+    const workGeneration = beginWork(key)
     try {
       const restored = await adapter.restoreVersion(currentNode, target)
+      if (!workIsCurrent(workGeneration)) return
       setCurrentNode(restored)
       setRestoreTarget(null)
       onFeedback?.('版本已恢复')
       await load(restored.id)
+      if (!workIsCurrent(workGeneration)) return
       await onRestored?.(restored)
     } catch (error) {
-      onError(error)
+      if (workIsCurrent(workGeneration)) onError(error)
     } finally {
-      setWorkingKey('')
+      finishWork(workGeneration)
     }
   }
 
   const download = async (version: FileVersion) => {
     if (!currentNode || !adapter.downloadVersion) return
     const key = `download:${version.id}`
-    setWorkingKey(key)
+    const workGeneration = beginWork(key)
     try {
       await adapter.downloadVersion(currentNode, version)
     } catch (error) {
-      onError(error)
+      if (workIsCurrent(workGeneration)) onError(error)
     } finally {
-      setWorkingKey('')
+      finishWork(workGeneration)
     }
   }
 
