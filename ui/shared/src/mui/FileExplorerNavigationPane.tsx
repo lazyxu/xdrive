@@ -182,7 +182,13 @@ export function XDriveFileExplorerNavigationPane({
   }, [pathNodes])
 
   const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => {
-    const loaded = pageByParent[String(node.id)]?.children ?? []
+    const loaded = (pageByParent[String(node.id)]?.children ?? []).map((candidate) => ({
+      ...candidate,
+      crumbs: [
+        ...node.crumbs.map((crumb) => ({ ...crumb })),
+        { id: candidate.id, name: candidate.name },
+      ],
+    }))
     const pathChild = pathChildByParent.get(node.id)
     if (!pathChild) return loaded
 
