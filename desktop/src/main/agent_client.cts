@@ -785,6 +785,11 @@ export type AgentMediaMotion = {
   data: ArrayBuffer
 }
 
+export type AgentBinaryProgressHandler = (
+  loadedBytes: number,
+  totalBytes?: number,
+) => void
+
 export type AgentCloudQuota = {
   quota_bytes: number
   physical_used_bytes: number
@@ -1495,11 +1500,16 @@ export class AgentIPCClient {
     )
   }
 
-  mediaLivePhotoMotion(nodeID: number): Promise<AgentMediaMotion> {
+  mediaLivePhotoMotion(
+    nodeID: number,
+    onProgress?: AgentBinaryProgressHandler,
+  ): Promise<AgentMediaMotion> {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.requestBinary(
       `/v1/media/live-photo-motion?${query.toString()}`,
       45_000,
+      undefined,
+      onProgress,
     )
   }
 
@@ -2155,6 +2165,7 @@ export class AgentIPCClient {
     endpoint: string,
     timeoutMs = 10_000,
     externalSignal?: AbortSignal,
+    onProgress?: AgentBinaryProgressHandler,
   ): Promise<AgentMediaThumbnail> {
     let lastError: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -2201,9 +2212,49 @@ export class AgentIPCClient {
         }
 
         const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim() || 'application/octet-stream'
+        if (!onProgress) {
+          return {
+            content_type: contentType,
+            data: await response.arrayBuffer(),
+          }
+        }
+
+        const rawTotal = Number(response.headers.get('content-length') || '')
+        const totalBytes = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : undefined
+        onProgress(0, totalBytes)
+        if (!response.body) {
+          const data = await response.arrayBuffer()
+          onProgress(data.byteLength, totalBytes ?? data.byteLength)
+          return { content_type: contentType, data }
+        }
+
+        const reader = response.body.getReader()
+        const chunks: Uint8Array[] = []
+        let loadedBytes = 0
+        let lastProgressAt = 0
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (!value?.byteLength) continue
+          chunks.push(value)
+          loadedBytes += value.byteLength
+          const now = Date.now()
+          if (now - lastProgressAt >= 100) {
+            lastProgressAt = now
+            onProgress(loadedBytes, totalBytes)
+          }
+        }
+
+        const data = new Uint8Array(loadedBytes)
+        let offset = 0
+        for (const chunk of chunks) {
+          data.set(chunk, offset)
+          offset += chunk.byteLength
+        }
+        onProgress(loadedBytes, totalBytes)
         return {
           content_type: contentType,
-          data: await response.arrayBuffer(),
+          data: data.buffer,
         }
       } catch (error) {
         if (externalSignal?.aborted) {

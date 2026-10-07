@@ -29,6 +29,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import type { XDriveByteProgressHandler } from '../file-preview'
 import type {
   MediaAlbum,
   MediaGalleryQuery,
@@ -96,7 +97,10 @@ import type {
 } from './MediaGalleryThumbnailScheduler'
 
 export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
-export type MediaMotionLoader = (nodeID: number) => Promise<string | null>
+export type MediaMotionLoader = (
+  nodeID: number,
+  onProgress?: XDriveByteProgressHandler,
+) => Promise<string | null>
 export type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',
@@ -2393,9 +2397,11 @@ export function XDriveMediaGallery({
     if (!previewItem?.metadata.has_thumbnail) return null
     return loadThumbnail(previewItem.node.id)
   }, [loadThumbnail, previewItem?.metadata.has_thumbnail, previewItem?.node.id])
-  const loadOpenLivePhotoMotion = useCallback(async () => {
+  const loadOpenLivePhotoMotion = useCallback(async (
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
     if (!previewItem || !loadLivePhotoMotion) return null
-    return loadLivePhotoMotion(previewItem.node.id)
+    return loadLivePhotoMotion(previewItem.node.id, onProgress)
   }, [loadLivePhotoMotion, previewItem?.node.id])
 
   const toggleMediaFavorite = useCallback((item: MediaItem) => {

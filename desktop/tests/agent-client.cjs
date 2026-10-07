@@ -445,12 +445,18 @@ test('Live Photo motion stays binary over Agent IPC', async (t) => {
     assert.equal(url.searchParams.get('node_id'), '31')
     res.statusCode = 200
     res.setHeader('Content-Type', 'video/quicktime')
+    res.setHeader('Content-Length', '4')
     res.end(Buffer.from([1, 2, 3, 4]))
   })
 
-  const result = await client.mediaLivePhotoMotion(31)
+  const progress = []
+  const result = await client.mediaLivePhotoMotion(31, (loadedBytes, totalBytes) => {
+    progress.push([loadedBytes, totalBytes])
+  })
   assert.equal(result.content_type, 'video/quicktime')
   assert.deepEqual(Array.from(new Uint8Array(result.data)), [1, 2, 3, 4])
+  assert.deepEqual(progress.at(0), [0, 4])
+  assert.deepEqual(progress.at(-1), [4, 4])
 })
 
 test('media favorite uses the scoped Agent API', async (t) => {

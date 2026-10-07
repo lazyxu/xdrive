@@ -5,6 +5,7 @@ import {
   xDriveClassifyFilePreview,
 } from '../file-preview'
 import type {
+  XDriveByteProgressHandler,
   XDriveFilePreviewKind,
   XDriveFilePreviewTarget,
   XDriveFileTextPreview,
@@ -21,6 +22,7 @@ export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDr
 
 export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
+  onProgress?: XDriveByteProgressHandler,
 ) => Promise<string | null | undefined>
 
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
@@ -59,6 +61,19 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     () => target ? xDriveClassifyFilePreview(target) : 'none',
     [target?.kind, target?.mimeType, target?.name],
   )
+  const livePhotoMotionLoader = useMemo(() => {
+    if (!target || !loadLivePhotoMotion) return undefined
+    return (onProgress?: XDriveByteProgressHandler) =>
+      loadLivePhotoMotion(target, onProgress)
+  }, [
+    loadLivePhotoMotion,
+    target?.id,
+    target?.kind,
+    target?.mimeType,
+    target?.name,
+    target?.revision,
+    target?.size,
+  ])
   const [textPreview, setTextPreview] = useState<XDriveFileTextPreview | null>(null)
   const [previewURL, setPreviewURL] = useState('')
   const [loading, setLoading] = useState(false)
@@ -257,11 +272,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               sx={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
             />
           )}
-          loadMotion={
-            target && loadLivePhotoMotion
-              ? () => loadLivePhotoMotion(target)
-              : undefined
-          }
+          loadMotion={livePhotoMotionLoader}
           label={target?.name ? `${target.name} 实况照片` : '实况照片'}
         />
       )

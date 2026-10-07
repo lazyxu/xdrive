@@ -231,8 +231,17 @@ a second standalone video player.
 The interaction contract is:
 
 - show the still image by default;
-- preload the associated motion resource without autoplay;
-- press-and-hold on mouse or touch starts motion in the same frame;
+- do not request the motion resource merely because the preview surface mounted;
+- the first press-and-hold starts one motion request; if the user keeps holding, playback
+  begins as soon as the motion resource is ready; releasing during the request prevents
+  autoplay but does not start a second duplicate request on the next hold;
+- when the transport exposes a positive total byte count, render a determinate circular
+  download indicator from actual received bytes; otherwise render indeterminate progress
+  and never fabricate a percentage;
+- Web and Desktop progress reporting must observe the existing continuous byte stream.
+  It must not introduce range fan-out or smaller network chunks solely for UI progress,
+  and renderer/IPC progress notifications must be throttled;
+- press-and-hold on mouse or touch starts motion in the same frame once ready;
 - releasing, cancelling, leaving the pressed surface, or losing focus stops playback
   and returns to the still image;
 - keyboard Enter/Space provides the same hold/release behavior;
@@ -253,6 +262,8 @@ Desktop Live Photo motion transport must remain binary end-to-end. xdrive-agent 
 buffer the bounded motion payload for the local Desktop IPC limit, but it must return
 raw bytes; Electron transports those bytes as `ArrayBuffer`, and renderer surfaces create
 a Blob URL. Do not base64-encode motion payloads in Agent IPC or renderer adapters.
+Desktop may relay throttled byte-progress events while reading that same response stream;
+those events are observational only and must not change the motion payload or request shape.
 
 ## FileExplorer boundary
 

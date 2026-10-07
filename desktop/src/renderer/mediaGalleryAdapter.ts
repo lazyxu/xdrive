@@ -32,7 +32,7 @@ export function createDesktopMediaGalleryDataSource(
     listAlbumItemRange: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItemRange(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => agent.getMediaThumbnail(nodeID),
-    loadLivePhotoMotion: (nodeID) => agent.getMediaLivePhotoMotion(nodeID),
+    loadLivePhotoMotion: (nodeID, onProgress) => agent.getMediaLivePhotoMotion(nodeID, onProgress),
     loadPreviewURL: (nodeID, _kind) => agent.cloudFilePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),

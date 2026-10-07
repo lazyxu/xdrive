@@ -193,7 +193,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'onPointerDown={handlePointerDown}',
     'onPointerUp={handlePointerRelease}',
     'onPointerCancel={handlePointerRelease}',
-    'onPointerLeave={stopPlayback}',
+    'onPointerLeave={endHold}',
     'onKeyDown={handleKeyDown}',
     'onKeyUp={handleKeyUp}',
     'video.play()',
@@ -202,12 +202,22 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'controls={false}',
     'playsInline',
     'preload="auto"',
-    '按住播放',
+    'loadStartedRef.current',
+    'loadMotion(onProgress)',
+    "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",
+    '按住加载并播放',
     'aria-pressed={playing}',
+    'aria-busy={loading}',
   ]) {
     assert.ok(sharedLivePhotoSurface.includes(token), 'Live Photo surface missing: ' + token)
   }
   assert.equal(sharedLivePhotoSurface.includes('muted'), false, 'Live Photo motion must preserve audio capability')
+  assert.match(webAPI, /responseBlobWithProgress/)
+  assert.match(preload, /agent:media-live-photo-motion-progress/)
+  assert.match(desktopMain, /agent:media-live-photo-motion-progress/)
+  assert.match(agentClient, /lastProgressAt/)
+  assert.match(webAdapter, /mediaLivePhotoMotion\(nodeID, onProgress\)/)
+  assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress\)/)
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
   assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')
   assert.match(sharedGallery, /still=\{\([\s\S]*?<XDriveFilePreviewSurface/, 'Live Photo still image should reuse the Preview Engine before thumbnail fallback')
@@ -424,11 +434,17 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaPeople(nodeID:',
     'setMediaDescription(nodeID:',
     'mediaThumbnail(nodeID:',
-    'mediaLivePhotoMotion(nodeID:',
+    'mediaLivePhotoMotion(',
     'cloudFilePreviewTicket(nodeID:',
   ]) {
     assert.ok(agentClient.includes(token), `Desktop Agent client missing ${token}`)
   }
+
+  assert.match(
+    agentClient,
+    /mediaLivePhotoMotion\([\s\S]*onProgress\?: AgentBinaryProgressHandler/,
+    'Desktop Live Photo motion must expose byte-progress callbacks',
+  )
 
   assert.ok(desktopIPC.includes('"media-gallery"'))
   assert.ok(desktopIPC.includes('GET /v1/media/items'))
@@ -460,7 +476,10 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
   assert.match(desktopAdapter, /cloudFilePreviewURL/)
   assert.match(agentClient, /data: ArrayBuffer/)
-  assert.match(agentClient, /mediaLivePhotoMotion\(nodeID: number\): Promise<AgentMediaMotion>/)
+  assert.match(
+    agentClient,
+    /mediaLivePhotoMotion\([\s\S]*nodeID: number,[\s\S]*onProgress\?: AgentBinaryProgressHandler[\s\S]*\): Promise<AgentMediaMotion>/,
+  )
   assert.match(agentClient, /requestBinary\(/)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaSuggestedPeople/)
