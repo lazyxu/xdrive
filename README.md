@@ -957,6 +957,8 @@ Repository secrets `XD_E2E_USERNAME` and `XD_E2E_PASSWORD` are required and must
 
 ## CI, snapshots, and releases
 
+Containerized tests follow the repository's [CI test-image contract](docs/ci-test-images.md): ordinary tests and benchmarks use reusable runtime/toolchain images and bind-mount the current checkout's business code/tests instead of rebuilding an image whenever application code changes. Final release-image and exact-artifact checks are deliberately separate and validate the packaged artifact without source-code overrides.
+
 Every push runs cross-platform CI. The test matrix covers:
 
 - Linux Go tests with the race detector;
