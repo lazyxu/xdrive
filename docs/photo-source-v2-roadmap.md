@@ -391,7 +391,7 @@ Remote delete/rename/album mutation and general two-way synchronization are not 
 
 ### Remaining integrity work
 
-The current durable repair model is complete for Source bindings/runs and media-derived state, including explicit orphan-thumbnail-file GC. The Admin global Task Center now runs Source verify/repair and storage-aware media verify through durable P4 maintenance tasks; media verify uses the same filesystem-root-aware verifier as the server CLI and remains cancellable during thumbnail-cache traversal. Media repair is the next maintenance operation to move onto this same Task Center contract. Remaining integrity work is verification-oriented:
+The current durable repair model is complete for Source bindings/runs and media-derived state, including explicit orphan-thumbnail-file GC. The Admin global Task Center now runs Source verify/repair plus storage-aware media verify/repair through durable P4 maintenance tasks. Media verify uses the same filesystem-root-aware verifier as the server CLI and remains cancellable during thumbnail-cache traversal; media repair calls the same deterministic `RepairMedia(ctx, db, root, false)` implementation and shares the `media-integrity` lease with verify. Thumbnail GC and Photo Intelligence GC remain explicit separate operations and are never implicit repair side effects. Remaining integrity work is verification-oriented:
 
 - Node -> File -> CAS presence and storage SHA integrity through the existing storage verifier boundary;
 - verified digest-alias consistency and any future repair only after a deterministic ownership/provenance contract exists.

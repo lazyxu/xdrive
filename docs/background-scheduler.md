@@ -312,7 +312,11 @@ The server exposes background work as a read model without introducing a generic
   never execute concurrently against the same Source/SourceItem/SyncRun integrity domain. `media.verify`
   uses the same durable lifecycle with its own cluster-wide `media-integrity` lease and requires a storage
   backend that explicitly exposes a local filesystem root, preserving the CLI verifier's byte/cache checks
-  instead of silently degrading to database-only verification.
+  instead of silently degrading to database-only verification. `media.repair` reuses the same durable
+  lifecycle, filesystem-root capability, and `media-integrity` lease; verify and repair may queue but never
+  execute concurrently. The Task Center repair path runs only deterministic `RepairMedia(..., false)`;
+  thumbnail GC and Photo Intelligence GC remain separate maintenance actions and are never implicit side
+  effects of media repair.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
   active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable

@@ -71,6 +71,33 @@ func (r *immediateSystemMaintenanceMediaVerifyRunner) VerifyMedia(
 	return r.report, nil
 }
 
+type blockingSystemMaintenanceMediaVerifyRunner struct {
+	calls   atomic.Int32
+	started chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingSystemMaintenanceMediaVerifyRunner) VerifyMedia(
+	ctx context.Context,
+) (maintenance.MediaVerifyReport, error) {
+	r.calls.Add(1)
+	r.once.Do(func() { close(r.started) })
+	<-ctx.Done()
+	return maintenance.MediaVerifyReport{}, context.Cause(ctx)
+}
+
+type immediateSystemMaintenanceMediaRepairRunner struct {
+	report maintenance.MediaRepairReport
+	calls  atomic.Int32
+}
+
+func (r *immediateSystemMaintenanceMediaRepairRunner) RepairMedia(
+	context.Context,
+) (maintenance.MediaRepairReport, error) {
+	r.calls.Add(1)
+	return r.report, nil
+}
+
 func newSystemMaintenanceTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -513,6 +540,139 @@ func TestMediaVerifyMaintenanceUsesDurableContractAndReportsFindings(t *testing.
 	}
 }
 
+func TestMediaRepairMaintenanceWaitsForIntegrityLeaseAndReportsResidualIssues(t *testing.T) {
+	db := newSystemMaintenanceTaskTestDB(t)
+	schedulerA, ctx := newSystemMaintenanceTaskScheduler(t)
+	schedulerB, _ := newSystemMaintenanceTaskScheduler(t)
+	verifyRunner := &blockingSystemMaintenanceMediaVerifyRunner{
+		started: make(chan struct{}),
+	}
+	repairRunner := &immediateSystemMaintenanceMediaRepairRunner{
+		report: maintenance.MediaRepairReport{
+			Actions: []maintenance.MediaRepairAction{
+				{NodeID: 1, Applied: true},
+				{NodeID: 2, Applied: true},
+			},
+			RelationActions: []maintenance.MediaRelationRepairAction{
+				{OwnerID: 1, Applied: true},
+			},
+			DerivedActions: []maintenance.MediaDerivedRepairAction{
+				{OwnerID: 1, NodeID: 3, Mode: "rebuild", Applied: true},
+			},
+			PersonMembershipActions: []maintenance.MediaPersonMembershipRepairAction{
+				{OwnerID: 1, PersonRowID: 4, AssetID: 5, Applied: true},
+			},
+			Skipped: []maintenance.MediaIntegrityIssue{
+				{OwnerID: 1, NodeID: 6, Reason: "metadata_sha_stale"},
+			},
+			After: maintenance.MediaVerifyReport{
+				Issues: []maintenance.MediaIntegrityIssue{
+					{OwnerID: 1, NodeID: 6, Reason: "metadata_sha_stale"},
+				},
+			},
+		},
+	}
+	serverA := &Server{
+		DB:                           db,
+		BackgroundScheduler:          schedulerA,
+		systemMaintenanceMediaVerify: verifyRunner,
+		systemMaintenanceHeartbeat:   20 * time.Millisecond,
+	}
+	serverB := &Server{
+		DB:                           db,
+		BackgroundScheduler:          schedulerB,
+		systemMaintenanceMediaRepair: repairRunner,
+		systemMaintenanceHeartbeat:   20 * time.Millisecond,
+	}
+
+	verifyRun, err := serverA.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindMediaVerify,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-verifyRunner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("media verify runner did not start")
+	}
+	waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		verifyRun.ID,
+		meta.SystemMaintenanceStatusRunning,
+	)
+
+	repairRun, err := serverB.requestSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindMediaRepair,
+		background.InitiatorAdmin,
+		99,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := repairRunner.calls.Load(); got != 0 {
+		t.Fatalf("media repair ran concurrently with media verify: calls=%d", got)
+	}
+
+	if _, err := serverB.requestSystemMaintenanceCancel(
+		ctx,
+		meta.SystemMaintenanceKindMediaVerify,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		verifyRun.ID,
+		meta.SystemMaintenanceStatusCancelled,
+	)
+	finished := waitSystemMaintenanceRunStatus(
+		t,
+		db,
+		repairRun.ID,
+		meta.SystemMaintenanceStatusIssues,
+	)
+	if repairRunner.calls.Load() != 1 {
+		t.Fatalf("media repair calls=%d want=1", repairRunner.calls.Load())
+	}
+	for _, want := range []string{
+		"修复 2 个缩略图元数据",
+		"重建 1 个关系批次",
+		"修复 1 个派生资源",
+		"修复 1 个人物状态",
+		"跳过 1 项",
+		"剩余 1 个一致性问题",
+	} {
+		if !strings.Contains(finished.Summary, want) {
+			t.Fatalf("media repair summary=%q missing %q", finished.Summary, want)
+		}
+	}
+
+	tasks, err := serverB.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repairTask := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindMediaRepair),
+	)
+	if repairTask == nil ||
+		repairTask.State != "issues" ||
+		repairTask.Progress.CurrentItem != finished.Summary ||
+		!backgroundTaskActionAllowed(
+			repairTask.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected media repair Task Center row: %+v", repairTask)
+	}
+}
+
 func TestMediaVerifyMaintenanceRequiresFilesystemStorageCapability(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	server := &Server{DB: db}
@@ -529,6 +689,7 @@ func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
+		meta.SystemMaintenanceKindMediaRepair,
 	} {
 		_, err := server.requestSystemMaintenanceRun(
 			context.Background(),
