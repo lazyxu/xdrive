@@ -20,7 +20,7 @@ test('Desktop folder download uses one group with one child per leaf file', () =
     'func (c *agentController) CloudDownloadFolder(',
     'c.transfers.StartGroup(transfer.Spec{',
     'transfer.PhaseScanning',
-    'scanAgentCloudDownloadFolder(ctx, root, cli.List)',
+    'scanAgentCloudDownloadFolder(ctx, root, cli.ListPage)',
     'c.transfers.StartChild(group, transfer.Spec{',
     'transfer.PhaseQueued',
     'RelativePath:',
@@ -34,6 +34,24 @@ test('Desktop folder download uses one group with one child per leaf file', () =
   ]) {
     assert.ok(agentCloud.includes(token), 'folder download hierarchy missing: ' + token)
   }
+})
+
+test('Desktop folder download bounds root lookup and tree scans to cursor pages', () => {
+  for (const token of [
+    'agentCloudDownloadChildrenPageLimit = 500',
+    'client.ChildrenOptions{',
+    'NextCursor',
+    'resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.ListPage)',
+    'scanAgentCloudDownloadFolder(ctx, root, cli.ListPage)',
+  ]) {
+    assert.ok(agentCloud.includes(token), 'bounded folder-download pagination missing: ' + token)
+  }
+
+  const scanStart = agentCloud.indexOf('const agentCloudDownloadChildrenPageLimit = 500')
+  const downloadStart = agentCloud.indexOf('func downloadAgentCloudFileIntoPath(', scanStart)
+  const scanSource = agentCloud.slice(scanStart, downloadStart)
+  assert.equal(scanSource.includes('func(context.Context, uint64) ([]client.Node, error)'), false, 'legacy unpaged scanner contract must be removed')
+  assert.equal(scanSource.includes('.List(ctx,'), false, 'folder-download scan helpers must not use legacy unpaged List')
 })
 
 test('folder manifest counts leaf files and preserves empty directories without using archive transport', () => {

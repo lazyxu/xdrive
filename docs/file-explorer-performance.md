@@ -23,6 +23,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Adaptive infinite-scroll prefetch | **Merged** | Unmeasured wall-clock | Prefetch threshold is viewport-adaptive and protected by in-flight request locks. |
 | Indexed typed-path lookup | **Merged** | Unmeasured wall-clock | One exact child lookup per path segment instead of full child-list scans. |
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
+| Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Deterministic 1,201-sibling fixtures: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response** for both root lookup and recursive tree scan. No wall-clock speedup claimed. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
 | 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
@@ -49,6 +50,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Directory responses from superseded navigation requests are ignored rather than replacing the newer location.
 - Address-bar path traversal resolves each segment with one exact-name paged child lookup (limit 1) instead of loading every child in each traversed directory.
 - Folder-upload create conflicts reuse an existing sibling through a case-insensitive indexed name lookup (limit 1) instead of listing and scanning the entire parent directory.
+- Desktop folder-tree download resolves the selected root and enumerates every directory through cursor-paged children reads capped at **500 nodes per response**; it must not use the legacy unpaginated children contract during scan.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
 - Search result sorting is server-paged for name/updated/size/type; cursors bind query/type/sort/order, and changing sort reloads the active search from page one instead of re-sorting only the loaded subset.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
@@ -189,6 +191,37 @@ This is a controller/VirtualCollection CPU and retained-metadata baseline only. 
 ### Existing optimizations without comparable wall-clock BEFORE/AFTER
 
 Thumbnail queue/cache changes, Desktop binary thumbnail transport, adaptive prefetch, indexed typed-path lookup, indexed folder-upload conflict lookup, navigation-tree pagination, and several controller/projection refactors have correctness/complexity/resource regression coverage but do **not** have an equivalent wall-clock BEFORE/AFTER workload. Do not quote a timing speedup for these changes until a stable benchmark exists.
+
+### Desktop folder-download paged scan
+
+Status: **Accepted / structural; wall-clock unmeasured**.
+
+Workload and method:
+
+- deterministic Agent unit fixtures with **1,201 sibling nodes** under one parent;
+- cursor page limit: **500**;
+- both the selected-folder root lookup and recursive tree enumeration are exercised;
+- sample count: not applicable to timing because this is a deterministic structural contract, not a wall-clock benchmark;
+- command: `go test ./cmd/xdrive-agent -run 'Test(ScanAgentCloudDownloadFolderPagesWideDirectories|ResolveAgentCloudDownloadFolderRootPagesWideParent)$' -count=1`.
+
+BEFORE:
+
+- Desktop folder download used `Client.List` for the selected root's parent and for each recursively visited directory;
+- the legacy children endpoint materialized and serialized the full sibling set in one response;
+- on the 1,201-sibling fixture this means **1 request carrying 1,201 nodes**.
+
+AFTER / current:
+
+- both paths use `Client.ListPage` with a **500-node** cursor page and a repeated/missing-cursor guard;
+- the 1,201-sibling fixture uses **3 requests**, with at most **500 nodes in any one response**;
+- maximum per-response node cardinality in that fixture is **1,201 -> 500 (-58.4%)**;
+- total manifest metadata remains **O(total files)**, so this change does **not** claim bounded total Agent memory or a wall-clock speedup.
+
+Decision: **accept** the bounded paging tradeoff. It removes unbounded Server query/JSON/transport response size from a foundational Desktop download path at the cost of additional bounded requests.
+
+Regression budget: no Desktop folder-download root lookup or recursive scan may fall back to legacy unpaginated `Client.List`; each children page stays at **<=500 nodes**.
+
+Next action: if very large folder downloads still show Agent memory pressure, benchmark manifest retention and child-transfer creation separately before considering a streaming manifest design.
 
 ### Desktop warm-thumbnail transport and Agent cache
 
