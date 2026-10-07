@@ -1903,3 +1903,191 @@ test('favorite lookup from an unmounted FileExplorer cannot activate a stale fil
     'an unmounted FileExplorer favorite lookup must not activate a stale file after reconnect',
   )
 })
+
+test('change feed does not advance past an event for a directory that is still loading', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let holdNextBetaLoad = false
+    let releasePendingBeta
+    const changeCursorArgs = []
+
+    const page = (parentID, offset, limit, betaItemName = 'beta-current.txt') => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: betaItemName }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && holdNextBetaLoad) {
+          holdNextBetaLoad = false
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(
+              page(parentID, offset, limit, 'beta-old.txt'),
+            )
+          })
+        }
+        return Promise.resolve(
+          page(
+            parentID,
+            offset,
+            limit,
+            parentID === beta.id ? 'beta-new.txt' : undefined,
+          ),
+        )
+      },
+      async getChanges(cursor) {
+        changeCursorArgs.push(cursor)
+        if (cursor === 0) {
+          return {
+            changes: [],
+            next_cursor: 1,
+            latest_cursor: 1,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        if (cursor === 1) {
+          return {
+            changes: [{
+              id: 1,
+              kind: 'updated',
+              affected_parent_ids: [beta.id],
+            }],
+            next_cursor: 2,
+            latest_cursor: 2,
+            has_more: false,
+            reset_required: false,
+          }
+        }
+        return {
+          changes: [],
+          next_cursor: 2,
+          latest_cursor: 2,
+          has_more: false,
+          reset_required: false,
+        }
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        changePollIntervalMs: 0,
+        changeDebounceMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'change-feed-inflight-target',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(await app.navigation.openTab([root, beta]), true)
+    app = render()
+    await app.navigation.activateTab('tab-1')
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+
+    // Establish cursor=1 before the race.
+    await app.cloud.refreshChanges()
+    app = render()
+    assert.deepEqual(changeCursorArgs, [0])
+
+    holdNextBetaLoad = true
+    const activateBeta = app.navigation.activateTab('tab-2')
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    // The Server reports a Beta change while Beta's old range snapshot is
+    // still in flight. This event must remain replayable until Beta commits.
+    const affectedWhilePending = await app.cloud.refreshChanges()
+    assert.equal(affectedWhilePending, false)
+
+    releasePendingBeta()
+    await activateBeta
+    app = render()
+
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+    assert.equal(app.cloud.items[0]?.name, 'beta-old.txt')
+
+    // Poll again after Beta commits. The same cursor=1 event must be replayed
+    // and force an authoritative Beta reload to beta-new.txt.
+    const affectedAfterCommit = await app.cloud.refreshChanges()
+    app = render()
+
+    assert.equal(
+      changeCursorArgs.at(-1),
+      1,
+      'change cursor must not advance past an event for the in-flight navigation target',
+    )
+    assert.equal(
+      affectedAfterCommit,
+      true,
+      'the deferred Beta event must be consumed after Beta becomes current',
+    )
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+    assert.equal(
+      app.cloud.items[0]?.name,
+      'beta-new.txt',
+      'Beta must not remain on the stale range snapshot after its change event was observed while loading',
+    )
+  } finally {
+    global.window = originalWindow
+  }
+})
