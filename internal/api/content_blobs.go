@@ -181,6 +181,107 @@ func (s *Server) cleanupUncommittedContentBlob(ctx context.Context, hash, storag
 	})
 }
 
+const contentReferenceReleaseBatchSize = 200
+
+type contentReferenceRelease struct {
+	SHA256     string
+	StorageKey string
+	Release    int64
+}
+
+type contentReferenceUpdate struct {
+	SHA256   string
+	RefCount int64
+	State    string
+}
+
+func contentReferenceUpdateValues(count int) string {
+	return strings.TrimSuffix(strings.Repeat("(?::text, ?::bigint, ?::text),", count), ",")
+}
+
+func contentReferenceLockValues(count int) string {
+	return strings.TrimSuffix(strings.Repeat("(?::text),", count), ",")
+}
+
+func lockContentReferenceBatchTx(
+	tx *gorm.DB,
+	batch []contentReferenceRelease,
+) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(batch))
+	for _, item := range batch {
+		args = append(args, item.SHA256)
+	}
+	query := fmt.Sprintf(`
+SELECT pg_advisory_xact_lock(hashtextextended(requested.sha256, 0))
+FROM (VALUES %s) AS requested(sha256)
+ORDER BY requested.sha256
+`, contentReferenceLockValues(len(batch)))
+	rows, err := tx.Raw(query, args...).Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+	}
+	return rows.Err()
+}
+
+func loadContentReferenceBatchTx(
+	tx *gorm.DB,
+	batch []contentReferenceRelease,
+) ([]meta.ContentBlob, error) {
+	if len(batch) == 0 {
+		return nil, nil
+	}
+	hashes := make([]string, 0, len(batch))
+	for _, item := range batch {
+		hashes = append(hashes, item.SHA256)
+	}
+	var blobs []meta.ContentBlob
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("sha256 IN ?", hashes).
+		Order("sha256 ASC").
+		Find(&blobs).Error; err != nil {
+		return nil, err
+	}
+	return blobs, nil
+}
+
+func updateContentReferenceBatchTx(
+	tx *gorm.DB,
+	updates []contentReferenceUpdate,
+) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(updates)*3)
+	for _, item := range updates {
+		args = append(args, item.SHA256, item.RefCount, item.State)
+	}
+	query := fmt.Sprintf(`
+WITH updates(sha256, ref_count, state) AS (
+	VALUES %s
+)
+UPDATE xd_content_blobs AS blob
+SET
+	ref_count = updates.ref_count::bigint,
+	state = updates.state
+FROM updates
+WHERE blob.sha256 = updates.sha256
+`, contentReferenceUpdateValues(len(updates)))
+	result := tx.Exec(query, args...)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != int64(len(updates)) {
+		return fmt.Errorf("content blob batch update affected %d rows; want %d", result.RowsAffected, len(updates))
+	}
+	return nil
+}
+
 func (s *Server) releaseContentReferencesTx(
 	tx *gorm.DB,
 	files []meta.File,
@@ -209,35 +310,68 @@ func (s *Server) releaseContentReferencesTx(
 	}
 	sort.Strings(keys)
 
-	var candidates []contentDeleteCandidate
+	releases := make([]contentReferenceRelease, 0, len(keys))
+	keyByHash := make(map[string]string, len(keys))
 	for _, key := range keys {
 		hash, ok := storage.ContentHashFromKey(key)
 		if !ok {
 			return nil, nil, fmt.Errorf("invalid content-addressed key %q", key)
 		}
-		if err := lockContentHash(tx, hash); err != nil {
-			return nil, nil, err
-		}
-		var blob meta.ContentBlob
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("sha256 = ?", hash).First(&blob).Error; err != nil {
-			return nil, nil, fmt.Errorf("load content blob %s: %w", hash, err)
-		}
-		if blob.StorageKey != key {
+		if previousKey, exists := keyByHash[hash]; exists && previousKey != key {
 			return nil, nil, fmt.Errorf("content blob key mismatch for %s", hash)
 		}
-		release := counts[key]
-		if blob.RefCount < release {
-			return nil, nil, fmt.Errorf("content blob refcount underflow for %s", hash)
+		keyByHash[hash] = key
+		releases = append(releases, contentReferenceRelease{
+			SHA256:     hash,
+			StorageKey: key,
+			Release:    counts[key],
+		})
+	}
+	sort.Slice(releases, func(i, j int) bool {
+		return releases[i].SHA256 < releases[j].SHA256
+	})
+
+	var candidates []contentDeleteCandidate
+	for start := 0; start < len(releases); start += contentReferenceReleaseBatchSize {
+		end := min(start+contentReferenceReleaseBatchSize, len(releases))
+		batch := releases[start:end]
+		if err := lockContentReferenceBatchTx(tx, batch); err != nil {
+			return nil, nil, err
 		}
-		next := blob.RefCount - release
-		state := meta.ContentBlobStateReady
-		if next == 0 {
-			state = meta.ContentBlobStateDeleting
-			candidates = append(candidates, contentDeleteCandidate{SHA256: hash, StorageKey: key})
+		rows, err := loadContentReferenceBatchTx(tx, batch)
+		if err != nil {
+			return nil, nil, err
 		}
-		if err := tx.Model(&meta.ContentBlob{}).Where("sha256 = ?", hash).
-			Updates(map[string]any{"ref_count": next, "state": state}).Error; err != nil {
+		byHash := make(map[string]meta.ContentBlob, len(rows))
+		for _, row := range rows {
+			byHash[row.SHA256] = row
+		}
+
+		updates := make([]contentReferenceUpdate, 0, len(batch))
+		for _, item := range batch {
+			row, ok := byHash[item.SHA256]
+			if !ok {
+				return nil, nil, fmt.Errorf("load content blob %s: %w", item.SHA256, gorm.ErrRecordNotFound)
+			}
+			if row.StorageKey != item.StorageKey {
+				return nil, nil, fmt.Errorf("content blob key mismatch for %s", item.SHA256)
+			}
+			if row.RefCount < item.Release {
+				return nil, nil, fmt.Errorf("content blob refcount underflow for %s", item.SHA256)
+			}
+			next := row.RefCount - item.Release
+			state := meta.ContentBlobStateReady
+			if next == 0 {
+				state = meta.ContentBlobStateDeleting
+				candidates = append(candidates, contentDeleteCandidate{
+					SHA256: item.SHA256, StorageKey: item.StorageKey,
+				})
+			}
+			updates = append(updates, contentReferenceUpdate{
+				SHA256: item.SHA256, RefCount: next, State: state,
+			})
+		}
+		if err := updateContentReferenceBatchTx(tx, updates); err != nil {
 			return nil, nil, err
 		}
 	}
