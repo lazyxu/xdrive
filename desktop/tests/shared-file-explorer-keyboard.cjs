@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
@@ -13,6 +14,21 @@ const keyboard = read('ui', 'shared', 'src', 'file-explorer-keyboard.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+
+function loadKeyboardModule() {
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'file-explorer-keyboard.ts')
+  const source = fs.readFileSync(filename, 'utf8')
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+  const mod = { exports: {} }
+  new Function('exports', 'module', 'require', output)(mod.exports, mod, require)
+  return mod.exports
+}
 
 test('shared FileExplorer owns Windows-style keyboard navigation semantics', () => {
   for (const token of [
@@ -153,4 +169,97 @@ test('native tab restore shortcut is shared across Windows, macOS, and Web profi
       label + ' must expose the shared restore shortcut only in the normal files workspace',
     )
   }
+})
+
+
+test('native keyboard profiles preserve OS tab and clipboard habits without stealing browser shortcuts', () => {
+  const {
+    xDriveFileExplorerKeyboardCommand,
+    xDriveFileExplorerKeyboardTabIndex,
+  } = loadKeyboardModule()
+
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'Tab', ctrlKey: true }, 'macos'),
+    'next-tab',
+    'macOS tab navigation should use Control+Tab',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'Tab', ctrlKey: true, shiftKey: true }, 'macos'),
+    'previous-tab',
+    'macOS previous-tab navigation should use Control+Shift+Tab',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'Tab', metaKey: true }, 'macos'),
+    null,
+    'FileExplorer must not steal Command+Tab from the macOS app switcher',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'y', metaKey: true }, 'macos'),
+    'quick-look',
+    'Finder Command+Y should reuse the shared Quick Look surface',
+  )
+
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'Insert', ctrlKey: true }, 'windows'),
+    'copy',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'Insert', shiftKey: true }, 'windows'),
+    'paste',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'd', ctrlKey: true }, 'windows'),
+    'delete',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardTabIndex({ key: '1', ctrlKey: true }, 'windows'),
+    0,
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardTabIndex({ key: '9', ctrlKey: true }, 'windows'),
+    8,
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardTabIndex({ key: '0', ctrlKey: true }, 'windows'),
+    null,
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardTabIndex({ key: '1', ctrlKey: true }, 'web'),
+    null,
+    'Web must leave browser Ctrl+number tab shortcuts alone',
+  )
+  assert.equal(
+    xDriveFileExplorerKeyboardCommand({ key: 'd', ctrlKey: true }, 'web'),
+    null,
+    'Web must not turn the browser bookmark shortcut into file deletion',
+  )
+})
+
+test('Desktop wires Windows numbered-tab shortcuts through the shared FileExplorer', () => {
+  for (const token of [
+    'xDriveFileExplorerKeyboardTabIndex',
+    'onActivateTabAtIndex?: (index: number) => void',
+    'const tabIndex = xDriveFileExplorerKeyboardTabIndex(event, keyboardProfile)',
+    'onActivateTabAtIndex(tabIndex)',
+  ]) {
+    assert.ok(
+      explorer.includes(token),
+      'shared numbered-tab keyboard contract missing: ' + token,
+    )
+  }
+  for (const token of [
+    'onActivateTabAtIndex={!trashActive',
+    'const tab = tabs[index]',
+    'if (tab) void activateTab(tab.id)',
+  ]) {
+    assert.ok(
+      desktop.includes(token),
+      'Desktop numbered-tab adapter missing: ' + token,
+    )
+  }
+  assert.equal(
+    web.includes('onActivateTabAtIndex='),
+    false,
+    'Web should leave browser Ctrl+number behavior untouched',
+  )
 })

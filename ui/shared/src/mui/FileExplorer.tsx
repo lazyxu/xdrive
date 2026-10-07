@@ -63,6 +63,7 @@ import {
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import {
   xDriveFileExplorerKeyboardCommand,
+  xDriveFileExplorerKeyboardTabIndex,
   xDriveFileExplorerPrimaryModifierActive,
 } from '../file-explorer-keyboard'
 import type { XDriveFileExplorerKeyboardProfile } from '../file-explorer-keyboard'
@@ -494,6 +495,7 @@ export function XDriveFileExplorer({
   onNewTab,
   onCloseTab,
   onRestoreClosedTab,
+  onActivateTabAtIndex,
   onNextTab,
   onPreviousTab,
   pathValue,
@@ -573,6 +575,7 @@ export function XDriveFileExplorer({
   onNewTab?: () => void
   onCloseTab?: () => void
   onRestoreClosedTab?: () => void
+  onActivateTabAtIndex?: (index: number) => void
   onNextTab?: () => void
   onPreviousTab?: () => void
   pathValue?: string
@@ -2453,6 +2456,13 @@ export function XDriveFileExplorer({
   }
 
   const handleExplorerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const tabIndex = xDriveFileExplorerKeyboardTabIndex(event, keyboardProfile)
+    if (tabIndex !== null && onActivateTabAtIndex) {
+      event.preventDefault()
+      onActivateTabAtIndex(tabIndex)
+      return
+    }
+
     const command = xDriveFileExplorerKeyboardCommand(event, keyboardProfile)
 
     if (command === 'new-tab' && onNewTab) {

@@ -89,6 +89,23 @@ function xDriveFileExplorerPrimaryOnly(
   )
 }
 
+export function xDriveFileExplorerKeyboardTabIndex(
+  event: XDriveFileExplorerKeyboardEventLike,
+  profile: XDriveFileExplorerKeyboardProfile,
+): number | null {
+  if (
+    profile !== 'windows' ||
+    !event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey ||
+    !/^[1-9]$/.test(event.key)
+  ) {
+    return null
+  }
+  return Number(event.key) - 1
+}
+
 export function xDriveFileExplorerKeyboardCommand(
   event: XDriveFileExplorerKeyboardEventLike,
   profile: XDriveFileExplorerKeyboardProfile,
@@ -107,10 +124,42 @@ export function xDriveFileExplorerKeyboardCommand(
     return 'copy-path'
   }
 
+  if (
+    profile === 'macos' &&
+    key === 'tab' &&
+    Boolean(event.ctrlKey) &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
+    return event.shiftKey ? 'previous-tab' : 'next-tab'
+  }
+
+  if (
+    profile === 'windows' &&
+    key === 'insert' &&
+    Boolean(event.ctrlKey) &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey
+  ) {
+    return 'copy'
+  }
+
+  if (
+    profile === 'windows' &&
+    key === 'insert' &&
+    Boolean(event.shiftKey) &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
+    return 'paste'
+  }
+
   if (xDriveFileExplorerPrimaryOnly(event, profile)) {
     if (key === 't') return 'new-tab'
     if (key === 'w') return 'close-tab'
-    if (key === 'tab') return 'next-tab'
+    if (key === 'tab' && profile !== 'macos') return 'next-tab'
     if (key === 'f') return 'focus-search'
     if (key === 'a') return 'select-all'
     if (key === 'c') return 'copy'
@@ -124,18 +173,20 @@ export function xDriveFileExplorerKeyboardCommand(
       if (key === 'arrowup') return 'up'
       if (key === 'arrowdown' || key === 'o') return 'open'
       if (key === 'i') return 'properties'
+      if (key === 'y') return 'quick-look'
       if (key === 'backspace') return 'delete'
     } else {
       if (key === 'l') return 'focus-path'
       if (key === 'e') return 'focus-search'
       if (key === 'r') return 'refresh'
       if (key === 'y') return 'redo'
+      if (profile === 'windows' && key === 'd') return 'delete'
     }
   }
 
   if (xDriveFileExplorerPrimaryOnly(event, profile, true)) {
     if (key === 't') return 'restore-closed-tab'
-    if (key === 'tab') return 'previous-tab'
+    if (key === 'tab' && profile !== 'macos') return 'previous-tab'
     if (key === 'n') return 'new-folder'
     if (key === 'z') return 'redo'
     if (key === 'c' && profile !== 'macos') return 'copy-path'
