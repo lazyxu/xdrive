@@ -9,6 +9,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const openPreview = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.tsx')
 const quickLook = read('ui', 'shared', 'src', 'mui', 'FileQuickLookDialog.tsx')
 const gallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
+const galleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const livePhoto = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
@@ -21,9 +23,10 @@ test('FileExplorer and Gallery share one open-preview dialog shell', () => {
   assert.ok(index.includes("export * from './FileOpenPreviewDialog'"), 'shared MUI index must export OpenPreviewDialog')
   assert.ok(openPreview.includes('export function XDriveOpenPreviewDialog'), 'shared OpenPreviewDialog is missing')
   assert.ok(quickLook.includes('<XDriveOpenPreviewDialog'), 'Quick Look must reuse OpenPreviewDialog')
-  assert.ok(gallery.includes('<XDriveOpenPreviewDialog'), 'Gallery media open must reuse OpenPreviewDialog')
+  assert.ok(gallery.includes('<XDriveMediaGalleryViewer'), 'Gallery must delegate media open to the shared Gallery Viewer')
+  assert.ok(galleryViewer.includes('<XDriveOpenPreviewDialog'), 'Gallery Viewer must reuse OpenPreviewDialog')
   assert.ok(quickLook.includes('<XDriveFilePreviewSurface'), 'Quick Look must keep the shared Preview Engine renderer')
-  assert.ok(gallery.includes('<XDriveFilePreviewSurface'), 'Gallery ordinary media open must keep the shared Preview Engine renderer')
+  assert.ok(galleryViewer.includes('<XDriveFilePreviewSurface'), 'Gallery Viewer must keep the shared Preview Engine renderer')
   assert.ok(preview.includes('xDriveClassifyFilePreview'), 'ordinary open preview must inherit the canonical preview classifier')
 })
 
@@ -77,7 +80,7 @@ test('Gallery single click keeps media details while selection gestures stay dis
     'onOpen={openMediaItem}',
     'onPreview={openMediaPreview}',
     '<XDriveMediaDetailsDialog',
-    '<XDriveOpenPreviewDialog',
+    '<XDriveMediaGalleryViewer',
   ]) {
     assert.ok(gallery.includes(token), 'Gallery open/details split missing: ' + token)
   }
@@ -85,16 +88,74 @@ test('Gallery single click keeps media details while selection gestures stay dis
 
 test('Gallery Live Photo keeps semantic motion inside the shared open-preview shell', () => {
   for (const token of [
-    'previewLivePhoto && loadLivePhotoMotion',
+    'livePhoto && loadLivePhotoMotion',
     '<XDriveLivePhotoSurface',
     'loadMotion={loadOpenLivePhotoMotion}',
     'still={(',
     '<XDriveFilePreviewSurface',
   ]) {
-    assert.ok(gallery.includes(token), 'Gallery Live Photo open preview missing: ' + token)
+    assert.ok(galleryViewer.includes(token), 'Gallery Live Photo open preview missing: ' + token)
   }
   assert.ok(livePhoto.includes('video.play()'), 'Live Photo semantic motion surface must remain intact')
+  assert.ok(galleryViewer.includes('onProgress?: Parameters<MediaMotionLoader>[1]'), 'Gallery Viewer must preserve lazy Live Photo byte progress')
   assert.equal(openPreview.includes('loadMotion'), false, 'OpenPreviewDialog must stay media-semantic neutral')
+})
+
+test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip and optional image zoom', () => {
+  for (const token of [
+    'actions?: ReactNode',
+    'footer?: ReactNode',
+    'immersive?: boolean',
+    'fullScreen?: boolean',
+    'onFullScreenChange?:',
+    'data-xdrive-preview-chrome="header"',
+    'data-xdrive-preview-chrome="footer"',
+    'chromeAutoHideMs = 2200',
+  ]) {
+    assert.ok(openPreview.includes(token), 'OpenPreviewDialog immersive shell missing: ' + token)
+  }
+
+  for (const token of [
+    'interactiveImage?: boolean',
+    'data-xdrive-preview-zoom',
+    'data-xdrive-preview-zoom-controls',
+    'setPointerCapture',
+    'releasePointerCapture',
+    'onWheel={handleImageWheel}',
+    'setImageZoom(imageScale > 1 ? 1 : 2)',
+    'Math.min(6, Math.max(1',
+  ]) {
+    assert.ok(preview.includes(token), 'shared image zoom/pan contract missing: ' + token)
+  }
+
+  for (const token of [
+    'data-xdrive-gallery-filmstrip',
+    'activeIndex',
+    'onSelect(index)',
+  ]) {
+    assert.ok(galleryFilmstrip.includes(token), 'Gallery filmstrip missing: ' + token)
+  }
+
+  for (const token of [
+    'immersive',
+    'fullScreen={fullScreen}',
+    'onFullScreenChange={setFullScreen}',
+    '<XDriveMediaGalleryFilmstrip',
+    'interactiveImage',
+    '收藏',
+    '媒体信息',
+    '下载媒体',
+    '分享媒体',
+    '删除媒体',
+  ]) {
+    assert.ok(galleryViewer.includes(token), 'Gallery Viewer 2.0 missing: ' + token)
+  }
+
+  assert.ok(gallery.includes('previewIndex - 6'), 'Gallery Viewer neighbor prefetch must stay bounded')
+  assert.ok(gallery.includes('previewIndex + 6'), 'Gallery Viewer neighbor prefetch must stay bounded')
+  assert.ok(gallery.includes('previewIndex - 5'), 'Gallery filmstrip must render a small local window')
+  assert.ok(gallery.includes('previewIndex + 5'), 'Gallery filmstrip must render a small local window')
+  assert.equal(gallery.includes('new Array(logicalItemCount)'), false, 'Viewer must not materialize the whole Gallery')
 })
 
 test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and Desktop', () => {

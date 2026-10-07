@@ -59,13 +59,9 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsDialog } from './MediaGalleryDetails'
-import { XDriveFilePreviewSurface } from './FilePreviewSurface'
-import type {
-  XDriveFilePreviewImageLoader,
-  XDriveFilePreviewURLLoader,
-} from './FilePreviewSurface'
-import { XDriveLivePhotoSurface } from './LivePhotoSurface'
-import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
+import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
+import { XDriveShareDialog } from './ShareDialog'
+import type { XDriveShareDialogAdapter } from './ShareDialog'
 import {
   XDriveMediaAsyncThumbnail,
   XDriveMediaAsyncVideoPoster,
@@ -279,15 +275,24 @@ function mediaTimelineGroupSetsFromRange(range: MediaItemRange): MediaTimelineGr
   }
 }
 
+export type XDriveMediaGalleryShareDialogOptions = {
+  adapter: XDriveShareDialogAdapter
+  expiryMode?: 'datetime' | 'days'
+  listVariant?: 'table' | 'compact'
+  showCloseAction?: boolean
+}
+
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   pageSize?: number
+  shareDialog?: XDriveMediaGalleryShareDialogOptions
   onError?: (error: unknown) => void
 }
 
 export function XDriveMediaGalleryPage({
   source,
   pageSize = 100,
+  shareDialog,
   onError,
 }: XDriveMediaGalleryPageProps) {
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
@@ -314,6 +319,7 @@ export function XDriveMediaGalleryPage({
   const [smartAlbumName, setSmartAlbumName] = useState('')
   const [smartDialogBusy, setSmartDialogBusy] = useState(false)
   const [smartDialogError, setSmartDialogError] = useState('')
+  const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
   const collectionTargetRef = useRef<MediaGalleryCollectionTarget | null>(null)
   const [collectionTarget, setCollectionTarget] = useState<MediaGalleryCollectionTarget | null>(null)
@@ -1168,6 +1174,7 @@ export function XDriveMediaGalleryPage({
         onAddItemsToAlbum={source.addToAlbum ? addItemsToAlbum : undefined}
         onDeleteItems={source.deleteItems ? deleteItems : undefined}
         onDownloadItems={source.downloadItems ? downloadItems : undefined}
+        onShareItem={shareDialog ? setShareItem : undefined}
         onRestoreTrashItems={source.restoreTrashItems ? restoreTrashItems : undefined}
         onPermanentlyDeleteTrashItems={
           source.permanentlyDeleteTrashItems ? permanentlyDeleteTrashItems : undefined
@@ -1223,6 +1230,17 @@ export function XDriveMediaGalleryPage({
           section === 'trash' ? 'trash' : 'default',
         )}
       />
+      {shareDialog ? (
+        <XDriveShareDialog
+          adapter={shareDialog.adapter}
+          node={shareItem?.node ?? null}
+          onClose={() => setShareItem(null)}
+          onError={reportError}
+          expiryMode={shareDialog.expiryMode}
+          listVariant={shareDialog.listVariant}
+          showCloseAction={shareDialog.showCloseAction}
+        />
+      ) : null}
       <Dialog
         open={smartDialogOpen}
         onClose={() => !smartDialogBusy && setSmartDialogOpen(false)}
@@ -1322,6 +1340,7 @@ export interface XDriveMediaGalleryProps {
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  onShareItem?: (item: MediaItem) => void
   onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
   onPermanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
@@ -2307,6 +2326,7 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  onShareItem,
   onRestoreTrashItems,
   onPermanentlyDeleteTrashItems,
   onSetTags,
@@ -2388,6 +2408,11 @@ export function XDriveMediaGallery({
         ? { ...current, favorite }
         : current
     ))
+    setPreviewItem((current) => (
+      current?.node.id === item.node.id
+        ? { ...current, favorite }
+        : current
+    ))
   }, [onSetFavorite])
 
   const activeTimelineGroups = timeScale === 'year'
@@ -2437,39 +2462,40 @@ export function XDriveMediaGallery({
     setPreviewLogicalIndex(pendingPreviewIndex)
     setPendingPreviewIndex(null)
   }, [pendingPreviewIndex, virtualCollection, virtualCollection?.loadedItems])
-  const previewLivePhoto = Boolean(previewItem?.live_photo || previewItem?.asset_kind === 'live_photo')
-  const previewTarget = useMemo(() => (
-    previewItem
-      ? {
-          id: previewItem.node.id,
-          name: previewItem.node.name,
-          kind: 'file' as const,
-          mimeType: previewItem.metadata.mime_type,
-          size: previewItem.node.size,
-          revision: previewItem.node.revision,
-        }
-      : null
-  ), [
-    previewItem?.node.id,
-    previewItem?.node.name,
-    previewItem?.node.revision,
-    previewItem?.node.size,
-    previewItem?.metadata.mime_type,
+  useEffect(() => {
+    if (previewIndex < 0 || !virtualCollection || logicalItemCount <= 0) return
+    const start = Math.max(0, previewIndex - 6)
+    const end = Math.min(logicalItemCount - 1, previewIndex + 6)
+    void virtualCollection.onRangeChange(start, end)
+  }, [logicalItemCount, previewIndex, virtualCollection?.onRangeChange])
+
+  const previewFilmstripEntries = useMemo(() => {
+    if (previewIndex < 0 || logicalItemCount <= 0) return []
+    const start = Math.max(0, previewIndex - 5)
+    const end = Math.min(logicalItemCount - 1, previewIndex + 5)
+    const entries: Array<{ index: number; item: MediaItem }> = []
+    for (let index = start; index <= end; index += 1) {
+      const item = virtualCollection?.itemAt(index) ?? items[index]
+      if (item) entries.push({ index, item })
+    }
+    return entries
+  }, [
+    items,
+    logicalItemCount,
+    previewIndex,
+    virtualCollection?.loadedItems,
   ])
-  const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
-    if (!previewItem || !loadPreviewURL || (kind !== 'image' && kind !== 'video')) return null
-    return loadPreviewURL(previewItem.node.id, kind)
-  }, [loadPreviewURL, previewItem?.node.id])
-  const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
-    if (!previewItem?.metadata.has_thumbnail) return null
-    return loadThumbnail(previewItem.node.id)
-  }, [loadThumbnail, previewItem?.metadata.has_thumbnail, previewItem?.node.id])
-  const loadOpenLivePhotoMotion = useCallback(async (
-    onProgress?: XDriveByteProgressHandler,
-  ) => {
-    if (!previewItem || !loadLivePhotoMotion) return null
-    return loadLivePhotoMotion(previewItem.node.id, onProgress)
-  }, [loadLivePhotoMotion, previewItem?.node.id])
+
+  const closeMediaPreview = useCallback(() => {
+    setPreviewItem(null)
+    setPreviewLogicalIndex(null)
+    setPendingPreviewIndex(null)
+  }, [])
+
+  const openPreviewInfo = useCallback((item: MediaItem) => {
+    closeMediaPreview()
+    setSelected(item)
+  }, [closeMediaPreview])
 
   const toggleMediaFavorite = useCallback((item: MediaItem) => {
     void toggleFavorite(item).catch(() => undefined)
@@ -3418,49 +3444,30 @@ export function XDriveMediaGallery({
         </Paper>
       ) : null}
 
-      <XDriveOpenPreviewDialog
-        open={Boolean(previewItem)}
-        title={previewItem?.node.name ?? ''}
+      <XDriveMediaGalleryViewer
+        item={previewItem}
         positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < logicalItemCount - 1}
+        filmstripEntries={previewFilmstripEntries}
+        activeIndex={previewIndex}
+        loadThumbnail={loadThumbnail}
+        loadLivePhotoMotion={loadLivePhotoMotion}
+        loadPreviewURL={loadPreviewURL}
         onPrevious={() => requestPreviewIndex(previewIndex - 1)}
         onNext={() => requestPreviewIndex(previewIndex + 1)}
-        onClose={() => {
-          setPreviewItem(null)
-          setPreviewLogicalIndex(null)
-          setPendingPreviewIndex(null)
-        }}
-      >
-        {previewItem ? (
-          previewLivePhoto && loadLivePhotoMotion ? (
-            <XDriveLivePhotoSurface
-              key={previewItem.node.id}
-              label={previewItem.node.name}
-              loadMotion={loadOpenLivePhotoMotion}
-              still={(
-                <XDriveFilePreviewSurface
-                  target={previewTarget}
-                  loadPreviewURL={loadOpenPreview}
-                  loadImagePreview={loadOpenThumbnail}
-                  fallback={xDriveMediaFallback(previewItem.metadata.media_kind)}
-                  minHeight={320}
-                  maxHeight={760}
-                />
-              )}
-            />
-          ) : (
-            <XDriveFilePreviewSurface
-              target={previewTarget}
-              loadPreviewURL={loadOpenPreview}
-              loadImagePreview={loadOpenThumbnail}
-              fallback={xDriveMediaFallback(previewItem.metadata.media_kind)}
-              minHeight={320}
-              maxHeight={760}
-            />
-          )
-        ) : null}
-      </XDriveOpenPreviewDialog>
+        onFilmstripSelect={requestPreviewIndex}
+        onToggleFavorite={onSetFavorite ? toggleFavorite : undefined}
+        onInfo={openPreviewInfo}
+        onDownload={onDownloadItems
+          ? (item) => onDownloadItems([item])
+          : undefined}
+        onShare={onShareItem}
+        onDelete={onDeleteItems
+          ? (item) => onDeleteItems([item])
+          : undefined}
+        onClose={closeMediaPreview}
+      />
 
       <XDriveMediaDetailsDialog
         item={selected}

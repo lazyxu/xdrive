@@ -91,6 +91,7 @@ import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
+import { desktopShareDialogAdapter } from './fileDialogAdapters'
 import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
@@ -1851,6 +1852,12 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            shareDialog={{
+              adapter: desktopShareDialogAdapter,
+              expiryMode: 'days',
+              listVariant: 'compact',
+              showCloseAction: true,
+            }}
             onError={(galleryError) => setError(
               galleryError instanceof Error ? galleryError.message : String(galleryError),
             )}

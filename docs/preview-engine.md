@@ -278,11 +278,19 @@ to make preview work.
 Ordinary file opening in Web/Desktop FileExplorer and ordinary image/video opening in Gallery
 must use the shared `XDriveOpenPreviewDialog` presentation shell.
 
-The shell owns common preview chrome and navigation only. Its content must remain:
+The shell owns common preview chrome and navigation only. It may optionally expose
+fullscreen, immersive chrome auto-hide, and caller-provided action/footer slots, but
+those slots do not transfer domain ownership into the Preview Engine. Its content must
+remain:
 
 - `FilePreviewSurface` for ordinary text/PDF/image/video/audio preview;
 - `FilePreviewSurface` + `LivePhotoSurface` for a validated single-file `.livp`;
 - `LivePhotoSurface` wrapping a `FilePreviewSurface` still image for Gallery Live Photo.
+
+The ordinary image renderer may opt into shared zoom/pan interaction. Zoom/pan is
+presentation state only: it does not change preview identity, request another source
+contract, or persist an edited image. Gallery Viewer enables this mode; Inspector and
+ordinary FileExplorer preview are unchanged unless they explicitly opt in.
 
 Explicit Download remains a separate file-management action. Web/Desktop FileExplorer must
 not treat double-click/Enter/open as an implicit download. Desktop may additionally expose
@@ -290,7 +298,10 @@ an explicit system-shell Open action, but it must not replace the shared preview
 
 Gallery keeps media information, EXIF/GPS, Favorite/Tags/People/albums, and Live Photo
 motion semantics outside the ordinary Preview Engine. Double-clicking a Gallery media
-tile opens the media preview; opening MediaDetails remains a separate interaction.
+tile opens the media preview; opening media information remains a separate Gallery
+interaction. Viewer actions such as Favorite, Info, Download, Share, Delete, and its
+bounded filmstrip therefore live in the shared Gallery layer, even though Viewer
+embeds the generic preview shell and renderer.
 
 ### Quick Look
 

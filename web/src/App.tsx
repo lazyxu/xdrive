@@ -986,7 +986,15 @@ function FileManager({
               />
           </Box>
         ) : appView === 'gallery' ? (
-          <XDriveMediaGalleryPage source={gallerySource} onError={handleError} />
+          <XDriveMediaGalleryPage
+            source={gallerySource}
+            shareDialog={{
+              adapter: shareDialogAdapter,
+              expiryMode: 'datetime',
+              listVariant: 'table',
+            }}
+            onError={handleError}
+          />
         ) : appView === 'sources' ? (
           <XDriveSourceManager
             adapter={sourceManagerAdapter}

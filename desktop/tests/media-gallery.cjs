@@ -13,6 +13,8 @@ const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
+const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
+const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
@@ -25,6 +27,8 @@ const sharedGallery = [
   sharedGalleryFilters,
   sharedGalleryNavigation,
   sharedGallerySelectionToolbar,
+  sharedGalleryFilmstrip,
+  sharedGalleryViewer,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -132,6 +136,43 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   assert.match(sharedGalleryMain, /mediaGalleryMediaTypes/)
   assert.match(sharedGalleryMain, /你收藏的照片和视频/)
   assert.match(sharedGalleryMain, /按媒体资产类型快速进入照片集合/)
+})
+
+test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => {
+  for (const token of [
+    '<XDriveMediaGalleryViewer',
+    'previewFilmstripEntries',
+    'previewIndex - 6',
+    'previewIndex + 6',
+    'onToggleFavorite={onSetFavorite ? toggleFavorite : undefined}',
+    'onInfo={openPreviewInfo}',
+    'onDownload={onDownloadItems',
+    'onShare={onShareItem}',
+    'onDelete={onDeleteItems',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery Viewer wiring missing: ${token}`)
+  }
+
+  for (const token of [
+    '<XDriveOpenPreviewDialog',
+    '<XDriveMediaGalleryFilmstrip',
+    'interactiveImage',
+    'fullScreen={fullScreen}',
+    'immersive',
+    '收藏',
+    '媒体信息',
+    '下载媒体',
+    '分享媒体',
+    '删除媒体',
+  ]) {
+    assert.ok(sharedGalleryViewer.includes(token), `shared Gallery Viewer missing: ${token}`)
+  }
+
+  assert.ok(sharedGalleryFilmstrip.includes('data-xdrive-gallery-filmstrip'))
+  assert.match(webApp, /shareDialog=\{\{[\s\S]*adapter: shareDialogAdapter[\s\S]*expiryMode: 'datetime'/)
+  assert.match(desktopApp, /shareDialog=\{\{[\s\S]*adapter: desktopShareDialogAdapter[\s\S]*expiryMode: 'days'/)
+  assert.match(sharedGalleryMain, /<XDriveShareDialog[\s\S]*adapter=\{shareDialog\.adapter\}/)
+  assert.equal(sharedGalleryViewer.includes('createShare'), false, 'Viewer must not create a parallel share implementation')
 })
 
 test('Gallery multi-select and Selection Toolbar stay shared across Web and Desktop', () => {

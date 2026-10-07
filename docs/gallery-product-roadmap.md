@@ -26,7 +26,7 @@ presentation and product intelligence.
 | 2 | Year / Month / Day semantic timeline + thumbnail density | **Current** |
 | 3 | Multi-select + shared Selection Toolbar | **Current** |
 | 4 | Gallery Trash + Favorites + media-type smart collections | **Current** |
-| 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | Planned |
+| 5 | Viewer 2.0: fullscreen, zoom/pan, filmstrip, chrome hide, actions | **Current** |
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | Planned |
 | 7 | Map Places | Planned |
 | 8 | Smart Search: object/scene + OCR, then semantic search | Planned |
@@ -163,3 +163,34 @@ Deleted media intentionally has a narrower capability surface:
 
 This preserves the existing active-node authorization boundary: Gallery Trash does
 not widen the generic file-preview ticket or analysis-preview contracts.
+
+
+## Phase 5 — Viewer 2.0
+
+Gallery Viewer 2.0 is a shared Web/Desktop product surface built on the existing Preview
+Engine rather than a second media renderer.
+
+The boundary is deliberate:
+
+- `XDriveOpenPreviewDialog` owns only generic preview chrome, previous/next navigation,
+  optional fullscreen, optional immersive chrome auto-hide, and action/footer slots.
+- `FilePreviewSurface` owns ordinary media rendering. Its image renderer has an
+  **explicit opt-in** interactive mode for wheel/button zoom, double-click zoom,
+  pointer-drag pan, and fit/reset. Inspector and ordinary FileExplorer preview keep
+  their existing non-interactive behavior unless they opt in.
+- `XDriveMediaGalleryViewer` owns Gallery-only semantics: Favorite, media Info,
+  Download, Share, Delete, filmstrip, and Live Photo presentation.
+- Share reuses the existing `XDriveShareDialog` and the existing Web/Desktop share
+  adapters. Viewer does not create shares or invent default share policy.
+- Delete reuses the durable FileOperation path from Phase 3; Download reuses the
+  existing single-file/archive transports.
+- Live Photo keeps Phase 4/preview-engine lazy motion behavior: mounting Viewer does
+  not fetch motion bytes. First hold requests motion and keeps byte-progress reporting.
+
+Filmstrip metadata remains bounded. When Viewer opens, Gallery asks VirtualCollection
+for only the current logical index plus a small neighborhood (currently ±6), and the
+filmstrip renders only already available entries around the active item (currently
+±5). Viewer must never allocate or fetch the whole logical Gallery to build a filmstrip.
+
+No new preview endpoint, media token, Gallery-only raw stream, or persistent preview
+cache is introduced by Viewer 2.0.
