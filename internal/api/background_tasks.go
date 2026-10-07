@@ -47,6 +47,10 @@ type backgroundTaskDTO struct {
 	QueuedCount    int                       `json:"queued_count,omitempty"`
 	RunningCount   int                       `json:"running_count,omitempty"`
 	InstanceCount  int                       `json:"instance_count,omitempty"`
+	Attempt        int                       `json:"attempt,omitempty"`
+	RetryAt        *time.Time                `json:"retry_at,omitempty"`
+	TraceID        string                    `json:"trace_id,omitempty"`
+	ParentKey      string                    `json:"parent_key,omitempty"`
 	ControlActions []string                  `json:"control_actions,omitempty"`
 	StartedAt      *time.Time                `json:"started_at,omitempty"`
 	UpdatedAt      time.Time                 `json:"updated_at"`
@@ -268,6 +272,9 @@ func aggregateRuntimeBackgroundTasks(
 				UpdatedAt:     snapshot.UpdatedAt,
 				ActiveCount:   1,
 				InstanceCount: 1,
+				Attempt:       snapshot.Attempt,
+				TraceID:       snapshot.TraceID,
+				ParentKey:     snapshot.ParentKey,
 			}}
 			group.task.Progress = toBackgroundTaskProgress(snapshot.Progress)
 			groups[groupKey] = group
@@ -291,6 +298,20 @@ func aggregateRuntimeBackgroundTasks(
 			if group.task.Initiator != string(snapshot.Initiator) {
 				group.task.Initiator = "mixed"
 			}
+			if snapshot.Attempt > group.task.Attempt {
+				group.task.Attempt = snapshot.Attempt
+			}
+			if group.task.TraceID != snapshot.TraceID {
+				group.task.TraceID = ""
+			}
+			if group.task.ParentKey != snapshot.ParentKey {
+				group.task.ParentKey = ""
+			}
+		}
+		if snapshot.State == "queued" && snapshot.ReadyAt != nil &&
+			(group.task.RetryAt == nil || snapshot.ReadyAt.Before(*group.task.RetryAt)) {
+			value := snapshot.ReadyAt.UTC()
+			group.task.RetryAt = &value
 		}
 
 		group.task.ControlActions = backgroundRuntimeControlActions(

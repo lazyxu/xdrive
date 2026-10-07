@@ -252,6 +252,10 @@ type BackgroundTask struct {
 	QueuedCount    int                    `json:"queued_count,omitempty"`
 	RunningCount   int                    `json:"running_count,omitempty"`
 	InstanceCount  int                    `json:"instance_count,omitempty"`
+	Attempt        int                    `json:"attempt,omitempty"`
+	RetryAt        *time.Time             `json:"retry_at,omitempty"`
+	TraceID        string                 `json:"trace_id,omitempty"`
+	ParentKey      string                 `json:"parent_key,omitempty"`
 	ControlActions []string               `json:"control_actions,omitempty"`
 	StartedAt      *time.Time             `json:"started_at,omitempty"`
 	UpdatedAt      time.Time              `json:"updated_at"`

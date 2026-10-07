@@ -155,6 +155,10 @@ type BackgroundRuntimePresence struct {
 	ActiveCount     int        `gorm:"not null;default:0"`
 	QueuedCount     int        `gorm:"not null;default:0"`
 	RunningCount    int        `gorm:"not null;default:0"`
+	Attempt         int        `gorm:"not null;default:0"`
+	RetryAt         *time.Time `gorm:"index"`
+	TraceID         string     `gorm:"size:128"`
+	ParentKey       string     `gorm:"type:text"`
 	StartedAt       *time.Time `gorm:"index"`
 	TaskUpdatedAt   time.Time  `gorm:"not null;index"`
 	ExpiresAt       time.Time  `gorm:"not null;index"`

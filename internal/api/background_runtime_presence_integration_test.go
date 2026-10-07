@@ -102,6 +102,8 @@ func TestBackgroundRuntimePresenceMergesServersAndExpires(t *testing.T) {
 			OwnerID:   ownerID,
 			Trigger:   background.TriggerSystemEvent,
 			Initiator: background.InitiatorSystem,
+			ParentKey: "file-commit:42",
+			TraceID:   "trace-cluster-42",
 			Priority:  background.PriorityP0,
 			Resource:  background.ResourceMediaCPU,
 			Run: func(ctx context.Context) error {
@@ -147,8 +149,28 @@ func TestBackgroundRuntimePresenceMergesServersAndExpires(t *testing.T) {
 	if err := serverB.publishBackgroundRuntimePresence(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-
+	var published meta.BackgroundRuntimePresence
+	if err := db.Where("instance_id = ?", "server-b").First(&published).Error; err != nil {
+		t.Fatal(err)
+	}
+	if published.Attempt != 1 || published.RetryAt != nil ||
+		published.TraceID != "trace-cluster-42" ||
+		published.ParentKey != "file-commit:42" {
+		t.Fatalf("unexpected published operational metadata: %+v", published)
+	}
+	serverC := &Server{
+		DB:                          db,
+		BackgroundRuntimeInstanceID: "server-c",
+	}
 	owner := ownerID
+	remoteOnly := serverC.backgroundClusterRuntimeTasks(ctx, &owner, ownerID, false)
+	remoteTask := backgroundTaskByID(remoteOnly, fmt.Sprintf("runtime:user:%d:media.thumbnail", ownerID))
+	if remoteTask == nil || remoteTask.Attempt != 1 || remoteTask.RetryAt != nil ||
+		remoteTask.TraceID != "trace-cluster-42" || remoteTask.ParentKey != "file-commit:42" {
+		t.Fatalf("unexpected remote operational metadata: %+v", remoteTask)
+	}
+
+	owner = ownerID
 	tasks := serverA.backgroundClusterRuntimeTasks(
 		ctx,
 		&owner,
@@ -166,7 +188,11 @@ func TestBackgroundRuntimePresenceMergesServersAndExpires(t *testing.T) {
 		task.ActiveCount != 2 ||
 		task.RunningCount != 2 ||
 		task.QueuedCount != 0 ||
-		task.InstanceCount != 2 {
+		task.InstanceCount != 2 ||
+		task.Attempt != 1 ||
+		task.RetryAt != nil ||
+		task.TraceID != "trace-cluster-42" ||
+		task.ParentKey != "file-commit:42" {
 		t.Fatalf("unexpected merged runtime task: %+v", task)
 	}
 

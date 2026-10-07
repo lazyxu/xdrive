@@ -289,6 +289,12 @@ The server exposes background work as a read model without introducing a generic
   instance-level progress/history.
 - High-frequency scheduler work is grouped by `owner + kind` so thumbnail, preview, media-index and future
   face/place micro-jobs do not create thousands of Task Center rows.
+- Scheduler runtime rows expose bounded operational metadata already owned by the scheduler: `attempt`,
+  `retry_at`, `trace_id`, and `parent_key`. `retry_at` is the next scheduler eligibility time for queued
+  retry/backoff or lease-deferred work; it is not a second durable schedule. Because Task Center groups
+  microtasks by owner+kind, `attempt` is the highest active attempt, `retry_at` is the earliest next eligible
+  time, and trace/parent are emitted only when all contributors agree. The same fields are carried through
+  TTL cluster presence as observation-only metadata.
 - `GET /api/v1/background-tasks` returns only the authenticated user's work.
 - `GET /api/v1/admin/background-tasks` returns the global user/system view and requires the admin role.
 - The shared Task Center uses `/background-tasks/page` and `/admin/background-tasks/page` for active-first

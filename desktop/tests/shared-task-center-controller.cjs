@@ -245,6 +245,24 @@ test('shared Task Center owns cluster runtime instance presentation', () => {
 })
 
 
+test('shared Task Center owns scheduler operational metadata presentation', () => {
+  for (const token of [
+    'attempt?: number',
+    'retry_at?: string',
+    'trace_id?: string',
+    'parent_key?: string',
+  ]) {
+    assert.ok(backgroundModel.includes(token), `shared background task model missing: ${token}`)
+    assert.ok(agentClient.includes(token), `Desktop task transport missing: ${token}`)
+  }
+  for (const token of ['运维信息', '尝试：', '下次尝试：', 'Trace：', '父任务：']) {
+    assert.ok(backgroundCenter.includes(token), `shared Task Center operational UI missing: ${token}`)
+  }
+  assert.equal(web.includes('trace_id'), false, 'Web must not duplicate scheduler trace presentation')
+  assert.equal(desktop.includes('trace_id'), false, 'Desktop must not duplicate scheduler trace presentation')
+})
+
+
 test('Task Center badge includes owner background activity through shared summary', () => {
   for (const token of [
     'loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>',
