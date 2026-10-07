@@ -106,6 +106,11 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
 
   useEffect(() => { void refresh() }, [refresh])
 
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    lifecycleGenerationRef.current += 1
+  }, [])
+
   const favoriteIDs = useMemo(() => new Set(items.map((item) => item.id)), [items])
 
   const enqueueMutation = useCallback((
