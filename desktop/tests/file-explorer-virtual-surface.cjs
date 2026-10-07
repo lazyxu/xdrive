@@ -104,17 +104,19 @@ test('empty logical collection produces no virtual slots', () => {
 })
 
 
-test('sparse FileExplorer interactions use logical indexes and never commit partial Shift ranges', () => {
+test('sparse FileExplorer interactions resolve logical indexes and never commit partial Shift ranges', () => {
   for (const token of [
     'const logicalItemAt = (index: number) =>',
     'const logicalIndexOf = (id: XDriveFileExplorerID) =>',
     'const logicalItemByID = (id: XDriveFileExplorerID) =>',
-    'const loadedRangeIDs = (start: number, end: number) =>',
+    'const loadedRangeItems = (start: number, end: number) =>',
+    'const resolveLogicalRange = async (start: number, end: number) =>',
     'if (!item) return null',
     'const currentIndex = logicalIndexOf(item.id) ?? -1',
-    'const anchorIndex = logicalIndexOf(anchorID) ?? -1',
-    'const anchorIndex = logicalIndexOf(selectionAnchorID) ?? -1',
-    'virtualCollection?.onRangeChange?.(start, end)',
+    'selectionAnchorIndex ?? logicalIndexOf(anchorID) ?? currentIndex',
+    'selectionAnchorIndex ?? logicalIndexOf(selectionAnchorID) ?? -1',
+    'const range = await resolveLogicalRange(start, end)',
+    'commitSelectionIntent(intent, nextIDs, range)',
   ]) {
     assert.ok(explorerSource.includes(token), 'missing sparse interaction contract: ' + token)
   }

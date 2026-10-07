@@ -39,13 +39,14 @@ test('Space opens Quick Look while Ctrl/Cmd+Space retains keyboard selection', (
   }
 })
 
-test('Quick Look navigates the current file result set and reuses Inspector preview loaders', () => {
+test('Quick Look navigates logical virtual order and reuses Inspector preview loaders', () => {
   for (const token of [
     'const quickLookFiles = interactionProjection.files',
     'const moveQuickLook = (delta: -1 | 1) =>',
     'setQuickLookItemID(target.id)',
-    'canPrevious={quickLookIndex > 0}',
-    'canNext={quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}',
+    'quickLookLogicalIndex',
+    'const range = await resolveLogicalRange(start, end)',
+    "if (target.kind !== 'file') continue",
     'loadTextPreview={loadTextPreview}',
     'loadPreviewURL={loadPreviewURL}',
     'loadImagePreview={',

@@ -10,7 +10,7 @@ export type XDriveFileExplorerSearchProjection<TNode extends Node = Node> = {
   path: string
 }
 
-function xDriveProjectFileExplorerNode<TNode extends Node>(
+export function xDriveProjectFileExplorerNode<TNode extends Node>(
   node: TNode,
   pathPrefix: string,
   resultPath?: string,
