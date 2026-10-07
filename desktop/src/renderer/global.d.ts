@@ -257,7 +257,7 @@ declare global {
   type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
   type AgentMediaThumbnail = { content_type: string; data: ArrayBuffer }
-  type AgentMediaMotion = { content_type: string; data_base64: string; size: number }
+  type AgentMediaMotion = { content_type: string; data: ArrayBuffer }
 
   type AgentCloudBatchNodeRef = { id: number; revision: number }
   type AgentCloudBatchResult = {

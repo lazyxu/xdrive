@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -88,9 +87,8 @@ type agentMediaThumbnail struct {
 }
 
 type agentMediaMotion struct {
-	ContentType string `json:"content_type"`
-	DataBase64  string `json:"data_base64"`
-	Size        int64  `json:"size"`
+	ContentType string
+	Data        []byte
 }
 
 func startAgentCloudTransfer(
@@ -2196,8 +2194,7 @@ func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID 
 	}
 	return agentMediaMotion{
 		ContentType: contentType,
-		DataBase64:  base64.StdEncoding.EncodeToString(data),
-		Size:        int64(len(data)),
+		Data:        data,
 	}, nil
 }
 

@@ -2877,7 +2877,14 @@ func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	writeDesktopIPCJSON(w, http.StatusOK, motion)
+	contentType := strings.TrimSpace(motion.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(motion.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(motion.Data)
 }
 
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {

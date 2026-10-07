@@ -1861,8 +1861,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		},
 		cloudMediaMotion: agentMediaMotion{
 			ContentType: "video/quicktime",
-			DataBase64:  "ZmFrZS1tb3Rpb24=",
-			Size:        11,
+			Data:        []byte("fake-motion"),
 		},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
@@ -2133,9 +2132,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-motion?node_id=31", "")
 	if res.Code != http.StatusOK ||
-		!strings.Contains(res.Body.String(), "\"content_type\":\"video/quicktime\"") ||
-		!strings.Contains(res.Body.String(), "\"data_base64\":\"ZmFrZS1tb3Rpb24=\"") {
-		t.Fatalf("media motion status=%d body=%s", res.Code, res.Body.String())
+		res.Header().Get("Content-Type") != "video/quicktime" ||
+		res.Body.String() != "fake-motion" {
+		t.Fatalf("media motion status=%d content_type=%q body=%q", res.Code, res.Header().Get("Content-Type"), res.Body.String())
 	}
 	if ctrl.cloudMediaMotionID != 31 {
 		t.Fatalf("media motion id=%d want=31", ctrl.cloudMediaMotionID)
