@@ -137,6 +137,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/files/:id/preview/text", s.fileTextPreview)
 	authed.POST("/files/:id/preview-ticket", s.filePreviewTicket)
 	authed.POST("/download/archive/prepare", s.prepareArchiveDownload)
+	authed.GET("/download/archive/prepare/:id", s.getArchiveDownloadPrepare)
 	authed.GET("/download/archive/progress/:id", s.getArchiveDownloadProgress)
 	authed.POST("/download/archive", s.downloadArchive)
 	authed.GET("/media/items", s.listMediaItems)

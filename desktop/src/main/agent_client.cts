@@ -460,6 +460,7 @@ export type AgentBackgroundTaskActiveSummary = {
   active_total: number
   file_operation: number
   sync_run: number
+  archive_prepare: number
   scheduler: number
 }
 

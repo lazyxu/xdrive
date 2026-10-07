@@ -229,6 +229,24 @@ Do not use Folder Properties work as a reason to retrofit cancellation across un
 
 Existing cancellation/control behavior already implemented for those subsystems remains in place.
 
+### Archive prepare lifecycle
+
+Folder/multi-selection ZIP preparation is a durable owner-scoped background task, while the final ZIP HTTP
+stream remains request-scoped:
+
+- POST `/download/archive/prepare` persists the selected node ids and returns a durable transfer id immediately;
+- preparation builds and persists one immutable manifest (paths, storage keys, sizes, timestamps and filename);
+- queued/running preparation survives Server process loss through reconciliation and may be adopted by another Server;
+- one PostgreSQL advisory lease per prepare id prevents duplicate cross-Server manifest construction;
+- Task Center exposes `archive.prepare` to the owner/admin and supports durable cancellation before completion;
+- Web and Desktop/Go wait on GET `/download/archive/prepare/:id`, then send the durable transfer id with the
+  archive payload request;
+- the payload Server consumes the persisted manifest instead of rescanning the tree, so load balancing does not
+  require sticky sessions;
+- per-entry streaming progress remains an optional process-local side channel; losing that side channel never
+  invalidates an authorized payload;
+- a broken ZIP connection is not resumable. Retrying the payload may reuse the still-valid prepared manifest.
+
 ## Tests
 
 ### Basic lifecycle regression

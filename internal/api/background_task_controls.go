@@ -138,6 +138,9 @@ func parseBackgroundTaskRef(raw string) (backgroundTaskRef, bool) {
 	case strings.HasPrefix(value, "sync-run:"):
 		key := strings.TrimSpace(strings.TrimPrefix(value, "sync-run:"))
 		return backgroundTaskRef{domain: "sync_run", key: key}, key != ""
+	case strings.HasPrefix(value, "archive-prepare:"):
+		key := strings.TrimSpace(strings.TrimPrefix(value, "archive-prepare:"))
+		return backgroundTaskRef{domain: "archive_prepare", key: key}, key != ""
 	case strings.HasPrefix(value, "system-maintenance:"):
 		kind := strings.TrimSpace(strings.TrimPrefix(value, "system-maintenance:"))
 		return backgroundTaskRef{
@@ -306,6 +309,14 @@ func (s *Server) dispatchBackgroundTaskControl(
 			viewerID,
 			admin,
 		)
+	case "archive_prepare":
+		return s.controlBackgroundArchivePrepare(
+			ctx,
+			ref.key,
+			action,
+			viewerID,
+			admin,
+		)
 	case "scheduler":
 		return s.controlBackgroundRuntimeTask(
 			ctx,
@@ -397,6 +408,40 @@ func (s *Server) controlBackgroundFileOperation(
 	default:
 		return outcome, errBackgroundTaskControlUnavailable
 	}
+}
+
+func (s *Server) controlBackgroundArchivePrepare(
+	ctx context.Context,
+	runID, action string,
+	viewerID uint64,
+	admin bool,
+) (backgroundTaskControlOutcome, error) {
+	var run meta.ArchivePrepareRun
+	query := s.DB.WithContext(ctx).Where("id = ?", runID)
+	if !admin {
+		query = query.Where("owner_id = ?", viewerID)
+	}
+	if err := query.First(&run).Error; err != nil {
+		return backgroundTaskControlOutcome{}, err
+	}
+	outcome := backgroundTaskControlOutcome{
+		OwnerID: run.OwnerID,
+		Kind:    "archive.prepare",
+	}
+	if !backgroundTaskActionAllowed(
+		archivePrepareControlActions(run, viewerID, admin),
+		action,
+	) {
+		return outcome, errBackgroundTaskControlUnavailable
+	}
+	if action != backgroundTaskActionCancel {
+		return outcome, errBackgroundTaskControlUnavailable
+	}
+	if err := s.requestArchivePrepareCancel(ctx, run); err != nil {
+		return outcome, err
+	}
+	outcome.ResultTaskID = archivePrepareTaskID(run.ID)
+	return outcome, nil
 }
 
 func (s *Server) controlBackgroundSyncRun(

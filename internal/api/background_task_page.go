@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	backgroundTaskHistoryDomainFileOperation = "file_operation"
-	backgroundTaskHistoryDomainSyncRun       = "sync_run"
+	backgroundTaskHistoryDomainFileOperation  = "file_operation"
+	backgroundTaskHistoryDomainSyncRun        = "sync_run"
+	backgroundTaskHistoryDomainArchivePrepare = "archive_prepare"
 )
 
 type backgroundTaskPageDTO struct {
@@ -181,6 +182,18 @@ func (s *Server) backgroundCurrentTasks(
 	}
 	out = append(out, activeRuns...)
 
+	activeArchivePrepares, err := s.backgroundActiveArchivePrepareTasks(
+		ctx,
+		ownerID,
+		viewerID,
+		admin,
+		backgroundTaskMaxLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, activeArchivePrepares...)
+
 	if admin {
 		activeOperations, err := s.backgroundActiveFileOperationTasks(
 			ctx,
@@ -315,7 +328,7 @@ func (s *Server) backgroundTerminalHistoryPage(
 		limit = backgroundTaskMaxLimit
 	}
 
-	candidates := make([]backgroundTaskDTO, 0, limit*2+2)
+	candidates := make([]backgroundTaskDTO, 0, limit*3+3)
 	if admin {
 		operations, err := s.backgroundTerminalFileOperationTasks(
 			ctx,
@@ -343,6 +356,19 @@ func (s *Server) backgroundTerminalHistoryPage(
 		return nil, "", err
 	}
 	candidates = append(candidates, runs...)
+
+	archivePrepares, err := s.backgroundTerminalArchivePrepareTasks(
+		ctx,
+		ownerID,
+		viewerID,
+		admin,
+		limit+1,
+		cursor,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	candidates = append(candidates, archivePrepares...)
 
 	sortBackgroundTaskHistory(candidates)
 	if len(candidates) <= limit {
@@ -539,6 +565,22 @@ func backgroundTaskFromSourceRun(
 	return task
 }
 
+func backgroundTaskHistoryRawID(domain, id string) (string, bool) {
+	switch domain {
+	case backgroundTaskHistoryDomainFileOperation:
+		raw := strings.TrimPrefix(id, "file-operation:")
+		return raw, raw != id && raw != ""
+	case backgroundTaskHistoryDomainSyncRun:
+		raw := strings.TrimPrefix(id, "sync-run:")
+		return raw, raw != id && raw != ""
+	case backgroundTaskHistoryDomainArchivePrepare:
+		raw := strings.TrimPrefix(id, "archive-prepare:")
+		return raw, raw != id && raw != ""
+	default:
+		return "", false
+	}
+}
+
 func applyBackgroundHistoryCursor(
 	query *gorm.DB,
 	domain string,
@@ -547,36 +589,24 @@ func applyBackgroundHistoryCursor(
 	if cursor == nil {
 		return query
 	}
-	switch domain {
-	case backgroundTaskHistoryDomainFileOperation:
-		if cursor.Domain == backgroundTaskHistoryDomainFileOperation {
-			rawID := strings.TrimPrefix(cursor.ID, "file-operation:")
-			return query.Where(
-				"(updated_at < ?) OR (updated_at = ? AND id > ?)",
-				cursor.UpdatedAt,
-				cursor.UpdatedAt,
-				rawID,
-			)
+	domainRank := backgroundTaskHistoryDomainRank(domain)
+	cursorRank := backgroundTaskHistoryDomainRank(cursor.Domain)
+	if domainRank == cursorRank {
+		rawID, ok := backgroundTaskHistoryRawID(domain, cursor.ID)
+		if !ok {
+			return query.Where("1 = 0")
 		}
-		// FileOperation sorts before SyncRun at the same timestamp, so once a
-		// SyncRun cursor is reached every same-timestamp FileOperation is older
-		// in the combined history ordering only on the next timestamp.
-		return query.Where("updated_at < ?", cursor.UpdatedAt)
-	case backgroundTaskHistoryDomainSyncRun:
-		if cursor.Domain == backgroundTaskHistoryDomainSyncRun {
-			rawID := strings.TrimPrefix(cursor.ID, "sync-run:")
-			return query.Where(
-				"(updated_at < ?) OR (updated_at = ? AND id > ?)",
-				cursor.UpdatedAt,
-				cursor.UpdatedAt,
-				rawID,
-			)
-		}
-		// SyncRun sorts after FileOperation at the same timestamp.
-		return query.Where("updated_at <= ?", cursor.UpdatedAt)
-	default:
-		return query
+		return query.Where(
+			"(updated_at < ?) OR (updated_at = ? AND id > ?)",
+			cursor.UpdatedAt,
+			cursor.UpdatedAt,
+			rawID,
+		)
 	}
+	if domainRank < cursorRank {
+		return query.Where("updated_at < ?", cursor.UpdatedAt)
+	}
+	return query.Where("updated_at <= ?", cursor.UpdatedAt)
 }
 
 func sortBackgroundTaskHistory(tasks []backgroundTaskDTO) {
@@ -599,8 +629,10 @@ func backgroundTaskHistoryDomainRank(domain string) int {
 		return 0
 	case backgroundTaskHistoryDomainSyncRun:
 		return 1
-	default:
+	case backgroundTaskHistoryDomainArchivePrepare:
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -609,7 +641,8 @@ func encodeBackgroundTaskHistoryCursor(
 ) (string, error) {
 	switch task.Domain {
 	case backgroundTaskHistoryDomainFileOperation,
-		backgroundTaskHistoryDomainSyncRun:
+		backgroundTaskHistoryDomainSyncRun,
+		backgroundTaskHistoryDomainArchivePrepare:
 	default:
 		return "", fmt.Errorf("unsupported background task history domain %q", task.Domain)
 	}
@@ -650,6 +683,10 @@ func decodeBackgroundTaskHistoryCursor(
 	case backgroundTaskHistoryDomainSyncRun:
 		if !strings.HasPrefix(cursor.ID, "sync-run:") {
 			return nil, fmt.Errorf("invalid sync-run cursor")
+		}
+	case backgroundTaskHistoryDomainArchivePrepare:
+		if !strings.HasPrefix(cursor.ID, "archive-prepare:") {
+			return nil, fmt.Errorf("invalid archive-prepare cursor")
 		}
 	default:
 		return nil, fmt.Errorf("unknown background task cursor domain")

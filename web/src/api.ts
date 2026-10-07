@@ -171,9 +171,11 @@ type ArchiveDownloadPrepareFile = {
 
 type ArchiveDownloadPrepare = {
   transfer_id: string
-  filename: string
-  total_bytes: number
-  files: ArchiveDownloadPrepareFile[]
+  state: 'queued' | 'running' | 'cancel_requested' | 'cancelled' | 'completed' | 'failed'
+  filename?: string
+  total_bytes?: number
+  files?: ArchiveDownloadPrepareFile[]
+  error?: string
 }
 
 type ArchiveDownloadProgressFile = {
@@ -1768,13 +1770,29 @@ export class XDriveApi {
     }
 
     try {
-      const prepared = await this.request<ArchiveDownloadPrepare>('/api/v1/download/archive/prepare', {
+      let prepared = await this.request<ArchiveDownloadPrepare>('/api/v1/download/archive/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       })
+      while (
+        prepared.state === 'queued' ||
+        prepared.state === 'running' ||
+        prepared.state === 'cancel_requested'
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, 200))
+        prepared = await this.request<ArchiveDownloadPrepare>(
+          `/api/v1/download/archive/prepare/${encodeURIComponent(prepared.transfer_id)}`,
+        )
+      }
+      if (prepared.state !== 'completed') {
+        throw new ApiError(409, prepared.error || `Archive prepare ${prepared.state}`)
+      }
+      const preparedFiles = prepared.files ?? []
+      const preparedTotalBytes = prepared.total_bytes ?? 0
+      const preparedFilename = prepared.filename || filename
 
-      for (const file of prepared.files) {
+      for (const file of preparedFiles) {
         const childID = this.startTransferChild(groupID, {
           fileName: file.path.split('/').at(-1) || file.path,
           relativePath: file.path,
@@ -1786,12 +1804,12 @@ export class XDriveApi {
       this.updateTransferGroup(groupID, {
         scanComplete: true,
         bytesDone: 0,
-        bytesTotal: prepared.total_bytes,
-        itemsTotal: prepared.files.length,
+        bytesTotal: preparedTotalBytes,
+        itemsTotal: preparedFiles.length,
         itemsCompleted: 0,
         itemsFailed: 0,
         itemsRunning: 0,
-        itemsQueued: prepared.files.length,
+        itemsQueued: preparedFiles.length,
       })
 
       polling = (async () => {
@@ -1808,7 +1826,7 @@ export class XDriveApi {
       })()
 
       try {
-        await this.downloadAuthenticated('/api/v1/download/archive', prepared.filename || filename, {
+        await this.downloadAuthenticated('/api/v1/download/archive', preparedFilename, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
@@ -1827,7 +1845,7 @@ export class XDriveApi {
         // A successful archive response proves every entry was fully streamed.
       }
 
-      for (const file of prepared.files) {
+      for (const file of preparedFiles) {
         const childID = childIDs.get(file.path)
         if (!childID || childStates.get(file.path) === 'completed') continue
         this.progressTransfer(childID, file.size, file.size)
@@ -1836,10 +1854,10 @@ export class XDriveApi {
       }
       this.updateTransferGroup(groupID, {
         scanComplete: true,
-        bytesDone: prepared.total_bytes,
-        bytesTotal: prepared.total_bytes,
-        itemsTotal: prepared.files.length,
-        itemsCompleted: prepared.files.length,
+        bytesDone: preparedTotalBytes,
+        bytesTotal: preparedTotalBytes,
+        itemsTotal: preparedFiles.length,
+        itemsCompleted: preparedFiles.length,
         itemsFailed: 0,
         itemsRunning: 0,
         itemsQueued: 0,

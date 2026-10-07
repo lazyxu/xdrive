@@ -10,6 +10,7 @@ export type XDriveBackgroundTaskActiveSummary = {
   active_total: number
   file_operation: number
   sync_run: number
+  archive_prepare: number
   scheduler: number
 }
 
@@ -95,6 +96,7 @@ export function xDriveBackgroundTaskPollIntervalMs(tasks: readonly XDriveBackgro
 export function xDriveBackgroundTaskKindLabel(kind: string) {
   switch (kind) {
     case 'source.sync': return '同步文件夹'
+    case 'archive.prepare': return '准备压缩下载'
     case 'media.index': return '媒体索引'
     case 'media.thumbnail': return '缩略图生成'
     case 'media.analysis_preview': return '分析预览'
@@ -191,6 +193,7 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'media_repair': return '正在修复媒体完整性'
     case 'storage_verify': return '正在校验存储完整性'
     case 'storage_repair': return '正在修复 CAS 元数据'
+    case 'archive_prepare': return '正在准备压缩下载'
     case 'waiting_for_cluster_lease': return '等待其他服务器'
     case 'reanalyze_queued': return '重新分析已排队'
     case 'reanalyze_applying': return '正在准备重新分析'

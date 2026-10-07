@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 const archiveDownloadProgressTTL = 30 * time.Minute
@@ -28,9 +26,11 @@ type archiveDownloadPrepareFile struct {
 
 type archiveDownloadPrepareResponse struct {
 	TransferID string                       `json:"transfer_id"`
-	Filename   string                       `json:"filename"`
-	TotalBytes int64                        `json:"total_bytes"`
-	Files      []archiveDownloadPrepareFile `json:"files"`
+	State      string                       `json:"state"`
+	Filename   string                       `json:"filename,omitempty"`
+	TotalBytes int64                        `json:"total_bytes,omitempty"`
+	Files      []archiveDownloadPrepareFile `json:"files,omitempty"`
+	Error      string                       `json:"error,omitempty"`
 }
 
 type archiveDownloadProgressFile struct {
@@ -115,14 +115,25 @@ func (s *Server) cleanupArchiveDownloadProgressLocked(now time.Time) {
 	}
 }
 
-func (s *Server) prepareArchiveDownloadProgress(ownerID uint64, ids []uint64, manifest archiveDownloadManifest) archiveDownloadPrepareResponse {
+func (s *Server) seedArchiveDownloadProgress(
+	ownerID uint64,
+	transferID string,
+	ids []uint64,
+	filename string,
+	manifest archiveDownloadManifest,
+) error {
+	transferID = strings.TrimSpace(transferID)
+	if transferID == "" {
+		return errArchiveProgressNotFound
+	}
 	now := time.Now()
 	files := archiveDownloadManifestFiles(manifest)
-	transferID := uuid.NewString()
 	progressFiles := make([]archiveDownloadProgressFile, 0, len(files))
 	index := make(map[string]int, len(files))
 	for position, file := range files {
-		progressFiles = append(progressFiles, archiveDownloadProgressFile{Path: file.Path, Size: file.Size, State: "queued"})
+		progressFiles = append(progressFiles, archiveDownloadProgressFile{
+			Path: file.Path, Size: file.Size, State: "queued",
+		})
 		index[file.Path] = position
 	}
 
@@ -132,21 +143,26 @@ func (s *Server) prepareArchiveDownloadProgress(ownerID uint64, ids []uint64, ma
 		s.archiveProgress = make(map[string]*archiveDownloadProgressState)
 	}
 	s.cleanupArchiveDownloadProgressLocked(now)
+	if existing := s.archiveProgress[transferID]; existing != nil {
+		if existing.OwnerID != ownerID {
+			return errArchiveProgressNotFound
+		}
+		if !sameArchiveProgressIDs(existing.IDs, normalizedArchiveProgressIDs(ids)) ||
+			!sameArchivePreparedFiles(existing.Files, files) {
+			return errArchiveProgressMismatch
+		}
+		return nil
+	}
 	s.archiveProgress[transferID] = &archiveDownloadProgressState{
 		OwnerID:  ownerID,
 		IDs:      normalizedArchiveProgressIDs(ids),
-		Filename: archiveDownloadFilename(manifest.Roots),
+		Filename: filename,
 		State:    "queued",
 		Files:    progressFiles,
 		index:    index,
 		Updated:  now,
 	}
-	return archiveDownloadPrepareResponse{
-		TransferID: transferID,
-		Filename:   archiveDownloadFilename(manifest.Roots),
-		TotalBytes: manifest.TotalBytes,
-		Files:      files,
-	}
+	return nil
 }
 
 func (s *Server) beginArchiveDownloadProgress(ownerID uint64, transferID string, ids []uint64, manifest archiveDownloadManifest) error {
@@ -166,6 +182,11 @@ func (s *Server) beginArchiveDownloadProgress(ownerID uint64, transferID string,
 	}
 	state.State = "running"
 	state.Error = ""
+	for index := range state.Files {
+		state.Files[index].Done = 0
+		state.Files[index].State = "queued"
+		state.Files[index].Error = ""
+	}
 	state.Updated = now
 	return nil
 }
@@ -251,38 +272,6 @@ func (s *Server) archiveDownloadProgressSnapshot(ownerID uint64, transferID stri
 	}
 	response.ItemsTotal = len(response.Files)
 	return response, nil
-}
-
-func (s *Server) prepareArchiveDownload(c *gin.Context) {
-	var req archiveDownloadRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "invalid request")
-		return
-	}
-	ids, ok := normalizeArchiveDownloadIDs(req.IDs)
-	if !ok {
-		fail(c, http.StatusBadRequest, "ids must contain between 1 and 1000 valid node ids")
-		return
-	}
-	manifest, err := s.buildArchiveDownloadManifest(c.Request.Context(), userID(c), ids)
-	if err != nil {
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			fail(c, http.StatusNotFound, "archive item not found")
-		case errors.Is(err, errArchiveRootNotAllowed), errors.Is(err, errArchiveInvalidStoredEntry):
-			fail(c, http.StatusBadRequest, err.Error())
-		case errors.Is(err, errArchiveTooManyEntries):
-			fail(c, http.StatusRequestEntityTooLarge, err.Error())
-		case errors.Is(err, errArchiveStoredContent):
-			fail(c, http.StatusConflict, err.Error())
-		default:
-			fail(c, http.StatusInternalServerError, "prepare archive failed")
-		}
-		return
-	}
-	response := s.prepareArchiveDownloadProgress(userID(c), ids, manifest)
-	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) getArchiveDownloadProgress(c *gin.Context) {

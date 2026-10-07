@@ -178,6 +178,18 @@ func (s *Server) backgroundTasks(
 	}
 	out = append(out, sourceRuns...)
 
+	archivePrepares, err := s.backgroundArchivePrepareTasks(
+		ctx,
+		ownerID,
+		viewerID,
+		admin,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, archivePrepares...)
+
 	if admin {
 		maintenanceTasks, err := s.backgroundSystemMaintenanceTasks(ctx)
 		if err != nil {
@@ -241,8 +253,9 @@ func aggregateRuntimeBackgroundTasks(
 	groups := make(map[string]*runtimeTaskGroup)
 	for _, snapshot := range snapshots {
 		kind := strings.TrimSpace(snapshot.Kind)
-		if snapshot.Identity.Scope == background.ScopeSystem &&
-			strings.HasPrefix(kind, "system.maintenance.") {
+		if (snapshot.Identity.Scope == background.ScopeSystem &&
+			strings.HasPrefix(kind, "system.maintenance.")) ||
+			kind == "archive.prepare" {
 			continue
 		}
 		if kind == "" {

@@ -37,11 +37,11 @@ type archiveDownloadRequest struct {
 }
 
 type archiveDownloadEntry struct {
-	Path       string
-	IsDir      bool
-	StorageKey string
-	Size       int64
-	UpdatedAt  time.Time
+	Path       string    `json:"path"`
+	IsDir      bool      `json:"is_dir,omitempty"`
+	StorageKey string    `json:"storage_key,omitempty"`
+	Size       int64     `json:"size,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type archiveDownloadManifest struct {
@@ -62,45 +62,89 @@ func (s *Server) downloadArchive(c *gin.Context) {
 		return
 	}
 
-	manifest, err := s.buildArchiveDownloadManifest(c.Request.Context(), userID(c), ids)
-	if err != nil {
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			fail(c, http.StatusNotFound, "archive item not found")
-		case errors.Is(err, errArchiveRootNotAllowed), errors.Is(err, errArchiveInvalidStoredEntry):
-			fail(c, http.StatusBadRequest, err.Error())
-		case errors.Is(err, errArchiveTooManyEntries):
-			fail(c, http.StatusRequestEntityTooLarge, err.Error())
-		case errors.Is(err, errArchiveStoredContent):
-			fail(c, http.StatusConflict, err.Error())
-		default:
-			fail(c, http.StatusInternalServerError, "prepare archive failed")
+	transferID := strings.TrimSpace(req.TransferID)
+	var manifest archiveDownloadManifest
+	filename := ""
+	loadedPrepared := false
+	if transferID != "" {
+		preparedManifest, preparedFilename, found, err := s.loadArchivePreparedManifest(
+			c.Request.Context(),
+			userID(c),
+			transferID,
+			ids,
+		)
+		if err != nil {
+			switch {
+			case errors.Is(err, errArchiveProgressMismatch),
+				errors.Is(err, errArchivePrepareUnavailable),
+				errors.Is(err, errArchivePrepareExpired):
+				fail(c, http.StatusConflict, err.Error())
+			default:
+				fail(c, http.StatusInternalServerError, "load prepared archive failed")
+			}
+			return
 		}
-		return
+		if found {
+			manifest = preparedManifest
+			filename = preparedFilename
+			loadedPrepared = true
+		}
+	}
+	if !loadedPrepared {
+		var err error
+		manifest, err = s.buildArchiveDownloadManifest(c.Request.Context(), userID(c), ids)
+		if err != nil {
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				fail(c, http.StatusNotFound, "archive item not found")
+			case errors.Is(err, errArchiveRootNotAllowed), errors.Is(err, errArchiveInvalidStoredEntry):
+				fail(c, http.StatusBadRequest, err.Error())
+			case errors.Is(err, errArchiveTooManyEntries):
+				fail(c, http.StatusRequestEntityTooLarge, err.Error())
+			case errors.Is(err, errArchiveStoredContent):
+				fail(c, http.StatusConflict, err.Error())
+			default:
+				fail(c, http.StatusInternalServerError, "prepare archive failed")
+			}
+			return
+		}
+		filename = archiveDownloadFilename(manifest.Roots)
 	}
 
-	transferID := strings.TrimSpace(req.TransferID)
 	if transferID != "" {
-		if err := s.beginArchiveDownloadProgress(userID(c), transferID, ids, manifest); err != nil {
-			switch {
-			case errors.Is(err, errArchiveProgressNotFound):
-				// Archive progress is an optional process-local side channel. A
-				// load-balanced payload request may land on another Server instance,
-				// so missing local progress state must not fail the authenticated
-				// download. Clear the correlation before streaming so this request
-				// cannot update an unrelated local transfer with the same ID.
+		if loadedPrepared {
+			if err := s.seedArchiveDownloadProgress(
+				userID(c),
+				transferID,
+				ids,
+				filename,
+				manifest,
+			); err != nil {
+				if errors.Is(err, errArchiveProgressMismatch) {
+					fail(c, http.StatusConflict, err.Error())
+					return
+				}
 				transferID = ""
-			case errors.Is(err, errArchiveProgressMismatch):
-				fail(c, http.StatusConflict, err.Error())
-				return
-			default:
-				fail(c, http.StatusInternalServerError, "start archive progress failed")
-				return
+			}
+		}
+		if transferID != "" {
+			if err := s.beginArchiveDownloadProgress(userID(c), transferID, ids, manifest); err != nil {
+				switch {
+				case errors.Is(err, errArchiveProgressNotFound):
+					// Legacy/process-local tickets remain optional. The durable prepared
+					// manifest above is the data-plane authority when one exists.
+					transferID = ""
+				case errors.Is(err, errArchiveProgressMismatch):
+					fail(c, http.StatusConflict, err.Error())
+					return
+				default:
+					fail(c, http.StatusInternalServerError, "start archive progress failed")
+					return
+				}
 			}
 		}
 	}
 
-	filename := archiveDownloadFilename(manifest.Roots)
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filename))
 	c.Header("X-Content-Type-Options", "nosniff")

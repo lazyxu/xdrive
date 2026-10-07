@@ -9,10 +9,11 @@ import (
 )
 
 type backgroundTaskActiveSummaryDTO struct {
-	ActiveTotal   int `json:"active_total"`
-	FileOperation int `json:"file_operation"`
-	SyncRun       int `json:"sync_run"`
-	Scheduler     int `json:"scheduler"`
+	ActiveTotal    int `json:"active_total"`
+	FileOperation  int `json:"file_operation"`
+	SyncRun        int `json:"sync_run"`
+	ArchivePrepare int `json:"archive_prepare"`
+	Scheduler      int `json:"scheduler"`
 }
 
 func (s *Server) backgroundTaskActiveSummary(c *gin.Context) {
@@ -98,7 +99,21 @@ func (s *Server) backgroundTaskActiveSummaryForOwner(
 		return out, err
 	}
 	out.SyncRun = int(syncRuns)
-	out.ActiveTotal = out.FileOperation + out.SyncRun + out.Scheduler
+
+	var archivePrepares int64
+	if err := s.DB.WithContext(ctx).
+		Model(&meta.ArchivePrepareRun{}).
+		Where("owner_id = ?", ownerID).
+		Where("status IN ?", []string{
+			meta.ArchivePrepareStatusQueued,
+			meta.ArchivePrepareStatusRunning,
+			meta.ArchivePrepareStatusCancelRequested,
+		}).
+		Count(&archivePrepares).Error; err != nil {
+		return out, err
+	}
+	out.ArchivePrepare = int(archivePrepares)
+	out.ActiveTotal = out.FileOperation + out.SyncRun + out.ArchivePrepare + out.Scheduler
 	return out, nil
 }
 
