@@ -88,6 +88,10 @@ func (s *Server) backgroundClusterRuntimeTasks(
 			QueuedCount:   row.QueuedCount,
 			RunningCount:  row.RunningCount,
 			InstanceCount: 1,
+			Attempt:       row.Attempt,
+			RetryAt:       row.RetryAt,
+			TraceID:       row.TraceID,
+			ParentKey:     row.ParentKey,
 			StartedAt:     row.StartedAt,
 			UpdatedAt:     row.TaskUpdatedAt,
 		}
@@ -135,6 +139,20 @@ func mergeClusterRuntimeTask(
 	task.QueuedCount += incoming.QueuedCount
 	task.RunningCount += incoming.RunningCount
 	task.InstanceCount += incoming.InstanceCount
+	if incoming.Attempt > task.Attempt {
+		task.Attempt = incoming.Attempt
+	}
+	if incoming.RetryAt != nil &&
+		(task.RetryAt == nil || incoming.RetryAt.Before(*task.RetryAt)) {
+		value := incoming.RetryAt.UTC()
+		task.RetryAt = &value
+	}
+	if task.TraceID != incoming.TraceID {
+		task.TraceID = ""
+	}
+	if task.ParentKey != incoming.ParentKey {
+		task.ParentKey = ""
+	}
 
 	if runtimeStateRank(incoming.State) > runtimeStateRank(task.State) {
 		task.State = incoming.State

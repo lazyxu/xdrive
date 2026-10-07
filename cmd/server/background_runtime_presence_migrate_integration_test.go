@@ -68,6 +68,10 @@ func TestMigrateCreatesBackgroundRuntimePresence(t *testing.T) {
 		Resource:      "media_cpu",
 		ActiveCount:   1,
 		RunningCount:  1,
+		Attempt:       2,
+		RetryAt:       &now,
+		TraceID:       "trace-42",
+		ParentKey:     "parent-42",
 		TaskUpdatedAt: now,
 		ExpiresAt:     now.Add(time.Second),
 	}

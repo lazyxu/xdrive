@@ -50,6 +50,64 @@ function taskTime(value?: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
+function compactTaskKey(value: string) {
+  if (value.length <= 28) return value
+  return `${value.slice(0, 16)}…${value.slice(-8)}`
+}
+
+function BackgroundTaskOperationalMetadata({
+  task,
+  table = false,
+}: {
+  task: XDriveBackgroundTask
+  table?: boolean
+}) {
+  const hasAttempt = (task.attempt ?? 0) > 0
+  if (!hasAttempt && !task.retry_at && !task.trace_id && !task.parent_key) {
+    return table ? (
+      <Typography variant="caption" color="text.secondary">—</Typography>
+    ) : null
+  }
+
+  const attemptLabel = task.active_count && task.active_count > 1
+    ? `最高 #${task.attempt}`
+    : `#${task.attempt}`
+
+  return (
+    <Stack
+      direction={table ? 'column' : 'row'}
+      spacing={table ? 0.25 : 2}
+      alignItems={table ? 'flex-start' : 'center'}
+      flexWrap="wrap"
+    >
+      {hasAttempt ? (
+        <Typography variant="caption" color="text.secondary">
+          尝试：{attemptLabel}
+        </Typography>
+      ) : null}
+      {task.retry_at ? (
+        <Typography variant="caption" color="text.secondary">
+          下次尝试：{taskTime(task.retry_at)}
+        </Typography>
+      ) : null}
+      {task.trace_id ? (
+        <Typography variant="caption" color="text.secondary" title={task.trace_id}>
+          Trace：<Box component="span" sx={{ fontFamily: 'monospace' }}>
+            {compactTaskKey(task.trace_id)}
+          </Box>
+        </Typography>
+      ) : null}
+      {task.parent_key ? (
+        <Typography variant="caption" color="text.secondary" title={task.parent_key}>
+          父任务：<Box component="span" sx={{ fontFamily: 'monospace' }}>
+            {compactTaskKey(task.parent_key)}
+          </Box>
+        </Typography>
+      ) : null}
+    </Stack>
+  )
+}
+
 function BackgroundTaskControls({
   task,
   controlKey,
@@ -205,6 +263,7 @@ function BackgroundTaskItem({
               : '—'}
           </Typography>
         </Stack>
+        <BackgroundTaskOperationalMetadata task={task} />
         {task.error ? <XDriveStatusAlert tone="bad">{task.error}</XDriveStatusAlert> : null}
       </Stack>
     </Box>
@@ -279,6 +338,7 @@ export function XDriveBackgroundTaskTable({
             <TableCell>资源类</TableCell>
             <TableCell>进度</TableCell>
             <TableCell>触发方式</TableCell>
+            <TableCell>运维信息</TableCell>
             <TableCell>开始时间</TableCell>
             <TableCell>耗时</TableCell>
             <TableCell>控制能力</TableCell>
@@ -326,6 +386,9 @@ export function XDriveBackgroundTaskTable({
               <TableCell>{xDriveBackgroundTaskResourceLabel(task.resource)}</TableCell>
               <TableCell>{xDriveBackgroundTaskProgressLabel(task)}</TableCell>
               <TableCell>{xDriveBackgroundTaskTriggerLabel(task.trigger)}</TableCell>
+              <TableCell>
+                <BackgroundTaskOperationalMetadata task={task} table />
+              </TableCell>
               <TableCell>{taskTime(task.started_at)}</TableCell>
               <TableCell>
                 {task.started_at

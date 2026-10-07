@@ -251,6 +251,8 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 			OwnerID:   ownerID,
 			Trigger:   background.TriggerSystemEvent,
 			Initiator: background.InitiatorSystem,
+			ParentKey: "parent:" + key,
+			TraceID:   "trace:" + key,
 			Priority:  background.PriorityP1,
 			Resource:  background.ResourceMediaCPU,
 			Run: func(ctx context.Context) error {
@@ -314,6 +316,14 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 	runtimeAID := fmt.Sprintf("runtime:user:%d:media.index", userA.ID)
 	if !backgroundTaskHasControl(userTasks, runtimeAID, "cancel") {
 		t.Fatal("owner runtime scheduler task did not expose cancel")
+	}
+	runtimeATask := backgroundTaskByID(userTasks, runtimeAID)
+	if runtimeATask == nil ||
+		runtimeATask.Attempt != 1 ||
+		runtimeATask.RetryAt != nil ||
+		runtimeATask.TraceID != "trace:runtime-a" ||
+		runtimeATask.ParentKey != "parent:runtime-a" {
+		t.Fatalf("unexpected runtime operational metadata: %+v", runtimeATask)
 	}
 	reanalyzeTaskID := fmt.Sprintf(
 		"runtime:user:%d:photo.face",
