@@ -93,6 +93,20 @@ Native tab workflows use the same shared navigation state machine:
 
 The recently-closed stack is intentionally in-memory. Desktop's existing reconnect snapshot preserves committed open navigation state across a transient Agent disconnect, but this feature does not yet persist tabs/recently-closed state across a full renderer/app restart. Full session restore remains a separate optional persistence feature.
 
+## Native keyboard profiles
+
+FileExplorer resolves keyboard behavior through one shared profile-aware command layer. Web/Desktop must not fork keyboard semantics in app-local handlers.
+
+Current native-alignment rules include:
+
+- **Windows:** `Ctrl+Tab / Ctrl+Shift+Tab` switch tabs; `Ctrl+1…9` activates the corresponding FileExplorer tab; `Ctrl+Insert` copies; `Shift+Insert` pastes; `Ctrl+D` moves the selected item to Trash. Existing `Alt+D`, `Alt+Left/Right/Up`, `Alt+Enter`, `F2/F3/F4/F5`, `Shift+F10`, and `Ctrl+Shift+N` bindings remain shared.
+- **macOS:** tab cycling uses `Control+Tab / Control+Shift+Tab`. FileExplorer must not intercept `Command+Tab`, which belongs to the system app switcher. `Command+Y` opens the same shared Quick Look surface as Space. Existing Finder-like `Command+[/]`, `Command+Up/Down`, `Command+I`, `Command+Delete`, `Shift+Command+G`, `Shift+Command+N`, and `Shift+Command+P` behavior remains shared.
+- **Web:** browser-reserved shortcuts such as `Ctrl+D` and `Ctrl+number` are intentionally not captured by FileExplorer.
+
+Do not add a `Shift+Delete` permanent-delete shortcut merely for Windows parity. Permanent deletion remains an explicit Trash action with its existing confirmation semantics.
+
+Finder's `Option+Command+V` move-after-copy semantics require a clipboard-operation contract change and are intentionally separate from this keyboard-only alignment.
+
 ## File favorites and Quick Access
 
 FileExplorer keeps **folder pinning** and **file favorites** as separate concepts:

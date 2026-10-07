@@ -1306,6 +1306,12 @@ export default function DesktopFileExplorer({
         onRestoreClosedTab={!trashActive && canRestoreClosedTab
           ? () => { void restoreClosedTab() }
           : undefined}
+        onActivateTabAtIndex={!trashActive
+          ? (index) => {
+              const tab = tabs[index]
+              if (tab) void activateTab(tab.id)
+            }
+          : undefined}
         onNextTab={!trashActive && tabs.length > 1 ? () => { void nextTab() } : undefined}
         onPreviousTab={!trashActive && tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarEnd={trashActive ? undefined : (
