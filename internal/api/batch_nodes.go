@@ -113,66 +113,77 @@ func batchLoadNodeTx(tx *gorm.DB, uid uint64, ref batchNodeRef, index int, prelo
 	return node, nil
 }
 
-func batchSelectionHasAncestor(tx *gorm.DB, uid uint64, items []batchNodeRef) (bool, error) {
-	selected := make(map[uint64]struct{}, len(items))
+type batchAncestorCoverageRow struct {
+	OriginID uint64 `gorm:"column:origin_id"`
+	Covered  bool   `gorm:"column:covered"`
+}
+
+func batchAncestorCoverageTx(tx *gorm.DB, uid uint64, items []batchNodeRef) (map[uint64]bool, error) {
+	coverage := make(map[uint64]bool, len(items))
+	if len(items) == 0 {
+		return coverage, nil
+	}
+
+	ids := make([]uint64, 0, len(items))
 	for _, item := range items {
-		selected[item.ID] = struct{}{}
+		ids = append(ids, item.ID)
+	}
+
+	var rows []batchAncestorCoverageRow
+	if err := tx.Raw(`WITH RECURSIVE ancestry AS (
+SELECT id AS origin_id, parent_id
+FROM xd_nodes
+WHERE id IN ? AND owner_id = ? AND deleted_at IS NULL
+UNION
+SELECT ancestry.origin_id, parent.parent_id
+FROM ancestry
+JOIN xd_nodes AS parent
+  ON parent.id = ancestry.parent_id
+ AND parent.owner_id = ?
+ AND parent.deleted_at IS NULL
+WHERE ancestry.parent_id IS NOT NULL
+)
+SELECT origin_id,
+       COALESCE(BOOL_OR(parent_id IN ?), FALSE) AS covered
+FROM ancestry
+GROUP BY origin_id`, ids, uid, uid, ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		coverage[row.OriginID] = row.Covered
 	}
 	for index, item := range items {
-		current := item.ID
-		for depth := 0; depth < 10000; depth++ {
-			var row struct {
-				ParentID *uint64 `gorm:"column:parent_id"`
+		if _, ok := coverage[item.ID]; !ok {
+			return nil, &batchMutationFailure{
+				Index: index, ID: item.ID, Status: http.StatusNotFound,
+				Code: "node_not_found", Message: "node not found",
 			}
-			if err := tx.Model(&meta.Node{}).Select("parent_id").
-				Where("id = ? AND owner_id = ? AND deleted_at IS NULL", current, uid).Take(&row).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return false, &batchMutationFailure{Index: index, ID: item.ID, Status: http.StatusNotFound, Code: "node_not_found", Message: "node not found"}
-				}
-				return false, err
-			}
-			if row.ParentID == nil {
-				break
-			}
-			if _, ok := selected[*row.ParentID]; ok {
-				return true, nil
-			}
-			current = *row.ParentID
+		}
+	}
+	return coverage, nil
+}
+
+func batchSelectionHasAncestor(tx *gorm.DB, uid uint64, items []batchNodeRef) (bool, error) {
+	coverage, err := batchAncestorCoverageTx(tx, uid, items)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range items {
+		if coverage[item.ID] {
+			return true, nil
 		}
 	}
 	return false, nil
 }
 
 func topLevelBatchDeleteRefs(tx *gorm.DB, uid uint64, items []batchNodeRef) ([]batchNodeRef, error) {
-	selected := make(map[uint64]struct{}, len(items))
-	for _, item := range items {
-		selected[item.ID] = struct{}{}
+	coverage, err := batchAncestorCoverageTx(tx, uid, items)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]batchNodeRef, 0, len(items))
-	for index, item := range items {
-		covered := false
-		current := item.ID
-		for depth := 0; depth < 10000; depth++ {
-			var row struct {
-				ParentID *uint64 `gorm:"column:parent_id"`
-			}
-			if err := tx.Model(&meta.Node{}).Select("parent_id").
-				Where("id = ? AND owner_id = ? AND deleted_at IS NULL", current, uid).Take(&row).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return nil, &batchMutationFailure{Index: index, ID: item.ID, Status: http.StatusNotFound, Code: "node_not_found", Message: "node not found"}
-				}
-				return nil, err
-			}
-			if row.ParentID == nil {
-				break
-			}
-			if _, ok := selected[*row.ParentID]; ok {
-				covered = true
-				break
-			}
-			current = *row.ParentID
-		}
-		if !covered {
+	for _, item := range items {
+		if !coverage[item.ID] {
 			out = append(out, item)
 		}
 	}
