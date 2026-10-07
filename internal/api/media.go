@@ -821,13 +821,25 @@ func (s *Server) mediaNodeIsLivePhoto(
 	return ok, nil
 }
 
+func (s *Server) ownedThumbnailNode(
+	ctx context.Context,
+	uid, id uint64,
+) (meta.Node, error) {
+	var node meta.Node
+	err := s.DB.WithContext(ctx).
+		Preload("File").
+		Where("id = ? AND owner_id = ?", id, uid).
+		First(&node).Error
+	return node, err
+}
+
 func (s *Server) mediaThumbnail(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
 		fail(c, http.StatusBadRequest, "invalid media id")
 		return
 	}
-	node, err := s.ownedNode(userID(c), id, true)
+	node, err := s.ownedThumbnailNode(c.Request.Context(), userID(c), id)
 	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
 		fail(c, http.StatusNotFound, "file not found")
 		return

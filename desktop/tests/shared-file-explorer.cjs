@@ -310,7 +310,7 @@ test('folder downloads stay capability-aware across Web and Desktop', () => {
   const desktopExplorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
   assert.ok(webExplorer.includes('folderDownloadSupported'), 'Web must enable archive downloads for selected folders')
   assert.ok(
-    desktopExplorer.includes('folderDownloadSupported={folderTreeDownloadSupported || archiveDownloadSupported}'),
+    desktopExplorer.includes('folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}'),
     'Desktop must enable selected-folder downloads for hierarchical download or archive fallback',
   )
   assert.ok(

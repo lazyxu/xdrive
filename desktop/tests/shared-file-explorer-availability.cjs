@@ -71,8 +71,8 @@ test('Desktop availability is Windows-only and preserves shared sparse collectio
   for (const token of [
     'const getItemAvailability = useCallback',
     'getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}',
-    'items={explorerItems}',
-    'virtualCollection={explorerVirtualCollection}',
+    'items={trashActive ? trash.items : explorerItems}',
+    'virtualCollection={trashActive ? undefined : explorerVirtualCollection}',
   ]) {
     assert.ok(desktopExplorer.includes(token), 'Desktop availability presentation adapter missing: ' + token)
   }

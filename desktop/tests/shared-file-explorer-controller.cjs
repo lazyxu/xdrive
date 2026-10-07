@@ -212,9 +212,9 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
 
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerOperationController<'), `${label} must consume the shared queued-operation controller`)
-    assert.ok(source.includes('onCopyItems={copyItems}'), `${label} must retain shared copy wiring`)
-    assert.ok(source.includes('onCutItems={cutItems}'), `${label} must retain shared cut wiring`)
-    assert.ok(source.includes('onPaste={() => { void pasteClipboard() }}'), `${label} must wire shared paste execution`)
+    assert.ok(source.includes('onCopyItems={trashActive ? undefined : copyItems}'), `${label} must retain shared copy wiring`)
+    assert.ok(source.includes('onCutItems={trashActive ? undefined : cutItems}'), `${label} must retain shared cut wiring`)
+    assert.ok(source.includes('onPaste={trashActive ? undefined : () => { void pasteClipboard() }}'), `${label} must wire shared paste execution`)
     assert.equal(source.includes('xDriveFileExplorerRunQueuedOperation({'), false, `${label} must not execute queued operations locally`)
     assert.equal(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), false, `${label} must not plan internal folder drops locally`)
     assert.equal(source.includes('xDriveFileExplorerDropItemsToParentPlan('), false, `${label} must not plan breadcrumb drops locally`)
@@ -397,11 +397,11 @@ test('shared FileExplorer owns parent-target drop planning and edge autoscroll d
       `${label} must not plan breadcrumb drops locally`,
     )
     assert.ok(
-      source.includes('onDropItemsToCrumb={(selected, crumb, operation) =>'),
+      source.includes('onDropItemsToCrumb={trashActive ? undefined : (selected, crumb, operation) =>'),
       `${label} must wire internal breadcrumb drops`,
     )
     assert.ok(
-      source.includes('onExternalFilesDropToCrumb={(files, crumb) =>'),
+      source.includes('onExternalFilesDropToCrumb={trashActive ? undefined : (files, crumb) =>'),
       `${label} must wire external breadcrumb drops`,
     )
   }

@@ -49,7 +49,6 @@ import {
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
-  XDriveTrashDialog,
   XDriveVersionHistoryDialog,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
@@ -963,6 +962,13 @@ function FileManager({
                 onUploadDroppedFolderEntries={uploadDroppedFolderEntries}
                 onCreateFolder={() => setFolderOpen(true)}
                 onOpenTrash={openTrash}
+                trashActive={trashOpen}
+                trashAdapter={trashDialogAdapter}
+                onCloseTrash={() => setTrashOpen(false)}
+                onTrashChanged={async () => {
+                  if (current) await loadDirectory(current.id)
+                  await refreshQuota()
+                }}
                 onRemove={remove}
                 onRemoveMany={removeMany}
                 onOperationQueued={rememberFileOperation}
@@ -1023,18 +1029,6 @@ function FileManager({
         onClose={() => setFolderOpen(false)}
         onSubmit={createFolder}
         onError={handleError}
-      />
-
-      <XDriveTrashDialog
-        open={trashOpen}
-        adapter={trashDialogAdapter}
-        onClose={() => setTrashOpen(false)}
-        onError={handleError}
-        onFeedback={(message) => setFeedback({ tone: 'good', message })}
-        onChanged={async () => {
-          if (current) await loadDirectory(current.id)
-          await refreshQuota()
-        }}
       />
 
       <XDriveVersionHistoryDialog

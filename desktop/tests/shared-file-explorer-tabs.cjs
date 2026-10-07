@@ -99,8 +99,8 @@ test('Web and Desktop consume the same shared tab controller and tab bar', () =>
       'closeTab,',
       'nextTab,',
       'previousTab,',
-      'tabBar={(',
-      'onNextTab={tabs.length > 1',
+      'tabBar={trashActive ? undefined : (',
+      'onNextTab={!trashActive && tabs.length > 1',
     ]) {
       assert.ok(source.includes(token), label + ' tab adapter missing: ' + token)
     }

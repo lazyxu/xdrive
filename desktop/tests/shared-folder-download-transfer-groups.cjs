@@ -82,7 +82,7 @@ test('single folder prefers tree download while single-file and multi-selection 
     "nodes[0].type === 'dir'",
     'window.xdriveDesktop.agent.cloudDownloadFolder(',
     "setActionBusy('download-folder')",
-    'folderDownloadSupported={folderTreeDownloadSupported || archiveDownloadSupported}',
+    'folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}',
   ]) {
     assert.ok(explorer.includes(token), 'Desktop folder-download selection missing: ' + token)
   }

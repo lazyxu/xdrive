@@ -89,6 +89,11 @@ import {
   xDriveFileExplorerVirtualWindowSlots,
 } from './FileExplorerVirtualSurface'
 import {
+  XDriveFileExplorerThumbnail,
+  XDriveFileExplorerThumbnailProvider,
+  xDriveFileExplorerMarkThumbnailScrollActivity,
+} from './FileExplorerThumbnail'
+import {
   xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerGroupedItemTop,
   xDriveFileExplorerVisibleGroupSegments,
@@ -428,283 +433,6 @@ function setFileExplorerDragImage(
   window.setTimeout(() => ghost.remove(), 0)
 }
 
-const fileThumbnailConcurrency = 6
-const fileThumbnailCacheLimit = 96
-const fileThumbnailScrollSettleMs = 80
-const fileThumbnailPrefetchMarginPx = 240
-
-type FileThumbnailCache = {
-  values: Map<string, string>
-  disposed: boolean
-}
-
-type FileThumbnailQueueEntry = {
-  task: () => Promise<string | null | undefined>
-  resolve: (value: string | null | undefined) => void
-  reject: (reason?: unknown) => void
-  started: boolean
-  cancelled: boolean
-}
-
-type FileThumbnailVisibilityEntry = {
-  onVisible: () => void
-  timer: number | null
-}
-
-let fileThumbnailActive = 0
-const fileThumbnailQueue: FileThumbnailQueueEntry[] = []
-let fileThumbnailVisibilityObserver: IntersectionObserver | null = null
-const fileThumbnailVisibilityCallbacks = new Map<Element, FileThumbnailVisibilityEntry>()
-const fileThumbnailScrollActivity = new WeakMap<Element, number>()
-
-function revokeFileThumbnailSource(value: string | null | undefined) {
-  if (value?.startsWith('blob:') && typeof URL !== 'undefined') URL.revokeObjectURL(value)
-}
-
-function fileThumbnailCacheKey(item: XDriveFileExplorerItem) {
-  return [
-    explorerIDKey(item.id),
-    String(item.revision ?? ''),
-    item.updatedAt ?? '',
-  ].join(':')
-}
-
-function fileThumbnailCacheGet(cache: FileThumbnailCache, key: string) {
-  const value = cache.values.get(key)
-  if (!value) return null
-  cache.values.delete(key)
-  cache.values.set(key, value)
-  return value
-}
-
-function fileThumbnailCacheSet(cache: FileThumbnailCache, key: string, value: string) {
-  if (cache.disposed) {
-    revokeFileThumbnailSource(value)
-    return false
-  }
-  const current = cache.values.get(key)
-  if (current && current !== value) revokeFileThumbnailSource(current)
-  cache.values.delete(key)
-  cache.values.set(key, value)
-  while (cache.values.size > fileThumbnailCacheLimit) {
-    const oldestKey = cache.values.keys().next().value
-    if (typeof oldestKey !== 'string') break
-    const oldest = cache.values.get(oldestKey)
-    cache.values.delete(oldestKey)
-    revokeFileThumbnailSource(oldest)
-  }
-  return true
-}
-
-function disposeFileThumbnailCache(cache: FileThumbnailCache) {
-  cache.disposed = true
-  for (const value of cache.values.values()) revokeFileThumbnailSource(value)
-  cache.values.clear()
-}
-
-function pumpFileThumbnailQueue() {
-  while (fileThumbnailActive < fileThumbnailConcurrency && fileThumbnailQueue.length > 0) {
-    const entry = fileThumbnailQueue.shift()!
-    if (entry.cancelled) continue
-    entry.started = true
-    fileThumbnailActive += 1
-    void entry.task()
-      .then(entry.resolve, entry.reject)
-      .finally(() => {
-        fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
-        pumpFileThumbnailQueue()
-      })
-  }
-}
-
-function scheduleFileThumbnail(task: () => Promise<string | null | undefined>) {
-  let entry!: FileThumbnailQueueEntry
-  const promise = new Promise<string | null | undefined>((resolve, reject) => {
-    entry = { task, resolve, reject, started: false, cancelled: false }
-    fileThumbnailQueue.push(entry)
-    pumpFileThumbnailQueue()
-  })
-  return {
-    promise,
-    cancel: () => {
-      if (entry.started || entry.cancelled) return
-      entry.cancelled = true
-      const index = fileThumbnailQueue.indexOf(entry)
-      if (index >= 0) fileThumbnailQueue.splice(index, 1)
-      entry.resolve(undefined)
-    },
-  }
-}
-
-function fileThumbnailNow() {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now()
-}
-
-function markFileThumbnailScrollActivity(host: Element) {
-  fileThumbnailScrollActivity.set(host, fileThumbnailNow())
-}
-
-function fileThumbnailScrollRoot(host: Element) {
-  return host.closest('[data-xdrive-file-explorer-scroll-host]')
-}
-
-function fileThumbnailWithinPrefetchRange(host: Element) {
-  const root = fileThumbnailScrollRoot(host)
-  if (!(root instanceof HTMLElement)) return true
-  const hostRect = host.getBoundingClientRect()
-  const rootRect = root.getBoundingClientRect()
-  return (
-    hostRect.bottom >= rootRect.top - fileThumbnailPrefetchMarginPx &&
-    hostRect.top <= rootRect.bottom + fileThumbnailPrefetchMarginPx &&
-    hostRect.right >= rootRect.left - fileThumbnailPrefetchMarginPx &&
-    hostRect.left <= rootRect.right + fileThumbnailPrefetchMarginPx
-  )
-}
-
-function fileThumbnailAdmissionDelay(host: Element) {
-  const root = fileThumbnailScrollRoot(host)
-  if (!root) return 0
-  const lastScroll = fileThumbnailScrollActivity.get(root)
-  if (lastScroll === undefined) return 0
-  return Math.max(0, fileThumbnailScrollSettleMs - (fileThumbnailNow() - lastScroll))
-}
-
-function clearFileThumbnailVisibilityTimer(entry: FileThumbnailVisibilityEntry) {
-  if (entry.timer === null) return
-  window.clearTimeout(entry.timer)
-  entry.timer = null
-}
-
-function admitFileThumbnailVisibility(host: Element, observer: IntersectionObserver) {
-  const entry = fileThumbnailVisibilityCallbacks.get(host)
-  if (!entry) return
-  const delay = fileThumbnailAdmissionDelay(host)
-  if (delay > 0) {
-    if (entry.timer === null) {
-      entry.timer = window.setTimeout(() => {
-        entry.timer = null
-        if (!fileThumbnailVisibilityCallbacks.has(host)) return
-        if (!fileThumbnailWithinPrefetchRange(host)) return
-        admitFileThumbnailVisibility(host, observer)
-      }, Math.ceil(delay))
-    }
-    return
-  }
-  clearFileThumbnailVisibilityTimer(entry)
-  fileThumbnailVisibilityCallbacks.delete(host)
-  observer.unobserve(host)
-  entry.onVisible()
-}
-
-function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
-  if (typeof IntersectionObserver === 'undefined') {
-    onVisible()
-    return () => {}
-  }
-  if (!fileThumbnailVisibilityObserver) {
-    const observer = new IntersectionObserver((entries) => {
-      for (const observed of entries) {
-        const entry = fileThumbnailVisibilityCallbacks.get(observed.target)
-        if (!entry) continue
-        if (!observed.isIntersecting) {
-          clearFileThumbnailVisibilityTimer(entry)
-          continue
-        }
-        admitFileThumbnailVisibility(observed.target, observer)
-      }
-      if (fileThumbnailVisibilityCallbacks.size === 0) {
-        observer.disconnect()
-        if (fileThumbnailVisibilityObserver === observer) fileThumbnailVisibilityObserver = null
-      }
-    }, { rootMargin: `${fileThumbnailPrefetchMarginPx}px` })
-    fileThumbnailVisibilityObserver = observer
-  }
-  const observer = fileThumbnailVisibilityObserver
-  fileThumbnailVisibilityCallbacks.set(host, { onVisible, timer: null })
-  observer.observe(host)
-  return () => {
-    const entry = fileThumbnailVisibilityCallbacks.get(host)
-    if (entry) clearFileThumbnailVisibilityTimer(entry)
-    fileThumbnailVisibilityCallbacks.delete(host)
-    observer.unobserve(host)
-    if (fileThumbnailVisibilityCallbacks.size === 0) {
-      observer.disconnect()
-      if (fileThumbnailVisibilityObserver === observer) fileThumbnailVisibilityObserver = null
-    }
-  }
-}
-
-function XDriveLazyFileThumbnail({
-  item,
-  loadThumbnail,
-  fallback,
-  cache,
-}: {
-  item: XDriveFileExplorerItem
-  loadThumbnail: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
-  fallback: ReactNode
-  cache: FileThumbnailCache
-}) {
-  const hostRef = useRef<HTMLDivElement | null>(null)
-  const cacheKey = fileThumbnailCacheKey(item)
-  const [visible, setVisible] = useState(false)
-  const [src, setSrc] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    setFailed(false)
-    setSrc(fileThumbnailCacheGet(cache, cacheKey))
-  }, [cache, cacheKey])
-
-  useEffect(() => {
-    const host = hostRef.current
-    if (!host || visible || src) return
-    return observeFileThumbnailVisibility(host, () => setVisible(true))
-  }, [src, visible])
-
-  useEffect(() => {
-    if (!visible || failed || src) return
-    const cached = fileThumbnailCacheGet(cache, cacheKey)
-    if (cached) {
-      setSrc(cached)
-      return
-    }
-    let active = true
-    const scheduled = scheduleFileThumbnail(() => loadThumbnail(item))
-    void scheduled.promise
-      .then((value) => {
-        if (!value) {
-          if (active) setFailed(true)
-          return
-        }
-        if (!fileThumbnailCacheSet(cache, cacheKey, value)) return
-        if (active) setSrc(value)
-      })
-      .catch(() => {
-        if (active) setFailed(true)
-      })
-    return () => {
-      active = false
-      scheduled.cancel()
-    }
-  }, [cache, cacheKey, failed, item, loadThumbnail, src, visible])
-
-  return (
-    <Box ref={hostRef} sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {src ? (
-        <Box
-          component="img"
-          src={src}
-          alt=""
-          loading="lazy"
-          draggable={false}
-          sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : fallback}
-    </Box>
-  )
-}
-
 const xDriveWindowsFolderYellow = '#ffcb3d'
 
 export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
@@ -769,6 +497,7 @@ export function XDriveFileExplorer({
   onPreviousTab,
   pathValue,
   onPathSubmit,
+  searchEnabled = true,
   searchValue = '',
   onSearchValueChange,
   onSearch,
@@ -819,6 +548,7 @@ export function XDriveFileExplorer({
   onSortChange,
   grouping: controlledGrouping,
   onGroupingChange,
+  groupingEnabled = true,
   commandBarStart,
   commandBarEnd,
   navigationPane,
@@ -844,6 +574,7 @@ export function XDriveFileExplorer({
   onPreviousTab?: () => void
   pathValue?: string
   onPathSubmit?: (path: string) => void
+  searchEnabled?: boolean
   searchValue?: string
   onSearchValueChange?: (value: string) => void
   onSearch?: (value: string) => void
@@ -894,6 +625,7 @@ export function XDriveFileExplorer({
   onSortChange?: (sort: XDriveFileExplorerSort) => void
   grouping?: XDriveFileExplorerGrouping
   onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => void
+  groupingEnabled?: boolean
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
   navigationPane?: ReactNode
@@ -989,10 +721,6 @@ export function XDriveFileExplorer({
     ? detailsCompactRowHeight
     : detailsNormalRowHeight
   const gridMetrics = fileExplorerGridMetrics[viewPreferences.gridSize]
-  const thumbnailCache = useMemo<FileThumbnailCache>(
-    () => ({ values: new Map(), disposed: false }),
-    [loadThumbnail],
-  )
   const gridGapPx = gridMetrics.gap * muiSpacingPixel
   const gridPaddingPx = gridMetrics.padding * muiSpacingPixel
   const gridColumns = useMemo(() => {
@@ -1046,11 +774,6 @@ export function XDriveFileExplorer({
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs([])
     onSelectionChange?.([])
   }, [controlledSelectedIDs, interactionScopeKey, onSelectionChange])
-
-  useEffect(() => {
-    thumbnailCache.disposed = false
-    return () => disposeFileThumbnailCache(thumbnailCache)
-  }, [thumbnailCache])
 
   useEffect(() => {
     if (!editingPath) setPathDraft(derivedPath)
@@ -2485,19 +2208,16 @@ export function XDriveFileExplorer({
     return <InsertDriveFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
   }
 
-  const thumbnailForItem = (item: XDriveFileExplorerItem) => {
-    if (item.thumbnail) return item.thumbnail
-    const eligible = item.thumbnailEligible ?? xDriveFileSupportsThumbnail(item.name, item.kind)
-    if (!eligible || !loadThumbnail) return defaultItemIcon(item, true)
-    return (
-      <XDriveLazyFileThumbnail
-        item={item}
-        loadThumbnail={loadThumbnail}
-        fallback={defaultItemIcon(item, true)}
-        cache={thumbnailCache}
-      />
-    )
-  }
+  const thumbnailForItem = (
+    item: XDriveFileExplorerItem,
+    large = true,
+  ) => (
+    <XDriveFileExplorerThumbnail
+      item={item}
+      eligible={item.thumbnailEligible ?? xDriveFileSupportsThumbnail(item.name, item.kind)}
+      fallback={defaultItemIcon(item, large)}
+    />
+  )
 
   const gridColumnCount = () => viewMode === 'grid' ? gridColumns : 1
 
@@ -2755,6 +2475,7 @@ export function XDriveFileExplorer({
       return
     }
     if (command === 'focus-search') {
+      if (!searchEnabled) return
       event.preventDefault()
       searchInputRef.current?.focus()
       searchInputRef.current?.select()
@@ -3094,7 +2815,17 @@ export function XDriveFileExplorer({
           <Box key={key} role="cell" sx={{ minWidth: 0, overflow: 'hidden' }}>
             {key === 'name' ? (
               <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
-                {defaultItemIcon(item)}
+                <Box
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            flex: '0 0 24px',
+                            overflow: 'hidden',
+                            borderRadius: 0.75,
+                          }}
+                        >
+                          {thumbnailForItem(item, false)}
+                        </Box>
                 <Box sx={{ minWidth: 0 }}>
                   {renderItemName(item, false)}
                   {viewPreferences.detailsDensity === 'normal' && item.secondaryLabel ? (
@@ -3385,7 +3116,7 @@ export function XDriveFileExplorer({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
-    markFileThumbnailScrollActivity(host)
+    xDriveFileExplorerMarkThumbnailScrollActivity(host)
     if (virtualizeDetails || virtualizeGrid) {
       pendingScrollTopRef.current = host.scrollTop
       const updateVirtualWindow = () => {
@@ -3411,6 +3142,7 @@ export function XDriveFileExplorer({
   }
 
   return (
+    <XDriveFileExplorerThumbnailProvider loadThumbnail={loadThumbnail}>
     <Paper
       variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
       onKeyDown={handleExplorerKeyDown}
@@ -3573,36 +3305,38 @@ export function XDriveFileExplorer({
           )}
         </Box>
 
-        <TextField
-          inputRef={searchInputRef}
-          size="small"
-          value={searchValue}
-          onChange={(event) => onSearchValueChange?.(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              submitSearch()
-            }
-          }}
-          placeholder="搜索"
-          aria-label="搜索文件和文件夹"
-          sx={{
-            width: { xs: 150, sm: 220, lg: 280 },
-            flexShrink: 0,
-            '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' },
-          }}
-          slotProps={{
-            input: {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small" aria-label="搜索" onClick={submitSearch}>
-                    <SearchRoundedIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        {searchEnabled ? (
+          <TextField
+            inputRef={searchInputRef}
+            size="small"
+            value={searchValue}
+            onChange={(event) => onSearchValueChange?.(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                submitSearch()
+              }
+            }}
+            placeholder="搜索"
+            aria-label="搜索文件和文件夹"
+            sx={{
+              width: { xs: 150, sm: 220, lg: 280 },
+              flexShrink: 0,
+              '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' },
+            }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton size="small" aria-label="搜索" onClick={submitSearch}>
+                      <SearchRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+        ) : null}
       </Stack>
 
       <Divider />
@@ -3834,14 +3568,19 @@ export function XDriveFileExplorer({
         </Menu>
 
         <XDriveFileExplorerCommandButton
+          disabled={!groupingEnabled}
           startIcon={<ViewAgendaRoundedIcon />}
           onClick={(event) => setGroupAnchor(event.currentTarget)}
           aria-haspopup="menu"
-          aria-expanded={Boolean(groupAnchor)}
+          aria-expanded={groupingEnabled && Boolean(groupAnchor)}
         >
           分组
         </XDriveFileExplorerCommandButton>
-        <Menu anchorEl={groupAnchor} open={Boolean(groupAnchor)} onClose={() => setGroupAnchor(null)}>
+        <Menu
+          anchorEl={groupAnchor}
+          open={groupingEnabled && Boolean(groupAnchor)}
+          onClose={() => setGroupAnchor(null)}
+        >
           {([
             ['none', '不分组'],
             ['type', '类型'],
@@ -4412,5 +4151,6 @@ export function XDriveFileExplorer({
         </Typography>
       </Stack>
     </Paper>
+    </XDriveFileExplorerThumbnailProvider>
   )
 }

@@ -7,19 +7,32 @@ import type {
 export type XDriveFileExplorerRecentEntry = {
   id: number
   name: string
-  kind: string
+  kind: 'dir' | 'file'
+  size?: number
+  revision?: string | number
+  updatedAt?: string
   path: string
   crumbs: XDriveCloudFilesCrumb[]
   accessedAt: string
 }
 
-function projectRecentItem<TNode extends { id: number; name: string; type: string }>(
+function projectRecentItem<TNode extends {
+  id: number
+  name: string
+  type: string
+  size?: number
+  revision?: string | number
+  updated_at?: string
+}>(
   item: XDriveFileRecentItem<TNode>,
 ): XDriveFileExplorerRecentEntry {
   return {
     id: item.node.id,
     name: item.node.name,
-    kind: item.node.type,
+    kind: item.node.type === 'dir' ? 'dir' : 'file',
+    size: item.node.size,
+    revision: item.node.revision,
+    updatedAt: item.node.updated_at,
     path: item.path,
     crumbs: item.crumbs.map((crumb) => ({ ...crumb })),
     accessedAt: item.accessed_at,
@@ -27,7 +40,14 @@ function projectRecentItem<TNode extends { id: number; name: string; type: strin
 }
 
 export function useXDriveFileExplorerRecent<
-  TNode extends { id: number; name: string; type: string },
+  TNode extends {
+    id: number
+    name: string
+    type: string
+    size?: number
+    revision?: string | number
+    updated_at?: string
+  },
 >({
   enabled = true,
   loadItems,

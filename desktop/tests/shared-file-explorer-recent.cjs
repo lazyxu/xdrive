@@ -129,7 +129,7 @@ test('Web and Desktop share Recent state and keep only transport adapters local'
     'clearItems: () => api.clearFileRecent()',
     'onDirectoryAccess: (nodeID) => { void recent.record(nodeID) }',
     'onFileAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onPreviewItem={(item) => { void recent.record(Number(item.id)) }}',
+    'onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}',
     'recentItems={recent.items}',
   ]) assert.ok(webExplorer.includes(token), 'Web Recent adapter missing: ' + token)
 
@@ -141,7 +141,7 @@ test('Web and Desktop share Recent state and keep only transport adapters local'
     'cloudClearFileRecent()',
     'onDirectoryAccess: (nodeID) => { void recent.record(nodeID) }',
     'onFileAccess: (nodeID) => { void recent.record(nodeID) }',
-    'onPreviewItem={(item) => { void recent.record(Number(item.id)) }}',
+    'onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}',
     'recentItems={recent.items}',
   ]) assert.ok(desktopExplorer.includes(token), 'Desktop Recent adapter missing: ' + token)
 

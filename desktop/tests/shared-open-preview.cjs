@@ -51,7 +51,7 @@ test('Desktop FileExplorer Open previews while system shell open remains explici
     'onSystemOpen: node.type === \'file\'',
     'void openLocalNode(node)',
     'onReveal: () => { void openLocalNode(node, true) }',
-    'onOpenItem={(item) => { void openWorkspaceItem(item, openPreviewNode) }}',
+    'onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}',
     '<XDriveOpenPreviewDialog',
     '<XDriveFilePreviewSurface',
   ]) {

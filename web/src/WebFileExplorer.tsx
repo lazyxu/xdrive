@@ -7,7 +7,8 @@ import {
   XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
-  XDriveFileExplorerTrashCommandButton,
+  XDriveFileExplorerTrashDeleteDialog,
+  useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
@@ -22,6 +23,7 @@ import type {
   XDriveFileExplorerItem,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
+  XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
 import {
   xDriveFileExplorerKeyboardProfileFromPlatform,
@@ -70,6 +72,10 @@ export default function WebFileExplorer({
   onUploadDroppedFolderEntries,
   onCreateFolder,
   onOpenTrash,
+  trashActive,
+  trashAdapter,
+  onCloseTrash,
+  onTrashChanged,
   onRemove,
   onRemoveMany,
   onOperationQueued,
@@ -103,6 +109,10 @@ export default function WebFileExplorer({
   ) => Promise<void>
   onCreateFolder: () => void
   onOpenTrash: () => void
+  trashActive: boolean
+  trashAdapter: XDriveTrashDialogAdapter
+  onCloseTrash: () => void
+  onTrashChanged: () => void | Promise<void>
   onRemove: (node: Node) => void
   onRemoveMany: (nodes: Node[]) => void
   onOperationQueued: (operation: XDriveFileOperation) => void
@@ -247,6 +257,14 @@ export default function WebFileExplorer({
   })
 
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+  const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
+  const trash = useXDriveFileExplorerTrash({
+    enabled: trashActive,
+    adapter: trashAdapter,
+    onError,
+    onFeedback: (message) => onFeedback('good', message),
+    onChanged: onTrashChanged,
+  })
 
   const {
     busy: fileOperationBusy,
@@ -460,67 +478,70 @@ export default function WebFileExplorer({
       <XDriveFileExplorer
         presentation="workspace"
         keyboardProfile={FILE_KEYBOARD_PROFILE}
-        items={explorerItems}
-        crumbs={explorerCrumbs}
-        virtualCollection={explorerVirtualCollection}
-        loading={loading || searchLoading || fileOperationBusy}
+        items={trashActive ? trash.items : explorerItems}
+        crumbs={trashActive ? trash.crumbs : explorerCrumbs}
+        virtualCollection={trashActive ? undefined : explorerVirtualCollection}
+        loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
+        emptyMessage={trashActive ? '回收站为空' : undefined}
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
         loadPropertiesStats={loadPropertiesStats}
-        pathValue={pathValue}
-        onPathSubmit={(path) => { void submitPath(path) }}
-        searchValue={searchValue}
+        pathValue={trashActive ? '回收站' : pathValue}
+        onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
+        searchEnabled={!trashActive}
+        searchValue={trashActive ? '' : searchValue}
         onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
-        canGoUp={canGoUp}
+        canGoBack={!trashActive && canGoBack}
+        canGoForward={!trashActive && canGoForward}
+        canGoUp={!trashActive && canGoUp}
         onBack={() => { void goBack() }}
         onForward={() => { void goForward() }}
         onUp={() => { void goUp() }}
-        onRefresh={refresh}
-        onCrumbClick={(_crumb, index) => { void navigateToCrumb(index) }}
-        onCreateFolder={onCreateFolder}
-        onUpload={() => uploadInputRef.current?.click()}
-        onUploadFolder={() => folderUploadInputRef.current?.click()}
-        onOpenItem={(item) => { void openItem(item, openWebNode) }}
-        onPreviewItem={(item) => { void recent.record(Number(item.id)) }}
+        onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
+        onCrumbClick={trashActive ? undefined : (_crumb, index) => { void navigateToCrumb(index) }}
+        onCreateFolder={trashActive ? undefined : onCreateFolder}
+        onUpload={trashActive ? undefined : () => uploadInputRef.current?.click()}
+        onUploadFolder={trashActive ? undefined : () => folderUploadInputRef.current?.click()}
+        onOpenItem={trashActive ? undefined : (item) => { void openItem(item, openWebNode) }}
+        onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        sort={sort}
-        onSortChange={changeSort}
-        grouping={grouping}
-        onGroupingChange={changeGrouping}
-        externallySorted={externallySorted}
+        sort={trashActive ? trashSort : sort}
+        onSortChange={trashActive ? setTrashSort : changeSort}
+        grouping={trashActive ? undefined : grouping}
+        onGroupingChange={trashActive ? undefined : changeGrouping}
+        groupingEnabled={!trashActive}
+        externallySorted={trashActive ? false : externallySorted}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}
-        onCopyItems={copyItems}
-        onCopyPaths={(selected) => { void copyItemPaths(selected) }}
-        onCutItems={cutItems}
-        onPaste={() => { void pasteClipboard() }}
-        canPaste={fileOperationCanPaste}
-        canUndo={canUndo}
-        onUndo={onUndo}
-        canRedo={canRedo}
-        onRedo={onRedo}
-        onDownloadItems={(selected) => { void downloadSelected(selected) }}
-        folderDownloadSupported
-        onDeleteItems={(selected) => {
+        onCopyItems={trashActive ? undefined : copyItems}
+        onCopyPaths={trashActive ? undefined : (selected) => { void copyItemPaths(selected) }}
+        onCutItems={trashActive ? undefined : cutItems}
+        onPaste={trashActive ? undefined : () => { void pasteClipboard() }}
+        canPaste={!trashActive && fileOperationCanPaste}
+        canUndo={!trashActive && canUndo}
+        onUndo={trashActive ? undefined : onUndo}
+        canRedo={!trashActive && canRedo}
+        onRedo={trashActive ? undefined : onRedo}
+        onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}
+        folderDownloadSupported={!trashActive}
+        onDeleteItems={trashActive ? undefined : (selected) => {
           const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
           if (nodes.length > 0) onRemoveMany(nodes)
         }}
-        onRenameItem={renameItem}
-        renameDisabled={fileOperationBusy}
-        onDropItemsToFolder={(selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
-        onDropItemsToCrumb={(selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
-        onExternalFilesDrop={(files, target) => { void dropExternalFiles(files, target) }}
-        onExternalFilesDropToCrumb={(files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
-        onExternalFolderDrop={(payload, target) => { void dropExternalFolderEntries(payload, target) }}
-        onExternalFolderDropToCrumb={(payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }}
-        getItemMenuItems={getItemMenuItems}
-        backgroundMenuItems={backgroundMenuItems}
-        tabBar={(
+        onRenameItem={trashActive ? undefined : renameItem}
+        renameDisabled={trashActive || fileOperationBusy}
+        onDropItemsToFolder={trashActive ? undefined : (selected, target, operation) => { void dropItemsToFolder(selected, target, operation) }}
+        onDropItemsToCrumb={trashActive ? undefined : (selected, crumb, operation) => { void dropItemsToCrumb(selected, crumb, operation) }}
+        onExternalFilesDrop={trashActive ? undefined : (files, target) => { void dropExternalFiles(files, target) }}
+        onExternalFilesDropToCrumb={trashActive ? undefined : (files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
+        onExternalFolderDrop={trashActive ? undefined : (payload, target) => { void dropExternalFolderEntries(payload, target) }}
+        onExternalFolderDropToCrumb={trashActive ? undefined : (payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }}
+        getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}
+        backgroundMenuItems={trashActive ? [] : backgroundMenuItems}
+        tabBar={trashActive ? undefined : (
           <XDriveFileExplorerTabs
             tabs={tabs}
             activeTabID={activeTabID}
@@ -531,12 +552,11 @@ export default function WebFileExplorer({
             onCloseTab={(id) => { void closeTab(id) }}
           />
         )}
-        onNewTab={canNewTab ? () => { void newTab() } : undefined}
-        onCloseTab={canCloseTab ? () => { void closeTab() } : undefined}
-        onNextTab={tabs.length > 1 ? () => { void nextTab() } : undefined}
-        onPreviousTab={tabs.length > 1 ? () => { void previousTab() } : undefined}
-        commandBarStart={<XDriveFileExplorerTrashCommandButton onClick={onOpenTrash} />}
-        commandBarEnd={(
+        onNewTab={!trashActive && canNewTab ? () => { void newTab() } : undefined}
+        onCloseTab={!trashActive && canCloseTab ? () => { void closeTab() } : undefined}
+        onNextTab={!trashActive && tabs.length > 1 ? () => { void nextTab() } : undefined}
+        onPreviousTab={!trashActive && tabs.length > 1 ? () => { void previousTab() } : undefined}
+        commandBarEnd={trashActive ? undefined : (
           <XDriveFileExplorerSearchFilters
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
@@ -546,8 +566,13 @@ export default function WebFileExplorer({
         navigationPane={(
           <XDriveFileExplorerNavigationPane
             currentCrumbs={crumbs}
+            trashActive={trashActive}
+            onNavigateTrash={onOpenTrash}
             loadDirectoryPage={loadTreeDirectoryPage}
-            onNavigate={(nextCrumbs) => { void navigateTo(nextCrumbs) }}
+            onNavigate={(nextCrumbs) => {
+              onCloseTrash()
+              void navigateTo(nextCrumbs)
+            }}
             dropDisabled={fileOperationBusy}
             onDropInternalItems={(itemIDs, target, operation) => {
               void dropItemsToCrumb(
@@ -568,6 +593,7 @@ export default function WebFileExplorer({
             quickAccessBusyID={quickAccess.busyID}
             currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
             onNavigateQuickAccess={(nodeID) => {
+              onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
               void quickAccess.navigate(
                 nodeID,
@@ -582,6 +608,7 @@ export default function WebFileExplorer({
             recentItems={recent.items}
             recentLoading={recent.loading}
             onActivateRecent={(nodeID) => {
+              onCloseTrash()
               const navigationIntentID = beginNavigationIntent()
               void recent.activate(nodeID, {
                 onDirectory: (nextCrumbs) => (
@@ -598,11 +625,19 @@ export default function WebFileExplorer({
             onError={onError}
           />
         )}
-        statusText={searchStatusText ?? (
-          uploadProgress !== null
-            ? `上传中 ${Math.round(uploadProgress)}%`
-            : undefined
-        )}
+        statusText={trashActive
+          ? (trash.working ? '正在处理回收站项目…' : `${trash.items.length} 个回收站项目`)
+          : searchStatusText ?? (
+              uploadProgress !== null
+                ? `上传中 ${Math.round(uploadProgress)}%`
+                : undefined
+            )}
+      />
+      <XDriveFileExplorerTrashDeleteDialog
+        target={trash.deleteTarget}
+        loading={trash.workingKey.startsWith('delete:')}
+        onCancel={trash.cancelPermanentDelete}
+        onConfirm={() => { void trash.confirmPermanentDelete() }}
       />
       <XDriveOpenPreviewDialog
         open={Boolean(openPreviewItem)}

@@ -935,6 +935,67 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		nil,
 		http.StatusNotFound,
 	)
+	trashThumbnailBytes := testPNG(t, 4, 3)
+	trashThumbnailNode := uploadTestFile(
+		t,
+		router,
+		token,
+		folder.ID,
+		"trash-thumbnail-cold.png",
+		string(trashThumbnailBytes),
+	)
+	requestWithHeaders(
+		t,
+		router,
+		http.MethodDelete,
+		fmt.Sprintf("/api/v1/nodes/%d", trashThumbnailNode.ID),
+		token,
+		nil,
+		http.StatusNoContent,
+		map[string]string{
+			"If-Match": fmt.Sprintf("\"%d\"", trashThumbnailNode.Revision),
+		},
+	)
+
+	// Trash uses the same FileExplorer thumbnail transport. This image has
+	// never requested a thumbnail before deletion, so success proves the
+	// deleted-owner path can generate a cold derivative rather than only serve
+	// a cache object created while the node was active.
+	trashThumbnailResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail", trashThumbnailNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	trashThumbnailConfig, err := jpeg.DecodeConfig(
+		bytes.NewReader(trashThumbnailResponse.Body.Bytes()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trashThumbnailConfig.Width != 4 || trashThumbnailConfig.Height != 3 {
+		t.Fatalf(
+			"trash thumbnail dimensions=%dx%d want=4x3",
+			trashThumbnailConfig.Width,
+			trashThumbnailConfig.Height,
+		)
+	}
+
+	// Only thumbnail reads are Trash-aware. Analysis preview remains an
+	// active-media API and must not expose deleted nodes.
+	request(
+		t,
+		router,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview", trashThumbnailNode.ID),
+		token,
+		nil,
+		http.StatusNotFound,
+	)
+
 }
 
 func testPNG(t *testing.T, width, height int) []byte {

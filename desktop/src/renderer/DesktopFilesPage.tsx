@@ -3,7 +3,6 @@ import type { ComponentProps } from 'react'
 import {
   XDriveShareDialog,
   XDriveStatusAlert,
-  XDriveTrashDialog,
   XDriveVersionHistoryDialog,
 } from '@xdrive/ui/mui'
 import DesktopFileExplorer from './DesktopFileExplorer'
@@ -13,7 +12,10 @@ import {
   desktopVersionHistoryDialogAdapter,
 } from './fileDialogAdapters'
 
-type ExplorerProps = ComponentProps<typeof DesktopFileExplorer>
+type ExplorerProps = Omit<
+  ComponentProps<typeof DesktopFileExplorer>,
+  'trashActive' | 'trashAdapter' | 'onCloseTrash' | 'onTrashChanged'
+>
 
 export function DesktopFilesPage({
   quota,
@@ -64,15 +66,12 @@ export function DesktopFilesPage({
         </XDriveStatusAlert>
       ) : null}
 
-      <DesktopFileExplorer {...explorer} />
-
-      <XDriveTrashDialog
-        open={trashOpen}
-        adapter={desktopTrashDialogAdapter}
-        onClose={onCloseTrash}
-        onError={onFileDialogError}
-        onFeedback={onFileDialogFeedback}
-        onChanged={onTrashChanged}
+      <DesktopFileExplorer
+        {...explorer}
+        trashActive={trashOpen}
+        trashAdapter={desktopTrashDialogAdapter}
+        onCloseTrash={onCloseTrash}
+        onTrashChanged={onTrashChanged}
       />
 
       <XDriveVersionHistoryDialog

@@ -7,6 +7,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Box,
   CircularProgress,
@@ -31,6 +32,8 @@ import type {
 } from './FileExplorerExternalDrop'
 import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAccessController'
 import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
+import { XDriveFileExplorerThumbnail } from './FileExplorerThumbnail'
+import { xDriveFileSupportsThumbnail } from './FileExplorer'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -57,6 +60,8 @@ type XDriveFileExplorerNavigationTreeNode = {
 
 export function XDriveFileExplorerNavigationPane({
   currentCrumbs,
+  trashActive = false,
+  onNavigateTrash,
   loadDirectoryPage,
   onNavigate,
   dropDisabled = false,
@@ -79,6 +84,8 @@ export function XDriveFileExplorerNavigationPane({
   onError,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
+  trashActive?: boolean
+  onNavigateTrash?: () => void | Promise<void>
   loadDirectoryPage: (
     parentID: number,
     cursor?: string,
@@ -350,7 +357,7 @@ export function XDriveFileExplorerNavigationPane({
     const loading = loadingIDs.has(node.id)
     const expanded = expandedIDs.has(node.id)
     const expandable = !loaded || children.length > 0 || hasMore
-    const selected = currentID === node.id
+    const selected = !trashActive && currentID === node.id
 
     return (
       <Box
@@ -413,7 +420,13 @@ export function XDriveFileExplorerNavigationPane({
               outlineOffset: -2,
             }}
           >
-            <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />
+            <Box sx={{ width: 20, height: 20, flex: '0 0 20px' }}>
+              <XDriveFileExplorerThumbnail
+                item={{ id: node.id, name: node.name, kind: 'dir' }}
+                eligible={false}
+                fallback={<FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />}
+              />
+            </Box>
             <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
               {node.name}
             </Typography>
@@ -445,7 +458,7 @@ export function XDriveFileExplorerNavigationPane({
     )
   }
 
-  const canPinCurrent = quickAccessEnabled && currentCrumbs.length > 1 && Boolean(onToggleCurrentQuickAccess)
+  const canPinCurrent = !trashActive && quickAccessEnabled && currentCrumbs.length > 1 && Boolean(onToggleCurrentQuickAccess)
 
   return (
     <Box
@@ -460,6 +473,25 @@ export function XDriveFileExplorerNavigationPane({
         bgcolor: 'background.paper',
       }}
     >
+      {onNavigateTrash ? (
+        <>
+          <Box component="nav" aria-label="回收站" sx={{ px: 0.75, pb: 0.75 }}>
+            <ListItemButton
+              selected={trashActive}
+              aria-current={trashActive ? 'page' : undefined}
+              onClick={() => { void onNavigateTrash() }}
+              sx={{ minWidth: 0, minHeight: 32, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+            >
+              <DeleteOutlineRoundedIcon sx={{ fontSize: 19, color: trashActive ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
+              <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: trashActive ? 600 : 400 }}>
+                回收站
+              </Typography>
+            </ListItemButton>
+          </Box>
+          <Divider sx={{ mb: 0.75 }} />
+        </>
+      ) : null}
+
       {quickAccessEnabled ? (
         <Box component="nav" aria-label="快速访问" sx={{ px: 0.75, pb: 0.75 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30, pl: 0.75 }}>
@@ -509,12 +541,18 @@ export function XDriveFileExplorerNavigationPane({
                   }}
                 >
                   <ListItemButton
-                    selected={currentID === item.id}
+                    selected={!trashActive && currentID === item.id}
                     title={item.path || item.name}
                     onClick={() => { void onNavigateQuickAccess?.(item.id) }}
                     sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
                   >
-                    <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />
+                    <Box sx={{ width: 20, height: 20, flex: '0 0 20px' }}>
+                      <XDriveFileExplorerThumbnail
+                        item={{ id: item.id, name: item.name, kind: 'dir', path: item.path }}
+                        eligible={false}
+                        fallback={<FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />}
+                      />
+                    </Box>
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                       {item.name}
                     </Typography>
@@ -580,14 +618,28 @@ export function XDriveFileExplorerNavigationPane({
               {recentItems.slice(0, 8).map((item) => (
                 <ListItemButton
                   key={item.id}
-                  selected={item.kind === 'dir' && currentID === item.id}
+                  selected={!trashActive && item.kind === 'dir' && currentID === item.id}
                   title={item.path || item.name}
                   onClick={() => { void onActivateRecent?.(item.id) }}
                   sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
                 >
-                  {item.kind === 'dir'
-                    ? <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d', flexShrink: 0 }} />
-                    : <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />}
+                  <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0.75 }}>
+                    <XDriveFileExplorerThumbnail
+                      item={{
+                        id: item.id,
+                        name: item.name,
+                        kind: item.kind,
+                        size: item.size,
+                        revision: item.revision,
+                        updatedAt: item.updatedAt,
+                        path: item.path,
+                      }}
+                      eligible={item.kind === 'file' && xDriveFileSupportsThumbnail(item.name, 'file')}
+                      fallback={item.kind === 'dir'
+                        ? <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />
+                        : <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+                    />
+                  </Box>
                   <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                     {item.name}
                   </Typography>

@@ -147,8 +147,8 @@ test('FileExplorer exposes visible Undo through the shared keyboard command reso
     ['Desktop', desktopApp, desktopExplorer],
   ]) {
     assert.ok(app.includes('xDriveLatestUndoableFileOperation'), label + ' must select undo from shared operation history')
-    assert.ok(adapter.includes('canUndo={canUndo}'), label + ' Explorer must receive the shared undo availability')
-    assert.ok(adapter.includes('onUndo={onUndo}'), label + ' Explorer must receive the shared undo action')
+    assert.ok(adapter.includes('canUndo={!trashActive && canUndo}'), label + ' Explorer must receive the shared undo availability')
+    assert.ok(adapter.includes('onUndo={trashActive ? undefined : onUndo}'), label + ' Explorer must receive the shared undo action')
   }
   assert.ok(webApp.includes('undoOperation: (id) => api.undoFileOperation(id)'), 'Web must keep only the REST undo adapter')
   assert.ok(desktopApp.includes("capabilities.includes('file-operation-undo')"), 'Desktop must gate undo on Agent capability')

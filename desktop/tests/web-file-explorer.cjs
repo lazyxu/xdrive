@@ -28,9 +28,9 @@ test('Web files workspace consumes the shared FileExplorer instead of a bespoke 
 test('Web FileExplorer navigation matches system explorer behavior', () => {
   for (const token of [
     'useXDriveFileExplorerWorkspace<Node, WebSearchResult>({',
-    'canGoBack={canGoBack}',
-    'canGoForward={canGoForward}',
-    'canGoUp={canGoUp}',
+    'canGoBack={!trashActive && canGoBack}',
+    'canGoForward={!trashActive && canGoForward}',
+    'canGoUp={!trashActive && canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
   ]) {
@@ -43,9 +43,9 @@ test('Web FileExplorer navigation matches system explorer behavior', () => {
   assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Web typed-path traversal should request one indexed child')
   assert.equal(explorer.includes('xDriveResolveFileExplorerPath({'), false, 'Web must not orchestrate typed-path traversal locally')
   assert.ok(explorer.includes('viewModeStorageKey: FILE_VIEW_KEY'), 'Web Explorer should pass its view-mode storage key to the shared controller')
-  assert.ok(explorer.includes('pathValue={pathValue}'), 'Web Explorer path display must come from shared navigation')
+  assert.ok(explorer.includes("pathValue={trashActive ? '回收站' : pathValue}"), 'Web Explorer path display must come from shared navigation')
   assert.ok(explorer.includes('navigateToCrumb(index)'), 'Web breadcrumb clicks must use shared navigation')
-  assert.ok(explorer.includes('onRefresh={refresh}'), 'Web Explorer refresh must use shared navigation')
+  assert.ok(explorer.includes("onRefresh={trashActive ? () => { void trash.refresh() } : refresh}"), 'Web Explorer refresh must use shared navigation')
   assert.ok(explorer.includes('onRefresh: refresh'), 'Web background refresh must use shared navigation')
   assert.ok(navigation.includes('window.localStorage.setItem(viewModeStorageKey, viewMode)'), 'shared Explorer controller should persist Details/Grid mode')
 })
@@ -60,14 +60,14 @@ test('Web FileExplorer uses real file operations and server search', () => {
     'onShare(node)',
     'onHistory(node)',
     'api.rename(node.id, node.revision, name)',
-    'onRenameItem={renameItem}',
+    'onRenameItem={trashActive ? undefined : renameItem}',
     'onRemove(node)',
     'onUploadFiles(event.target.files)',
   ]) {
     assert.ok(explorer.includes(token), `missing real Web Explorer operation: ${token}`)
   }
-  assert.ok(explorer.includes('getItemMenuItems={getItemMenuItems}'), 'Web Explorer item context menu is not wired')
-  assert.ok(explorer.includes('backgroundMenuItems={backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
+  assert.ok(explorer.includes('getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}'), 'Web Explorer item context menu is not wired')
+  assert.ok(explorer.includes('backgroundMenuItems={trashActive ? [] : backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
   const openStart = explorer.indexOf('const openWebNode = (node: Node) =>')
   const downloadStart = explorer.indexOf('const downloadSelected = async')
   assert.ok(openStart >= 0 && downloadStart > openStart, 'Web Open/Download adapters are missing')
@@ -88,7 +88,7 @@ test('Web FileExplorer Search preserves paths and breadcrumbs across sparse rang
   assert.ok(explorer.includes('<XDriveFileExplorerSearchFilters'), 'Web must render shared structured filter chips')
   assert.ok(explorer.includes('searchSort.key'), 'Web Search range must forward sort key')
   assert.ok(explorer.includes('searchSort.direction'), 'Web Search range must forward sort direction')
-  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Web Search must reuse the shared sparse surface')
+  assert.ok(explorer.includes('virtualCollection={trashActive ? undefined : explorerVirtualCollection}'), 'Web Search must reuse the shared sparse surface')
   assert.equal(explorer.includes('api.search('), false, 'Web Explorer must not use cursor Search after migration')
   assert.equal(explorer.includes('仅显示前 200 个结果'), false, 'Web Search must not truncate the logical result set')
 })
@@ -100,10 +100,10 @@ test('Web FileExplorer queues copy/cut/paste through the shared operation contro
   assert.ok(explorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web must consume the shared queued-operation controller')
   assert.ok(explorer.includes('submitOperation: (plan) => api.createFileOperation('), 'Web must keep persistent-operation transport local')
   assert.ok(explorer.includes('onQueued: onOperationQueued'), 'Web must surface queued operations immediately')
-  assert.ok(explorer.includes('canPaste={fileOperationCanPaste}'), 'Web paste availability must come from shared operation state')
-  assert.ok(explorer.includes('onCopyItems={copyItems}'), 'Web shared copy adapter is missing')
-  assert.ok(explorer.includes('onCutItems={cutItems}'), 'Web shared cut adapter is missing')
-  assert.ok(explorer.includes('onPaste={() => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
+  assert.ok(explorer.includes('canPaste={!trashActive && fileOperationCanPaste}'), 'Web paste availability must come from shared operation state')
+  assert.ok(explorer.includes('onCopyItems={trashActive ? undefined : copyItems}'), 'Web shared copy adapter is missing')
+  assert.ok(explorer.includes('onCutItems={trashActive ? undefined : cutItems}'), 'Web shared cut adapter is missing')
+  assert.ok(explorer.includes('onPaste={trashActive ? undefined : () => { void pasteClipboard() }}'), 'Web shared paste adapter is missing')
   assert.ok(operationController.includes("await runPlan('paste', plan"), 'shared controller must execute Web paste plans')
   assert.equal(explorer.includes('const plan = planPaste(current.id)'), false, 'Web must not execute paste planning locally')
 })
@@ -115,7 +115,7 @@ test('Web FileExplorer supports file, folder, and mixed-selection download', () 
   assert.ok(explorer.includes('await api.download(plan.file)'), 'single Web file must use authenticated direct download')
   assert.ok(explorer.includes('await api.downloadArchive(plan.ids, plan.filename)'), 'folder/mixed Web download must use the archive endpoint')
   assert.ok(explorer.includes('onDownload: () => { void downloadSelected([item]) }'), 'folder context-menu download must use the shared download flow')
-  assert.ok(explorer.includes('onDownloadItems={(selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
+  assert.ok(explorer.includes('onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}'), 'Web shared bulk download adapter is missing')
   assert.ok(api.includes('downloadArchive(ids: number[], filename: string)'), 'Web archive API is missing')
   assert.ok(api.includes("'/api/v1/download/archive'"), 'Web archive API must use the protected archive endpoint')
   assert.ok(explorer.includes('onRemoveMany(nodes)'), 'Web shared bulk delete adapter is missing')
@@ -174,11 +174,11 @@ test('Web FileExplorer uses the shared Cloud Files controller for range-backed s
   assert.equal(cloudFilesController.includes('xDriveFileExplorerCanLoadMore('), false, 'directory browsing must no longer use cursor load-more eligibility')
   assert.equal(cloudFilesController.includes('xDriveFileExplorerDirectoryPageTransition('), false, 'directory browsing must no longer append cursor pages')
   assert.ok(explorer.includes('directoryVirtualCollection: virtualDirectory'), 'Web Explorer must delegate sparse directory state to the shared workspace')
-  assert.ok(explorer.includes('virtualCollection={explorerVirtualCollection}'), 'Web Explorer must activate the shared sparse surface')
-  assert.ok(explorer.includes('externallySorted={externallySorted}'), 'Web directory ranges should consume shared workspace sorting state')
-  assert.ok(explorer.includes('onSortChange={changeSort}'), 'Web sort changes should reload server-sorted ranges')
-  assert.ok(explorer.includes('grouping={grouping}'), 'Web grouping must come from shared tab state')
-  assert.ok(explorer.includes('onGroupingChange={changeGrouping}'), 'Web grouping changes must reload Server ranges')
+  assert.ok(explorer.includes('virtualCollection={trashActive ? undefined : explorerVirtualCollection}'), 'Web Explorer must activate the shared sparse surface')
+  assert.ok(explorer.includes('externallySorted={trashActive ? false : externallySorted}'), 'Web directory ranges should consume shared workspace sorting state')
+  assert.ok(explorer.includes('onSortChange={trashActive ? setTrashSort : changeSort}'), 'Web sort changes should reload server-sorted ranges')
+  assert.ok(explorer.includes('grouping={trashActive ? undefined : grouping}'), 'Web grouping must come from shared tab state')
+  assert.ok(explorer.includes('onGroupingChange={trashActive ? undefined : changeGrouping}'), 'Web grouping changes must reload Server ranges')
   assert.ok(explorer.includes('searchGrouping,'), 'Web Search must forward grouping to the Server range contract')
 })
 
@@ -286,7 +286,7 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     'folderUploadInputRef',
     "element.setAttribute('webkitdirectory', '')",
     "element.setAttribute('directory', '')",
-    'onUploadFolder={() => folderUploadInputRef.current?.click()}',
+    'onUploadFolder={trashActive ? undefined : () => folderUploadInputRef.current?.click()}',
   ]) {
     assert.ok(explorer.includes(token), `missing Web folder-upload picker: ${token}`)
   }
@@ -315,8 +315,8 @@ test('Web FileExplorer recursively uploads dropped folders and empty directories
     'XDriveFileExplorerExternalDropPayload',
     'useXDriveFileExplorerExternalDropController<Node, Crumb, XDriveFileExplorerSort>',
     'uploadFolderEntriesToParent: onUploadDroppedFolderEntries',
-    'onExternalFolderDrop={(payload, target) =>',
-    'onExternalFolderDropToCrumb={(payload, crumb) =>',
+    'onExternalFolderDrop={trashActive ? undefined : (payload, target) =>',
+    'onExternalFolderDropToCrumb={trashActive ? undefined : (payload, crumb) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Web dropped-folder wiring: ${token}`)
   }
