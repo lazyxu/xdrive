@@ -211,7 +211,7 @@ The Preview Engine owns ordinary file presentation, not photo-library semantics.
 
 The following remain Gallery responsibilities:
 
-- Live Photo relation and motion playback
+- Live Photo relation and motion playback for paired standalone still/video files
 - EXIF
 - GPS/location semantics
 - Favorite
@@ -240,7 +240,14 @@ The interaction contract is:
 - audio capability is preserved instead of forcing the motion resource muted;
 - the still image remains visible when motion loading or decoding fails.
 
-Do not migrate those concerns into FileExplorer or `FilePreviewSurface`.
+Do not migrate inferred/grouped Live Photo semantics into FileExplorer.
+
+A validated `.livp` is the deliberate exception because the still/motion relation is
+self-contained and cryptographically tied to one original file/container. FileExplorer
+may classify that one file as `live_photo`, use the existing media thumbnail for its
+still frame, and render the existing `XDriveLivePhotoSurface` with the existing
+owner-scoped motion endpoint. This is file-format presentation, not Gallery grouping.
+Do not infer standalone JPG/HEIC + MOV relationships inside FileExplorer.
 
 ## FileExplorer boundary
 
@@ -258,6 +265,7 @@ must use the shared `XDriveOpenPreviewDialog` presentation shell.
 The shell owns common preview chrome and navigation only. Its content must remain:
 
 - `FilePreviewSurface` for ordinary text/PDF/image/video/audio preview;
+- `FilePreviewSurface` + `LivePhotoSurface` for a validated single-file `.livp`;
 - `LivePhotoSurface` wrapping a `FilePreviewSurface` still image for Gallery Live Photo.
 
 Explicit Download remains a separate file-management action. Web/Desktop FileExplorer must
@@ -282,8 +290,9 @@ The shared interaction contract is:
 - `Ctrl/Cmd + Space` preserves the existing keyboard selection-toggle behavior;
 - directories keep Space selection behavior rather than acquiring a fake media preview.
 
-Quick Look must not add a second preview endpoint, app-local renderer, Gallery media
-semantics, or provider-specific media behavior.
+Quick Look must not add a second preview endpoint, app-local renderer, inferred Gallery
+pairing semantics, or provider-specific media behavior. Validated `.livp` Quick Look
+reuses the same thumbnail + motion sources and shared `LivePhotoSurface` as Open/Inspector.
 
 ## Format-extension rule
 

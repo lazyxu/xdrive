@@ -342,7 +342,7 @@ export type XDriveFileExplorerMenuItem = {
   onSelect: () => void
 }
 
-const imageExtensions = new Set(['avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp'])
+const imageExtensions = new Set(['avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'livp', 'png', 'tif', 'tiff', 'webp'])
 const videoExtensions = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm'])
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
 const documentExtensions = new Set(['doc', 'docx', 'odt', 'rtf'])
@@ -381,6 +381,7 @@ export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileEx
 export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
   if (kind === 'dir') return '文件夹'
   const extension = explorerExtension(name)
+  if (extension === 'livp') return 'LIVP 实况照片'
   const fileKind = xDriveFileKind(name, kind)
   switch (fileKind) {
     case 'image': return extension ? `${extension.toUpperCase()} 图像` : '图像'
@@ -560,6 +561,7 @@ export function XDriveFileExplorer({
   loadThumbnail,
   loadTextPreview,
   loadPreviewURL,
+  loadLivePhotoMotion,
   loadPropertiesStats,
   getItemAvailability,
   externallySorted = false,
@@ -642,6 +644,9 @@ export function XDriveFileExplorer({
   loadPreviewURL?: (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
+  ) => Promise<string | null | undefined>
+  loadLivePhotoMotion?: (
+    item: XDriveFileExplorerItem,
   ) => Promise<string | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   getItemAvailability?: (
@@ -4088,6 +4093,7 @@ export function XDriveFileExplorer({
                     target={inspectorItem}
                     loadTextPreview={loadTextPreview}
                     loadPreviewURL={loadPreviewURL}
+                    loadLivePhotoMotion={loadLivePhotoMotion}
                     loadImagePreview={
                       (inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind))
                         ? loadThumbnail
@@ -4143,6 +4149,7 @@ export function XDriveFileExplorer({
           : undefined}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         loadImagePreview={
           quickLookItem &&
           (quickLookItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(quickLookItem.name, quickLookItem.kind))

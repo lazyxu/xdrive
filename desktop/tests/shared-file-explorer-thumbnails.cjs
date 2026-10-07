@@ -44,7 +44,9 @@ test('Recent preserves thumbnail identity and only supported image media is elig
   for (const token of ['revision?: string | number', 'updatedAt?: string', 'size?: number']) {
     assert.ok(recent.includes(token), 'Recent thumbnail identity missing: ' + token)
   }
+  assert.ok(explorer.includes("'livp'"), 'FileExplorer image-like thumbnail allowlist must include LIVP')
   assert.ok(explorer.includes("return xDriveFileKind(name, kind) === 'image'"))
+  assert.ok(thumbnail.includes('title="实况照片"'), 'LIVP thumbnails must expose a static Live Photo badge')
   assert.equal(
     explorer.includes("return fileKind === 'image' || fileKind === 'video'"),
     false,

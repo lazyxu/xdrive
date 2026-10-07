@@ -46,6 +46,7 @@ test('binary preview classification is extension-allowlist based', () => {
     [{ name: 'movie.mp4', kind: 'file', mimeType: 'text/html' }, 'video'],
     [{ name: 'song.mp3', kind: 'file', mimeType: 'application/octet-stream' }, 'audio'],
     [{ name: 'document.pdf', kind: 'file', mimeType: 'text/plain' }, 'pdf'],
+    [{ name: 'photo.LIVP', kind: 'file', mimeType: 'application/octet-stream' }, 'live_photo'],
   ]
 
   for (const [target, expected] of cases) {

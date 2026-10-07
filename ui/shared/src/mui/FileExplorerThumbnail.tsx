@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
+import PlayCircleOutlineRoundedIcon from '@mui/icons-material/PlayCircleOutlineRounded'
 import { Box } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { XDriveFileExplorerItem } from './FileExplorer'
@@ -280,6 +281,7 @@ export function XDriveFileExplorerThumbnail({
   sx?: SxProps<Theme>
 }) {
   const context = useContext(XDriveFileExplorerThumbnailContext)
+  const livePhoto = item.kind === 'file' && item.name.trim().toLowerCase().endsWith('.livp')
   const hostRef = useRef<HTMLDivElement | null>(null)
   const itemRef = useRef(item)
   itemRef.current = item
@@ -354,6 +356,7 @@ export function XDriveFileExplorerThumbnail({
           height: '100%',
           minWidth: 0,
           minHeight: 0,
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -372,6 +375,28 @@ export function XDriveFileExplorerThumbnail({
           sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       ) : fallback)}
+      {livePhoto ? (
+        <Box
+          component="span"
+          title="实况照片"
+          aria-label="实况照片"
+          sx={{
+            position: 'absolute',
+            left: 3,
+            top: 3,
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: 'rgba(0, 0, 0, 0.56)',
+            color: 'common.white',
+            pointerEvents: 'none',
+          }}
+        >
+          <PlayCircleOutlineRoundedIcon sx={{ fontSize: 14 }} />
+        </Box>
+      ) : null}
     </Box>
   )
 }
