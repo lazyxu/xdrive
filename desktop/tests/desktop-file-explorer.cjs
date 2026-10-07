@@ -31,8 +31,8 @@ test('Desktop files workspace consumes the shared FileExplorer', () => {
 
 test('Desktop FileExplorer wires real cloud mutations and native transfers', () => {
   for (const token of [
-    'cloudCreateDirectory(current.id, name)',
-    'cloudUploadFiles(current.id)',
+    'cloudCreateDirectory(expectedCurrentID, name)',
+    'cloudUploadFiles(expectedCurrentID)',
     'cloudRename(node.id, node.revision, name)',
     'onRenameItem={renameItem}',
     'cloudDownload(node.id, node.name)',
@@ -273,7 +273,7 @@ test('Desktop upload conflicts use the shared upload controller with capability-
     'runGroup: runUploadGroup,',
     '<XDriveUploadConflictDialog {...uploadConflictDialogProps}',
     'uploadConflictSupported',
-    'cloudUploadFiles(current.id)',
+    'cloudUploadFiles(expectedCurrentID)',
     'cloudUploadDroppedFiles(parentID, files)',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop shared upload-controller wiring: ${token}`)

@@ -38,6 +38,7 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
+  useXDriveFileExplorerCurrentDirectoryRefresh,
   xDriveFileExplorerUploadGroupLabel,
   useXDriveFileExplorerDeleteController,
   useXDriveCloudFilesController,
@@ -527,6 +528,14 @@ function FileManager({
     onError: handleError,
   })
 
+  const refreshCurrentDirectoryIfCurrent =
+    useXDriveFileExplorerCurrentDirectoryRefresh({
+      currentID: current?.id,
+      currentCrumbs: crumbs,
+      sort: directorySort,
+      refreshDirectory: loadDirectory,
+    })
+
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => api.quota(),
     getStats: () => api.storageStats(),
@@ -570,7 +579,7 @@ function FileManager({
     onRefreshError: handleError,
     onTerminalTransition: () => {
       if (!current) return
-      void loadDirectory(current.id, crumbs, directorySort)
+      void refreshCurrentDirectoryIfCurrent(current.id)
       void refreshQuota()
     },
   })
@@ -733,9 +742,10 @@ function FileManager({
     reloadCurrent = true,
     action: 'upload' | 'drop-upload' | 'upload-folder' = 'upload',
   ) => {
+    const expectedCurrentID = current?.id
     const result = await fileUploads.runTargets(targets, action)
-    if (result.uploaded > 0 && reloadCurrent && current) {
-      await loadDirectory(current.id)
+    if (result.uploaded > 0 && reloadCurrent) {
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
     }
     if (result.uploaded > 0) await refreshQuota()
     return result
@@ -800,15 +810,16 @@ function FileManager({
 
   const uploadFolderFiles = async (files: FileList | null) => {
     if (!current || !files?.length) return
+    const expectedCurrentID = current.id
     try {
       await uploadFolderEntriesTo(
-        current.id,
+        expectedCurrentID,
         Array.from(files).map((file) => ({
           file,
           relativePath: file.webkitRelativePath || file.name,
         })),
       )
-      await loadDirectory(current.id)
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
     } catch (error) {
       handleError(error)
     }
@@ -827,8 +838,9 @@ function FileManager({
 
   const createFolder = async (name: string) => {
     if (!current) return
-    await api.createDirectory(current.id, name)
-    await loadDirectory(current.id)
+    const expectedCurrentID = current.id
+    await api.createDirectory(expectedCurrentID, name)
+    await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
   }
 
   const openTrash = () => setTrashOpen(true)
@@ -1018,7 +1030,7 @@ function FileManager({
         onError={handleError}
         onFeedback={(message) => setFeedback({ tone: 'good', message })}
         onChanged={async () => {
-          if (current) await loadDirectory(current.id)
+          if (current) await refreshCurrentDirectoryIfCurrent(current.id)
           await refreshQuota()
         }}
       />
@@ -1031,7 +1043,7 @@ function FileManager({
         onFeedback={(message) => setFeedback({ tone: 'good', message })}
         onRestored={async (restored) => {
           setHistoryNode(restored)
-          if (current) await loadDirectory(current.id)
+          if (current) await refreshCurrentDirectoryIfCurrent(current.id)
           await refreshQuota()
         }}
       />

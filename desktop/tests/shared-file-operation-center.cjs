@@ -115,7 +115,7 @@ test('Web delegates persistent-operation polling and terminal refresh to the sha
     'loadOperations: loadFileOperations',
     "taskCenterVisible: appView === 'transfers'",
     'onTerminalTransition: () => {',
-    'void loadDirectory(current.id, crumbs',
+    'void refreshCurrentDirectoryIfCurrent(current.id)',
     'void refreshQuota()',
     'useXDriveFileOperationActions<XDriveFileOperation>({',
     'cancelOperation: (id) => api.cancelFileOperation(id)',

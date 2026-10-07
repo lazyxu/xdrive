@@ -14,6 +14,7 @@ const workspaceController = read('ui', 'shared', 'src', 'mui', 'FileExplorerWork
 const clipboardController = read('ui', 'shared', 'src', 'mui', 'FileExplorerClipboard.ts')
 const operationController = read('ui', 'shared', 'src', 'mui', 'FileExplorerOperationController.ts')
 const externalDropController = read('ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts')
+const currentDirectoryRefresh = read('ui', 'shared', 'src', 'mui', 'FileExplorerCurrentDirectoryRefresh.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -263,14 +264,24 @@ test('shared FileExplorer external-drop controller owns target, breadcrumb, and 
     'xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)',
     'uploadFilesToParent(parentID, files)',
     'uploadFolderEntriesToParent(parentID, payload)',
-    'currentContextRef.current',
-    'latest.currentID !== expectedCurrentID',
-    'await refreshCurrentDirectory(expectedCurrentID)',
+    'useXDriveFileExplorerCurrentDirectoryRefresh({',
+    'await refreshCurrentDirectoryIfCurrent(expectedCurrentID)',
     'Number(crumb.id)',
     'folderDropEnabled',
   ]) {
     assert.ok(externalDropController.includes(token), `shared external-drop controller missing: ${token}`)
   }
+  for (const token of [
+    'currentContextRef.current',
+    'latest.currentID !== expectedCurrentID',
+    'await refreshDirectory(',
+  ]) {
+    assert.ok(currentDirectoryRefresh.includes(token), `shared current-directory refresh fence missing: ${token}`)
+  }
+  assert.ok(
+    sharedMuiIndex.includes("export * from './FileExplorerCurrentDirectoryRefresh'"),
+    'shared current-directory refresh fence must be exported',
+  )
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
     assert.ok(source.includes('useXDriveFileExplorerExternalDropController<'), `${label} must consume the shared external-drop controller`)
     assert.equal(source.includes('xDriveFileExplorerExternalDropParentID(current.id, target, nodeByID)'), false, `${label} must not resolve external-drop targets locally`)

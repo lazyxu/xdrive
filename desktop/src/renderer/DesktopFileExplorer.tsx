@@ -36,6 +36,7 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
+  useXDriveFileExplorerCurrentDirectoryRefresh,
   useXDriveFileExplorerUploadController,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
@@ -294,6 +295,14 @@ export default function DesktopFileExplorer({
     onFileAccess: (nodeID) => { void recent.record(nodeID) },
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
+
+  const refreshCurrentDirectoryIfCurrent =
+    useXDriveFileExplorerCurrentDirectoryRefresh({
+      currentID: current?.id,
+      currentCrumbs: crumbs,
+      sort,
+      refreshDirectory: onLoadDirectory,
+    })
 
   const loadTreeDirectoryPage = useCallback(
     (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
@@ -709,15 +718,16 @@ export default function DesktopFileExplorer({
     resolveTargets: () => Promise<readonly DesktopUploadTarget[]>,
     busyState: 'upload' | 'drop-upload' | 'upload-folder',
     refreshEvenWithoutUploads = false,
-    refreshCurrentDirectory = true,
+    shouldRefreshCurrentDirectory = true,
   ) => {
     if (explorerActionBusy) return false
+    const expectedCurrentID = current?.id
     try {
       const targets = await resolveTargets()
       const result = await runUploadTargets(targets, busyState)
       const shouldRefresh = result.uploaded > 0 || refreshEvenWithoutUploads
-      if (refreshCurrentDirectory && shouldRefresh && current) {
-        await onLoadDirectory(current.id, crumbs, sort)
+      if (shouldRefreshCurrentDirectory && shouldRefresh) {
+        await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       }
       if (result.uploaded > 0) await onQuotaChanged()
       return shouldRefresh
@@ -731,14 +741,14 @@ export default function DesktopFileExplorer({
     parentID: number,
     files: File[],
     busyState: 'upload' | 'drop-upload',
-    refreshCurrentDirectory = true,
+    shouldRefreshCurrentDirectory = true,
   ) => {
     if (files.length === 0) return false
     return uploadConflictAwareTargets(
       async () => files.map((file) => ({ parentID, file })),
       busyState,
       false,
-      refreshCurrentDirectory,
+      shouldRefreshCurrentDirectory,
     )
   }
 
@@ -771,6 +781,7 @@ export default function DesktopFileExplorer({
 
   const uploadFolderFiles = async (files: File[]) => {
     if (!current || files.length === 0 || !uploadConflictSupported) return
+    const expectedCurrentID = current.id
     const entries = files.map((file) => ({
       file,
       relativePath: file.webkitRelativePath || file.name,
@@ -794,28 +805,29 @@ export default function DesktopFileExplorer({
         }))
       },
     })
-    if ((result.uploaded > 0 || result.skipped > 0) && current) {
-      await onLoadDirectory(current.id, crumbs, sort)
+    if (result.uploaded > 0 || result.skipped > 0) {
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
     }
     if (result.uploaded > 0) await onQuotaChanged()
   }
 
   const uploadFiles = async () => {
     if (!current || explorerActionBusy) return
+    const expectedCurrentID = current.id
     if (uploadConflictSupported) {
       uploadInputRef.current?.click()
       return
     }
     setActionBusy('upload')
     try {
-      const result = await window.xdriveDesktop.agent.cloudUploadFiles(current.id)
+      const result = await window.xdriveDesktop.agent.cloudUploadFiles(expectedCurrentID)
       if (!result.ok) {
         onError(result.error.message)
         return
       }
       if (result.data.canceled) return
       if (result.data.uploaded.length > 0) {
-        await onLoadDirectory(current.id, crumbs, sort)
+        await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
         await onQuotaChanged()
       }
       if (result.data.failures.length > 0) {
@@ -835,11 +847,12 @@ export default function DesktopFileExplorer({
 
   const createFolder = async (name: string) => {
     if (!current || explorerActionBusy) return
+    const expectedCurrentID = current.id
     setActionBusy('create-folder')
     try {
-      const result = await window.xdriveDesktop.agent.cloudCreateDirectory(current.id, name)
+      const result = await window.xdriveDesktop.agent.cloudCreateDirectory(expectedCurrentID, name)
       if (!result.ok) throw new Error(result.error.message)
-      await onLoadDirectory(current.id, crumbs, sort)
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       onFeedback('good', '文件夹已创建。')
     } finally {
       setActionBusy('')
@@ -850,12 +863,13 @@ export default function DesktopFileExplorer({
     if (explorerActionBusy) throw new Error('当前有文件操作正在进行，请稍后重试。')
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
+    const expectedCurrentID = current.id
     setActionBusy('rename-' + node.id)
     try {
       const result = await window.xdriveDesktop.agent.cloudRename(node.id, node.revision, name)
       if (!result.ok) throw new Error(result.error.message)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs, sort)
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       onFeedback('good', '已重命名。')
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))

@@ -15,6 +15,7 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
+  useXDriveFileExplorerCurrentDirectoryRefresh,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerExternalDropPayload,
@@ -211,6 +212,14 @@ export default function WebFileExplorer({
     onError,
   })
 
+  const refreshCurrentDirectoryIfCurrent =
+    useXDriveFileExplorerCurrentDirectoryRefresh({
+      currentID: current?.id,
+      currentCrumbs: crumbs,
+      sort,
+      refreshDirectory: onLoadDirectory,
+    })
+
   const loadTreeDirectoryPage = useCallback(
     (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
       parentID,
@@ -368,10 +377,11 @@ export default function WebFileExplorer({
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
+    const expectedCurrentID = current.id
     try {
       await api.rename(node.id, node.revision, name)
       clearSearch()
-      await onLoadDirectory(current.id, crumbs, sort)
+      await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
       onFeedback('good', '已重命名。')
     } catch (error) {
       onError(error)

@@ -184,6 +184,10 @@ function loadOperationHook(react) {
 }
 
 function loadExternalDropHook(react) {
+  const currentDirectoryRefresh = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerCurrentDirectoryRefresh.ts'],
+    react,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'],
     react,
@@ -193,6 +197,7 @@ function loadExternalDropHook(react) {
           target?.kind === 'dir' ? Number(target.id) : currentID
         ),
       },
+      './FileExplorerCurrentDirectoryRefresh': currentDirectoryRefresh,
     },
   ).useXDriveFileExplorerExternalDropController
 }
