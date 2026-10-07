@@ -384,6 +384,18 @@ func (s *Server) releaseContentReferencesTx(
 	return candidates, legacyKeys, nil
 }
 
+func reusedUploadPartExistsTx(tx *gorm.DB, sourceStorageKey string) (bool, error) {
+	var exists bool
+	err := tx.Raw(`
+SELECT EXISTS (
+	SELECT 1
+	FROM xd_upload_parts
+	WHERE reused = TRUE AND source_storage_key = ?
+)
+`, sourceStorageKey).Scan(&exists).Error
+	return exists, err
+}
+
 func (s *Server) finalizeContentBlobDeletes(ctx context.Context, candidates []contentDeleteCandidate) error {
 	var firstErr error
 	for _, candidate := range candidates {
@@ -406,13 +418,11 @@ func (s *Server) finalizeContentBlobDeletes(ctx context.Context, candidates []co
 			if blob.StorageKey != candidate.StorageKey {
 				return fmt.Errorf("content blob delete key mismatch for %s", candidate.SHA256)
 			}
-			var reusedParts int64
-			if err := tx.Model(&meta.UploadPart{}).
-				Where("reused = ? AND source_storage_key = ?", true, blob.StorageKey).
-				Count(&reusedParts).Error; err != nil {
+			reusedPartExists, err := reusedUploadPartExistsTx(tx, blob.StorageKey)
+			if err != nil {
 				return err
 			}
-			if reusedParts > 0 {
+			if reusedPartExists {
 				// Active resumable overwrite sessions may still stream reused
 				// ranges from this blob. Leave it in deleting state; the upload
 				// janitor will retry after those temporary references disappear.

@@ -264,6 +264,9 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_upload_sessions_owner_active_quota ON xd_upload_sessions(owner_id, expires_at) WHERE status = 'active' AND quota_reserved_bytes > 0`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_upload_parts_reused_source_storage ON xd_upload_parts(source_storage_key) WHERE reused = TRUE`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`DROP INDEX IF EXISTS idx_xd_files_storage_key`).Error; err != nil {
 		return err
 	}
