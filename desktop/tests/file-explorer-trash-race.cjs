@@ -205,3 +205,123 @@ test('old Trash restore completion cannot clear a newer restore busy lock after 
   releaseB()
   await flushAsync()
 })
+
+
+test('old Trash permanent-delete completion cannot clear a newer delete target after disable/re-enable', async () => {
+  const runtime = createHookRuntime()
+  const useTrash = loadTrashHook(runtime.react)
+  const nodeA = {
+    id: 1,
+    name: 'A.txt',
+    type: 'file',
+    revision: 'a',
+    deleted_at: '2026-10-07T00:00:00Z',
+  }
+  const nodeB = {
+    id: 2,
+    name: 'B.txt',
+    type: 'file',
+    revision: 'b',
+    deleted_at: '2026-10-07T00:01:00Z',
+  }
+
+  let enabled = true
+  let releaseDeleteA
+  let releaseDeleteB
+  let aDeleted = false
+  let bDeleted = false
+
+  const adapter = {
+    listTrash: async () => [
+      ...(!aDeleted ? [nodeA] : []),
+      ...(!bDeleted ? [nodeB] : []),
+    ],
+    restoreTrash: async () => undefined,
+    deleteTrash: (node) => new Promise((resolve) => {
+      if (node.id === nodeA.id) {
+        releaseDeleteA = () => {
+          aDeleted = true
+          resolve()
+        }
+      } else if (node.id === nodeB.id) {
+        releaseDeleteB = () => {
+          bDeleted = true
+          resolve()
+        }
+      } else {
+        throw new Error('unexpected delete node')
+      }
+    }),
+  }
+
+  const render = () => runtime.render(() => useTrash({
+    enabled,
+    adapter,
+    onError: (error) => { throw error },
+    onFeedback: () => {},
+    onChanged: async () => {},
+  }))
+
+  render()
+  await flushAsync()
+  let trash = render()
+  assert.deepEqual(trash.items.map((item) => item.id), [nodeA.id, nodeB.id])
+
+  trash.getItemMenuItems(trash.items[0])
+    .find((item) => item.id === 'trash-delete-forever')
+    .onSelect()
+  trash = render()
+  assert.equal(trash.deleteTarget?.id, nodeA.id)
+
+  const pendingDeleteA = trash.confirmPermanentDelete()
+  await flushAsync()
+  trash = render()
+  assert.equal(trash.workingKey, 'delete:' + nodeA.id)
+  assert.equal(typeof releaseDeleteA, 'function')
+
+  enabled = false
+  render()
+  await flushAsync()
+  trash = render()
+  assert.equal(trash.workingKey, '')
+  assert.equal(trash.deleteTarget, null)
+
+  enabled = true
+  render()
+  await flushAsync()
+  trash = render()
+  assert.deepEqual(trash.items.map((item) => item.id), [nodeA.id, nodeB.id])
+
+  trash.getItemMenuItems(trash.items[1])
+    .find((item) => item.id === 'trash-delete-forever')
+    .onSelect()
+  trash = render()
+  assert.equal(trash.deleteTarget?.id, nodeB.id)
+
+  const pendingDeleteB = trash.confirmPermanentDelete()
+  await flushAsync()
+  trash = render()
+  assert.equal(trash.workingKey, 'delete:' + nodeB.id)
+  assert.equal(trash.deleteTarget?.id, nodeB.id)
+  assert.equal(typeof releaseDeleteB, 'function')
+
+  releaseDeleteA()
+  await pendingDeleteA
+  await flushAsync()
+  trash = render()
+
+  assert.equal(
+    trash.workingKey,
+    'delete:' + nodeB.id,
+    'older delete completion must not clear the newer delete busy ownership',
+  )
+  assert.equal(
+    trash.deleteTarget?.id,
+    nodeB.id,
+    'older delete completion from the previous Trash lifecycle must not clear the newer B delete target',
+  )
+
+  releaseDeleteB()
+  await pendingDeleteB
+  await flushAsync()
+})
