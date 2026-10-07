@@ -206,16 +206,27 @@ func batchTargetDirectoryTx(tx *gorm.DB, uid, parentID uint64) (meta.Node, error
 }
 
 func batchTargetInsideNode(tx *gorm.DB, uid, targetID, nodeID uint64) (bool, error) {
-	ids, err := activeSubtreeIDsDB(tx, uid, nodeID)
-	if err != nil {
+	var inside bool
+	row := tx.Raw(`
+WITH RECURSIVE ancestors AS (
+	SELECT id, parent_id
+	FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT parent.id, parent.parent_id
+	FROM xd_nodes AS parent
+	JOIN ancestors AS child ON child.parent_id = parent.id
+	WHERE parent.owner_id = ? AND parent.deleted_at IS NULL
+)
+SELECT EXISTS (
+	SELECT 1
+	FROM ancestors
+	WHERE id = ?
+)`, targetID, uid, uid, nodeID).Row()
+	if err := row.Scan(&inside); err != nil {
 		return false, err
 	}
-	for _, id := range ids {
-		if id == targetID {
-			return true, nil
-		}
-	}
-	return false, nil
+	return inside, nil
 }
 
 func batchNameExistsTx(tx *gorm.DB, uid, parentID uint64, name string, except uint64) (bool, error) {
