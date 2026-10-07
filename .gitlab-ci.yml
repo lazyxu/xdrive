@@ -284,8 +284,8 @@ file-explorer-directory-sort-performance:
     - *ensure_linux_fetch_tools
     - *install_postgres_client
   rules:
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-directory-sort-100k-baseline"'
-    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-directory-sort-100k-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\\/file-explorer-directory-sort-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\\/file-explorer-directory-sort-/'
   script:
     - go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 

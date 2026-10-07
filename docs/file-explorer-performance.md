@@ -13,7 +13,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Sparse paged directory SQL | **Merged** | Measured | Non-empty sparse reads: **2 -> 1 SQL round-trip**. |
 | Sparse range count reuse at 100k | **Accepted / production validated (#750)** | Paired SQL A/B + production contract CI | #739 established the direction; #750 production validation preserved the same result: broad-offset **3885.236 -> 2136.375 ms (-45.01%)** and sequential **3480.204 -> 1695.987 ms (-51.27%)**. First range remains authoritative-counted; later ranges reuse that generation's count. |
 | Search candidate-first / sparse range | **Merged** | Measured | 100k range/cursor workloads: **2.38x to 5.67x faster** depending on access pattern. |
-| Directory sort at 100k | **Measured baseline** | Measured | name/updated/size/type baselines recorded below; type is currently slowest. |
+| Directory sort at 100k | **Measured / expression-index candidate accepted (#756)** | Current count-once rebaseline + paired type-sort A/B | Under the #750 contract, type remains slowest at **209.882 / 294.771 ms** first-counted / middle-count-free. The exact expression index leaves first-counted effectively unchanged (**-1.39%**) but cuts the middle count-free range **300.789 -> 126.174 ms (-58.05%)**; persisted-key is rejected for production complexity and weaker later-range performance. |
 | Sparse VirtualCollection CPU at 100k | **Accepted structural baseline / no optimization (PR #708)** | Measured | Three CI CPU medians: **126.877 / 160.081 / 161.319 ms per sweep** (**50.751 / 64.032 / 64.528 us per viewport**); hosted-runner timing is diagnostic only, while structural counts are stable at **500 page loads / 800 peak / 600 final retained**. |
 | Details/Grid windowing and logical-index interaction | **Merged** | Unmeasured wall-clock | Bounded mounted/retained work; no comparable end-to-end BEFORE/AFTER timing yet. |
 | Thumbnail viewport scheduler + bounded cache | **Merged** | Unmeasured wall-clock | Shared viewport observer, max **6** concurrent thumbnail requests, bounded **96-entry** per-Explorer cache. |
@@ -68,13 +68,13 @@ Only measurements produced from a stable, repeatable workload belong in this tab
 | Search 100k, cursor first page | 977.251868 ms | 411.109089 ms | **-57.9% / 2.38x faster** |
 | Search 100k, cursor around item 50k | 2.168573513 s | 382.454648 ms | **-82.4% / 5.67x faster** |
 | Directory 100k simple name-only fixture, first/middle | n/a | 73.981118 ms / 92.281482 ms | Healthy baseline; no production optimization |
-| Directory-sort 100k mixed-file fixture, name first/middle | n/a | 158.775298 ms / 193.732604 ms | Baseline |
-| Directory-sort 100k mixed-file fixture, updated first/middle | n/a | 150.115920 ms / 275.943830 ms | Baseline |
-| Directory-sort 100k mixed-file fixture, size first/middle | n/a | 150.348111 ms / 273.407850 ms | Baseline |
-| Directory-sort 100k mixed-file fixture, type first/middle | n/a | 273.676411 ms / 422.931606 ms | Slowest current directory sort baseline |
+| Directory-sort 100k current contract, name first-counted / middle-count-free | n/a | **118.088387 ms / 161.423072 ms** | #756 current-contract baseline |
+| Directory-sort 100k current contract, updated first-counted / middle-count-free | n/a | **112.731281 ms / 88.349891 ms** | #756 current-contract baseline |
+| Directory-sort 100k current contract, size first-counted / middle-count-free | n/a | **113.027136 ms / 130.228185 ms** | #756 current-contract baseline |
+| Directory-sort 100k current contract, type first-counted / middle-count-free | n/a | **209.882056 ms / 294.770849 ms** | Slowest current directory sort baseline |
 | Desktop warm-thumbnail transport, 200 unique x 64 KiB x 3 passes | **600 upstream GETs / 39,321,600 B** | **200 upstream GETs / 13,107,200 B** | **Accepted**: **-66.7% requests**, **-66.7% payload**, **25 MiB less upstream payload**; hosted httptest wall time is diagnostic only and is not compared across layers |
 
-### Rejected measured attempt: type expression index
+### Historical rejected measured attempt: type expression index (pre-#750)
 
 A candidate type-sort expression index was evaluated on the exact same 100k mixed-file workload before adding any production index:
 
@@ -83,6 +83,54 @@ A candidate type-sort expression index was evaluated on the exact same 100k mixe
 - type middle range: **422.931606 ms -> 420.332119 ms** (**0.6% faster**)
 
 This is noise-level improvement with permanent write/storage maintenance cost, so the index was **rejected** and is not part of the production schema.
+
+That result predates the #750 count-once contract: the old middle-range workload still recomputed `COUNT(*) OVER()`. The current benchmark-only follow-up does **not** erase this rejection. It explicitly retests the same expression index only because later viewport ranges now run with `include_count=false`, which can materially change the PostgreSQL plan. It also measures a persisted extension sort-key + matching index candidate. Until the paired data is written here, both candidates remain **Benchmarking**, not production recommendations.
+
+### Directory type-sort count-free A/B
+
+Status: **Measured / expression-index production candidate accepted; persisted-key rejected**.
+
+Workload:
+
+- PostgreSQL 17, isolated schema;
+- **100,000** mixed file nodes with four extensions (`.txt/.jpg/.pdf/.zip`);
+- page size **200**;
+- first range at offset 0 remains authoritative-counted;
+- middle range at offset 50,000 uses the production `include_count=false` path;
+- **3 measured samples** after warm-up;
+- exact ordered node IDs matched across every candidate;
+- benchmark test duration: **18.29 s**.
+
+Current #750-contract HTTP baselines:
+
+| Sort | First range, counted | Middle range, count-free |
+| --- | ---: | ---: |
+| name | **118.088387 ms** | **161.423072 ms** |
+| updated | **112.731281 ms** | **88.349891 ms** |
+| size | **113.027136 ms** | **130.228185 ms** |
+| type | **209.882056 ms** | **294.770849 ms** |
+
+The paired DB-level type-sort A/B kept the query shape and ordered node IDs fixed:
+
+| Variant | First counted | Delta vs current | Middle count-free | Delta vs current |
+| --- | ---: | ---: | ---: | ---: |
+| Current dynamic expression | **211.511509 ms** | baseline | **300.789263 ms** | baseline |
+| Exact expression index | **208.566369 ms** | **-1.39%** | **126.173709 ms** | **-58.05%** |
+| Persisted extension key + index | **122.501282 ms** | **-42.08%** | **192.687067 ms** | **-35.94%** |
+
+Candidate setup cost on the same 100k fixture:
+
+- expression-index build: **335.346016 ms**;
+- persisted-key backfill: **2.831021167 s**;
+- persisted-key index build: **147.718034 ms**.
+
+Decision:
+
+- **Accept the exact expression index as the production candidate.** The old pre-#750 rejection no longer applies to the dominant later-range path: once `COUNT(*) OVER()` is removed from subsequent viewport ranges, the same index produces a paired **58.05%** middle-range reduction while leaving the once-per-generation counted first range effectively unchanged.
+- **Reject the persisted-key candidate for now.** Although it improves the counted first range more, it is slower than the expression index on the repeated count-free middle-range path, requires a multi-second 100k-row backfill in this fixture, adds persistent column/storage cost, and must be maintained on every name-changing create/rename/keep-both path.
+- #756 remains benchmark-only: it does **not** add a production schema/index or change the Server query.
+
+Next action: a separate small production PR should add only the exact expression index through the real Server schema/migration path, preserve existing sort semantics, and rerun this 100k current-contract workload plus ordinary API race/correctness gates. The production PR should keep the persisted-key design out unless future data reverses this result.
 
 ### VirtualCollection 100k CPU baseline (PR #708)
 
@@ -448,7 +496,7 @@ Decision: **accept the production count-once contract.** Keep `total_count_inclu
 1. **No further thumbnail or marquee production tuning from #734.** Keep the current **80 ms scroll-settle**, **6-request thumbnail concurrency**, **96-entry FileExplorer cache**, video icon fallback, and virtual-geometry marquee implementation.
 2. **Measured / accepted direction:** #739 shows a **38.28% broad-offset** and **39.52% sequential-session** reduction when later ranges stop recomputing `COUNT(*) OVER()`. Keep #739 benchmark-only.
 3. **Accepted / implemented:** the production **count-once / count-free subsequent-range** contract is complete across Server -> Go client -> xdrive-agent/Electron/Web -> shared Cloud Files/VirtualCollection. Keep #739 as the decision benchmark and #750 as the production validation.
-4. **No further FileExplorer production optimization is selected from the current evidence.** Keep a combined browser-to-real-Server trace optional only if field behavior later disagrees with the separate backend and Chromium measurements; do not build it merely to chase hosted-runner timing.
+4. **Measured / production candidate selected:** #756 rebaselined 100k directory sorts under the #750 count-once contract. The exact type expression index cuts the repeated count-free middle range **300.789 -> 126.174 ms (-58.05%)** with only **-1.39%** change on the once-per-generation counted first range. Proceed with a separate production index PR; keep the persisted-key candidate rejected. The combined browser-to-real-Server trace remains optional only if field behavior later disagrees with existing measurements.
 5. Warm FileExplorer video posters remain blocked until the product has a real derived/cached poster contract.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.

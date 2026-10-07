@@ -292,7 +292,7 @@ jobs:
         run: go test -run '^TestFileExplorerSearchPerformanceBaseline100K$' -count=1 -v ./internal/api
 
   file-explorer-directory-sort-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-directory-sort-100k-baseline'
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/file-explorer-directory-sort-')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -318,7 +318,7 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Measure FileExplorer directory sort 100k baseline
+      - name: Measure FileExplorer directory sort 100k workload
         run: go test -run '^TestFileExplorerDirectorySortPerformanceBaseline100K$' -count=1 -v ./internal/api
 
   file-explorer-thumbnail-transport-performance:
