@@ -1284,15 +1284,14 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
 				return err
 			}
-			size, err := fileOperationNodeBytesTx(tx, uid, node)
+			if node.Type == meta.NodeTypeFile && node.File == nil {
+				return gorm.ErrRecordNotFound
+			}
+			subtree, err := activeSubtreeSummaryDB(tx, uid, node.ID)
 			if err != nil {
 				return err
 			}
-			ids, err := activeSubtreeIDsDB(tx, uid, node.ID)
-			if err != nil {
-				return err
-			}
-			protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, ids)
+			protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, subtree.IDs)
 			if err != nil {
 				return err
 			}
@@ -1301,12 +1300,12 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			}
 			now := time.Now()
 			if err := tx.Model(&meta.Share{}).
-				Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", ids, uid).
+				Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", subtree.IDs, uid).
 				Update("revoked_at", &now).Error; err != nil {
 				return err
 			}
 			if err := tx.Model(&meta.Node{}).
-				Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, uid).
+				Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", subtree.IDs, uid).
 				Updates(map[string]any{"deleted_at": &now, "trash_root_id": node.ID}).Error; err != nil {
 				return err
 			}
@@ -1324,7 +1323,7 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 				Revision: ref.Revision + 1,
 				Name:     node.Name,
 			})
-			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
+			if err := s.recordFileOperationProgress(ctx, operation.ID, subtree.Bytes); err != nil {
 				return err
 			}
 		}

@@ -336,6 +336,61 @@ func (s *Server) restoreFileVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, toNodeDTO(n))
 }
 
+type activeSubtreeSummary struct {
+	IDs   []uint64
+	Bytes int64
+}
+
+func activeSubtreeSummaryDB(db *gorm.DB, uid, root uint64) (activeSubtreeSummary, error) {
+	type row struct {
+		ID       uint64 `gorm:"column:id"`
+		Bytes    int64  `gorm:"column:bytes"`
+		Overflow bool   `gorm:"column:overflow"`
+	}
+	var rows []row
+	err := db.Raw(`WITH RECURSIVE tree AS (
+SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+UNION ALL
+SELECT n.id FROM xd_nodes n JOIN tree t ON n.parent_id = t.id
+WHERE n.owner_id = ? AND n.deleted_at IS NULL
+),
+stats AS (
+SELECT COALESCE(SUM(f.size), 0)::numeric AS bytes
+FROM tree
+LEFT JOIN xd_files f ON f.node_id = tree.id
+)
+SELECT tree.id,
+       CASE
+         WHEN stats.bytes > 9223372036854775807 THEN 9223372036854775807
+         WHEN stats.bytes < -9223372036854775808 THEN -9223372036854775808
+         ELSE stats.bytes
+       END::bigint AS bytes,
+       (
+         stats.bytes > 9223372036854775807 OR
+         stats.bytes < -9223372036854775808
+       ) AS overflow
+FROM tree
+CROSS JOIN stats
+ORDER BY tree.id`, root, uid, uid).Scan(&rows).Error
+	if err != nil {
+		return activeSubtreeSummary{}, err
+	}
+	if len(rows) == 0 {
+		return activeSubtreeSummary{}, gorm.ErrRecordNotFound
+	}
+	if rows[0].Overflow {
+		return activeSubtreeSummary{}, errors.New("file operation size overflow")
+	}
+	ids := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	return activeSubtreeSummary{
+		IDs:   ids,
+		Bytes: rows[0].Bytes,
+	}, nil
+}
+
 func activeSubtreeIDsDB(db *gorm.DB, uid, root uint64) ([]uint64, error) {
 	type row struct{ ID uint64 }
 	var rows []row
