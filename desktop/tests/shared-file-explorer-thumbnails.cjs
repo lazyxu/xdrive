@@ -66,3 +66,39 @@ test('navigation thumbnail projections do not restart work on fresh item object 
     'thumbnail effect must be keyed by thumbnail identity rather than projected object identity',
   )
 })
+
+test('FileExplorer thumbnail surfaces are square without radius clipping', () => {
+  assert.ok(
+    thumbnail.includes("borderRadius: 0,"),
+    'shared thumbnail primitive must explicitly remain square',
+  )
+
+  const detailsStart = explorer.indexOf("width: 24,")
+  const detailsEnd = explorer.indexOf("{thumbnailForItem(item, false)}", detailsStart)
+  assert.ok(detailsStart >= 0 && detailsEnd > detailsStart)
+  assert.equal(
+    explorer.slice(detailsStart, detailsEnd).includes('borderRadius'),
+    false,
+    'Details thumbnail wrapper must not round or clip image corners',
+  )
+
+  const gridStart = explorer.indexOf("width: gridMetrics.thumbnailWidth")
+  const gridEnd = explorer.indexOf("{thumbnailForItem(item)}", gridStart)
+  assert.ok(gridStart >= 0 && gridEnd > gridStart)
+  assert.equal(
+    explorer.slice(gridStart, gridEnd).includes('borderRadius'),
+    false,
+    'Grid thumbnail wrapper must not round or clip image corners',
+  )
+
+  assert.equal(
+    pane.includes("<Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0.75 }}>"),
+    false,
+    'Favorite/Recent thumbnail wrappers must not retain rounded clipping',
+  )
+  assert.ok(
+    (pane.match(/<Box sx=\{\{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden' \}\}>/g) || []).length >= 2,
+    'Favorite and Recent must both use square thumbnail wrappers',
+  )
+})
+

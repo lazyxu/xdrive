@@ -646,7 +646,7 @@ export function XDriveFileExplorerNavigationPane({
                     onClick={() => { void onActivateFavorite?.(item.id) }}
                     sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
                   >
-                    <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0.75 }}>
+                    <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden' }}>
                       <XDriveFileExplorerThumbnail
                         item={{
                           id: item.id,
@@ -731,7 +731,7 @@ export function XDriveFileExplorerNavigationPane({
                   onClick={() => { void onActivateRecent?.(item.id) }}
                   sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
                 >
-                  <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0.75 }}>
+                  <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden' }}>
                     <XDriveFileExplorerThumbnail
                       item={{
                         id: item.id,

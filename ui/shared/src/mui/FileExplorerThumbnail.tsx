@@ -361,6 +361,7 @@ export function XDriveFileExplorerThumbnail({
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
+          borderRadius: 0,
         },
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
       ]}

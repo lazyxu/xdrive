@@ -2901,7 +2901,6 @@ export function XDriveFileExplorer({
                             height: 24,
                             flex: '0 0 24px',
                             overflow: 'hidden',
-                            borderRadius: 0.75,
                           }}
                         >
                           {thumbnailForItem(item, false)}
@@ -3034,7 +3033,6 @@ export function XDriveFileExplorer({
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
-            borderRadius: 1,
             position: 'relative',
           }}
         >
