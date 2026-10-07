@@ -38,7 +38,6 @@ import {
   XDriveTaskCenterPage,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
-  useXDriveFileExplorerCurrentDirectoryRefresh,
   xDriveFileExplorerUploadGroupLabel,
   useXDriveFileExplorerDeleteController,
   useXDriveCloudFilesController,
@@ -516,12 +515,11 @@ function FileManager({
     items,
     crumbs,
     current,
-    sort: directorySort,
-    grouping: directoryGrouping,
     loading,
     virtualDirectory,
     applyQuota,
     refreshQuota,
+    refreshCurrentDirectoryIfIdle,
     loadDirectory,
   } = useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>({
     port: cloudFilesPort,
@@ -530,13 +528,7 @@ function FileManager({
     onError: handleError,
   })
 
-  const refreshCurrentDirectory = useXDriveFileExplorerCurrentDirectoryRefresh({
-    currentID: current?.id,
-    currentCrumbs: crumbs,
-    sort: directorySort,
-    currentGrouping: directoryGrouping,
-    refreshDirectory: loadDirectory,
-  })
+  const refreshCurrentDirectory = refreshCurrentDirectoryIfIdle
 
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
     getQuota: () => api.quota(),
@@ -580,8 +572,10 @@ function FileManager({
     loadOperations: loadFileOperations,
     onRefreshError: handleError,
     onTerminalTransition: () => {
-      if (!current) return
-      void loadDirectory(current.id, crumbs, directorySort)
+      const expectedCurrentID = current?.id
+      if (expectedCurrentID !== undefined) {
+        void refreshCurrentDirectoryIfIdle(expectedCurrentID)
+      }
       void refreshQuota()
     },
   })
@@ -957,6 +951,7 @@ function FileManager({
                 loading={loading}
                 uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
+                onRefreshCurrentDirectoryIfIdle={refreshCurrentDirectoryIfIdle}
                 onUploadFiles={uploadFiles}
                 onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}
@@ -967,7 +962,10 @@ function FileManager({
                 trashAdapter={trashDialogAdapter}
                 onCloseTrash={() => setTrashOpen(false)}
                 onTrashChanged={async () => {
-                  if (current) await loadDirectory(current.id)
+                  const expectedCurrentID = current?.id
+                  if (expectedCurrentID !== undefined) {
+                    await refreshCurrentDirectoryIfIdle(expectedCurrentID)
+                  }
                   await refreshQuota()
                 }}
                 onRemove={remove}
@@ -1039,8 +1037,11 @@ function FileManager({
         onError={handleError}
         onFeedback={(message) => setFeedback({ tone: 'good', message })}
         onRestored={async (restored) => {
+          const expectedCurrentID = current?.id
           setHistoryNode(restored)
-          if (current) await loadDirectory(current.id)
+          if (expectedCurrentID !== undefined) {
+            await refreshCurrentDirectoryIfIdle(expectedCurrentID)
+          }
           await refreshQuota()
         }}
       />

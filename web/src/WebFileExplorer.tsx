@@ -16,7 +16,6 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
-  useXDriveFileExplorerCurrentDirectoryRefresh,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerExternalDropPayload,
@@ -66,6 +65,7 @@ export default function WebFileExplorer({
   loading,
   uploadProgress,
   onLoadDirectory,
+  onRefreshCurrentDirectoryIfIdle,
   onUploadFiles,
   onUploadFolderFiles,
   onUploadDroppedFiles,
@@ -99,6 +99,9 @@ export default function WebFileExplorer({
     crumbs: Crumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
+  ) => Promise<boolean | void>
+  onRefreshCurrentDirectoryIfIdle: (
+    expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadFolderFiles: (files: FileList | null) => Promise<void>
@@ -232,13 +235,7 @@ export default function WebFileExplorer({
     onError,
   })
 
-  const refreshCurrentDirectory = useXDriveFileExplorerCurrentDirectoryRefresh({
-    currentID: current?.id,
-    currentCrumbs: crumbs,
-    sort,
-    currentGrouping: grouping,
-    refreshDirectory: onLoadDirectory,
-  })
+  const refreshCurrentDirectory = onRefreshCurrentDirectoryIfIdle
 
   const loadTreeDirectoryPage = useCallback(
     (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
