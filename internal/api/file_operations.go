@@ -551,20 +551,17 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 			refs = topLevel
 		}
 
-		var totalBytes int64
+		nodes := make([]meta.Node, 0, len(refs))
 		for index, ref := range refs {
 			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
 			if err != nil {
 				return err
 			}
-			size, err := fileOperationNodeBytesTx(tx, uid, node)
-			if err != nil {
-				return err
-			}
-			if size > 0 && totalBytes > int64(^uint64(0)>>1)-size {
-				return errors.New("file operation size overflow")
-			}
-			totalBytes += size
+			nodes = append(nodes, node)
+		}
+		totalBytes, err := fileOperationSelectionBytesTx(tx, uid, nodes)
+		if err != nil {
+			return err
 		}
 
 		rawRefs, err := json.Marshal(refs)
@@ -589,6 +586,57 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 		return tx.Create(&operation).Error
 	})
 	return operation, err
+}
+
+func fileOperationSelectionBytesTx(tx *gorm.DB, uid uint64, nodes []meta.Node) (int64, error) {
+	if len(nodes) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]uint64, 0, len(nodes))
+	for _, node := range nodes {
+		ids = append(ids, node.ID)
+		if node.Type == meta.NodeTypeFile && node.File == nil {
+			var file meta.File
+			if err := tx.Where("node_id = ?", node.ID).First(&file).Error; err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	var row struct {
+		Bytes    int64 `gorm:"column:bytes"`
+		Overflow bool  `gorm:"column:overflow"`
+	}
+	err := tx.Raw(`WITH RECURSIVE tree AS (
+SELECT id
+FROM xd_nodes
+WHERE id IN ? AND owner_id = ? AND deleted_at IS NULL
+UNION
+SELECT n.id
+FROM xd_nodes n
+JOIN tree t ON n.parent_id = t.id
+WHERE n.owner_id = ? AND n.deleted_at IS NULL
+),
+total AS (
+SELECT COALESCE(SUM(f.size), 0)::numeric AS bytes
+FROM tree
+LEFT JOIN xd_files f ON f.node_id = tree.id
+)
+SELECT CASE
+         WHEN bytes > 9223372036854775807 THEN 9223372036854775807
+         WHEN bytes < -9223372036854775808 THEN -9223372036854775808
+         ELSE bytes
+       END::bigint AS bytes,
+       (bytes > 9223372036854775807 OR bytes < -9223372036854775808) AS overflow
+FROM total`, ids, uid, uid).Scan(&row).Error
+	if err != nil {
+		return 0, err
+	}
+	if row.Overflow {
+		return 0, errors.New("file operation size overflow")
+	}
+	return row.Bytes, nil
 }
 
 func fileOperationNodeBytesTx(tx *gorm.DB, uid uint64, node meta.Node) (int64, error) {
