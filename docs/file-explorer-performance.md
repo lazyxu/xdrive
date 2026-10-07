@@ -26,6 +26,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Recursive tree scan: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response**. #788 also bounded root lookup before the exact lookup follow-up below. No wall-clock speedup claimed. |
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
+| Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
@@ -57,6 +58,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Folder-upload create conflicts reuse an existing sibling through a case-insensitive indexed name lookup (limit 1) instead of listing and scanning the entire parent directory.
 - Desktop folder-tree download resolves the selected root through an owner-scoped exact node-id lookup and validates its expected parent/type/name; recursive directory enumeration uses cursor-paged children reads capped at **500 nodes per response** and must not use the legacy unpaginated children contract.
 - Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
+- Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
@@ -64,6 +66,38 @@ This table is the durable status index for the FileExplorer performance track. A
 - Search result sorting is server-paged for name/updated/size/type; cursors bind query/type/sort/order, and changing sort reloads the active search from page one instead of re-sorting only the loaded subset.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
 - Navigation-tree expansion loads one 200-item folder page at a time; further sibling folders require explicit load-more, while the active path child stays injected even when it lies outside the loaded page.
+
+### Resumable upload chunk-buffer allocation contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- shared Go resumable-upload client used by FileExplorer/Desktop sync paths;
+- stable structural workload: **1 GiB file**, **8 MiB chunks**, exactly **128 chunks**;
+- evidence method: source-level explicit payload-buffer allocation count plus `go test ./internal/client`; wall-clock benchmark intentionally not quoted;
+- samples: n/a for the structural count.
+
+BEFORE:
+
+- file-path pre-hash pass: **128** explicit large chunk-buffer instances;
+- file-path upload verification pass with all chunks missing: **128** more;
+- total for the 1 GiB path workload: **256** explicit 8 MiB payload-buffer instances;
+- stream upload with 128 missing chunks: **128** explicit large payload-buffer instances.
+
+AFTER / current:
+
+- file-path pre-hash pass: **1** reusable chunk buffer;
+- file-path upload verification pass: **1** lazily allocated reusable chunk buffer;
+- total for the same 1 GiB path workload: **2** explicit 8 MiB payload-buffer instances;
+- stream upload: **1** reusable chunk buffer from the first missing chunk onward;
+- chunk-hash manifest strings remain **O(chunk count)** and are intentionally unchanged.
+
+Decision: **Accepted.** The change removes chunk-count-scaled large payload allocations without weakening resumable-state validation, retry behavior, source-change detection, or the intentional second hash during upload.
+
+Regression budget: payload-buffer instances must remain **O(1) per upload pass**, each bounded to one negotiated chunk (Server maximum **16 MiB**); no full-file buffering.
+
+Next action: after this client-side allocation fix is merged, continue the basic-path performance audit at Server upload-finalize staging/object-store I/O before considering broader concurrency changes.
 
 ## Measured baselines and accepted/rejected changes
 
