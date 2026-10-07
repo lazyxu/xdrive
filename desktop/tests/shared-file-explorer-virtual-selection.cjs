@@ -169,3 +169,33 @@ test('interaction-scope change cancels queued marquee selection work', () => {
     'queued marquee RAF must be cancelled before the new interaction scope publishes its cleared selection',
   )
 })
+
+
+test('interaction-scope change closes stale item-bound menu and rename sessions', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'setContextMenu(null)',
+    'renameCancelledRef.current = true',
+    'setRenamingID(null)',
+    "setRenameDraft('')",
+    "setRenameError('')",
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'interaction-scope change must dispose stale item-bound UI before old directory actions can leak into the new workspace: ' + token,
+    )
+  }
+
+  assert.ok(
+    scopeBlock.indexOf('setContextMenu(null)') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'stale item menu must close as part of the same scope invalidation before the new selection state is published',
+  )
+})

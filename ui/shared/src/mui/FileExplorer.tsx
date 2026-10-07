@@ -860,6 +860,11 @@ export function XDriveFileExplorer({
     marqueePointerRef.current = null
     marqueeSessionRef.current = null
     setMarqueeRect(null)
+    setContextMenu(null)
+    renameCancelledRef.current = true
+    setRenamingID(null)
+    setRenameDraft('')
+    setRenameError('')
     typeSelectIntentRef.current += 1
     selectionIntentRef.current += 1
     quickLookIntentRef.current += 1
