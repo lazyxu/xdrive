@@ -380,7 +380,7 @@ test('desktop page-level status alerts use the shared alert surface', () => {
   assert.ok(renderer.includes('{error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}'), 'login errors need a stable inline error surface')
   for (const text of [
     '存储空间已超出配额',
-    '未计入 CAS 尺寸分布',
+    '这里展示账号配额与逻辑文件视角',
     '当前平台不提供 Windows CfAPI',
     '当前 xdrive-agent 不支持更新设置',
     'clientUpdate.last_error ? <XDriveStatusAlert tone="bad"',

@@ -352,19 +352,28 @@ type StorageStats struct {
 	DiskAvailableBytes        *int64              `json:"disk_available_bytes,omitempty"`
 	XDrivePhysicalBytes       *int64              `json:"xdrive_physical_bytes,omitempty"`
 	Inventory                 *StorageInventory   `json:"inventory,omitempty"`
-	CASBlobCount              int64               `json:"cas_blob_count"`
-	CASPhysicalBytes          int64               `json:"cas_physical_bytes"`
-	CASLogicalReferencedBytes int64               `json:"cas_logical_referenced_bytes"`
-	CASDedupSavedBytes        int64               `json:"cas_dedup_saved_bytes"`
-	CASDedupRatio             float64             `json:"cas_dedup_ratio"`
-	CASSavingsRatio           float64             `json:"cas_savings_ratio"`
-	AverageBlobSizeBytes      float64             `json:"average_blob_size_bytes"`
-	P50BlobSizeBytes          int64               `json:"p50_blob_size_bytes"`
-	P90BlobSizeBytes          int64               `json:"p90_blob_size_bytes"`
-	P99BlobSizeBytes          int64               `json:"p99_blob_size_bytes"`
-	LegacyBlobCount           int64               `json:"legacy_blob_count"`
-	LegacyPhysicalBytes       int64               `json:"legacy_physical_bytes"`
-	Buckets                   []StorageSizeBucket `json:"buckets"`
+	FileCount                 int64               `json:"file_count,omitempty"`
+	LogicalFileBytes          int64               `json:"logical_file_bytes,omitempty"`
+	AverageFileSizeBytes      float64             `json:"average_file_size_bytes,omitempty"`
+	P50FileSizeBytes          int64               `json:"p50_file_size_bytes,omitempty"`
+	P90FileSizeBytes          int64               `json:"p90_file_size_bytes,omitempty"`
+	P99FileSizeBytes          int64               `json:"p99_file_size_bytes,omitempty"`
+	FileBuckets               []StorageSizeBucket `json:"file_buckets,omitempty"`
+	CASBlobCount              int64               `json:"cas_blob_count,omitempty"`
+	CASPhysicalBytes          int64               `json:"cas_physical_bytes,omitempty"`
+	UnreferencedBlobCount     int64               `json:"unreferenced_blob_count,omitempty"`
+	UnreferencedBlobBytes     int64               `json:"unreferenced_blob_bytes,omitempty"`
+	CASLogicalReferencedBytes int64               `json:"cas_logical_referenced_bytes,omitempty"`
+	CASDedupSavedBytes        int64               `json:"cas_dedup_saved_bytes,omitempty"`
+	CASDedupRatio             float64             `json:"cas_dedup_ratio,omitempty"`
+	CASSavingsRatio           float64             `json:"cas_savings_ratio,omitempty"`
+	AverageBlobSizeBytes      float64             `json:"average_blob_size_bytes,omitempty"`
+	P50BlobSizeBytes          int64               `json:"p50_blob_size_bytes,omitempty"`
+	P90BlobSizeBytes          int64               `json:"p90_blob_size_bytes,omitempty"`
+	P99BlobSizeBytes          int64               `json:"p99_blob_size_bytes,omitempty"`
+	LegacyBlobCount           int64               `json:"legacy_blob_count,omitempty"`
+	LegacyPhysicalBytes       int64               `json:"legacy_physical_bytes,omitempty"`
+	Buckets                   []StorageSizeBucket `json:"buckets,omitempty"`
 	GeneratedAt               time.Time           `json:"generated_at"`
 }
 

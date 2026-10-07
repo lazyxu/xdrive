@@ -1,12 +1,12 @@
-# Server storage inventory
+# Account storage and global storage inventory
 
-This document is the normative contract for the xDrive **云端存储** physical-storage inventory, host-path presentation, and safe cache cleanup.
+This document is the normative contract for the separation between xDrive **云端存储** (current-account logical view) and **全局存储** (administrator physical view), including host-path presentation and safe cache cleanup.
 
 ## Goals
 
 The storage UI must explain where xDrive-managed disk space is actually used. It must not stop at account quota or CAS logical references.
 
-For administrators, the shared Web/Desktop cloud-storage page reports:
+The administrator **全局存储** surface reports:
 
 - canonical file data;
 - upload staging and transient files;
@@ -106,7 +106,7 @@ The PostgreSQL row displays the resolved `XD_POSTGRES_DATA_DIR`.
 
 Host Control measures the physical PostgreSQL data directory. When that host snapshot is temporarily unavailable, the Server may fall back to PostgreSQL's `pg_database_size(current_database())` for a database-byte estimate.
 
-Database storage is always read-only in the cloud-storage cleanup surface.
+Database storage is always read-only in the global-storage cleanup surface.
 
 ### Backups
 
@@ -223,23 +223,57 @@ A cache cleanup is an explicit administrator maintenance action. It is not a dur
 
 ## UI contract
 
-Web and Desktop must use the shared `XDriveCloudStoragePage`.
+The two storage destinations have deliberately different scopes.
 
-Platform code supplies thin adapters only:
+### 云端存储 — current account
 
-- Web: REST.
-- Desktop: renderer → Electron → Agent IPC → Server.
+Web and Desktop use the shared `XDriveCloudStoragePage` for the current account.
 
-Administrators see:
+It reports only account-scoped information:
 
+- quota-accounted physical usage;
+- available quota / server free space when quota is unlimited;
+- current logical file bytes and file count;
+- trash and history usage;
+- active upload reservation;
+- current-file size distribution by count and logical bytes.
+
+The current-account size distribution is a **file-size distribution**, not a CAS distribution.
+
+The `/api/v1/me/storage` response must not expose:
+
+- global CAS Blob counts or physical CAS bytes;
+- Server physical inventory;
+- database or backup bytes;
+- host absolute paths;
+- global cache cleanup controls;
+- global disk totals.
+
+Administrator status does not widen the scope of `/api/v1/me/storage`. An administrator sees the same account-scoped cloud-storage contract as any other user.
+
+### 全局存储 — whole instance
+
+The administrator global-storage surface owns all physical-instance information:
+
+- disk total / used / available capacity;
+- xDrive physical managed bytes;
+- global CAS Blob count, physical bytes, logical references and dedup metrics;
+- CAS P50/P90/P99 and CAS Blob size distribution;
+- CAS health;
+- upload staging;
 - the complete Server physical inventory;
 - absolute host paths;
-- file counts and byte counts;
-- reclaimable bytes;
-- per-class cleanup actions for eligible classes;
-- “clear all reclaimable cache” with a destructive confirmation.
+- database, backup, host-service and cache byte counts;
+- reclaimable bytes and per-class cleanup actions.
 
-Non-admin users continue to see their own quota/CAS statistics and do not receive Server-wide physical-path or cleanup authority.
+CAS Blob size distribution is **global by definition**. CAS is a content-addressed deduplicated physical object pool, so one Blob may be referenced by multiple files and multiple users. The UI must not present a CAS Blob as belonging to a single account merely because that account references it.
+
+The global page renders two complementary CAS distribution charts:
+
+- **by Blob count** — highlights small-object/object-count pressure;
+- **by physical bytes** — highlights the size ranges that actually consume disk.
+
+A precise bucket table may remain below the charts for exact values.
 
 Database, backups, and canonical data rows never render a delete action.
 
