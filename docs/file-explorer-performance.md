@@ -35,6 +35,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
+| Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
@@ -74,6 +75,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
+- Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
 - FileOperation Copy/Move target-descendant validation walks the target's active ancestor chain in PostgreSQL and returns one scalar `EXISTS` result instead of materializing the source subtree IDs in Go. Managed-source subtree protection likewise stays inside PostgreSQL as a recursive CTE joined directly to `xd_sources`, while Delete keeps its existing ID materialization because those IDs are required for share revocation and Trash updates.
 - FileOperation Move obtains logical byte totals for all selected roots with one lazily executed grouped recursive CTE, then reuses the per-root totals for normal, skipped, and replace/merge progress. Move root nodes are loaded without the unused `File` preload; Copy keeps file preloads because recursive copy hooks need file metadata, and Delete keeps its subtree summary contract.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
@@ -209,6 +211,40 @@ Decision: **Accepted.** This removes change-count x baseline-size CPU amplificat
 Regression budget: `applyRemoteChangePage` must build at most **1 baseline node index per journal page** and must not call the linear `findBaselinePathByNodeID` for each change. Incremental file delete/rename must not call `deletePrefix` / `moveBaselinePrefix`.
 
 Next action: continue delete-path performance at content-reference release / physical blob cleanup, and only change it if deterministic SQL or object-store amplification is found.
+
+### Permanent-delete CAS reference release contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- permanent deletion of a trash subtree whose files/versions reference **120 unique CAS blobs**;
+- every unique CAS key requires one refcount decrement; some rows remain referenced and some transition to `deleting`;
+- evidence method: deterministic PostgreSQL statement counting around `releaseContentReferencesTx`; physical object-store deletion is outside this measured phase;
+- samples: n/a for the structural count.
+
+BEFORE:
+
+- each unique CAS blob acquires one advisory xact lock with its own SQL statement;
+- each blob is loaded with its own `SELECT ... FOR UPDATE`;
+- each blob is updated with its own `UPDATE`;
+- **120 unique blobs = 360 SQL statements** in the reference-release phase.
+
+AFTER / current:
+
+- unique CAS releases are sorted and processed in batches capped at **200**;
+- one PostgreSQL statement per batch acquires advisory locks in hash order;
+- one `SELECT ... FOR UPDATE` loads all matching content rows, then Go validates storage keys and refcount underflow exactly as before;
+- one batch `UPDATE ... FROM VALUES` applies the resulting refcount/state transitions;
+- **120 unique blobs = 3 SQL statements** in the reference-release phase;
+- zero-ref rows still enter `deleting` and are physically removed only by the existing finalize path;
+- legacy non-CAS key cleanup is unchanged.
+
+Decision: **Accepted.** This removes unique-content-count-scaled DB round trips from permanent delete without changing the two-phase CAS deletion protocol or physical object deletion.
+
+Regression budget: reference release must use at most **3 × ceil(unique CAS blobs / 200) SQL statements**, with exactly three statements for each non-empty batch; advisory locks must remain deterministically ordered and batches must stay parameter-bounded.
+
+Next action: audit the physical finalize phase separately. Per-object `Store.Delete` is inherent, so only optimize if the DB/upload-part safety checks show deterministic amplification.
 
 ### Upload conflict preflight batching contract
 
