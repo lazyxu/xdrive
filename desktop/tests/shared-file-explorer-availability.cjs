@@ -106,7 +106,7 @@ test('Desktop maps CfAPI state to Explorer labels and management actions', () =>
     'Release space action is missing',
   )
   assert.ok(
-    sharedExplorer.includes("{ label: '可用性', value: availability.label }"),
+    sharedExplorer.includes("label: '可用性', value: availability.label, section: 'general'"),
     'availability must also appear in shared Properties',
   )
 })

@@ -339,6 +339,7 @@ export type XDriveFileExplorerItem = {
   thumbnailEligible?: boolean
   path?: string
   revision?: string | number
+  sha256?: string
   properties?: XDriveFileExplorerProperty[]
   availability?: XDriveFileExplorerAvailability
 }
@@ -2758,17 +2759,29 @@ export function XDriveFileExplorer({
     if (event.key === 'Escape') clearSelection()
   }
 
-  const propertiesForItem = (item: XDriveFileExplorerItem) => {
+  const propertiesForItem = (
+    item: XDriveFileExplorerItem,
+    sourceValue?: string,
+  ) => {
     const availability = availabilityForItem(item)
     return [
-      { label: '类型', value: defaultTypeLabel(item) },
-      { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0) },
-      { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—' },
-      { label: '位置', value: item.path || item.secondaryLabel || derivedPath },
-      ...(availability ? [{ label: '可用性', value: availability.label }] : []),
+      { label: '类型', value: defaultTypeLabel(item), section: 'general' },
+      { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—', section: 'general' },
+      { label: '创建时间', value: item.createdAt ? new Date(item.createdAt).toLocaleString() : '—', section: 'general' },
+      { label: '位置', value: item.path || item.secondaryLabel || derivedPath, section: 'general' },
+      ...(availability
+        ? [{ label: '可用性', value: availability.label, section: 'general' as const }]
+        : []),
+      { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0), section: 'content' },
       ...(item.properties ?? []),
-    { label: 'Revision', value: item.revision ?? '—', technical: true },
-      { label: 'ID', value: String(item.id), technical: true },
+      ...(item.kind === 'file'
+        ? [{ label: 'SHA-256', value: item.sha256 || '—', section: 'technical' as const }]
+        : []),
+      { label: 'Revision', value: item.revision ?? '—', section: 'technical' },
+      { label: 'ID', value: String(item.id), section: 'technical' },
+      ...(sourceValue !== undefined
+        ? [{ label: '来源', value: sourceValue, section: 'technical' as const }]
+        : []),
     ] satisfies XDriveFileExplorerProperty[]
   }
 
@@ -2776,6 +2789,19 @@ export function XDriveFileExplorer({
   const inspectorFileCount = selectedItems.filter((item) => item.kind === 'file').length
   const inspectorFolderCount = selectedItems.length - inspectorFileCount
   const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
+  const inspectorPropertySections = ([
+    ['general', '常规'],
+    ['content', '内容'],
+    ['technical', '技术详情'],
+  ] as const)
+    .map(([key, label]) => ({
+      key,
+      label,
+      properties: inspectorProperties.filter((property) => (
+        (property.section ?? 'general') === key
+      )),
+    }))
+    .filter((section) => section.properties.length > 0)
 
   const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
   const propertiesDialogAvailability = propertiesDialogItem
@@ -2801,38 +2827,51 @@ export function XDriveFileExplorer({
       : propertiesStatsState.error
         ? '计算失败'
         : '—'
+  const propertiesDialogSource = propertiesStatsState.loading
+    ? '正在加载…'
+    : propertiesStatsState.error
+      ? '加载失败'
+      : propertiesStatsState.stats?.sources?.length
+        ? propertiesStatsState.stats.sources
+            .map((source) => `${source.name} (${source.kind})`)
+            .join('；')
+        : '—'
   const propertiesDialogProperties = propertiesDialogItem
     ? propertiesDialogItem.kind === 'dir'
       ? [
-          { label: '类型', value: defaultTypeLabel(propertiesDialogItem) },
-          { label: '大小', value: propertiesDialogRecursiveSize },
-          { label: '内容', value: propertiesDialogRecursiveContent },
-          { label: '修改时间', value: propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—' },
-          { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath },
+          { label: '类型', value: defaultTypeLabel(propertiesDialogItem), section: 'general' },
+          { label: '修改时间', value: propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—', section: 'general' },
+          { label: '创建时间', value: propertiesDialogItem.createdAt ? new Date(propertiesDialogItem.createdAt).toLocaleString() : '—', section: 'general' },
+          { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath, section: 'general' },
           ...(propertiesDialogAvailability
-            ? [{ label: '可用性', value: propertiesDialogAvailability.label }]
+            ? [{ label: '可用性', value: propertiesDialogAvailability.label, section: 'general' as const }]
             : []),
+          { label: '大小', value: propertiesDialogRecursiveSize, section: 'content' },
+          { label: '内容', value: propertiesDialogRecursiveContent, section: 'content' },
           ...(propertiesDialogItem.properties ?? []),
-          { label: 'Revision', value: propertiesDialogItem.revision ?? '—', technical: true },
-          { label: 'ID', value: String(propertiesDialogItem.id), technical: true },
+          { label: 'Revision', value: propertiesDialogItem.revision ?? '—', section: 'technical' },
+          { label: 'ID', value: String(propertiesDialogItem.id), section: 'technical' },
+          { label: '来源', value: propertiesDialogSource, section: 'technical' },
         ] satisfies XDriveFileExplorerProperty[]
-      : propertiesForItem(propertiesDialogItem)
+      : propertiesForItem(propertiesDialogItem, propertiesDialogSource)
     : propertiesItems.length > 1
       ? [
-          { label: '项目数', value: `${propertiesItems.length} 个` },
+          { label: '项目数', value: `${propertiesItems.length} 个`, section: 'general' },
+          { label: '位置', value: derivedPath, section: 'general' },
           {
             label: '内容',
             value: propertiesDialogHasFolder
               ? propertiesDialogRecursiveContent
               : `${propertiesDialogFileCount} 个文件 · 0 个文件夹`,
+            section: 'content',
           },
           {
             label: '文件大小合计',
             value: propertiesDialogHasFolder
               ? propertiesDialogRecursiveSize
               : formatBytes(propertiesDialogLocalSize),
+            section: 'content',
           },
-          { label: '位置', value: derivedPath },
         ] satisfies XDriveFileExplorerProperty[]
       : []
   const propertiesDialogTitle = propertiesDialogItem
@@ -4244,25 +4283,20 @@ export function XDriveFileExplorer({
                   />
                 </Box>
                 <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>{inspectorItem.name}</Typography>
-                <Divider />
-                <Stack spacing={1}>
-                  {inspectorProperties.filter((property) => !property.technical).map((property) => (
-                    <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
-                      <Typography variant="caption" color="text.secondary">{property.label}</Typography>
-                      <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
-                    </Box>
-                  ))}
-                </Stack>
-                <Divider />
-                <Typography variant="caption" color="text.secondary">技术信息</Typography>
-                <Stack spacing={1}>
-                  {inspectorProperties.filter((property) => property.technical).map((property) => (
-                    <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
-                      <Typography variant="caption" color="text.secondary">{property.label}</Typography>
-                      <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
-                    </Box>
-                  ))}
-                </Stack>
+                {inspectorPropertySections.map((section) => (
+                  <Stack key={section.key} spacing={1}>
+                    <Divider />
+                    <Typography variant="caption" color="text.secondary">
+                      {section.label}
+                    </Typography>
+                    {section.properties.map((property) => (
+                      <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
+                        <Typography variant="caption" color="text.secondary">{property.label}</Typography>
+                        <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ))}
               </Stack>
             ) : null}
           </Box>

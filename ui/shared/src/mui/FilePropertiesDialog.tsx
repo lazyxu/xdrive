@@ -6,10 +6,12 @@ import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
+export type XDriveFilePropertiesDialogSection = 'general' | 'content' | 'technical'
+
 export type XDriveFilePropertiesDialogProperty = {
   label: string
   value: ReactNode
-  technical?: boolean
+  section?: XDriveFilePropertiesDialogSection
 }
 
 export function XDriveFilePropertiesDialog({
@@ -25,8 +27,19 @@ export function XDriveFilePropertiesDialog({
   properties: XDriveFilePropertiesDialogProperty[]
   onClose: () => void
 }) {
-  const general = properties.filter((property) => !property.technical)
-  const technical = properties.filter((property) => property.technical)
+  const sections = ([
+    ['general', '常规'],
+    ['content', '内容'],
+    ['technical', '技术详情'],
+  ] as const)
+    .map(([key, label]) => ({
+      key,
+      label,
+      properties: properties.filter((property) => (
+        (property.section ?? 'general') === key
+      )),
+    }))
+    .filter((section) => section.properties.length > 0)
 
   return (
     <Dialog
@@ -59,27 +72,21 @@ export function XDriveFilePropertiesDialog({
             </Box>
           ) : null}
 
-          <XDriveDescriptionGrid columns={2}>
-            {general.map((property) => (
-              <XDriveDescriptionItem key={property.label} label={property.label}>
-                {property.value}
-              </XDriveDescriptionItem>
-            ))}
-          </XDriveDescriptionGrid>
-
-          {technical.length > 0 ? (
-            <>
-              <Divider />
-              <Typography variant="caption" color="text.secondary">技术信息</Typography>
+          {sections.map((section, index) => (
+            <Stack key={section.key} spacing={1}>
+              {index > 0 ? <Divider /> : null}
+              <Typography variant="caption" color="text.secondary">
+                {section.label}
+              </Typography>
               <XDriveDescriptionGrid columns={2}>
-                {technical.map((property) => (
+                {section.properties.map((property) => (
                   <XDriveDescriptionItem key={property.label} label={property.label}>
                     {property.value}
                   </XDriveDescriptionItem>
                 ))}
               </XDriveDescriptionGrid>
-            </>
-          ) : null}
+            </Stack>
+          ))}
         </Stack>
       </XDriveDialogContent>
       <XDriveDialogActions>

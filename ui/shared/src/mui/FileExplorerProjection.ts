@@ -25,6 +25,7 @@ export function xDriveProjectFileExplorerNode<TNode extends Node>(
     secondaryLabel: resultPath,
     path: resultPath || `${pathPrefix}${node.name}`,
     revision: node.revision,
+    sha256: node.sha256,
   }
 }
 

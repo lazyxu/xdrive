@@ -406,6 +406,11 @@ export type AgentCloudFilePropertiesStats = {
   total_bytes: number
   file_count: number
   folder_count: number
+  sources?: Array<{
+    id: number
+    name: string
+    kind: string
+  }>
 }
 
 export type AgentCloudUploadConflictPreflight = {

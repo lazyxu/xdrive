@@ -1,9 +1,16 @@
+export type XDriveFileExplorerPropertiesSource = {
+  id: number
+  name: string
+  kind: string
+}
+
 export type XDriveFileExplorerPropertiesStats = {
   selected_count: number
   effective_root_count: number
   total_bytes: number
   file_count: number
   folder_count: number
+  sources?: XDriveFileExplorerPropertiesSource[]
 }
 
 export type XDriveFileExplorerPropertiesRef = {

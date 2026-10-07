@@ -36,8 +36,8 @@ export function useXDriveFileExplorerPropertiesController<
 
     if (
       items.length === 0 ||
-      !items.some((item) => item.kind === 'dir') ||
-      !loadStats
+      !loadStats ||
+      (items.length > 1 && !items.some((item) => item.kind === 'dir'))
     ) {
       return
     }
