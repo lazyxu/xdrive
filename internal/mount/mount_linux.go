@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -84,18 +85,40 @@ func (n *linuxNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	return inode, 0
 }
 
+const linuxReaddirPageLimit = 500
+
 func (n *linuxNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	children, err := n.cli.List(ctx, n.node.ID)
-	if err != nil {
-		return nil, errno(err)
-	}
-	entries := make([]fuse.DirEntry, 0, len(children))
-	for _, child := range children {
-		mode := uint32(syscall.S_IFREG)
-		if child.Type == "dir" {
-			mode = syscall.S_IFDIR
+	entries := make([]fuse.DirEntry, 0)
+	cursor := ""
+	for {
+		page, err := n.cli.ListPage(ctx, n.node.ID, client.ChildrenOptions{
+			Limit:  linuxReaddirPageLimit,
+			Cursor: cursor,
+			Sort:   "name",
+			Order:  "asc",
+		})
+		if err != nil {
+			return nil, errno(err)
 		}
-		entries = append(entries, fuse.DirEntry{Name: child.Name, Mode: mode, Ino: child.ID})
+		for _, child := range page.Items {
+			mode := uint32(syscall.S_IFREG)
+			if child.Type == "dir" {
+				mode = syscall.S_IFDIR
+			}
+			entries = append(entries, fuse.DirEntry{
+				Name: child.Name,
+				Mode: mode,
+				Ino:  child.ID,
+			})
+		}
+		if !page.HasMore {
+			break
+		}
+		nextCursor := strings.TrimSpace(page.NextCursor)
+		if nextCursor == "" || nextCursor == cursor {
+			return nil, syscall.EIO
+		}
+		cursor = nextCursor
 	}
 	return fs.NewListDirStream(entries), 0
 }
