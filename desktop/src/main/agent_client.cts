@@ -2125,6 +2125,10 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('POST', '/v1/open-path', { path, reveal })
   }
 
+  openWith(path: string) {
+    return this.request<{ ok: boolean }>('POST', '/v1/open-with', { path })
+  }
+
   shutdown() {
     return this.request<{ ok: boolean }>('POST', '/v1/lifecycle/shutdown')
   }

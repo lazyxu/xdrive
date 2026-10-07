@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -146,6 +147,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported = false,
   propertiesStatsSupported = false,
   fileAvailabilitySupported = false,
+  openWithSupported = false,
   quickAccessSupported = false,
   favoritesSupported = false,
   recentSupported = false,
@@ -193,6 +195,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported?: boolean
   propertiesStatsSupported?: boolean
   fileAvailabilitySupported?: boolean
+  openWithSupported?: boolean
   quickAccessSupported?: boolean
   favoritesSupported?: boolean
   recentSupported?: boolean
@@ -785,6 +788,23 @@ export default function DesktopFileExplorer({
     }
   }
 
+  const openLocalNodeWith = async (node: AgentCloudNode) => {
+    const relativePath = relativePathForNode(node)
+    if (!relativePath) {
+      onError('无法确定本地同步路径。')
+      return
+    }
+    setActionBusy(`open-with-${node.id}`)
+    try {
+      const result = await window.xdriveDesktop.agent.openWith(relativePath)
+      if (!result.ok) {
+        onError(result.error.message)
+      }
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const downloadNode = async (node: AgentCloudNode) => {
     setActionBusy(`download-${node.id}`)
     try {
@@ -1003,10 +1023,23 @@ export default function DesktopFileExplorer({
         : undefined,
       onDelete: () => onDelete(node),
     })
-    if (!fileAvailabilitySupported) return standardItems
+    const desktopItems = node.type === 'file' && openWithSupported
+      ? [
+          ...standardItems,
+          {
+            id: 'open-with',
+            label: '打开方式…',
+            icon: <AppsRoundedIcon fontSize="small" />,
+            disabled: explorerActionBusy,
+            onSelect: () => { void openLocalNodeWith(node) },
+          } satisfies XDriveFileExplorerMenuItem,
+        ]
+      : standardItems
+
+    if (!fileAvailabilitySupported) return desktopItems
 
     const state = availabilityByID.get(node.id)?.state
-    if (!state) return standardItems
+    if (!state) return desktopItems
 
     const availabilityItems: XDriveFileExplorerMenuItem[] = []
     if (!state.Syncing && !state.Pinned && state.Mode !== 'always-local') {
@@ -1035,7 +1068,7 @@ export default function DesktopFileExplorer({
         onSelect: () => { void setNodeAvailability(node, 'release') },
       })
     }
-    return [...standardItems, ...availabilityItems]
+    return [...desktopItems, ...availabilityItems]
   }
 
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {

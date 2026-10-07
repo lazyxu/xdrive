@@ -436,6 +436,8 @@ export default function App({
     agent.hello?.platform === 'windows' &&
     agent.hello?.capabilities.includes('file-availability-batch'),
   )
+  const fileOpenWithSupported =
+    agent.hello?.capabilities.includes('open-with') ?? false
   const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
   const backgroundTasksSupported =
     agent.hello?.capabilities.includes('background-tasks') ?? false
@@ -1909,6 +1911,7 @@ export default function App({
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               propertiesStatsSupported: filePropertiesStatsSupported,
               fileAvailabilitySupported,
+              openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,
               favoritesSupported: fileFavoritesSupported,
               recentSupported: fileRecentSupported,

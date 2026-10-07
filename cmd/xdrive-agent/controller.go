@@ -1168,6 +1168,25 @@ func (c *agentController) OpenManagedPath(path string, reveal bool) error {
 	return openFilePlatform(abs)
 }
 
+func (c *agentController) OpenManagedPathWith(path string) error {
+	_, root, abs, err := managedPath(path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			_ = mount.RequestSync(root)
+			return fmt.Errorf("本地同步副本尚未就绪，已请求同步，请稍后重试")
+		}
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("打开方式仅支持文件")
+	}
+	return openWithPlatform(abs)
+}
+
 func (c *agentController) UpdateState() clientUpdateState {
 	return c.updates.Snapshot()
 }

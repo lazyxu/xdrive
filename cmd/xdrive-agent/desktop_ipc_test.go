@@ -58,6 +58,7 @@ type fakeDesktopIPCController struct {
 	openFolderN                int
 	openManagedPath            string
 	openManagedReveal          bool
+	openWithPath               string
 	openID                     string
 	openBoth                   bool
 	resolveID                  string
@@ -1336,6 +1337,11 @@ func (f *fakeDesktopIPCController) OpenManagedPath(path string, reveal bool) err
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) OpenManagedPathWith(path string) error {
+	f.openWithPath = path
+	return f.err
+}
+
 func desktopIPCRequest(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "http://127.0.0.1"+path, strings.NewReader(body))
@@ -1409,6 +1415,53 @@ func TestDesktopIPCHelloAndShutdown(t *testing.T) {
 	case <-shutdown:
 	case <-time.After(time.Second):
 		t.Fatal("shutdown callback was not invoked")
+	}
+}
+
+func TestDesktopIPCOpenWithCapabilityMatchesPlatform(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{revision: 1}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/hello", "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("hello status=%d body=%s", res.Code, res.Body.String())
+	}
+	var hello desktopIPCHello
+	if err := json.NewDecoder(res.Body).Decode(&hello); err != nil {
+		t.Fatal(err)
+	}
+	hasCapability := false
+	for _, capability := range hello.Capabilities {
+		if capability == "open-with" {
+			hasCapability = true
+			break
+		}
+	}
+	if hasCapability != openWithSupportedPlatform() {
+		t.Fatalf("open-with capability=%v platform-supported=%v", hasCapability, openWithSupportedPlatform())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/open-with",
+		`{"path":"Projects/report.pdf"}`,
+	)
+	if openWithSupportedPlatform() {
+		if res.Code != http.StatusOK {
+			t.Fatalf("open-with status=%d body=%s", res.Code, res.Body.String())
+		}
+		if ctrl.openWithPath != "Projects/report.pdf" {
+			t.Fatalf("open-with path=%q", ctrl.openWithPath)
+		}
+	} else {
+		if res.Code != http.StatusNotImplemented {
+			t.Fatalf("unsupported open-with status=%d body=%s", res.Code, res.Body.String())
+		}
+		if ctrl.openWithPath != "" {
+			t.Fatalf("unsupported open-with reached controller: %q", ctrl.openWithPath)
+		}
 	}
 }
 
