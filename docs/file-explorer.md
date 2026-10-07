@@ -219,6 +219,18 @@ The shared left folder tree is a first-class drop target, not navigation-only ch
 
 ## Folder Properties
 
+FileExplorer Properties uses the shared dialog and one request-scoped metadata/statistics contract. The dialog is divided into three explicit sections:
+
+- **常规** — type, created/modified timestamps, location, and device-local availability when authoritative;
+- **内容** — file size or recursive folder/multi-selection size and item counts; media dimensions/duration may be added here only when the shared media metadata projection exposes them;
+- **技术详情** — SHA-256 for files, revision, stable node ID, and source binding.
+
+The right-side Inspector uses the same section semantics for metadata already present in the loaded node projection, but it must not trigger an additional Server request merely to populate source binding.
+
+SHA-256 is projected from the existing Node field and does not require an additional lookup. Source binding is intentionally request-scoped: when Properties is opened for one node, the existing `/nodes/properties/stats` request also resolves owner-scoped `SourceItem(NodeID) -> Source` bindings. Multiple SourceItem rows for the same Source are de-duplicated. Sources owned by another user must never be returned.
+
+Do **not** join Source/SourceItem into ordinary directory or search range payloads just to show technical Properties metadata. Normal FileExplorer pagination must remain cheap.
+
 Folder Properties must report real recursive statistics rather than displaying `—` for directories.
 
 ### Statistics contract
@@ -248,7 +260,7 @@ Folder Properties statistics are **request-scoped**, not a durable background jo
 
 Cancellation is automatic:
 
-1. opening Properties starts a request for the current immutable selection snapshot;
+1. opening Properties starts a request for the current immutable selection snapshot when it is a single file or includes a folder; a pure multi-file selection stays local because source binding is intentionally single-node metadata;
 2. closing the dialog aborts the request;
 3. opening/replacing Properties for a different selection aborts the previous request before starting the next;
 4. unmounting FileExplorer aborts any outstanding Properties request;

@@ -261,6 +261,29 @@ test('cloud File Properties cancellation aborts the Agent HTTP request', async (
   ])
 })
 
+test('cloud File Properties preserves source-binding metadata', async (t) => {
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(req.method, 'POST')
+    assert.equal(url.pathname, '/v1/cloud/properties/stats')
+    json(res, 200, {
+      selected_count: 1,
+      effective_root_count: 1,
+      total_bytes: 12,
+      file_count: 1,
+      folder_count: 0,
+      sources: [{ id: 9, name: '相机备份', kind: 'filesystem' }],
+    })
+  })
+
+  const stats = await client.cloudFilePropertiesStats(
+    [{ id: 3, revision: 4 }],
+  )
+  assert.deepEqual(stats.sources, [
+    { id: 9, name: '相机备份', kind: 'filesystem' },
+  ])
+})
+
 test('cloud search forwards server sort and cursor options', async (t) => {
   const { client } = await fixture(t, (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')

@@ -202,12 +202,19 @@ type BatchNodesResult struct {
 	DeletedIDs  []uint64 `json:"deleted_ids,omitempty"`
 }
 
+type FilePropertiesSource struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
 type FilePropertiesStats struct {
-	SelectedCount      int64 `json:"selected_count"`
-	EffectiveRootCount int64 `json:"effective_root_count"`
-	TotalBytes         int64 `json:"total_bytes"`
-	FileCount          int64 `json:"file_count"`
-	FolderCount        int64 `json:"folder_count"`
+	SelectedCount      int64                  `json:"selected_count"`
+	EffectiveRootCount int64                  `json:"effective_root_count"`
+	TotalBytes         int64                  `json:"total_bytes"`
+	FileCount          int64                  `json:"file_count"`
+	FolderCount        int64                  `json:"folder_count"`
+	Sources            []FilePropertiesSource `json:"sources,omitempty"`
 }
 
 type BackgroundTaskProgress struct {

@@ -87,3 +87,76 @@ test('Server Folder Properties uses request context for recursive SQL and stays 
   assert.ok(server.includes('topLevelBatchDeleteRefs'), 'Server must remove nested selected roots before aggregation')
   assert.equal(server.includes('BackgroundTask'), false, 'Folder Properties must not become a durable Task Center job')
 })
+
+
+test('Properties loads metadata for a single file or folder selection without making pure multi-file summaries remote', () => {
+  assert.ok(
+    controller.includes("(items.length > 1 && !items.some((item) => item.kind === 'dir'))"),
+    'pure multi-file Properties should stay local while single-file and folder selections may load technical metadata',
+  )
+  assert.ok(
+    controller.includes('const controller = new AbortController()'),
+    'single-file technical metadata must retain the existing cancellable request lifecycle',
+  )
+})
+
+test('Properties renders explicit general, content and technical-detail sections', () => {
+  const dialog = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
+  for (const token of [
+    "export type XDriveFilePropertiesDialogSection = 'general' | 'content' | 'technical'",
+    "['general', '常规']",
+    "['content', '内容']",
+    "['technical', '技术详情']",
+    "(property.section ?? 'general') === key",
+  ]) {
+    assert.ok(dialog.includes(token), 'Properties section contract missing: ' + token)
+  }
+  assert.equal(dialog.includes('technical?: boolean'), false)
+  assert.equal(dialog.includes('技术信息'), false)
+})
+
+test('Properties technical details include hash, revision, stable id and owner-scoped source bindings', () => {
+  for (const token of [
+    'sources?: XDriveFileExplorerPropertiesSource[]',
+    "label: 'SHA-256'",
+    "label: 'Revision'",
+    "label: 'ID'",
+    "label: '来源'",
+    'propertiesStatsState.stats?.sources?.length',
+    "source.name",
+    "source.kind",
+    "section: 'technical'",
+    'sha256?: string',
+  ]) {
+    assert.ok(
+      (model + explorer).includes(token),
+      'Properties technical detail missing: ' + token,
+    )
+  }
+
+  for (const token of [
+    'filePropertiesSourceResponse',
+    'DISTINCT s.id, s.name, s.kind',
+    'JOIN xd_sources AS s ON s.id = si.source_id',
+    'si.node_id = ? AND s.owner_id = ?',
+    'Sources:            sources',
+  ]) {
+    assert.ok(server.includes(token), 'Server source-binding contract missing: ' + token)
+  }
+})
+
+test('source binding reuses the existing cancellable Properties transport', () => {
+  assert.ok(
+    webApi.includes("filePropertiesStats(items: BatchNodeRef[], signal?: AbortSignal)"),
+    'Web source metadata must stay on the existing cancellable Properties request',
+  )
+  assert.ok(
+    desktopExplorer.includes('cloudFilePropertiesStats('),
+    'Desktop source metadata must stay on the existing cancellable Agent request',
+  )
+  assert.equal(
+    agentIPC.includes('/v1/cloud/properties/source'),
+    false,
+    'source metadata must not create a second Desktop IPC request path',
+  )
+})

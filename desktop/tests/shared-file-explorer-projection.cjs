@@ -25,7 +25,9 @@ test('shared FileExplorer projection owns node/search view-model derivation', ()
     'const explorerItems = new Array<XDriveFileExplorerItem>(sourceLength)',
     'const resultPath = result?.path || undefined',
     'path: resultPath || \`${pathPrefix}${node.name}\`',
+    'createdAt: node.created_at',
     'revision: node.revision',
+    'sha256: node.sha256',
   ]) {
     assert.ok(shared.includes(token), `shared Explorer projection missing: ${token}`)
   }

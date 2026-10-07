@@ -29,7 +29,7 @@ func TestFilePropertiesStatsPostsSelection(t *testing.T) {
 			t.Fatalf("unexpected properties refs: %+v", body.Items)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"selected_count":2,"effective_root_count":1,"total_bytes":12,"file_count":3,"folder_count":1}`))
+		_, _ = w.Write([]byte(`{"selected_count":2,"effective_root_count":1,"total_bytes":12,"file_count":3,"folder_count":1,"sources":[{"id":9,"name":"相机备份","kind":"filesystem"}]}`))
 	}))
 	defer server.Close()
 
@@ -44,6 +44,12 @@ func TestFilePropertiesStatsPostsSelection(t *testing.T) {
 	}
 	if stats.TotalBytes != 12 || stats.FileCount != 3 || stats.FolderCount != 1 {
 		t.Fatalf("unexpected properties stats: %+v", stats)
+	}
+	if len(stats.Sources) != 1 ||
+		stats.Sources[0].ID != 9 ||
+		stats.Sources[0].Name != "相机备份" ||
+		stats.Sources[0].Kind != "filesystem" {
+		t.Fatalf("unexpected properties sources: %+v", stats.Sources)
 	}
 }
 

@@ -223,8 +223,10 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
     '选择一个项目以查看预览和属性。',
     '已选择 {selectedItems.length} 个项目',
     'loadThumbnail={loadThumbnail}',
+    "label: 'SHA-256'",
     "label: 'Revision'",
     "label: 'ID'",
+    "label: '来源'",
   ]) {
     assert.ok(explorer.includes(token), `missing preview/properties feature: ${token}`)
   }
@@ -234,7 +236,9 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
     'aria-label="文件属性"',
     'data-xdrive-file-properties-preview',
     '<XDriveDescriptionGrid columns={2}>',
-    '技术信息',
+    '常规',
+    '内容',
+    '技术详情',
     '<XDriveDialogActions>',
   ]) {
     assert.ok(propertiesDialog.includes(token), `missing shared Properties dialog feature: ${token}`)

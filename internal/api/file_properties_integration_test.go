@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -19,7 +22,35 @@ func setupFilePropertiesTestDB(t *testing.T) (*gorm.DB, *Server, meta.User, meta
 	if dsn == "" {
 		t.Skip("XD_TEST_DATABASE_URL is not set")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	baseDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseSQL, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = baseSQL.Close()
+	})
+
+	schema := "file_properties_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = baseDB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE`, schema)).Error
+	})
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := u.Query()
+	query.Set("search_path", schema)
+	u.RawQuery = query.Encode()
+
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +61,14 @@ func setupFilePropertiesTestDB(t *testing.T) (*gorm.DB, *Server, meta.User, meta
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 	})
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}); err != nil {
+
+	if err := db.AutoMigrate(
+		&meta.User{},
+		&meta.Node{},
+		&meta.File{},
+		&meta.Source{},
+		&meta.SourceItem{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	suffix := time.Now().UnixNano()
@@ -140,6 +178,82 @@ func TestFilePropertiesStatsDeduplicateNestedSelection(t *testing.T) {
 		if !errors.As(err, &failure) || failure.Code != "node_not_found" {
 			t.Fatalf("cross-owner error=%v", err)
 		}
+	}
+}
+
+func TestFilePropertiesStatsReturnsOwnerScopedSourceBindings(t *testing.T) {
+	db, srv, userA, userB, root := setupFilePropertiesTestDB(t)
+	file := createFilePropertiesFile(t, db, userA.ID, root.ID, "sourced.bin", 8)
+
+	sourceA := meta.Source{
+		OwnerID:   userA.ID,
+		Name:      "相机备份",
+		Kind:      "filesystem",
+		Direction: meta.SourceDirectionPull,
+		SyncMode:  meta.SourceSyncModeBackup,
+		Status:    meta.SourceStatusActive,
+	}
+	if err := db.Create(&sourceA).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index, externalID := range []string{"source-a", "source-a-alias"} {
+		nodeID := file.ID
+		item := meta.SourceItem{
+			SourceID:     sourceA.ID,
+			ExternalID:   externalID,
+			NodeID:       &nodeID,
+			NodeRevision: file.Revision,
+			Kind:         meta.SourceItemKindFile,
+			Path:         fmt.Sprintf("camera/%d.bin", index),
+			State:        meta.SourceItemStateSynced,
+			LastSeenAt:   time.Now(),
+			LastSyncedAt: func() *time.Time { value := time.Now(); return &value }(),
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	foreignSource := meta.Source{
+		OwnerID:   userB.ID,
+		Name:      "其它用户来源",
+		Kind:      "filesystem",
+		Direction: meta.SourceDirectionPull,
+		SyncMode:  meta.SourceSyncModeBackup,
+		Status:    meta.SourceStatusActive,
+	}
+	if err := db.Create(&foreignSource).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodeID := file.ID
+	if err := db.Create(&meta.SourceItem{
+		SourceID:     foreignSource.ID,
+		ExternalID:   "foreign-binding",
+		NodeID:       &nodeID,
+		NodeRevision: file.Revision,
+		Kind:         meta.SourceItemKindFile,
+		Path:         "foreign.bin",
+		State:        meta.SourceItemStateSynced,
+		LastSeenAt:   time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := srv.computeFilePropertiesStats(
+		context.Background(),
+		userA.ID,
+		[]batchNodeRef{{ID: file.ID, Revision: file.Revision}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Sources) != 1 {
+		t.Fatalf("source bindings=%+v want one deduplicated owner source", stats.Sources)
+	}
+	if stats.Sources[0].ID != sourceA.ID ||
+		stats.Sources[0].Name != sourceA.Name ||
+		stats.Sources[0].Kind != sourceA.Kind {
+		t.Fatalf("unexpected source binding: %+v", stats.Sources[0])
 	}
 }
 

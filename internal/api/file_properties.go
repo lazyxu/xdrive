@@ -14,12 +14,19 @@ type filePropertiesStatsRequest struct {
 	Items []batchNodeRef `json:"items"`
 }
 
+type filePropertiesSourceResponse struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
 type filePropertiesStatsResponse struct {
-	SelectedCount      int64 `json:"selected_count"`
-	EffectiveRootCount int64 `json:"effective_root_count"`
-	TotalBytes         int64 `json:"total_bytes"`
-	FileCount          int64 `json:"file_count"`
-	FolderCount        int64 `json:"folder_count"`
+	SelectedCount      int64                          `json:"selected_count"`
+	EffectiveRootCount int64                          `json:"effective_root_count"`
+	TotalBytes         int64                          `json:"total_bytes"`
+	FileCount          int64                          `json:"file_count"`
+	FolderCount        int64                          `json:"folder_count"`
+	Sources            []filePropertiesSourceResponse `json:"sources,omitempty"`
 }
 
 func (s *Server) filePropertiesStats(c *gin.Context) {
@@ -117,6 +124,19 @@ func (s *Server) computeFilePropertiesStats(
 			}
 		}
 
+		var sources []filePropertiesSourceResponse
+		if len(items) == 1 {
+			if err := tx.
+				Table("xd_source_items AS si").
+				Select("DISTINCT s.id, s.name, s.kind").
+				Joins("JOIN xd_sources AS s ON s.id = si.source_id").
+				Where("si.node_id = ? AND s.owner_id = ?", items[0].ID, uid).
+				Order("s.name ASC, s.id ASC").
+				Scan(&sources).Error; err != nil {
+				return err
+			}
+		}
+
 		topLevel, err := topLevelBatchDeleteRefs(tx, uid, items)
 		if err != nil {
 			return err
@@ -172,6 +192,7 @@ LEFT JOIN xd_files f ON f.node_id = tree.id
 			TotalBytes:         row.TotalBytes,
 			FileCount:          row.FileCount,
 			FolderCount:        folderCount,
+			Sources:            sources,
 		}
 		return nil
 	})
