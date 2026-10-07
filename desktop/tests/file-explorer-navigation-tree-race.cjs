@@ -41,6 +41,24 @@ function callbackInitializer(relativePath, variableName) {
   return callback
 }
 
+function compileChildrenFor(callbackSource) {
+  const source = `
+    module.exports = (pageByParent, pathChildByParent) => {
+      const childrenFor = ${callbackSource}
+      return childrenFor
+    }
+  `
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText
+  const mod = { exports: {} }
+  new Function('module', 'exports', output)(mod, mod.exports)
+  return mod.exports
+}
+
 function compileLoadChildren(callbackSource) {
   const source = `
     module.exports = (
@@ -330,5 +348,50 @@ test('a replaced navigation-tree loader must reload a page already cached by the
     pageByParentRef.current[String(root.id)]?.children?.map((child) => child.name),
     ['NewChild'],
     'replacement loader must replace children cached by the older generation',
+  )
+})
+
+
+test('cached navigation-tree child rebases crumbs when parent path metadata changes', () => {
+  const callbackSource = callbackInitializer(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'],
+    'childrenFor',
+  )
+  const makeChildrenFor = compileChildrenFor(callbackSource)
+
+  const root = { id: 1, name: '我的文件' }
+  const oldParent = { id: 2, name: 'OldParent' }
+  const newParent = { id: 2, name: 'NewParent' }
+  const child = { id: 3, name: 'Child' }
+
+  const pageByParent = {
+    [String(oldParent.id)]: {
+      children: [{
+        id: child.id,
+        name: child.name,
+        crumbs: [root, oldParent, child],
+      }],
+      nextCursor: '',
+      hasMore: false,
+      loaded: true,
+      generation: 1,
+    },
+  }
+
+  // The parent node now comes from the latest current path projection. The
+  // cached child was loaded earlier and still carries OldParent in its crumbs.
+  const currentParentNode = {
+    id: newParent.id,
+    name: newParent.name,
+    crumbs: [root, newParent],
+  }
+  const childrenFor = makeChildrenFor(pageByParent, new Map())
+  const renderedChild = childrenFor(currentParentNode)[0]
+
+  assert.ok(renderedChild)
+  assert.deepEqual(
+    renderedChild.crumbs,
+    [root, newParent, child],
+    'clicking a cached child must use the latest parent breadcrumb metadata rather than restoring an old address/tab path',
   )
 })
