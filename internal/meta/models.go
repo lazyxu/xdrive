@@ -180,6 +180,7 @@ const (
 	SystemMaintenancePhaseContentBlobGC           = "content_blob_gc"
 	SystemMaintenancePhaseSourceRunRetention      = "source_run_retention"
 	SystemMaintenancePhaseCleanupHistoryRetention = "cleanup_history_retention"
+	SystemMaintenancePhaseMaintenanceRunRetention = "maintenance_run_retention"
 	SystemMaintenancePhaseStorageSample           = "storage_sample"
 	SystemMaintenancePhaseFinished                = "finished"
 )

@@ -1152,7 +1152,7 @@ func (s *Server) runStorageJanitorLeaderPass(ctx context.Context) {
 			runID := s.beginSystemMaintenanceRun(
 				ctx,
 				meta.SystemMaintenanceKindJanitor,
-				4,
+				5,
 			)
 			result := s.runStorageJanitorTrackedPass(ctx, runID)
 			s.finishSystemMaintenanceRun(
@@ -1172,7 +1172,7 @@ func (s *Server) runStorageJanitorTrackedPass(
 	ctx context.Context,
 	runID uint64,
 ) systemMaintenancePassResult {
-	result := newSystemMaintenancePassResult(4)
+	result := newSystemMaintenancePassResult(5)
 
 	s.updateSystemMaintenanceRunPhase(
 		ctx,
@@ -1258,6 +1258,28 @@ func (s *Server) runStorageJanitorTrackedPass(
 		)
 		result.addIssue(
 			meta.SystemMaintenancePhaseCleanupHistoryRetention,
+			err,
+		)
+	} else {
+		result.CompletedSteps++
+	}
+
+	s.updateSystemMaintenanceRunPhase(
+		ctx,
+		runID,
+		meta.SystemMaintenancePhaseMaintenanceRunRetention,
+		result.CompletedSteps,
+		result.TotalSteps,
+	)
+	if err := s.cleanupSystemMaintenanceHistory(ctx); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn(
+			"system_maintenance_history_retention_failed",
+			"error",
+			err,
+		)
+		result.addIssue(
+			meta.SystemMaintenancePhaseMaintenanceRunRetention,
 			err,
 		)
 	} else {
