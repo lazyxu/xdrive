@@ -178,8 +178,8 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 3 {
-		t.Fatalf("maintenance tasks=%d want=3: %+v", len(tasks), tasks)
+	if len(tasks) != 4 {
+		t.Fatalf("maintenance tasks=%d want=4: %+v", len(tasks), tasks)
 	}
 	janitor := backgroundTaskByID(
 		tasks,
@@ -209,6 +209,17 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 			backgroundTaskActionRun,
 		) {
 		t.Fatalf("unexpected source verify capability row: %+v", sourceVerify)
+	}
+	sourceRepair := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindSourceRepair),
+	)
+	if sourceRepair == nil || sourceRepair.State != "idle" ||
+		!backgroundTaskActionAllowed(
+			sourceRepair.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected source repair capability row: %+v", sourceRepair)
 	}
 
 	oldFinished := time.Now().UTC().Add(
