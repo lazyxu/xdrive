@@ -2167,3 +2167,113 @@ test('stale Search clear captured by an older mutation cannot erase a newer subm
   assert.equal(search.searchState.query, '')
   assert.equal(errors.length, 0)
 })
+
+
+test('newer Search submission cannot be cleared by an older pending directory navigation', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const root = { id: 1, name: '我的文件' }
+    const folderA = { id: 2, name: 'A' }
+    const driver = createDirectoryDriver([root])
+    const runtime = createHookRuntime()
+    const useNavigation = loadNavigationHook(runtime.react)
+    const useSearch = loadSearchHook(runtime.react)
+    const errors = []
+
+    const loadRange = async (query, _filters, _grouping, _sort, offset, limit) => ({
+      items: [{ node: { id: query === 'new' ? 20 : 10 }, path: '/' + query }],
+      totalCount: 1,
+      offset,
+      limit,
+    })
+
+    const render = () => runtime.render(() => {
+      // Mirror the real WorkspaceController wiring: navigation is created
+      // before Search, so onAfterNavigate dereferences the latest clearSearch.
+      const searchActiveRef = runtime.react.useRef(false)
+      const clearSearchRef = runtime.react.useRef(() => false)
+
+      const navigation = useNavigation({
+        crumbs: driver.crumbs,
+        viewModeStorageKey: 'search-vs-navigation-latest-intent',
+        onLoadDirectory: driver.onLoadDirectory,
+        searchActive: () => searchActiveRef.current,
+        onAfterNavigate: () => {
+          clearSearchRef.current()
+        },
+      })
+
+      const search = useSearch({
+        loadRange,
+        sort: navigation.sort,
+        grouping: navigation.grouping,
+        workspaceKey: navigation.activeTabID,
+        onError: (error) => errors.push(error),
+        onSearchIntent: navigation.beginNavigationIntent,
+      })
+
+      searchActiveRef.current = search.searchResults !== null
+      clearSearchRef.current = search.clearSearch
+      return { navigation, search }
+    })
+
+    let app = render()
+    await app.search.submitSearch('old')
+    app = render()
+
+    assert.equal(app.search.searchState.query, 'old')
+    assert.deepEqual(app.search.searchResults.map((item) => item.node.id), [10])
+
+    driver.controlRequests()
+
+    // Model clicking a Search A folder result. Its directory load is pending.
+    const staleNavigation = app.navigation.navigateTo([root, folderA])
+    await flushAsync()
+
+    // Before that older navigation completes, the user submits newer Search B.
+    await app.search.submitSearch('new')
+    app = render()
+
+    assert.equal(app.search.searchState.query, 'new')
+    assert.deepEqual(app.search.searchResults.map((item) => item.node.id), [20])
+
+    // The older directory request now finishes. It must not clear the newer
+    // Search generation via WorkspaceController.onAfterNavigate.
+    driver.resolveDirectory(folderA.id)
+    await staleNavigation
+    app = render()
+
+    assert.equal(
+      app.search.searchState.query,
+      'new',
+      'a newer Search submission must supersede an older pending directory navigation',
+    )
+    assert.ok(
+      app.search.searchResults,
+      'older navigation completion must not exit the newer Search workspace',
+    )
+    assert.deepEqual(app.search.searchResults.map((item) => item.node.id), [20])
+    assert.equal(errors.length, 0)
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+
+test('shared FileExplorer workspace routes Search intent through navigation generation', () => {
+  const workspaceSource = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'),
+    'utf8',
+  )
+  assert.ok(
+    workspaceSource.includes('onSearchIntent: navigation.beginNavigationIntent'),
+    'Search generation changes must invalidate older pending directory navigation in the shared workspace',
+  )
+})

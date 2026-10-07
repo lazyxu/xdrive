@@ -100,18 +100,22 @@ export function useXDriveFileExplorerSearch<
   sort,
   grouping,
   onError,
+  onSearchIntent,
   workspaceKey = 'default',
 }: {
   loadRange: XDriveFileExplorerSearchLoader<TResult>
   sort: XDriveFileExplorerSort
   grouping: XDriveFileExplorerGrouping
   onError: (error: unknown) => void
+  onSearchIntent?: () => void
   workspaceKey?: string
 }) {
   const requestRef = useRef<Record<string, number>>({})
   const targetRef = useRef<XDriveFileExplorerSearchTarget | null>(null)
   const [target, setTarget] = useState<XDriveFileExplorerSearchTarget | null>(null)
   const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry>>({})
+  const onSearchIntentRef = useRef(onSearchIntent)
+  onSearchIntentRef.current = onSearchIntent
 
   const entry = entries[workspaceKey] ?? idleWorkspaceSearchEntry()
   const searchValue = entry.value
@@ -191,6 +195,7 @@ export function useXDriveFileExplorerSearch<
     targetGrouping: XDriveFileExplorerGrouping,
     targetSort: XDriveFileExplorerSort,
   ) => {
+    onSearchIntentRef.current?.()
     const requestID = nextRequestID(key)
     const nextTarget: XDriveFileExplorerSearchTarget = {
       workspaceKey: key,
@@ -253,6 +258,7 @@ export function useXDriveFileExplorerSearch<
 
   const clearSearch = useCallback(() => {
     if (searchStateKeyRef.current !== searchStateKey) return false
+    onSearchIntentRef.current?.()
     nextRequestID(workspaceKey)
     if (targetRef.current?.workspaceKey === workspaceKey) {
       targetRef.current = null
@@ -275,6 +281,7 @@ export function useXDriveFileExplorerSearch<
         clearSearch()
         return
       }
+      onSearchIntentRef.current?.()
       nextRequestID(workspaceKey)
       updateEntry(workspaceKey, (current) => ({
         ...current,
@@ -285,6 +292,7 @@ export function useXDriveFileExplorerSearch<
       }))
       return
     }
+    onSearchIntentRef.current?.()
     updateEntry(workspaceKey, (current) => ({ ...current, value }))
   }, [
     clearSearch,
@@ -300,6 +308,7 @@ export function useXDriveFileExplorerSearch<
       clearSearch()
       return
     }
+    onSearchIntentRef.current?.()
     nextRequestID(workspaceKey)
     updateEntry(workspaceKey, (current) => ({
       ...current,
