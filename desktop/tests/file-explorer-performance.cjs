@@ -140,11 +140,12 @@ test('FileExplorer directory and search ranges reject duplicate and stale reques
 test('FileExplorer selection and keyboard lookup avoid repeated whole-directory scans', () => {
   assert.ok(shared.includes('const visibleItemProjection = useMemo(() => {'), 'one-pass visible-item projection is missing')
   assert.ok(shared.includes('const logicalItemByID = (id: XDriveFileExplorerID) =>'), 'selected items need logical ID lookup')
-  assert.ok(shared.includes('.map((id) => logicalItemByID(id))'), 'selected items must use bounded logical ID lookup')
-  assert.ok(shared.includes('logicalIndexOf(activeItemID) ?? -1'), 'active item lookup must be logically indexed')
-  assert.ok(shared.includes('logicalIndexOf(selectionAnchorID) ?? -1'), 'mouse Shift anchor lookup must be logically indexed')
-  assert.ok(shared.includes('logicalIndexOf(item.id) ?? -1'), 'keyboard current-item lookup must be logically indexed')
-  assert.ok(shared.includes('logicalIndexOf(anchorID) ?? -1'), 'keyboard Shift anchor lookup must be logically indexed')
+  assert.ok(shared.includes('selectedIDs\n      .map((id) => ('), 'selected items must scale with selected IDs rather than the whole directory')
+  assert.ok(shared.includes('selectionItemCacheRef.current.get(explorerIDKey(id))'), 'evicted selected metadata must use the explicit interaction cache')
+  assert.ok(shared.includes('logicalIndexOf(activeItemID) ?? activeLogicalIndex ?? -1'), 'active item lookup must retain logical index after page eviction')
+  assert.ok(shared.includes('selectionAnchorIndex ?? logicalIndexOf(selectionAnchorID) ?? -1'), 'mouse Shift anchor must retain logical index after page eviction')
+  assert.ok(shared.includes('const currentIndex = logicalIndexOf(item.id) ?? -1'), 'keyboard current-item lookup must stay logically indexed for rendered items')
+  assert.ok(shared.includes('selectionAnchorIndex ?? logicalIndexOf(anchorID) ?? currentIndex'), 'keyboard Shift anchor must retain logical index after page eviction')
   assert.ok(shared.includes('names: visibleItemNames'), 'dense type-select names should stay memoized')
   assert.ok(shared.includes('() => selectedItems.reduce((total, item) => ('), 'selected-size aggregation must scale with the selection')
   assert.equal(shared.includes('visibleItems.findIndex((candidate)'), false, 'keyboard/selection paths must not rescan visibleItems')
@@ -332,17 +333,17 @@ test('FileExplorer sparse virtual surface keeps logical count separate from rend
 })
 
 
-test('FileExplorer sparse interactions stay bounded to loaded metadata', () => {
-  assert.ok(shared.includes('loadedItems: ReadonlyMap<number, XDriveFileExplorerItem>'), 'virtual surface must receive bounded loaded metadata')
+test('FileExplorer sparse interactions keep render metadata bounded while resolving explicit logical interactions', () => {
+  assert.ok(shared.includes('loadedItems: ReadonlyMap<number, XDriveFileExplorerItem>'), 'virtual surface must receive bounded loaded render metadata')
   assert.ok(shared.includes('const virtualLoadedItems = virtualCollection?.loadedItems'), 'loaded virtual metadata projection is missing')
-  assert.ok(shared.includes('const interactionProjection = virtualLoadedProjection ?? visibleItemProjection'), 'interaction lookup must switch to bounded virtual metadata')
-  assert.ok(shared.includes('const loadedRangeIDs = (start: number, end: number) =>'), 'Shift selection needs a bounded loaded-range helper')
-  assert.ok(shared.includes('itemCount: logicalItemCount'), 'keyboard navigation must use the logical collection length')
-  assert.ok(shared.includes('const target = logicalItemAt(targetIndex)'), 'keyboard navigation must resolve sparse indexes lazily')
-  assert.ok(shared.includes('virtualCollection?.onRangeChange?.(index, index)'), 'unloaded keyboard targets must request their range')
-  assert.ok(shared.includes('if (virtualCollectionEnabled) return false'), 'dense type-select must not scan sparse logical indexes')
-  assert.ok(shared.includes('const selectableItems = interactionProjection.orderedItems'), 'Ctrl+A must stay bounded to loaded metadata')
-  assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(logicalItemCount)'), false, 'interaction lookup must not materialize the logical directory')
+  assert.ok(shared.includes('const interactionProjection = virtualLoadedProjection ?? visibleItemProjection'), 'render interaction lookup must use the retained virtual metadata')
+  assert.ok(shared.includes('const loadedRangeItems = (start: number, end: number) =>'), 'Shift selection needs a bounded loaded-range fast path')
+  assert.ok(shared.includes('const resolveLogicalRange = async (start: number, end: number) =>'), 'unloaded interactions need one bounded logical-range resolver')
+  assert.ok(shared.includes('virtualCollection.collectRange(start, end)'), 'logical interactions must delegate bounded range collection to VirtualCollection')
+  assert.ok(shared.includes('const chunkSize = 128'), 'virtual type-select must scan bounded chunks rather than the full logical directory at once')
+  assert.ok(shared.includes('resolveLogicalRange(0, logicalItemCount - 1)'), 'Ctrl+A must explicitly resolve the requested logical selection')
+  assert.ok(shared.includes('virtualCollection?.retainInteractionIDs?.(ids)'), 'interaction metadata must be pruned back to the selected IDs')
+  assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(logicalItemCount)'), false, 'render lookup must not allocate a logical placeholder array')
 })
 
 

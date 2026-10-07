@@ -19,6 +19,7 @@ import {
 } from './FileExplorerNavigation'
 import {
   useXDriveFileExplorerProjection,
+  xDriveProjectFileExplorerNode,
 } from './FileExplorerProjection'
 import type {
   XDriveFileExplorerSearchProjection,
@@ -42,6 +43,7 @@ export type XDriveFileExplorerWorkspaceVirtualDirectory<
   loadedItems: ReadonlyMap<number, TNode>
   itemAt: (index: number) => TNode | undefined
   ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
+  collectRange: (startIndex: number, endIndex: number) => Promise<TNode[] | null>
 }
 
 export type XDriveFileExplorerWorkspaceSearchResult<
@@ -86,6 +88,9 @@ export function useXDriveFileExplorerWorkspace<
 }) {
   const searchActiveRef = useRef(false)
   const clearSearchRef = useRef<() => void>(() => {})
+  const interactionNodeCacheRef = useRef(new Map<number, TNode>())
+  const interactionSearchCacheRef = useRef(new Map<number, TSearch>())
+  const interactionCacheKeyRef = useRef('')
 
   const navigation = useXDriveFileExplorerNavigation({
     crumbs,
@@ -111,6 +116,19 @@ export function useXDriveFileExplorerWorkspace<
   const directoryVirtualItems = search.searchResults === null
     ? directoryVirtualCollection?.loadedItems
     : undefined
+  const interactionCacheKey = [
+    navigation.activeTabID,
+    crumbs.at(-1)?.id ?? 0,
+    search.searchResults === null ? '' : search.searchState.query,
+    navigation.sort.key,
+    navigation.sort.direction,
+  ].join(':')
+  if (interactionCacheKeyRef.current !== interactionCacheKey) {
+    interactionCacheKeyRef.current = interactionCacheKey
+    interactionNodeCacheRef.current.clear()
+    interactionSearchCacheRef.current.clear()
+  }
+
   const projection = useXDriveFileExplorerProjection<
     TNode,
     TSearch,
@@ -125,22 +143,71 @@ export function useXDriveFileExplorerWorkspace<
       : undefined,
   })
 
+  for (const [id, node] of interactionNodeCacheRef.current) {
+    projection.nodeByID.set(id, node)
+  }
+  for (const [id, result] of interactionSearchCacheRef.current) {
+    projection.searchByID.set(id, result)
+  }
+
   const explorerVirtualCollection = useMemo<XDriveFileExplorerVirtualCollection | undefined>(() => {
     const activeCollection = search.searchResults !== null
       ? search.searchVirtualCollection
       : directoryVirtualCollection
     if (!activeCollection || !projection.virtualExplorerItems) return undefined
     const loadedItems = projection.virtualExplorerItems
+    const pathPrefix = crumbs.length > 0
+      ? `${crumbs.map((crumb) => crumb.name).join('/')}/`
+      : ''
     return {
+      interactionKey: interactionCacheKey,
       itemCount: activeCollection.itemCount,
       loadedItems,
       itemAt: (index) => loadedItems.get(index),
       onRangeChange: (startIndex, endIndex) => (
         activeCollection.ensureViewport(startIndex, endIndex)
       ),
+      retainInteractionIDs: (ids) => {
+        const retained = new Set(ids.map((id) => Number(id)))
+        for (const id of interactionNodeCacheRef.current.keys()) {
+          if (!retained.has(id)) interactionNodeCacheRef.current.delete(id)
+        }
+        for (const id of interactionSearchCacheRef.current.keys()) {
+          if (!retained.has(id)) interactionSearchCacheRef.current.delete(id)
+        }
+      },
+      collectRange: async (startIndex, endIndex) => {
+        const rawItems = await activeCollection.collectRange(startIndex, endIndex)
+        if (!rawItems) return null
+        const projectedItems = new Array<XDriveFileExplorerItem>(rawItems.length)
+        for (let offset = 0; offset < rawItems.length; offset += 1) {
+          const index = startIndex + offset
+          if (search.searchResults !== null) {
+            const result = rawItems[offset] as TSearch
+            interactionNodeCacheRef.current.set(result.node.id, result.node)
+            interactionSearchCacheRef.current.set(result.node.id, result)
+            const item = xDriveProjectFileExplorerNode(
+              result.node,
+              pathPrefix,
+              result.path || undefined,
+            )
+            loadedItems.set(index, item)
+            projectedItems[offset] = item
+          } else {
+            const node = rawItems[offset] as TNode
+            interactionNodeCacheRef.current.set(node.id, node)
+            const item = xDriveProjectFileExplorerNode(node, pathPrefix)
+            loadedItems.set(index, item)
+            projectedItems[offset] = item
+          }
+        }
+        return projectedItems
+      },
     }
   }, [
+    crumbs,
     directoryVirtualCollection,
+    interactionCacheKey,
     projection.virtualExplorerItems,
     search.searchResults,
     search.searchVirtualCollection,

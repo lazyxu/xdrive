@@ -12,6 +12,7 @@ import {
 import type {
   XDriveVirtualCollectionPage,
   XDriveVirtualCollectionRange,
+  XDriveVirtualCollectionSnapshot,
 } from '../virtual-collection'
 
 export type XDriveVirtualCollectionLoader<TItem> = (
@@ -47,6 +48,19 @@ export function useXDriveVirtualCollection<TItem>({
   const [snapshot, setSnapshot] = useState(
     () => xDriveCreateVirtualCollectionSnapshot<TItem>(queryKey, 1),
   )
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
+
+  const commitSnapshot = useCallback((
+    updater: (
+      current: XDriveVirtualCollectionSnapshot<TItem>,
+    ) => XDriveVirtualCollectionSnapshot<TItem>,
+  ) => {
+    const current = snapshotRef.current
+    const next = updater(current)
+    snapshotRef.current = next
+    if (!Object.is(next, current)) setSnapshot(next)
+  }, [])
 
   const abortInFlight = useCallback(() => {
     for (const entry of inFlightRef.current.values()) entry.controller.abort()
@@ -59,24 +73,24 @@ export function useXDriveVirtualCollection<TItem>({
     loadedRangeRef.current.clear()
     generationRef.current += 1
     queryKeyRef.current = resolvedQueryKey
-    setSnapshot(
-      xDriveCreateVirtualCollectionSnapshot<TItem>(
-        resolvedQueryKey,
-        generationRef.current,
-      ),
+    const next = xDriveCreateVirtualCollectionSnapshot<TItem>(
+      resolvedQueryKey,
+      generationRef.current,
     )
+    snapshotRef.current = next
+    setSnapshot(next)
   }, [abortInFlight])
 
   const primePage = useCallback((page: XDriveVirtualCollectionPage<TItem>) => {
     const generation = generationRef.current
     const range = { offset: page.offset, limit: page.limit }
     loadedRangeRef.current.add(xDriveVirtualCollectionRangeKey(range))
-    setSnapshot((current) => (
+    commitSnapshot((current) => (
       current.generation === generation
         ? xDriveVirtualCollectionApplyPage(current, generation, page)
         : current
     ))
-  }, [])
+  }, [commitSnapshot])
 
   useEffect(() => {
     if (queryKeyRef.current === queryKey) return
@@ -94,17 +108,18 @@ export function useXDriveVirtualCollection<TItem>({
     if (queryKeyRef.current !== queryKey) return
 
     const generation = generationRef.current
+    const totalCount = snapshotRef.current.totalCount
     const ranges = xDriveVirtualCollectionRangesForViewport({
       startIndex,
       endIndex,
-      totalCount: snapshot.totalCount,
+      totalCount,
       pageSize,
       overscanPages,
     })
     const retentionRanges = xDriveVirtualCollectionRangesForViewport({
       startIndex,
       endIndex,
-      totalCount: snapshot.totalCount,
+      totalCount,
       pageSize,
       overscanPages: Math.max(overscanPages, retentionOverscanPages),
     })
@@ -127,7 +142,7 @@ export function useXDriveVirtualCollection<TItem>({
       evicted = true
     }
     if (evicted) {
-      setSnapshot((current) => (
+      commitSnapshot((current) => (
         current.generation === generation
           ? xDriveVirtualCollectionRetainRanges(current, retentionRanges)
           : current
@@ -158,7 +173,7 @@ export function useXDriveVirtualCollection<TItem>({
           ) return
 
           loadedRangeRef.current.add(key)
-          setSnapshot((current) => (
+          commitSnapshot((current) => (
             current.generation === generation
               ? xDriveVirtualCollectionApplyPage(current, generation, page)
               : current
@@ -183,19 +198,62 @@ export function useXDriveVirtualCollection<TItem>({
 
     await Promise.all(tasks)
   }, [
+    commitSnapshot,
     loadRange,
     onError,
     overscanPages,
     pageSize,
     queryKey,
     retentionOverscanPages,
-    snapshot.totalCount,
   ])
+
+  const collectRange = useCallback(async (
+    startIndex: number,
+    endIndex: number,
+  ): Promise<TItem[] | null> => {
+    const generation = generationRef.current
+    const activeQueryKey = queryKeyRef.current
+    const totalCount = snapshotRef.current.totalCount
+
+    if (totalCount === 0) return []
+
+    const start = Math.max(0, Math.trunc(startIndex))
+    const requestedEnd = Math.max(start, Math.trunc(endIndex))
+    const end = totalCount === null
+      ? requestedEnd
+      : Math.min(requestedEnd, Math.max(0, totalCount - 1))
+
+    const result: TItem[] = []
+    const chunkSize = Math.max(pageSize, pageSize * 4)
+
+    for (let chunkStart = start; chunkStart <= end; chunkStart += chunkSize) {
+      if (
+        generation !== generationRef.current ||
+        activeQueryKey !== queryKeyRef.current
+      ) return null
+
+      const chunkEnd = Math.min(end, chunkStart + chunkSize - 1)
+      await ensureViewport(chunkStart, chunkEnd)
+
+      if (
+        generation !== generationRef.current ||
+        activeQueryKey !== queryKeyRef.current
+      ) return null
+
+      for (let index = chunkStart; index <= chunkEnd; index += 1) {
+        const item = snapshotRef.current.items.get(index)
+        if (!item) return null
+        result.push(item)
+      }
+    }
+
+    return result
+  }, [ensureViewport, pageSize])
 
   const updateLoadedItems = useCallback((
     updater: (item: TItem, index: number) => TItem,
   ) => {
-    setSnapshot((current) => {
+    commitSnapshot((current) => {
       let changed = false
       const items = new Map(current.items)
       for (const [index, item] of current.items) {
@@ -206,11 +264,11 @@ export function useXDriveVirtualCollection<TItem>({
       }
       return changed ? { ...current, items } : current
     })
-  }, [])
+  }, [commitSnapshot])
 
   const itemAt = useCallback(
-    (index: number) => snapshot.items.get(index),
-    [snapshot.items],
+    (index: number) => snapshotRef.current.items.get(index),
+    [],
   )
 
   return {
@@ -220,6 +278,7 @@ export function useXDriveVirtualCollection<TItem>({
     loadedItems: snapshot.items,
     itemAt,
     ensureViewport,
+    collectRange,
     reset,
     primePage,
     updateLoadedItems,

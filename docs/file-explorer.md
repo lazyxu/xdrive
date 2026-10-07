@@ -56,6 +56,22 @@ Transport requirements:
 
 An intentional abort is not a failure and must not produce an error toast.
 
+## VirtualCollection interaction semantics
+
+Virtualization must not weaken ordinary FileExplorer interaction semantics. The logical collection is authoritative; the retained render pages are only a cache.
+
+Required behavior:
+
+- `Ctrl/Cmd+A` selects the entire logical collection, not only currently loaded pages.
+- Shift-click and Shift+keyboard selection load missing logical indexes before committing the range. Results from an older selection intent must never overwrite a newer selection.
+- Type-to-select remains available in virtual collections. It scans bounded logical ranges on demand and stops at the first matching item; it must not require preloading the entire collection.
+- Quick Look previous/next follows logical collection order, loads missing ranges on demand, and skips folders.
+- File operations from a virtual selection must retain enough node metadata for every selected item even if its render page is later evicted.
+- Logical range resolution must stay bounded. Never fan out every page of a 100k-item selection concurrently; load small page groups and allow ordinary viewport retention to evict old render metadata after interaction metadata has been captured.
+- Directory/search/tab/sort generation changes invalidate in-flight interaction resolution so stale results cannot change current selection or Quick Look state.
+
+These are correctness requirements, not a FileExplorer performance specialization. Performance work remains governed separately by `docs/file-explorer-performance.md`.
+
 ## Async scope rule
 
 Do not use Folder Properties work as a reason to retrofit cancellation across unrelated async subsystems. Transfers, thumbnails, analysis previews, media indexing, Photo Intelligence, archive preparation, and maintenance are reviewed for cancellation when their own subsystem is being changed or when a specific correctness issue requires it.

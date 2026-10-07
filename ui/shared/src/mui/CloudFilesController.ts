@@ -17,6 +17,7 @@ export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   loadedItems: ReadonlyMap<number, TNode>
   itemAt: (index: number) => TNode | undefined
   ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
+  collectRange: (startIndex: number, endIndex: number) => Promise<TNode[] | null>
 }
 
 type XDriveCloudFilesVirtualTarget<
@@ -144,9 +145,11 @@ export function useXDriveCloudFilesController<
       loadedItems: virtualCollection.loadedItems,
       itemAt: virtualCollection.itemAt,
       ensureViewport: virtualCollection.ensureViewport,
+      collectRange: virtualCollection.collectRange,
     }
   }, [
     items.length,
+    virtualCollection.collectRange,
     virtualCollection.ensureViewport,
     virtualCollection.itemAt,
     virtualCollection.loadedItems,

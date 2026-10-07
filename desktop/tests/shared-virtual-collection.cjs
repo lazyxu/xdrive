@@ -463,3 +463,90 @@ test('VirtualCollection is exported from shared core and shared MUI', () => {
   assert.ok(sharedIndex.includes("export * from './virtual-collection'"))
   assert.ok(muiIndex.includes("export * from './VirtualCollectionController'"))
 })
+
+
+test('VirtualCollection collectRange resolves complete logical ranges in bounded chunks', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const requests = []
+  const loadRange = async (range) => {
+    requests.push({ ...range })
+    return {
+      offset: range.offset,
+      limit: range.limit,
+      totalCount: 10,
+      items: Array.from(
+        { length: Math.min(range.limit, 10 - range.offset) },
+        (_, index) => ({ id: range.offset + index + 1 }),
+      ),
+    }
+  }
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'selection',
+    loadRange,
+    onError: (error) => { throw error },
+    pageSize: 2,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+
+  let collection = render()
+  collection.primePage({
+    offset: 0,
+    limit: 2,
+    totalCount: 10,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  collection = render()
+
+  const items = await collection.collectRange(0, 9)
+  assert.deepEqual(items?.map((item) => item.id), [1,2,3,4,5,6,7,8,9,10])
+  assert.ok(
+    requests.length <= 4,
+    'logical range collection should load bounded page groups instead of one request per item',
+  )
+  collection = render()
+  assert.ok(
+    collection.loadedCount < 10,
+    'collectRange may retain only the final viewport chunk after returning complete logical items',
+  )
+})
+
+test('VirtualCollection collectRange abandons stale generations', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const pending = []
+  const loadRange = (range, signal) => new Promise((resolve) => {
+    pending.push({ range, signal, resolve })
+  })
+  const render = (queryKey) => runtime.render(() => useVirtualCollection({
+    queryKey,
+    loadRange,
+    onError: () => {},
+    pageSize: 2,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+
+  let collection = render('old')
+  collection.primePage({
+    offset: 0,
+    limit: 2,
+    totalCount: 4,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  collection = render('old')
+  const stale = collection.collectRange(0, 3)
+  assert.equal(pending.length, 1)
+
+  render('new')
+  collection = render('new')
+  assert.equal(pending[0].signal.aborted, true)
+  pending[0].resolve({
+    offset: 2,
+    limit: 2,
+    totalCount: 4,
+    items: [{ id: 3 }, { id: 4 }],
+  })
+  assert.equal(await stale, null)
+})

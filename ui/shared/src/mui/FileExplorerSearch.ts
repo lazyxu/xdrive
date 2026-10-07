@@ -272,6 +272,7 @@ export function useXDriveFileExplorerSearch<
         loadedItems: searchVirtualItems,
         itemAt: virtualCollection.itemAt,
         ensureViewport: virtualCollection.ensureViewport,
+        collectRange: virtualCollection.collectRange,
       }
     : null
 

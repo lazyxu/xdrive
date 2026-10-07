@@ -290,10 +290,16 @@ export type XDriveFileExplorerItem = {
 }
 
 export type XDriveFileExplorerVirtualCollection = {
+  interactionKey?: string
   itemCount: number
   loadedItems: ReadonlyMap<number, XDriveFileExplorerItem>
   itemAt: (index: number) => XDriveFileExplorerItem | undefined
   onRangeChange?: (startIndex: number, endIndex: number) => void
+  collectRange?: (
+    startIndex: number,
+    endIndex: number,
+  ) => Promise<readonly XDriveFileExplorerItem[] | null>
+  retainInteractionIDs?: (ids: readonly XDriveFileExplorerID[]) => void
 }
 
 export type XDriveFileExplorerSort = {
@@ -892,7 +898,9 @@ export function XDriveFileExplorer({
   const [internalSort, setInternalSort] = useState<XDriveFileExplorerSort>(XDRIVE_FILE_EXPLORER_DEFAULT_SORT)
   const [internalSelectedIDs, setInternalSelectedIDs] = useState<XDriveFileExplorerID[]>([...defaultSelectedIDs])
   const [selectionAnchorID, setSelectionAnchorID] = useState<XDriveFileExplorerID | null>(null)
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
   const [activeItemID, setActiveItemID] = useState<XDriveFileExplorerID | null>(null)
+  const [activeLogicalIndex, setActiveLogicalIndex] = useState<number | null>(null)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [viewPreferencesAnchor, setViewPreferencesAnchor] = useState<HTMLElement | null>(null)
@@ -921,6 +929,11 @@ export function XDriveFileExplorer({
   const marqueeFrameRef = useRef<number | null>(null)
   const suppressBackgroundClickRef = useRef(false)
   const typeSelectRef = useRef({ query: '', updatedAt: 0 })
+  const typeSelectIntentRef = useRef(0)
+  const selectionIntentRef = useRef(0)
+  const quickLookIntentRef = useRef(0)
+  const selectionItemCacheRef = useRef(new Map<string, XDriveFileExplorerItem>())
+  const interactionScopeKeyRef = useRef<string | null>(null)
   const [renamingID, setRenamingID] = useState<XDriveFileExplorerID | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameSubmitting, setRenameSubmitting] = useState(false)
@@ -935,6 +948,7 @@ export function XDriveFileExplorer({
     loadStats: loadPropertiesStats,
   })
   const [quickLookItemID, setQuickLookItemID] = useState<XDriveFileExplorerID | null>(null)
+  const [quickLookLogicalIndex, setQuickLookLogicalIndex] = useState<number | null>(null)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
   const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
@@ -974,10 +988,35 @@ export function XDriveFileExplorer({
     [detailsLayout.widths, visibleDetailsColumns],
   )
   const selectedIDs = controlledSelectedIDs ?? internalSelectedIDs
+  const selectedIDsRef = useRef(selectedIDs)
+  selectedIDsRef.current = selectedIDs
   const selectedKeySet = useMemo(
     () => new Set(selectedIDs.map(explorerIDKey)),
     [selectedIDs],
   )
+
+  const interactionScopeKey = virtualCollection?.interactionKey ?? derivedPath
+  useEffect(() => {
+    if (interactionScopeKeyRef.current === null) {
+      interactionScopeKeyRef.current = interactionScopeKey
+      return
+    }
+    if (interactionScopeKeyRef.current === interactionScopeKey) return
+
+    interactionScopeKeyRef.current = interactionScopeKey
+    typeSelectIntentRef.current += 1
+    selectionIntentRef.current += 1
+    quickLookIntentRef.current += 1
+    selectionItemCacheRef.current.clear()
+    setSelectionAnchorID(null)
+    setSelectionAnchorIndex(null)
+    setActiveItemID(null)
+    setActiveLogicalIndex(null)
+    setQuickLookItemID(null)
+    setQuickLookLogicalIndex(null)
+    if (controlledSelectedIDs === undefined) setInternalSelectedIDs([])
+    onSelectionChange?.([])
+  }, [controlledSelectedIDs, interactionScopeKey, onSelectionChange])
 
   useEffect(() => {
     thumbnailCache.disposed = false
@@ -1121,16 +1160,20 @@ export function XDriveFileExplorer({
   )
   const logicalItemByID = (id: XDriveFileExplorerID) => (
     interactionProjection.itemByKey.get(explorerIDKey(id))
+      ?? selectionItemCacheRef.current.get(explorerIDKey(id))
   )
   const selectedItems = useMemo(
     () => selectedIDs
-      .map((id) => logicalItemByID(id))
+      .map((id) => (
+        interactionProjection.itemByKey.get(explorerIDKey(id))
+          ?? selectionItemCacheRef.current.get(explorerIDKey(id))
+      ))
       .filter((item): item is XDriveFileExplorerItem => Boolean(item)),
     [interactionProjection.itemByKey, selectedIDs],
   )
   const activeIndex = activeItemID === null
     ? -1
-    : (logicalIndexOf(activeItemID) ?? -1)
+    : (logicalIndexOf(activeItemID) ?? activeLogicalIndex ?? -1)
   const activeItem = activeItemID === null
     ? interactionProjection.orderedItems[0]
     : logicalItemByID(activeItemID)
@@ -1138,45 +1181,125 @@ export function XDriveFileExplorer({
   const quickLookIndex = quickLookItemID === null
     ? -1
     : (quickLookIndexByKey.get(explorerIDKey(quickLookItemID)) ?? -1)
-  const quickLookItem = quickLookIndex >= 0 ? quickLookFiles[quickLookIndex] : null
+  const quickLookItem = quickLookItemID === null
+    ? null
+    : virtualCollectionEnabled
+      ? logicalItemByID(quickLookItemID) ?? null
+      : quickLookIndex >= 0
+        ? quickLookFiles[quickLookIndex]
+        : null
 
   useEffect(() => {
-    if (quickLookItemID !== null && quickLookIndex < 0) setQuickLookItemID(null)
-  }, [quickLookIndex, quickLookItemID])
+    if (
+      !virtualCollectionEnabled &&
+      quickLookItemID !== null &&
+      quickLookIndex < 0
+    ) {
+      setQuickLookItemID(null)
+      setQuickLookLogicalIndex(null)
+    }
+  }, [quickLookIndex, quickLookItemID, virtualCollectionEnabled])
 
   useEffect(() => {
     if (logicalItemCount === 0) {
       if (activeItemID !== null) setActiveItemID(null)
+      if (activeLogicalIndex !== null) setActiveLogicalIndex(null)
       return
     }
     if (activeIndex >= 0) return
     const fallback = selectedItems[0] ?? interactionProjection.orderedItems[0]
-    if (fallback) setActiveItemID(fallback.id)
-  }, [activeIndex, activeItemID, interactionProjection.orderedItems, logicalItemCount, selectedItems])
+    if (fallback) {
+      setActiveItemID(fallback.id)
+      setActiveLogicalIndex(logicalIndexOf(fallback.id) ?? null)
+    }
+  }, [activeIndex, activeItemID, activeLogicalIndex, interactionProjection.orderedItems, logicalItemCount, selectedItems])
 
-  const commitSelection = (ids: XDriveFileExplorerID[]) => {
+  const applySelection = (
+    ids: XDriveFileExplorerID[],
+    resolvedItems: readonly XDriveFileExplorerItem[] = [],
+  ) => {
+    const resolvedByKey = new Map(
+      resolvedItems.map((item) => [explorerIDKey(item.id), item]),
+    )
+    const nextCache = new Map<string, XDriveFileExplorerItem>()
+    for (const id of ids) {
+      const key = explorerIDKey(id)
+      const item = resolvedByKey.get(key)
+        ?? interactionProjection.itemByKey.get(key)
+        ?? selectionItemCacheRef.current.get(key)
+      if (item) nextCache.set(key, item)
+    }
+    selectionItemCacheRef.current = nextCache
+    virtualCollection?.retainInteractionIDs?.(ids)
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs(ids)
     onSelectionChange?.(ids)
   }
 
+  const commitSelection = (
+    ids: XDriveFileExplorerID[],
+    resolvedItems: readonly XDriveFileExplorerItem[] = [],
+  ) => {
+    selectionIntentRef.current += 1
+    applySelection(ids, resolvedItems)
+  }
+
+  const beginSelectionIntent = () => {
+    selectionIntentRef.current += 1
+    return selectionIntentRef.current
+  }
+
+  const commitSelectionIntent = (
+    intent: number,
+    ids: XDriveFileExplorerID[],
+    resolvedItems: readonly XDriveFileExplorerItem[] = [],
+  ) => {
+    if (selectionIntentRef.current !== intent) return false
+    applySelection(ids, resolvedItems)
+    return true
+  }
+
   const resetTypeSelect = () => {
+    typeSelectIntentRef.current += 1
     typeSelectRef.current = { query: '', updatedAt: 0 }
   }
 
   const clearSelection = () => {
     resetTypeSelect()
     setSelectionAnchorID(null)
+    setSelectionAnchorIndex(null)
     commitSelection([])
   }
 
-  const loadedRangeIDs = (start: number, end: number) => {
-    const ids: XDriveFileExplorerID[] = []
+  const loadedRangeItems = (start: number, end: number) => {
+    const range: XDriveFileExplorerItem[] = []
     for (let index = start; index <= end; index += 1) {
       const item = logicalItemAt(index)
       if (!item) return null
-      ids.push(item.id)
+      range.push(item)
     }
-    return ids
+    return range
+  }
+
+  const resolveLogicalRange = async (start: number, end: number) => {
+    const loaded = loadedRangeItems(start, end)
+    if (loaded) return loaded
+    if (!virtualCollection?.collectRange) {
+      virtualCollection?.onRangeChange?.(start, end)
+      return null
+    }
+    return virtualCollection.collectRange(start, end)
+  }
+
+  const anchorSelectionAt = (
+    item: XDriveFileExplorerItem,
+    index?: number,
+  ) => {
+    setSelectionAnchorID(item.id)
+    setSelectionAnchorIndex(index ?? logicalIndexOf(item.id) ?? null)
+  }
+
+  const releaseInteractionMetadata = () => {
+    virtualCollection?.retainInteractionIDs?.(selectedIDsRef.current)
   }
 
   const marqueeSelectionIDs = (
@@ -1268,6 +1391,7 @@ export function XDriveFileExplorer({
       moved: false,
     }
     setSelectionAnchorID(null)
+    setSelectionAnchorIndex(null)
     if (!additive) commitSelection([])
     setMarqueeRect({ left: contentX, top: contentY, width: 0, height: 0 })
     host.setPointerCapture(event.pointerId)
@@ -1382,6 +1506,7 @@ export function XDriveFileExplorer({
       return
     }
     setActiveItemID(item.id)
+    setActiveLogicalIndex(index)
     scheduleItemFocus(item.id)
   }
 
@@ -1389,8 +1514,8 @@ export function XDriveFileExplorer({
     if (!onRenameItem || renameDisabled || renameSubmitting) return
     resetTypeSelect()
     if (!selectedKeySet.has(explorerIDKey(item.id)) || selectedItems.length !== 1) {
-      commitSelection([item.id])
-      setSelectionAnchorID(item.id)
+      commitSelection([item.id], [item])
+      anchorSelectionAt(item)
     }
     setActiveItemID(item.id)
     renameCancelledRef.current = false
@@ -1528,26 +1653,44 @@ export function XDriveFileExplorer({
     const additive = event.ctrlKey || event.metaKey
     resetTypeSelect()
     setActiveItemID(item.id)
+    setActiveLogicalIndex(index)
 
     if (event.shiftKey && selectionAnchorID !== null) {
-      const anchorIndex = logicalIndexOf(selectionAnchorID) ?? -1
+      const anchorIndex = selectionAnchorIndex ?? logicalIndexOf(selectionAnchorID) ?? -1
       if (anchorIndex >= 0) {
         const start = Math.min(anchorIndex, index)
         const end = Math.max(anchorIndex, index)
-        const range = loadedRangeIDs(start, end)
-        if (!range) {
-          virtualCollection?.onRangeChange?.(start, end)
-        } else if (additive) {
-          const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
-          for (const id of range) merged.set(explorerIDKey(id), id)
-          commitSelection([...merged.values()])
-        } else {
-          commitSelection(range)
-        }
+        const range = loadedRangeItems(start, end)
         if (range) {
+          if (additive) {
+            const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
+            for (const candidate of range) merged.set(explorerIDKey(candidate.id), candidate.id)
+            commitSelection([...merged.values()], range)
+          } else {
+            commitSelection(range.map((candidate) => candidate.id), range)
+          }
           onItemClick?.(item)
           return
         }
+
+        const intent = beginSelectionIntent()
+        void resolveLogicalRange(start, end).then((resolved) => {
+          if (!resolved) return
+          const ids = resolved.map((candidate) => candidate.id)
+          const nextIDs = additive
+            ? (() => {
+                const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
+                for (const id of ids) merged.set(explorerIDKey(id), id)
+                return [...merged.values()]
+              })()
+            : ids
+          if (!commitSelectionIntent(intent, nextIDs, resolved)) {
+            releaseInteractionMetadata()
+            return
+          }
+          onItemClick?.(item)
+        })
+        return
       }
     }
 
@@ -1555,54 +1698,115 @@ export function XDriveFileExplorer({
       if (selectedKeySet.has(itemKey)) {
         commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== itemKey))
       } else {
-        commitSelection([...selectedIDs, item.id])
+        commitSelection([...selectedIDs, item.id], [item])
       }
     } else {
-      commitSelection([item.id])
+      commitSelection([item.id], [item])
     }
-    setSelectionAnchorID(item.id)
+    anchorSelectionAt(item, index)
     onItemClick?.(item)
   }
 
   const toggleKeyboardSelection = (item: XDriveFileExplorerItem) => {
     const key = explorerIDKey(item.id)
     setActiveItemID(item.id)
+    setActiveLogicalIndex(logicalIndexOf(item.id) ?? activeLogicalIndex)
     if (selectedKeySet.has(key)) {
       commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== key))
     } else {
-      commitSelection([...selectedIDs, item.id])
+      commitSelection([...selectedIDs, item.id], [item])
     }
-    setSelectionAnchorID(item.id)
+    anchorSelectionAt(item)
   }
 
   const openQuickLook = (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return
     resetTypeSelect()
+    quickLookIntentRef.current += 1
+    const index = logicalIndexOf(item.id) ?? activeLogicalIndex ?? 0
     setActiveItemID(item.id)
+    setActiveLogicalIndex(index)
     if (!selectedKeySet.has(explorerIDKey(item.id))) {
-      commitSelection([item.id])
-      setSelectionAnchorID(item.id)
+      commitSelection([item.id], [item])
+      anchorSelectionAt(item, index)
     }
     setQuickLookItemID(item.id)
+    setQuickLookLogicalIndex(index)
     onPreviewItem?.(item)
   }
 
   const closeQuickLook = () => {
     const item = quickLookItem
+    quickLookIntentRef.current += 1
+    releaseInteractionMetadata()
     setQuickLookItemID(null)
+    setQuickLookLogicalIndex(null)
     if (item) scheduleItemFocus(item.id)
   }
 
   const moveQuickLook = (delta: -1 | 1) => {
-    if (quickLookIndex < 0) return
-    const target = quickLookFiles[quickLookIndex + delta]
-    if (!target) return
-    setQuickLookItemID(target.id)
-    setActiveItemID(target.id)
-    commitSelection([target.id])
-    setSelectionAnchorID(target.id)
-    onItemClick?.(target)
-    onPreviewItem?.(target)
+    if (!virtualCollectionEnabled) {
+      if (quickLookIndex < 0) return
+      const target = quickLookFiles[quickLookIndex + delta]
+      if (!target) return
+      setQuickLookItemID(target.id)
+      setQuickLookLogicalIndex(logicalIndexOf(target.id) ?? null)
+      setActiveItemID(target.id)
+      setActiveLogicalIndex(logicalIndexOf(target.id) ?? quickLookIndex + delta)
+      commitSelection([target.id], [target])
+      anchorSelectionAt(target)
+      onItemClick?.(target)
+      onPreviewItem?.(target)
+      return
+    }
+
+    const currentIndex = quickLookLogicalIndex
+      ?? (quickLookItemID === null ? null : (logicalIndexOf(quickLookItemID) ?? null))
+    if (currentIndex === null || currentIndex < 0) return
+
+    const intent = ++quickLookIntentRef.current
+    void (async () => {
+      const chunkSize = 64
+      let cursor = currentIndex + delta
+      while (cursor >= 0 && cursor < logicalItemCount) {
+        const start = delta > 0
+          ? cursor
+          : Math.max(0, cursor - chunkSize + 1)
+        const end = delta > 0
+          ? Math.min(logicalItemCount - 1, cursor + chunkSize - 1)
+          : cursor
+        const range = await resolveLogicalRange(start, end)
+        if (!range || quickLookIntentRef.current !== intent) {
+          releaseInteractionMetadata()
+          return
+        }
+
+        const offsets = delta > 0
+          ? range.map((_, index) => index)
+          : range.map((_, index) => range.length - 1 - index)
+        for (const offset of offsets) {
+          const target = range[offset]
+          if (target.kind !== 'file') continue
+          const targetIndex = start + offset
+          if (quickLookIntentRef.current !== intent) {
+            releaseInteractionMetadata()
+            return
+          }
+          setQuickLookItemID(target.id)
+          setQuickLookLogicalIndex(targetIndex)
+          setActiveItemID(target.id)
+          setActiveLogicalIndex(targetIndex)
+          commitSelection([target.id], [target])
+          anchorSelectionAt(target, targetIndex)
+          onItemClick?.(target)
+          onPreviewItem?.(target)
+          focusItemAtIndex(targetIndex)
+          return
+        }
+        cursor = delta > 0 ? end + 1 : start - 1
+      }
+      releaseInteractionMetadata()
+    })()
   }
 
   const openItemContextMenuAt = (
@@ -1612,8 +1816,8 @@ export function XDriveFileExplorer({
   ) => {
     setActiveItemID(item.id)
     if (!selectedKeySet.has(explorerIDKey(item.id))) {
-      commitSelection([item.id])
-      setSelectionAnchorID(item.id)
+      commitSelection([item.id], [item])
+      anchorSelectionAt(item)
     }
     const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
       ? selectedItems
@@ -1777,8 +1981,8 @@ export function XDriveFileExplorer({
       ? selectedItems
       : [item]
     if (!selectedKeySet.has(explorerIDKey(item.id))) {
-      commitSelection([item.id])
-      setSelectionAnchorID(item.id)
+      commitSelection([item.id], [item])
+      anchorSelectionAt(item)
     }
     setDraggedItems(selection)
     event.dataTransfer.effectAllowed = 'copyMove'
@@ -2178,39 +2382,57 @@ export function XDriveFileExplorer({
     resetTypeSelect()
     if (targetIndex === currentIndex) return true
 
-    const target = logicalItemAt(targetIndex)
-    if (!target) {
-      focusItemAtIndex(targetIndex)
-      return true
+    const modifier = xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)
+    const shift = event.shiftKey
+    const anchorID = selectionAnchorID ?? item.id
+    const anchorIndex = selectionAnchorIndex ?? logicalIndexOf(anchorID) ?? currentIndex
+    if (selectionAnchorID === null && shift) {
+      setSelectionAnchorID(anchorID)
+      setSelectionAnchorIndex(anchorIndex)
     }
 
-    const modifier = xDriveFileExplorerPrimaryModifierActive(event, keyboardProfile)
-    if (event.shiftKey) {
-      const anchorID = selectionAnchorID ?? item.id
-      if (selectionAnchorID === null) setSelectionAnchorID(anchorID)
-      const anchorIndex = logicalIndexOf(anchorID) ?? -1
-      if (anchorIndex >= 0) {
+    const intent = beginSelectionIntent()
+    void (async () => {
+      const targetRange = await resolveLogicalRange(targetIndex, targetIndex)
+      if (!targetRange || selectionIntentRef.current !== intent) {
+        releaseInteractionMetadata()
+        return
+      }
+      const target = targetRange[0]
+      if (!target) return
+
+      if (shift) {
         const start = Math.min(anchorIndex, targetIndex)
         const end = Math.max(anchorIndex, targetIndex)
-        const range = loadedRangeIDs(start, end)
-        if (!range) {
-          virtualCollection?.onRangeChange?.(start, end)
-        } else if (modifier) {
-          const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
-          for (const id of range) merged.set(explorerIDKey(id), id)
-          commitSelection([...merged.values()])
-        } else {
-          commitSelection(range)
+        const range = await resolveLogicalRange(start, end)
+        if (!range || selectionIntentRef.current !== intent) {
+          releaseInteractionMetadata()
+          return
         }
+        const ids = range.map((candidate) => candidate.id)
+        const nextIDs = modifier
+          ? (() => {
+              const merged = new Map(selectedIDs.map((id) => [explorerIDKey(id), id]))
+              for (const id of ids) merged.set(explorerIDKey(id), id)
+              return [...merged.values()]
+            })()
+          : ids
+        if (!commitSelectionIntent(intent, nextIDs, range)) {
+          releaseInteractionMetadata()
+          return
+        }
+      } else if (!modifier) {
+        if (!commitSelectionIntent(intent, [target.id], [target])) return
+        anchorSelectionAt(target, targetIndex)
+      } else if (selectionIntentRef.current !== intent) {
+        return
       }
-    } else if (!modifier) {
-      commitSelection([target.id])
-      setSelectionAnchorID(target.id)
-    }
 
-    setActiveItemID(target.id)
-    onItemClick?.(target)
-    focusItemAtIndex(targetIndex)
+      setActiveItemID(target.id)
+      setActiveLogicalIndex(targetIndex)
+      onItemClick?.(target)
+      focusItemAtIndex(targetIndex)
+    })()
     return true
   }
 
@@ -2256,7 +2478,6 @@ export function XDriveFileExplorer({
   }
 
   const typeSelectFromKeyboard = (event: KeyboardEvent<HTMLElement>) => {
-    if (virtualCollectionEnabled) return false
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -2279,22 +2500,69 @@ export function XDriveFileExplorer({
     const query = repeatedSingleKey ? typed : previous + typed
     typeSelectRef.current = { query, updatedAt: now }
 
-    const targetIndex = xDriveFileExplorerTypeSelectTargetIndex({
-      names: visibleItemNames,
-      currentIndex: activeIndex,
-      query,
-      cycle: repeatedSingleKey,
-    })
     event.preventDefault()
     event.stopPropagation()
-    if (targetIndex === null) return true
 
-    const target = visibleItems[targetIndex]
-    commitSelection([target.id])
-    setSelectionAnchorID(target.id)
-    setActiveItemID(target.id)
-    onItemClick?.(target)
-    focusItemAtIndex(targetIndex)
+    if (!virtualCollectionEnabled) {
+      const targetIndex = xDriveFileExplorerTypeSelectTargetIndex({
+        names: visibleItemNames,
+        currentIndex: activeIndex,
+        query,
+        cycle: repeatedSingleKey,
+      })
+      if (targetIndex === null) return true
+
+      const target = visibleItems[targetIndex]
+      commitSelection([target.id], [target])
+      anchorSelectionAt(target, targetIndex)
+      setActiveItemID(target.id)
+      setActiveLogicalIndex(targetIndex)
+      onItemClick?.(target)
+      focusItemAtIndex(targetIndex)
+      return true
+    }
+
+    const intent = ++typeSelectIntentRef.current
+    const normalizedQuery = query.normalize('NFKC').toLocaleLowerCase()
+    const startIndex = activeIndex >= 0
+      ? repeatedSingleKey
+        ? (activeIndex + 1) % Math.max(1, logicalItemCount)
+        : activeIndex
+      : 0
+
+    void (async () => {
+      if (logicalItemCount <= 0 || !normalizedQuery) return
+      const spans = startIndex > 0
+        ? [[startIndex, logicalItemCount - 1], [0, startIndex - 1]] as const
+        : [[0, logicalItemCount - 1]] as const
+      const chunkSize = 128
+
+      for (const [spanStart, spanEnd] of spans) {
+        for (let chunkStart = spanStart; chunkStart <= spanEnd; chunkStart += chunkSize) {
+          if (typeSelectIntentRef.current !== intent) return
+          const chunkEnd = Math.min(spanEnd, chunkStart + chunkSize - 1)
+          const range = await resolveLogicalRange(chunkStart, chunkEnd)
+          if (!range || typeSelectIntentRef.current !== intent) {
+            releaseInteractionMetadata()
+            return
+          }
+
+          for (let offset = 0; offset < range.length; offset += 1) {
+            const candidate = range[offset]
+            if (!candidate.name.normalize('NFKC').toLocaleLowerCase().startsWith(normalizedQuery)) continue
+            const targetIndex = chunkStart + offset
+            commitSelection([candidate.id], [candidate])
+            anchorSelectionAt(candidate, targetIndex)
+            setActiveItemID(candidate.id)
+            setActiveLogicalIndex(targetIndex)
+            onItemClick?.(candidate)
+            focusItemAtIndex(targetIndex)
+            return
+          }
+        }
+      }
+      releaseInteractionMetadata()
+    })()
     return true
   }
 
@@ -2407,9 +2675,35 @@ export function XDriveFileExplorer({
     }
     if (command === 'select-all') {
       event.preventDefault()
-      const selectableItems = interactionProjection.orderedItems
-      commitSelection(selectableItems.map((candidate) => candidate.id))
-      if (activeItemID === null && selectableItems[0]) setActiveItemID(selectableItems[0].id)
+      if (!virtualCollectionEnabled) {
+        const selectableItems = interactionProjection.orderedItems
+        commitSelection(
+          selectableItems.map((candidate) => candidate.id),
+          selectableItems,
+        )
+        if (activeItemID === null && selectableItems[0]) {
+          setActiveItemID(selectableItems[0].id)
+          setActiveLogicalIndex(0)
+        }
+        return
+      }
+
+      const intent = beginSelectionIntent()
+      void resolveLogicalRange(0, logicalItemCount - 1).then((resolved) => {
+        if (!resolved || resolved.length !== logicalItemCount) return
+        if (!commitSelectionIntent(
+          intent,
+          resolved.map((candidate) => candidate.id),
+          resolved,
+        )) {
+          releaseInteractionMetadata()
+          return
+        }
+        if (activeItemID === null && resolved[0]) {
+          setActiveItemID(resolved[0].id)
+          setActiveLogicalIndex(0)
+        }
+      })
       return
     }
     if (command === 'copy-path' && onCopyPaths) {
@@ -3371,7 +3665,10 @@ export function XDriveFileExplorer({
                   if (!renaming) onOpenItem?.(item)
                 }}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
-                onFocus={() => setActiveItemID(item.id)}
+                onFocus={() => {
+                  setActiveItemID(item.id)
+                  setActiveLogicalIndex(index)
+                }}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   width: '100%',
@@ -3502,7 +3799,10 @@ export function XDriveFileExplorer({
                   if (!renaming) onOpenItem?.(item)
                 }}
                 onContextMenu={(event) => openItemContextMenu(event, item)}
-                onFocus={() => setActiveItemID(item.id)}
+                onFocus={() => {
+                  setActiveItemID(item.id)
+                  setActiveLogicalIndex(index)
+                }}
                 onKeyDown={(event) => itemKeyDown(event, item)}
                 sx={{
                   minWidth: 0,
@@ -3689,7 +3989,11 @@ export function XDriveFileExplorer({
       <XDriveFileQuickLookDialog
         open={quickLookItem !== null}
         item={quickLookItem}
-        positionLabel={quickLookItem ? `${quickLookIndex + 1} / ${quickLookFiles.length}` : undefined}
+        positionLabel={quickLookItem
+          ? virtualCollectionEnabled && quickLookLogicalIndex !== null
+            ? `${quickLookLogicalIndex + 1} / ${logicalItemCount}`
+            : `${quickLookIndex + 1} / ${quickLookFiles.length}`
+          : undefined}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
         loadImagePreview={
@@ -3698,8 +4002,12 @@ export function XDriveFileExplorer({
             ? loadThumbnail
             : undefined
         }
-        canPrevious={quickLookIndex > 0}
-        canNext={quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}
+        canPrevious={virtualCollectionEnabled
+          ? (quickLookLogicalIndex ?? -1) > 0
+          : quickLookIndex > 0}
+        canNext={virtualCollectionEnabled
+          ? quickLookLogicalIndex !== null && quickLookLogicalIndex < logicalItemCount - 1
+          : quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}
         onPrevious={() => moveQuickLook(-1)}
         onNext={() => moveQuickLook(1)}
         onClose={closeQuickLook}

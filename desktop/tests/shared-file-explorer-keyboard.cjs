@@ -63,8 +63,10 @@ test('shared FileExplorer supports Windows-style type-to-select', () => {
     'const repeatedSingleKey =',
     'names: visibleItemNames',
     'cycle: repeatedSingleKey',
-    'commitSelection([target.id])',
+    'commitSelection([target.id], [target])',
     'focusItemAtIndex(targetIndex)',
+    'const intent = ++typeSelectIntentRef.current',
+    'const range = await resolveLogicalRange(chunkStart, chunkEnd)',
     'if (typeSelectFromKeyboard(event)) return',
   ]) assert.ok(explorer.includes(token), 'shared Explorer type-select behavior missing: ' + token)
 })
