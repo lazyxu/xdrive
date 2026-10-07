@@ -603,6 +603,7 @@ function FileManager({
     remove,
     removeMany,
   } = useXDriveFileExplorerDeleteController<Node, XDriveFileOperation>({
+    lifecycleKey: username,
     submitOperation: (operation, items) => api.createFileOperation(operation, items),
     onQueued: rememberFileOperation,
     requestConfirmation: (confirmation) => setConfirmAction(confirmation),

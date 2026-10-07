@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { xDriveFileExplorerDeleteOperationPlan } from '../file-explorer-controller'
 import type { Node } from '../models'
 import {
@@ -21,6 +21,7 @@ export function useXDriveFileExplorerDeleteController<
   TNode extends XDriveFileExplorerDeleteNode,
   TQueued,
 >({
+  lifecycleKey,
   submitOperation,
   onQueued,
   requestConfirmation,
@@ -28,6 +29,7 @@ export function useXDriveFileExplorerDeleteController<
   onFeedback,
   onError,
 }: {
+  lifecycleKey: string
   submitOperation: (
     operation: 'delete',
     items: Array<{ id: number; revision: number }>,
@@ -40,9 +42,26 @@ export function useXDriveFileExplorerDeleteController<
 }) {
   const busyRef = useRef(false)
   const [busy, setBusy] = useState(false)
+  const lifecycleGenerationRef = useRef(1)
 
-  const runDelete = useCallback(async (nodes: readonly TNode[]) => {
-    if (busyRef.current) return false
+  useEffect(() => {
+    lifecycleGenerationRef.current += 1
+    busyRef.current = false
+    setBusy(false)
+    return () => {
+      lifecycleGenerationRef.current += 1
+      busyRef.current = false
+    }
+  }, [lifecycleKey])
+
+  const runDelete = useCallback(async (
+    nodes: readonly TNode[],
+    lifecycleGeneration = lifecycleGenerationRef.current,
+  ) => {
+    if (
+      lifecycleGeneration !== lifecycleGenerationRef.current ||
+      busyRef.current
+    ) return false
     const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
     if (plan.count === 0) return false
 
@@ -52,20 +71,26 @@ export function useXDriveFileExplorerDeleteController<
       const queued = await resolveXDriveTransport(
         submitOperation(plan.operation, plan.items),
       )
+      if (lifecycleGeneration !== lifecycleGenerationRef.current) return false
       onQueued(queued)
       onFeedback(plan.message)
       return true
     } catch (error) {
-      onError(error)
+      if (lifecycleGeneration === lifecycleGenerationRef.current) {
+        onError(error)
+      }
       return false
     } finally {
-      busyRef.current = false
-      setBusy(false)
+      if (lifecycleGeneration === lifecycleGenerationRef.current) {
+        busyRef.current = false
+        setBusy(false)
+      }
     }
   }, [onError, onFeedback, onQueued, submitOperation])
 
   const requestDelete = useCallback((nodes: readonly TNode[]) => {
     if (busyRef.current) return
+    const lifecycleGeneration = lifecycleGenerationRef.current
     const plan = xDriveFileExplorerDeleteOperationPlan(nodes)
     if (plan.count === 0) return
 
@@ -82,7 +107,7 @@ export function useXDriveFileExplorerDeleteController<
       confirmLabel: '移到回收站',
       intent: confirmationIntent,
       run: async () => {
-        await runDelete(nodes)
+        await runDelete(nodes, lifecycleGeneration)
       },
     })
   }, [confirmationIntent, requestConfirmation, runDelete])

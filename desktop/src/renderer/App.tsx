@@ -506,6 +506,7 @@ export default function App({
     remove: removeCloudNode,
     removeMany: removeCloudNodes,
   } = useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>({
+    lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     submitOperation: (operation, items) => {
       setError('')
       return window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)

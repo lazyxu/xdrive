@@ -191,6 +191,20 @@ function loadOperationHook(react) {
   ).useXDriveFileExplorerOperationController
 }
 
+function loadDeleteHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerDeleteController.ts'],
+    react,
+    {
+      '../file-explorer-controller': loadFileExplorerController(),
+      '../transport-result': loadTypeScriptModule(
+        ['ui', 'shared', 'src', 'transport-result.ts'],
+        null,
+      ),
+    },
+  ).useXDriveFileExplorerDeleteController
+}
+
 function loadExternalDropHook(react) {
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'],
@@ -2541,4 +2555,133 @@ test('stale Recent file activation cannot record access after a newer navigation
     0,
     'stale Recent file activation must not record access after its open was rejected',
   )
+})
+
+
+test('stale FileExplorer delete confirmation cannot submit after session identity changes', async () => {
+  const runtime = createHookRuntime()
+  const useDelete = loadDeleteHook(runtime.react)
+
+  const nodeA = { id: 1, revision: 1, name: 'A.txt', type: 'file' }
+  let lifecycleKey = 'server-a:user-a'
+  let confirmation = null
+  const submitted = []
+
+  const render = () => runtime.render(() => useDelete({
+    lifecycleKey,
+    submitOperation: async (_operation, items) => {
+      submitted.push(items)
+      return { id: 'queued' }
+    },
+    onQueued: () => {},
+    requestConfirmation: (next) => { confirmation = next },
+    onFeedback: () => {},
+    onError: (error) => { throw error },
+  }))
+
+  let deletion = render()
+  deletion.remove(nodeA)
+  const staleConfirmation = confirmation
+  assert.ok(staleConfirmation, 'delete confirmation should be captured for account A')
+
+  lifecycleKey = 'server-b:user-b'
+  render()
+  await flushAsync()
+  deletion = render()
+  assert.equal(deletion.busy, false)
+
+  await staleConfirmation.run()
+
+  assert.deepEqual(
+    submitted,
+    [],
+    'a confirmation created under account A must not submit A node ids after account B becomes current',
+  )
+})
+
+
+test('pending FileExplorer delete completion cannot cross session identity lifecycles', async () => {
+  const runtime = createHookRuntime()
+  const useDelete = loadDeleteHook(runtime.react)
+
+  const nodeA = { id: 1, revision: 1, name: 'A.txt', type: 'file' }
+  const nodeB = { id: 2, revision: 1, name: 'B.txt', type: 'file' }
+  let lifecycleKey = 'server-a:user-a'
+  let confirmation = null
+  let releaseA
+  let releaseB
+  const queued = []
+  const feedback = []
+  const errors = []
+
+  const submitOperation = (_operation, items) => new Promise((resolve) => {
+    const id = items[0]?.id
+    if (id === nodeA.id) {
+      releaseA = () => resolve({ id: 'op-a' })
+      return
+    }
+    if (id === nodeB.id) {
+      releaseB = () => resolve({ id: 'op-b' })
+      return
+    }
+    throw new Error('unexpected delete id')
+  })
+
+  const render = () => runtime.render(() => useDelete({
+    lifecycleKey,
+    submitOperation,
+    onQueued: (operation) => queued.push(operation),
+    requestConfirmation: (next) => { confirmation = next },
+    onFeedback: (message) => feedback.push(message),
+    onError: (error) => errors.push(error),
+  }))
+
+  let deletion = render()
+  deletion.remove(nodeA)
+  const pendingA = confirmation.run()
+  await flushAsync()
+  deletion = render()
+  assert.equal(deletion.busy, true)
+  assert.equal(typeof releaseA, 'function')
+
+  lifecycleKey = 'server-b:user-b'
+  render()
+  await flushAsync()
+  deletion = render()
+  assert.equal(
+    deletion.busy,
+    false,
+    'changing Server+username lifecycle must release the old account delete busy ownership',
+  )
+
+  deletion.remove(nodeB)
+  const pendingB = confirmation.run()
+  await flushAsync()
+  deletion = render()
+  assert.equal(deletion.busy, true)
+  assert.equal(typeof releaseB, 'function')
+
+  releaseA()
+  await pendingA
+  await flushAsync()
+  deletion = render()
+
+  assert.equal(
+    deletion.busy,
+    true,
+    'stale A completion must not clear the newer B delete busy ownership',
+  )
+  assert.deepEqual(queued, [])
+  assert.deepEqual(feedback, [])
+  assert.deepEqual(errors, [])
+
+  releaseB()
+  await pendingB
+  await flushAsync()
+  deletion = render()
+
+  assert.equal(deletion.busy, false)
+  assert.deepEqual(queued.map((operation) => operation.id), ['op-b'])
+  assert.equal(feedback.length, 1)
+  assert.deepEqual(errors, [])
 })
