@@ -222,21 +222,20 @@ func (s *Server) retainOwnedContentBlobTx(
 }
 
 func userOwnsStorageKey(db *gorm.DB, uid uint64, storageKey string) (bool, error) {
-	var count int64
-	row := db.Raw(`SELECT COUNT(*)
-FROM (
-  SELECT f.storage_key
+	var exists bool
+	row := db.Raw(`SELECT EXISTS (
+  SELECT 1
   FROM xd_files f
   JOIN xd_nodes n ON n.id = f.node_id
   WHERE n.owner_id = ? AND f.storage_key = ?
   UNION ALL
-  SELECT v.storage_key
+  SELECT 1
   FROM xd_file_versions v
   JOIN xd_nodes n ON n.id = v.node_id
   WHERE n.owner_id = ? AND v.storage_key = ?
-) refs`, uid, storageKey, uid, storageKey).Row()
-	if err := row.Scan(&count); err != nil {
+)`, uid, storageKey, uid, storageKey).Row()
+	if err := row.Scan(&exists); err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return exists, nil
 }
