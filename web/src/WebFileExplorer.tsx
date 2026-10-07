@@ -660,7 +660,9 @@ export default function WebFileExplorer({
             favoriteBusyID={favorites.busyID}
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
+              const navigationIntentID = beginNavigationIntent()
               void favorites.activate(nodeID, (node) => {
+                if (!isNavigationIntentCurrent(navigationIntentID)) return
                 void recent.record(node.id)
                 openWebNode(node)
               })

@@ -71,3 +71,31 @@ test('Web and Desktop use the shared favorite controller with transport-only ada
   for (const token of ['useXDriveFileExplorerFavorites<AgentCloudNode>','enabled: favoritesSupported','cloudFileFavorites()','cloudFavoriteFile(nodeID)','cloudUnfavoriteFile(nodeID)','favoriteItems={favorites.items}']) assert.ok(desktopExplorer.includes(token))
   assert.ok(desktopApp.includes("capabilities.includes('file-favorites')"))
 })
+
+
+test('favorite activation is fenced by the shared navigation intent on Web and Desktop', () => {
+  const assertFavoriteIntentFence = (source, label) => {
+    const start = source.indexOf('onActivateFavorite={(nodeID) => {')
+    assert.ok(start >= 0, label + ' favorite activation handler is missing')
+    const end = source.indexOf('onUnfavorite=', start)
+    assert.ok(end > start, label + ' favorite activation handler boundary is missing')
+    const block = source.slice(start, end)
+
+    assert.ok(
+      block.includes('const navigationIntentID = beginNavigationIntent()'),
+      label + ' favorite activation must claim a navigation intent before its async favorite refresh starts',
+    )
+    assert.ok(
+      block.includes('isNavigationIntentCurrent(navigationIntentID)'),
+      label + ' favorite activation must reject a stale lookup completion after a newer navigation intent',
+    )
+    assert.ok(
+      block.indexOf('const navigationIntentID = beginNavigationIntent()') <
+        block.indexOf('favorites.activate('),
+      label + ' favorite intent must be captured before the async favorite lookup starts',
+    )
+  }
+
+  assertFavoriteIntentFence(webExplorer, 'Web')
+  assertFavoriteIntentFence(desktopExplorer, 'Desktop')
+})

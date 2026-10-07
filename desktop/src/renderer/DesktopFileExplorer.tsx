@@ -1438,7 +1438,12 @@ export default function DesktopFileExplorer({
             favoriteBusyID={favorites.busyID}
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
-              void favorites.activate(nodeID, (node) => openLocalNode(node))
+              const navigationIntentID = beginNavigationIntent()
+              void favorites.activate(nodeID, (node) => (
+                isNavigationIntentCurrent(navigationIntentID)
+                  ? openLocalNode(node)
+                  : undefined
+              ))
             }}
             onUnfavorite={(nodeID) => { void favorites.unfavorite(nodeID) }}
             recentEnabled={recentSupported}
