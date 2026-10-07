@@ -377,6 +377,16 @@ func (c *agentController) CloudCreateFileOperation(
 	return cli.CreateFileOperation(ctx, operationType, items, parentID)
 }
 
+func (c *agentController) CloudBackgroundTaskActiveSummary(
+	ctx context.Context,
+) (client.BackgroundTaskActiveSummary, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.BackgroundTaskActiveSummary{}, err
+	}
+	return cli.BackgroundTaskActiveSummary(ctx)
+}
+
 func (c *agentController) CloudBackgroundTasks(ctx context.Context, global bool, limit int) ([]client.BackgroundTask, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

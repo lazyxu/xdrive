@@ -273,6 +273,11 @@ The server exposes background work as a read model without introducing a generic
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user admin controls are deliberately empty until the corresponding domain explicitly defines
   and authorizes them.
+- `GET /api/v1/background-tasks/active-summary` is the lightweight owner-scoped badge contract. It counts
+  active FileOperation, SyncRun, and grouped scheduler rows without loading terminal history. Web/Desktop
+  continuously poll only this compact summary for the shared Task Center badge; the detailed task list remains
+  visibility-scoped. The shared controller combines Server background activity with client transfer activity,
+  so neither platform duplicates badge arithmetic.
 
 Scheduler runtime tasks expose `kind`, state, owner attribution, trigger/initiator, priority/resource,
 timestamps, and optional progress reported with `background.ReportProgress(ctx, progress)`. A queued task

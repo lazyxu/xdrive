@@ -332,6 +332,26 @@ func TestBackgroundTasksRespectOwnerAndAdminVisibility(t *testing.T) {
 		t.Fatalf("sync run scheduling metadata=%+v want P0/network", syncTask)
 	}
 
+	summaryResponse := request(
+		t,
+		router,
+		http.MethodGet,
+		"/api/v1/background-tasks/active-summary",
+		userAToken,
+		nil,
+		http.StatusOK,
+	)
+	var summary backgroundTaskActiveSummaryDTO
+	if err := json.Unmarshal(summaryResponse.Body.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.FileOperation != 1 ||
+		summary.SyncRun != 1 ||
+		summary.Scheduler != 2 ||
+		summary.ActiveTotal != 4 {
+		t.Fatalf("active summary=%+v want file=1 sync=1 scheduler=2 total=4", summary)
+	}
+
 	request(
 		t,
 		router,

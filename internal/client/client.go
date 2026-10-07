@@ -178,6 +178,13 @@ type BackgroundTaskControlResult struct {
 	Accepted     bool   `json:"accepted"`
 }
 
+type BackgroundTaskActiveSummary struct {
+	ActiveTotal   int `json:"active_total"`
+	FileOperation int `json:"file_operation"`
+	SyncRun       int `json:"sync_run"`
+	Scheduler     int `json:"scheduler"`
+}
+
 type BackgroundTask struct {
 	ID             string                 `json:"id"`
 	Kind           string                 `json:"kind"`
@@ -652,6 +659,20 @@ func (c *Client) ResolveFileOperationConflict(ctx context.Context, id, conflictP
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/file-operations/%s/resolve", url.PathEscape(id)),
 		map[string]any{"conflict_policy": conflictPolicy},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) BackgroundTaskActiveSummary(
+	ctx context.Context,
+) (BackgroundTaskActiveSummary, error) {
+	var out BackgroundTaskActiveSummary
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		"/api/v1/background-tasks/active-summary",
+		nil,
 		&out,
 	)
 	return out, err

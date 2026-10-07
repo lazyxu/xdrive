@@ -42,6 +42,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "DELETE", path: "/api/v1/file-quick-access/:id", suite: "quick-access"},
 		{method: "GET", path: "/api/v1/file-recent", suite: "recent"},
 		{method: "GET", path: "/api/v1/background-tasks", suite: "background-tasks"},
+		{method: "GET", path: "/api/v1/background-tasks/active-summary", suite: "background-tasks"},
 		{method: "POST", path: "/api/v1/background-tasks/control", suite: "background-tasks"},
 		{method: "POST", path: "/api/v1/photo-intelligence/reanalyze", suite: "photo-intelligence"},
 		{method: "POST", path: "/api/v1/file-recent/:id", suite: "recent"},

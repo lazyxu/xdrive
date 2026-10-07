@@ -73,6 +73,7 @@ var desktopIPCCapabilities = []string{
 	"cache-management",
 	"cloud-files",
 	"background-tasks",
+	"background-task-summary",
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
@@ -193,6 +194,7 @@ type desktopIPCController interface {
 	CloudBatchDelete(context.Context, []client.BatchNodeRef) (client.BatchNodesResult, error)
 	CloudFilePropertiesStats(context.Context, []client.BatchNodeRef) (client.FilePropertiesStats, error)
 	CloudCreateFileOperation(context.Context, string, []client.BatchNodeRef, uint64) (client.FileOperation, error)
+	CloudBackgroundTaskActiveSummary(context.Context) (client.BackgroundTaskActiveSummary, error)
 	CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error)
 	CloudControlBackgroundTask(context.Context, bool, string, string) (client.BackgroundTaskControlResult, error)
 	CloudFileOperations(context.Context, int) ([]client.FileOperation, error)
@@ -486,6 +488,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/properties/stats", h.cloudFilePropertiesStats)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
+	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
 	mux.HandleFunc("GET /v1/cloud/file-operations", h.cloudFileOperations)
@@ -1256,6 +1259,18 @@ func (h *desktopIPCHandler) cloudCreateFileOperation(w http.ResponseWriter, r *h
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusAccepted, operation)
+}
+
+func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	summary, err := h.ctrl.CloudBackgroundTaskActiveSummary(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, summary)
 }
 
 func (h *desktopIPCHandler) cloudBackgroundTasks(w http.ResponseWriter, r *http.Request) {
