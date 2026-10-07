@@ -120,6 +120,16 @@ export function useXDriveFileExplorerSearch<
   const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
   const filterActive = xDriveFileExplorerSearchFiltersActive(entry.filters)
   const searchActive = Boolean(entry.query || filterActive)
+  const searchStateKey = JSON.stringify([
+    workspaceKey,
+    searchValue,
+    entry.query,
+    filterSignature,
+    groupingSignature,
+    sortSignature,
+  ])
+  const searchStateKeyRef = useRef(searchStateKey)
+  searchStateKeyRef.current = searchStateKey
 
   const updateEntry = useCallback((
     key: string,
@@ -242,6 +252,7 @@ export function useXDriveFileExplorerSearch<
   ])
 
   const clearSearch = useCallback(() => {
+    if (searchStateKeyRef.current !== searchStateKey) return false
     nextRequestID(workspaceKey)
     if (targetRef.current?.workspaceKey === workspaceKey) {
       targetRef.current = null
@@ -249,7 +260,14 @@ export function useXDriveFileExplorerSearch<
       virtualCollection.reset(`file-explorer:search:idle:${workspaceKey}`)
     }
     updateEntry(workspaceKey, () => idleWorkspaceSearchEntry())
-  }, [nextRequestID, updateEntry, virtualCollection.reset, workspaceKey])
+    return true
+  }, [
+    nextRequestID,
+    searchStateKey,
+    updateEntry,
+    virtualCollection.reset,
+    workspaceKey,
+  ])
 
   const changeSearchValue = useCallback((value: string) => {
     if (!value.trim()) {
