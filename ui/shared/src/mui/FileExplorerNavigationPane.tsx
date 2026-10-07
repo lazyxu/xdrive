@@ -135,6 +135,15 @@ export function XDriveFileExplorerNavigationPane({
   )
   const currentID = currentCrumbs.at(-1)?.id
   const rootNode = pathNodes[0] ?? null
+  const latestPathCrumbsByIDRef = useRef(
+    new Map<number, XDriveFileExplorerNavigationTreeCrumb[]>(),
+  )
+  latestPathCrumbsByIDRef.current = new Map(
+    pathNodes.map((node) => [
+      node.id,
+      node.crumbs.map((crumb) => ({ ...crumb })),
+    ]),
+  )
 
   const pathChildByParent = useMemo(() => {
     const next = new Map<number, XDriveFileExplorerNavigationTreeNode>()
@@ -198,11 +207,16 @@ export function XDriveFileExplorerNavigationPane({
       if (append && current) {
         for (const child of current.children) merged.set(child.id, child)
       }
+      const latestNodeCrumbs =
+        latestPathCrumbsByIDRef.current.get(node.id) ?? node.crumbs
       for (const directory of page.items) {
         merged.set(directory.id, {
           id: directory.id,
           name: directory.name,
-          crumbs: [...node.crumbs, { id: directory.id, name: directory.name }],
+          crumbs: [
+            ...latestNodeCrumbs.map((crumb) => ({ ...crumb })),
+            { id: directory.id, name: directory.name },
+          ],
         })
       }
       commitParentPage(node.id, {
