@@ -69,6 +69,16 @@ Provider delivery rules:
 - Do not duplicate cross-surface Source/status/formatting rules or common business presentation in Web and Desktop. Put framework-neutral semantics in `ui/shared/src`, common React/MUI rendering in `ui/shared/src/mui`, and only platform-specific orchestration in each app.
 - When waiting on GitHub/GitLab CI for the current PR, use that time to **plan** the next small feature: inspect the relevant interfaces, tests, dependency chain, and branch strategy. Do not modify or open the next feature branch until the current small feature is merged, unless the work is an explicitly approved stacked dependency.
 
+## Cloud storage inventory policy
+
+- **`docs/storage-inventory.md` is normative** for Server physical-storage accounting, cache classification, host-path display, and storage cleanup. Read and follow it before adding or changing any Server-side persistent cache, derivative, temporary directory, database/storage sidecar, backup class, or other xDrive-managed file class.
+- Every administrator storage-inventory row must expose the resolved **host absolute path**. Never show environment templates such as `$XD_FILES_DATA_DIR/...`, unresolved relative paths, or container-only mount paths such as `/data/...` as though they were host locations.
+- Any new persisted Server file class must define its inventory category, resolved host path, byte-accounting relationship, canonical/regenerable/temporary/read-only status, and safe cleanup semantics in the same change. Unknown/unclassified xDrive-reserved data is counted but is never automatically deleted.
+- Cache cleanup may remove only explicitly regenerable or lifecycle-safe temporary data. It must never delete CAS/legacy canonical content, PostgreSQL data, backups, trash/history canonical content, Source identities/bindings/credentials, PhotoAsset/PhotoResource/PhotoMetadata canonical data, host configuration/program/log/state data, or unclassified files.
+- Do not broaden API-container host access merely for storage accounting. Host-only directories are measured by the existing host-control boundary and exposed to the Server as aggregate counts/sizes plus already-resolved display paths; do not mount secret-bearing host directories into the API container.
+- Web and Desktop must use the shared `XDriveCloudStoragePage` and shared storage models. Keep REST, Electron, and Agent IPC as thin platform adapters instead of forking storage presentation or cleanup semantics.
+- Physical totals must be non-overlapping at their declared aggregation level. In particular, backup subcategories are detail rows under the backup root, and file-data cache/staging categories are detail rows under the file-data root; do not double-count child categories in `total_managed_bytes`.
+
 ## Asynchronous task and cancellation policy
 
 - Keep cancellation work **scoped to the feature or subsystem currently being changed**. Do not start a repository-wide cancellation retrofit merely because another asynchronous subsystem is missing a control. Existing async cancellation gaps are handled when that subsystem is materially touched, explicitly requested, or becomes necessary for correctness.

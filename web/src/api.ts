@@ -35,6 +35,8 @@ import type {
   StorageHealth,
   StorageHistory,
   StorageStats,
+  StorageCacheCleanup,
+  StorageCacheCleanupKind,
   StagingCleanupFailure,
   StagingCleanupRun,
   UploadStagingCleanup,
@@ -427,6 +429,13 @@ export class XDriveApi {
 
   adminStorageStats() {
     return this.request<StorageStats>('/api/v1/admin/storage')
+  }
+
+  adminCleanupStorageCache(kind: StorageCacheCleanupKind) {
+    return this.request<StorageCacheCleanup>('/api/v1/admin/storage/cache/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ kind }),
+    })
   }
 
   adminServerUpdate() {

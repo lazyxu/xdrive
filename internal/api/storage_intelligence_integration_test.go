@@ -56,7 +56,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{},
-		&meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{},
+		&meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.MediaMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -68,16 +68,23 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 
 	storageRoot := t.TempDir()
+	hostRoot := t.TempDir()
 	store, err := storage.NewLocal(storageRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &Server{
 		DB: db, Store: store,
-		Auth:           auth.New("storage-intelligence-secret", time.Hour),
-		RefreshTTL:     24 * time.Hour,
-		AllowedOrigin:  "http://localhost",
-		MaxUploadBytes: 64 << 20,
+		Auth:                 auth.New("storage-intelligence-secret", time.Hour),
+		RefreshTTL:           24 * time.Hour,
+		AllowedOrigin:        "http://localhost",
+		MaxUploadBytes:       64 << 20,
+		FilesDataHostPath:    storageRoot,
+		PostgresDataHostPath: filepath.Join(hostRoot, "data", "postgres"),
+		BackupRootHostPath:   filepath.Join(hostRoot, "backups"),
+		XDriveHomeHostPath:   hostRoot,
+		CaddyDataHostPath:    filepath.Join(hostRoot, "data", "caddy", "data"),
+		CaddyConfigHostPath:  filepath.Join(hostRoot, "data", "caddy", "config"),
 	}
 	router := server.Router()
 
@@ -92,7 +99,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 
 	tokenA := createTestUser(t, db, router, "storage-a", "password-a")
 	rootA := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", tokenA, nil, http.StatusOK)
-	uploadTestFile(t, router, tokenA, rootA.ID, "small-a.txt", "abc")
+	smallA := uploadTestFile(t, router, tokenA, rootA.ID, "small-a.txt", "abc")
 	uploadTestFile(t, router, tokenA, rootA.ID, "small-b.txt", "abc")
 	large := strings.Repeat("x", 20<<10)
 	uploadTestFile(t, router, tokenA, rootA.ID, "large.bin", large)
@@ -164,6 +171,22 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if *global.XDrivePhysicalBytes != global.CASPhysicalBytes+global.LegacyPhysicalBytes {
 		t.Fatalf("xdrive physical=%d want=%d", *global.XDrivePhysicalBytes, global.CASPhysicalBytes+global.LegacyPhysicalBytes)
+	}
+	if global.Inventory == nil {
+		t.Fatal("global storage stats missing physical inventory")
+	}
+	for _, item := range global.Inventory.Items {
+		if item.Path == "" || strings.Contains(item.Path, "$XD_") {
+			t.Fatalf("inventory item has unresolved path: %+v", item)
+		}
+		if item.Path != "宿主机绝对路径不可用" && !filepath.IsAbs(strings.TrimSuffix(item.Path, "/*-512.jpg")) &&
+			!filepath.IsAbs(strings.TrimSuffix(item.Path, "/*-1280.jpg")) &&
+			!strings.Contains(item.Path, "**/.xdrive-upload-*") {
+			t.Fatalf("inventory path is not absolute: %+v", item)
+		}
+	}
+	if got := storageInventoryItemByKey(*global.Inventory, "cas").Path; got != filepath.Join(storageRoot, storage.ContentBlobDir) {
+		t.Fatalf("CAS host path=%q want=%q", got, filepath.Join(storageRoot, storage.ContentBlobDir))
 	}
 
 	stagingNow := time.Now().UTC()
@@ -289,6 +312,38 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatalf("active staging was deleted: %v", err)
 	}
 
+	thumbnailKey := ".xdrive-media/thumbnails/aa/test-512.jpg"
+	analysisKey := ".xdrive-media/thumbnails/aa/test-1280.jpg"
+	if _, err := store.Put(context.Background(), thumbnailKey, strings.NewReader("thumb")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), analysisKey, strings.NewReader("analysis")); err != nil {
+		t.Fatal(err)
+	}
+	server.invalidateStorageInventory()
+	request(t, router, http.MethodPost, "/api/v1/admin/storage/cache/cleanup", tokenA, strings.NewReader(`{"kind":"media_thumbnail"}`), http.StatusForbidden)
+	cacheCleanupRes := request(t, router, http.MethodPost, "/api/v1/admin/storage/cache/cleanup", adminToken, strings.NewReader(`{"kind":"media_thumbnail"}`), http.StatusOK)
+	var cacheCleanup storageCacheCleanupDTO
+	if err := json.Unmarshal(cacheCleanupRes.Body.Bytes(), &cacheCleanup); err != nil {
+		t.Fatal(err)
+	}
+	if cacheCleanup.DeletedFiles != 1 || cacheCleanup.DeletedBytes != int64(len("thumb")) || cacheCleanup.FailedFiles != 0 {
+		t.Fatalf("unexpected thumbnail cleanup: %+v", cacheCleanup)
+	}
+	if _, err := store.Open(context.Background(), thumbnailKey); !os.IsNotExist(err) {
+		t.Fatalf("thumbnail cache still exists after cleanup: %v", err)
+	}
+	if _, err := store.Open(context.Background(), analysisKey); err != nil {
+		t.Fatalf("analysis preview was incorrectly deleted: %v", err)
+	}
+	canonicalKey, err := storage.ContentAddressedKey(smallA.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Open(context.Background(), canonicalKey); err != nil {
+		t.Fatalf("canonical CAS file was incorrectly deleted: %v", err)
+	}
+
 	failedOrphanKey := storage.UploadStagingDir + "/orphan/delete-fails"
 	if _, err := store.Put(context.Background(), failedOrphanKey, strings.NewReader("cannot-delete")); err != nil {
 		t.Fatal(err)
@@ -386,6 +441,15 @@ func requestStorageStats(t *testing.T, h http.Handler, path, token string, statu
 		}
 	}
 	return out
+}
+
+func storageInventoryItemByKey(inventory storageInventoryDTO, key string) storageInventoryItemDTO {
+	for _, item := range inventory.Items {
+		if item.Key == key {
+			return item
+		}
+	}
+	return storageInventoryItemDTO{}
 }
 
 func storageBucketByKey(stats storageStatsDTO, key string) storageSizeBucketDTO {

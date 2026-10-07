@@ -90,6 +90,7 @@ var desktopIPCCapabilities = []string{
 	"media-gallery",
 	"external-sources",
 	"storage-intelligence",
+	"storage-cache-cleanup",
 	"conflicts",
 	"transfers",
 	"transfer-events",
@@ -220,6 +221,7 @@ type desktopIPCController interface {
 	CloudServerUpdateState(context.Context) (client.ServerUpdateState, error)
 	CloudStartServerUpdate(context.Context, string, string, bool) (client.ServerUpdateState, error)
 	CloudStorageStats(context.Context) (client.StorageStats, error)
+	CloudCleanupStorageCache(context.Context, string) (client.StorageCacheCleanup, error)
 	CloudTrash(context.Context) ([]client.Node, error)
 	CloudRestoreTrash(context.Context, uint64, uint64) (client.Node, error)
 	CloudDeleteTrash(context.Context, uint64, uint64) error
@@ -512,6 +514,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/server-update", h.serverUpdateState)
 	mux.HandleFunc("POST /v1/server-update", h.startServerUpdate)
 	mux.HandleFunc("GET /v1/cloud/storage-stats", h.cloudStorageStats)
+	mux.HandleFunc("POST /v1/cloud/storage-cache/cleanup", h.cloudCleanupStorageCache)
 	mux.HandleFunc("GET /v1/cloud/trash", h.cloudTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/restore", h.cloudRestoreTrash)
 	mux.HandleFunc("POST /v1/cloud/trash/delete", h.cloudDeleteTrash)
@@ -1807,6 +1810,28 @@ func (h *desktopIPCHandler) cloudStorageStats(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, stats)
+}
+
+func (h *desktopIPCHandler) cloudCleanupStorageCache(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Kind string `json:"kind"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.Kind = strings.TrimSpace(input.Kind)
+	switch input.Kind {
+	case "media_thumbnail", "analysis_preview", "upload_staging", "storage_temp", "all":
+	default:
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_storage_cleanup", "storage cleanup kind is invalid")
+		return
+	}
+	result, err := h.ctrl.CloudCleanupStorageCache(r.Context(), input.Kind)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudTrash(w http.ResponseWriter, r *http.Request) {

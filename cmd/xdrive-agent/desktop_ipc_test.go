@@ -610,6 +610,10 @@ func (f *fakeDesktopIPCController) CloudStorageStats(context.Context) (client.St
 	return f.cloudStorage, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudCleanupStorageCache(_ context.Context, kind string) (client.StorageCacheCleanup, error) {
+	return client.StorageCacheCleanup{Kind: kind, DeletedFiles: 2, DeletedBytes: 12}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudTrash(context.Context) ([]client.Node, error) {
 	return append([]client.Node(nil), f.cloudTrash...), f.err
 }
@@ -1617,6 +1621,7 @@ func TestDesktopIPCCloudFiles(t *testing.T) {
 		{http.MethodGet, "/v1/cloud/search?q=report&offset=200&limit=100&sort=updated&order=asc", "", "\"total_count\":640"},
 		{http.MethodGet, "/v1/cloud/quota", "", "\"available_bytes\":600"},
 		{http.MethodGet, "/v1/cloud/storage-stats", "", "\"cas_blob_count\":9"},
+		{http.MethodPost, "/v1/cloud/storage-cache/cleanup", `{"kind":"media_thumbnail"}`, "\"deleted_bytes\":12"},
 		{http.MethodGet, "/v1/cloud/trash", "", "\"old.txt\""},
 		{http.MethodPost, "/v1/cloud/trash/restore", `{"id":4,"revision":3}`, "\"revision\":4"},
 		{http.MethodPost, "/v1/cloud/trash/delete", `{"id":4,"revision":3}`, "\"ok\":true"},

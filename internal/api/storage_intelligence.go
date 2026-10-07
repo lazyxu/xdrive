@@ -28,6 +28,7 @@ type storageStatsDTO struct {
 	DiskAvailableBytes        *int64                 `json:"disk_available_bytes,omitempty"`
 	XDrivePhysicalBytes       *int64                 `json:"xdrive_physical_bytes,omitempty"`
 	UploadStaging             *uploadStagingStatsDTO `json:"upload_staging,omitempty"`
+	Inventory                 *storageInventoryDTO   `json:"inventory,omitempty"`
 	CASBlobCount              int64                  `json:"cas_blob_count"`
 	CASPhysicalBytes          int64                  `json:"cas_physical_bytes"`
 	CASLogicalReferencedBytes int64                  `json:"cas_logical_referenced_bytes"`
@@ -73,7 +74,7 @@ type storageStatsRow struct {
 }
 
 func (s *Server) storageStats(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Minute)
 	defer cancel()
 
 	stats, err := s.loadUserStorageStats(ctx, userID(c))
@@ -81,12 +82,20 @@ func (s *Server) storageStats(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "load storage statistics failed")
 		return
 	}
+	if user, ok := currentUser(c); ok && user.Role == meta.UserRoleAdmin {
+		inventory, inventoryErr := s.loadStorageInventory(ctx)
+		if inventoryErr != nil {
+			fail(c, http.StatusInternalServerError, "load storage inventory failed")
+			return
+		}
+		stats.Inventory = &inventory
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) adminStorageStats(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Minute)
 	defer cancel()
 
 	stats, err := s.loadGlobalStorageStats(ctx)
@@ -110,12 +119,18 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	if diskUsed < 0 {
 		diskUsed = 0
 	}
-	xdrivePhysical := stats.CASPhysicalBytes + stats.LegacyPhysicalBytes + staging.Stats.StagingBytes
+	inventory, err := s.loadStorageInventory(ctx)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "load storage inventory failed")
+		return
+	}
+	xdrivePhysical := inventory.StorageRootBytes
 	stats.DiskTotalBytes = &diskTotal
 	stats.DiskUsedBytes = &diskUsed
 	stats.DiskAvailableBytes = &diskAvailable
 	stats.XDrivePhysicalBytes = &xdrivePhysical
 	stats.UploadStaging = &staging.Stats
+	stats.Inventory = &inventory
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }

@@ -356,6 +356,8 @@ const agent = Object.freeze({
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
   cloudStorageStats: () => ipcRenderer.invoke('agent:cloud-storage-stats'),
+  cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
+    ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
   cloudRestoreTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-restore-trash', id, revision),
   cloudDeleteTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete-trash', id, revision),

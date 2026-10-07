@@ -126,6 +126,8 @@ The contract is:
 
 The analysis preview is a derived cache only. Current image rows protect both the 512px Gallery key and 1280px analysis key from thumbnail GC; after the underlying media row disappears, either cache becomes eligible for the existing conservative GC window.
 
+The Server storage inventory described in `docs/storage-inventory.md` reports the 1280px analysis preview separately from the 512px presentation thumbnail, including its resolved host absolute path and physical byte count. Administrators may explicitly clear the 1280px cache; doing so never deletes PhotoAsset/PhotoResource/PhotoMetadata or original file bytes, and the analysis preview is regenerated through the same deterministic contract when needed.
+
 Local inference workers must consume this HTTP contract through the short-lived revision-scoped `preview_stream(kind=analysis)` ticket issued by xDrive Server. They must not receive a normal user access token, mount the server storage root, or reimplement media decoding. The analyzer input fingerprint is the canonical analysis-preview ETag identity, while detector/embedding analyzer versions are derived separately from the reported model/pipeline manifest.
 
 ### Analyzer/runtime requirements

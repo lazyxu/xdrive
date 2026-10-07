@@ -141,6 +141,47 @@ export interface StagingCleanupFailure {
   failed_at: string
 }
 
+export type StorageCacheCleanupKind =
+  | 'media_thumbnail'
+  | 'analysis_preview'
+  | 'upload_staging'
+  | 'storage_temp'
+  | 'all'
+
+export interface StorageInventoryItem {
+  key: string
+  label: string
+  category: 'primary' | 'cache' | 'temporary' | 'database' | 'backup' | 'host' | 'other' | string
+  path: string
+  files: number
+  bytes: number
+  reclaimable_files: number
+  reclaimable_bytes: number
+  deletable: boolean
+  cleanup_kind?: StorageCacheCleanupKind
+  status: 'active' | 'regenerable' | 'reclaimable_by_age' | 'not_enabled' | 'read_only' | 'unknown' | 'review' | string
+}
+
+export interface StorageInventory {
+  items: StorageInventoryItem[]
+  storage_root_bytes: number
+  database_bytes: number
+  backup_bytes: number
+  host_service_bytes: number
+  total_managed_bytes: number
+  reclaimable_bytes: number
+  unclassified_bytes: number
+  generated_at: string
+}
+
+export interface StorageCacheCleanup {
+  kind: StorageCacheCleanupKind
+  deleted_files: number
+  deleted_bytes: number
+  failed_files: number
+  inventory: StorageInventory
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number
@@ -148,6 +189,7 @@ export interface StorageStats {
   disk_available_bytes?: number
   xdrive_physical_bytes?: number
   upload_staging?: UploadStagingStats
+  inventory?: StorageInventory
   cas_blob_count: number
   cas_physical_bytes: number
   cas_logical_referenced_bytes: number

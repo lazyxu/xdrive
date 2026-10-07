@@ -260,12 +260,47 @@ type StorageSizeBucket struct {
 	Bytes int64  `json:"bytes"`
 }
 
+type StorageInventoryItem struct {
+	Key              string `json:"key"`
+	Label            string `json:"label"`
+	Category         string `json:"category"`
+	Path             string `json:"path"`
+	Files            int64  `json:"files"`
+	Bytes            int64  `json:"bytes"`
+	ReclaimableFiles int64  `json:"reclaimable_files"`
+	ReclaimableBytes int64  `json:"reclaimable_bytes"`
+	Deletable        bool   `json:"deletable"`
+	CleanupKind      string `json:"cleanup_kind,omitempty"`
+	Status           string `json:"status"`
+}
+
+type StorageInventory struct {
+	Items             []StorageInventoryItem `json:"items"`
+	StorageRootBytes  int64                  `json:"storage_root_bytes"`
+	DatabaseBytes     int64                  `json:"database_bytes"`
+	BackupBytes       int64                  `json:"backup_bytes"`
+	HostServiceBytes  int64                  `json:"host_service_bytes"`
+	TotalManagedBytes int64                  `json:"total_managed_bytes"`
+	ReclaimableBytes  int64                  `json:"reclaimable_bytes"`
+	UnclassifiedBytes int64                  `json:"unclassified_bytes"`
+	GeneratedAt       time.Time              `json:"generated_at"`
+}
+
+type StorageCacheCleanup struct {
+	Kind         string           `json:"kind"`
+	DeletedFiles int64            `json:"deleted_files"`
+	DeletedBytes int64            `json:"deleted_bytes"`
+	FailedFiles  int64            `json:"failed_files"`
+	Inventory    StorageInventory `json:"inventory"`
+}
+
 type StorageStats struct {
 	Scope                     string              `json:"scope"`
 	DiskTotalBytes            *int64              `json:"disk_total_bytes,omitempty"`
 	DiskUsedBytes             *int64              `json:"disk_used_bytes,omitempty"`
 	DiskAvailableBytes        *int64              `json:"disk_available_bytes,omitempty"`
 	XDrivePhysicalBytes       *int64              `json:"xdrive_physical_bytes,omitempty"`
+	Inventory                 *StorageInventory   `json:"inventory,omitempty"`
 	CASBlobCount              int64               `json:"cas_blob_count"`
 	CASPhysicalBytes          int64               `json:"cas_physical_bytes"`
 	CASLogicalReferencedBytes int64               `json:"cas_logical_referenced_bytes"`
@@ -407,6 +442,14 @@ func (c *Client) Quota(ctx context.Context) (QuotaUsage, error) {
 func (c *Client) StorageStats(ctx context.Context) (StorageStats, error) {
 	var out StorageStats
 	err := c.json(ctx, http.MethodGet, "/api/v1/me/storage", nil, &out)
+	return out, err
+}
+
+func (c *Client) CleanupStorageCache(ctx context.Context, kind string) (StorageCacheCleanup, error) {
+	var out StorageCacheCleanup
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/storage/cache/cleanup", map[string]string{
+		"kind": strings.TrimSpace(kind),
+	}, &out)
 	return out, err
 }
 

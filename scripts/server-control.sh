@@ -8,6 +8,7 @@ BIN_DIR="$XDRIVE_HOME/bin"
 LOG_DIR="$XDRIVE_HOME/logs"
 STATE_DIR="$XDRIVE_HOME/state"
 ENV_PATH="$CONFIG_DIR/.env"
+COMPOSE_PATH="$CONFIG_DIR/docker-compose.yml"
 MANAGER="$BIN_DIR/xdrive-server"
 
 # The transactional installer reserves fd 9 for its flock. Host-control may be
@@ -45,6 +46,105 @@ prepare_dir() {
   chgrp "$server_gid" "$dir" 2>/dev/null || true
   chmod 2770 "$dir"
   printf '%s\n' "$dir"
+}
+
+
+directory_size_bytes() {
+  local dir="$1" value
+  [[ -d "$dir" ]] || { printf '0\n'; return; }
+  value="$(du -sb -- "$dir" 2>/dev/null | awk '{print $1}' || true)"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s\n' "$value"
+}
+
+directory_file_count() {
+  local dir="$1" value
+  [[ -d "$dir" ]] || { printf '0\n'; return; }
+  value="$(find "$dir" -type f -print 2>/dev/null | wc -l | tr -d ' ' || true)"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s\n' "$value"
+}
+
+home_root_file_bytes() {
+  local value
+  value="$(find "$XDRIVE_HOME" -mindepth 1 -maxdepth 1 -type f -printf '%s\n' 2>/dev/null | awk '{sum += $1} END {print sum + 0}' || true)"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s\n' "$value"
+}
+
+home_root_file_count() {
+  local value
+  value="$(find "$XDRIVE_HOME" -mindepth 1 -maxdepth 1 -type f -print 2>/dev/null | wc -l | tr -d ' ' || true)"
+  [[ "$value" =~ ^[0-9]+$ ]] || value=0
+  printf '%s\n' "$value"
+}
+
+postgres_storage_value() {
+  local mode="$1" host_path value=""
+  host_path="$(env_value XD_POSTGRES_DATA_DIR)"
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
+    if [[ "$mode" == "bytes" ]]; then
+      value="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T postgres sh -ec 'du -sk /var/lib/postgresql/data 2>/dev/null | cut -f1' 2>/dev/null | tr -d '\r' || true)"
+      if [[ "$value" =~ ^[0-9]+$ ]]; then
+        value=$(( value * 1024 ))
+      fi
+    else
+      value="$(docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T postgres sh -ec "find /var/lib/postgresql/data -type f -print 2>/dev/null | wc -l" 2>/dev/null | tr -d ' \r' || true)"
+    fi
+  fi
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    if [[ "$mode" == "bytes" ]]; then
+      value="$(directory_size_bytes "$host_path")"
+    else
+      value="$(directory_file_count "$host_path")"
+    fi
+  fi
+  printf '%s\n' "$value"
+}
+
+refresh_storage_host_inventory() {
+  local dir target tmp backup_root snapshots pre_upgrade pre_restore caddy_data caddy_config
+  dir="$(prepare_dir)"
+  target="$dir/storage-host-inventory.env"
+  tmp="$(mktemp "$dir/.storage-host-inventory.XXXXXX")"
+  backup_root="$XDRIVE_HOME/backups"
+  snapshots="$backup_root/snapshots"
+  pre_upgrade="$backup_root/pre-upgrade"
+  pre_restore="$backup_root/pre-restore"
+  caddy_data="$(env_value XD_CADDY_DATA_DIR)"
+  caddy_config="$(env_value XD_CADDY_CONFIG_DIR)"
+  [[ -n "$caddy_data" ]] || caddy_data="$XDRIVE_HOME/data/caddy/data"
+  [[ -n "$caddy_config" ]] || caddy_config="$XDRIVE_HOME/data/caddy/config"
+
+  {
+    printf 'generated_at=%s\n' "$(now_utc)"
+    printf 'database_bytes=%s\n' "$(postgres_storage_value bytes)"
+    printf 'database_files=%s\n' "$(postgres_storage_value files)"
+    printf 'backup_root_bytes=%s\n' "$(directory_size_bytes "$backup_root")"
+    printf 'backup_root_files=%s\n' "$(directory_file_count "$backup_root")"
+    printf 'backup_snapshots_bytes=%s\n' "$(directory_size_bytes "$snapshots")"
+    printf 'backup_snapshots_files=%s\n' "$(directory_file_count "$snapshots")"
+    printf 'backup_pre_upgrade_bytes=%s\n' "$(directory_size_bytes "$pre_upgrade")"
+    printf 'backup_pre_upgrade_files=%s\n' "$(directory_file_count "$pre_upgrade")"
+    printf 'backup_pre_restore_bytes=%s\n' "$(directory_size_bytes "$pre_restore")"
+    printf 'backup_pre_restore_files=%s\n' "$(directory_file_count "$pre_restore")"
+    printf 'config_bytes=%s\n' "$(directory_size_bytes "$CONFIG_DIR")"
+    printf 'config_files=%s\n' "$(directory_file_count "$CONFIG_DIR")"
+    printf 'bin_bytes=%s\n' "$(directory_size_bytes "$BIN_DIR")"
+    printf 'bin_files=%s\n' "$(directory_file_count "$BIN_DIR")"
+    printf 'logs_bytes=%s\n' "$(directory_size_bytes "$LOG_DIR")"
+    printf 'logs_files=%s\n' "$(directory_file_count "$LOG_DIR")"
+    printf 'state_bytes=%s\n' "$(directory_size_bytes "$STATE_DIR")"
+    printf 'state_files=%s\n' "$(directory_file_count "$STATE_DIR")"
+    printf 'caddy_data_bytes=%s\n' "$(directory_size_bytes "$caddy_data")"
+    printf 'caddy_data_files=%s\n' "$(directory_file_count "$caddy_data")"
+    printf 'caddy_config_bytes=%s\n' "$(directory_size_bytes "$caddy_config")"
+    printf 'caddy_config_files=%s\n' "$(directory_file_count "$caddy_config")"
+    printf 'home_root_files_bytes=%s\n' "$(home_root_file_bytes)"
+    printf 'home_root_files_count=%s\n' "$(home_root_file_count)"
+  } > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$target"
 }
 
 json_escape() {
@@ -224,6 +324,7 @@ process_request() {
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
+  local storage_inventory_interval last_storage_inventory_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
 
@@ -275,9 +376,20 @@ serve_cmd() {
     write_status idle "$source" "$channel" "" "" 0 9 0 0 "等待管理员发起服务端更新。" "" "" ""
   fi
 
+  storage_inventory_interval="$(env_value XD_STORAGE_INVENTORY_INTERVAL_SECONDS)"
+  [[ "$storage_inventory_interval" =~ ^[0-9]+$ ]] || storage_inventory_interval=300
+  (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
+  refresh_storage_host_inventory || true
+  last_storage_inventory_at="$(date +%s)"
+
   while true; do
     touch_heartbeat
     [[ -f "$dir/request.json" ]] && process_request
+    now="$(date +%s)"
+    if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
+      refresh_storage_host_inventory || true
+      last_storage_inventory_at="$now"
+    fi
     [[ "${XD_CONTROL_ONCE:-0}" == "1" ]] && break
     sleep 1
   done
