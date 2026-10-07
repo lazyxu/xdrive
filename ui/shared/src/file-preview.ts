@@ -4,7 +4,7 @@ export type XDriveFileTextPreview = {
   size: number
 }
 
-export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf'
+export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'live_photo'
 
 export type XDriveFilePreviewTarget = {
   id: string | number
@@ -66,6 +66,7 @@ export function xDriveClassifyFilePreview(
   // allowlist. MIME metadata may describe a file, but must never broaden the
   // set of originals that can receive a signed preview ticket.
   if (extension === 'pdf') return 'pdf'
+  if (extension === 'livp') return 'live_photo'
   if (xDriveImagePreviewExtensions.has(extension)) return 'image'
   if (xDriveVideoPreviewExtensions.has(extension)) return 'video'
   if (xDriveAudioPreviewExtensions.has(extension)) return 'audio'

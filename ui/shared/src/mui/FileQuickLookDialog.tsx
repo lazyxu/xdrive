@@ -5,6 +5,7 @@ import type { XDriveFilePreviewTarget } from '../file-preview'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
   XDriveFilePreviewImageLoader,
+  XDriveFilePreviewLivePhotoMotionLoader,
   XDriveFilePreviewTextLoader,
   XDriveFilePreviewURLLoader,
 } from './FilePreviewSurface'
@@ -17,6 +18,7 @@ export type XDriveFileQuickLookDialogProps<T extends XDriveFilePreviewTarget = X
   loadTextPreview?: XDriveFilePreviewTextLoader<T>
   loadImagePreview?: XDriveFilePreviewImageLoader<T>
   loadPreviewURL?: XDriveFilePreviewURLLoader<T>
+  loadLivePhotoMotion?: XDriveFilePreviewLivePhotoMotionLoader<T>
   canPrevious?: boolean
   canNext?: boolean
   onPrevious?: () => void
@@ -31,6 +33,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
   loadTextPreview,
   loadImagePreview,
   loadPreviewURL,
+  loadLivePhotoMotion,
   canPrevious = false,
   canNext = false,
   onPrevious,
@@ -54,6 +57,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
         loadTextPreview={loadTextPreview}
         loadImagePreview={loadImagePreview}
         loadPreviewURL={loadPreviewURL}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         fallback={(
           <Stack spacing={1} alignItems="center" sx={{ color: 'text.secondary', px: 4 }}>
             <InsertDriveFileRoundedIcon sx={{ fontSize: 64 }} />

@@ -275,6 +275,7 @@ export type XDriveFileExplorerCrumb = {
 export type XDriveFileExplorerFileKind =
   | 'folder'
   | 'image'
+  | 'live_photo'
   | 'video'
   | 'audio'
   | 'pdf'
@@ -364,6 +365,7 @@ function explorerExtension(name: string) {
 export function xDriveFileKind(name: string, kind: 'dir' | 'file'): XDriveFileExplorerFileKind {
   if (kind === 'dir') return 'folder'
   const extension = explorerExtension(name)
+  if (extension === 'livp') return 'live_photo'
   if (imageExtensions.has(extension)) return 'image'
   if (videoExtensions.has(extension)) return 'video'
   if (audioExtensions.has(extension)) return 'audio'
@@ -383,6 +385,7 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
   const fileKind = xDriveFileKind(name, kind)
   switch (fileKind) {
     case 'image': return extension ? `${extension.toUpperCase()} 图像` : '图像'
+    case 'live_photo': return 'LIVP 实况照片'
     case 'video': return extension ? `${extension.toUpperCase()} 视频` : '视频'
     case 'audio': return extension ? `${extension.toUpperCase()} 音频` : '音频'
     case 'pdf': return 'PDF 文档'
@@ -397,7 +400,8 @@ export function xDriveFileTypeLabel(name: string, kind: 'dir' | 'file') {
 }
 
 export function xDriveFileSupportsThumbnail(name: string, kind: 'dir' | 'file') {
-  return xDriveFileKind(name, kind) === 'image'
+  const fileKind = xDriveFileKind(name, kind)
+  return fileKind === 'image' || fileKind === 'live_photo'
 }
 
 function explorerIDKey(id: XDriveFileExplorerID) {
@@ -558,6 +562,7 @@ export function XDriveFileExplorer({
   loadThumbnail,
   loadTextPreview,
   loadPreviewURL,
+  loadLivePhotoMotion,
   loadPropertiesStats,
   getItemAvailability,
   externallySorted = false,
@@ -639,6 +644,9 @@ export function XDriveFileExplorer({
   loadPreviewURL?: (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
+  ) => Promise<string | null | undefined>
+  loadLivePhotoMotion?: (
+    item: XDriveFileExplorerItem,
   ) => Promise<string | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   getItemAvailability?: (
@@ -2201,7 +2209,7 @@ export function XDriveFileExplorer({
     const fontSize = large ? gridMetrics.iconSize : 21
     const fileKind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
     if (fileKind === 'folder') return <FolderRoundedIcon sx={{ fontSize: large ? gridMetrics.folderIconSize : 22, color: xDriveWindowsFolderYellow }} />
-    if (fileKind === 'image') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
+    if (fileKind === 'image' || fileKind === 'live_photo') return <ImageRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'video') return <MovieRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'audio') return <AudioFileRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
     if (fileKind === 'pdf') return <PictureAsPdfRoundedIcon sx={{ fontSize, color: 'text.secondary' }} />
@@ -4078,6 +4086,7 @@ export function XDriveFileExplorer({
                     target={inspectorItem}
                     loadTextPreview={loadTextPreview}
                     loadPreviewURL={loadPreviewURL}
+                    loadLivePhotoMotion={loadLivePhotoMotion}
                     loadImagePreview={
                       (inspectorItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(inspectorItem.name, inspectorItem.kind))
                         ? loadThumbnail
@@ -4133,6 +4142,7 @@ export function XDriveFileExplorer({
           : undefined}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         loadImagePreview={
           quickLookItem &&
           (quickLookItem.thumbnailEligible ?? xDriveFileSupportsThumbnail(quickLookItem.name, quickLookItem.kind))

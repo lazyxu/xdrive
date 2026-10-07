@@ -94,6 +94,31 @@ test('Gallery Live Photo keeps semantic motion inside the shared open-preview sh
   assert.equal(openPreview.includes('loadMotion'), false, 'OpenPreviewDialog must stay media-semantic neutral')
 })
 
+test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and Desktop', () => {
+  for (const token of [
+    "extension === 'livp'",
+    "'live_photo'",
+  ]) assert.ok(preview.includes(token) || read('ui', 'shared', 'src', 'file-preview.ts').includes(token), 'LIVP preview classifier missing: ' + token)
+
+  for (const token of [
+    '<XDriveLivePhotoSurface',
+    'loadLivePhotoMotion',
+    "previewKind === 'live_photo'",
+  ]) assert.ok(preview.includes(token), 'shared LIVP preview surface missing: ' + token)
+
+  for (const token of [
+    'const loadLivePhotoMotion = useCallback',
+    'api.mediaLivePhotoMotion(Number(item.id))',
+    'loadLivePhotoMotion={loadLivePhotoMotion}',
+  ]) assert.ok(web.includes(token), 'Web LIVP preview wiring missing: ' + token)
+
+  for (const token of [
+    'const loadLivePhotoMotion = useCallback',
+    'getMediaLivePhotoMotion(Number(item.id))',
+    'loadLivePhotoMotion={loadLivePhotoMotion}',
+  ]) assert.ok(desktop.includes(token), 'Desktop LIVP preview wiring missing: ' + token)
+})
+
 test('Preview Engine design documents Open versus Download semantics', () => {
   assert.ok(docs.includes('### Open Preview dialog'), 'Preview Engine design must document the shared open dialog')
   assert.ok(docs.includes('Web/Desktop FileExplorer must'), 'Preview Engine design must document Web/Desktop open behavior')

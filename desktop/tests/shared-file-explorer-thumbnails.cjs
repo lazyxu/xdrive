@@ -44,11 +44,12 @@ test('Recent preserves thumbnail identity and only supported image media is elig
   for (const token of ['revision?: string | number', 'updatedAt?: string', 'size?: number']) {
     assert.ok(recent.includes(token), 'Recent thumbnail identity missing: ' + token)
   }
-  assert.ok(explorer.includes("return xDriveFileKind(name, kind) === 'image'"))
+  assert.ok(explorer.includes("fileKind === 'image' || fileKind === 'live_photo'"))
+  assert.ok(explorer.includes("if (extension === 'livp') return 'live_photo'"))
   assert.equal(
-    explorer.includes("return fileKind === 'image' || fileKind === 'video'"),
+    explorer.includes("fileKind === 'image' || fileKind === 'video'"),
     false,
-    'FileExplorer must not claim video poster thumbnails before the Server supports them',
+    'FileExplorer must not claim ordinary video poster thumbnails before the Server supports them',
   )
 })
 

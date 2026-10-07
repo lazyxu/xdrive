@@ -66,7 +66,7 @@ test('FileExplorer derives system-style file types and icons from extensions', (
 
 test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(shared.includes('export function xDriveFileSupportsThumbnail'), 'thumbnail eligibility classifier is missing')
-  assert.ok(shared.includes("return xDriveFileKind(name, kind) === 'image'"), 'FileExplorer thumbnail requests must stay image-only until video posters are supported')
+  assert.ok(shared.includes("fileKind === 'image' || fileKind === 'live_photo'"), 'FileExplorer thumbnail requests must stay still-image-only except validated LIVP containers; ordinary video posters remain unsupported')
   assert.equal(shared.includes("fileKind === 'image' || fileKind === 'video'"), false, 'unsupported videos must not enter the image-thumbnail request path')
   assert.ok(thumbnail.includes('let fileThumbnailVisibilityObserver: IntersectionObserver | null = null'), 'thumbnail visibility must use one shared observer')
   assert.ok(thumbnail.includes('const fileThumbnailVisibilityCallbacks = new Map<Element, FileThumbnailVisibilityEntry>()'), 'shared thumbnail visibility callback registry is missing')

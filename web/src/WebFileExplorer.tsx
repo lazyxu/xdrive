@@ -319,6 +319,16 @@ export default function WebFileExplorer({
     }
   }, [api])
 
+  const loadLivePhotoMotion = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file' || !item.name.toLowerCase().endsWith('.livp')) return null
+    try {
+      const blob = await api.mediaLivePhotoMotion(Number(item.id))
+      return URL.createObjectURL(blob)
+    } catch {
+      return null
+    }
+  }, [api])
+
   const loadPropertiesStats = useCallback((
     selected: readonly XDriveFileExplorerItem[],
     signal: AbortSignal,
@@ -502,6 +512,7 @@ export default function WebFileExplorer({
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={loadPropertiesStats}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
@@ -691,6 +702,7 @@ export default function WebFileExplorer({
           loadTextPreview={loadTextPreview}
           loadImagePreview={loadThumbnail}
           loadPreviewURL={loadPreviewURL}
+          loadLivePhotoMotion={loadLivePhotoMotion}
           fallback={(
             <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
               此文件暂无可用预览

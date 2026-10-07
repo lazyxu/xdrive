@@ -211,7 +211,7 @@ The Preview Engine owns ordinary file presentation, not photo-library semantics.
 
 The following remain Gallery responsibilities:
 
-- Live Photo relation and motion playback
+- cross-file Live Photo relation and motion playback for standalone still+motion pairs
 - EXIF
 - GPS/location semantics
 - Favorite
@@ -240,7 +240,7 @@ The interaction contract is:
 - audio capability is preserved instead of forcing the motion resource muted;
 - the still image remains visible when motion loading or decoding fails.
 
-Do not migrate those concerns into FileExplorer or `FilePreviewSurface`.
+Do not migrate cross-file Gallery semantics into FileExplorer. A validated self-contained `.livp` file is the exception: the container itself locally proves its still+motion relation, so FileExplorer may present that one file through the shared `LivePhotoSurface` without pairing separate Nodes or consulting provider metadata.
 
 ## FileExplorer boundary
 
@@ -258,7 +258,7 @@ must use the shared `XDriveOpenPreviewDialog` presentation shell.
 The shell owns common preview chrome and navigation only. Its content must remain:
 
 - `FilePreviewSurface` for ordinary text/PDF/image/video/audio preview;
-- `LivePhotoSurface` wrapping a `FilePreviewSurface` still image for Gallery Live Photo.
+- `LivePhotoSurface` for Gallery Live Photo and for a validated self-contained FileExplorer `.livp` file.
 
 Explicit Download remains a separate file-management action. Web/Desktop FileExplorer must
 not treat double-click/Enter/open as an implicit download. Desktop may additionally expose
@@ -272,7 +272,10 @@ tile opens the media preview; opening MediaDetails remains a separate interactio
 
 FileExplorer may expose a Finder-style Quick Look overlay, but the overlay is only
 another presentation of the shared Preview Engine. It must reuse `FilePreviewSurface`
-and the same text/thumbnail/signed-preview loaders already used by Inspector.
+and the same text/thumbnail/signed-preview loaders already used by Inspector. For a
+validated `.livp`, Quick Look/Inspector/Open Preview use the same `LivePhotoSurface`
+hold-to-play interaction as Gallery; list/grid thumbnails remain a static still image
+and must not autoplay motion on hover.
 
 The shared interaction contract is:
 

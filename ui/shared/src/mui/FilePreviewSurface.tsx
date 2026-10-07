@@ -9,6 +9,7 @@ import type {
   XDriveFilePreviewTarget,
   XDriveFileTextPreview,
 } from '../file-preview'
+import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 
 export type XDriveFilePreviewTextLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
@@ -20,7 +21,11 @@ export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDr
 
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
-  kind: Exclude<XDriveFilePreviewKind, 'none' | 'text'>,
+  kind: Exclude<XDriveFilePreviewKind, 'none' | 'text' | 'live_photo'>,
+) => Promise<string | null | undefined>
+
+export type XDriveFilePreviewLivePhotoMotionLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
+  target: T,
 ) => Promise<string | null | undefined>
 
 export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = {
@@ -28,6 +33,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   loadTextPreview?: XDriveFilePreviewTextLoader<T>
   loadImagePreview?: XDriveFilePreviewImageLoader<T>
   loadPreviewURL?: XDriveFilePreviewURLLoader<T>
+  loadLivePhotoMotion?: XDriveFilePreviewLivePhotoMotionLoader<T>
   fallback?: ReactNode
   minHeight?: number
   maxHeight?: number
@@ -43,6 +49,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   loadTextPreview,
   loadImagePreview,
   loadPreviewURL,
+  loadLivePhotoMotion,
   fallback = null,
   minHeight = 176,
   maxHeight = 420,
@@ -105,17 +112,23 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       }
     }
 
-    const canLoadOriginal = Boolean(loadPreviewURL)
-    const canLoadImageFallback = previewKind === 'image' && Boolean(loadImagePreview)
+    const canLoadOriginal = previewKind !== 'live_photo' && Boolean(loadPreviewURL)
+    const canLoadImageFallback = (
+      previewKind === 'image' || previewKind === 'live_photo'
+    ) && Boolean(loadImagePreview)
     if (!canLoadOriginal && !canLoadImageFallback) return () => undefined
 
     setLoading(true)
     void (async () => {
-      let value = loadPreviewURL
+      let value = previewKind !== 'live_photo' && loadPreviewURL
         ? await loadPreviewURL(target, previewKind)
         : null
       let fallback = false
-      if (!value && previewKind === 'image' && loadImagePreview) {
+      if (
+        !value &&
+        (previewKind === 'image' || previewKind === 'live_photo') &&
+        loadImagePreview
+      ) {
         value = await loadImagePreview(target)
         fallback = Boolean(value)
       }
@@ -155,7 +168,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
   const loadImageFallback = useCallback(() => {
     if (
-      previewKind !== 'image' ||
+      (previewKind !== 'image' && previewKind !== 'live_photo') ||
       !target ||
       !loadImagePreview ||
       usingImageFallback
@@ -230,6 +243,28 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       )
     }
     if (!previewURL) return fallback
+    if (previewKind === 'live_photo') {
+      return (
+        <XDriveLivePhotoSurface
+          label={target?.name ? `${target.name} 实况照片` : '实况照片'}
+          loadMotion={
+            target && loadLivePhotoMotion
+              ? () => loadLivePhotoMotion(target)
+              : undefined
+          }
+          still={(
+            <Box
+              component="img"
+              src={previewURL}
+              alt={target?.name || ''}
+              draggable={false}
+              onError={loadImageFallback}
+              sx={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
+            />
+          )}
+        />
+      )
+    }
     if (previewKind === 'image') {
       return (
         <Box

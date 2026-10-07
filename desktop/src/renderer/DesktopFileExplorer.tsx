@@ -603,6 +603,13 @@ export default function DesktopFileExplorer({
     return URL.createObjectURL(blob)
   }, [])
 
+  const loadLivePhotoMotion = useCallback(async (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file' || !item.name.toLowerCase().endsWith('.livp')) return null
+    const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id))
+    if (!result.ok) return null
+    return `data:${result.data.content_type || 'video/quicktime'};base64,${result.data.data_base64}`
+  }, [])
+
   const openPreviewNode = (node: AgentCloudNode) => {
     setOpenPreviewItem({
       id: node.id,
@@ -1217,6 +1224,7 @@ export default function DesktopFileExplorer({
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
+        loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}
@@ -1435,6 +1443,7 @@ export default function DesktopFileExplorer({
           loadTextPreview={loadTextPreview}
           loadImagePreview={loadThumbnail}
           loadPreviewURL={loadPreviewURL}
+          loadLivePhotoMotion={loadLivePhotoMotion}
           fallback={(
             <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
               此文件暂无可用预览
