@@ -133,6 +133,7 @@ export function useXDriveFileExplorerWorkspace<
     sort: navigation.sort,
     grouping: navigation.grouping,
     onError,
+    onSearchIntent: navigation.beginNavigationIntent,
     workspaceKey: navigation.activeTabID,
   })
   searchActiveRef.current = search.searchResults !== null
