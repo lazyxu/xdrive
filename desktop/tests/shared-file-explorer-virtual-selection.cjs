@@ -226,3 +226,24 @@ test('interaction-scope change abandons stale address-bar edit state', () => {
     'stale address editing must end as part of scope invalidation before the new workspace publishes interaction state',
   )
 })
+
+
+test('interaction-scope change clears stale type-to-select buffer', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  assert.ok(
+    scopeBlock.includes("typeSelectRef.current = { query: '', updatedAt: 0 }"),
+    'a tab/directory/search/sort/grouping scope change must clear the old type-to-select query instead of carrying it into the new workspace',
+  )
+  assert.ok(
+    scopeBlock.indexOf("typeSelectRef.current = { query: '', updatedAt: 0 }") <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'stale type-to-select buffer must be cleared as part of scope invalidation before the new workspace publishes interaction state',
+  )
+})

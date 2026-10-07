@@ -867,6 +867,7 @@ export function XDriveFileExplorer({
     setRenamingID(null)
     setRenameDraft('')
     setRenameError('')
+    typeSelectRef.current = { query: '', updatedAt: 0 }
     typeSelectIntentRef.current += 1
     selectionIntentRef.current += 1
     quickLookIntentRef.current += 1
