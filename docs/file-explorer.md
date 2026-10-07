@@ -363,6 +363,21 @@ Desktop Windows/macOS additionally expose a distinct native drag-out handle on l
 
 Do not replace the internal drag lifecycle with native drag-out and do not expose mount-root absolute paths to renderer code.
 
+## Windows-style shared chrome
+
+The Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like interaction hierarchy:
+
+- the address bar remains breadcrumb-first, enters a raw editable path on focus/shortcut, and keeps compact square-ish segments instead of rounded app-navigation pills;
+- Search is contextual to the current folder and receives more horizontal space than secondary command controls;
+- structured Search filters stay Server-backed but are collapsed behind one **筛选** trigger; active filter count remains visible without keeping four chips permanently on the command bar;
+- **视图** is the single layout/density control; do not add a second Details/Grid toggle beside it;
+- **排序与分组** is one menu containing Server-backed sort, Server-backed group mode, and **文件夹优先**;
+- the folder tree is manually expanded by the user and does not auto-expand or highlight itself merely because navigation changed elsewhere;
+- Trash, Quick Access, Favorites, and Recent item icons reserve the same left disclosure-slot width as the root folder row, so their visual icon column lines up with **我的文件**;
+- Grid item visual boxes are square at every density and file/folder fallback icons use the same size token within each density.
+
+These are presentation contracts only. Search/filter/group ordering, range identity, navigation generations, and Server/Agent ownership remain unchanged.
+
 ## Tests
 
 ### Basic lifecycle regression

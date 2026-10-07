@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react'
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
 import {
+  Box,
+  Button,
   Chip,
   Menu,
   MenuItem,
+  Popover,
   Stack,
+  Typography,
 } from '@mui/material'
 import type { MouseEvent } from 'react'
 import type {
@@ -68,6 +72,7 @@ export function XDriveFileExplorerSearchFilters({
   sourceOptions?: readonly XDriveFileExplorerSearchSourceOption[]
   onChange: (filters: XDriveFileExplorerSearchFilters) => void
 }) {
+  const [panelAnchor, setPanelAnchor] = useState<HTMLElement | null>(null)
   const [menu, setMenu] = useState<FilterMenu | null>(null)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const filterCount = xDriveFileExplorerSearchFilterCount(filters)
@@ -91,53 +96,75 @@ export function XDriveFileExplorerSearchFilters({
 
   return (
     <>
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
-        <FilterAltOutlinedIcon fontSize="small" color={filterCount > 0 ? 'primary' : 'action'} />
-        <Chip
-          size="small"
-          variant={filters.kind ? 'filled' : 'outlined'}
-          color={filters.kind ? 'primary' : 'default'}
-          label={filters.kind ? `类型：${kindLabels[filters.kind]}` : '类型'}
-          onClick={open('kind')}
-          onDelete={filters.kind ? () => onChange({ ...filters, kind: undefined }) : undefined}
-        />
-        <Chip
-          size="small"
-          variant={filters.modifiedFrom || filters.modifiedTo ? 'filled' : 'outlined'}
-          color={filters.modifiedFrom || filters.modifiedTo ? 'primary' : 'default'}
-          label={filters.modifiedFrom || filters.modifiedTo ? '修改时间：已筛选' : '修改时间'}
-          onClick={open('modified')}
-          onDelete={filters.modifiedFrom || filters.modifiedTo
-            ? () => onChange({ ...filters, modifiedFrom: undefined, modifiedTo: undefined })
-            : undefined}
-        />
-        <Chip
-          size="small"
-          variant={filters.minSize !== undefined || filters.maxSize !== undefined ? 'filled' : 'outlined'}
-          color={filters.minSize !== undefined || filters.maxSize !== undefined ? 'primary' : 'default'}
-          label={sizeLabel(filters)}
-          onClick={open('size')}
-          onDelete={filters.minSize !== undefined || filters.maxSize !== undefined
-            ? () => onChange({ ...filters, minSize: undefined, maxSize: undefined })
-            : undefined}
-        />
-        <Chip
-          size="small"
-          variant={filters.sourceID ? 'filled' : 'outlined'}
-          color={filters.sourceID ? 'primary' : 'default'}
-          label={filters.sourceID ? `同步文件夹：${sourceName ?? filters.sourceID}` : '同步文件夹'}
-          onClick={open('source')}
-          onDelete={filters.sourceID ? () => onChange({ ...filters, sourceID: undefined }) : undefined}
-        />
-        {filterCount > 1 ? (
-          <Chip
-            size="small"
-            variant="outlined"
-            label="清除筛选"
-            onClick={() => onChange({})}
-          />
-        ) : null}
-      </Stack>
+      <Button
+        size="small"
+        variant={filterCount > 0 ? 'outlined' : 'text'}
+        startIcon={<FilterAltOutlinedIcon fontSize="small" />}
+        aria-label="筛选文件"
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(panelAnchor)}
+        onClick={(event) => setPanelAnchor(event.currentTarget)}
+        sx={{ whiteSpace: 'nowrap', minWidth: 0 }}
+      >
+        {filterCount > 0 ? `筛选 (${filterCount})` : '筛选'}
+      </Button>
+      <Popover
+        open={Boolean(panelAnchor)}
+        anchorEl={panelAnchor}
+        onClose={() => setPanelAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Box
+          data-xdrive-file-explorer-search-filters
+          sx={{ p: 1.25, width: 'min(360px, calc(100vw - 32px))' }}
+        >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+            <Typography variant="subtitle2">筛选</Typography>
+            {filterCount > 0 ? (
+              <Button size="small" onClick={() => onChange({})}>清除全部</Button>
+            ) : null}
+          </Stack>
+          <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.75}>
+            <Chip
+              size="small"
+              variant={filters.kind ? 'filled' : 'outlined'}
+              color={filters.kind ? 'primary' : 'default'}
+              label={filters.kind ? `类型：${kindLabels[filters.kind]}` : '类型'}
+              onClick={open('kind')}
+              onDelete={filters.kind ? () => onChange({ ...filters, kind: undefined }) : undefined}
+            />
+            <Chip
+              size="small"
+              variant={filters.modifiedFrom || filters.modifiedTo ? 'filled' : 'outlined'}
+              color={filters.modifiedFrom || filters.modifiedTo ? 'primary' : 'default'}
+              label={filters.modifiedFrom || filters.modifiedTo ? '修改时间：已筛选' : '修改时间'}
+              onClick={open('modified')}
+              onDelete={filters.modifiedFrom || filters.modifiedTo
+                ? () => onChange({ ...filters, modifiedFrom: undefined, modifiedTo: undefined })
+                : undefined}
+            />
+            <Chip
+              size="small"
+              variant={filters.minSize !== undefined || filters.maxSize !== undefined ? 'filled' : 'outlined'}
+              color={filters.minSize !== undefined || filters.maxSize !== undefined ? 'primary' : 'default'}
+              label={sizeLabel(filters)}
+              onClick={open('size')}
+              onDelete={filters.minSize !== undefined || filters.maxSize !== undefined
+                ? () => onChange({ ...filters, minSize: undefined, maxSize: undefined })
+                : undefined}
+            />
+            <Chip
+              size="small"
+              variant={filters.sourceID ? 'filled' : 'outlined'}
+              color={filters.sourceID ? 'primary' : 'default'}
+              label={filters.sourceID ? `同步文件夹：${sourceName ?? filters.sourceID}` : '同步文件夹'}
+              onClick={open('source')}
+              onDelete={filters.sourceID ? () => onChange({ ...filters, sourceID: undefined }) : undefined}
+            />
+          </Stack>
+        </Box>
+      </Popover>
 
       <Menu anchorEl={anchor} open={menu === 'kind'} onClose={close}>
         <MenuItem onClick={() => patch({ kind: undefined })}>全部类型</MenuItem>

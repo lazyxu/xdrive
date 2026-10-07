@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -153,56 +153,33 @@ export function XDriveFileExplorerNavigationPane({
   }
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
 
-  const pathNodes = useMemo(
-    () => currentCrumbs.map((crumb, index) => ({
-      id: crumb.id,
-      name: crumb.name,
-      crumbs: currentCrumbs.slice(0, index + 1).map((entry) => ({ ...entry })),
-    })),
-    [currentCrumbs],
-  )
-  const currentID = currentCrumbs.at(-1)?.id
-  const rootNode = pathNodes[0] ?? null
-  const latestPathCrumbsByIDRef = useRef(
-    new Map<number, XDriveFileExplorerNavigationTreeCrumb[]>(),
-  )
+  const rootNode = useMemo(() => {
+    const root = currentCrumbs[0]
+    if (!root) return null
+    return {
+      id: root.id,
+      name: root.name,
+      crumbs: [{ id: root.id, name: root.name }],
+    }
+  }, [currentCrumbs])
+  const latestPathCrumbsByIDRef = useRef(new Map<number, XDriveFileExplorerNavigationTreeCrumb[]>())
   latestPathCrumbsByIDRef.current = new Map(
-    pathNodes.map((node) => [
-      node.id,
-      node.crumbs.map((crumb) => ({ ...crumb })),
+    currentCrumbs.map((crumb, index) => [
+      crumb.id,
+      currentCrumbs.slice(0, index + 1).map((candidate) => ({ ...candidate })),
     ]),
   )
+  const currentID = currentCrumbs.at(-1)?.id
 
-  const pathChildByParent = useMemo(() => {
-    const next = new Map<number, XDriveFileExplorerNavigationTreeNode>()
-    for (let index = 0; index < pathNodes.length - 1; index += 1) {
-      next.set(pathNodes[index].id, pathNodes[index + 1])
-    }
-    return next
-  }, [pathNodes])
-
-  const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => {
-    const loaded = (pageByParent[String(node.id)]?.children ?? []).map((candidate) => ({
+  const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => (
+    (pageByParent[String(node.id)]?.children ?? []).map((candidate) => ({
       ...candidate,
       crumbs: [
         ...node.crumbs.map((crumb) => ({ ...crumb })),
         { id: candidate.id, name: candidate.name },
       ],
     }))
-    const pathChild = pathChildByParent.get(node.id)
-    if (!pathChild) return loaded
-
-    let matched = false
-    const merged = loaded.map((candidate) => {
-      if (candidate.id !== pathChild.id) return candidate
-      matched = true
-      return pathChild
-    })
-    if (!matched) merged.push(pathChild)
-    return merged.sort((left, right) => (
-      left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' })
-    ))
-  }, [pageByParent, pathChildByParent])
+  ), [pageByParent])
 
   const commitParentPage = useCallback((
     parentID: number,
@@ -288,17 +265,6 @@ export function XDriveFileExplorerNavigationPane({
       }
     }
   }, [commitParentPage, loadDirectoryPage, onError])
-
-  useEffect(() => {
-    if (!rootNode) return
-    const ancestors = pathNodes.slice(0, Math.max(1, pathNodes.length - 1))
-    setExpandedIDs((current) => {
-      const next = new Set(current)
-      for (const node of ancestors) next.add(node.id)
-      return next
-    })
-    for (const node of ancestors) void loadChildren(node)
-  }, [loadChildren, pathNodes, rootNode])
 
   const toggleExpanded = (node: XDriveFileExplorerNavigationTreeNode) => {
     const expanded = expandedIDs.has(node.id)
@@ -392,14 +358,12 @@ export function XDriveFileExplorerNavigationPane({
     const loading = loadingIDs.has(node.id)
     const expanded = expandedIDs.has(node.id)
     const expandable = !loaded || children.length > 0 || hasMore
-    const selected = !trashActive && currentID === node.id
 
     return (
       <Box
         key={node.id}
         role="treeitem"
         aria-expanded={expandable ? expanded : undefined}
-        aria-current={selected ? 'page' : undefined}
       >
         <Box
           sx={{
@@ -423,7 +387,7 @@ export function XDriveFileExplorerNavigationPane({
                 event.stopPropagation()
                 toggleExpanded(node)
               }}
-              sx={{ width: 26, height: 28, borderRadius: 1 }}
+              sx={{ width: 26, height: 28, borderRadius: 0.5 }}
             >
               {expanded
                 ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />
@@ -434,20 +398,19 @@ export function XDriveFileExplorerNavigationPane({
           )}
 
           <ListItemButton
-            selected={selected}
             aria-label={node.name}
             onDragOver={(event) => dragOverNode(event, node)}
             onDragLeave={(event) => leaveDropTarget(event, node.id)}
             onDrop={(event) => { void dropOnNode(event, node) }}
             onClick={() => {
-              if (!selected) void onNavigate(node.crumbs)
+              void onNavigate(node.crumbs)
             }}
             sx={{
               minWidth: 0,
               minHeight: 30,
               py: 0.25,
               px: 0.75,
-              borderRadius: 1,
+              borderRadius: 0.5,
               gap: 0.75,
               bgcolor: dropTargetID === node.id ? 'action.hover' : undefined,
               outline: dropTargetID === node.id ? '2px solid' : undefined,
@@ -515,7 +478,7 @@ export function XDriveFileExplorerNavigationPane({
               selected={trashActive}
               aria-current={trashActive ? 'page' : undefined}
               onClick={() => { void onNavigateTrash() }}
-              sx={{ minWidth: 0, minHeight: 32, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+              sx={{ minWidth: 0, minHeight: 32, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
             >
               <DeleteOutlineRoundedIcon sx={{ fontSize: 19, color: trashActive ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
               <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: trashActive ? 600 : 400 }}>
@@ -541,7 +504,7 @@ export function XDriveFileExplorerNavigationPane({
                     aria-label={currentQuickAccessPinned ? '取消固定当前文件夹' : '固定当前文件夹'}
                     disabled={quickAccessBusyID !== null}
                     onClick={() => { void onToggleCurrentQuickAccess?.() }}
-                    sx={{ width: 26, height: 26, borderRadius: 1 }}
+                    sx={{ width: 26, height: 26, borderRadius: 0.5 }}
                   >
                     <PushPinRoundedIcon
                       sx={{
@@ -579,7 +542,7 @@ export function XDriveFileExplorerNavigationPane({
                     selected={!trashActive && currentID === item.id}
                     title={item.path || item.name}
                     onClick={() => { void onNavigateQuickAccess?.(item.id) }}
-                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
                     <Box sx={{ width: 20, height: 20, flex: '0 0 20px' }}>
                       <XDriveFileExplorerThumbnail
@@ -599,7 +562,7 @@ export function XDriveFileExplorerNavigationPane({
                         aria-label={`取消固定 ${item.name}`}
                         disabled={quickAccessBusyID !== null}
                         onClick={() => { void onUnpinQuickAccess?.(item.id) }}
-                        sx={{ width: 26, height: 26, borderRadius: 1 }}
+                        sx={{ width: 26, height: 26, borderRadius: 0.5 }}
                       >
                         <CloseRoundedIcon sx={{ fontSize: 15 }} />
                       </IconButton>
@@ -644,7 +607,7 @@ export function XDriveFileExplorerNavigationPane({
                   <ListItemButton
                     title={item.path || item.name}
                     onClick={() => { void onActivateFavorite?.(item.id) }}
-                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
                     <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0 }}>
                       <XDriveFileExplorerThumbnail
@@ -672,7 +635,7 @@ export function XDriveFileExplorerNavigationPane({
                         aria-label={`取消收藏 ${item.name}`}
                         disabled={favoriteBusyID !== null}
                         onClick={() => { void onUnfavorite?.(item.id) }}
-                        sx={{ width: 26, height: 26, borderRadius: 1 }}
+                        sx={{ width: 26, height: 26, borderRadius: 0.5 }}
                       >
                         <StarRoundedIcon sx={{ fontSize: 15 }} />
                       </IconButton>
@@ -704,7 +667,7 @@ export function XDriveFileExplorerNavigationPane({
                     aria-label="清空最近使用"
                     disabled={recentLoading}
                     onClick={() => { void onClearRecent() }}
-                    sx={{ width: 26, height: 26, borderRadius: 1 }}
+                    sx={{ width: 26, height: 26, borderRadius: 0.5 }}
                   >
                     <CloseRoundedIcon sx={{ fontSize: 15 }} />
                   </IconButton>
@@ -729,7 +692,7 @@ export function XDriveFileExplorerNavigationPane({
                   selected={!trashActive && item.kind === 'dir' && currentID === item.id}
                   title={item.path || item.name}
                   onClick={() => { void onActivateRecent?.(item.id) }}
-                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, px: 0.75, borderRadius: 1, gap: 0.75 }}
+                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                 >
                   <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0 }}>
                     <XDriveFileExplorerThumbnail

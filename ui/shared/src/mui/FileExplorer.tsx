@@ -27,14 +27,12 @@ import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
-import ViewAgendaRoundedIcon from '@mui/icons-material/ViewAgendaRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
 import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewColumnRoundedIcon from '@mui/icons-material/ViewColumnRounded'
-import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import {
   Box,
   Breadcrumbs,
@@ -48,8 +46,6 @@ import {
   Paper,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -222,44 +218,44 @@ const fileExplorerGridMetrics: Record<XDriveFileExplorerGridSize, {
   small: {
     minColumnWidth: 88,
     maxItemWidth: 136,
-    minItemHeight: 92,
+    minItemHeight: 96,
     thumbnailWidth: 48,
-    thumbnailHeight: 44,
-    iconSize: 36,
+    thumbnailHeight: 48,
+    iconSize: 40,
     folderIconSize: 40,
     gap: 0.5,
     padding: 1,
     itemPadding: 0.75,
     itemGap: 0.5,
-    estimatedRowHeight: 108,
+    estimatedRowHeight: 112,
   },
   medium: {
     minColumnWidth: 112,
     maxItemWidth: 180,
-    minItemHeight: 116,
+    minItemHeight: 124,
     thumbnailWidth: 72,
-    thumbnailHeight: 64,
-    iconSize: 48,
+    thumbnailHeight: 72,
+    iconSize: 52,
     folderIconSize: 52,
     gap: 1,
     padding: 1.25,
     itemPadding: 1,
     itemGap: 0.75,
-    estimatedRowHeight: 132,
+    estimatedRowHeight: 140,
   },
   large: {
     minColumnWidth: 148,
     maxItemWidth: 236,
-    minItemHeight: 156,
+    minItemHeight: 168,
     thumbnailWidth: 108,
-    thumbnailHeight: 96,
-    iconSize: 72,
+    thumbnailHeight: 108,
+    iconSize: 76,
     folderIconSize: 76,
     gap: 1.25,
     padding: 1.5,
     itemPadding: 1.25,
     itemGap: 1,
-    estimatedRowHeight: 174,
+    estimatedRowHeight: 186,
   },
 }
 
@@ -754,8 +750,7 @@ export function XDriveFileExplorer({
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
   const [activeItemID, setActiveItemID] = useState<XDriveFileExplorerID | null>(null)
   const [activeLogicalIndex, setActiveLogicalIndex] = useState<number | null>(null)
-  const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
-  const [groupAnchor, setGroupAnchor] = useState<HTMLElement | null>(null)
+  const [arrangeAnchor, setArrangeAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [viewPreferencesAnchor, setViewPreferencesAnchor] = useState<HTMLElement | null>(null)
   const [draggedDetailsColumn, setDraggedDetailsColumn] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
@@ -2081,13 +2076,13 @@ export function XDriveFileExplorer({
   const setSort = (next: XDriveFileExplorerSort) => {
     if (controlledSort === undefined) setInternalSort(next)
     onSortChange?.(next)
-    setSortAnchor(null)
+    setArrangeAnchor(null)
   }
 
   const setGrouping = (next: XDriveFileExplorerGrouping) => {
     if (controlledGrouping === undefined) setInternalGrouping(next)
     onGroupingChange?.(next)
-    setGroupAnchor(null)
+    setArrangeAnchor(null)
   }
 
   const chooseDetailsDensity = (detailsDensity: XDriveFileExplorerDetailsDensity) => {
@@ -3469,10 +3464,11 @@ export function XDriveFileExplorer({
               onKeyDown={handlePathKeyDown}
               onBlur={submitPath}
               slotProps={{ htmlInput: { spellCheck: false } }}
-              sx={{ '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' } }}
+              sx={{ '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' } }}
             />
           ) : (
             <Paper
+              data-xdrive-file-explorer-address-bar
               variant="outlined"
               role={onPathSubmit ? 'button' : undefined}
               tabIndex={onPathSubmit ? 0 : undefined}
@@ -3489,13 +3485,13 @@ export function XDriveFileExplorer({
               }}
               sx={{
                 minHeight: 36,
-                px: 1,
-                borderRadius: '6px',
+                px: 0.5,
+                borderRadius: '4px',
                 display: 'flex',
                 alignItems: 'center',
                 minWidth: 0,
                 cursor: onPathSubmit ? 'text' : 'default',
-                bgcolor: 'background.default',
+                bgcolor: 'background.paper',
                 '&:focus-visible': {
                   outline: '2px solid',
                   outlineColor: 'primary.main',
@@ -3531,8 +3527,10 @@ export function XDriveFileExplorer({
                     sx={{
                       px: 0.5,
                       py: 0.25,
-                      borderRadius: 1,
+                      borderRadius: 0.5,
                       maxWidth: 180,
+                      minHeight: 28,
+                      '&:hover': { bgcolor: 'action.hover' },
                       color: index === crumbs.length - 1 ? 'text.primary' : 'text.secondary',
                       fontSize: 13,
                       justifyContent: 'flex-start',
@@ -3547,7 +3545,7 @@ export function XDriveFileExplorer({
                       outlineOffset: -2,
                     }}
                   >
-                    <Typography variant="body2" noWrap>{crumb.name}</Typography>
+                    <Typography variant="body2" noWrap fontWeight={index === crumbs.length - 1 ? 600 : 400}>{crumb.name}</Typography>
                   </ButtonBase>
                 ))}
               </Breadcrumbs>
@@ -3567,13 +3565,13 @@ export function XDriveFileExplorer({
                 submitSearch()
               }
             }}
-            placeholder="搜索"
+            placeholder={`在“${crumbs.at(-1)?.name ?? '当前位置'}”中搜索`}
             aria-label="搜索文件和文件夹"
             title={fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)}
             sx={{
-              width: { xs: 150, sm: 220, lg: 280 },
+              width: { xs: 180, sm: 280, md: 320, lg: 360 },
               flexShrink: 0,
-              '& .MuiOutlinedInput-root': { height: 36, borderRadius: '6px' },
+              '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' },
             }}
             slotProps={{
               input: {
@@ -3606,7 +3604,6 @@ export function XDriveFileExplorer({
           py: 0.5,
           minHeight: 40,
           '& .MuiButton-root': { minHeight: 30, px: 1, borderRadius: 1 },
-          '& .MuiToggleButton-root': { width: 32, height: 30, p: 0.5 },
         }}
       >
         {selectedItems.length > 0 ? (
@@ -3810,14 +3807,21 @@ export function XDriveFileExplorer({
 
         <XDriveFileExplorerCommandButton
           startIcon={<SortRoundedIcon />}
-          title="按名称、修改时间、类型或大小排序"
-          onClick={(event) => setSortAnchor(event.currentTarget)}
+          title="排序、分组与文件夹优先"
+          onClick={(event) => setArrangeAnchor(event.currentTarget)}
           aria-haspopup="menu"
-          aria-expanded={Boolean(sortAnchor)}
+          aria-expanded={Boolean(arrangeAnchor)}
         >
-          排序
+          排序与分组
         </XDriveFileExplorerCommandButton>
-        <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)} onClose={() => setSortAnchor(null)}>
+        <Menu
+          anchorEl={arrangeAnchor}
+          open={Boolean(arrangeAnchor)}
+          onClose={() => setArrangeAnchor(null)}
+        >
+          <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', fontWeight: 700 }}>
+            排序方式
+          </MenuItem>
           {([
             ['name', '名称'],
             ['updated', '修改时间'],
@@ -3832,26 +3836,16 @@ export function XDriveFileExplorer({
                 direction: sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc',
               })}
             >
-              {label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+              <Box component="span" sx={{ width: 20, color: 'text.secondary' }}>
+                {sort.key === key ? (sort.direction === 'asc' ? '↑' : '↓') : ''}
+              </Box>
+              {label}
             </MenuItem>
           ))}
-        </Menu>
-
-        <XDriveFileExplorerCommandButton
-          disabled={!groupingEnabled}
-          startIcon={<ViewAgendaRoundedIcon />}
-          title="按类型、修改日期或大小分组；可启用文件夹优先"
-          onClick={(event) => setGroupAnchor(event.currentTarget)}
-          aria-haspopup="menu"
-          aria-expanded={groupingEnabled && Boolean(groupAnchor)}
-        >
-          分组
-        </XDriveFileExplorerCommandButton>
-        <Menu
-          anchorEl={groupAnchor}
-          open={groupingEnabled && Boolean(groupAnchor)}
-          onClose={() => setGroupAnchor(null)}
-        >
+          <Divider />
+          <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', fontWeight: 700 }}>
+            分组方式
+          </MenuItem>
           {([
             ['none', '不分组'],
             ['type', '类型'],
@@ -3860,6 +3854,7 @@ export function XDriveFileExplorer({
           ] as const).map(([groupBy, label]) => (
             <MenuItem
               key={groupBy}
+              disabled={!groupingEnabled}
               selected={grouping.groupBy === groupBy}
               onClick={() => setGrouping({ ...grouping, groupBy })}
             >
@@ -3871,6 +3866,7 @@ export function XDriveFileExplorer({
           ))}
           <Divider />
           <MenuItem
+            disabled={!groupingEnabled}
             onClick={() => setGrouping({
               ...grouping,
               foldersFirst: !grouping.foldersFirst,
@@ -3882,23 +3878,6 @@ export function XDriveFileExplorer({
             文件夹优先
           </MenuItem>
         </Menu>
-
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={viewMode}
-          onChange={(_event, next: XDriveFileExplorerViewMode | null) => {
-            if (next) setViewMode(next)
-          }}
-          aria-label="文件查看方式"
-        >
-          <ToggleButton value="details" aria-label="详细信息" title="详细信息视图">
-            <ViewListRoundedIcon fontSize="small" />
-          </ToggleButton>
-          <ToggleButton value="grid" aria-label="图标" title="图标视图">
-            <GridViewRoundedIcon fontSize="small" />
-          </ToggleButton>
-        </ToggleButtonGroup>
       </Stack>
 
       <Divider />
