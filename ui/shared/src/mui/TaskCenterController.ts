@@ -3,10 +3,12 @@ import {
   XDRIVE_BACKGROUND_TASK_LIMIT,
   xDriveActiveFileOperationCount,
   xDriveBackgroundTaskPollIntervalMs,
+  xDriveBackgroundTaskSummaryPollIntervalMs,
   xDriveFileOperationHasHistory,
 } from '..'
 import type {
   XDriveBackgroundTask,
+  XDriveBackgroundTaskActiveSummary,
   XDriveBackgroundTaskControlAction,
   XDriveFileOperation,
   XDriveFileOperationConflictResolution,
@@ -35,6 +37,7 @@ export type XDriveTaskCenterOperationActions = {
 export type XDriveBackgroundTaskScope = 'mine' | 'global'
 
 export type XDriveBackgroundTaskPort = {
+  loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>
   loadMine: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
   loadGlobal?: (limit: number) => Promise<readonly XDriveBackgroundTask[]>
   control?: (
@@ -42,6 +45,45 @@ export type XDriveBackgroundTaskPort = {
     action: XDriveBackgroundTaskControlAction,
     global: boolean,
   ) => Promise<unknown>
+}
+
+function useXDriveBackgroundTaskActiveSummary({
+  port,
+  enabled,
+}: {
+  port?: XDriveBackgroundTaskPort
+  enabled: boolean
+}) {
+  const [summary, setSummary] = useState<XDriveBackgroundTaskActiveSummary>()
+
+  const refresh = useCallback(async () => {
+    if (!enabled || !port?.loadActiveSummary) {
+      setSummary(undefined)
+      return
+    }
+    try {
+      setSummary(await port.loadActiveSummary())
+    } catch {
+      setSummary(undefined)
+    }
+  }, [enabled, port])
+
+  const pollIntervalMs = useMemo(
+    () => xDriveBackgroundTaskSummaryPollIntervalMs(summary),
+    [summary],
+  )
+
+  useEffect(() => {
+    if (!enabled || !port?.loadActiveSummary) {
+      setSummary(undefined)
+      return
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
+    return () => window.clearInterval(timer)
+  }, [enabled, pollIntervalMs, port, refresh])
+
+  return { summary, refresh }
 }
 
 function useXDriveBackgroundTasks({
@@ -154,7 +196,6 @@ export function useXDriveTaskCenterController({
   const activeTransferCount = xDriveActiveTransferCount(transfers)
   const activeOperationCount = xDriveActiveFileOperationCount(operations)
   const hasHistory = xDriveTransferHasHistory(transfers) || xDriveFileOperationHasHistory(operations)
-  const badgeCount = activeTransferCount + activeOperationCount
   const [backgroundScope, setBackgroundScope] = useState<XDriveBackgroundTaskScope>('mine')
   const [backgroundControlKey, setBackgroundControlKey] = useState('')
 
@@ -163,6 +204,19 @@ export function useXDriveTaskCenterController({
       setBackgroundScope('mine')
     }
   }, [backgroundScope, globalTasksEnabled])
+
+  const backgroundSummary = useXDriveBackgroundTaskActiveSummary({
+    port: backgroundTaskPort,
+    enabled: backgroundTasksEnabled,
+  })
+  const summaryFileOperationCount =
+    backgroundSummary.summary?.file_operation ?? 0
+  const activeBackgroundCount = backgroundSummary.summary
+    ? backgroundSummary.summary.active_total -
+      summaryFileOperationCount +
+      Math.max(summaryFileOperationCount, activeOperationCount)
+    : activeOperationCount
+  const badgeCount = activeTransferCount + activeBackgroundCount
 
   const background = useXDriveBackgroundTasks({
     port: backgroundTaskPort,
@@ -183,7 +237,10 @@ export function useXDriveTaskCenterController({
     setBackgroundControlKey(key)
     try {
       await backgroundTaskPort.control(task.id, action, global)
-      await background.refresh()
+      await Promise.all([
+        background.refresh(),
+        backgroundSummary.refresh(),
+      ])
     } catch (error) {
       onBackgroundTaskError?.(error)
     } finally {
@@ -194,6 +251,7 @@ export function useXDriveTaskCenterController({
     background.refresh,
     backgroundControlKey,
     backgroundTaskPort,
+    backgroundSummary.refresh,
     onBackgroundTaskError,
   ])
 
@@ -239,6 +297,7 @@ export function useXDriveTaskCenterController({
   return {
     activeTransferCount,
     activeOperationCount,
+    activeBackgroundCount,
     badgeCount,
     badge: badgeCount || undefined,
     hasHistory,

@@ -450,6 +450,13 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentBackgroundTaskActiveSummary = {
+  active_total: number
+  file_operation: number
+  sync_run: number
+  scheduler: number
+}
+
 export type AgentBackgroundTask = {
   id: string
   kind: string
@@ -1585,6 +1592,13 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
+  }
+
+  cloudBackgroundTaskActiveSummary() {
+    return this.request<AgentBackgroundTaskActiveSummary>(
+      'GET',
+      '/v1/cloud/background-task-summary',
+    )
   }
 
   cloudBackgroundTasks(global = false, limit = 100) {

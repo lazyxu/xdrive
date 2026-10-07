@@ -45,6 +45,7 @@ import type {
   XDriveServerUpdateState,
   XDriveTransferTask,
   XDriveBackgroundTask,
+  XDriveBackgroundTaskActiveSummary,
   XDriveBackgroundTaskControlAction,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
@@ -1440,6 +1441,12 @@ export class XDriveApi {
       method: 'POST',
       body: JSON.stringify({ conflict_policy: conflictPolicy }),
     })
+  }
+
+  backgroundTaskActiveSummary() {
+    return this.request<XDriveBackgroundTaskActiveSummary>(
+      '/api/v1/background-tasks/active-summary',
+    )
   }
 
   backgroundTasks(limit = 100) {

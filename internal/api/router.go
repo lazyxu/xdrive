@@ -89,6 +89,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/file-quick-access/:id", s.unpinFileQuickAccess)
 	authed.GET("/file-recent", s.listFileRecent)
 	authed.GET("/background-tasks", s.listBackgroundTasks)
+	authed.GET("/background-tasks/active-summary", s.backgroundTaskActiveSummary)
 	authed.POST("/background-tasks/control", s.controlBackgroundTask)
 	authed.POST("/photo-intelligence/reanalyze", s.reanalyzePhotoIntelligence)
 	authed.POST("/file-recent/:id", s.touchFileRecent)

@@ -73,6 +73,7 @@ import {
   type AgentCloudBatchResult,
   type AgentCloudFilePropertiesStats,
   type AgentBackgroundTask,
+  type AgentBackgroundTaskActiveSummary,
   type AgentBackgroundTaskControlResult,
   type AgentCloudFileOperation,
   type AgentCloudUploadConflictPreflight,
@@ -2864,6 +2865,14 @@ function registerIPCHandlers() {
       typeof targetParent === 'number' ? targetParent : 0,
     )
   }, false))
+  ipcMain.handle(
+    'agent:cloud-background-task-summary',
+    () => runAgentAction<AgentBackgroundTaskActiveSummary>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'background-task-summary')
+      return requireAgentClient().cloudBackgroundTaskActiveSummary()
+    }, false),
+  )
   ipcMain.handle('agent:cloud-background-tasks', (_event, global: unknown, limit: unknown) => runAgentAction<AgentBackgroundTask[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'background-tasks')

@@ -3,6 +3,14 @@ import { formatBytes } from './format'
 export const XDRIVE_BACKGROUND_TASK_LIMIT = 200
 export const XDRIVE_BACKGROUND_TASK_ACTIVE_POLL_MS = 1_500
 export const XDRIVE_BACKGROUND_TASK_VISIBLE_IDLE_POLL_MS = 3_000
+export const XDRIVE_BACKGROUND_TASK_SUMMARY_IDLE_POLL_MS = 3_000
+
+export type XDriveBackgroundTaskActiveSummary = {
+  active_total: number
+  file_operation: number
+  sync_run: number
+  scheduler: number
+}
 
 export type XDriveBackgroundTaskProgress = {
   phase?: string
@@ -57,6 +65,14 @@ export type XDriveBackgroundTask = {
 
 export function xDriveBackgroundTaskActive(state: string) {
   return state === 'queued' || state === 'running' || state === 'cancelling' || state === 'cancel_requested'
+}
+
+export function xDriveBackgroundTaskSummaryPollIntervalMs(
+  summary?: XDriveBackgroundTaskActiveSummary,
+) {
+  return (summary?.active_total ?? 0) > 0
+    ? XDRIVE_BACKGROUND_TASK_ACTIVE_POLL_MS
+    : XDRIVE_BACKGROUND_TASK_SUMMARY_IDLE_POLL_MS
 }
 
 export function xDriveBackgroundTaskPollIntervalMs(tasks: readonly XDriveBackgroundTask[]) {

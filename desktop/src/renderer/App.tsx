@@ -403,6 +403,8 @@ export default function App({
   const fileExplorerKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(info?.platform)
   const backgroundTasksSupported =
     agent.hello?.capabilities.includes('background-tasks') ?? false
+  const backgroundTaskSummarySupported =
+    agent.hello?.capabilities.includes('background-task-summary') ?? false
 
   const fileOperationActions = useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({
     cancelOperation: async (id) => {
@@ -483,6 +485,13 @@ export default function App({
   })
 
   const backgroundTaskPort = useMemo(() => backgroundTasksSupported ? ({
+    loadActiveSummary: backgroundTaskSummarySupported
+      ? async () => {
+          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary()
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data
+        }
+      : undefined,
     loadMine: async (limit: number) => {
       const result = await window.xdriveDesktop.agent.cloudBackgroundTasks(false, limit)
       if (!result.ok) throw new Error(result.error.message)
@@ -504,7 +513,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-  }) : undefined, [backgroundTasksSupported, status?.role])
+  }) : undefined, [
+    backgroundTaskSummarySupported,
+    backgroundTasksSupported,
+    status?.role,
+  ])
 
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,

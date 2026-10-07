@@ -27,7 +27,8 @@ test('shared Task Center controller owns summary, history and page-action presen
     'xDriveActiveFileOperationCount(operations)',
     'xDriveTransferHasHistory(transfers)',
     'xDriveFileOperationHasHistory(operations)',
-    'const badgeCount = activeTransferCount + activeOperationCount',
+    'const activeBackgroundCount =',
+    'const badgeCount = activeTransferCount + activeBackgroundCount',
     'disabled: !hasHistory || externalBusy || operationActions.busy',
     'loading: operationActions.clearHistoryLoading',
     'operationCancellingID: operationActions.cancellingID',
@@ -237,4 +238,25 @@ test('shared Task Center owns cluster runtime instance presentation', () => {
     false,
     'Desktop renderer must not duplicate cluster runtime instance presentation',
   )
+})
+
+
+test('Task Center badge includes owner background activity through shared summary', () => {
+  for (const token of [
+    'loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>',
+    'useXDriveBackgroundTaskActiveSummary',
+    'xDriveBackgroundTaskSummaryPollIntervalMs',
+    'summaryFileOperationCount',
+    'Math.max(summaryFileOperationCount, activeOperationCount)',
+    'const badgeCount = activeTransferCount + activeBackgroundCount',
+  ]) assert.ok(controller.includes(token), 'shared active badge contract missing: ' + token)
+
+  assert.ok(webApi.includes('backgroundTaskActiveSummary()'), 'Web summary endpoint adapter missing')
+  assert.ok(web.includes('loadActiveSummary: () => api.backgroundTaskActiveSummary()'), 'Web summary port missing')
+  assert.ok(agentIPC.includes('"background-task-summary"'), 'Agent summary capability missing')
+  assert.ok(agentClient.includes('cloudBackgroundTaskActiveSummary()'), 'Desktop agent summary client missing')
+  assert.ok(desktopPreload.includes('cloudBackgroundTaskActiveSummary:'), 'Desktop preload summary bridge missing')
+  assert.ok(desktop.includes('backgroundTaskSummarySupported'), 'Desktop summary capability gate missing')
+  assert.equal(web.includes('active_total +'), false, 'Web must not own badge arithmetic')
+  assert.equal(desktop.includes('active_total +'), false, 'Desktop must not own badge arithmetic')
 })

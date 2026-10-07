@@ -420,6 +420,17 @@ func (f *fakeDesktopIPCController) CloudCreateFileOperation(_ context.Context, o
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudBackgroundTaskActiveSummary(
+	context.Context,
+) (client.BackgroundTaskActiveSummary, error) {
+	return client.BackgroundTaskActiveSummary{
+		ActiveTotal:   4,
+		FileOperation: 1,
+		SyncRun:       1,
+		Scheduler:     2,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudBackgroundTasks(context.Context, bool, int) ([]client.BackgroundTask, error) {
 	return []client.BackgroundTask{{
 		ID: "runtime:user:1:media.index", Kind: "media.index", Domain: "scheduler",
