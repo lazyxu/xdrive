@@ -354,6 +354,11 @@ serve_cmd() {
   trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
   trap 'exit 0' INT TERM
 
+  # Publish liveness before any externally visible idle/recovery status. This
+  # prevents API/UI consumers from observing a ready-looking status while the
+  # host-control heartbeat is still absent during startup.
+  touch_heartbeat
+
   if [[ -f "$dir/active.json" ]]; then
     interrupted_source="$(json_value "$dir/active.json" source)"
     interrupted_channel="$(json_value "$dir/active.json" channel)"
