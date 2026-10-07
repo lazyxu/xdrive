@@ -49,6 +49,13 @@ export function useXDriveFileExplorerQuickAccess<
   const loadRequestRef = useRef(0)
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const pendingMutationCountRef = useRef(0)
+  const enabledRef = useRef(enabled)
+  const lifecycleGenerationRef = useRef(1)
+
+  if (enabledRef.current !== enabled) {
+    enabledRef.current = enabled
+    lifecycleGenerationRef.current += 1
+  }
 
   loadItemsRef.current = loadItems
   pinItemRef.current = pinItem
@@ -66,6 +73,7 @@ export function useXDriveFileExplorerQuickAccess<
       loadRequestRef.current += 1
       setItems([])
       setLoading(false)
+      setBusyID(null)
       return []
     }
     const requestID = loadRequestRef.current + 1
@@ -90,22 +98,25 @@ export function useXDriveFileExplorerQuickAccess<
     [items],
   )
 
-  const enqueueMutation = useCallback(<T,>(
+  const enqueueMutation = useCallback((
     nodeID: number,
-    operation: () => Promise<T>,
+    operation: (generation: number) => Promise<boolean>,
   ) => {
+    const generation = lifecycleGenerationRef.current
     loadRequestRef.current += 1
     setLoading(false)
     pendingMutationCountRef.current += 1
     if (pendingMutationCountRef.current === 1) setBusyID(nodeID)
 
-    const queued = mutationTailRef.current.then(async () => {
+    const run = async () => {
+      if (
+        generation !== lifecycleGenerationRef.current ||
+        !enabledRef.current
+      ) return false
       setBusyID(nodeID)
-      return operation()
-    }, async () => {
-      setBusyID(nodeID)
-      return operation()
-    })
+      return operation(generation)
+    }
+    const queued = mutationTailRef.current.then(run, run)
     const tracked = queued.finally(() => {
       pendingMutationCountRef.current = Math.max(
         0,
@@ -122,9 +133,13 @@ export function useXDriveFileExplorerQuickAccess<
 
   const pin = useCallback((nodeID: number) => {
     if (!enabled || nodeID <= 0) return Promise.resolve(false)
-    return enqueueMutation(nodeID, async () => {
+    return enqueueMutation(nodeID, async (generation) => {
       try {
         const pinned = projectQuickAccessItem(await pinItemRef.current(nodeID))
+        if (
+          generation !== lifecycleGenerationRef.current ||
+          !enabledRef.current
+        ) return true
         setItems((current) => (
           current.some((item) => item.id === pinned.id)
             ? current.map((item) => item.id === pinned.id ? pinned : item)
@@ -132,7 +147,10 @@ export function useXDriveFileExplorerQuickAccess<
         ))
         return true
       } catch (error) {
-        onErrorRef.current(error)
+        if (
+          generation === lifecycleGenerationRef.current &&
+          enabledRef.current
+        ) onErrorRef.current(error)
         return false
       }
     })
@@ -140,13 +158,20 @@ export function useXDriveFileExplorerQuickAccess<
 
   const unpin = useCallback((nodeID: number) => {
     if (!enabled || nodeID <= 0) return Promise.resolve(false)
-    return enqueueMutation(nodeID, async () => {
+    return enqueueMutation(nodeID, async (generation) => {
       try {
         await unpinItemRef.current(nodeID)
+        if (
+          generation !== lifecycleGenerationRef.current ||
+          !enabledRef.current
+        ) return true
         setItems((current) => current.filter((item) => item.id !== nodeID))
         return true
       } catch (error) {
-        onErrorRef.current(error)
+        if (
+          generation === lifecycleGenerationRef.current &&
+          enabledRef.current
+        ) onErrorRef.current(error)
         return false
       }
     })

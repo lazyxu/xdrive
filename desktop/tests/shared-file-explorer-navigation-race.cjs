@@ -1070,3 +1070,53 @@ test('Quick Access mutations preserve user order when pin follows a pending unpi
     'the later Quick Access mutation must be the final visible state',
   )
 })
+
+
+test('disabling Quick Access invalidates a pending pin completion', async () => {
+  const runtime = createHookRuntime()
+  const useQuickAccess = loadQuickAccessHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const pinnedItem = {
+    node: { id: 9, name: 'Late' },
+    path: '/Late',
+    crumbs: [root, { id: 9, name: 'Late' }],
+    pinned_at: '2026-10-07T00:00:00Z',
+  }
+
+  let enabled = true
+  let releasePin
+  const renderQuick = () => runtime.render(() => useQuickAccess({
+    enabled,
+    loadItems: async () => [],
+    pinItem: () => new Promise((resolve) => {
+      releasePin = () => resolve(pinnedItem)
+    }),
+    unpinItem: async () => undefined,
+    onError: (error) => { throw error },
+  }))
+
+  renderQuick()
+  await flushAsync()
+  let quick = renderQuick()
+  assert.deepEqual(quick.items, [])
+
+  const pendingPin = quick.pin(pinnedItem.node.id)
+  await flushAsync()
+  assert.equal(typeof releasePin, 'function')
+
+  enabled = false
+  renderQuick()
+  await flushAsync()
+  quick = renderQuick()
+  assert.deepEqual(quick.items, [])
+
+  releasePin()
+  assert.equal(await pendingPin, true)
+
+  quick = renderQuick()
+  assert.deepEqual(
+    quick.items,
+    [],
+    'a Quick Access mutation started before disable must not repopulate disabled state',
+  )
+})
