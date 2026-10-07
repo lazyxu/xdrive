@@ -6,7 +6,6 @@ import {
 import {
   Box,
   Button,
-  Dialog,
   MenuItem,
   Stack,
   TextField,
@@ -14,8 +13,6 @@ import {
 } from '@mui/material'
 import type { MediaAlbum, MediaItem } from '../models'
 import { formatBytes } from '../format'
-import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
   XDriveFilePreviewImageLoader,
@@ -106,21 +103,7 @@ function mediaResourceRoleLabel(role: string) {
   }
 }
 
-export function XDriveMediaDetailsDialog({
-  item,
-  loadThumbnail,
-  loadLivePhotoMotion,
-  loadPreviewURL,
-  albums,
-  currentAlbum,
-  onSetFavorite,
-  onSetTags,
-  onSetPeople,
-  onSetDescription,
-  onAddToAlbum,
-  onRemoveFromAlbum,
-  onClose,
-}: {
+export interface XDriveMediaDetailsContentProps {
   item: MediaItem | null
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
@@ -133,8 +116,22 @@ export function XDriveMediaDetailsDialog({
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
-  onClose: () => void
-}) {
+}
+
+export function XDriveMediaDetailsContent({
+  item,
+  loadThumbnail,
+  loadLivePhotoMotion,
+  loadPreviewURL,
+  albums,
+  currentAlbum,
+  onSetFavorite,
+  onSetTags,
+  onSetPeople,
+  onSetDescription,
+  onAddToAlbum,
+  onRemoveFromAlbum,
+}: XDriveMediaDetailsContentProps) {
   const [targetAlbumID, setTargetAlbumID] = useState('')
   const [albumBusy, setAlbumBusy] = useState(false)
   const [albumError, setAlbumError] = useState('')
@@ -268,25 +265,13 @@ export function XDriveMediaDetailsDialog({
     return result
   }, [item])
 
+  if (!item) return null
+
   return (
-    <Dialog
-      open={Boolean(item)}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      slotProps={{ paper: xDriveDialogPaperProps }}
-    >
-      <XDriveDialogTitle
-        title="媒体信息"
-        subtitle={item?.node.name}
-        onClose={onClose}
-      />
-      <XDriveDialogContent dividers>
-        {item ? (
-          <Stack spacing={2}>
+    <Stack spacing={2} sx={{ p: 1.5 }}>
             <Box
               sx={{
-                height: { xs: 220, sm: 320 },
+                height: 184,
                 border: 1,
                 borderColor: 'divider',
                 borderRadius: 1.5,
@@ -304,8 +289,8 @@ export function XDriveMediaDetailsDialog({
                       loadPreviewURL={loadSelectedPreview}
                       loadImagePreview={loadSelectedThumbnail}
                       fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                      minHeight={220}
-                      maxHeight={420}
+                      minHeight={160}
+                      maxHeight={240}
                     />
                   )}
                 />
@@ -315,8 +300,8 @@ export function XDriveMediaDetailsDialog({
                   loadPreviewURL={loadSelectedPreview}
                   loadImagePreview={loadSelectedThumbnail}
                   fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                  minHeight={220}
-                  maxHeight={420}
+                  minHeight={160}
+                  maxHeight={240}
                 />
               ) : (
                 <XDriveMediaAsyncThumbnail
@@ -574,10 +559,7 @@ export function XDriveMediaDetailsDialog({
                 </Stack>
               </Box>
             ) : null}
-          </Stack>
-        ) : null}
-      </XDriveDialogContent>
-    </Dialog>
+    </Stack>
   )
 }
 
