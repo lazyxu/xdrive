@@ -114,6 +114,29 @@ test('shared FileExplorer uses the keyboard command resolver without stealing te
   ]) assert.ok(keyboard.includes(token), 'shared keyboard profile binding missing: ' + token)
 })
 
+test('shared FileExplorer exposes native shortcut labels in hover and context chrome', () => {
+  for (const token of [
+    'xDriveFileExplorerShortcutLabel',
+    "case 'focus-path': return mac ? '⌘⇧G' : 'Ctrl+L / Alt+D / F4'",
+    "case 'next-tab': return mac ? '⌃Tab' : 'Ctrl+Tab'",
+    "case 'previous-tab': return mac ? '⌃⇧Tab' : 'Ctrl+Shift+Tab'",
+    "case 'copy': return mac ? '⌘C' : 'Ctrl+C / Ctrl+Insert'",
+    "case 'paste': return mac ? '⌘V' : 'Ctrl+V / Shift+Insert'",
+    "case 'delete': return mac ? '⌘⌫' : 'Delete / Ctrl+D'",
+    "case 'quick-look': return mac ? 'Space / ⌘Y' : 'Space'",
+    "case 'properties': return mac ? '⌘I' : 'Alt+Enter'",
+  ]) assert.ok(keyboard.includes(token), 'shared shortcut label contract missing: ' + token)
+
+  for (const token of [
+    "fileExplorerShortcutTitle('后退', 'back', keyboardProfile)",
+    "fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)",
+    "fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)",
+    'fileExplorerMenuShortcut(menuItem.id, keyboardProfile)',
+    '双击/Enter 打开 · Space 快速预览',
+    '双击自动适应',
+  ]) assert.ok(explorer.includes(token), 'shared hover/shortcut affordance missing: ' + token)
+})
+
 test('shared FileExplorer owns inline rename and extension-aware selection', () => {
   for (const token of [
     'xDriveFileExplorerRenameSelectionEnd',

@@ -91,7 +91,9 @@ requireText(fileExplorer, [
   'variant="text"',
   'color="inherit"',
   "color: 'text.primary'",
-  '<XDriveFileExplorerCommandButton startIcon={<CreateNewFolderRoundedIcon />} onClick={onCreateFolder}>',
+  'startIcon={<CreateNewFolderRoundedIcon />}',
+  "fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)",
+  'onClick={onCreateFolder}',
   '<XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>',
   'startIcon={<SortRoundedIcon />}',
 ], 'Shared FileExplorer command chrome')

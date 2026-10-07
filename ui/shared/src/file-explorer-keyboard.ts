@@ -54,6 +54,42 @@ export function xDriveFileExplorerKeyboardProfileFromPlatform(
   return 'web'
 }
 
+export function xDriveFileExplorerShortcutLabel(
+  command: XDriveFileExplorerKeyboardCommand,
+  profile: XDriveFileExplorerKeyboardProfile,
+) {
+  const mac = profile === 'macos'
+  switch (command) {
+  case 'new-tab': return mac ? '⌘T' : 'Ctrl+T'
+  case 'close-tab': return mac ? '⌘W' : 'Ctrl+W'
+  case 'restore-closed-tab': return mac ? '⌘⇧T' : 'Ctrl+Shift+T'
+  case 'next-tab': return mac ? '⌃Tab' : 'Ctrl+Tab'
+  case 'previous-tab': return mac ? '⌃⇧Tab' : 'Ctrl+Shift+Tab'
+  case 'back': return mac ? '⌘[' : 'Alt+←'
+  case 'forward': return mac ? '⌘]' : 'Alt+→'
+  case 'up': return mac ? '⌘↑' : 'Alt+↑'
+  case 'focus-path': return mac ? '⌘⇧G' : 'Ctrl+L / Alt+D / F4'
+  case 'focus-search': return mac ? '⌘F' : 'Ctrl+F / F3'
+  case 'refresh': return mac ? '' : 'F5 / Ctrl+R'
+  case 'new-folder': return mac ? '⌘⇧N' : 'Ctrl+Shift+N'
+  case 'toggle-inspector': return mac ? '⌘⇧P' : 'Alt+P'
+  case 'undo': return mac ? '⌘Z' : 'Ctrl+Z'
+  case 'redo': return mac ? '⌘⇧Z' : 'Ctrl+Y / Ctrl+Shift+Z'
+  case 'rename': return mac ? 'Enter' : 'F2'
+  case 'context-menu': return mac ? '' : 'Shift+F10'
+  case 'select-all': return mac ? '⌘A' : 'Ctrl+A'
+  case 'copy': return mac ? '⌘C' : 'Ctrl+C / Ctrl+Insert'
+  case 'copy-path': return mac ? '⌥⌘C' : 'Ctrl+Shift+C'
+  case 'cut': return mac ? '⌘X' : 'Ctrl+X'
+  case 'paste': return mac ? '⌘V' : 'Ctrl+V / Shift+Insert'
+  case 'delete': return mac ? '⌘⌫' : 'Delete / Ctrl+D'
+  case 'properties': return mac ? '⌘I' : 'Alt+Enter'
+  case 'open': return mac ? '⌘↓ / ⌘O' : 'Enter'
+  case 'quick-look': return mac ? 'Space / ⌘Y' : 'Space'
+  default: return ''
+  }
+}
+
 export function xDriveFileExplorerPrimaryModifierActive(
   event: XDriveFileExplorerKeyboardEventLike,
   profile: XDriveFileExplorerKeyboardProfile,

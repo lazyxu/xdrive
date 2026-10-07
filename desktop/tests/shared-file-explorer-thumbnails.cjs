@@ -55,6 +55,23 @@ test('Recent preserves thumbnail identity and only supported image media is elig
 })
 
 
+test('FileExplorer file thumbnails use square frames without rounded clipping', () => {
+  assert.ok(
+    explorer.includes("width: 24,\n                            height: 24,\n                            flex: '0 0 24px',\n                            overflow: 'hidden',\n                            borderRadius: 0,"),
+    'Details thumbnail frame must remain square',
+  )
+  assert.ok(
+    explorer.includes("width: gridMetrics.thumbnailWidth,\n            height: gridMetrics.thumbnailHeight,") &&
+      explorer.includes("overflow: 'hidden',\n            borderRadius: 0,\n            position: 'relative',"),
+    'Grid thumbnail frame must remain square',
+  )
+  assert.equal(
+    (pane.match(/width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0/g) || []).length,
+    2,
+    'Favorite and Recent file thumbnail frames must remain square',
+  )
+})
+
 test('navigation thumbnail projections do not restart work on fresh item object identity', () => {
   assert.ok(thumbnail.includes('const itemRef = useRef(item)'))
   assert.ok(thumbnail.includes('itemRef.current = item'))
