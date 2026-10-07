@@ -3,6 +3,7 @@ export type XDriveFileExplorerKeyboardProfile = 'windows' | 'macos' | 'web'
 export type XDriveFileExplorerKeyboardCommand =
   | 'new-tab'
   | 'close-tab'
+  | 'restore-closed-tab'
   | 'next-tab'
   | 'previous-tab'
   | 'back'
@@ -133,6 +134,7 @@ export function xDriveFileExplorerKeyboardCommand(
   }
 
   if (xDriveFileExplorerPrimaryOnly(event, profile, true)) {
+    if (key === 't') return 'restore-closed-tab'
     if (key === 'tab') return 'previous-tab'
     if (key === 'n') return 'new-folder'
     if (key === 'z') return 'redo'

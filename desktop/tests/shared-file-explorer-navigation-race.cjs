@@ -1534,3 +1534,133 @@ test('completed cut paste clears the unchanged clipboard generation', async () =
     'the exact cut clipboard submitted by Paste must still clear after successful queueing',
   )
 })
+
+
+test('deep tab actions preserve ordering, duplicate state and original restore slots', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+  const folderC = { id: 4, name: 'C' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+  const tabB = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderC]), true)
+  navigation = harness.render()
+  const tabC = navigation.activeTabID
+
+  assert.equal(navigation.reorderTab(tabC, tabA, 'before'), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabC, tabA, tabB],
+    'drag reorder must change tab order without changing active tab identity',
+  )
+
+  assert.equal(await navigation.duplicateTab(tabA), true)
+  navigation = harness.render()
+  const duplicateA = navigation.activeTabID
+  assert.notEqual(duplicateA, tabA)
+  assert.equal(
+    navigation.tabs.find((tab) => tab.id === duplicateA)?.label,
+    folderA.name,
+    'duplicate tab must preserve the source tab current directory',
+  )
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+
+  assert.equal(await navigation.closeTabsToRight(tabA), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabC, tabA],
+    'close-right must keep the target and everything to its left',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.canRestoreClosedTab, true)
+
+  assert.equal(await navigation.restoreClosedTab(), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabC, tabA, tabB],
+    'the most recently closed rightmost tab must restore into its original slot',
+  )
+  assert.equal(navigation.activeTabID, tabB)
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+
+  assert.equal(await navigation.restoreClosedTab(), true)
+  navigation = harness.render()
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    ['tab-1', tabC, tabA, duplicateA, tabB],
+    'the next restore must recover the duplicated tab at its original index',
+  )
+  assert.equal(navigation.activeTabID, duplicateA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+
+  assert.equal(await navigation.closeOtherTabs(tabC), true)
+  navigation = harness.render()
+  assert.deepEqual(navigation.tabs.map((tab) => tab.id), [tabC])
+  assert.equal(navigation.activeTabID, tabC)
+  assert.equal(driver.visibleDirectoryID, folderC.id)
+  assert.equal(navigation.pathValue, '我的文件/C')
+})
+
+test('pending duplicate tab cannot override a newer tab activation', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+  const tabB = navigation.activeTabID
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+
+  driver.controlRequests()
+
+  const staleDuplicate = navigation.duplicateTab(tabA)
+  const newerActivation = navigation.activateTab(tabB)
+
+  driver.resolveDirectory(folderB.id)
+  await newerActivation
+
+  driver.resolveDirectory(folderA.id)
+  assert.equal(
+    await staleDuplicate,
+    false,
+    'an older duplicate load must be fenced after a newer tab activation wins',
+  )
+
+  const finalNavigation = harness.render()
+  assert.equal(finalNavigation.tabs.length, 3)
+  assert.equal(finalNavigation.activeTabID, tabB)
+  assert.equal(driver.visibleDirectoryID, folderB.id)
+  assert.equal(finalNavigation.current.id, folderB.id)
+  assert.equal(finalNavigation.pathValue, '我的文件/B')
+})
