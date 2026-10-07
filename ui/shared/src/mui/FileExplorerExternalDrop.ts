@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import type { Node } from '../models'
 import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
 import { xDriveFileExplorerExternalDropParentID } from '../file-explorer-controller'
@@ -29,11 +29,8 @@ export type XDriveFileExplorerExternalDropControllerOptions<
     parentID: number,
     payload: XDriveFileExplorerExternalDropPayload,
   ) => Promise<boolean | void>
-  refreshDirectory: (
-    id: number,
-    crumbs: TCrumb[],
-    sort: TSort,
-    grouping: XDriveFileExplorerGrouping,
+  refreshCurrentDirectoryIfIdle: (
+    expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
 }
 
@@ -43,53 +40,22 @@ export function useXDriveFileExplorerExternalDropController<
   TSort,
 >({
   currentID,
-  currentCrumbs,
-  sort,
-  currentGrouping,
   nodeByID,
   disabled = false,
   folderDropEnabled = true,
   uploadFilesToParent,
   uploadFolderEntriesToParent,
-  refreshDirectory,
+  refreshCurrentDirectoryIfIdle,
 }: XDriveFileExplorerExternalDropControllerOptions<TNode, TCrumb, TSort>) {
-  const currentContextRef = useRef({
-    currentID,
-    currentCrumbs,
-    sort,
-    grouping: currentGrouping,
-  })
-  currentContextRef.current = {
-    currentID,
-    currentCrumbs,
-    sort,
-    grouping: currentGrouping,
-  }
-
-  const refreshCurrentDirectory = useCallback(async (
-    expectedCurrentID: number | undefined,
-  ) => {
-    const latest = currentContextRef.current
-    if (
-      expectedCurrentID === undefined ||
-      latest.currentID !== expectedCurrentID
-    ) return
-    await refreshDirectory(
-      latest.currentID,
-      [...latest.currentCrumbs],
-      latest.sort,
-      latest.grouping,
-    )
-  }, [refreshDirectory])
 
   const dropFilesToParent = useCallback(async (files: File[], parentID: number) => {
     if (disabled || files.length === 0) return
     const expectedCurrentID = currentID
     const shouldRefresh = await uploadFilesToParent(parentID, files)
     if (shouldRefresh !== false) {
-      await refreshCurrentDirectory(expectedCurrentID)
+      await refreshCurrentDirectoryIfIdle(expectedCurrentID)
     }
-  }, [currentID, disabled, refreshCurrentDirectory, uploadFilesToParent])
+  }, [currentID, disabled, refreshCurrentDirectoryIfIdle, uploadFilesToParent])
 
   const dropFiles = useCallback(async (
     files: File[],
@@ -112,13 +78,13 @@ export function useXDriveFileExplorerExternalDropController<
     const expectedCurrentID = currentID
     const shouldRefresh = await uploadFolderEntriesToParent(parentID, payload)
     if (shouldRefresh !== false) {
-      await refreshCurrentDirectory(expectedCurrentID)
+      await refreshCurrentDirectoryIfIdle(expectedCurrentID)
     }
   }, [
     currentID,
     disabled,
     folderDropEnabled,
-    refreshCurrentDirectory,
+    refreshCurrentDirectoryIfIdle,
     uploadFolderEntriesToParent,
   ])
 

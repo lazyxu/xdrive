@@ -171,6 +171,20 @@ function loadNavigationHook(react) {
   ).useXDriveFileExplorerNavigation
 }
 
+function loadExternalDropHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'],
+    react,
+    {
+      '../file-explorer-controller': {
+        xDriveFileExplorerExternalDropParentID: (currentID, target) => (
+          target?.kind === 'dir' ? Number(target.id) : currentID
+        ),
+      },
+    },
+  ).useXDriveFileExplorerExternalDropController
+}
+
 async function flushAsync() {
   for (let index = 0; index < 8; index += 1) await Promise.resolve()
 }
@@ -1543,5 +1557,186 @@ test('Desktop owns transient FileExplorer navigation state above the Agent disco
   assert.ok(
     workspaceSource.includes('initialNavigationState'),
     'the shared workspace must support a caller-owned transient navigation snapshot',
+  )
+})
+
+
+test('external drop completion cannot cancel a pending manual tab navigation', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const useExternalDrop = loadExternalDropHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let betaPending = false
+    let releasePendingBeta
+    let releaseUpload
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && betaPending) {
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(page(parentID, offset, limit))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'external-drop-vs-tab-navigation',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      const externalDrop = useExternalDrop({
+        currentID: cloud.current?.id,
+        currentCrumbs: cloud.crumbs,
+        sort: cloud.sort,
+        currentGrouping: cloud.grouping,
+        nodeByID: new Map(),
+        uploadFilesToParent: async () => new Promise((resolve) => {
+          releaseUpload = () => resolve(true)
+        }),
+        uploadFolderEntriesToParent: async () => false,
+        // Keep the legacy raw loader present in the harness so this test
+        // fails against the old controller that preferred it.
+        refreshDirectory: cloud.loadDirectory,
+        refreshCurrentDirectoryIfIdle: cloud.refreshCurrentDirectoryIfIdle,
+      })
+      return { cloud, navigation, externalDrop }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(await app.navigation.openTab([root, beta]), true)
+    app = render()
+    await app.navigation.activateTab('tab-1')
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.activeTabID, 'tab-1')
+
+    const pendingDrop = app.externalDrop.dropFiles([{}])
+    await flushAsync()
+    assert.equal(typeof releaseUpload, 'function')
+
+    betaPending = true
+    const activateBeta = app.navigation.activateTab('tab-2')
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    releaseUpload()
+    await pendingDrop
+
+    releasePendingBeta()
+    await activateBeta
+    app = render()
+
+    assert.equal(
+      app.cloud.current?.id,
+      beta.id,
+      'an older external-drop completion must not reload Alpha and cancel the pending Beta navigation',
+    )
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+test('Web and Desktop external drop use the CloudFiles guarded idle refresh adapter', () => {
+  const controllerSource = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerExternalDrop.ts'),
+    'utf8',
+  )
+  const webSource = fs.readFileSync(
+    path.join(repo, 'web', 'src', 'WebFileExplorer.tsx'),
+    'utf8',
+  )
+  const desktopSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'),
+    'utf8',
+  )
+
+  assert.ok(
+    controllerSource.includes('refreshCurrentDirectoryIfIdle'),
+    'shared ExternalDrop must consume the guarded current-directory refresh adapter',
+  )
+  assert.equal(
+    controllerSource.includes('currentContextRef'),
+    false,
+    'ExternalDrop must not rebuild the old current-ID-only refresh fence',
+  )
+  assert.ok(
+    webSource.includes('refreshCurrentDirectoryIfIdle: onRefreshCurrentDirectoryIfIdle'),
+    'Web external drop must pass the CloudFiles idle refresh guard',
+  )
+  assert.equal(
+    webSource.includes('refreshDirectory: onLoadDirectory'),
+    false,
+    'Web external drop must not pass the raw directory loader as a background refresh',
+  )
+  assert.ok(
+    desktopSource.includes('refreshCurrentDirectoryIfIdle: onRefreshCurrentDirectoryIfIdle'),
+    'Desktop external drop must pass the CloudFiles idle refresh guard',
+  )
+  assert.equal(
+    desktopSource.includes('refreshDirectory: onLoadDirectory'),
+    false,
+    'Desktop external drop must not pass the raw directory loader as a background refresh',
   )
 })
