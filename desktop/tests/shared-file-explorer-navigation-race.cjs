@@ -2110,3 +2110,60 @@ test('closing an unrelated tab does not cancel a pending duplicate owned by a su
   assert.equal(driver.visibleDirectoryID, folderB.id)
   assert.equal(navigation.pathValue, '我的文件/B')
 })
+
+
+test('stale Search clear captured by an older mutation cannot erase a newer submitted Search', async () => {
+  const runtime = createHookRuntime()
+  const useSearch = loadSearchHook(runtime.react)
+  const loadRange = async (query, _filters, _grouping, _sort, offset, limit) => ({
+    items: [{ node: { id: query === 'new' ? 20 : 10 }, path: '/' + query }],
+    totalCount: 1,
+    offset,
+    limit,
+  })
+  const errors = []
+  const renderSearch = () => runtime.render(() => useSearch({
+    loadRange,
+    sort: { key: 'name', direction: 'asc' },
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onError: (error) => errors.push(error),
+  }))
+
+  let search = renderSearch()
+  await search.submitSearch('old')
+  search = renderSearch()
+  assert.equal(search.searchState.query, 'old')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [10])
+
+  // Model renameItem(): it captures clearSearch when the async rename starts.
+  const staleMutationClearSearch = search.clearSearch
+
+  // Before the old mutation completes, the user submits a newer Search.
+  await search.submitSearch('new')
+  search = renderSearch()
+  assert.equal(search.searchState.query, 'new')
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
+
+  // The old mutation completion must not clear Search state created after it.
+  const cleared = staleMutationClearSearch()
+  search = renderSearch()
+
+  assert.equal(
+    cleared,
+    false,
+    'a clearSearch callback captured by an older mutation must reject a newer Search generation',
+  )
+  assert.equal(
+    search.searchState.query,
+    'new',
+    'older rename completion must not erase the user\'s newer submitted Search',
+  )
+  assert.deepEqual(search.searchResults.map((item) => item.node.id), [20])
+
+  // The clear callback from the current Search generation must still work.
+  assert.equal(search.clearSearch(), true)
+  search = renderSearch()
+  assert.equal(search.searchResults, null)
+  assert.equal(search.searchState.query, '')
+  assert.equal(errors.length, 0)
+})
