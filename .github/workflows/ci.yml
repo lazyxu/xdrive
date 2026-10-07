@@ -359,8 +359,41 @@ jobs:
         working-directory: desktop
         run: node --expose-gc --test tests/file-explorer-virtual-collection-performance.cjs
 
+  file-explorer-media-server-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-real-media-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_MEDIA_SERVER_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure real FileExplorer Server/object-store 100k media matrix
+        run: go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
+
   file-explorer-media-renderer-trace:
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/file-explorer-media-')
+    if: >-
+      github.event_name == 'pull_request' &&
+      (startsWith(github.head_ref, 'perf/file-explorer-media-') ||
+       github.head_ref == 'perf/file-explorer-real-media-100k')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

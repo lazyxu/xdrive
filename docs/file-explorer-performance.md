@@ -24,7 +24,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
-| 100k image/video media-directory traces | **Synthetic trace measured / real dataset pending** | Measured structural + diagnostic timing | First Web/Desktop Chromium run confirms 80 initial / 110 max mounted items, 1200 peak retained metadata, <=6 thumbnail in-flight, and 0 video-icon thumbnail requests. Wall-clock/RSS remain diagnostic single-run samples; real Server/object-store runs are still required. |
+| 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
 
 ## Current performance contract
 
@@ -145,7 +145,36 @@ Stable workload:
 
 Command:
 
-`XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF=1 go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline
+`XD_FILEEXPLORER_THUMBNAIL_TRANSPORT_PERF=1 go test -run '^TestFileExplorerDesktopThumbnailWarmTransportBaseline$' -count=1 -v ./internal/client`
+
+
+Measured evidence:
+
+- BEFORE baseline, branch-scoped GitHub CI:
+  - upstream/full GET requests: **600**
+  - conditional `If-None-Match` requests: **0**
+  - response payload: **39,321,600 bytes (37.5 MiB)**
+  - diagnostic wall time: **162.373 ms** in the original baseline run; a later paired CI run measured **82.651 ms**
+- AFTER Agent-cache run from PR #720 authoritative CI:
+  - upstream requests: **200**
+  - upstream payload: **13,107,200 bytes (12.5 MiB)**
+  - unique thumbnails: **200**
+  - passes: **3**
+  - thumbnail payload: **64 KiB**
+  - diagnostic cache-layer wall time: **0.158 ms**
+- structural delta:
+  - upstream requests: **600 -> 200**, **-66.7% / 3x fewer**
+  - upstream payload: **39,321,600 -> 13,107,200 bytes**, **-66.7%**
+  - bytes avoided on the stable workload: **26,214,400 bytes (25 MiB)**
+
+The wall-time values are **not comparable** and remain diagnostic only: the baseline measures the Go client/httptest transport path while the AFTER cache benchmark measures the in-process Agent cache layer. No wall-clock speedup or regression budget is claimed from those values.
+
+Decision: **accept the bounded Desktop Agent thumbnail cache**. The deterministic request/byte counters materially improve on the exact baseline while the implementation keeps resident entries/bytes bounded, singleflights concurrent misses, and revalidates expired entries with ETag.
+
+Next action: use this accepted warm-cache transport as an input to the planned **100k image cold/warm media-directory traces**, where renderer CPU, long tasks/FPS, RSS, Blob URL memory, request counts, and Web-vs-Desktop transport can be measured end to end.
+
+
+
 ## Current video-thumbnail capability gap
 
 The Server media-thumbnail endpoint is currently image-only. FileExplorer now mirrors that capability instead of speculatively scheduling video thumbnails:
@@ -163,9 +192,9 @@ Gallery's client-side video poster fallback remains Gallery-specific; it loads a
 
 ### Synthetic renderer trace harness
 
-A dedicated opt-in CI job on `perf/file-explorer-media-*` branches drives the actual Web and Desktop Chromium renderers with a deterministic **100,000-item sparse namespace**. It executes the same script on both surfaces: initial Grid mount, continuous scroll, midpoint jump, end jump, and return to top.
+A dedicated opt-in CI job on `perf/file-explorer-media-*` branches drives the actual Web and Desktop Chromium renderers with a deterministic **100,000-item sparse namespace**. It executes the same script on both surfaces: initial Grid mount, continuous scroll, midpoint jump, end jump, return to top, and a native Chromium mouse-driven marquee selection across the Grid viewport.
 
-The harness records time-to-first-grid, scripted trace duration, Long Task count/duration, maximum mounted FileExplorer item nodes, maximum retained sparse metadata, thumbnail request count and peak in-flight requests, JS heap when Chromium exposes it, Electron renderer working-set memory, and a Chrome trace artifact.
+The harness records time-to-first-grid, scripted trace duration, Long Task count/duration, maximum mounted FileExplorer item nodes, maximum retained sparse metadata, thumbnail request count and peak in-flight requests, marquee duration/selection commits/selected-item peak, JS heap when Chromium exposes it, Electron renderer working-set memory, and a Chrome trace artifact.
 
 Structural CI guards are intentionally strict while timing remains diagnostic: mounted items must stay **< 1,000**, retained sparse metadata must stay **<= 1,200**, image thumbnail in-flight work must stay **<= 6**, the warm synthetic image scenario must stay at **<= 600 thumbnail requests**, and the video icon-fallback scenario must issue **0 thumbnail requests**.
 
@@ -222,13 +251,78 @@ Compared with the immediately preceding #728 renderer trace using the same harne
 Decision: **accept scroll-settled thumbnail admission**. The first trace isolates request/Blob churn as the dominant cause of the prior warm Web outlier. Keep the existing **6-request concurrency** and **96-entry cache** unchanged; use the warm **<= 600 request** guard as a conservative structural regression budget. Continue treating timing and RSS as diagnostic until repeated hosted-runner samples establish variance.
 
 
+#### Second scroll-settle sample (#731 final CI)
+
+The final authoritative CI run for PR #731 repeated the same six scenarios after the amend, with no production-setting changes between samples.
+
+| Surface | Scenario | First grid | Script duration | Long tasks | Long-task time | Thumbnail requests | Peak in-flight | Max mounted | Peak retained | Renderer RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | image cold | 217.8 ms | 2400.4 ms | 1 | 72 ms | 102 | 6 | 110 | 1200 | 277,248 KiB |
+| Desktop | image warm | 249.2 ms | 2419.0 ms | 2 | 138 ms | 184 | 1 | 110 | 1200 | 278,132 KiB |
+| Desktop | video icons | 218.7 ms | 2237.0 ms | 1 | 77 ms | 0 | 0 | 110 | 1200 | 257,812 KiB |
+| Web | image cold | 239.5 ms | 2472.2 ms | 2 | 134 ms | 102 | 6 | 110 | 1200 | 284,164 KiB |
+| Web | image warm | 334.1 ms | 2798.1 ms | 3 | 229 ms | 184 | 1 | 110 | 1200 | 298,372 KiB |
+| Web | video icons | 224.4 ms | 2392.4 ms | 1 | 79 ms | 0 | 0 | 110 | 1200 | 256,448 KiB |
+
+Across the two post-settle samples, the structural signals are stable:
+
+- warm thumbnail admission is exactly **184 requests** for both Desktop and Web in both runs;
+- Web cold is exactly **102 requests** in both runs; Desktop cold is **106 -> 102**;
+- video icon fallback remains exactly **0 thumbnail requests** on both surfaces;
+- peak thumbnail concurrency remains **6** for cold images and **1** for the zero-latency warm fixture;
+- mounted DOM and sparse metadata remain exactly **110** and **1200** at their peaks.
+
+Hosted-runner timing still varies enough to remain diagnostic. The second Web warm run moved from **2.54 s -> 2.80 s (+10.1%)**, while renderer RSS moved only **292,820 -> 298,372 KiB (+1.9%)** and admission stayed fixed at **184**. Long-task observations also moved from **1 / 77 ms** to **3 / 229 ms** without any structural request growth.
+
+Decision after the second sample: keep the current **80 ms scroll-settle**, **6-request concurrency**, **96-entry cache**, and **<=600 warm-request** structural guard unchanged. Do not add another production thumbnail optimization from synthetic timing alone. The next evidence must come from the real Server/object-store 100k image cold/warm and video icon-fallback matrix.
+
+#### Real Server/object-store 100k sample (#734)
+
+PR #734 adds a real production-path Server benchmark instead of another synthetic thumbnail transport. The fixture uses a real PostgreSQL **100,000-file** namespace per media case, the production Gin handlers, the production media-derivative scheduler, and `storage.Local`. The image namespace maps onto **128 physical 800x600 JPEG CAS objects** so the logical directory remains 100k while the measured top/middle/end sample contains **102 distinct source objects**. Cold and warm runs use the exact same 102 node IDs.
+
+| Scenario | First range median | Middle range median | End range median | 102-thumbnail batch | p50 thumbnail | p95 thumbnail | Response bytes | Object-store behavior |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Image cold | 234.558 ms | 222.277 ms | 235.727 ms | 1248.984 ms | 70.311 ms | 102.139 ms | 2,610,039 | 102 original opens, 204 derived opens, 102 derived puts |
+| Image warm | 234.558 ms | 222.277 ms | 235.727 ms | 70.345 ms | 3.722 ms | 6.227 ms | 2,610,039 | **0 original opens**, 102 derived opens, **0 derived puts** |
+| Video icons | 219.400 ms | 197.063 ms | 206.675 ms | n/a | n/a | n/a | n/a | **0 thumbnail requests, 0 object-store opens, 0 derived puts** |
+
+Structural conclusions:
+
+- cold generation proves the sampled 102 requests are not accidentally deduplicated into a warm workload: there are exactly **102 distinct originals**, **102 original object opens**, and **102 derived writes**;
+- warm serving proves the derivative cache is actually hit: source-object opens fall **102 -> 0** and derivative writes fall **102 -> 0**, while response bytes stay identical;
+- diagnostic batch time falls **1248.984 -> 70.345 ms (17.8x)**; p50 falls **70.311 -> 3.722 ms (18.9x)** and p95 falls **102.139 -> 6.227 ms (16.4x)**;
+- the current ordinary-video icon path performs no speculative media fetch at all: **0 thumbnail requests and 0 object-store I/O**;
+- the cold path's two successful derived opens per newly generated thumbnail are visible in the counter (**204 opens for 102 thumbnails**), but current local-object-store timing does not justify changing production behavior from that count alone.
+
+A second authoritative CI sample reproduced the structural result exactly: cold remained **102 original opens / 102 derivative writes**, warm remained **0 / 0** with **102 derivative reads**, and video fallback remained **0 thumbnail requests / 0 object-store opens**. The repeated range medians stayed in the same band: image **212.699-236.452 ms** and video **199.079-219.704 ms**.
+
+Decision from the real Server/object-store samples: **do not change thumbnail concurrency, the 96-entry FileExplorer cache, scroll-settle timing, or video fallback.** The warm cache path removes source reads and derivative writes exactly as designed. Hosted-runner timing remains diagnostic.
+
+#### Marquee-selection Chromium trace (#734)
+
+The same Web/Desktop 100k renderer harness now performs a native Chromium mouse-driven marquee after the scroll/jump sequence. Electron sends a real mouse-down, 12 paced mouse moves, and mouse-up; FileExplorer handles them through the production pointer/rAF/virtual-geometry selection path.
+
+| Surface | Scenario | Marquee duration | Selection commits | Final / peak selected | Long tasks | Long-task time | Thumbnail requests | Max mounted | Peak retained |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | image cold | 398.7 ms | 12 | 18 / 18 | 1 | 54 ms | 101 | 110 | 1200 |
+| Desktop | image warm | 416.1 ms | 12 | 18 / 18 | 1 | 56 ms | 184 | 110 | 1200 |
+| Desktop | video icons | 349.7 ms | 11 | 18 / 18 | 1 | 51 ms | 0 | 110 | 1200 |
+| Web | image cold | 300.2 ms | 12 | 18 / 18 | 1 | 75 ms | 94 | 110 | 1200 |
+| Web | image warm | 373.5 ms | 12 | 18 / 18 | 1 | 60 ms | 184 | 110 | 1200 |
+| Web | video icons | 332.8 ms | 12 | 18 / 18 | 1 | 57 ms | 0 | 110 | 1200 |
+
+The marquee duration is **not** a CPU-only latency metric: the driver intentionally includes 12 x 16 ms mouse pacing, a 50 ms input settle, polling, and post-input animation frames. The structural signal is what matters: all six runs completed a non-empty selection, selection work stayed frame-coalesced, DOM/metadata bounds did not grow, and marquee interaction did not create a new thumbnail-request class.
+
+**Production decision after #734:** stop optimizing FileExplorer thumbnail/marquee behavior here. The backend cache path, renderer admission, sparse metadata, DOM bounds, and marquee interaction are healthy enough that another thumbnail or selection change would be speculative. The only repeatable cost now worth a separate investigation is the **100k file-heavy sparse range query (~200-236 ms per range)**. Because first/middle/end are all similar and the current range SQL uses `COUNT(*) OVER()`, the next performance PR should first A/B a **count-once / count-free subsequent-range** contract on the exact same fixture; only change production SQL/API if that paired measurement shows a material win without weakening count correctness.
+
+
 The following four workloads are mandatory before claiming FileExplorer is validated for 100k media-heavy directories. “No thumbnails” means a **cold thumbnail cache at benchmark start**; “with thumbnails” means the same dataset with thumbnails already materialized/warm. The logical directory remains 100,000 items in all four cases.
 
 | Scenario | Thumbnail state | Status | What must be measured |
 | --- | --- | --- | --- |
-| 100k images | Cold / no pre-existing thumbnails | **Planned - not measured** | first-page latency, time-to-first-grid, viewport/scroll CPU, long tasks/FPS, renderer RSS, thumbnail request count, peak in-flight, cold thumbnail latency, bytes transferred, retained metadata |
-| 100k images | Warm / thumbnails pre-existing | **Planned - not measured** | same metrics plus thumbnail cache hit behavior and Blob URL memory; compare directly with cold image run |
-| 100k videos | Image-thumbnail suppression / icon fallback | **Planned - not measured** | first-page/grid latency, verify **0** image-thumbnail requests for ordinary videos, long tasks/FPS, renderer RSS, and icon-fallback latency |
+| 100k images | Cold / no pre-existing thumbnails | **Server/object-store measured; Chromium renderer + marquee measured** | Backend generation/cache and renderer interaction are measured separately; a combined browser-to-real-Server trace is optional future evidence, not a blocker for the current decision. |
+| 100k images | Warm / thumbnails pre-existing | **Server/object-store measured; Chromium renderer + marquee measured** | Warm derivative hits and renderer Blob/commit behavior are covered at their respective layers. |
+| 100k videos | Image-thumbnail suppression / icon fallback | **Server/object-store measured; Chromium renderer + marquee measured** | Real namespace and renderer both preserve **0** thumbnail requests for ordinary videos. |
 | 100k videos | Warm / poster thumbnails pre-existing | **Blocked - capability not implemented** | FileExplorer Server thumbnail endpoint is image-only today; measure only after a real video-poster thumbnail contract exists |
 
 ### Current assessment of the four 100k media cases
@@ -246,7 +340,7 @@ The following four workloads are mandatory before claiming FileExplorer is valid
 - Run both **Web** and **Desktop** for warm-thumbnail transport because Desktop uses Agent IPC/ArrayBuffer while Web uses HTTP/Blob transport.
 - For the current video fallback run, assert that ordinary video tiles do not call the image-thumbnail endpoint. Once a real poster generator exists, benchmark its Server/Agent extraction time separately from renderer time.
 - The pure Node VirtualCollection baseline above is a prerequisite reference, not a substitute for these browser/Electron traces.
-- Until these four runs have real numbers, keep their status as **Planned - not measured** and do not claim that 100k thumbnail-heavy media directories are fully validated.
+- Do not claim the image cases are fully end-to-end validated until the real Server/object-store fixture is connected to the Web/Desktop renderer transport. The current Server/object-store sample and synthetic Chromium trace measure complementary layers rather than one combined pipeline.
 
 ## Performance scenarios
 
@@ -263,13 +357,11 @@ The FileExplorer performance suite should keep these workloads stable:
 
 ## Next work
 
-1. Use the PR #731 amend rerun as a second scroll-settle sample; keep request count as the structural signal and wall-clock/RSS diagnostic until variance is understood.
-2. If Web warm RSS/long tasks become an outlier again while request count stays bounded, profile Blob/image decode/commit lifetime before changing thumbnail concurrency or cache size.
-3. Run the **real 100k media-directory matrix** against Server/object storage: image cold/warm and current video icon fallback; keep warm video posters blocked until the real poster contract exists.
-4. Extend the renderer trace script with marquee-selection interaction after the scroll/jump baseline is stable.
-5. Use the 100k VirtualCollection CPU baseline as the controller reference while establishing renderer long-task/RSS budgets; do not conflate the two layers.
-6. Promote only stable structural/render budgets into normal CI; keep noisy hosted-runner timing out of merge gates.
-7. Revisit directory sort indexing only if a future measured workload materially exceeds the baselines above; the first type-expression-index attempt was rejected.
+1. **No further thumbnail or marquee production tuning from #734.** Keep the current **80 ms scroll-settle**, **6-request thumbnail concurrency**, **96-entry FileExplorer cache**, video icon fallback, and virtual-geometry marquee implementation.
+2. The next performance investigation is **100k file-heavy sparse range count cost**. A/B the current `COUNT(*) OVER()` range query against a count-once / count-free subsequent-range contract on the same PostgreSQL fixture, including first/middle/end ranges and repeated viewport loads.
+3. Only promote that investigation into a production API/SQL change if the paired benchmark shows a repeatable material improvement and preserves exact total-count semantics across navigation-generation resets and directory mutations.
+4. Keep a combined browser-to-real-Server trace as optional validation if field behavior later disagrees with the separate backend and Chromium measurements; do not build it merely to chase hosted-runner timing.
+5. Warm FileExplorer video posters remain blocked until the product has a real derived/cached poster contract.
 
 Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
 
@@ -280,116 +372,3 @@ The FileExplorer surface can separate the logical directory item count from load
 
 
 Before sparse runtime is enabled, item interactions must also be logical-index aware. Active item, rename recovery, marquee hit-testing, and keyboard targets resolve against loaded sparse logical indexes. Shift ranges are committed only when every logical item in the requested range is loaded; otherwise FileExplorer requests that range instead of silently selecting a partial loaded subset. Full Ctrl+A / cross-unloaded-range bulk selection remains a separate selection-model problem and must not be faked by selecting only loaded items.
- -count=1 -v ./internal/client`
-
-Measured evidence:
-
-- BEFORE baseline, branch-scoped GitHub CI:
-  - upstream/full GET requests: **600**
-  - conditional `If-None-Match` requests: **0**
-  - response payload: **39,321,600 bytes (37.5 MiB)**
-  - diagnostic wall time: **162.373 ms** in the original baseline run; a later paired CI run measured **82.651 ms**
-- AFTER Agent-cache run from PR #720 authoritative CI:
-  - upstream requests: **200**
-  - upstream payload: **13,107,200 bytes (12.5 MiB)**
-  - unique thumbnails: **200**
-  - passes: **3**
-  - thumbnail payload: **64 KiB**
-  - diagnostic cache-layer wall time: **0.158 ms**
-- structural delta:
-  - upstream requests: **600 -> 200**, **-66.7% / 3x fewer**
-  - upstream payload: **39,321,600 -> 13,107,200 bytes**, **-66.7%**
-  - bytes avoided on the stable workload: **26,214,400 bytes (25 MiB)**
-
-The wall-time values are **not comparable** and remain diagnostic only: the baseline measures the Go client/httptest transport path while the AFTER cache benchmark measures the in-process Agent cache layer. No wall-clock speedup or regression budget is claimed from those values.
-
-Decision: **accept the bounded Desktop Agent thumbnail cache**. The deterministic request/byte counters materially improve on the exact baseline while the implementation keeps resident entries/bytes bounded, singleflights concurrent misses, and revalidates expired entries with ETag.
-
-Next action: use this accepted warm-cache transport as an input to the planned **100k image cold/warm media-directory traces**, where renderer CPU, long tasks/FPS, RSS, Blob URL memory, request counts, and Web-vs-Desktop transport can be measured end to end.
-
-## Current video-thumbnail capability gap
-
-The Server media-thumbnail endpoint is currently image-only. FileExplorer now mirrors that capability instead of speculatively scheduling video thumbnails:
-
-- `xDriveFileSupportsThumbnail()` is image-only by default.
-- Grid, Inspector, and Quick Look no longer send ordinary video files through the image-thumbnail loader.
-- Video files continue to use their normal video icon and the shared preview engine for actual video playback.
-- The explicit `thumbnailEligible` override remains available for a future capability-aware adapter, but current Web/Desktop FileExplorer projections do not opt videos into it.
-
-This removes the previous 415/fallback request path from video-heavy directories. A real derived/cached video-poster contract is still required before FileExplorer can offer warm video poster thumbnails.
-
-Gallery's client-side video poster fallback remains Gallery-specific; it loads a video preview and captures a canvas frame, which is not a reusable FileExplorer thumbnail cache and should not be treated as the future FileExplorer poster contract.
-
-## 100k media-directory benchmark matrix
-
-### Synthetic renderer trace harness
-
-A dedicated opt-in CI job on `perf/file-explorer-media-*` branches drives the actual Web and Desktop Chromium renderers with a deterministic **100,000-item sparse namespace**. It executes the same script on both surfaces: initial Grid mount, continuous scroll, midpoint jump, end jump, and return to top.
-
-The harness records time-to-first-grid, scripted trace duration, Long Task count/duration, maximum mounted FileExplorer item nodes, maximum retained sparse metadata, thumbnail request count and peak in-flight requests, JS heap when Chromium exposes it, Electron renderer working-set memory, and a Chrome trace artifact.
-
-Structural CI guards are intentionally strict while timing remains diagnostic: mounted items must stay **< 1,000**, retained sparse metadata must stay **<= 1,200**, image thumbnail in-flight work must stay **<= 6**, the warm synthetic image scenario must stay at **<= 600 thumbnail requests**, and the video icon-fallback scenario must issue **0 thumbnail requests**.
-
-Thumbnail admission is scroll-settled: every FileExplorer scroll records activity on the real scroll host, and newly visible/near-visible thumbnail tiles wait until **80 ms after the latest scroll event** before entering the thumbnail queue. Initial/static viewport thumbnails remain immediate; continuous scrolling keeps pushing admission back, and unmounted tiles cancel their pending admission timer before any loader/Blob work begins.
-
-This is a **synthetic renderer/thumbnail-scheduler workload**, not a replacement for the real Server/object-store matrix below. It does not claim cold thumbnail generation latency, object-store throughput, HTTP/Agent transport throughput, or real codec decode cost. Those remain pending on a real 100k dataset.
-
-The following four workloads are mandatory before claiming FileExplorer is validated for 100k media-heavy directories. “No thumbnails” means a **cold thumbnail cache at benchmark start**; “with thumbnails” means the same dataset with thumbnails already materialized/warm. The logical directory remains 100,000 items in all four cases.
-
-| Scenario | Thumbnail state | Status | What must be measured |
-| --- | --- | --- | --- |
-| 100k images | Cold / no pre-existing thumbnails | **Planned - not measured** | first-page latency, time-to-first-grid, viewport/scroll CPU, long tasks/FPS, renderer RSS, thumbnail request count, peak in-flight, cold thumbnail latency, bytes transferred, retained metadata |
-| 100k images | Warm / thumbnails pre-existing | **Planned - not measured** | same metrics plus thumbnail cache hit behavior and Blob URL memory; compare directly with cold image run |
-| 100k videos | Image-thumbnail suppression / icon fallback | **Planned - not measured** | first-page/grid latency, verify **0** image-thumbnail requests for ordinary videos, long tasks/FPS, renderer RSS, and icon-fallback latency |
-| 100k videos | Warm / poster thumbnails pre-existing | **Blocked - capability not implemented** | FileExplorer Server thumbnail endpoint is image-only today; measure only after a real video-poster thumbnail contract exists |
-
-### Current assessment of the four 100k media cases
-
-- **100k images, cold/no thumbnails:** sparse metadata and DOM work are already bounded; expected dominant costs are thumbnail generation, object-store I/O, HTTP/Agent transport, image decode, and Blob creation. Client thumbnail work must stay capped at **6 concurrent requests**, and request count must scale with viewport exposure rather than 100k logical items.
-- **100k images, warm thumbnails:** generation cost is removed, isolating cached-object reads, transport, Blob URL creation, renderer commit/layout/paint, and the bounded **96-entry** FileExplorer thumbnail cache. This is the cleanest Web-vs-Desktop transport comparison.
-- **100k videos, image-thumbnail suppression/icon fallback:** ordinary videos are not thumbnail-eligible while the Server thumbnail endpoint is image-only. The benchmark must verify **zero** image-thumbnail requests for video tiles, stable icon fallback, and no request growth after remount/scroll-back.
-- **100k videos, warm poster thumbnails:** blocked until a real derived/cached video-poster contract exists. Do not substitute Gallery's client-side video decode/canvas capture for this workload.
-
-### Media benchmark execution rules
-
-- Use the same 100,000-node namespace shape, sort order, viewport, Grid size, scroll/jump script, and client build for all four runs.
-- Record **cold** and **warm** states separately. Never compare a cold image/video run against a warm run and call the difference a renderer optimization.
-- Keep FileExplorer structural budgets visible in the result: thumbnail requests must remain **O(viewport/scroll exposure), not O(100k)**; in-flight thumbnail work must remain at or below **6**; the per-Explorer thumbnail cache must remain bounded at **96**; sparse logical metadata must remain bounded rather than retaining 100,000 rows.
-- Run both **Web** and **Desktop** for warm-thumbnail transport because Desktop uses Agent IPC/ArrayBuffer while Web uses HTTP/Blob transport.
-- For the current video fallback run, assert that ordinary video tiles do not call the image-thumbnail endpoint. Once a real poster generator exists, benchmark its Server/Agent extraction time separately from renderer time.
-- The pure Node VirtualCollection baseline above is a prerequisite reference, not a substitute for these browser/Electron traces.
-- Until these four runs have real numbers, keep their status as **Planned - not measured** and do not claim that 100k thumbnail-heavy media directories are fully validated.
-
-## Performance scenarios
-
-The FileExplorer performance suite should keep these workloads stable:
-
-| Scenario | Scale | Primary budget |
-| --- | ---: | --- |
-| Open directory | 200 / 10k / 100k children | first-page latency and time-to-interactive |
-| Details scroll | 10k loaded items | frame stability and bounded mounted rows |
-| Grid scroll | 10k loaded items | DOM count, thumbnail request concurrency, frame stability |
-| Marquee select | 10k loaded items | pointer-frame CPU and selection latency |
-| Pagination | 50 consecutive pages | no duplicate requests, no stale-page overwrite |
-| Search | 100k namespace | first-page latency and next-page latency |
-
-## Next work
-
-1. Run the new **synthetic Web/Desktop renderer trace harness** repeatedly and record its variance; keep wall-clock numbers diagnostic until stability is understood.
-2. Run the **real 100k media-directory matrix** against Server/object storage: image cold/warm and current video icon fallback; keep warm video posters blocked until the real poster contract exists.
-3. Extend the renderer trace script with marquee-selection interaction after the scroll/jump baseline is stable.
-4. Use the 100k VirtualCollection CPU baseline as the controller reference while establishing renderer long-task/RSS budgets; do not conflate the two layers.
-5. Promote only stable structural/render budgets into normal CI; keep noisy hosted-runner timing out of merge gates.
-6. Revisit directory sort indexing only if a future measured workload materially exceeds the baselines above; the first type-expression-index attempt was rejected.
-
-Every performance change should preserve FileExplorer selection, keyboard navigation, drag/drop, rename, preview, and pagination semantics.
-
-
-### Sparse logical directory surface
-
-The FileExplorer surface can separate the logical directory item count from loaded/rendered items. Details and Grid compute scrollbar geometry from the full logical count, while only the current viewport plus bounded overscan creates render slots. Missing slots are lightweight non-interactive placeholders; the surface never allocates an array sized to the full directory. The dense compatibility path retains adaptive prefetch/load-more behavior, while sparse mode bypasses legacy bottom pagination entirely. Search remains dense until its own range contract migrates.
-
-
-Before sparse runtime is enabled, item interactions must also be logical-index aware. Active item, rename recovery, marquee hit-testing, and keyboard targets resolve against loaded sparse logical indexes. Shift ranges are committed only when every logical item in the requested range is loaded; otherwise FileExplorer requests that range instead of silently selecting a partial loaded subset. Full Ctrl+A / cross-unloaded-range bulk selection remains a separate selection-model problem and must not be faked by selecting only loaded items.
-
-- Desktop thumbnail transport baseline is measured with 200 unique thumbnails across three passes. Agent warm caching targets 200 upstream requests / 13.1 MiB payload versus the 600 requests / 39.3 MiB uncached baseline, and expired entries revalidate with ETag.

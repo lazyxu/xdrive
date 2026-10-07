@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Chip, Stack, Typography } from '@mui/material'
 import {
   XDriveFileExplorer,
+  type XDriveFileExplorerID,
   type XDriveFileExplorerItem,
   type XDriveFileExplorerSort,
   type XDriveFileExplorerVirtualCollection,
@@ -29,12 +30,24 @@ export type XDriveFileExplorerMediaTraceResult = {
   usedJSHeapSize: number | null
   scrollHeight: number
   viewportHeight: number
+  marqueeDurationMs: number
+  marqueeSelectionChangeCount: number
+  marqueeSelectedItems: number
+  marqueePeakSelectedItems: number
 }
 
 declare global {
   interface Window {
     __xdriveFileExplorerPerfResult?: XDriveFileExplorerMediaTraceResult
     __xdriveFileExplorerPerfError?: string
+    __xdriveFileExplorerPerfMarqueeRequest?: {
+      startX: number
+      startY: number
+      endX: number
+      endY: number
+      steps: number
+    }
+    __xdriveFileExplorerPerfMarqueeDone?: boolean
   }
 }
 
@@ -95,6 +108,9 @@ export function XDriveFileExplorerPerformanceHarness({
   const peakThumbnailInFlightRef = useRef(0)
   const longTaskCountRef = useRef(0)
   const longTaskDurationRef = useRef(0)
+  const marqueeSelectionChangeCountRef = useRef(0)
+  const marqueeSelectedItemsRef = useRef(0)
+  const marqueePeakSelectedItemsRef = useRef(0)
 
   const onRangeChange = useCallback((startIndex: number, endIndex: number) => {
     const firstPage = Math.max(0, Math.floor(startIndex / pageSize) - retentionPages)
@@ -142,6 +158,15 @@ export function XDriveFileExplorerPerformanceHarness({
     }
   }, [scenario])
 
+  const onSelectionChange = useCallback((ids: XDriveFileExplorerID[]) => {
+    marqueeSelectionChangeCountRef.current += 1
+    marqueeSelectedItemsRef.current = ids.length
+    marqueePeakSelectedItemsRef.current = Math.max(
+      marqueePeakSelectedItemsRef.current,
+      ids.length,
+    )
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     let longTaskObserver: PerformanceObserver | null = null
@@ -178,6 +203,7 @@ export function XDriveFileExplorerPerformanceHarness({
       sampleMounted()
       const initialMountedItems = maxMountedItems
       const maxScroll = Math.max(0, host.scrollHeight - host.clientHeight)
+      let marqueeDurationMs = 0
 
       for (let step = 1; step <= 36; step += 1) {
         host.scrollTop = Math.min(maxScroll, step * Math.max(1, host.clientHeight * 0.8))
@@ -192,6 +218,38 @@ export function XDriveFileExplorerPerformanceHarness({
         await waitFrames(8)
         sampleMounted()
       }
+
+      const hostBounds = host.getBoundingClientRect()
+      const marqueeStartX = Math.round(hostBounds.left + 6)
+      const marqueeStartY = Math.round(hostBounds.top + 6)
+      const marqueeStartedAt = performance.now()
+      window.__xdriveFileExplorerPerfMarqueeDone = false
+      window.__xdriveFileExplorerPerfMarqueeRequest = {
+        startX: marqueeStartX,
+        startY: marqueeStartY,
+        endX: Math.round(Math.min(
+          hostBounds.right - 24,
+          marqueeStartX + Math.max(240, host.clientWidth * 0.55),
+        )),
+        endY: Math.round(Math.min(
+          hostBounds.bottom - 24,
+          marqueeStartY + Math.max(180, host.clientHeight * 0.55),
+        )),
+        steps: 12,
+      }
+      for (
+        let attempt = 0;
+        attempt < 200 && !window.__xdriveFileExplorerPerfMarqueeDone;
+        attempt += 1
+      ) {
+        await wait(25)
+      }
+      if (!window.__xdriveFileExplorerPerfMarqueeDone) {
+        throw new Error('FileExplorer marquee trace input was not completed.')
+      }
+      await waitFrames(4)
+      marqueeDurationMs = performance.now() - marqueeStartedAt
+      delete window.__xdriveFileExplorerPerfMarqueeRequest
 
       let stableRequests = thumbnailRequestsRef.current
       let stableRounds = 0
@@ -226,6 +284,10 @@ export function XDriveFileExplorerPerformanceHarness({
         usedJSHeapSize: memory?.usedJSHeapSize ?? null,
         scrollHeight: host.scrollHeight,
         viewportHeight: host.clientHeight,
+        marqueeDurationMs,
+        marqueeSelectionChangeCount: marqueeSelectionChangeCountRef.current,
+        marqueeSelectedItems: marqueeSelectedItemsRef.current,
+        marqueePeakSelectedItems: marqueePeakSelectedItemsRef.current,
       }
       window.__xdriveFileExplorerPerfResult = result
       console.info('__XDRIVE_FILE_EXPLORER_PERF_RESULT__' + JSON.stringify(result))
@@ -263,6 +325,7 @@ export function XDriveFileExplorerPerformanceHarness({
           externallySorted
           virtualCollection={virtualCollection}
           loadThumbnail={loadThumbnail}
+          onSelectionChange={onSelectionChange}
           statusText="100,000 项"
         />
       </Box>
