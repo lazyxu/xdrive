@@ -1664,3 +1664,76 @@ test('pending duplicate tab cannot override a newer tab activation', async () =>
   assert.equal(finalNavigation.current.id, folderB.id)
   assert.equal(finalNavigation.pathValue, '我的文件/B')
 })
+
+
+test('close-other-tabs invalidates a pending activation of a tab it removes', async () => {
+  const root = { id: 1, name: '我的文件' }
+  const folderA = { id: 2, name: 'A' }
+  const folderB = { id: 3, name: 'B' }
+
+  const driver = createDirectoryDriver([root])
+  const harness = createNavigationHarness(driver)
+
+  harness.render()
+  let navigation = harness.render()
+
+  assert.equal(await navigation.openTab([root, folderA]), true)
+  navigation = harness.render()
+  const tabA = navigation.activeTabID
+
+  assert.equal(await navigation.openTab([root, folderB]), true)
+  navigation = harness.render()
+  const tabB = navigation.activeTabID
+
+  await navigation.activateTab(tabA)
+  navigation = harness.render()
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+
+  driver.controlRequests()
+
+  const pendingBetaActivation = navigation.activateTab(tabB)
+  await flushAsync()
+
+  assert.equal(
+    await navigation.closeOtherTabs(tabA),
+    true,
+    'closing other tabs should synchronously keep only the requested active tab',
+  )
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'the pending Beta tab must be removed immediately',
+  )
+  assert.equal(navigation.activeTabID, tabA)
+  assert.equal(driver.visibleDirectoryID, folderA.id)
+  assert.equal(navigation.pathValue, '我的文件/A')
+
+  driver.resolveDirectory(folderB.id)
+  await pendingBetaActivation
+  navigation = harness.render()
+
+  assert.deepEqual(
+    navigation.tabs.map((tab) => tab.id),
+    [tabA],
+    'a removed tab must stay closed after its older activation request completes',
+  )
+  assert.equal(
+    navigation.activeTabID,
+    tabA,
+    'a stale activation must not point activeTabID at a tab removed by close-other-tabs',
+  )
+  assert.equal(
+    driver.visibleDirectoryID,
+    folderA.id,
+    'a stale activation must not replace the visible directory after close-other-tabs',
+  )
+  assert.equal(
+    navigation.pathValue,
+    '我的文件/A',
+    'address path must remain aligned with the only surviving tab',
+  )
+})

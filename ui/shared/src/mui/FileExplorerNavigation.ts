@@ -553,6 +553,13 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       .map((tab) => tab.id)
 
     if (id === currentState.activeTabID) {
+      if (
+        closingIDs.includes(navigationRequestRef.current.targetTabID) &&
+        current
+      ) {
+        beginNavigation(currentState.activeTabID)
+        void onLoadDirectory(current.id, crumbs, sort, grouping)
+      }
       rememberClosedTabs(currentState.tabs, closingIDs)
       commitNavigationState(() => ({
         tabs: [targetTab],
