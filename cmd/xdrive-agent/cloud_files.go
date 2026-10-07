@@ -838,41 +838,34 @@ func visitAgentCloudDownloadChildren(
 	}
 }
 
+type agentCloudDownloadNodeFunc func(context.Context, uint64) (client.Node, error)
+
 func resolveAgentCloudDownloadFolderRoot(
 	ctx context.Context,
 	id uint64,
 	parentID uint64,
-	listPage agentCloudDownloadChildrenPageFunc,
+	getNode agentCloudDownloadNodeFunc,
 ) (client.Node, error) {
 	if id == 0 || parentID == 0 {
 		return client.Node{}, fmt.Errorf("folder id and parent id are required")
 	}
-	var found client.Node
-	err := visitAgentCloudDownloadChildren(
-		ctx,
-		parentID,
-		listPage,
-		func(node client.Node) (bool, error) {
-			if node.ID != id {
-				return false, nil
-			}
-			if node.Type != meta.NodeTypeDir {
-				return false, fmt.Errorf("download root is not a directory")
-			}
-			if _, err := agentCloudDownloadPathSegment(node.Name); err != nil {
-				return false, err
-			}
-			found = node
-			return true, nil
-		},
-	)
+	if getNode == nil {
+		return client.Node{}, fmt.Errorf("cloud download node lookup is unavailable")
+	}
+	node, err := getNode(ctx, id)
 	if err != nil {
 		return client.Node{}, err
 	}
-	if found.ID == 0 {
+	if node.ParentID == nil || *node.ParentID != parentID {
 		return client.Node{}, fmt.Errorf("download folder is no longer available")
 	}
-	return found, nil
+	if node.Type != meta.NodeTypeDir {
+		return client.Node{}, fmt.Errorf("download root is not a directory")
+	}
+	if _, err := agentCloudDownloadPathSegment(node.Name); err != nil {
+		return client.Node{}, err
+	}
+	return node, nil
 }
 
 func scanAgentCloudDownloadFolder(
@@ -1027,7 +1020,7 @@ func (c *agentController) CloudDownloadFolder(
 		return agentCloudFolderDownloadResult{}, fmt.Errorf("folder download destination is not a directory")
 	}
 
-	root, err := resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.ListPage)
+	root, err := resolveAgentCloudDownloadFolderRoot(ctx, id, parentID, cli.Node)
 	if err != nil {
 		return agentCloudFolderDownloadResult{}, err
 	}

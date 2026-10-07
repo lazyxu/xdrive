@@ -96,6 +96,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/search", s.searchNodes)
 	authed.GET("/changes", s.listNodeChanges)
 	authed.GET("/nodes/root", s.root)
+	authed.GET("/nodes/:id", s.getNode)
 	authed.GET("/nodes/:id/children", s.children)
 	authed.GET("/file-quick-access", s.listFileQuickAccess)
 	authed.PUT("/file-quick-access/:id", s.pinFileQuickAccess)

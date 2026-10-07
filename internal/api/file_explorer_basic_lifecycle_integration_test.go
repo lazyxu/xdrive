@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -113,6 +114,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	}
 	router := srv.Router()
 	token := createTestUser(t, db, router, "file-explorer-basic", "password-file-explorer-basic")
+	otherToken := createTestUser(t, db, router, "file-explorer-basic-other", "password-file-explorer-basic-other")
 
 	httpServer := httptest.NewServer(router)
 	t.Cleanup(httpServer.Close)
@@ -138,6 +140,18 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sourceByID, err := cli.Node(ctx, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceByID.ID != source.ID || sourceByID.Name != source.Name ||
+		sourceByID.Type != meta.NodeTypeDir || sourceByID.ParentID == nil || *sourceByID.ParentID != root.ID {
+		t.Fatalf("exact node lookup=%+v want source=%+v parent=%d", sourceByID, source, root.ID)
+	}
+	request(
+		t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d", source.ID),
+		otherToken, nil, http.StatusNotFound,
+	)
 	empty, err := cli.CreateDir(ctx, source.ID, "empty")
 	if err != nil {
 		t.Fatal(err)
@@ -271,6 +285,10 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	}
 	assertBasicNodeChange(t, deleteChanges, hello.ID, "delete", source.ID)
 	cursor = deleteChanges.LatestCursor
+	request(
+		t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d", hello.ID),
+		token, nil, http.StatusNotFound,
+	)
 
 	sourceRange = basicFileExplorerRange(t, cli, source.ID)
 	if sourceRange.TotalCount != 1 || basicRangeHasNode(sourceRange, hello.ID) {
@@ -299,6 +317,13 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	}
 	if restored.ID != hello.ID || restored.Revision <= hello.Revision {
 		t.Fatalf("restored hello=%+v original=%+v", restored, hello)
+	}
+	restoredByID, err := cli.Node(ctx, hello.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restoredByID.ID != restored.ID || restoredByID.Revision != restored.Revision {
+		t.Fatalf("restored exact lookup=%+v want=%+v", restoredByID, restored)
 	}
 	restoreChanges, err := observer.NodeChanges(ctx, cursor, 1000)
 	if err != nil {
