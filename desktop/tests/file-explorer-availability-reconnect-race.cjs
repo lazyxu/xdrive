@@ -194,6 +194,13 @@ function loadExternalDropHook(react) {
   ).useXDriveFileExplorerExternalDropController
 }
 
+function loadFavoriteHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerFavoriteController.ts'],
+    react,
+  ).useXDriveFileExplorerFavorites
+}
+
 async function flushAsync() {
   for (let index = 0; index < 8; index += 1) await Promise.resolve()
 }
@@ -1834,4 +1841,65 @@ test('unmounted FileExplorer navigation intent cannot overwrite a remounted work
   } finally {
     global.window = originalWindow
   }
+})
+
+
+test('favorite lookup from an unmounted FileExplorer cannot activate a stale file', async () => {
+  const runtime = createHookRuntime()
+  const useFavorites = loadFavoriteHook(runtime.react)
+  const favoriteItem = {
+    node: {
+      id: 42,
+      name: 'report.pdf',
+      size: 128,
+      revision: 1,
+      updated_at: '2026-10-07T00:00:00Z',
+    },
+    path: '/report.pdf',
+    crumbs: [{ id: 1, name: '我的文件' }],
+    favorited_at: '2026-10-07T00:00:00Z',
+  }
+  let controlled = false
+  let releaseLookup
+  const activated = []
+
+  const loadItems = () => {
+    if (!controlled) return Promise.resolve([favoriteItem])
+    return new Promise((resolve) => {
+      releaseLookup = () => resolve([favoriteItem])
+    })
+  }
+
+  const render = () => runtime.render(() => useFavorites({
+    loadItems,
+    favoriteItem: async () => favoriteItem,
+    unfavoriteItem: async () => undefined,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let favorites = render()
+
+  controlled = true
+  const pending = favorites.activate(favoriteItem.node.id, async (node) => {
+    activated.push(node.id)
+  })
+  await flushAsync()
+  assert.equal(typeof releaseLookup, 'function')
+
+  // Desktop disconnect unmounts FileExplorer while the Agent-facing lookup is
+  // still pending. A completion owned by this old instance must not perform
+  // the user-visible file-open callback after reconnect.
+  runtime.unmount()
+
+  releaseLookup()
+  await pending
+  favorites = render()
+
+  assert.deepEqual(
+    activated,
+    [],
+    'an unmounted FileExplorer favorite lookup must not activate a stale file after reconnect',
+  )
 })
