@@ -139,3 +139,33 @@ test('FileExplorer design makes VirtualCollection interaction parity normative',
     assert.ok(design.includes(phrase), 'FileExplorer design missing VirtualCollection rule: ' + phrase)
   }
 })
+
+
+test('interaction-scope change cancels queued marquee selection work', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'window.cancelAnimationFrame(marqueeFrameRef.current)',
+    'marqueeFrameRef.current = null',
+    'marqueePointerRef.current = null',
+    'marqueeSessionRef.current = null',
+    'setMarqueeRect(null)',
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'interaction-scope change must cancel stale marquee work before old RAF can rewrite the new selection: ' + token,
+    )
+  }
+
+  assert.ok(
+    scopeBlock.indexOf('window.cancelAnimationFrame(marqueeFrameRef.current)') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'queued marquee RAF must be cancelled before the new interaction scope publishes its cleared selection',
+  )
+})

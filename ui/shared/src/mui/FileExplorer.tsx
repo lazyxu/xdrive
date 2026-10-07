@@ -852,6 +852,13 @@ export function XDriveFileExplorer({
     if (interactionScopeKeyRef.current === interactionScopeKey) return
 
     interactionScopeKeyRef.current = interactionScopeKey
+    if (typeof window !== 'undefined' && marqueeFrameRef.current !== null) {
+      window.cancelAnimationFrame(marqueeFrameRef.current)
+      marqueeFrameRef.current = null
+    }
+    marqueePointerRef.current = null
+    marqueeSessionRef.current = null
+    setMarqueeRect(null)
     typeSelectIntentRef.current += 1
     selectionIntentRef.current += 1
     quickLookIntentRef.current += 1
