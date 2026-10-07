@@ -275,6 +275,7 @@ declare global {
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
   type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>
+  type AgentCloudTrashRange = XDriveCloudFilesRange<AgentCloudNode>
   type AgentCloudNodeChangePage = XDriveCloudFilesChangePage<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
   type AgentCloudFavoriteItem = XDriveFileFavoriteItem<AgentCloudNode>
@@ -612,6 +613,13 @@ declare global {
         cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
+        cloudTrashRange: (
+          offset: number,
+          limit?: number,
+          sort?: 'name' | 'updated' | 'size' | 'type',
+          order?: 'asc' | 'desc',
+          includeCount?: boolean,
+        ) => Promise<DesktopResult<AgentCloudTrashRange>>
         cloudRestoreTrash: (id: number, revision: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudDeleteTrash: (id: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>

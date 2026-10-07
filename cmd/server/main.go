@@ -291,6 +291,18 @@ func migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_nodes_children_name ON xd_nodes(owner_id, parent_id, type, lower(name), id) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_xd_nodes_trash_name
+		ON xd_nodes (
+			owner_id,
+			((CASE WHEN type = 'dir' THEN 0 ELSE 1 END)),
+			lower(name),
+			id
+		)
+		WHERE deleted_at IS NOT NULL AND trash_root_id = id
+	`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_xd_nodes_children_updated ON xd_nodes(owner_id, parent_id, type, updated_at, id) WHERE parent_id IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
 		return err
 	}

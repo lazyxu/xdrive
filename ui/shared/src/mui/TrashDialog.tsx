@@ -12,6 +12,11 @@ import {
   Typography,
 } from '@mui/material'
 import type { Node } from '../models'
+import type {
+  XDriveCloudFilesRange,
+  XDriveCloudFilesSortDirection,
+  XDriveCloudFilesSortKey,
+} from '../cloud-files'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
@@ -21,8 +26,17 @@ import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveTableSurface } from './TableSurface'
 
+export type XDriveTrashRangeRequest = {
+  offset: number
+  limit: number
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+  includeCount: boolean
+}
+
 export interface XDriveTrashDialogAdapter {
   listTrash(): Promise<Node[]>
+  listTrashRange?: (request: XDriveTrashRangeRequest) => Promise<XDriveCloudFilesRange<Node>>
   restoreTrash(node: Node): Promise<Node | void>
   deleteTrash(node: Node): Promise<unknown>
 }

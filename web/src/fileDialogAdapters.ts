@@ -8,6 +8,13 @@ import type { XDriveApi } from './api'
 export function createWebTrashDialogAdapter(api: XDriveApi) {
   return createXDriveTrashDialogAdapter({
     listTrash: () => api.trash(),
+    listTrashRange: (request) => api.trashRange(
+      request.offset,
+      request.limit,
+      request.sort,
+      request.order,
+      request.includeCount,
+    ),
     restoreTrash: (nodeID, revision) => api.restoreTrash(nodeID, revision),
     deleteTrash: (nodeID, revision) => api.permanentlyDeleteTrash(nodeID, revision),
   })

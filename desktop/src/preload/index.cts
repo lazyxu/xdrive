@@ -437,6 +437,13 @@ const agent = Object.freeze({
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
     ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
+  cloudTrashRange: (
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    includeCount = true,
+  ) => ipcRenderer.invoke('agent:cloud-trash-range', offset, limit, sort, order, includeCount),
   cloudRestoreTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-restore-trash', id, revision),
   cloudDeleteTrash: (id: number, revision: number) => ipcRenderer.invoke('agent:cloud-delete-trash', id, revision),
   cloudVersions: (nodeID: number) => ipcRenderer.invoke('agent:cloud-versions', nodeID),

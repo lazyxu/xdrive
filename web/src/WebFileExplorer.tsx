@@ -276,6 +276,7 @@ export default function WebFileExplorer({
   const trash = useXDriveFileExplorerTrash({
     enabled: trashActive,
     adapter: trashAdapter,
+    sort: trashSort,
     onError,
     onFeedback: (message) => onFeedback('good', message),
     onChanged: onTrashChanged,
@@ -518,7 +519,7 @@ export default function WebFileExplorer({
         keyboardProfile={FILE_KEYBOARD_PROFILE}
         items={trashActive ? trash.items : explorerItems}
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
-        virtualCollection={trashActive ? undefined : explorerVirtualCollection}
+        virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
         loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
         emptyMessage={trashActive ? '回收站为空' : undefined}
         loadThumbnail={loadThumbnail}
@@ -555,7 +556,7 @@ export default function WebFileExplorer({
         grouping={trashActive ? undefined : grouping}
         onGroupingChange={trashActive ? undefined : changeGrouping}
         groupingEnabled={!trashActive}
-        externallySorted={trashActive ? false : externallySorted}
+        externallySorted={trashActive ? Boolean(trash.virtualCollection) : externallySorted}
         detailsPreferencesKey={FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={trashActive ? undefined : copyItems}
@@ -693,7 +694,7 @@ export default function WebFileExplorer({
           />
         )}
         statusText={trashActive
-          ? (trash.working ? '正在处理回收站项目…' : `${trash.items.length} 个回收站项目`)
+          ? (trash.working ? '正在处理回收站项目…' : `${trash.itemCount} 个回收站项目`)
           : searchStatusText ?? (
               uploadProgress !== null
                 ? `上传中 ${Math.round(uploadProgress)}%`

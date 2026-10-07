@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +31,176 @@ func toFileVersionDTO(v meta.FileVersion) fileVersionDTO {
 	}
 }
 
+const (
+	trashRangeDefaultLimit = 200
+	trashRangeMaxLimit     = 500
+)
+
+type trashRangeOptions struct {
+	Limit        int
+	Offset       int
+	Sort         string
+	Order        string
+	IncludeCount bool
+}
+
+type trashRangeDTO struct {
+	Items              []nodeDTO `json:"items"`
+	TotalCount         int64     `json:"total_count"`
+	TotalCountIncluded bool      `json:"total_count_included"`
+	Offset             int       `json:"offset"`
+	Limit              int       `json:"limit"`
+	Sort               string    `json:"sort"`
+	Order              string    `json:"order"`
+}
+
+type trashRangeRow struct {
+	ID         uint64     `gorm:"column:id"`
+	ParentID   *uint64    `gorm:"column:parent_id"`
+	Name       string     `gorm:"column:name"`
+	Type       string     `gorm:"column:type"`
+	Revision   uint64     `gorm:"column:revision"`
+	DeletedAt  *time.Time `gorm:"column:deleted_at"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+	UpdatedAt  time.Time  `gorm:"column:updated_at"`
+	FileSize   int64      `gorm:"column:file_size"`
+	FileSHA256 string     `gorm:"column:file_sha256"`
+	TotalCount int64      `gorm:"column:total_count"`
+}
+
+func (row trashRangeRow) dto() nodeDTO {
+	return nodeDTO{
+		ID: row.ID, ParentID: row.ParentID, Name: row.Name, Type: row.Type,
+		Size: row.FileSize, Revision: row.Revision, SHA256: row.FileSHA256,
+		DeletedAt: row.DeletedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func parseTrashRangeOptions(c *gin.Context) (trashRangeOptions, bool) {
+	options := trashRangeOptions{
+		Limit:        trashRangeDefaultLimit,
+		Sort:         strings.TrimSpace(strings.ToLower(c.Query("sort"))),
+		Order:        strings.TrimSpace(strings.ToLower(c.Query("order"))),
+		IncludeCount: true,
+	}
+	if options.Sort == "" {
+		options.Sort = "name"
+	}
+	if options.Sort == "updated_at" {
+		options.Sort = "updated"
+	}
+	switch options.Sort {
+	case "name", "updated", "size", "type":
+	default:
+		fail(c, http.StatusBadRequest, "sort must be name, updated, size, or type")
+		return trashRangeOptions{}, false
+	}
+	if options.Order == "" {
+		options.Order = "asc"
+	}
+	if options.Order != "asc" && options.Order != "desc" {
+		fail(c, http.StatusBadRequest, "order must be asc or desc")
+		return trashRangeOptions{}, false
+	}
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			fail(c, http.StatusBadRequest, "offset must be zero or greater")
+			return trashRangeOptions{}, false
+		}
+		options.Offset = value
+	}
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > trashRangeMaxLimit {
+			fail(c, http.StatusBadRequest, "limit must be between 1 and 500")
+			return trashRangeOptions{}, false
+		}
+		options.Limit = value
+	}
+	if raw, exists := c.GetQuery("include_count"); exists {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			fail(c, http.StatusBadRequest, "include_count must be true or false")
+			return trashRangeOptions{}, false
+		}
+		options.IncludeCount = value
+	}
+	return options, true
+}
+
+func (s *Server) trashListRange(c *gin.Context) {
+	options, ok := parseTrashRangeOptions(c)
+	if !ok {
+		return
+	}
+	rankExpr := "(CASE WHEN xd_nodes.type = 'dir' THEN 0 ELSE 1 END)"
+	nameExpr := "lower(xd_nodes.name)"
+	sortExpr := nameExpr
+	switch options.Sort {
+	case "updated":
+		sortExpr = "xd_nodes.deleted_at"
+	case "size":
+		sortExpr = "COALESCE(trash_file.size, 0)"
+	case "type":
+		sortExpr = "(CASE WHEN xd_nodes.type = 'dir' THEN '' WHEN strpos(xd_nodes.name, '.') > 1 AND right(xd_nodes.name, 1) <> '.' THEN lower(regexp_replace(xd_nodes.name, '^.*\\.', '')) ELSE '' END)"
+	}
+	direction := "ASC"
+	if options.Order == "desc" {
+		direction = "DESC"
+	}
+	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
+	newQuery := func() *gorm.DB {
+		return s.DB.
+			Table("xd_nodes").
+			Joins("LEFT JOIN xd_files AS trash_file ON trash_file.node_id = xd_nodes.id").
+			Where("xd_nodes.owner_id = ? AND xd_nodes.deleted_at IS NOT NULL AND xd_nodes.trash_root_id = xd_nodes.id", userID(c))
+	}
+	selectClause := `xd_nodes.id, xd_nodes.parent_id, xd_nodes.name, xd_nodes.type,
+		xd_nodes.revision, xd_nodes.deleted_at, xd_nodes.created_at, xd_nodes.updated_at,
+		COALESCE(trash_file.size, 0) AS file_size,
+		COALESCE(trash_file.sha256, '') AS file_sha256`
+	if options.IncludeCount {
+		selectClause += ", COUNT(*) OVER() AS total_count"
+	}
+	var rows []trashRangeRow
+	if err := newQuery().
+		Select(selectClause).
+		Order(orderBy).
+		Offset(options.Offset).
+		Limit(options.Limit).
+		Scan(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "list trash failed")
+		return
+	}
+	var totalCount int64
+	if options.IncludeCount {
+		if len(rows) > 0 {
+			totalCount = rows[0].TotalCount
+		} else if err := newQuery().Count(&totalCount).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "count trash failed")
+			return
+		}
+	}
+	items := make([]nodeDTO, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.dto())
+	}
+	c.JSON(http.StatusOK, trashRangeDTO{
+		Items: items, TotalCount: totalCount, TotalCountIncluded: options.IncludeCount,
+		Offset: options.Offset, Limit: options.Limit, Sort: options.Sort, Order: options.Order,
+	})
+}
+
 func (s *Server) trashList(c *gin.Context) {
+	if raw, exists := c.GetQuery("range"); exists {
+		if strings.TrimSpace(strings.ToLower(raw)) != "true" {
+			fail(c, http.StatusBadRequest, "range must be true")
+			return
+		}
+		s.trashListRange(c)
+		return
+	}
 	var nodes []meta.Node
 	if err := s.DB.Preload("File").
 		Where("owner_id = ? AND deleted_at IS NOT NULL AND trash_root_id = id", userID(c)).

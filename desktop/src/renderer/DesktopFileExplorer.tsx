@@ -223,6 +223,7 @@ export default function DesktopFileExplorer({
   const trash = useXDriveFileExplorerTrash({
     enabled: trashActive,
     adapter: trashAdapter,
+    sort: trashSort,
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
     onFeedback: (message) => onFeedback('good', message),
     onChanged: onTrashChanged,
@@ -1303,7 +1304,7 @@ export default function DesktopFileExplorer({
         keyboardProfile={keyboardProfile}
         items={trashActive ? trash.items : explorerItems}
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
-        virtualCollection={trashActive ? undefined : explorerVirtualCollection}
+        virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
         loading={trashActive ? trash.loading : loading || searchLoading || explorerActionBusy}
         emptyMessage={trashActive ? '回收站为空' : undefined}
         loadThumbnail={loadThumbnail}
@@ -1347,7 +1348,7 @@ export default function DesktopFileExplorer({
         grouping={trashActive ? undefined : grouping}
         onGroupingChange={trashActive ? undefined : changeGrouping}
         groupingEnabled={!trashActive}
-        externallySorted={trashActive ? false : externallySorted}
+        externallySorted={trashActive ? Boolean(trash.virtualCollection) : externallySorted}
         detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}
         viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}
         onCopyItems={trashActive ? undefined : copyItems}
@@ -1498,7 +1499,7 @@ export default function DesktopFileExplorer({
           />
         )}
         statusText={trashActive
-          ? (trash.working ? '正在处理回收站项目…' : `${trash.items.length} 个回收站项目`)
+          ? (trash.working ? '正在处理回收站项目…' : `${trash.itemCount} 个回收站项目`)
           : searchStatusText ?? (
           (actionBusy === 'upload' || uploadBusyAction === 'upload')
             ? '正在上传…'

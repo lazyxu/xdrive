@@ -557,6 +557,16 @@ export type AgentFileExplorerGrouping = {
   foldersFirst: boolean
 }
 
+export type AgentCloudTrashRange = {
+  items: AgentCloudNode[]
+  total_count: number
+  total_count_included?: boolean
+  offset: number
+  limit: number
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+}
+
 export type AgentCloudChildrenRange = {
   items: AgentCloudNode[]
   total_count: number
@@ -2031,6 +2041,23 @@ export class AgentIPCClient {
 
   cloudTrash() {
     return this.request<AgentCloudNode[]>('GET', '/v1/cloud/trash')
+  }
+
+  cloudTrashRange(
+    offset: number,
+    limit = 200,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    includeCount = true,
+  ) {
+    const query = new URLSearchParams({
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      sort,
+      order,
+      include_count: String(includeCount),
+    })
+    return this.request<AgentCloudTrashRange>('GET', `/v1/cloud/trash/range?${query.toString()}`)
   }
 
   cloudRestoreTrash(id: number, revision: number) {

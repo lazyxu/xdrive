@@ -8,6 +8,13 @@ const agent = () => window.xdriveDesktop.agent
 
 export const desktopTrashDialogAdapter = createXDriveTrashDialogAdapter({
   listTrash: () => agent().cloudTrash(),
+  listTrashRange: (request) => agent().cloudTrashRange(
+    request.offset,
+    request.limit,
+    request.sort,
+    request.order,
+    request.includeCount,
+  ),
   restoreTrash: (nodeID, revision) => agent().cloudRestoreTrash(nodeID, revision),
   deleteTrash: (nodeID, revision) => agent().cloudDeleteTrash(nodeID, revision),
 })

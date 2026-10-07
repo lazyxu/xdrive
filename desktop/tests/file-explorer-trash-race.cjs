@@ -100,6 +100,14 @@ function loadTrashHook(react) {
   }).outputText
 
   const mod = { exports: {} }
+  const virtualCollection = {
+    totalCount: null,
+    loadedItems: new Map(),
+    reset: () => {},
+    primePage: () => {},
+    ensureViewport: () => {},
+    collectRange: async () => null,
+  }
   const localRequire = (request) => {
     if (request === 'react') return react
     if (request === 'react/jsx-runtime') {
@@ -108,6 +116,9 @@ function loadTrashHook(react) {
     if (request === '@mui/icons-material/DeleteForeverRounded') return () => null
     if (request === '@mui/icons-material/RestoreFromTrashRounded') return () => null
     if (request === './ConfirmDialog') return { XDriveConfirmDialog: () => null }
+    if (request === './VirtualCollectionController') {
+      return { useXDriveVirtualCollection: () => virtualCollection }
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
@@ -153,6 +164,7 @@ test('old Trash restore completion cannot clear a newer restore busy lock after 
   const render = () => runtime.render(() => useTrash({
     enabled,
     adapter,
+    sort: { key: 'name', direction: 'asc' },
     onError: (error) => { throw error },
     onFeedback: () => {},
     onChanged: async () => {},
@@ -257,6 +269,7 @@ test('old Trash permanent-delete completion cannot clear a newer delete target a
   const render = () => runtime.render(() => useTrash({
     enabled,
     adapter,
+    sort: { key: 'name', direction: 'asc' },
     onError: (error) => { throw error },
     onFeedback: () => {},
     onChanged: async () => {},

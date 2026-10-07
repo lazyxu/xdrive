@@ -1709,6 +1709,14 @@ func (c *agentController) CloudTrash(ctx context.Context) ([]client.Node, error)
 	return cli.Trash(ctx)
 }
 
+func (c *agentController) CloudTrashRange(ctx context.Context, offset, limit int, sort, order string, includeCount bool) (client.TrashRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.TrashRange{}, err
+	}
+	return cli.TrashRange(ctx, offset, limit, sort, order, includeCount)
+}
+
 func (c *agentController) CloudRestoreTrash(ctx context.Context, nodeID, revision uint64) (client.Node, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {
