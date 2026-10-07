@@ -42,13 +42,17 @@ import type {
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
 import {
-  XDriveMediaGalleryFilterBar,
+  XDriveMediaGalleryFilterToolbar,
   emptyMediaGalleryFilterDraft,
   hasMediaGalleryFilters,
   mediaGalleryDraftFromQuery,
   mediaGalleryQueryFromDraft,
 } from './MediaGalleryFilters'
 import type { MediaGalleryFilterDraft } from './MediaGalleryFilters'
+import {
+  XDriveMediaGalleryNavigation,
+} from './MediaGalleryNavigation'
+import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsDialog } from './MediaGalleryDetails'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
@@ -230,6 +234,19 @@ function mediaGalleryTarget(
   return { kind: 'all', query, requestID }
 }
 
+function mediaGallerySectionDraft(
+  section: MediaGallerySection,
+  activeMediaType = '',
+): MediaGalleryFilterDraft {
+  if (section === 'favorites') {
+    return { ...emptyMediaGalleryFilterDraft, favorite: 'favorite' }
+  }
+  if (section === 'media-types' && activeMediaType) {
+    return { ...emptyMediaGalleryFilterDraft, assetKind: activeMediaType }
+  }
+  return emptyMediaGalleryFilterDraft
+}
+
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   pageSize?: number
@@ -251,6 +268,8 @@ export function XDriveMediaGalleryPage({
   const [currentSuggestedPerson, setCurrentSuggestedPerson] =
     useState<MediaSuggestedPerson | null>(null)
   const [currentPerson, setCurrentPerson] = useState<MediaPersonIdentity | null>(null)
+  const [section, setSection] = useState<MediaGallerySection>('library')
+  const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
   )
@@ -456,6 +475,17 @@ export function XDriveMediaGalleryPage({
     virtualCollection.reset,
   ])
 
+  const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    if (nextSection === 'memories') return
+    setSection(nextSection)
+    setActiveMediaType('')
+    const nextDraft = mediaGallerySectionDraft(nextSection)
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(null, nextQuery)
+  }, [loadFirstPage])
+
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
     if (currentAlbum?.kind === 'smart') {
@@ -504,14 +534,22 @@ export function XDriveMediaGalleryPage({
       void loadFirstPage(currentAlbum, {})
       return
     }
+    const baseDraft = mediaGallerySectionDraft(section, activeMediaType)
     const nextDraft = currentPerson
-      ? { ...emptyMediaGalleryFilterDraft, personIdentity: currentPerson.id }
-      : emptyMediaGalleryFilterDraft
+      ? { ...baseDraft, personIdentity: currentPerson.id }
+      : baseDraft
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage])
+  }, [
+    activeMediaType,
+    currentAlbum,
+    currentPerson,
+    currentSuggestedPerson,
+    loadFirstPage,
+    section,
+  ])
 
   const createAlbum = useCallback(async (name: string) => {
     if (!source.createAlbum) throw new Error('当前客户端不支持创建相册')
@@ -584,6 +622,8 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, source])
 
   const openAlbum = useCallback((album: MediaAlbum) => {
+    setSection('albums')
+    setActiveMediaType('')
     if (album.kind === 'smart') {
       setDraftFilters(mediaGalleryDraftFromQuery(album.query))
       setQuery({})
@@ -594,6 +634,8 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, query])
 
   const openPlace = useCallback((place: MediaPlaceFacet) => {
+    setSection('places')
+    setActiveMediaType('')
     const nextDraft: MediaGalleryFilterDraft = {
       ...draftFilters,
       location: 'with',
@@ -606,12 +648,16 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, loadFirstPage])
 
   const openSuggestedPerson = useCallback((person: MediaSuggestedPerson) => {
+    setSection('people')
+    setActiveMediaType('')
     setQuery({})
     setDraftFilters(emptyMediaGalleryFilterDraft)
     void loadFirstPage(null, {}, person, null)
   }, [loadFirstPage])
 
   const openPerson = useCallback((person: MediaPersonIdentity) => {
+    setSection('people')
+    setActiveMediaType('')
     const nextDraft = {
       ...emptyMediaGalleryFilterDraft,
       personIdentity: person.id,
@@ -622,15 +668,26 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery, null, person)
   }, [loadFirstPage])
 
-  const leaveAlbum = useCallback(() => {
-    if (currentAlbum?.kind === 'smart' || currentSuggestedPerson || currentPerson) {
-      setDraftFilters(emptyMediaGalleryFilterDraft)
-      setQuery({})
-      void loadFirstPage(null, {})
-      return
+  const openMediaType = useCallback((assetKind: string) => {
+    setSection('media-types')
+    setActiveMediaType(assetKind)
+    const nextDraft = mediaGallerySectionDraft('media-types', assetKind)
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(null, nextQuery)
+  }, [loadFirstPage])
+
+  const leaveCollection = useCallback(() => {
+    if (section === 'media-types' && activeMediaType) {
+      setActiveMediaType('')
     }
-    void loadFirstPage(null, query)
-  }, [currentAlbum?.kind, currentPerson, currentSuggestedPerson, loadFirstPage, query])
+    const nextDraft = mediaGallerySectionDraft(section)
+    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(null, nextQuery)
+  }, [activeMediaType, loadFirstPage, section])
 
   const adoptSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,
@@ -877,8 +934,10 @@ export function XDriveMediaGalleryPage({
         loading={loading}
         timelineGroups={timelineGroups}
         error={error}
+        section={section}
+        activeMediaType={activeMediaType}
         filters={(
-          <XDriveMediaGalleryFilterBar
+          <XDriveMediaGalleryFilterToolbar
             draft={draftFilters}
             loading={loading}
             applyLabel={currentAlbum?.kind === 'smart' ? '保存规则' : '应用'}
@@ -890,6 +949,8 @@ export function XDriveMediaGalleryPage({
               (draftFilters.personIdentity ? '未命名人物' : undefined)
             }
             personIdentityLocked={Boolean(currentPerson)}
+            lockedAssetKind={section === 'media-types' && Boolean(activeMediaType)}
+            lockedFavorite={section === 'favorites'}
             onChange={setDraftFilters}
             onApply={applyFilters}
             onClear={clearFilters}
@@ -924,6 +985,8 @@ export function XDriveMediaGalleryPage({
         }
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
+        onSectionChange={selectSection}
+        onOpenMediaType={openMediaType}
         onOpenAlbum={openAlbum}
         onOpenPlace={openPlace}
         onOpenSuggestedPerson={openSuggestedPerson}
@@ -948,7 +1011,7 @@ export function XDriveMediaGalleryPage({
         }
         onMergePeople={source.mergePeople ? mergePeople : undefined}
         onSplitPerson={source.splitPerson ? splitPerson : undefined}
-        onBack={leaveAlbum}
+        onBack={leaveCollection}
         onRefresh={() => void loadFirstPage(
           currentAlbum,
           query,
@@ -1042,6 +1105,8 @@ export interface XDriveMediaGalleryProps {
   loading?: boolean
   timelineGroups?: MediaTimelineGroupIndex[]
   error?: string
+  section?: MediaGallerySection
+  activeMediaType?: string
   filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
@@ -1055,6 +1120,8 @@ export interface XDriveMediaGalleryProps {
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
+  onSectionChange?: (section: MediaGallerySection) => void
+  onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
@@ -1107,6 +1174,19 @@ function mediaAssetChipLabel(item: MediaItem) {
 }
 
 type MediaGalleryViewMode = 'grid' | 'timeline'
+
+const mediaGalleryMediaTypes = [
+  { value: 'image', label: '图片', description: '普通照片与静态图像' },
+  { value: 'video', label: '视频', description: '所有视频媒体' },
+  { value: 'live_photo', label: '实况照片', description: '照片与动态视频组成的实况资产' },
+  { value: 'raw_pair', label: 'RAW 组合', description: 'RAW 与渲染照片组成的逻辑资产' },
+  { value: 'burst', label: '连拍', description: '由本地证据识别的连拍组' },
+  { value: 'sidecar', label: '编辑组合', description: '带确定性 sidecar 关系的媒体' },
+] as const
+
+function mediaGalleryMediaTypeLabel(value?: string) {
+  return mediaGalleryMediaTypes.find((item) => item.value === value)?.label
+}
 
 type MediaTimelineGroup = {
   key: string
@@ -1861,6 +1941,8 @@ export function XDriveMediaGallery({
   loading = false,
   timelineGroups = [],
   error = '',
+  section = 'library',
+  activeMediaType = '',
   filters,
   loadThumbnail,
   loadLivePhotoMotion,
@@ -1874,6 +1956,8 @@ export function XDriveMediaGallery({
   onDeleteAlbum,
   onAddToAlbum,
   onRemoveFromAlbum,
+  onSectionChange,
+  onOpenMediaType,
   onOpenAlbum,
   onOpenPlace,
   onOpenSuggestedPerson,
@@ -2010,36 +2094,86 @@ export function XDriveMediaGallery({
     void toggleFavorite(item).catch(() => undefined)
   }, [toggleFavorite])
 
+  const activePlace = activePlaceID
+    ? places.find((place) => place.id === activePlaceID)
+    : undefined
+  const isRootSection = !currentAlbum && !currentSuggestedPerson && !currentPerson && !activePlaceID
+  const showAlbumIndex = isRootSection && section === 'albums'
+  const showPlacesIndex = isRootSection && section === 'places'
+  const showPeopleIndex = isRootSection && section === 'people'
+  const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
+  const showPhotoCollection =
+    !isRootSection ||
+    section === 'library' ||
+    section === 'favorites' ||
+    (section === 'media-types' && Boolean(activeMediaType))
+  const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
+  const galleryTitle = currentAlbum?.name ||
+    (currentPerson
+      ? currentPerson.name || '未命名人物'
+      : currentSuggestedPerson
+        ? '人物建议'
+        : activePlace
+          ? activePlace.name
+          : section === 'albums'
+            ? '相册'
+            : section === 'people'
+              ? '人物'
+              : section === 'places'
+                ? '地点'
+                : section === 'favorites'
+                  ? '收藏'
+                  : section === 'media-types'
+                    ? mediaTypeLabel || '媒体类型'
+                    : '图库')
+  const gallerySubtitle = currentAlbum
+    ? `${currentAlbum.item_count.toLocaleString('zh-CN')} 个项目`
+    : currentPerson
+      ? `${currentPerson.item_count.toLocaleString('zh-CN')} 张照片 · 长期人物${currentPerson.hidden ? ' · 已隐藏' : ''}`
+      : currentSuggestedPerson
+        ? `${currentSuggestedPerson.item_count.toLocaleString('zh-CN')} 张照片 · 自动聚类建议`
+        : activePlace
+          ? `${activePlace.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS`
+          : section === 'albums'
+            ? '手动相册、智能相册和导入相册'
+            : section === 'people'
+              ? '已保存人物与本地人脸分析建议'
+              : section === 'places'
+                ? '按照片本地 GPS 与本地地名索引浏览'
+                : section === 'favorites'
+                  ? '你收藏的照片和视频'
+                  : section === 'media-types'
+                    ? mediaTypeLabel
+                      ? `正在浏览${mediaTypeLabel}`
+                      : '按媒体资产类型快速进入照片集合'
+                    : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'
+  const canBack = Boolean(
+    currentAlbum ||
+    currentSuggestedPerson ||
+    currentPerson ||
+    activePlaceID ||
+    (section === 'media-types' && activeMediaType),
+  )
+
   return (
-    <Stack spacing={2.5} sx={{ minWidth: 0 }}>
+    <Stack spacing={2} sx={{ minWidth: 0 }}>
       <Stack direction="row" spacing={1} alignItems="center">
-        {(currentAlbum || currentSuggestedPerson || currentPerson) && onBack ? (
-          <Tooltip title="返回全部图库">
-            <IconButton onClick={onBack} size="small" aria-label="返回全部图库">
+        {canBack && onBack ? (
+          <Tooltip title="返回上一级">
+            <IconButton onClick={onBack} size="small" aria-label="返回上一级">
               <ArrowBackIcon />
             </IconButton>
           </Tooltip>
         ) : null}
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="h5" fontWeight={700} noWrap>
-            {currentAlbum?.name ||
-              (currentPerson
-                ? currentPerson.name || '未命名人物'
-                : currentSuggestedPerson
-                  ? '人物建议'
-                  : '图库')}
+            {galleryTitle}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {currentAlbum
-              ? `${currentAlbum.item_count.toLocaleString('zh-CN')} 个项目`
-              : currentPerson
-                ? `${currentPerson.item_count.toLocaleString('zh-CN')} 张照片 · 长期人物${currentPerson.hidden ? ' · 已隐藏' : ''}`
-                : currentSuggestedPerson
-                  ? `${currentSuggestedPerson.item_count.toLocaleString('zh-CN')} 张照片 · 自动聚类建议`
-                  : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'}
+            {gallerySubtitle}
           </Typography>
         </Box>
-        {!currentAlbum && !currentSuggestedPerson && !currentPerson && onCreateAlbum ? (
+        {showAlbumIndex && onCreateAlbum ? (
           <Button size="small" variant="outlined" onClick={() => openAlbumDialog('create')}>
             新建相册
           </Button>
@@ -2118,7 +2252,8 @@ export function XDriveMediaGallery({
             拆分
           </Button>
         ) : null}
-        <Stack direction="row" spacing={0.5} aria-label="图库视图">
+        {showPhotoCollection ? (
+          <Stack direction="row" spacing={0.5} aria-label="图库视图">
           <Button
             size="small"
             variant={viewMode === 'grid' ? 'contained' : 'text'}
@@ -2135,7 +2270,8 @@ export function XDriveMediaGallery({
           >
             时间轴
           </Button>
-        </Stack>
+          </Stack>
+        ) : null}
         {onRefresh ? (
           <Tooltip title="刷新">
             <span>
@@ -2151,13 +2287,17 @@ export function XDriveMediaGallery({
         ) : null}
       </Stack>
 
-      {filters}
+      {onSectionChange ? (
+        <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
+      ) : null}
+
+      {showPhotoCollection ? filters : null}
 
       {error ? (
         <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
       ) : null}
 
-      {!currentAlbum && !currentSuggestedPerson && !currentPerson && albums.length > 0 ? (
+      {showAlbumIndex && albums.length > 0 ? (
         <Box>
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
             相册
@@ -2235,7 +2375,7 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {!currentAlbum && !currentSuggestedPerson && !currentPerson && places.length > 0 ? (
+      {showPlacesIndex && places.length > 0 ? (
         <Box>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -2307,7 +2447,7 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {!currentAlbum && !currentSuggestedPerson && !currentPerson && people.length > 0 ? (
+      {showPeopleIndex && people.length > 0 ? (
         <Box>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -2409,7 +2549,7 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {!currentAlbum && !currentSuggestedPerson && !currentPerson && suggestedPeople.length > 0 ? (
+      {showPeopleIndex && suggestedPeople.length > 0 ? (
         <Box>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -2510,8 +2650,66 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      <Box>
-        {!currentAlbum && !currentSuggestedPerson && !currentPerson ? (
+      {showMediaTypeIndex ? (
+        <Box>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 1.5,
+            }}
+          >
+            {mediaGalleryMediaTypes.map((mediaType) => (
+              <Paper
+                key={mediaType.value}
+                variant="outlined"
+                role={onOpenMediaType ? 'button' : undefined}
+                tabIndex={onOpenMediaType ? 0 : undefined}
+                onClick={() => onOpenMediaType?.(mediaType.value)}
+                onKeyDown={(event) => {
+                  if (onOpenMediaType) {
+                    keyboardActivate(event, () => onOpenMediaType(mediaType.value))
+                  }
+                }}
+                sx={{
+                  p: 2,
+                  minHeight: 132,
+                  cursor: onOpenMediaType ? 'pointer' : 'default',
+                  transition: 'transform 120ms ease, box-shadow 120ms ease',
+                  '&:hover': onOpenMediaType
+                    ? { transform: 'translateY(-1px)', boxShadow: 2 }
+                    : undefined,
+                  '&:focus-visible': {
+                    outline: '2px solid',
+                    outlineColor: 'primary.main',
+                    outlineOffset: 2,
+                  },
+                }}
+              >
+                <Stack spacing={1}>
+                  <Box sx={{ color: 'text.secondary' }}>
+                    {mediaType.value === 'video'
+                      ? <MovieIcon />
+                      : mediaType.value === 'live_photo'
+                        ? <LivePhotoIcon />
+                        : <ImageIcon />}
+                  </Box>
+                  <Typography variant="subtitle2" fontWeight={700}>
+                    {mediaType.label}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {mediaType.description}
+                  </Typography>
+                </Stack>
+              </Paper>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
+
+      {showPhotoCollection ? (
+        <Box>
+        {isRootSection && section === 'library' ? (
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
             所有照片和视频
           </Typography>
@@ -2617,7 +2815,24 @@ export function XDriveMediaGallery({
             onToggleFavorite={toggleMediaFavorite}
           />
         )}
-      </Box>
+        </Box>
+      ) : null}
+
+      {showAlbumIndex && albums.length === 0 && !loading ? (
+        <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
+          <Typography color="text.secondary">还没有相册</Typography>
+        </Paper>
+      ) : null}
+      {showPlacesIndex && places.length === 0 && !loading ? (
+        <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
+          <Typography color="text.secondary">没有带地点信息的照片</Typography>
+        </Paper>
+      ) : null}
+      {showPeopleIndex && people.length === 0 && suggestedPeople.length === 0 && !loading ? (
+        <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
+          <Typography color="text.secondary">还没有可浏览的人物</Typography>
+        </Paper>
+      ) : null}
 
       <XDriveOpenPreviewDialog
         open={Boolean(previewItem)}
