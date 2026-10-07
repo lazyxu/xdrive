@@ -218,6 +218,9 @@ function loadUploadController(react) {
           endBatch() {
             batchActive = false
           },
+          reset() {
+            batchActive = false
+          },
           resolveConflict: async () => 'cancel',
           dialogProps: {},
         }),
@@ -232,11 +235,20 @@ function loadUploadController(react) {
 function createUploadHookRuntime() {
   const slots = []
   let cursor = 0
+  let pendingEffects = []
+
+  const sameDeps = (left, right) => (
+    Boolean(left && right) &&
+    left.length === right.length &&
+    left.every((value, index) => Object.is(value, right[index]))
+  )
+
   const react = {
     useState(initialValue) {
       const index = cursor++
       if (!slots[index]) {
         slots[index] = {
+          kind: 'state',
           value: typeof initialValue === 'function' ? initialValue() : initialValue,
         }
       }
@@ -250,15 +262,40 @@ function createUploadHookRuntime() {
     },
     useRef(initialValue) {
       const index = cursor++
-      if (!slots[index]) slots[index] = { value: { current: initialValue } }
+      if (!slots[index]) slots[index] = { kind: 'ref', value: { current: initialValue } }
       return slots[index].value
     },
+    useEffect(effect, deps) {
+      const index = cursor++
+      const current = slots[index]
+      if (!current || !sameDeps(current.deps, deps)) {
+        pendingEffects.push({ index, effect, deps: deps ? [...deps] : undefined })
+      }
+    },
   }
+
   return {
     react,
     render(factory) {
       cursor = 0
-      return factory()
+      pendingEffects = []
+      const result = factory()
+      for (const pending of pendingEffects) {
+        const previous = slots[pending.index]
+        if (typeof previous?.cleanup === 'function') previous.cleanup()
+        const cleanup = pending.effect()
+        slots[pending.index] = {
+          kind: 'effect',
+          deps: pending.deps,
+          cleanup: typeof cleanup === 'function' ? cleanup : undefined,
+        }
+      }
+      return result
+    },
+    unmount() {
+      for (const slot of slots) {
+        if (typeof slot?.cleanup === 'function') slot.cleanup()
+      }
     },
   }
 }
@@ -324,4 +361,109 @@ test('folder upload group creation is synchronously fenced before transfer lifec
   const [firstResult, duplicateResult] = await Promise.all([first, duplicate])
   assert.equal(firstResult.started, true)
   assert.equal(duplicateResult.started, false)
+})
+
+
+test('FileExplorer upload lifecycle change releases old batch ownership for the new session', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+
+  let lifecycleKey = 'server-a:user-a'
+  let releaseA
+  const uploads = []
+  const feedback = []
+  const errors = []
+
+  const render = () => runtime.render(() => useUploadController({
+    lifecycleKey,
+    fileName: (file) => file.name,
+    preflight: (_parentID, file) => {
+      if (file.name === 'A.txt') {
+        return new Promise((resolve) => {
+          releaseA = () => resolve({ conflict: false })
+        })
+      }
+      return Promise.resolve({ conflict: false })
+    },
+    upload: async (_parentID, file) => {
+      uploads.push(file.name)
+      return { skipped: false }
+    },
+    onError: (error) => errors.push(error),
+    onFeedback: (_tone, message) => feedback.push(message),
+  }))
+
+  let controller = render()
+  const pendingA = controller.runTargets([{ parentID: 1, file: { name: 'A.txt' } }])
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(typeof releaseA, 'function')
+  controller = render()
+  assert.equal(controller.busy, true)
+
+  lifecycleKey = 'server-b:user-b'
+  controller = render()
+  controller = render()
+  assert.equal(
+    controller.busy,
+    false,
+    'changing session identity must release the old upload busy ownership',
+  )
+
+  const resultB = await controller.runTargets([{ parentID: 2, file: { name: 'B.txt' } }])
+  assert.equal(
+    resultB.started,
+    true,
+    'a new-session upload must not be blocked by the old session conflict batch',
+  )
+  assert.deepEqual(uploads, ['B.txt'])
+
+  releaseA()
+  await pendingA
+
+  assert.deepEqual(
+    uploads,
+    ['B.txt'],
+    'old-session preflight completion must not continue into an upload after identity changed',
+  )
+  assert.deepEqual(feedback, [])
+  assert.deepEqual(errors, [])
+})
+
+
+test('FileExplorer upload completion after unmount cannot publish stale feedback', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+
+  let releaseUpload
+  const feedback = []
+  const errors = []
+
+  const controller = runtime.render(() => useUploadController({
+    lifecycleKey: 'server-a:user-a',
+    fileName: (file) => file.name,
+    preflight: async () => ({ conflict: false }),
+    upload: () => new Promise((resolve) => {
+      releaseUpload = () => resolve({ skipped: false })
+    }),
+    onError: (error) => errors.push(error),
+    onFeedback: (_tone, message) => feedback.push(message),
+  }))
+
+  const pending = controller.runTargets([{ parentID: 1, file: { name: 'A.txt' } }])
+  for (let attempt = 0; attempt < 12 && typeof releaseUpload !== 'function'; attempt += 1) {
+    await Promise.resolve()
+  }
+  assert.equal(typeof releaseUpload, 'function')
+
+  runtime.unmount()
+  releaseUpload()
+  await pending
+
+  assert.deepEqual(
+    feedback,
+    [],
+    'an upload completion from an unmounted FileExplorer must not publish stale feedback into its parent shell',
+  )
+  assert.deepEqual(errors, [])
 })

@@ -431,6 +431,7 @@ export default function DesktopFileExplorer({
     runGroup: runUploadGroup,
     dialogProps: uploadConflictDialogProps,
   } = useXDriveFileExplorerUploadController<File>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     disabled: Boolean(actionBusy),
     continueOnUploadError: true,
     fileName: (file) => file.name,
