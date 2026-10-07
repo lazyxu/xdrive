@@ -247,3 +247,107 @@ test('interaction-scope change clears stale type-to-select buffer', () => {
     'stale type-to-select buffer must be cleared as part of scope invalidation before the new workspace publishes interaction state',
   )
 })
+
+
+test('interaction-scope change clears stale internal drag and auto-scroll state', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'dragPointerYRef.current = null',
+    'window.cancelAnimationFrame(dragAutoScrollFrameRef.current)',
+    'dragAutoScrollFrameRef.current = null',
+    'setDraggedItems([])',
+    'setDropTargetID(null)',
+    'setDropTargetCrumbID(null)',
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'interaction-scope change must dispose stale internal drag work before the old workspace can affect the new one: ' + token,
+    )
+  }
+
+  assert.ok(
+    scopeBlock.indexOf('window.cancelAnimationFrame(dragAutoScrollFrameRef.current)') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'old drag auto-scroll RAF must be cancelled before the new workspace publishes interaction state',
+  )
+  assert.ok(
+    scopeBlock.indexOf('setDraggedItems([])') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'old dragged items must be cleared before the new workspace publishes interaction state',
+  )
+})
+
+
+test('interaction-scope change invalidates pending rename submission ownership', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  for (const token of [
+    'renameSubmitGenerationRef.current += 1',
+    'renameSubmittingRef.current = false',
+    'setRenameSubmitting(false)',
+  ]) {
+    assert.ok(
+      scopeBlock.includes(token),
+      'interaction-scope change must release stale rename ownership before the new workspace becomes interactive: ' + token,
+    )
+  }
+
+  const submitStart = explorer.indexOf('const submitRename = async')
+  const submitEnd = explorer.indexOf('\n\n  useEffect(() => {\n    if (renamingID === null', submitStart)
+  assert.ok(submitStart >= 0 && submitEnd > submitStart, 'FileExplorer rename submit block is missing')
+  const submitBlock = explorer.slice(submitStart, submitEnd)
+
+  for (const token of [
+    'const renameGeneration = renameSubmitGenerationRef.current + 1',
+    'renameSubmitGenerationRef.current = renameGeneration',
+    'renameGeneration !== renameSubmitGenerationRef.current',
+  ]) {
+    assert.ok(
+      submitBlock.includes(token),
+      'rename submit must fence late completion from an older workspace: ' + token,
+    )
+  }
+
+  const asyncStart = submitBlock.indexOf('await onRenameItem(item, normalized)')
+  const asyncSuccessFocus = submitBlock.indexOf('scheduleItemFocus(item.id)', asyncStart)
+  assert.ok(asyncStart >= 0 && asyncSuccessFocus > asyncStart, 'async rename success focus is missing')
+  assert.ok(
+    submitBlock.indexOf('renameGeneration !== renameSubmitGenerationRef.current', asyncStart) <
+      asyncSuccessFocus,
+    'a stale rename completion must be rejected before it can focus an item in the newer workspace',
+  )
+})
+
+
+test('interaction-scope change clears stale background-click suppression', () => {
+  const scopeStart = explorer.indexOf('const interactionScopeKey =')
+  const scopeEnd = explorer.indexOf(
+    'useEffect(() => {\n    if (!editingPath) setPathDraft(derivedPath)',
+    scopeStart,
+  )
+  assert.ok(scopeStart >= 0 && scopeEnd > scopeStart, 'FileExplorer interaction-scope effect is missing')
+  const scopeBlock = explorer.slice(scopeStart, scopeEnd)
+
+  assert.ok(
+    scopeBlock.includes('suppressBackgroundClickRef.current = false'),
+    'scope change must clear background-click suppression left by an old marquee interaction',
+  )
+  assert.ok(
+    scopeBlock.indexOf('suppressBackgroundClickRef.current = false') <
+      scopeBlock.indexOf('onSelectionChange?.([])'),
+    'old background-click suppression must be cleared before the new workspace publishes interaction state',
+  )
+})

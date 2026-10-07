@@ -769,6 +769,7 @@ export function XDriveFileExplorer({
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const renameSubmittingRef = useRef(false)
+  const renameSubmitGenerationRef = useRef(0)
   const renameCancelledRef = useRef(false)
   const itemElementRefs = useRef(new Map<string, HTMLElement>())
   const dragAutoScrollFrameRef = useRef<number | null>(null)
@@ -860,8 +861,20 @@ export function XDriveFileExplorer({
     marqueePointerRef.current = null
     marqueeSessionRef.current = null
     setMarqueeRect(null)
+    suppressBackgroundClickRef.current = false
+    dragPointerYRef.current = null
+    if (typeof window !== 'undefined' && dragAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
+    }
+    dragAutoScrollFrameRef.current = null
+    setDraggedItems([])
+    setDropTargetID(null)
+    setDropTargetCrumbID(null)
     setContextMenu(null)
     renameCancelledRef.current = true
+    renameSubmitGenerationRef.current += 1
+    renameSubmittingRef.current = false
+    setRenameSubmitting(false)
     setRenamingID(null)
     setRenameDraft('')
     setRenameError('')
@@ -1493,6 +1506,8 @@ export function XDriveFileExplorer({
 
   const cancelRename = (item: XDriveFileExplorerItem) => {
     renameCancelledRef.current = true
+    renameSubmitGenerationRef.current += 1
+    renameSubmittingRef.current = false
     setRenamingID(null)
     setRenameDraft('')
     setRenameError('')
@@ -1520,24 +1535,38 @@ export function XDriveFileExplorer({
       return
     }
 
+    const renameGeneration = renameSubmitGenerationRef.current + 1
+    renameSubmitGenerationRef.current = renameGeneration
     renameSubmittingRef.current = true
     setRenameSubmitting(true)
     setRenameError('')
     try {
       await onRenameItem(item, normalized)
+      if (
+        renameGeneration !== renameSubmitGenerationRef.current ||
+        renameCancelledRef.current
+      ) return
       setRenamingID(null)
       setRenameDraft('')
       scheduleItemFocus(item.id)
     } catch (error) {
+      if (
+        renameGeneration !== renameSubmitGenerationRef.current ||
+        renameCancelledRef.current
+      ) return
       setRenameError(error instanceof Error ? error.message : String(error))
       if (typeof window !== 'undefined') {
         window.requestAnimationFrame(() => {
-          renameInputRef.current?.focus()
+          if (renameGeneration === renameSubmitGenerationRef.current) {
+            renameInputRef.current?.focus()
+          }
         })
       }
     } finally {
-      renameSubmittingRef.current = false
-      setRenameSubmitting(false)
+      if (renameGeneration === renameSubmitGenerationRef.current) {
+        renameSubmittingRef.current = false
+        setRenameSubmitting(false)
+      }
     }
   }
 
