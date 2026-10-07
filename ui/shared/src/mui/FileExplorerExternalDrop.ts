@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { Node } from '../models'
 import { xDriveFileExplorerExternalDropParentID } from '../file-explorer-controller'
 import type {
@@ -45,16 +45,40 @@ export function useXDriveFileExplorerExternalDropController<
   uploadFolderEntriesToParent,
   refreshDirectory,
 }: XDriveFileExplorerExternalDropControllerOptions<TNode, TCrumb, TSort>) {
-  const refreshCurrentDirectory = useCallback(async () => {
-    if (currentID === undefined) return
-    await refreshDirectory(currentID, [...currentCrumbs], sort)
-  }, [currentCrumbs, currentID, refreshDirectory, sort])
+  const currentContextRef = useRef({
+    currentID,
+    currentCrumbs,
+    sort,
+  })
+  currentContextRef.current = {
+    currentID,
+    currentCrumbs,
+    sort,
+  }
+
+  const refreshCurrentDirectory = useCallback(async (
+    expectedCurrentID: number | undefined,
+  ) => {
+    const latest = currentContextRef.current
+    if (
+      expectedCurrentID === undefined ||
+      latest.currentID !== expectedCurrentID
+    ) return
+    await refreshDirectory(
+      latest.currentID,
+      [...latest.currentCrumbs],
+      latest.sort,
+    )
+  }, [refreshDirectory])
 
   const dropFilesToParent = useCallback(async (files: File[], parentID: number) => {
     if (disabled || files.length === 0) return
+    const expectedCurrentID = currentID
     const shouldRefresh = await uploadFilesToParent(parentID, files)
-    if (shouldRefresh !== false) await refreshCurrentDirectory()
-  }, [disabled, refreshCurrentDirectory, uploadFilesToParent])
+    if (shouldRefresh !== false) {
+      await refreshCurrentDirectory(expectedCurrentID)
+    }
+  }, [currentID, disabled, refreshCurrentDirectory, uploadFilesToParent])
 
   const dropFiles = useCallback(async (
     files: File[],
@@ -74,9 +98,13 @@ export function useXDriveFileExplorerExternalDropController<
       !folderDropEnabled ||
       (payload.files.length === 0 && payload.directories.length === 0)
     ) return
+    const expectedCurrentID = currentID
     const shouldRefresh = await uploadFolderEntriesToParent(parentID, payload)
-    if (shouldRefresh !== false) await refreshCurrentDirectory()
+    if (shouldRefresh !== false) {
+      await refreshCurrentDirectory(expectedCurrentID)
+    }
   }, [
+    currentID,
     disabled,
     folderDropEnabled,
     refreshCurrentDirectory,

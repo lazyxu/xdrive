@@ -255,7 +255,9 @@ test('shared FileExplorer external-drop controller owns target, breadcrumb, and 
     'xDriveFileExplorerExternalDropParentID(currentID, target, nodeByID)',
     'uploadFilesToParent(parentID, files)',
     'uploadFolderEntriesToParent(parentID, payload)',
-    'await refreshCurrentDirectory()',
+    'currentContextRef.current',
+    'latest.currentID !== expectedCurrentID',
+    'await refreshCurrentDirectory(expectedCurrentID)',
     'Number(crumb.id)',
     'folderDropEnabled',
   ]) {
