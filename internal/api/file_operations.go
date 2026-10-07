@@ -915,11 +915,16 @@ func (s *Server) processNextFileOperation(ctx context.Context) (bool, error) {
 func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation, bool, error) {
 	var operation meta.FileOperation
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status = ?", meta.FileOperationStatusQueued).
 			Order("created_at ASC, id ASC").
-			First(&operation).Error; err != nil {
-			return err
+			Limit(1).
+			Find(&operation)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
 		}
 		now := time.Now()
 		if err := tx.Model(&meta.FileOperation{}).Where("id = ?", operation.ID).Updates(map[string]any{
