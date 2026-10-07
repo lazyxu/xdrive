@@ -264,7 +264,14 @@ func (s *Server) buildArchiveDownloadManifest(
 		if err != nil {
 			return archiveDownloadManifest{}, err
 		}
-		if err := s.appendArchiveDownloadNode(ctx, uid, root, rootName, &manifest, visited); err != nil {
+		var childrenByParent map[uint64][]meta.Node
+		if root.Type == meta.NodeTypeDir {
+			childrenByParent, err = loadArchiveDownloadSubtree(ctx, s.DB, uid, root.ID)
+			if err != nil {
+				return archiveDownloadManifest{}, err
+			}
+		}
+		if err := s.appendArchiveDownloadNode(ctx, root, rootName, &manifest, visited, childrenByParent); err != nil {
 			return archiveDownloadManifest{}, err
 		}
 	}
@@ -303,13 +310,94 @@ func (s *Server) archiveNodeHasSelectedAncestor(
 	return false, nil
 }
 
+type archiveDownloadSubtreeRow struct {
+	ID             uint64    `gorm:"column:id"`
+	ParentID       *uint64   `gorm:"column:parent_id"`
+	Name           string    `gorm:"column:name"`
+	Type           string    `gorm:"column:type"`
+	Revision       uint64    `gorm:"column:revision"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
+	Cycle          bool      `gorm:"column:cycle"`
+	FileNodeID     uint64    `gorm:"column:file_node_id"`
+	FileSize       int64     `gorm:"column:file_size"`
+	FileStorageKey string    `gorm:"column:file_storage_key"`
+	FileSHA256     string    `gorm:"column:file_sha256"`
+}
+
+func loadArchiveDownloadSubtree(
+	ctx context.Context,
+	db *gorm.DB,
+	uid uint64,
+	rootID uint64,
+) (map[uint64][]meta.Node, error) {
+	var rows []archiveDownloadSubtreeRow
+	err := db.WithContext(ctx).Raw(`WITH RECURSIVE tree AS (
+SELECT n.id, n.parent_id, n.name, n.type, n.revision, n.created_at, n.updated_at,
+       ARRAY[CAST(? AS bigint), n.id]::bigint[] AS path_ids,
+       false AS cycle
+FROM xd_nodes AS n
+WHERE n.owner_id = ? AND n.parent_id = ? AND n.deleted_at IS NULL
+UNION ALL
+SELECT n.id, n.parent_id, n.name, n.type, n.revision, n.created_at, n.updated_at,
+       tree.path_ids || n.id,
+       n.id = ANY(tree.path_ids) AS cycle
+FROM xd_nodes AS n
+JOIN tree ON n.parent_id = tree.id
+WHERE n.owner_id = ? AND n.deleted_at IS NULL AND NOT tree.cycle
+)
+SELECT tree.id, tree.parent_id, tree.name, tree.type, tree.revision,
+       tree.created_at, tree.updated_at, tree.cycle,
+       COALESCE(f.node_id, 0) AS file_node_id,
+       COALESCE(f.size, 0) AS file_size,
+       COALESCE(f.storage_key, '') AS file_storage_key,
+       COALESCE(f.sha256, '') AS file_sha256
+FROM tree
+LEFT JOIN xd_files AS f ON f.node_id = tree.id
+ORDER BY tree.parent_id ASC NULLS FIRST, lower(tree.name) ASC, tree.id ASC
+LIMIT ?`, rootID, uid, rootID, uid, archiveDownloadMaxEntries).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) >= archiveDownloadMaxEntries {
+		return nil, errArchiveTooManyEntries
+	}
+
+	childrenByParent := make(map[uint64][]meta.Node)
+	for _, row := range rows {
+		if row.Cycle || row.ParentID == nil {
+			return nil, errArchiveInvalidStoredEntry
+		}
+		node := meta.Node{
+			ID:        row.ID,
+			ParentID:  row.ParentID,
+			Name:      row.Name,
+			Type:      row.Type,
+			OwnerID:   uid,
+			Revision:  row.Revision,
+			CreatedAt: row.CreatedAt,
+			UpdatedAt: row.UpdatedAt,
+		}
+		if row.FileNodeID != 0 {
+			node.File = &meta.File{
+				NodeID:     row.FileNodeID,
+				Size:       row.FileSize,
+				StorageKey: row.FileStorageKey,
+				SHA256:     row.FileSHA256,
+			}
+		}
+		childrenByParent[*row.ParentID] = append(childrenByParent[*row.ParentID], node)
+	}
+	return childrenByParent, nil
+}
+
 func (s *Server) appendArchiveDownloadNode(
 	ctx context.Context,
-	uid uint64,
 	node meta.Node,
 	archivePath string,
 	manifest *archiveDownloadManifest,
 	visited map[uint64]struct{},
+	childrenByParent map[uint64][]meta.Node,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -326,26 +414,18 @@ func (s *Server) appendArchiveDownloadNode(
 		manifest.Entries = append(manifest.Entries, archiveDownloadEntry{
 			Path: archivePath + "/", IsDir: true, UpdatedAt: node.UpdatedAt,
 		})
-		var children []meta.Node
-		if err := s.DB.WithContext(ctx).
-			Preload("File").
-			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", uid, node.ID).
-			Order("lower(name) ASC, id ASC").
-			Find(&children).Error; err != nil {
-			return err
-		}
-		for _, child := range children {
+		for _, child := range childrenByParent[node.ID] {
 			segment, err := archivePathSegment(child.Name)
 			if err != nil {
 				return err
 			}
 			if err := s.appendArchiveDownloadNode(
 				ctx,
-				uid,
 				child,
 				pathpkg.Join(archivePath, segment),
 				manifest,
 				visited,
+				childrenByParent,
 			); err != nil {
 				return err
 			}

@@ -29,6 +29,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
+| Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
@@ -65,6 +66,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Windows CfAPI hydration keeps the existing 4 MiB HTTP range granularity but fills one caller-owned buffer through `DownloadRangeInto` for the lifetime of each fetch callback, rather than allocating one response slice per range. The legacy `DownloadRange` API remains unchanged for compatibility.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
 - Multi-file and folder uploads batch conflict preflight for unique destination names, with at most **200 targets per request**. Shared orchestration consumes results in original file order, excludes duplicate destination names from upfront batching, and falls back to the legacy per-file preflight when the batch transport is unavailable or fails.
+- Archive prepare loads every descendant of a selected top-level directory with one owner-scoped recursive CTE per root, joining `xd_files` metadata in the same statement. Manifest DFS order, duplicate-root naming, stored-object validation, entry caps, and ZIP streaming remain unchanged.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
@@ -167,7 +169,38 @@ Decision: **Accepted.** This removes request-count-scaled preflight round trips 
 
 Regression budget: a normal <=200 unique-target batch must use at most **1 batch request / 1 batch SQL statement**; no batch failure may disable the single-target fallback, and duplicate destinations must remain sequentially preflighted.
 
-Next action: audit Server upload-finalize staging/object-store I/O for avoidable full-file copies or duplicate reads, then continue download/sync/delete basic-path performance.
+Next action: continue download/sync/delete basic-path performance; upload finalize was audited and the Local Store already promotes assembled content into CAS with same-filesystem rename while existing-CAS sessions short-circuit through instant upload, so no speculative finalize rewrite is planned.
+
+### Archive prepare subtree SQL contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one selected top-level folder directly under the user root;
+- **120 direct child folders**, each containing **1 file**;
+- total manifest entries: **241** including the selected root;
+- evidence is deterministic SQL cardinality for subtree enumeration; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- archive manifest DFS calls one `Find(children)` for the selected root and one for each of its 120 child folders;
+- that is **121 child-list SQL queries**, with additional `Preload("File")` queries emitted by GORM;
+- file bytes are not read during this phase, but request latency and DB work scale with directory count.
+
+AFTER / current:
+
+- **1 recursive CTE** returns all descendants for the selected root and LEFT JOINs current file metadata in the same statement;
+- children remain ordered by `lower(name), id` within each parent before the existing DFS builds archive paths;
+- cycle detection and the 200,000-entry cap remain enforced;
+- each file still goes through the existing stored-object open/stat validation;
+- ZIP creation still streams each stored object with `io.Copy`; the data plane is intentionally unchanged.
+
+Decision: **Accepted.** This removes directory-count-scaled manifest SQL without changing archive contents or download streaming semantics.
+
+Regression budget: each selected top-level directory root may use at most **1 recursive subtree SQL statement** regardless of descendant directory count; no reintroduction of per-directory child queries.
+
+Next action: continue with sync/delete basic-path performance and only change paths with deterministic request, SQL, allocation, or I/O amplification.
 
 ## Measured baselines and accepted/rejected changes
 
