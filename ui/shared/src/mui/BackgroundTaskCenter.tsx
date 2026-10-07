@@ -36,6 +36,7 @@ function taskTone(state: string) {
   if (state === 'failed') return 'bad' as const
   if (
     state === 'partial' ||
+    state === 'issues' ||
     state === 'cancelled' ||
     state === 'cancelling' ||
     state === 'cancel_requested'

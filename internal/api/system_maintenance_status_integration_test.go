@@ -178,8 +178,8 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks) != 2 {
-		t.Fatalf("maintenance tasks=%d want=2: %+v", len(tasks), tasks)
+	if len(tasks) != 3 {
+		t.Fatalf("maintenance tasks=%d want=3: %+v", len(tasks), tasks)
 	}
 	janitor := backgroundTaskByID(
 		tasks,
@@ -198,6 +198,17 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 		sampler.Progress.Current != 1 ||
 		sampler.Progress.Total != 1 {
 		t.Fatalf("unexpected Storage sampler projection: %+v", sampler)
+	}
+	sourceVerify := backgroundTaskByID(
+		tasks,
+		systemMaintenanceTaskCenterID(meta.SystemMaintenanceKindSourceVerify),
+	)
+	if sourceVerify == nil || sourceVerify.State != "idle" ||
+		!backgroundTaskActionAllowed(
+			sourceVerify.ControlActions,
+			backgroundTaskActionRun,
+		) {
+		t.Fatalf("unexpected source verify capability row: %+v", sourceVerify)
 	}
 
 	oldFinished := time.Now().UTC().Add(

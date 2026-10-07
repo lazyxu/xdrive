@@ -178,6 +178,7 @@ func main() {
 	srv.StartBackgroundRuntimePresence(serverCtx)
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
+	srv.StartSystemMaintenanceTasks(serverCtx)
 	srv.StartPhotoIntelligence(serverCtx)
 	srv.StartMediaIndexer(serverCtx)
 	srv.StartFileOperationWorker(serverCtx)

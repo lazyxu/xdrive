@@ -300,13 +300,21 @@ The server exposes background work as a read model without introducing a generic
   FileOperation and SyncRun terminal rows. Later cursor pages do not repeat current items.
 - The Web/Desktop shared controller owns cursor state, de-duplication, polling refresh, and automatic
   IntersectionObserver history admission. There is no platform-local or user-facing “load more” control.
+- Operator-driven system maintenance is represented by a durable domain row rather than scheduler memory.
+  `source.verify` is the first template: the admin global Task Center always exposes a stable idle/latest-result
+  row; `run` first persists a queued `SystemMaintenanceRun`; P4/`maintenance_io` execution uses a
+  cross-Server advisory lease; startup/30-second reconciliation resubmits queued or interrupted work; and
+  cancellation is durable through `cancel_requested` plus lease-heartbeat fencing. Scheduler runtime presence
+  for `system.maintenance.*` is intentionally hidden from Task Center because the durable maintenance row is
+  authoritative and must not be duplicated by an ephemeral runtime row.
 - Every item includes server-derived `control_actions`. Clients must not infer permissions from role or task
   kind. Cross-user administrator controls are domain-specific: administrators may cancel another user's
   active `FileOperation`, while retry/undo/redo remain owner-only until FileOperation persists durable
   initiator attribution; administrators may cancel a running `SyncRun`, cancel owner-scoped
   `media.index` / Photo Intelligence work, and request Photo Intelligence reanalysis. Every administrator
   Task Center control attempt is written to the audit log with the actor, target task, domain/kind, owner id,
-  requested action, result, and resulting task id when one is created.
+  requested action, result, and resulting task id when one is created. System-maintenance `run`/`cancel`
+  uses the same audited control endpoint, so Web and Desktop share the same authorization and lifecycle.
 - `GET /api/v1/background-tasks/active-summary` is the lightweight owner-scoped badge contract. It counts
   active FileOperation, SyncRun, and grouped scheduler rows without loading terminal history. Web/Desktop
   continuously poll only this compact summary for the shared Task Center badge; the detailed task list remains

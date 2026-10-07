@@ -237,6 +237,10 @@ func aggregateRuntimeBackgroundTasks(
 	groups := make(map[string]*runtimeTaskGroup)
 	for _, snapshot := range snapshots {
 		kind := strings.TrimSpace(snapshot.Kind)
+		if snapshot.Identity.Scope == background.ScopeSystem &&
+			strings.HasPrefix(kind, "system.maintenance.") {
+			continue
+		}
 		if kind == "" {
 			kind = "runtime"
 		}
