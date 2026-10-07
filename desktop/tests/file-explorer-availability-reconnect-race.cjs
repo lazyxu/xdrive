@@ -148,6 +148,24 @@ function loadCloudFilesHook(react) {
   ).useXDriveCloudFilesController
 }
 
+function loadNavigationHook(react) {
+  return loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'],
+    react,
+    {
+      '../file-explorer-controller': {
+        XDRIVE_FILE_EXPLORER_DEFAULT_SORT: { key: 'name', direction: 'asc' },
+      },
+      '../file-explorer-grouping': {
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING: {
+          groupBy: 'none',
+          foldersFirst: true,
+        },
+      },
+    },
+  ).useXDriveFileExplorerNavigation
+}
+
 async function flushAsync() {
   for (let index = 0; index < 8; index += 1) await Promise.resolve()
 }
@@ -364,4 +382,257 @@ test('CloudFiles reconnect preservation is Desktop-only opt-in', () => {
     controllerSource.includes('preserveStateOnDisable = false'),
     'shared/Web callers must retain the existing destructive disable default',
   )
+})
+
+
+test('tab activation cannot outlive an Agent reconnect and desynchronize tab from visible directory', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let enabled = true
+    let betaLoads = 0
+    let releasePendingBeta
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id) {
+          betaLoads += 1
+          if (betaLoads >= 2) {
+            return new Promise((resolve) => {
+              releasePendingBeta = () => resolve({
+                items: [{ id: 30, name: 'beta.txt' }],
+                total_count: 1,
+                offset,
+                limit,
+                sort: 'name',
+                order: 'asc',
+              })
+            })
+          }
+        }
+        return Promise.resolve({
+          items: parentID === root.id
+            ? [alpha, beta]
+            : parentID === alpha.id
+              ? [{ id: 20, name: 'alpha.txt' }]
+              : [{ id: 30, name: 'beta.txt' }],
+          total_count: parentID === root.id ? 2 : 1,
+          offset,
+          limit,
+          sort: 'name',
+          order: 'asc',
+        })
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'reconnect-tabs',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+    assert.deepEqual(app.cloud.crumbs, [root])
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.activeTabID, 'tab-1')
+
+    assert.equal(await app.navigation.openTab([root, beta]), true)
+    app = render()
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+
+    await app.navigation.activateTab('tab-1')
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.activeTabID, 'tab-1')
+
+    const pendingBetaActivation = app.navigation.activateTab('tab-2')
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    enabled = false
+    render()
+    enabled = true
+    render()
+    await flushAsync()
+    app = render()
+    assert.equal(
+      app.cloud.current?.id,
+      alpha.id,
+      'reconnect should reload the directory that was actually visible before reconnect',
+    )
+
+    releasePendingBeta()
+    await pendingBetaActivation
+
+    app = render()
+    assert.equal(
+      app.navigation.activeTabID,
+      'tab-1',
+      'a tab activation invalidated by reconnect must not commit after its directory load was discarded',
+    )
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+
+test('background current-directory reload cannot make a discarded manual navigation corrupt tab history', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let releasePendingBeta
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id) {
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve({
+              items: [{ id: 30, name: 'beta.txt' }],
+              total_count: 1,
+              offset,
+              limit,
+              sort: 'name',
+              order: 'asc',
+            })
+          })
+        }
+        return Promise.resolve({
+          items: parentID === root.id
+            ? [alpha, beta]
+            : [{ id: 20, name: 'alpha.txt' }],
+          total_count: parentID === root.id ? 2 : 1,
+          offset,
+          limit,
+          sort: 'name',
+          order: 'asc',
+        })
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'reload-vs-manual-navigation',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.tabs[0]?.label, 'Alpha')
+
+    const pendingManualNavigation = app.navigation.navigateTo([root, beta])
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    await app.cloud.loadDirectory(alpha.id, [root, alpha], sort)
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+
+    releasePendingBeta()
+    await pendingManualNavigation
+
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(
+      app.navigation.tabs[0]?.label,
+      'Alpha',
+      'a manual navigation whose directory load was discarded must not rewrite tab history to Beta',
+    )
+    assert.equal(app.navigation.pathValue, '我的文件/Alpha')
+  } finally {
+    global.window = originalWindow
+  }
 })

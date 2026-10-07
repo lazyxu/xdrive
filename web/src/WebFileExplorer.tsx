@@ -93,7 +93,7 @@ export default function WebFileExplorer({
     crumbs: Crumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   onUploadFiles: (files: FileList | null) => Promise<void>
   onUploadFolderFiles: (files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>

@@ -88,7 +88,7 @@ export function useXDriveFileExplorerWorkspace<
     crumbs: XDriveFileExplorerWorkspaceCrumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   loadSearchRange: XDriveFileExplorerSearchLoader<TSearch>
   loadRoot: () => Promise<{ id: number }>
   findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
