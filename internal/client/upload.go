@@ -323,9 +323,13 @@ func (c *Client) uploadStreamResult(
 	}
 
 	var transferredBytes int64
+	var chunkBuffer []byte
 	for index := firstMissing; index < session.ChunkCount; index++ {
 		partSize := uploadChunkSize(session.Size, session.ChunkSize, index)
-		buf := make([]byte, int(partSize))
+		if len(chunkBuffer) == 0 {
+			chunkBuffer = newUploadChunkBuffer(session.Size, session.ChunkSize)
+		}
+		buf := chunkBuffer[:int(partSize)]
 		if _, err := io.ReadFull(stream, buf); err != nil {
 			return UploadResult{}, fmt.Errorf("read upload stream chunk %d: %w", index, err)
 		}
@@ -448,13 +452,17 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 		progress(done, init.Size)
 	}
 
+	var chunkBuffer []byte
 	for index := 0; index < session.ChunkCount; index++ {
 		if _, ok := received[index]; ok {
 			continue
 		}
 		offset := int64(index) * session.ChunkSize
 		partSize := uploadChunkSize(session.Size, session.ChunkSize, index)
-		buf := make([]byte, int(partSize))
+		if len(chunkBuffer) == 0 {
+			chunkBuffer = newUploadChunkBuffer(session.Size, session.ChunkSize)
+		}
+		buf := chunkBuffer[:int(partSize)]
 		n, readErr := f.ReadAt(buf, offset)
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			return UploadResult{}, readErr
@@ -528,23 +536,37 @@ func hashUploadFile(f *os.File, size, chunkSize int64) (string, []string, error)
 	}
 	hashes := make([]string, count)
 	full := sha256.New()
+	buf := newUploadChunkBuffer(size, chunkSize)
 	for index := 0; index < count; index++ {
 		partSize := uploadChunkSize(size, chunkSize, index)
-		buf := make([]byte, int(partSize))
-		n, err := f.ReadAt(buf, int64(index)*chunkSize)
+		chunk := buf[:int(partSize)]
+		n, err := f.ReadAt(chunk, int64(index)*chunkSize)
 		if err != nil && !errors.Is(err, io.EOF) {
 			return "", nil, err
 		}
 		if int64(n) != partSize {
 			return "", nil, fmt.Errorf("short read while hashing chunk %d: got %d want %d", index, n, partSize)
 		}
-		if _, err := full.Write(buf); err != nil {
+		if _, err := full.Write(chunk); err != nil {
 			return "", nil, err
 		}
-		sum := sha256.Sum256(buf)
+		sum := sha256.Sum256(chunk)
 		hashes[index] = hex.EncodeToString(sum[:])
 	}
 	return hex.EncodeToString(full.Sum(nil)), hashes, nil
+}
+
+func newUploadChunkBuffer(total, chunkSize int64) []byte {
+	if total <= 0 {
+		return nil
+	}
+	if chunkSize <= 0 {
+		chunkSize = DefaultUploadChunkSize
+	}
+	if total < chunkSize {
+		chunkSize = total
+	}
+	return make([]byte, int(chunkSize))
 }
 
 func uploadChunkSize(total, chunkSize int64, index int) int64 {

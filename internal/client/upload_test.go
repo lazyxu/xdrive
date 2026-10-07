@@ -17,6 +17,28 @@ import (
 	"time"
 )
 
+func TestUploadChunkBufferBoundedToSingleChunk(t *testing.T) {
+	tests := []struct {
+		name      string
+		total     int64
+		chunkSize int64
+		want      int
+	}{
+		{name: "empty", total: 0, chunkSize: DefaultUploadChunkSize, want: 0},
+		{name: "small", total: 123, chunkSize: DefaultUploadChunkSize, want: 123},
+		{name: "one-gib", total: 1 << 30, chunkSize: DefaultUploadChunkSize, want: int(DefaultUploadChunkSize)},
+		{name: "server-max", total: 1 << 30, chunkSize: 16 << 20, want: 16 << 20},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := newUploadChunkBuffer(tt.total, tt.chunkSize)
+			if len(buf) != tt.want {
+				t.Fatalf("buffer len=%d want=%d", len(buf), tt.want)
+			}
+		})
+	}
+}
+
 func TestUploadFileResumableSkipsCompletedChunkAndRetries(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "large.bin")
