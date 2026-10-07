@@ -39,6 +39,16 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This integration test exercises the real thumbnail/analysis-preview
+	// scheduler. Cross-server derivative leases borrow dedicated SQL sessions,
+	// so do not retain those sessions in an idle test pool after each request.
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(0)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.Migrator().DropTable(
 		&meta.PhotoCollectionAsset{},
 		&meta.PhotoCollection{},

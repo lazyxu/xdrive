@@ -230,6 +230,25 @@ the scheduler handle; after successful completion they reopen the shared cache o
 singleflight while keeping task results small and allows one HTTP request to disconnect without cancelling
 work still needed by another waiter.
 
+Cross-Server cache misses use the same deterministic derivative task identity as a PostgreSQL session advisory
+lease key. Only one Server may decode/resize/write that exact owner/node/revision/SHA/kind/edge/version result at
+a time. Another Server defers through the scheduler without consuming a worker; after the leader releases the
+lease it acquires the key, rechecks the shared cache inside `generateMediaDerivative`, and exits without a
+second decode/write. Lease heartbeat loss terminates the stale generator through the scheduler's existing
+`ErrLeaseLost` path.
+
+Waiter cancellation remains consumer-aware: `Handle.Wait(ctx)` returns when that request context is cancelled,
+but it does not cancel the shared scheduler task. This applies both to same-Server deduplicated waiters and to
+cross-Server waiters, so one disconnected browser/Desktop request cannot abort derivative work still needed by
+another consumer.
+
+**Cross-Server singleflight status: Accepted (unmeasured / complexity-only).** Named validation workload:
+two Server instances sharing one PostgreSQL database and one derivative store, both missing the same 512px
+thumbnail identity, with one waiter cancelled while generation is in flight. Expected/observed structural
+result in PostgreSQL integration coverage: **1 derivative write instead of 2**, at least one distributed lease
+deferral, cancelled waiter returns promptly, surviving waiter succeeds. No wall-clock or percentage speedup is
+claimed.
+
 A saturated `media_cpu` queue returns service-unavailable with retry guidance. It never falls back to
 synchronous image decode/resize/encode on the request goroutine.
 
@@ -340,7 +359,8 @@ Cancelling a Photo Intelligence task also advances `cancelled_epoch` on the dura
 of pretending that the reanalysis request was applied. A newer reanalysis request remains pending because
 `cancelled_epoch` only fences requests that existed when cancellation was requested.
 
-Thumbnail and analysis-preview cancellation remains intentionally absent from this coarse owner-group
-control path. Those derivatives use shared singleflight and must gain consumer-aware cancellation together
-with the planned cross-Server derivative singleflight work so one consumer cannot cancel work still needed
-by another.
+Thumbnail and analysis-preview cancellation remains intentionally absent from the coarse owner-group Task
+Center control path. Their cancellation contract is consumer-aware and waiter-scoped: cancelling or
+disconnecting one HTTP/Web/Desktop waiter stops only that waiter while the shared underlying derivative task
+continues for other consumers. Cross-Server derivative singleflight uses the same waiter/task distinction, so
+one consumer cannot cancel work still needed by another Server or request.
