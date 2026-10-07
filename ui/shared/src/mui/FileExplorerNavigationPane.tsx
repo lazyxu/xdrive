@@ -125,6 +125,7 @@ export function XDriveFileExplorerNavigationPane({
     nextCursor: string
     hasMore: boolean
     loaded: boolean
+    generation: number
   }>>({})
   const pageByParentRef = useRef(pageByParent)
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
@@ -190,6 +191,7 @@ export function XDriveFileExplorerNavigationPane({
       nextCursor: string
       hasMore: boolean
       loaded: boolean
+      generation: number
     },
   ) => {
     const next = {
@@ -206,20 +208,32 @@ export function XDriveFileExplorerNavigationPane({
   ) => {
     const generation = loadDirectoryPageGenerationRef.current
     const current = pageByParentRef.current[String(node.id)]
-    if (!append && current?.loaded) return
-    if (append && (!current?.hasMore || !current.nextCursor)) return
+    const appendCurrentGeneration = append && current?.generation === generation
+    if (!append && current?.loaded && current.generation === generation) return
+    if (
+      appendCurrentGeneration &&
+      (!current?.hasMore || !current.nextCursor)
+    ) return
     if (loadingIDsRef.current.get(node.id) === generation) return
 
     loadingIDsRef.current.set(node.id, generation)
     setLoadingIDs((currentIDs) => new Set(currentIDs).add(node.id))
     try {
-      const page = await loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)
+      const page = await loadDirectoryPage(
+        node.id,
+        appendCurrentGeneration ? current?.nextCursor : undefined,
+      )
       if (generation !== loadDirectoryPageGenerationRef.current) return
-      if (append && current?.nextCursor && page.hasMore && page.nextCursor === current.nextCursor) {
+      if (
+        appendCurrentGeneration &&
+        current?.nextCursor &&
+        page.hasMore &&
+        page.nextCursor === current.nextCursor
+      ) {
         throw new Error('文件夹树分页游标重复。')
       }
       const merged = new Map<number, XDriveFileExplorerNavigationTreeNode>()
-      if (append && current) {
+      if (appendCurrentGeneration && current) {
         for (const child of current.children) merged.set(child.id, child)
       }
       const latestNodeCrumbs =
@@ -239,6 +253,7 @@ export function XDriveFileExplorerNavigationPane({
         nextCursor: page.nextCursor,
         hasMore: page.hasMore,
         loaded: true,
+        generation,
       })
     } catch (error) {
       if (generation === loadDirectoryPageGenerationRef.current) onError?.(error)

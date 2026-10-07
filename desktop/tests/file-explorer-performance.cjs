@@ -208,7 +208,7 @@ test('FileExplorer navigation tree expands with bounded pages instead of drainin
   const loaderStart = explorerController.indexOf('export async function xDriveFileExplorerLoadChildDirectoryPage')
   const loaderEnd = explorerController.indexOf('export type XDriveFileExplorerFolderUploadEntry', loaderStart)
   assert.equal(explorerController.slice(loaderStart, loaderEnd).includes('while (true)'), false, 'tree expansion must not drain every server page')
-  assert.ok(navigationPane.includes('loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)'), 'tree auto-load must advance one cursor page')
+  assert.ok(navigationPane.includes('appendCurrentGeneration ? current?.nextCursor : undefined'), 'tree auto-load must advance one current-generation cursor page')
   assert.ok(navigationPane.includes('data-xdrive-file-explorer-tree-auto-load'), 'tree must expose an automatic page sentinel')
   assert.ok(navigationPane.includes('onLoad={() => loadChildren(node, true)}'), 'tree sentinel must request exactly the next bounded page')
   assert.equal(navigationPane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more affordance')

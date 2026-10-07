@@ -242,3 +242,93 @@ test('a replaced navigation-tree loader supersedes an older pending request for 
     'an older tree-loader response must not overwrite the page committed by its replacement loader',
   )
 })
+
+
+test('a replaced navigation-tree loader must reload a page already cached by the older generation', async () => {
+  const callbackSource = callbackInitializer(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'],
+    'loadChildren',
+  )
+  const makeLoadChildren = compileLoadChildren(callbackSource)
+
+  const root = { id: 1, name: '我的文件' }
+  const oldChild = { id: 2, name: 'OldChild' }
+  const newChild = { id: 3, name: 'NewChild' }
+  const node = {
+    id: root.id,
+    name: root.name,
+    crumbs: [root],
+  }
+  const pageByParentRef = { current: {} }
+  const loadingIDsRef = { current: new Map() }
+  const loadDirectoryPageGenerationRef = { current: 1 }
+  const latestPathCrumbsByIDRef = {
+    current: new Map([[root.id, [root]]]),
+  }
+  let loadingIDs = new Set()
+  let newLoaderCalls = 0
+
+  const setLoadingIDs = (updater) => {
+    loadingIDs = typeof updater === 'function' ? updater(loadingIDs) : updater
+  }
+  const commitParentPage = (parentID, value) => {
+    pageByParentRef.current = {
+      ...pageByParentRef.current,
+      [String(parentID)]: value,
+    }
+  }
+
+  const oldLoadChildren = makeLoadChildren(
+    pageByParentRef,
+    loadingIDsRef,
+    setLoadingIDs,
+    async () => ({
+      items: [oldChild],
+      nextCursor: '',
+      hasMore: false,
+    }),
+    commitParentPage,
+    (error) => { throw error },
+    latestPathCrumbsByIDRef,
+    loadDirectoryPageGenerationRef,
+  )
+
+  await oldLoadChildren(node)
+  assert.deepEqual(
+    pageByParentRef.current[String(root.id)]?.children?.map((child) => child.name),
+    ['OldChild'],
+  )
+
+  loadDirectoryPageGenerationRef.current += 1
+
+  const newLoadChildren = makeLoadChildren(
+    pageByParentRef,
+    loadingIDsRef,
+    setLoadingIDs,
+    async () => {
+      newLoaderCalls += 1
+      return {
+        items: [newChild],
+        nextCursor: '',
+        hasMore: false,
+      }
+    },
+    commitParentPage,
+    (error) => { throw error },
+    latestPathCrumbsByIDRef,
+    loadDirectoryPageGenerationRef,
+  )
+
+  await newLoadChildren(node)
+
+  assert.equal(
+    newLoaderCalls,
+    1,
+    'a page cached by an older tree-loader generation must not suppress the replacement loader',
+  )
+  assert.deepEqual(
+    pageByParentRef.current[String(root.id)]?.children?.map((child) => child.name),
+    ['NewChild'],
+    'replacement loader must replace children cached by the older generation',
+  )
+})
