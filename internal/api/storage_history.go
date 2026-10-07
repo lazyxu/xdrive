@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	storageSampleInterval      = 6 * time.Hour
+	storageSampleInterval      = 24 * time.Hour
 	storageSampleCheckInterval = time.Hour
 	storageSampleRetention     = 180 * 24 * time.Hour
 	storageDecisionWindow      = 7 * 24 * time.Hour
@@ -59,8 +60,11 @@ type storageHistoryDTO struct {
 }
 
 func (s *Server) StartStorageSampler(ctx context.Context) {
+	if s == nil || s.DB == nil || s.BackgroundScheduler == nil {
+		return
+	}
 	go func() {
-		s.runStorageSamplingLeaderPass(ctx, time.Now().UTC())
+		s.ensureStorageSamplerRunDue(ctx, time.Now().UTC())
 		ticker := time.NewTicker(storageSampleCheckInterval)
 		defer ticker.Stop()
 		for {
@@ -68,70 +72,46 @@ func (s *Server) StartStorageSampler(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				s.runStorageSamplingLeaderPass(ctx, now.UTC())
+				s.ensureStorageSamplerRunDue(ctx, now.UTC())
 			}
 		}
 	}()
 }
 
-func (s *Server) runStorageSamplingLeaderPass(
-	ctx context.Context,
-	now time.Time,
-) {
-	s.runMaintenanceLeaderPass(
-		ctx,
-		maintenanceLeaderStorageSampler,
-		func() {
-			runID := s.beginSystemMaintenanceRun(
-				ctx,
-				meta.SystemMaintenanceKindStorageSampler,
-				1,
-			)
-			result := s.runStorageSamplingTrackedPass(
-				ctx,
-				now,
-				runID,
-			)
-			s.finishSystemMaintenanceRun(
-				ctx,
-				runID,
-				result,
-			)
-		},
-	)
-}
-
-func (s *Server) runStorageSamplingPass(
-	ctx context.Context,
-	now time.Time,
-) {
-	_ = s.runStorageSamplingTrackedPass(ctx, now, 0)
-}
-
-func (s *Server) runStorageSamplingTrackedPass(
-	ctx context.Context,
-	now time.Time,
-	runID uint64,
-) systemMaintenancePassResult {
-	result := newSystemMaintenancePassResult(1)
-	s.updateSystemMaintenanceRunPhase(
-		ctx,
-		runID,
-		meta.SystemMaintenancePhaseStorageSample,
-		result.CompletedSteps,
-		result.TotalSteps,
-	)
-	if err := s.captureStorageSampleIfDue(ctx, now); err != nil {
-		s.ensureObservability()
-		s.obs.logger.Warn("storage_sampling_failed", "error", err)
-		result.addIssue(meta.SystemMaintenancePhaseStorageSample, err)
-		return result
+func (s *Server) ensureStorageSamplerRunDue(ctx context.Context, now time.Time) {
+	if ctx.Err() != nil {
+		return
 	}
-	result.CompletedSteps++
-	return result
+	slot := now.UTC().Truncate(storageSampleInterval)
+	var existing int64
+	if err := s.DB.WithContext(ctx).Model(&meta.StorageSample{}).
+		Where("slot_at = ? AND snapshot_json <> '' AND snapshot_json <> '{}'", slot).
+		Count(&existing).Error; err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("storage_sampling_due_check_failed", "error", err)
+		return
+	}
+	if existing > 0 {
+		return
+	}
+	if _, err := s.requestScheduledSystemMaintenanceRun(
+		ctx,
+		meta.SystemMaintenanceKindStorageSampler,
+	); err != nil {
+		s.ensureObservability()
+		s.obs.logger.Warn("storage_sampling_schedule_failed", "error", err)
+	}
+}
+
+func (s *Server) runStorageSamplingPass(ctx context.Context, now time.Time) {
+	_ = s.captureStorageSample(ctx, now, false)
 }
 
 func (s *Server) captureStorageSampleIfDue(ctx context.Context, now time.Time) error {
+	return s.captureStorageSample(ctx, now, false)
+}
+
+func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force bool) error {
 	now = now.UTC()
 	if err := s.DB.WithContext(ctx).
 		Where("slot_at < ?", now.Add(-storageSampleRetention)).
@@ -140,20 +120,49 @@ func (s *Server) captureStorageSampleIfDue(ctx context.Context, now time.Time) e
 	}
 
 	slot := now.Truncate(storageSampleInterval)
-	var existing int64
-	if err := s.DB.WithContext(ctx).Model(&meta.StorageSample{}).
-		Where("slot_at = ?", slot).Count(&existing).Error; err != nil {
-		return err
-	}
-	if existing > 0 {
-		return nil
+	if !force {
+		var existing int64
+		if err := s.DB.WithContext(ctx).Model(&meta.StorageSample{}).
+			Where("slot_at = ? AND snapshot_json <> '' AND snapshot_json <> '{}'", slot).
+			Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			return nil
+		}
 	}
 
 	stats, err := s.loadGlobalStorageStats(ctx)
 	if err != nil {
 		return err
 	}
+	unreferencedCount, unreferencedBytes, err := s.loadUnreferencedPhysicalContentBlobs(ctx)
+	if err != nil {
+		return err
+	}
+	stats.UnreferencedBlobCount = unreferencedCount
+	stats.UnreferencedBlobBytes = unreferencedBytes
+
+	staging, err := s.loadUploadStagingInventoryFresh(ctx)
+	if err != nil {
+		return err
+	}
+	inventory, err := s.scanStorageInventory(ctx)
+	if err != nil {
+		return err
+	}
+	stats.UploadStaging = &staging.Stats
+	stats.Inventory = &inventory
+	xdrivePhysical := inventory.StorageRootBytes
+	stats.XDrivePhysicalBytes = &xdrivePhysical
+	stats.PhysicalSnapshotAt = &now
+	stats.GeneratedAt = now
+
 	rawBuckets, err := json.Marshal(stats.Buckets)
+	if err != nil {
+		return err
+	}
+	rawSnapshot, err := json.Marshal(stats)
 	if err != nil {
 		return err
 	}
@@ -169,12 +178,54 @@ func (s *Server) captureStorageSampleIfDue(ctx context.Context, now time.Time) e
 		P50BlobSizeBytes:          stats.P50BlobSizeBytes,
 		P90BlobSizeBytes:          stats.P90BlobSizeBytes,
 		P99BlobSizeBytes:          stats.P99BlobSizeBytes,
+		UnreferencedBlobCount:     stats.UnreferencedBlobCount,
+		UnreferencedBlobBytes:     stats.UnreferencedBlobBytes,
+		LegacyBlobCount:           stats.LegacyBlobCount,
+		LegacyPhysicalBytes:       stats.LegacyPhysicalBytes,
 		BucketsJSON:               string(rawBuckets),
+		SnapshotJSON:              string(rawSnapshot),
 	}
 	return s.DB.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "slot_at"}},
-		DoNothing: true,
+		Columns: []clause.Column{{Name: "slot_at"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"captured_at",
+			"cas_blob_count",
+			"cas_physical_bytes",
+			"cas_logical_referenced_bytes",
+			"cas_dedup_ratio",
+			"cas_savings_ratio",
+			"p50_blob_size_bytes",
+			"p90_blob_size_bytes",
+			"p99_blob_size_bytes",
+			"unreferenced_blob_count",
+			"unreferenced_blob_bytes",
+			"legacy_blob_count",
+			"legacy_physical_bytes",
+			"buckets_json",
+			"snapshot_json",
+		}),
 	}).Create(&sample).Error
+}
+
+func (s *Server) loadLatestStorageSnapshot(ctx context.Context) (storageStatsDTO, bool, error) {
+	var rows []meta.StorageSample
+	if err := s.DB.WithContext(ctx).
+		Order("slot_at DESC").
+		Limit(1).
+		Find(&rows).Error; err != nil {
+		return storageStatsDTO{}, false, err
+	}
+	if len(rows) == 0 || strings.TrimSpace(rows[0].SnapshotJSON) == "" ||
+		strings.TrimSpace(rows[0].SnapshotJSON) == "{}" {
+		return storageStatsDTO{}, false, nil
+	}
+	var stats storageStatsDTO
+	if err := json.Unmarshal([]byte(rows[0].SnapshotJSON), &stats); err != nil {
+		return storageStatsDTO{}, false, err
+	}
+	capturedAt := rows[0].CapturedAt.UTC()
+	stats.PhysicalSnapshotAt = &capturedAt
+	return stats, true, nil
 }
 
 func (s *Server) adminStorageHistory(c *gin.Context) {
@@ -308,7 +359,7 @@ func storageDecision(points []storageHistoryPointDTO) storageDecisionDTO {
 	}
 
 	decision.Confidence = "medium"
-	if len(window) >= 28 && decision.SpanHours >= 6*24 {
+	if len(window) >= 7 && decision.SpanHours >= 6*24 {
 		decision.Confidence = "high"
 	}
 

@@ -149,16 +149,16 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    `SyncRun` cancellation remain unchanged. Because the Source worker is a separate process, Server Task Center
    health/status continues to come from durable `SyncRun` rows and derives the same P0/P2 + `network` metadata;
    no cross-process generic task table or scheduler-snapshot relay is introduced.
-7. Janitor/storage sampler: **current**. Both remain timer-driven. Each pass takes a short-lived, non-blocking
-   PostgreSQL session advisory lease before running: one lease key for the upload/storage Janitor and one for the
-   storage sampler. A non-leader Server skips only that pass and competes again on the next timer tick; the lease
-   is released as soon as the pass finishes and is never held across timer intervals. Existing cleanup/GC/sample
-   implementations and manual admin staging cleanup remain unchanged. The elected leader also records a durable
-   maintenance-domain run with phase/progress/outcome in `xd_system_maintenance_runs`. Admin global Task Center
-   projects only the latest Janitor and Storage sampler runs from this shared table; ordinary users never query or
-   receive system-maintenance rows. Janitor also applies 90-day batched retention to finished maintenance-run
-   history, while always preserving the latest row for each maintenance kind so a long-idle installation retains
-   its last-known status. This is cluster-aware status, not a second generic task table.
+7. Janitor/storage sampler: **current**. Janitor remains timer-driven under its short-lived PostgreSQL leader
+   lease. Storage sampling is a **durable daily system-maintenance task**: an hourly due-check only persists/submits
+   at most one `storage_sampler` run for the UTC day, and the Background Scheduler executes that queued run through
+   the shared `maintenance_io` budget and the storage-sampler lease. Queued/running rows survive Server restart and
+   are reconciled by the normal system-maintenance recovery loop. The task captures one physical-storage snapshot,
+   including CAS distribution, unreferenced physical blobs, upload staging summary, and the full storage inventory;
+   page requests read that persisted snapshot instead of walking the storage backend. Admin global Task Center exposes
+   the sampler as “每日存储快照”, including Run/Cancel controls; manual Run refreshes the current day's snapshot.
+   Ordinary users never query or receive system-maintenance rows. Janitor keeps its existing cleanup/GC behavior and
+   applies 90-day batched retention to finished maintenance-run history while preserving the latest row per kind.
 
 ## Fairness and priority policy
 

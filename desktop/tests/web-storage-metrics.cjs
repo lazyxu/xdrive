@@ -121,3 +121,15 @@ test('unlimited cloud storage distinguishes xDrive bytes from other disk usage',
     'other disk usage must exclude current xDrive storage',
   )
 })
+
+
+test('global storage page reads daily physical snapshot without scanning staging on mount', () => {
+  assert.match(storageStats, /physical_snapshot_at/)
+  assert.match(storageStats, /每日后台任务更新/)
+  assert.match(storageStats, /加载 staging 明细/)
+  assert.equal(
+    storageStats.includes("const stagingRequest = scope === 'global'"),
+    false,
+    'opening global storage must not trigger a staging filesystem scan',
+  )
+})

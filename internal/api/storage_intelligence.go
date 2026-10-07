@@ -53,6 +53,7 @@ type storageStatsDTO struct {
 	LegacyBlobCount           int64                  `json:"legacy_blob_count,omitempty"`
 	LegacyPhysicalBytes       int64                  `json:"legacy_physical_bytes,omitempty"`
 	Buckets                   []storageSizeBucketDTO `json:"buckets,omitempty"`
+	PhysicalSnapshotAt        *time.Time             `json:"physical_snapshot_at,omitempty"`
 	GeneratedAt               time.Time              `json:"generated_at"`
 }
 
@@ -101,26 +102,22 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Minute)
 	defer cancel()
 
-	stats, err := s.loadGlobalStorageStats(ctx)
+	stats, snapshotAvailable, err := s.loadLatestStorageSnapshot(ctx)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "load storage statistics failed")
+		fail(c, http.StatusInternalServerError, "load storage snapshot failed")
 		return
 	}
-	unreferencedCount, unreferencedBytes, err := s.loadUnreferencedPhysicalContentBlobs(ctx)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "load unreferenced content blobs failed")
-		return
+	if !snapshotAvailable {
+		stats, err = s.loadGlobalStorageStats(ctx)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "load storage statistics failed")
+			return
+		}
 	}
-	stats.UnreferencedBlobCount = unreferencedCount
-	stats.UnreferencedBlobBytes = unreferencedBytes
+
 	capacity, err := s.storageCapacity(ctx)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "load storage capacity failed")
-		return
-	}
-	staging, err := s.loadUploadStagingInventory(ctx)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "load upload staging failed")
 		return
 	}
 	diskTotal := capacity.TotalBytes
@@ -129,18 +126,9 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	if diskUsed < 0 {
 		diskUsed = 0
 	}
-	inventory, err := s.loadStorageInventory(ctx)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "load storage inventory failed")
-		return
-	}
-	xdrivePhysical := inventory.StorageRootBytes
 	stats.DiskTotalBytes = &diskTotal
 	stats.DiskUsedBytes = &diskUsed
 	stats.DiskAvailableBytes = &diskAvailable
-	stats.XDrivePhysicalBytes = &xdrivePhysical
-	stats.UploadStaging = &staging.Stats
-	stats.Inventory = &inventory
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }

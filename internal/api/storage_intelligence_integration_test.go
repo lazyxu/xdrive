@@ -149,6 +149,12 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/health", tokenA, nil, http.StatusForbidden)
+	initialGlobal := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
+	if initialGlobal.PhysicalSnapshotAt != nil || initialGlobal.Inventory != nil ||
+		initialGlobal.UploadStaging != nil || initialGlobal.UnreferencedBlobCount != 0 {
+		t.Fatalf("global page performed physical discovery before the background snapshot: %#v", initialGlobal)
+	}
+	sampleNow := time.Date(2026, 9, 25, 12, 30, 0, 0, time.UTC)
 	unreferencedKey := storage.ContentBlobDir + "/sha256/ff/" + strings.Repeat("f", 64)
 	if err := db.Create(&meta.ContentBlob{
 		SHA256:     strings.Repeat("f", 64),
@@ -171,8 +177,11 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := server.captureStorageSample(context.Background(), sampleNow, true); err != nil {
+		t.Fatal(err)
+	}
 	global := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
-	if global.Scope != "global" || global.CASBlobCount != 2 {
+	if global.Scope != "global" || global.CASBlobCount != 2 || global.PhysicalSnapshotAt == nil {
 		t.Fatalf("global stats=%#v", global)
 	}
 	if global.UnreferencedBlobCount != 1 || global.UnreferencedBlobBytes != 9 {
@@ -257,6 +266,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatal(err)
 	}
 	server.invalidateUploadStagingSnapshot()
+	if err := server.captureStorageSample(context.Background(), sampleNow.Add(time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/staging", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodPost, "/api/v1/admin/storage/staging/cleanup", tokenA, strings.NewReader(`{}`), http.StatusForbidden)
@@ -403,7 +415,6 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 
 	request(t, router, http.MethodGet, "/api/v1/admin/storage/history", tokenA, nil, http.StatusForbidden)
-	sampleNow := time.Date(2026, 9, 25, 12, 30, 0, 0, time.UTC)
 	if err := db.Create(&meta.StorageSample{
 		SlotAt:      sampleNow.Add(-181 * 24 * time.Hour).Truncate(storageSampleInterval),
 		CapturedAt:  sampleNow.Add(-181 * 24 * time.Hour),
@@ -422,7 +433,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sampleCount != 1 {
-		t.Fatalf("storage sample count=%d want=1 for one six-hour slot", sampleCount)
+		t.Fatalf("storage sample count=%d want=1 for one daily slot", sampleCount)
 	}
 	historyRes := request(t, router, http.MethodGet, "/api/v1/admin/storage/history?days=180", adminToken, nil, http.StatusOK)
 	var history storageHistoryDTO
@@ -432,7 +443,7 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if len(history.Samples) != 1 || history.Samples[0].CASBlobCount != 2 {
 		t.Fatalf("unexpected storage history: %+v", history)
 	}
-	if history.Decision.Priority != "collecting" || history.SamplingIntervalHours != 6 || history.RetentionDays != 180 {
+	if history.Decision.Priority != "collecting" || history.SamplingIntervalHours != 24 || history.RetentionDays != 180 {
 		t.Fatalf("unexpected storage history decision/config: %+v", history)
 	}
 

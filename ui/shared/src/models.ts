@@ -212,6 +212,7 @@ export interface StorageStats {
   legacy_blob_count?: number
   legacy_physical_bytes?: number
   buckets?: StorageSizeBucket[]
+  physical_snapshot_at?: string
   generated_at: string
 }
 

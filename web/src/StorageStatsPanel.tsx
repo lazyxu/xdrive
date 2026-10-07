@@ -131,21 +131,16 @@ export default function StorageStatsPanel({
     const historyRequest = scope === 'global'
       ? api.adminStorageHistory(30).catch(() => null)
       : Promise.resolve(null)
-    const stagingRequest = scope === 'global'
-      ? api.adminUploadStaging(STAGING_PAGE_SIZE, '').catch(() => null)
-      : Promise.resolve(null)
     const cleanupRunsRequest = scope === 'global'
       ? api.adminStagingCleanupRuns(20, 0).catch(() => [])
       : Promise.resolve([])
-    void Promise.all([request, healthRequest, historyRequest, stagingRequest, cleanupRunsRequest])
-      .then(([value, healthValue, historyValue, stagingValue, cleanupRunValues]) => {
+    void Promise.all([request, healthRequest, historyRequest, cleanupRunsRequest])
+      .then(([value, healthValue, historyValue, cleanupRunValues]) => {
         if (!active) return
         setStats(value)
         setHealth(healthValue)
         setHistory(historyValue)
-        setStaging(stagingValue)
         setCleanupRuns(cleanupRunValues)
-        if (stagingValue?.next_cursor) setStagingCursors(['', stagingValue.next_cursor])
       })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
@@ -215,12 +210,17 @@ export default function StorageStatsPanel({
     }
 
     try {
-      const [nextStats, nextStaging, nextCleanupRuns] = await Promise.all([
-        api.adminStorageStats(),
+      const [nextStaging, nextCleanupRuns] = await Promise.all([
         api.adminUploadStaging(STAGING_PAGE_SIZE, ''),
         api.adminStagingCleanupRuns(20, 0),
       ])
-      setStats(nextStats)
+      setStats((current) => current ? {
+        ...current,
+        upload_staging: result.stats,
+        xdrive_physical_bytes: current.xdrive_physical_bytes === undefined
+          ? undefined
+          : Math.max(0, current.xdrive_physical_bytes - result.deleted_bytes),
+      } : current)
       setStaging(nextStaging)
       setCleanupRuns(nextCleanupRuns)
       setCleanupFailures({})
@@ -255,6 +255,7 @@ export default function StorageStatsPanel({
   const legacyBlobCount = stats?.legacy_blob_count ?? 0
   const legacyPhysicalBytes = stats?.legacy_physical_bytes ?? 0
   const casBuckets = stats?.buckets ?? []
+  const stagingStats = staging?.stats ?? stats?.upload_staging ?? null
 
   return (
     <>
@@ -319,44 +320,60 @@ export default function StorageStatsPanel({
                   </Stack>
                 )}
 
+              {scope === 'global' && (
+                <XDriveStatusAlert tone={stats.physical_snapshot_at ? 'neutral' : 'warning'}>
+                  {stats.physical_snapshot_at
+                    ? `物理统计快照：${new Date(stats.physical_snapshot_at).toLocaleString()}。每日后台任务更新；刷新页面不会触发全盘扫描。`
+                    : '物理存储快照尚未生成。每日后台任务会自动补齐；当前页面不会为了统计而触发全盘扫描。'}
+                </XDriveStatusAlert>
+              )}
+
               {scope === 'global' && stats.inventory && (
                 <XDriveStorageInventorySection
                   inventory={stats.inventory}
                   cleanupCache={(kind) => api.adminCleanupStorageCache(kind)}
-                  onCleanupComplete={() => setReloadKey((value) => value + 1)}
+                  onCleanupComplete={(result) => {
+                    setStats((current) => current ? {
+                      ...current,
+                      inventory: result.inventory,
+                      xdrive_physical_bytes: current.xdrive_physical_bytes === undefined
+                        ? undefined
+                        : Math.max(0, current.xdrive_physical_bytes - result.deleted_bytes),
+                    } : current)
+                  }}
                 />
               )}
 
-              {scope === 'global' && staging && (
+              {scope === 'global' && stagingStats && (
                 <Stack spacing={1.5}>
                   <XDriveSectionHeader level="h3" title="上传临时空间" />
                   {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
-                  {!staging.stats.supported && (
+                  {!stagingStats.supported && (
                     <XDriveStatusAlert tone="neutral">当前存储后端不支持 staging 文件系统扫描，仅显示数据库侧会话信息。</XDriveStatusAlert>
                   )}
-                  {(staging.stats.orphan_files > 0 || staging.stats.missing_part_files > 0 || staging.stats.recent_untracked_files > 0) && (
+                  {(stagingStats.orphan_files > 0 || stagingStats.missing_part_files > 0 || stagingStats.recent_untracked_files > 0) && (
                     <XDriveStatusAlert
-                      tone={staging.stats.missing_part_files > 0 || staging.stats.orphan_files > 0 ? 'warning' : 'neutral'}
+                      tone={stagingStats.missing_part_files > 0 || stagingStats.orphan_files > 0 ? 'warning' : 'neutral'}
                       title={
-                        'orphan ' + staging.stats.orphan_files.toLocaleString() +
-                        ' · 近期未登记 ' + staging.stats.recent_untracked_files.toLocaleString() +
-                        ' · 缺失 part ' + staging.stats.missing_part_files.toLocaleString()
+                        'orphan ' + stagingStats.orphan_files.toLocaleString() +
+                        ' · 近期未登记 ' + stagingStats.recent_untracked_files.toLocaleString() +
+                        ' · 缺失 part ' + stagingStats.missing_part_files.toLocaleString()
                       }
                     >
                       只有数据库无引用且超过 1 小时的临时文件才会作为 orphan 清理；近期未登记文件不会删除。
                     </XDriveStatusAlert>
                   )}
                   <XDriveMetricGrid>
-                    <XDriveMetricCard title="活跃 Upload Session" value={staging.stats.active_sessions} />
-                    <XDriveMetricCard title="容量 Reservation" value={formatBytes(staging.stats.reserved_bytes)} />
-                    <XDriveMetricCard title="Staging 实际占用" value={formatBytes(staging.stats.staging_bytes)} />
-                    <XDriveMetricCard title="Staging 文件" value={staging.stats.staging_files} />
-                    <XDriveMetricCard title="已登记 Part" value={staging.stats.part_files} suffix={'/ ' + formatBytes(staging.stats.part_bytes)} />
-                    <XDriveMetricCard title="近期未登记" value={staging.stats.recent_untracked_files} suffix={'/ ' + formatBytes(staging.stats.recent_untracked_bytes)} />
-                    <XDriveMetricCard title="可回收临时空间" value={formatBytes(staging.stats.reclaimable_bytes)} />
-                    <XDriveMetricCard title="Orphan" value={staging.stats.orphan_files} suffix={'/ ' + formatBytes(staging.stats.orphan_bytes)} />
-                    <XDriveMetricCard title="过期 Session" value={staging.stats.expired_sessions} />
-                    <XDriveMetricCard title="缺失 Part" value={staging.stats.missing_part_files} suffix={'/ ' + formatBytes(staging.stats.missing_part_bytes)} />
+                    <XDriveMetricCard title="活跃 Upload Session" value={stagingStats.active_sessions} />
+                    <XDriveMetricCard title="容量 Reservation" value={formatBytes(stagingStats.reserved_bytes)} />
+                    <XDriveMetricCard title="Staging 实际占用" value={formatBytes(stagingStats.staging_bytes)} />
+                    <XDriveMetricCard title="Staging 文件" value={stagingStats.staging_files} />
+                    <XDriveMetricCard title="已登记 Part" value={stagingStats.part_files} suffix={'/ ' + formatBytes(stagingStats.part_bytes)} />
+                    <XDriveMetricCard title="近期未登记" value={stagingStats.recent_untracked_files} suffix={'/ ' + formatBytes(stagingStats.recent_untracked_bytes)} />
+                    <XDriveMetricCard title="可回收临时空间" value={formatBytes(stagingStats.reclaimable_bytes)} />
+                    <XDriveMetricCard title="Orphan" value={stagingStats.orphan_files} suffix={'/ ' + formatBytes(stagingStats.orphan_bytes)} />
+                    <XDriveMetricCard title="过期 Session" value={stagingStats.expired_sessions} />
+                    <XDriveMetricCard title="缺失 Part" value={stagingStats.missing_part_files} suffix={'/ ' + formatBytes(stagingStats.missing_part_bytes)} />
                   </XDriveMetricGrid>
                   <Typography variant="body2" color="text.secondary">
                     Reservation 表示活跃 resumable 上传未来仍可能需要写入的峰值空间，不等于当前物理占用；Staging 实际占用已计入 xDrive 物理占用。
@@ -364,23 +381,23 @@ export default function StorageStatsPanel({
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                     <XDriveActionButton
                       loading={stagingLoading}
-                      loadingLabel="正在刷新…"
+                      loadingLabel="正在加载…"
                       onClick={() => void loadStagingPage(1, true)}
                     >
-                      刷新 staging
+                      {staging ? '刷新 staging 明细' : '加载 staging 明细'}
                     </XDriveActionButton>
                     <XDriveActionButton
                       intent="danger"
                       loading={cleanupLoading}
                       loadingLabel="正在清理…"
-                      disabled={staging.stats.reclaimable_files <= 0 && staging.stats.expired_sessions <= 0}
+                      disabled={stagingStats.reclaimable_files <= 0 && stagingStats.expired_sessions <= 0}
                       onClick={() => setCleanupConfirmOpen(true)}
                     >
                       清理可回收临时数据
                     </XDriveActionButton>
                   </Stack>
 
-                  {staging.orphans.length > 0 && (
+                  {staging && staging.orphans.length > 0 && (
                     <Stack spacing={1}>
                       <XDriveSectionHeader level="h3" title="Orphan staging" />
                       {stagingLoading ? <LinearProgress /> : null}
@@ -634,12 +651,12 @@ export default function StorageStatsPanel({
             <Typography variant="body2">
               将清理过期 UploadSession，以及超过 1 小时且数据库没有任何引用的 orphan staging 文件。近期未登记文件不会删除。
             </Typography>
-            {staging && (
+            {staging && stagingStats && (
               <XDriveStatusAlert
                 tone="warning"
-                title={`预计可回收 ${staging.stats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatBytes(staging.stats.reclaimable_bytes)}`}
+                title={`预计可回收 ${stagingStats.reclaimable_files.toLocaleString()} 个临时文件 / ${formatBytes(stagingStats.reclaimable_bytes)}`}
               >
-                另有 {staging.stats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。
+                另有 {stagingStats.expired_sessions.toLocaleString()} 个过期 UploadSession 将被回收。
               </XDriveStatusAlert>
             )}
           </Stack>
