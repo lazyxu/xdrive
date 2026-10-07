@@ -36,11 +36,16 @@ type systemMaintenanceMediaVerifyRunner interface {
 	VerifyMedia(context.Context) (maintenance.MediaVerifyReport, error)
 }
 
+type systemMaintenanceMediaRepairRunner interface {
+	RepairMedia(context.Context) (maintenance.MediaRepairReport, error)
+}
+
 func systemMaintenanceInteractiveKinds() []string {
 	return []string{
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
+		meta.SystemMaintenanceKindMediaRepair,
 	}
 }
 
@@ -48,7 +53,8 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
 	case meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
-		meta.SystemMaintenanceKindMediaVerify:
+		meta.SystemMaintenanceKindMediaVerify,
+		meta.SystemMaintenanceKindMediaRepair:
 		return true
 	default:
 		return false
@@ -63,6 +69,8 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseSourceRepair
 	case meta.SystemMaintenanceKindMediaVerify:
 		return meta.SystemMaintenancePhaseMediaVerify
+	case meta.SystemMaintenanceKindMediaRepair:
+		return meta.SystemMaintenancePhaseMediaRepair
 	default:
 		return ""
 	}
@@ -81,7 +89,8 @@ func systemMaintenanceLeaderKey(kind string) string {
 	case meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair:
 		return maintenanceLeaderSourceIntegrity
-	case meta.SystemMaintenanceKindMediaVerify:
+	case meta.SystemMaintenanceKindMediaVerify,
+		meta.SystemMaintenanceKindMediaRepair:
 		return maintenanceLeaderMediaIntegrity
 	default:
 		return ""
@@ -565,6 +574,28 @@ func (s *Server) executeSystemMaintenanceTask(
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
+	case meta.SystemMaintenanceKindMediaRepair:
+		report, err := s.repairMediaForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		personRepairs := len(report.PersonMembershipActions) +
+			len(report.PersonCoverActions) +
+			len(report.PersonClusterActions)
+		summary := fmt.Sprintf(
+			"修复 %d 个缩略图元数据 · 重建 %d 个关系批次 · 修复 %d 个派生资源 · 修复 %d 个人物状态 · 跳过 %d 项 · 剩余 %d 个一致性问题",
+			len(report.Actions),
+			len(report.RelationActions),
+			len(report.DerivedActions),
+			personRepairs,
+			len(report.Skipped),
+			len(report.After.Issues),
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if len(report.After.Issues) != 0 {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
 	default:
 		return "", "", errSystemMaintenanceUnsupported
 	}
@@ -602,6 +633,19 @@ func (s *Server) verifyMediaForSystemMaintenance(
 		s.DB.WithContext(ctx),
 		root,
 	)
+}
+
+func (s *Server) repairMediaForSystemMaintenance(
+	ctx context.Context,
+) (maintenance.MediaRepairReport, error) {
+	if s.systemMaintenanceMediaRepair != nil {
+		return s.systemMaintenanceMediaRepair.RepairMedia(ctx)
+	}
+	root, err := s.systemMaintenanceFilesystemRoot()
+	if err != nil {
+		return maintenance.MediaRepairReport{}, err
+	}
+	return maintenance.RepairMedia(ctx, s.DB, root, false)
 }
 
 func (s *Server) systemMaintenanceFilesystemRoot() (string, error) {

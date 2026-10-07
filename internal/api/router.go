@@ -61,6 +61,7 @@ type Server struct {
 	systemMaintenanceSourceVerify systemMaintenanceSourceVerifyRunner
 	systemMaintenanceSourceRepair systemMaintenanceSourceRepairRunner
 	systemMaintenanceMediaVerify  systemMaintenanceMediaVerifyRunner
+	systemMaintenanceMediaRepair  systemMaintenanceMediaRepairRunner
 	systemMaintenanceHeartbeat    time.Duration
 }
 
