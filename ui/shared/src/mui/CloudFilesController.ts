@@ -553,6 +553,7 @@ export function useXDriveCloudFilesController<
     applyQuota,
     refreshQuota,
     refreshChanges,
+    refreshCurrentDirectoryIfIdle: refreshChangedDirectory,
     loadInitial,
     loadDirectory,
   }

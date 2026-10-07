@@ -354,11 +354,11 @@ export default function App({
     quota: cloudQuota,
     items: cloudItems,
     crumbs: cloudCrumbs,
-    sort: cloudSort,
     loading: cloudLoading,
     virtualDirectory: cloudVirtualDirectory,
     applyQuota: applyCloudQuota,
     refreshQuota: refreshCloudQuota,
+    refreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
     loadDirectory: loadCloudDirectory,
   } = useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>({
     port: cloudFilesPort,
@@ -386,13 +386,11 @@ export default function App({
       operationError instanceof Error ? operationError.message : String(operationError),
     ),
     onTerminalTransition: () => {
-      if (cloudCrumbs.length === 0) return
+      const expectedCurrentID = cloudCrumbs.at(-1)?.id
       void refreshCloudQuota()
-      void loadCloudDirectory(
-        cloudCrumbs.at(-1)!.id,
-        cloudCrumbs,
-        cloudSort,
-      )
+      if (expectedCurrentID !== undefined) {
+        void refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
+      }
     },
   })
 
@@ -1853,6 +1851,7 @@ export default function App({
               virtualDirectory: cloudVirtualDirectory,
               loading: cloudLoading,
               onLoadDirectory: loadCloudDirectory,
+              onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,
               onOpenShares: openCloudShares,
@@ -1888,9 +1887,10 @@ export default function App({
             trashOpen={cloudTrashOpen}
             onCloseTrash={() => setCloudTrashOpen(false)}
             onTrashChanged={async () => {
+              const expectedCurrentID = cloudCrumbs.at(-1)?.id
               await refreshCloudQuota()
-              if (cloudCrumbs.length > 0) {
-                await loadCloudDirectory(cloudCrumbs.at(-1)!.id, cloudCrumbs)
+              if (expectedCurrentID !== undefined) {
+                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
               }
             }}
             historyNode={cloudHistoryNode}
@@ -1899,10 +1899,11 @@ export default function App({
               setCloudHistoryCrumbs([])
             }}
             onHistoryRestored={async (restored) => {
+              const expectedCurrentID = cloudHistoryCrumbs.at(-1)?.id
               setCloudHistoryNode(restored)
               await refreshCloudQuota()
-              if (cloudHistoryCrumbs.length > 0) {
-                await loadCloudDirectory(cloudHistoryCrumbs.at(-1)!.id, cloudHistoryCrumbs)
+              if (expectedCurrentID !== undefined) {
+                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
               }
             }}
             shareNode={cloudShareNode}

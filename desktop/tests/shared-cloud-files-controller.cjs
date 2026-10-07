@@ -92,7 +92,7 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
     'getRoot: () => api.root()',
     'getPage: (parentID, options) => api.listPage(parentID, options)',
     'getQuota: () => api.quota()',
-    'sort: directorySort',
+    'refreshCurrentDirectoryIfIdle,',
     'enabled: Boolean(profile && !profile.must_change_password)',
     'applyQuota',
   ]) {
@@ -123,7 +123,7 @@ test('Desktop delegates cloud read state and lifecycle to the shared controller'
     'quota: cloudQuota',
     'items: cloudItems',
     'crumbs: cloudCrumbs',
-    'sort: cloudSort',
+    'refreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle',
     'loading: cloudLoading',
     'applyQuota: applyCloudQuota',
     'refreshQuota: refreshCloudQuota',

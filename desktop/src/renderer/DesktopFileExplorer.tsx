@@ -37,7 +37,6 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
-  useXDriveFileExplorerCurrentDirectoryRefresh,
   useXDriveFileExplorerUploadController,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
@@ -114,6 +113,7 @@ export default function DesktopFileExplorer({
   virtualDirectory,
   loading,
   onLoadDirectory,
+  onRefreshCurrentDirectoryIfIdle,
   onOpenTrash,
   trashActive,
   trashAdapter,
@@ -152,6 +152,9 @@ export default function DesktopFileExplorer({
     crumbs: AgentCloudCrumb[],
     sort: XDriveFileExplorerSort,
     grouping: XDriveFileExplorerGrouping,
+  ) => Promise<boolean | void>
+  onRefreshCurrentDirectoryIfIdle: (
+    expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
   onOpenTrash: () => void
   trashActive: boolean
@@ -326,13 +329,7 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
-  const refreshCurrentDirectoryIfCurrent = useXDriveFileExplorerCurrentDirectoryRefresh({
-    currentID: current?.id,
-    currentCrumbs: crumbs,
-    sort,
-    currentGrouping: grouping,
-    refreshDirectory: onLoadDirectory,
-  })
+  const refreshCurrentDirectoryIfCurrent = onRefreshCurrentDirectoryIfIdle
 
   const loadTreeDirectoryPage = useCallback(
     (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({

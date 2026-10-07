@@ -1162,3 +1162,238 @@ test('node-change background refresh cannot cancel a newer manual tab navigation
     global.window = originalWindow
   }
 })
+
+
+test('background current-directory refresh yields to a pending manual navigation', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let betaPending = false
+    let releasePendingBeta
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (parentID === beta.id && betaPending) {
+          return new Promise((resolve) => {
+            releasePendingBeta = () => resolve(page(parentID, offset, limit))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled: true,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'background-refresh-vs-navigation',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(await app.navigation.openTab([root, beta]), true)
+    app = render()
+    await app.navigation.activateTab('tab-1')
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.activeTabID, 'tab-1')
+
+    betaPending = true
+    const activateBeta = app.navigation.activateTab('tab-2')
+    await flushAsync()
+    assert.equal(typeof releasePendingBeta, 'function')
+
+    const refreshed = await app.cloud.refreshCurrentDirectoryIfIdle(alpha.id)
+    assert.equal(
+      refreshed,
+      false,
+      'background refresh must yield while a newer directory navigation is pending',
+    )
+
+    releasePendingBeta()
+    await activateBeta
+    app = render()
+
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+  } finally {
+    global.window = originalWindow
+  }
+})
+
+test('background FileExplorer mutation completions use the guarded idle refresh path', () => {
+  const webSource = fs.readFileSync(
+    path.join(repo, 'web', 'src', 'App.tsx'),
+    'utf8',
+  )
+  const desktopSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx'),
+    'utf8',
+  )
+  const webExplorerSource = fs.readFileSync(
+    path.join(repo, 'web', 'src', 'WebFileExplorer.tsx'),
+    'utf8',
+  )
+  const desktopExplorerSource = fs.readFileSync(
+    path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'),
+    'utf8',
+  )
+
+  assert.ok(
+    webSource.includes('refreshCurrentDirectoryIfIdle'),
+    'Web must consume the CloudFiles guarded idle refresh helper',
+  )
+  assert.ok(
+    desktopSource.includes('refreshCurrentDirectoryIfIdle'),
+    'Desktop must consume the CloudFiles guarded idle refresh helper',
+  )
+  assert.ok(
+    webExplorerSource.includes('onRefreshCurrentDirectoryIfIdle'),
+    'Web FileExplorer background completions must use the guarded refresh adapter',
+  )
+  assert.equal(
+    webExplorerSource.includes('useXDriveFileExplorerCurrentDirectoryRefresh'),
+    false,
+    'Web FileExplorer must not rebuild a weaker current-ID-only refresh fence',
+  )
+  assert.ok(
+    desktopExplorerSource.includes('onRefreshCurrentDirectoryIfIdle'),
+    'Desktop FileExplorer background completions must use the guarded refresh adapter',
+  )
+  assert.equal(
+    desktopExplorerSource.includes('useXDriveFileExplorerCurrentDirectoryRefresh'),
+    false,
+    'Desktop FileExplorer must not rebuild a weaker current-ID-only refresh fence',
+  )
+
+  const webLifecycleStart = webSource.indexOf('useXDriveFileOperationLifecycle<XDriveFileOperation>')
+  const webLifecycleEnd = webSource.indexOf('const fileOperationActions', webLifecycleStart)
+  assert.ok(webLifecycleStart >= 0 && webLifecycleEnd > webLifecycleStart)
+  const webLifecycle = webSource.slice(webLifecycleStart, webLifecycleEnd)
+  assert.ok(
+    webLifecycle.includes('refreshCurrentDirectoryIfIdle'),
+    'Web FileOperation terminal transitions must yield to an in-flight navigation',
+  )
+  assert.equal(
+    webLifecycle.includes('void loadDirectory('),
+    false,
+    'Web FileOperation terminal transitions must not issue a raw directory reload',
+  )
+
+  const desktopLifecycleStart = desktopSource.indexOf('useXDriveFileOperationLifecycle<AgentCloudFileOperation>')
+  const desktopLifecycleEnd = desktopSource.indexOf('const fileOperationConflictResolveSupported', desktopLifecycleStart)
+  assert.ok(desktopLifecycleStart >= 0 && desktopLifecycleEnd > desktopLifecycleStart)
+  const desktopLifecycle = desktopSource.slice(desktopLifecycleStart, desktopLifecycleEnd)
+  assert.ok(
+    desktopLifecycle.includes('refreshCloudCurrentDirectoryIfIdle'),
+    'Desktop FileOperation terminal transitions must yield to an in-flight navigation',
+  )
+  assert.equal(
+    desktopLifecycle.includes('void loadCloudDirectory('),
+    false,
+    'Desktop FileOperation terminal transitions must not issue a raw directory reload',
+  )
+
+  const desktopTrashStart = desktopSource.indexOf('onTrashChanged={async () => {')
+  const desktopTrashEnd = desktopSource.indexOf('historyNode={cloudHistoryNode}', desktopTrashStart)
+  assert.ok(desktopTrashStart >= 0 && desktopTrashEnd > desktopTrashStart)
+  const desktopTrash = desktopSource.slice(desktopTrashStart, desktopTrashEnd)
+  assert.ok(
+    desktopTrash.includes('refreshCloudCurrentDirectoryIfIdle'),
+    'Desktop Trash completion refresh must yield to an in-flight navigation',
+  )
+  assert.equal(
+    desktopTrash.includes('loadCloudDirectory('),
+    false,
+    'Desktop Trash completion must not issue a raw directory reload',
+  )
+
+  const desktopHistoryStart = desktopSource.indexOf('onHistoryRestored={async (restored) => {')
+  const desktopHistoryEnd = desktopSource.indexOf('shareNode={cloudShareNode}', desktopHistoryStart)
+  assert.ok(desktopHistoryStart >= 0 && desktopHistoryEnd > desktopHistoryStart)
+  const desktopHistory = desktopSource.slice(desktopHistoryStart, desktopHistoryEnd)
+  assert.ok(
+    desktopHistory.includes('refreshCloudCurrentDirectoryIfIdle'),
+    'Desktop Version History restore refresh must yield to an in-flight navigation',
+  )
+  assert.equal(
+    desktopHistory.includes('loadCloudDirectory('),
+    false,
+    'Desktop Version History restore must not issue a raw directory reload',
+  )
+
+  const trashChangedStart = webSource.indexOf('onTrashChanged={async () => {')
+  const trashChangedEnd = webSource.indexOf('onRemove={remove}', trashChangedStart)
+  assert.ok(trashChangedStart >= 0 && trashChangedEnd > trashChangedStart)
+  assert.ok(
+    webSource.slice(trashChangedStart, trashChangedEnd).includes('refreshCurrentDirectoryIfIdle'),
+    'Trash completion refresh must yield to an in-flight navigation',
+  )
+
+  const restoredStart = webSource.indexOf('onRestored={async (restored) => {')
+  const restoredEnd = webSource.indexOf('<XDriveConfirmDialog', restoredStart)
+  assert.ok(restoredStart >= 0 && restoredEnd > restoredStart)
+  assert.ok(
+    webSource.slice(restoredStart, restoredEnd).includes('refreshCurrentDirectoryIfIdle'),
+    'Version History restore refresh must yield to an in-flight navigation',
+  )
+})
