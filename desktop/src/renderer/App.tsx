@@ -1840,6 +1840,7 @@ export default function App({
             activeTaskCount={taskCenter.badge ?? 0}
             recentSupported={fileRecentSupported}
             favoritesSupported={fileFavoritesSupported}
+            fileAvailabilitySupported={fileAvailabilitySupported}
             openFolderLoading={busy === 'folder'}
             onOpenFolder={() => {
               void run('folder', () => window.xdriveDesktop.agent.openFolder())

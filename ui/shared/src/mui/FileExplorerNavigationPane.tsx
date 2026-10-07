@@ -1,10 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
@@ -35,7 +33,13 @@ import type { XDriveFileExplorerQuickAccessEntry } from './FileExplorerQuickAcce
 import type { XDriveFileExplorerFavoriteNavigationEntry } from './FileExplorerFavoriteController'
 import type { XDriveFileExplorerRecentEntry } from './FileExplorerRecentController'
 import { XDriveFileExplorerThumbnail } from './FileExplorerThumbnail'
-import { xDriveFileSupportsThumbnail } from './FileExplorer'
+import {
+  XDriveFileExplorerAvailabilityBadge,
+  XDriveFileExplorerItemIcon,
+  xDriveFileSupportsThumbnail,
+} from './FileExplorer'
+import type { XDriveFileExplorerItem } from './FileExplorer'
+import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -89,6 +93,8 @@ export function XDriveFileExplorerNavigationPane({
   recentLoading = false,
   onActivateRecent,
   onClearRecent,
+  getItemAvailability,
+  onAvailabilityItemsChange,
   onError,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
@@ -132,6 +138,8 @@ export function XDriveFileExplorerNavigationPane({
   recentLoading?: boolean
   onActivateRecent?: (nodeID: number) => void | Promise<void>
   onClearRecent?: () => void | Promise<void>
+  getItemAvailability?: (item: XDriveFileExplorerItem) => XDriveFileExplorerAvailability | undefined
+  onAvailabilityItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
   onError?: (error: unknown) => void
 }) {
   const [pageByParent, setPageByParent] = useState<Record<string, {
@@ -170,6 +178,29 @@ export function XDriveFileExplorerNavigationPane({
     ]),
   )
   const currentID = currentCrumbs.at(-1)?.id
+
+  const navigationAvailabilityItems = useMemo(() => {
+    const byID = new Map<number, XDriveFileExplorerItem>()
+    for (let index = 1; index < currentCrumbs.length; index += 1) {
+      const crumb = currentCrumbs[index]
+      const path = currentCrumbs
+        .slice(1, index + 1)
+        .map((candidate) => candidate.name)
+        .join('/')
+      if (path) byID.set(crumb.id, { id: crumb.id, name: crumb.name, kind: 'dir', path })
+    }
+    for (const page of Object.values(pageByParent)) {
+      for (const node of page.children) {
+        const path = node.crumbs.slice(1).map((crumb) => crumb.name).join('/')
+        if (path) byID.set(node.id, { id: node.id, name: node.name, kind: 'dir', path })
+      }
+    }
+    return [...byID.values()]
+  }, [currentCrumbs, pageByParent])
+
+  useEffect(() => {
+    onAvailabilityItemsChange?.(navigationAvailabilityItems)
+  }, [navigationAvailabilityItems, onAvailabilityItemsChange])
 
   const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => (
     (pageByParent[String(node.id)]?.children ?? []).map((candidate) => ({
@@ -350,6 +381,28 @@ export function XDriveFileExplorerNavigationPane({
     }
   }
 
+  const renderItemVisual = (item: XDriveFileExplorerItem, edge = 22) => {
+    const availability = getItemAvailability?.(item)
+    return (
+      <Box sx={{ width: edge, height: edge, flex: '0 0 auto', position: 'relative', overflow: 'visible', borderRadius: 0 }}>
+        <XDriveFileExplorerThumbnail
+          item={item}
+          eligible={item.kind === 'file' && xDriveFileSupportsThumbnail(item.name, 'file')}
+          fallback={(
+            <XDriveFileExplorerItemIcon
+              item={item}
+              size={Math.max(18, edge - 4)}
+              folderSize={Math.max(18, edge - 4)}
+            />
+          )}
+        />
+        {availability ? (
+          <XDriveFileExplorerAvailabilityBadge availability={availability} overlay compact />
+        ) : null}
+      </Box>
+    )
+  }
+
   const renderNode = (node: XDriveFileExplorerNavigationTreeNode, depth: number) => {
     const children = childrenFor(node)
     const page = pageByParent[String(node.id)]
@@ -418,13 +471,7 @@ export function XDriveFileExplorerNavigationPane({
               outlineOffset: -2,
             }}
           >
-            <Box sx={{ width: 20, height: 20, flex: '0 0 20px' }}>
-              <XDriveFileExplorerThumbnail
-                item={{ id: node.id, name: node.name, kind: 'dir' }}
-                eligible={false}
-                fallback={<FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />}
-              />
-            </Box>
+            {renderItemVisual({ id: node.id, name: node.name, kind: 'dir' }, 20)}
             <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
               {node.name}
             </Typography>
@@ -544,13 +591,7 @@ export function XDriveFileExplorerNavigationPane({
                     onClick={() => { void onNavigateQuickAccess?.(item.id) }}
                     sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
-                    <Box sx={{ width: 20, height: 20, flex: '0 0 20px' }}>
-                      <XDriveFileExplorerThumbnail
-                        item={{ id: item.id, name: item.name, kind: 'dir', path: item.path }}
-                        eligible={false}
-                        fallback={<FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />}
-                      />
-                    </Box>
+                    {renderItemVisual({ id: item.id, name: item.name, kind: 'dir', path: item.path }, 20)}
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                       {item.name}
                     </Typography>
@@ -609,21 +650,15 @@ export function XDriveFileExplorerNavigationPane({
                     onClick={() => { void onActivateFavorite?.(item.id) }}
                     sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
-                    <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0 }}>
-                      <XDriveFileExplorerThumbnail
-                        item={{
-                          id: item.id,
-                          name: item.name,
-                          kind: 'file',
-                          size: item.size,
-                          revision: item.revision,
-                          updatedAt: item.updatedAt,
-                          path: item.path,
-                        }}
-                        eligible={xDriveFileSupportsThumbnail(item.name, 'file')}
-                        fallback={<InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
-                      />
-                    </Box>
+                    {renderItemVisual({
+                      id: item.id,
+                      name: item.name,
+                      kind: 'file',
+                      size: item.size,
+                      revision: item.revision,
+                      updatedAt: item.updatedAt,
+                      path: item.path,
+                    })}
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                       {item.name}
                     </Typography>
@@ -694,23 +729,15 @@ export function XDriveFileExplorerNavigationPane({
                   onClick={() => { void onActivateRecent?.(item.id) }}
                   sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                 >
-                  <Box sx={{ width: 22, height: 22, flex: '0 0 22px', overflow: 'hidden', borderRadius: 0 }}>
-                    <XDriveFileExplorerThumbnail
-                      item={{
-                        id: item.id,
-                        name: item.name,
-                        kind: item.kind,
-                        size: item.size,
-                        revision: item.revision,
-                        updatedAt: item.updatedAt,
-                        path: item.path,
-                      }}
-                      eligible={item.kind === 'file' && xDriveFileSupportsThumbnail(item.name, 'file')}
-                      fallback={item.kind === 'dir'
-                        ? <FolderRoundedIcon sx={{ fontSize: 18, color: '#ffcb3d' }} />
-                        : <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
-                    />
-                  </Box>
+                  {renderItemVisual({
+                    id: item.id,
+                    name: item.name,
+                    kind: item.kind,
+                    size: item.size,
+                    revision: item.revision,
+                    updatedAt: item.updatedAt,
+                    path: item.path,
+                  })}
                   <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                     {item.name}
                   </Typography>

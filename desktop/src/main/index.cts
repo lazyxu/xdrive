@@ -3556,7 +3556,7 @@ function registerIPCHandlers() {
       out.sourceID = raw.sourceID
     }
     if (raw.availability !== undefined) {
-      const availability = new Set(['local', 'always-local', 'online-only', 'cloud', 'syncing'])
+      const availability = new Set(['local', 'always-local', 'online-only', 'cloud', 'mixed', 'syncing'])
       if (typeof raw.availability !== 'string' || !availability.has(raw.availability)) {
         throw new AgentIPCError('invalid_input', 0, 'Search availability filter is invalid.')
       }

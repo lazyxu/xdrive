@@ -35,10 +35,10 @@ func (filters agentCloudSearchFilters) Active() bool {
 func normalizeAgentAvailabilityFilter(value string) (string, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case "", "local", "always-local", "online-only", "cloud", "syncing":
+	case "", "local", "always-local", "online-only", "cloud", "mixed", "syncing":
 		return value, nil
 	default:
-		return "", fmt.Errorf("availability must be local, always-local, online-only, cloud, or syncing")
+		return "", fmt.Errorf("availability must be local, always-local, online-only, cloud, mixed, or syncing")
 	}
 }
 
@@ -46,6 +46,8 @@ func agentAvailabilityClass(state mount.FileAvailability) string {
 	switch {
 	case state.Syncing || state.Mode == "syncing":
 		return "syncing"
+	case state.Mixed || state.Mode == "mixed":
+		return "mixed"
 	case state.Pinned || state.Mode == "always-local":
 		return "always-local"
 	case state.OnlineOnly || state.Mode == "online-only":

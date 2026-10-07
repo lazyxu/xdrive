@@ -166,6 +166,7 @@ declare global {
     Placeholder: boolean
     Pinned: boolean
     OnlineOnly: boolean
+    Mixed: boolean
     AvailableOffline: boolean
     InSync: boolean
     Syncing: boolean

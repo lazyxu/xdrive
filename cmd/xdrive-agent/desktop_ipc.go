@@ -3634,6 +3634,19 @@ func (h *desktopIPCHandler) fileAvailabilityBatch(w http.ResponseWriter, r *http
 		seen[path] = struct{}{}
 		state, err := h.ctrl.FileAvailability(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				stateCopy := mount.FileAvailability{
+					Path:             path,
+					Mode:             "cloud",
+					AvailableOffline: false,
+					InSync:           true,
+				}
+				items = append(items, desktopIPCFileAvailabilityBatchItem{
+					Path:         path,
+					Availability: &stateCopy,
+				})
+				continue
+			}
 			items = append(items, desktopIPCFileAvailabilityBatchItem{
 				Path:  path,
 				Error: err.Error(),
