@@ -26,6 +26,7 @@ const (
 	ActionAdminSessionRevoke     = "admin.user.sessions_revoke"
 	ActionAdminUserDelete        = "admin.user.delete"
 	ActionAdminStorageCleanup    = "admin.storage.cleanup"
+	ActionAdminTaskControl       = "admin.background_task.control"
 	ActionPermanentDelete        = "file.permanent_delete"
 	ActionVersionRestore         = "file.version_restore"
 	ActionBackup                 = "system.backup"

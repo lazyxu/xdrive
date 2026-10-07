@@ -57,6 +57,7 @@ const ACTION_LABELS: Record<string, string> = {
   'admin.user.password_reset': '重置用户密码',
   'admin.user.sessions_revoke': '撤销用户会话',
   'admin.user.delete': '删除用户',
+  'admin.background_task.control': '后台任务控制',
   'source.credential.update': '更新同步文件夹凭据',
   'source.credential.delete': '清除同步文件夹凭据',
   'source.credential.reveal': '查看同步文件夹凭据',

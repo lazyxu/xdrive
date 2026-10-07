@@ -334,8 +334,8 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 		999,
 		true,
 	)
-	if backgroundTaskActionAllowed(adminActions, backgroundTaskActionCancel) {
-		t.Fatalf("admin unexpectedly received cross-user runtime cancel: %v", adminActions)
+	if !backgroundTaskActionAllowed(adminActions, backgroundTaskActionCancel) {
+		t.Fatalf("admin actions=%v missing cross-user runtime cancel", adminActions)
 	}
 	adminPhotoActions := backgroundRuntimeControlActions(
 		"photo.face",
@@ -345,7 +345,7 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 		true,
 	)
 	if !backgroundTaskActionAllowed(adminPhotoActions, backgroundTaskActionReanalyze) ||
-		backgroundTaskActionAllowed(adminPhotoActions, backgroundTaskActionCancel) {
-		t.Fatalf("admin photo actions=%v want reanalyze without cancel", adminPhotoActions)
+		!backgroundTaskActionAllowed(adminPhotoActions, backgroundTaskActionCancel) {
+		t.Fatalf("admin photo actions=%v want reanalyze and cancel", adminPhotoActions)
 	}
 }
