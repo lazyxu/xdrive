@@ -2277,3 +2277,56 @@ test('shared FileExplorer workspace routes Search intent through navigation gene
     'Search generation changes must invalidate older pending directory navigation in the shared workspace',
   )
 })
+
+
+test('disabling Recent invalidates a pending record completion', async () => {
+  const runtime = createHookRuntime()
+  const useRecent = loadRecentHook(runtime.react)
+  const root = { id: 1, name: '我的文件' }
+  const recordedItem = {
+    node: { id: 11, name: 'late.txt', type: 'file' },
+    path: '/late.txt',
+    crumbs: [root],
+    accessed_at: '2026-10-07T00:00:00Z',
+  }
+
+  let enabled = true
+  let releaseTouch
+  const renderRecent = () => runtime.render(() => useRecent({
+    enabled,
+    loadItems: async () => [],
+    touchItem: () => new Promise((resolve) => {
+      releaseTouch = () => resolve(recordedItem)
+    }),
+    clearItems: async () => undefined,
+  }))
+
+  renderRecent()
+  await flushAsync()
+  let recent = renderRecent()
+  assert.deepEqual(recent.items, [])
+
+  const pendingRecord = recent.record(recordedItem.node.id)
+  await flushAsync()
+  assert.equal(typeof releaseTouch, 'function')
+
+  enabled = false
+  renderRecent()
+  await flushAsync()
+  recent = renderRecent()
+  assert.deepEqual(
+    recent.items,
+    [],
+    'disabling Recent must clear the visible list before the older record finishes',
+  )
+
+  releaseTouch()
+  await pendingRecord
+  recent = renderRecent()
+
+  assert.deepEqual(
+    recent.items,
+    [],
+    'a Recent record started before disable must not repopulate disabled state after its touch request completes',
+  )
+})

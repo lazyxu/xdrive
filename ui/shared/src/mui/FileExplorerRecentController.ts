@@ -67,6 +67,13 @@ export function useXDriveFileExplorerRecent<
   const rawItemsRef = useRef(new Map<number, XDriveFileRecentItem<TNode>>())
   const loadRequestRef = useRef(0)
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
+  const enabledRef = useRef(enabled)
+  const lifecycleGenerationRef = useRef(1)
+
+  if (enabledRef.current !== enabled) {
+    enabledRef.current = enabled
+    lifecycleGenerationRef.current += 1
+  }
 
   loadItemsRef.current = loadItems
   touchItemRef.current = touchItem
@@ -105,8 +112,23 @@ export function useXDriveFileExplorerRecent<
     void refresh()
   }, [refresh])
 
-  const enqueueMutation = useCallback(<T,>(operation: () => Promise<T>) => {
-    const result = mutationTailRef.current.then(operation, operation)
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    lifecycleGenerationRef.current += 1
+  }, [])
+
+  const enqueueMutation = useCallback((
+    operation: (generation: number) => Promise<boolean>,
+  ) => {
+    const generation = lifecycleGenerationRef.current
+    const run = () => {
+      if (
+        generation !== lifecycleGenerationRef.current ||
+        !enabledRef.current
+      ) return Promise.resolve(false)
+      return operation(generation)
+    }
+    const result = mutationTailRef.current.then(run, run)
     mutationTailRef.current = result.then(
       () => undefined,
       () => undefined,
@@ -116,9 +138,13 @@ export function useXDriveFileExplorerRecent<
 
   const record = useCallback((nodeID: number) => {
     if (!enabled || nodeID <= 0) return Promise.resolve(false)
-    return enqueueMutation(async () => {
+    return enqueueMutation(async (generation) => {
       try {
         const raw = await touchItemRef.current(nodeID)
+        if (
+          generation !== lifecycleGenerationRef.current ||
+          !enabledRef.current
+        ) return true
         loadRequestRef.current += 1
         setLoading(false)
         rawItemsRef.current.set(nodeID, raw)
@@ -136,9 +162,13 @@ export function useXDriveFileExplorerRecent<
 
   const clear = useCallback(() => {
     if (!enabled) return Promise.resolve(false)
-    return enqueueMutation(async () => {
+    return enqueueMutation(async (generation) => {
       try {
         await clearItemsRef.current()
+        if (
+          generation !== lifecycleGenerationRef.current ||
+          !enabledRef.current
+        ) return true
         loadRequestRef.current += 1
         setLoading(false)
         rawItemsRef.current.clear()
