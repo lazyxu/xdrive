@@ -28,6 +28,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
+| Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
@@ -65,6 +66,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
 - Windows CfAPI hydration keeps the existing 4 MiB HTTP range granularity but fills one caller-owned buffer through `DownloadRangeInto` for the lifetime of each fetch callback, rather than allocating one response slice per range. The legacy `DownloadRange` API remains unchanged for compatibility.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
+- Upload finalize keeps a reused source object open across fixed-block overwrite parts with the same source storage key. Interleaved newly uploaded staging chunks do not force that source handle to reopen; staging parts keep their existing per-object open/close behavior.
 - Multi-file and folder uploads batch conflict preflight for unique destination names, with at most **200 targets per request**. Shared orchestration consumes results in original file order, excludes duplicate destination names from upfront batching, and falls back to the legacy per-file preflight when the batch transport is unavailable or fails.
 - Archive prepare loads every descendant of a selected top-level directory with one owner-scoped recursive CTE per root, joining `xd_files` metadata in the same statement. Manifest DFS order, duplicate-root naming, stored-object validation, entry caps, and ZIP streaming remain unchanged.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
@@ -107,7 +109,38 @@ Decision: **Accepted.** The change removes chunk-count-scaled large payload allo
 
 Regression budget: payload-buffer instances must remain **O(1) per upload pass**, each bounded to one negotiated chunk (Server maximum **16 MiB**); no full-file buffering.
 
-Next action: after this client-side allocation fix is merged, continue the basic-path performance audit at Server upload-finalize staging/object-store I/O before considering broader concurrency changes.
+Next action: Server upload-finalize staging/object-store I/O is audited by the dedicated reused-source contract below; keep the client buffer contract unchanged.
+
+### Upload finalize reused-source open contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Server resumable-overwrite finalize path using fixed-size chunk reuse from the previous file revision;
+- stable structural shape: **128 chunks**, **1 changed staging chunk** in the middle, **127 reused chunks** pointing at the same prior CAS object; this mirrors a 1 GiB file at 8 MiB/chunk without allocating a 1 GiB test fixture;
+- evidence method: deterministic `uploadPartSequence` test with a counting Store wrapper; wall-clock timing is intentionally not quoted;
+- samples: n/a for the structural open count.
+
+BEFORE:
+
+- every reused part calls `Store.Open(source_storage_key)` independently;
+- the 127 reused chunks therefore cause **127 opens** of the same prior CAS object;
+- the one changed staging chunk causes **1** staging-object open.
+
+AFTER / current:
+
+- `uploadPartSequence` keeps one cached source file handle for the current reused source storage key;
+- reused chunks before and after the interleaved changed staging chunk share that handle;
+- reused source-object opens are **127 -> 1** for the stable workload;
+- the changed staging-object open remains **1**;
+- section offsets/sizes, assembled SHA-256/MD5 verification, CAS promotion, version history, resume state, and staging cleanup are unchanged.
+
+Decision: **Accepted.** This removes reused-chunk-count-scaled object opens from delta overwrite finalize without changing file bytes or integrity checks.
+
+Regression budget: reused source opens must remain **O(distinct reused source storage keys)**, not O(reused chunk count). The normal same-file overwrite path has one source key, so it must open that source at most once per finalize sequence.
+
+Next action: continue sync/delete basic-path performance. LocalStore assembled-content promotion is already a same-filesystem rename, so no speculative CAS-copy rewrite is planned.
 
 ### Windows CfAPI hydration range-buffer allocation contract
 
@@ -169,7 +202,7 @@ Decision: **Accepted.** This removes request-count-scaled preflight round trips 
 
 Regression budget: a normal <=200 unique-target batch must use at most **1 batch request / 1 batch SQL statement**; no batch failure may disable the single-target fallback, and duplicate destinations must remain sequentially preflighted.
 
-Next action: continue download/sync/delete basic-path performance; upload finalize was audited and the Local Store already promotes assembled content into CAS with same-filesystem rename while existing-CAS sessions short-circuit through instant upload, so no speculative finalize rewrite is planned.
+Next action: upload finalize reused-source open amplification is handled by the dedicated contract above; continue sync/delete basic-path performance without speculative CAS-copy rewrites.
 
 ### Archive prepare subtree SQL contract
 

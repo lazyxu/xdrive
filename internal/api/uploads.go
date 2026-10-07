@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -1472,12 +1473,14 @@ func (s *Server) nameExistsTx(tx *gorm.DB, uid, parent uint64, name string, exce
 }
 
 type uploadPartSequence struct {
-	ctx     context.Context
-	store   storage.Store
-	parts   []meta.UploadPart
-	index   int
-	current io.Reader
-	closer  io.Closer
+	ctx          context.Context
+	store        storage.Store
+	parts        []meta.UploadPart
+	index        int
+	current      io.Reader
+	closer       io.Closer
+	reusedKey    string
+	reusedSource *os.File
 }
 
 func (r *uploadPartSequence) Read(p []byte) (int, error) {
@@ -1489,12 +1492,11 @@ func (r *uploadPartSequence) Read(p []byte) (int, error) {
 			part := r.parts[r.index]
 			r.index++
 			if part.Reused {
-				f, err := r.store.Open(r.ctx, part.SourceStorageKey)
+				f, err := r.openReusedSource(part.SourceStorageKey)
 				if err != nil {
 					return 0, err
 				}
 				r.current = io.NewSectionReader(f, part.SourceOffset, part.Size)
-				r.closer = f
 			} else {
 				f, err := r.store.Open(r.ctx, part.StorageKey)
 				if err != nil {
@@ -1519,6 +1521,22 @@ func (r *uploadPartSequence) Read(p []byte) (int, error) {
 	}
 }
 
+func (r *uploadPartSequence) openReusedSource(key string) (*os.File, error) {
+	if r.reusedSource != nil && r.reusedKey == key {
+		return r.reusedSource, nil
+	}
+	if err := r.closeReusedSource(); err != nil {
+		return nil, err
+	}
+	f, err := r.store.Open(r.ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	r.reusedKey = key
+	r.reusedSource = f
+	return f, nil
+}
+
 func (r *uploadPartSequence) closeCurrent() error {
 	var err error
 	if r.closer != nil {
@@ -1529,6 +1547,22 @@ func (r *uploadPartSequence) closeCurrent() error {
 	return err
 }
 
+func (r *uploadPartSequence) closeReusedSource() error {
+	if r.reusedSource == nil {
+		r.reusedKey = ""
+		return nil
+	}
+	err := r.reusedSource.Close()
+	r.reusedSource = nil
+	r.reusedKey = ""
+	return err
+}
+
 func (r *uploadPartSequence) Close() error {
-	return r.closeCurrent()
+	currentErr := r.closeCurrent()
+	sourceErr := r.closeReusedSource()
+	if currentErr != nil {
+		return currentErr
+	}
+	return sourceErr
 }
