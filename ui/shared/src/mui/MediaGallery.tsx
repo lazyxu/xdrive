@@ -23,6 +23,7 @@ import {
   IconButton,
   MenuItem,
   Paper,
+  Slider,
   Stack,
   TextField,
   Tooltip,
@@ -38,6 +39,7 @@ import type {
   MediaPlaceFacet,
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
+  MediaTimelineGroupSets,
   UpdateMediaPersonIdentityInput,
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
@@ -247,6 +249,18 @@ function mediaGallerySectionDraft(
   return emptyMediaGalleryFilterDraft
 }
 
+function emptyMediaTimelineGroupSets(): MediaTimelineGroupSets {
+  return { year: [], month: [], day: [] }
+}
+
+function mediaTimelineGroupSetsFromRange(range: MediaItemRange): MediaTimelineGroupSets {
+  return {
+    year: range.timeline_group_sets?.year ?? [],
+    month: range.timeline_group_sets?.month ?? range.timeline_groups ?? [],
+    day: range.timeline_group_sets?.day ?? [],
+  }
+}
+
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   pageSize?: number
@@ -263,7 +277,9 @@ export function XDriveMediaGalleryPage({
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
-  const [timelineGroups, setTimelineGroups] = useState<MediaTimelineGroupIndex[]>([])
+  const [timelineGroupSets, setTimelineGroupSets] = useState<MediaTimelineGroupSets>(
+    emptyMediaTimelineGroupSets,
+  )
   const [currentAlbum, setCurrentAlbum] = useState<MediaAlbum | null>(null)
   const [currentSuggestedPerson, setCurrentSuggestedPerson] =
     useState<MediaSuggestedPerson | null>(null)
@@ -331,7 +347,7 @@ export function XDriveMediaGalleryPage({
       range.offset === 0 &&
       collectionTargetRef.current?.requestID === target.requestID
     ) {
-      setTimelineGroups(page.timeline_groups ?? [])
+      setTimelineGroupSets(mediaTimelineGroupSetsFromRange(page))
     }
     return {
       items: page.items,
@@ -402,7 +418,7 @@ export function XDriveMediaGalleryPage({
     )
     collectionTargetRef.current = target
     setCollectionTarget(target)
-    setTimelineGroups([])
+    setTimelineGroupSets(emptyMediaTimelineGroupSets())
     virtualCollection.reset(mediaGalleryCollectionKey(target))
     setLoading(true)
     setError('')
@@ -428,7 +444,7 @@ export function XDriveMediaGalleryPage({
         setSuggestedPeople(nextSuggestedPeople)
         setPersonIdentities(nextPeople)
         setItems([...range.items])
-        setTimelineGroups(range.timeline_groups ?? [])
+        setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
         virtualCollection.primePage({
           items: range.items,
           totalCount: range.total_count,
@@ -449,7 +465,7 @@ export function XDriveMediaGalleryPage({
       )
       setCurrentPerson(target.kind === 'person' ? person : null)
       setItems([...range.items])
-      setTimelineGroups(range.timeline_groups ?? [])
+      setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
       virtualCollection.primePage({
         items: range.items,
         totalCount: range.total_count,
@@ -932,7 +948,7 @@ export function XDriveMediaGalleryPage({
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
         loading={loading}
-        timelineGroups={timelineGroups}
+        timelineGroupSets={timelineGroupSets}
         error={error}
         section={section}
         activeMediaType={activeMediaType}
@@ -1103,7 +1119,7 @@ export interface XDriveMediaGalleryProps {
   currentSuggestedPerson?: MediaSuggestedPerson | null
   currentPerson?: MediaPersonIdentity | null
   loading?: boolean
-  timelineGroups?: MediaTimelineGroupIndex[]
+  timelineGroupSets?: MediaTimelineGroupSets
   error?: string
   section?: MediaGallerySection
   activeMediaType?: string
@@ -1173,7 +1189,7 @@ function mediaAssetChipLabel(item: MediaItem) {
   }
 }
 
-type MediaGalleryViewMode = 'grid' | 'timeline'
+type MediaGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 
 const mediaGalleryMediaTypes = [
   { value: 'image', label: '图片', description: '普通照片与静态图像' },
@@ -1200,7 +1216,10 @@ function mediaTimelineDate(item: MediaItem) {
   return Number.isNaN(captured.getTime()) ? null : captured
 }
 
-function mediaTimelineGroups(items: MediaItem[]): MediaTimelineGroup[] {
+function mediaTimelineGroups(
+  items: MediaItem[],
+  scale: Exclude<MediaGalleryTimeScale, 'all'>,
+): MediaTimelineGroup[] {
   const groups = new Map<string, MediaTimelineGroup>()
   const unknown: MediaItem[] = []
   for (const item of items) {
@@ -1209,18 +1228,27 @@ function mediaTimelineGroups(items: MediaItem[]): MediaTimelineGroup[] {
       unknown.push(item)
       continue
     }
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const year = String(date.getFullYear())
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const key = scale === 'year'
+      ? year
+      : scale === 'month'
+        ? `${year}-${month}`
+        : `${year}-${month}-${day}`
     const current = groups.get(key)
     if (current) {
       current.items.push(item)
       continue
     }
+    const formatOptions: Intl.DateTimeFormatOptions = scale === 'year'
+      ? { year: 'numeric' }
+      : scale === 'month'
+        ? { year: 'numeric', month: 'long' }
+        : { year: 'numeric', month: 'long', day: 'numeric' }
     groups.set(key, {
       key,
-      label: new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: 'long',
-      }).format(date),
+      label: new Intl.DateTimeFormat('zh-CN', formatOptions).format(date),
       items: [item],
     })
   }
@@ -1427,6 +1455,7 @@ function MediaTile({
 
 function MediaTileGrid({
   items,
+  minTileWidth,
   loadThumbnail,
   loadPreviewURL,
   onSetFavorite,
@@ -1436,6 +1465,7 @@ function MediaTileGrid({
   onToggleFavorite,
 }: {
   items: MediaItem[]
+  minTileWidth: number
   loadThumbnail: MediaThumbnailLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
@@ -1448,7 +1478,7 @@ function MediaTileGrid({
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        gridTemplateColumns: `repeat(auto-fill, minmax(${minTileWidth}px, 1fr))`,
         gap: 1,
       }}
     >
@@ -1481,6 +1511,7 @@ function mediaGalleryScrollParent(element: HTMLElement) {
 
 function MediaVirtualTileGrid({
   collection,
+  minTileWidth,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -1491,6 +1522,7 @@ function MediaVirtualTileGrid({
   onToggleFavorite,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
+  minTileWidth: number
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
@@ -1506,6 +1538,7 @@ function MediaVirtualTileGrid({
     metrics: xDriveMediaGalleryGridMetrics({
       width: 0,
       itemCount: collection.itemCount,
+      minColumnWidth: minTileWidth,
     }),
     window: { start: 0, end: 0, startRow: 0, endRow: 0 },
     visibleWindow: { start: 0, end: 0, startRow: 0, endRow: 0 },
@@ -1528,6 +1561,7 @@ function MediaVirtualTileGrid({
         const metrics = xDriveMediaGalleryGridMetrics({
           width: currentHost.clientWidth,
           itemCount: collection.itemCount,
+          minColumnWidth: minTileWidth,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -1588,7 +1622,7 @@ function MediaVirtualTileGrid({
         frameRef.current = null
       }
     }
-  }, [collection.itemCount, collection.onRangeChange])
+  }, [collection.itemCount, collection.onRangeChange, minTileWidth])
 
   useEffect(() => {
     const retainedNodeIDs: number[] = []
@@ -1697,6 +1731,7 @@ function sameMediaTimelineWindow(
 function MediaVirtualTimeline({
   groups,
   collection,
+  minTileWidth,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -1708,6 +1743,7 @@ function MediaVirtualTimeline({
 }: {
   groups: MediaTimelineGroupIndex[]
   collection: XDriveMediaGalleryVirtualCollection
+  minTileWidth: number
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
@@ -1720,7 +1756,11 @@ function MediaVirtualTimeline({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
   const [state, setState] = useState(() => {
-    const layout = xDriveMediaGalleryTimelineLayout({ width: 0, groups })
+    const layout = xDriveMediaGalleryTimelineLayout({
+      width: 0,
+      groups,
+      minColumnWidth: minTileWidth,
+    })
     const window = xDriveMediaGalleryTimelineWindow({
       layout,
       visibleTop: 0,
@@ -1746,6 +1786,7 @@ function MediaVirtualTimeline({
         const layout = xDriveMediaGalleryTimelineLayout({
           width: currentHost.clientWidth,
           groups,
+          minColumnWidth: minTileWidth,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -1803,7 +1844,7 @@ function MediaVirtualTimeline({
         frameRef.current = null
       }
     }
-  }, [collection.onRangeChange, groups])
+  }, [collection.onRangeChange, groups, minTileWidth])
 
   useEffect(() => {
     const retainedNodeIDs: number[] = []
@@ -1939,7 +1980,7 @@ export function XDriveMediaGallery({
   currentSuggestedPerson = null,
   currentPerson = null,
   loading = false,
-  timelineGroups = [],
+  timelineGroupSets = emptyMediaTimelineGroupSets(),
   error = '',
   section = 'library',
   activeMediaType = '',
@@ -1983,7 +2024,8 @@ export function XDriveMediaGallery({
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
-  const [viewMode, setViewMode] = useState<MediaGalleryViewMode>('grid')
+  const [timeScale, setTimeScale] = useState<MediaGalleryTimeScale>('all')
+  const [minTileWidth, setMinTileWidth] = useState(150)
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
   const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
@@ -2022,7 +2064,17 @@ export function XDriveMediaGallery({
     ))
   }, [onSetFavorite])
 
-  const denseTimelineGroups = useMemo(() => mediaTimelineGroups(items), [items])
+  const activeTimelineGroups = timeScale === 'year'
+    ? timelineGroupSets.year
+    : timeScale === 'month'
+      ? timelineGroupSets.month
+      : timeScale === 'day'
+        ? timelineGroupSets.day
+        : []
+  const denseTimelineGroups = useMemo(
+    () => timeScale === 'all' ? [] : mediaTimelineGroups(items, timeScale),
+    [items, timeScale],
+  )
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
   const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
@@ -2253,23 +2305,24 @@ export function XDriveMediaGallery({
           </Button>
         ) : null}
         {showPhotoCollection ? (
-          <Stack direction="row" spacing={0.5} aria-label="图库视图">
-          <Button
-            size="small"
-            variant={viewMode === 'grid' ? 'contained' : 'text'}
-            aria-pressed={viewMode === 'grid'}
-            onClick={() => setViewMode('grid')}
-          >
-            网格
-          </Button>
-          <Button
-            size="small"
-            variant={viewMode === 'timeline' ? 'contained' : 'text'}
-            aria-pressed={viewMode === 'timeline'}
-            onClick={() => setViewMode('timeline')}
-          >
-            时间轴
-          </Button>
+          <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
+            {([
+              ['year', '年'],
+              ['month', '月'],
+              ['day', '日'],
+              ['all', '所有照片'],
+            ] as const).map(([value, label]) => (
+              <Button
+                key={value}
+                size="small"
+                variant={timeScale === value ? 'contained' : 'text'}
+                aria-pressed={timeScale === value}
+                data-xdrive-gallery-time-scale={value}
+                onClick={() => setTimeScale(value)}
+              >
+                {label}
+              </Button>
+            ))}
           </Stack>
         ) : null}
         {onRefresh ? (
@@ -2292,6 +2345,32 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPhotoCollection ? filters : null}
+
+      {showPhotoCollection ? (
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          justifyContent="flex-end"
+          sx={{ minWidth: 0 }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+            缩略图大小
+          </Typography>
+          <Slider
+            size="small"
+            aria-label="缩略图密度"
+            min={96}
+            max={240}
+            step={24}
+            value={minTileWidth}
+            onChange={(_event, value) => {
+              if (typeof value === 'number') setMinTileWidth(value)
+            }}
+            sx={{ width: 132 }}
+          />
+        </Stack>
+      ) : null}
 
       {error ? (
         <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
@@ -2730,11 +2809,12 @@ export function XDriveMediaGallery({
               </Typography>
             </Stack>
           </Paper>
-        ) : viewMode === 'timeline' ? (
+        ) : timeScale !== 'all' ? (
           virtualCollection ? (
             <MediaVirtualTimeline
-              groups={timelineGroups}
+              groups={activeTimelineGroups}
               collection={virtualCollection}
+              minTileWidth={minTileWidth}
               loadThumbnail={loadThumbnail}
               thumbnailScheduler={thumbnailScheduler}
               loadPreviewURL={loadPreviewURL}
@@ -2767,6 +2847,7 @@ export function XDriveMediaGallery({
                   </Stack>
                   <MediaTileGrid
                     items={group.items}
+                    minTileWidth={minTileWidth}
                     loadThumbnail={loadThumbnail}
                     loadPreviewURL={loadPreviewURL}
                     onSetFavorite={onSetFavorite}
@@ -2786,6 +2867,7 @@ export function XDriveMediaGallery({
         ) : virtualCollection ? (
           <MediaVirtualTileGrid
             collection={virtualCollection}
+            minTileWidth={minTileWidth}
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
             loadPreviewURL={loadPreviewURL}
@@ -2802,6 +2884,7 @@ export function XDriveMediaGallery({
         ) : (
           <MediaTileGrid
             items={items}
+            minTileWidth={minTileWidth}
             loadThumbnail={loadThumbnail}
             loadPreviewURL={loadPreviewURL}
             onSetFavorite={onSetFavorite}

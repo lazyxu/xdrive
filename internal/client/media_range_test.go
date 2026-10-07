@@ -78,6 +78,20 @@ func TestMediaItemRangeQueries(t *testing.T) {
 						{Key: "2026-10", ItemCount: 600, StartIndex: 0},
 						{Key: "unknown", ItemCount: 40, StartIndex: 600},
 					},
+					TimelineGroupSets: &MediaTimelineGroupSets{
+						Year: []MediaTimelineGroupIndex{
+							{Key: "2026", ItemCount: 600, StartIndex: 0},
+							{Key: "unknown", ItemCount: 40, StartIndex: 600},
+						},
+						Month: []MediaTimelineGroupIndex{
+							{Key: "2026-10", ItemCount: 600, StartIndex: 0},
+							{Key: "unknown", ItemCount: 40, StartIndex: 600},
+						},
+						Day: []MediaTimelineGroupIndex{
+							{Key: "2026-10-05", ItemCount: 600, StartIndex: 0},
+							{Key: "unknown", ItemCount: 40, StartIndex: 600},
+						},
+					},
 				})
 			}))
 			defer server.Close()
@@ -91,7 +105,10 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				len(page.Items) != 1 || page.Items[0].Node.ID != 7 ||
 				len(page.TimelineGroups) != 2 ||
 				page.TimelineGroups[0].Key != "2026-10" ||
-				page.TimelineGroups[1].StartIndex != 600 {
+				page.TimelineGroups[1].StartIndex != 600 ||
+				page.TimelineGroupSets == nil ||
+				page.TimelineGroupSets.Year[0].Key != "2026" ||
+				page.TimelineGroupSets.Day[0].Key != "2026-10-05" {
 				t.Fatalf("unexpected page: %+v", page)
 			}
 		})

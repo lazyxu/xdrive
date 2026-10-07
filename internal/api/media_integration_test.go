@@ -253,6 +253,15 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		itemRange.TimelineGroups[0].StartIndex != 0 {
 		t.Fatalf("captured media timeline groups=%+v", itemRange.TimelineGroups)
 	}
+	if itemRange.TimelineGroupSets == nil ||
+		len(itemRange.TimelineGroupSets.Year) != 1 ||
+		itemRange.TimelineGroupSets.Year[0].Key != "2026" ||
+		len(itemRange.TimelineGroupSets.Month) != 1 ||
+		itemRange.TimelineGroupSets.Month[0].Key != "2026-10" ||
+		len(itemRange.TimelineGroupSets.Day) != 1 ||
+		itemRange.TimelineGroupSets.Day[0].Key != "2026-10-05" {
+		t.Fatalf("captured media timeline group sets=%+v", itemRange.TimelineGroupSets)
+	}
 
 	emptyRangeResponse := request(
 		t,

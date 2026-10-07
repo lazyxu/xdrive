@@ -647,12 +647,19 @@ export type AgentMediaTimelineGroupIndex = {
   start_index: number
 }
 
+export type AgentMediaTimelineGroupSets = {
+  year: AgentMediaTimelineGroupIndex[]
+  month: AgentMediaTimelineGroupIndex[]
+  day: AgentMediaTimelineGroupIndex[]
+}
+
 export type AgentMediaItemRange = {
   items: AgentMediaItem[]
   total_count: number
   offset: number
   limit: number
   timeline_groups?: AgentMediaTimelineGroupIndex[]
+  timeline_group_sets?: AgentMediaTimelineGroupSets
 }
 
 export type AgentMediaQuery = {
