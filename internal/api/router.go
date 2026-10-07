@@ -19,50 +19,51 @@ import (
 )
 
 type Server struct {
-	DB                            *gorm.DB
-	Store                         storage.Store
-	Auth                          auth.Manager
-	RefreshTTL                    time.Duration
-	AllowedOrigin                 string
-	MaxUploadBytes                int64
-	SourceRunFailureRetention     time.Duration
-	ConnectorSecrets              *connectorsecret.Keyring
-	PhotoPlaceResolver            photointelligence.PlaceResolver
-	PhotoFaceAnalyzer             photointelligence.FaceAnalyzer
-	PhotoFacePreviewBaseURL       string
-	HostControlDir                string
-	FilesDataHostPath             string
-	PostgresDataHostPath          string
-	BackupRootHostPath            string
-	XDriveHomeHostPath            string
-	CaddyDataHostPath             string
-	CaddyConfigHostPath           string
-	BackgroundScheduler           *background.Scheduler
-	BackgroundRuntimeInstanceID   string
-	MediaIndexWakeups             <-chan uint64
-	FileOperationWakeups          <-chan struct{}
-	credentialTest                sourceCredentialTester
-	fileStationBrowse             sourceFileStationBrowser
-	obs                           *serverObservability
-	stagingCacheMu                sync.Mutex
-	stagingCacheAt                time.Time
-	stagingCache                  uploadStagingInventory
-	fileOperationCancelMu         sync.Mutex
-	fileOperationCancels          map[string]context.CancelCauseFunc
-	archiveProgressMu             sync.Mutex
-	archiveProgress               map[string]*archiveDownloadProgressState
-	mediaIndexMu                  sync.Mutex
-	mediaIndexOwners              map[uint64]*mediaIndexOwnerState
-	photoIntelligenceMu           sync.Mutex
-	photoIntelligenceOwners       map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
-	photoFaceRunner               photoFaceOwnerRunner
-	photoPlaceRunner              photoPlaceOwnerRunner
-	photoPersonRunner             photoPersonOwnerRunner
-	systemMaintenanceSourceVerify systemMaintenanceSourceVerifyRunner
-	systemMaintenanceSourceRepair systemMaintenanceSourceRepairRunner
-	systemMaintenanceMediaVerify  systemMaintenanceMediaVerifyRunner
-	systemMaintenanceMediaRepair  systemMaintenanceMediaRepairRunner
-	systemMaintenanceHeartbeat    time.Duration
+	DB                             *gorm.DB
+	Store                          storage.Store
+	Auth                           auth.Manager
+	RefreshTTL                     time.Duration
+	AllowedOrigin                  string
+	MaxUploadBytes                 int64
+	SourceRunFailureRetention      time.Duration
+	ConnectorSecrets               *connectorsecret.Keyring
+	PhotoPlaceResolver             photointelligence.PlaceResolver
+	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
+	PhotoFacePreviewBaseURL        string
+	HostControlDir                 string
+	FilesDataHostPath              string
+	PostgresDataHostPath           string
+	BackupRootHostPath             string
+	XDriveHomeHostPath             string
+	CaddyDataHostPath              string
+	CaddyConfigHostPath            string
+	BackgroundScheduler            *background.Scheduler
+	BackgroundRuntimeInstanceID    string
+	MediaIndexWakeups              <-chan uint64
+	FileOperationWakeups           <-chan struct{}
+	credentialTest                 sourceCredentialTester
+	fileStationBrowse              sourceFileStationBrowser
+	obs                            *serverObservability
+	stagingCacheMu                 sync.Mutex
+	stagingCacheAt                 time.Time
+	stagingCache                   uploadStagingInventory
+	fileOperationCancelMu          sync.Mutex
+	fileOperationCancels           map[string]context.CancelCauseFunc
+	archiveProgressMu              sync.Mutex
+	archiveProgress                map[string]*archiveDownloadProgressState
+	mediaIndexMu                   sync.Mutex
+	mediaIndexOwners               map[uint64]*mediaIndexOwnerState
+	photoIntelligenceMu            sync.Mutex
+	photoIntelligenceOwners        map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
+	photoFaceRunner                photoFaceOwnerRunner
+	photoPlaceRunner               photoPlaceOwnerRunner
+	photoPersonRunner              photoPersonOwnerRunner
+	systemMaintenanceSourceVerify  systemMaintenanceSourceVerifyRunner
+	systemMaintenanceSourceRepair  systemMaintenanceSourceRepairRunner
+	systemMaintenanceMediaVerify   systemMaintenanceMediaVerifyRunner
+	systemMaintenanceMediaRepair   systemMaintenanceMediaRepairRunner
+	systemMaintenanceStorageVerify systemMaintenanceStorageVerifyRunner
+	systemMaintenanceHeartbeat     time.Duration
 }
 
 func (s *Server) Router() *gin.Engine {

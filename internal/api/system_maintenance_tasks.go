@@ -40,12 +40,17 @@ type systemMaintenanceMediaRepairRunner interface {
 	RepairMedia(context.Context) (maintenance.MediaRepairReport, error)
 }
 
+type systemMaintenanceStorageVerifyRunner interface {
+	VerifyStorage(context.Context) (maintenance.VerifyReport, error)
+}
+
 func systemMaintenanceInteractiveKinds() []string {
 	return []string{
 		meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
+		meta.SystemMaintenanceKindStorageVerify,
 	}
 }
 
@@ -54,7 +59,8 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 	case meta.SystemMaintenanceKindSourceVerify,
 		meta.SystemMaintenanceKindSourceRepair,
 		meta.SystemMaintenanceKindMediaVerify,
-		meta.SystemMaintenanceKindMediaRepair:
+		meta.SystemMaintenanceKindMediaRepair,
+		meta.SystemMaintenanceKindStorageVerify:
 		return true
 	default:
 		return false
@@ -71,6 +77,8 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseMediaVerify
 	case meta.SystemMaintenanceKindMediaRepair:
 		return meta.SystemMaintenancePhaseMediaRepair
+	case meta.SystemMaintenanceKindStorageVerify:
+		return meta.SystemMaintenancePhaseStorageVerify
 	default:
 		return ""
 	}
@@ -92,6 +100,10 @@ func systemMaintenanceLeaderKey(kind string) string {
 	case meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair:
 		return maintenanceLeaderMediaIntegrity
+	case meta.SystemMaintenanceKindStorageVerify:
+		// Full storage verification hashes managed content and must not race
+		// the Janitor's CAS GC/state transitions.
+		return maintenanceLeaderJanitor
 	default:
 		return ""
 	}
@@ -596,6 +608,29 @@ func (s *Server) executeSystemMaintenanceTask(
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
+	case meta.SystemMaintenanceKindStorageVerify:
+		report, err := s.verifyStorageForSystemMaintenance(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		issues := len(report.Missing) +
+			len(report.SizeMismatches) +
+			len(report.DuplicateRefs) +
+			len(report.ContentRefMismatch) +
+			len(report.Orphans) +
+			len(report.HashMismatches)
+		summary := fmt.Sprintf(
+			"%d 个文件引用 · %d 个版本引用 · %d 个物理对象 · 发现 %d 个一致性问题",
+			report.ReferencedFiles,
+			report.ReferencedVersions,
+			report.BlobFiles,
+			issues,
+		)
+		state := meta.SystemMaintenanceStatusSuccess
+		if !report.OK() {
+			state = meta.SystemMaintenanceStatusIssues
+		}
+		return summary, state, nil
 	default:
 		return "", "", errSystemMaintenanceUnsupported
 	}
@@ -646,6 +681,19 @@ func (s *Server) repairMediaForSystemMaintenance(
 		return maintenance.MediaRepairReport{}, err
 	}
 	return maintenance.RepairMedia(ctx, s.DB, root, false)
+}
+
+func (s *Server) verifyStorageForSystemMaintenance(
+	ctx context.Context,
+) (maintenance.VerifyReport, error) {
+	if s.systemMaintenanceStorageVerify != nil {
+		return s.systemMaintenanceStorageVerify.VerifyStorage(ctx)
+	}
+	root, err := s.systemMaintenanceFilesystemRoot()
+	if err != nil {
+		return maintenance.VerifyReport{}, err
+	}
+	return maintenance.VerifyWithContext(ctx, s.DB, root)
 }
 
 func (s *Server) systemMaintenanceFilesystemRoot() (string, error) {
