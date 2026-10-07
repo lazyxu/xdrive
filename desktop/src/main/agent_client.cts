@@ -765,8 +765,7 @@ export type AgentMediaThumbnail = {
 
 export type AgentMediaMotion = {
   content_type: string
-  data_base64: string
-  size: number
+  data: ArrayBuffer
 }
 
 export type AgentCloudQuota = {
@@ -1463,12 +1462,10 @@ export class AgentIPCClient {
     )
   }
 
-  mediaLivePhotoMotion(nodeID: number) {
+  mediaLivePhotoMotion(nodeID: number): Promise<AgentMediaMotion> {
     const query = new URLSearchParams({ node_id: String(nodeID) })
-    return this.request<AgentMediaMotion>(
-      'GET',
+    return this.requestBinary(
       `/v1/media/live-photo-motion?${query.toString()}`,
-      undefined,
       45_000,
     )
   }

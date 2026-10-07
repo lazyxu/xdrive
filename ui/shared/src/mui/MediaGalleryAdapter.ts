@@ -28,10 +28,6 @@ export type XDriveMediaGalleryBinaryResource =
       content_type?: string
       data: ArrayBuffer
     }
-  | {
-      content_type?: string
-      data_base64: string
-    }
 
 export interface XDriveMediaGalleryPort {
   listItems: (
@@ -185,9 +181,6 @@ function mediaResourceURL(
       [resource.data],
       { type: resource.content_type || fallbackContentType },
     ))
-  }
-  if ('data_base64' in resource) {
-    return `data:${resource.content_type || fallbackContentType};base64,${resource.data_base64}`
   }
   return URL.createObjectURL(resource)
 }

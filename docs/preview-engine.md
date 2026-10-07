@@ -249,6 +249,11 @@ still frame, and render the existing `XDriveLivePhotoSurface` with the existing
 owner-scoped motion endpoint. This is file-format presentation, not Gallery grouping.
 Do not infer standalone JPG/HEIC + MOV relationships inside FileExplorer.
 
+Desktop Live Photo motion transport must remain binary end-to-end. xdrive-agent may
+buffer the bounded motion payload for the local Desktop IPC limit, but it must return
+raw bytes; Electron transports those bytes as `ArrayBuffer`, and renderer surfaces create
+a Blob URL. Do not base64-encode motion payloads in Agent IPC or renderer adapters.
+
 ## FileExplorer boundary
 
 FileExplorer Inspector owns file-management context such as file identity, path,

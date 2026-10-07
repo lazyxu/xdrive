@@ -610,7 +610,8 @@ export default function DesktopFileExplorer({
     ) return null
     const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id))
     if (!result.ok) return null
-    return `data:${result.data.content_type || 'video/quicktime'};base64,${result.data.data_base64}`
+    const contentType = result.data.content_type || 'video/quicktime'
+    return URL.createObjectURL(new Blob([result.data.data], { type: contentType }))
   }, [])
 
   const openPreviewNode = (node: AgentCloudNode) => {
