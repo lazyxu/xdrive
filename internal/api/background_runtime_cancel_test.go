@@ -292,6 +292,7 @@ func TestBackgroundRuntimeControlActionsExposeOwnerCancellation(t *testing.T) {
 		"media.index",
 		"photo.face",
 		"photo.smart_search",
+		"photo.semantic_search",
 		"photo.place",
 		"photo.person_cluster",
 	} {

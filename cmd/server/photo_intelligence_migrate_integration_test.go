@@ -59,6 +59,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_place_labels",
 		"xd_photo_visual_labels",
 		"xd_photo_ocr_texts",
+		"xd_photo_semantic_embeddings",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("photo intelligence table %q was not created", table)
@@ -265,5 +266,19 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	duplicateOCR := ocr
 	if err := db.Create(&duplicateOCR).Error; err == nil {
 		t.Fatal("multiple current OCR rows were accepted for one photo asset")
+	}
+
+	semantic := meta.PhotoSemanticEmbedding{
+		AssetID: asset.ID, OwnerID: user.ID,
+		AnalyzerVersion: "semantic-v1",
+		Embedding:       []byte{1, 2, 3}, EmbeddingFormat: "i8norm-v1",
+		Dimensions: 3,
+	}
+	if err := db.Create(&semantic).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateSemantic := semantic
+	if err := db.Create(&duplicateSemantic).Error; err == nil {
+		t.Fatal("multiple current semantic embeddings were accepted for one photo asset")
 	}
 }

@@ -2,7 +2,7 @@
 
 > **Normative boundary:** Photo Intelligence is an optional, connector-neutral analysis layer that runs only after xDrive has created local `PhotoAsset` / `PhotoResource` / `PhotoMetadata` state. Yike, Synology Photos, FileStation, Synology Push, and future synchronization-folder connectors must not provide canonical face/person/place/visual/OCR intelligence.
 
-This document defines the architecture for automatic face/person analysis, human-readable place analysis, and rebuildable Smart Search visual/OCR analysis. It is deliberately separate from `docs/photo-source-v2-roadmap.md`: Photo Source v2 is the file-ingestion and native-media foundation; Photo Intelligence is a later derived product layer.
+This document defines the architecture for automatic face/person analysis, human-readable place analysis, and rebuildable Smart Search visual/OCR/semantic analysis. It is deliberately separate from `docs/photo-source-v2-roadmap.md`: Photo Source v2 is the file-ingestion and native-media foundation; Photo Intelligence is a later derived product layer.
 
 ## Goals
 
@@ -84,7 +84,8 @@ Initial analysis kinds are:
 - `face_embedding`;
 - `place_label`;
 - `visual_label`;
-- `ocr_text`.
+- `ocr_text`;
+- `semantic_embedding`.
 
 ### `PhotoFace`
 
@@ -124,6 +125,34 @@ Smart Search intelligence is also asset-scoped, derived, and rebuildable.
   but are not authoritative.
 - Model/pipeline hashes participate in analyzer-version tokens, so upgrades invalidate
   derived search evidence deterministically.
+
+### `PhotoSemanticEmbedding`
+
+Semantic embeddings are also asset-scoped rebuildable evidence. The current reference
+runtime uses pinned multilingual SigLIP2 image/text towers in the optional local
+Photo Intelligence sidecar. The Server itself has no ONNX/tokenizer dependency.
+
+The canonical persistence/search contract is:
+
+- only image `PhotoAsset` rows receive asynchronous semantic image embeddings;
+- analysis input is the same revision/SHA-bound 1280px analysis preview used by other
+  local intelligence;
+- the analyzer L2-normalizes 768-dimensional vectors and deterministically quantizes
+  them to signed-int8 `i8norm-v1`;
+- `PhotoSemanticEmbedding` persists owner, analyzer version, format, dimensions and
+  rebuildable bytes; `PhotoAnalysisState(kind=semantic_embedding)` remains the
+  authoritative readiness/version gate;
+- query text is embedded on demand in the same model space;
+- Server builds an owner-scoped in-memory exact-cosine index from current ready rows.
+  PostgreSQL remains the durable source; no pgvector extension or second database is
+  required;
+- lexical filename/tag/OCR/person/place matches are merged as a stronger relevance
+  signal rather than discarded;
+- analyzer/index unavailability falls back to lexical search;
+- stale/failed/old-version embeddings are never mixed into current semantic ranking.
+
+The in-memory index is an implementation detail and may later become HNSW only behind
+the same contract when measured large-library workloads justify it.
 
 ## Face/person analysis policy
 
@@ -382,7 +411,7 @@ to the next generation when work is already active, preventing an older generati
 premature stale marker. Reanalysis only invalidates/rebuilds derived Photo Intelligence state; it does not
 modify originals, durable people, manual `PeopleJSON`, tags, favorites, descriptions, or albums.
 
-Owner-scoped face/place/person/Smart Search runtime work uses the durable background
+Owner-scoped face/place/person/lexical Smart Search/semantic Search runtime work uses the durable background
 cancellation fence. A cancellation request advances the persisted owner+kind epoch;
 running work observes that epoch through the distributed owner lease heartbeat, rolls
 any `running` analysis state back to `stale`, and only then acknowledges cancellation.
@@ -410,7 +439,7 @@ The status command is read-only. It reports:
 - whether the offline place resolver is configured plus place-analysis state counts and persisted place labels;
 - visual-label/OCR analysis state counts plus persisted visual-label and OCR-document counts.
 
-Photo Intelligence ML analysis remains **disabled by default**. The standard reference deployment enables face plus Smart Search inference only with the `photo-intelligence` Compose profile / analyzer socket configuration. The reference analyzer reports `runtime.framework=opencv_dnn` and `runtime.device=cpu`; alternate analyzers may omit runtime details while still satisfying protocol v1.
+Photo Intelligence ML analysis remains **disabled by default**. The standard reference deployment enables face plus lexical/semantic Smart Search inference only with the `photo-intelligence` Compose profile / analyzer socket configuration. The reference analyzer reports `runtime.framework=opencv_dnn` and `runtime.device=cpu`; alternate analyzers may omit runtime details while still satisfying protocol v1.
 
 ## Product/API rules
 
@@ -420,7 +449,7 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
 - platform transports remain adapters;
 - automatic suggestions must be visually distinguishable from user-authored metadata;
 - search/smart-album filters must remain usable with all synchronization providers offline;
-- Gallery lexical search may consume only local ready visual/OCR/place/person evidence; semantic embeddings must remain versioned derived state;
+- Gallery search may consume only local ready visual/OCR/place/person/semantic evidence; semantic embeddings must remain versioned derived state and relevance ranking must degrade to lexical search when semantic inference is unavailable;
 - deleting/rebuilding intelligence must not delete or mutate originals or user-authored metadata.
 
 ## Delivery sequence
@@ -481,7 +510,14 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
    - `visual_label` and `ocr_text` are first-class versioned analysis kinds;
    - MobileNetV2 + PP-OCRv3 + CRNN CN run inside the existing optional local analyzer boundary using the canonical analysis preview;
    - the shared Gallery `q` query searches only ready visual/OCR evidence together with local filenames, metadata, tags, people, and place labels;
-   - Task Center exposes `photo.smart_search` through the same cancel/reanalyze contract;
-   - semantic/vector retrieval remains the next Phase-8 slice and must not mix embedding versions.
+   - Task Center exposes `photo.smart_search` through the same cancel/reanalyze contract.
+10. **Smart Search semantic relevance — current**
+   - `semantic_embedding` is a versioned rebuildable analysis kind using the canonical analysis preview;
+   - pinned multilingual SigLIP2 vision/text towers run only in the optional local sidecar and emit one shared 768-dimensional space;
+   - normalized embeddings persist as compact `i8norm-v1` bytes while Server maintains a rebuildable owner-scoped exact-cosine index/cache;
+   - the existing Gallery `q` merges semantic ranking with a strong lexical boost and falls back to lexical search if semantic inference/indexing is unavailable;
+   - relevance search stays in the shared Gallery grid and does not expose Year/Month/Day ordering;
+   - Task Center exposes `photo.semantic_search` as P3/`ml_cpu` with the existing durable cancel/reanalyze contract;
+   - no pgvector/second database is required; a future approximate index backend must preserve this API/product contract.
 
 The supported reference runtime is now the opt-in OpenCV DNN CPU analyzer using pinned YuNet detection and SFace embeddings. GPU/NPU or alternate licensed/BYO analyzers remain optional future backends and must preserve the same versioned analyzer contract; the schema and durable-person model remain runtime-agnostic.

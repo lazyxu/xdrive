@@ -84,7 +84,7 @@ interactive I/O merely because it has pending high-priority work.
 - `interactive_io`: user-facing upload/download/file operations and similar latency-sensitive I/O;
 - `network`: connector/network synchronization work;
 - `media_cpu`: metadata extraction, thumbnails, analysis-preview generation;
-- `ml_cpu`: face detection/embedding, Smart Search visual/OCR analysis, and similar compute-heavy inference;
+- `ml_cpu`: face detection/embedding, Smart Search visual/OCR/semantic analysis, and similar compute-heavy inference;
 - `background_cpu`: place resolution, clustering, and other deferrable CPU work;
 - `maintenance_io`: GC, integrity reconciliation, and storage maintenance I/O.
 
@@ -132,7 +132,7 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    Full batches continue immediately only when indexing made progress; a full batch with zero progress stops
    instead of hot-looping and waits for the next 30-second P2 fallback reconciliation.
 4. Photo Intelligence: **current**. Media-index progress emits owner-scoped face/smart-search/place work;
-   face completion emits person-cluster(owner). Face uses P2 `ml_cpu`; Smart Search uses P3 `ml_cpu`;
+   face completion emits person-cluster(owner). Face uses P2 `ml_cpu`; lexical Smart Search and semantic Search use P3 `ml_cpu`;
    place/person clustering use P3 `background_cpu`.
    Bursts coalesce by owner+kind and candidate-owner scans remain a 30-second fallback reconciliation path.
    Each `photo.<kind> + owner` generation acquires an independent PostgreSQL session advisory lease before
@@ -375,10 +375,11 @@ the shared Background Scheduler:
 
 - `photo.face`: P2 / `ml_cpu`;
 - `photo.smart_search`: P3 / `ml_cpu`;
+- `photo.semantic_search`: P3 / `ml_cpu`;
 - `photo.place`: P3 / `background_cpu`;
 - `photo.person_cluster`: P3 / `background_cpu`.
 
-A media-index owner batch that produces new/updated PhotoAssets requests face/place work. A face batch that
+A media-index owner batch that produces new/updated PhotoAssets requests face/lexical-smart/semantic/place work. A face batch that
 processes candidates requests a person-cluster rebuild for the same owner. Repeated events coalesce while a
 generation is queued/running. Candidate-owner scans every 30 seconds remain the correctness fallback for
 lost events, process restarts, analyzer-version changes, and retry eligibility.

@@ -112,6 +112,7 @@ type mediaItemRangeDTO struct {
 	TotalCount        int64                      `json:"total_count"`
 	Offset            int                        `json:"offset"`
 	Limit             int                        `json:"limit"`
+	SearchOrder       string                     `json:"search_order,omitempty"`
 	TimelineGroups    []mediaTimelineGroupDTO    `json:"timeline_groups,omitempty"`
 	TimelineGroupSets *mediaTimelineGroupSetsDTO `json:"timeline_group_sets,omitempty"`
 }
@@ -628,6 +629,43 @@ func (s *Server) materializeMediaItems(
 	return out, nil
 }
 
+func (s *Server) materializeMediaItemsByNodeIDs(
+	ctx context.Context,
+	uid uint64,
+	options mediaQueryOptions,
+	albumKey string,
+	nodeIDs []uint64,
+) ([]mediaItemDTO, error) {
+	if len(nodeIDs) == 0 {
+		return []mediaItemDTO{}, nil
+	}
+	query, err := s.mediaItemsBaseQuery(
+		ctx,
+		uid,
+		options.withoutSearch(),
+		albumKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+	query = query.Where("n.id IN ?", nodeIDs)
+	items, err := s.materializeMediaItems(ctx, uid, query, len(nodeIDs), 0)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uint64]mediaItemDTO, len(items))
+	for _, item := range items {
+		byID[item.Node.ID] = item
+	}
+	out := make([]mediaItemDTO, 0, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if item, ok := byID[nodeID]; ok {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) queryMediaItems(
 	ctx context.Context,
 	uid uint64,
@@ -635,6 +673,22 @@ func (s *Server) queryMediaItems(
 	albumKey string,
 	limit, offset int,
 ) ([]mediaItemDTO, error) {
+	if ranked, handled, err := s.semanticRankedMediaNodeIDs(
+		ctx,
+		uid,
+		options,
+		albumKey,
+	); err != nil {
+		return nil, err
+	} else if handled {
+		return s.materializeMediaItemsByNodeIDs(
+			ctx,
+			uid,
+			options,
+			albumKey,
+			semanticPage(ranked, limit, offset),
+		)
+	}
 	query, err := s.mediaItemsBaseQuery(ctx, uid, options, albumKey)
 	if err != nil {
 		return nil, err
@@ -716,6 +770,34 @@ func (s *Server) queryMediaItemRange(
 	albumKey string,
 	limit, offset int,
 ) (mediaItemRangeDTO, error) {
+	if ranked, handled, err := s.semanticRankedMediaNodeIDs(
+		ctx,
+		uid,
+		options,
+		albumKey,
+	); err != nil {
+		return mediaItemRangeDTO{}, err
+	} else if handled {
+		pageIDs := semanticPage(ranked, limit, offset)
+		items, itemErr := s.materializeMediaItemsByNodeIDs(
+			ctx,
+			uid,
+			options,
+			albumKey,
+			pageIDs,
+		)
+		if itemErr != nil {
+			return mediaItemRangeDTO{}, itemErr
+		}
+		return mediaItemRangeDTO{
+			Items:       items,
+			TotalCount:  int64(len(ranked)),
+			Offset:      offset,
+			Limit:       limit,
+			SearchOrder: "relevance",
+		}, nil
+	}
+
 	query, err := s.mediaItemsBaseQuery(ctx, uid, options, albumKey)
 	if err != nil {
 		return mediaItemRangeDTO{}, err

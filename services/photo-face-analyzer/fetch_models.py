@@ -16,6 +16,17 @@ OPENCV_ZOO_COMMIT = "47534e27c9851bb1128ccc0102f1145e27f23f98"
 ZOO_MEDIA = "https://media.githubusercontent.com/media/opencv/opencv_zoo/" + OPENCV_ZOO_COMMIT
 ZOO_RAW = "https://raw.githubusercontent.com/opencv/opencv_zoo/" + OPENCV_ZOO_COMMIT
 
+SIGLIP_ONNX_COMMIT = "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+SIGLIP_ONNX = (
+    "https://huggingface.co/onnx-community/"
+    "siglip2-base-patch16-224-ONNX/resolve/" + SIGLIP_ONNX_COMMIT
+)
+SIGLIP_TOKENIZER_COMMIT = "997aaec"
+SIGLIP_TOKENIZER = (
+    "https://huggingface.co/google/siglip2-base-patch16-224/resolve/"
+    + SIGLIP_TOKENIZER_COMMIT
+)
+
 FILES = (
     {
         "name": "face_detection_yunet_2023mar.onnx",
@@ -46,6 +57,24 @@ FILES = (
         "url": ZOO_MEDIA + "/models/text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx",
         "sha256": "c760bf82d684b87dfabb288e6c0f92d41a8cd6c1780661ca2c3cd10c2065a9ba",
         "size": 72807160,
+    },
+    {
+        "name": "siglip2_vision_int8.onnx",
+        "url": SIGLIP_ONNX + "/onnx/vision_model_int8.onnx",
+        "sha256": "0dd31785a2713f1113ef2272472165c69d580473dae38d7b47568ac587795e70",
+        "size": None,
+    },
+    {
+        "name": "siglip2_text_int8.onnx",
+        "url": SIGLIP_ONNX + "/onnx/text_model_int8.onnx",
+        "sha256": "3a0603d3a00c05a80a6ded4743c16aaac7b1e62cdcc7e362e7ce418659b96400",
+        "size": None,
+    },
+    {
+        "name": "siglip2_tokenizer.json",
+        "url": SIGLIP_TOKENIZER + "/tokenizer.json",
+        "sha256": "cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322",
+        "size": 34363039,
     },
 )
 
@@ -113,9 +142,13 @@ def download(url: str, destination: Path, attempts: int = 3) -> None:
     raise RuntimeError(f"download failed after {attempts} attempts: {url}") from last_error
 
 
-def verify_model(path: Path, expected_sha256: str, expected_size: int) -> None:
+def verify_model(
+    path: Path,
+    expected_sha256: str,
+    expected_size: int | None,
+) -> None:
     size = path.stat().st_size
-    if size != expected_size:
+    if expected_size is not None and size != expected_size:
         raise RuntimeError(
             f"{path.name}: size mismatch: got {size}, expected {expected_size}"
         )
@@ -204,9 +237,11 @@ def main() -> int:
 
     metadata = license_dir / "OPENCV_ZOO_SOURCE.txt"
     lines = [
-        "OpenCV Zoo reference models used by xDrive Photo Intelligence",
+        "Pinned models used by xDrive Photo Intelligence",
         "repository: https://github.com/opencv/opencv_zoo",
-        f"commit: {OPENCV_ZOO_COMMIT}",
+        f"opencv_zoo_commit: {OPENCV_ZOO_COMMIT}",
+        f"siglip_onnx_commit: {SIGLIP_ONNX_COMMIT}",
+        f"siglip_tokenizer_commit: {SIGLIP_TOKENIZER_COMMIT}",
         "",
     ]
     for item in FILES:

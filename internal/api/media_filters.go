@@ -135,6 +135,56 @@ func validMediaCategory(value string) bool {
 	}
 }
 
+func (options mediaQueryOptions) withoutSearch() mediaQueryOptions {
+	options.Search = ""
+	return options
+}
+
+func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return query
+	}
+	like := "%" + strings.ToLower(search) + "%"
+	return query.Where(
+		"LOWER(n.name) LIKE ? "+
+			"OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? "+
+			"OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? "+
+			"OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? "+
+			"OR LOWER(COALESCE(pm.description, '')) LIKE ? "+
+			"OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.tags_json, ''), '[]')::jsonb) AS media_tag(value) WHERE LOWER(media_tag.value) LIKE ?) "+
+			"OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.people_json, ''), '[]')::jsonb) AS media_person(value) WHERE LOWER(media_person.value) LIKE ?) "+
+			"OR EXISTS ("+
+			"SELECT 1 FROM xd_photo_people AS search_person "+
+			"JOIN xd_photo_person_assets AS search_membership ON search_membership.person_id = search_person.id "+
+			"WHERE search_person.owner_id = pa.owner_id AND search_membership.asset_id = pa.id "+
+			"AND LOWER(COALESCE(search_person.name, '')) LIKE ?"+
+			") "+
+			"OR EXISTS ("+
+			"SELECT 1 FROM xd_photo_visual_labels AS search_visual "+
+			"JOIN xd_photo_analysis_states AS search_visual_state ON search_visual_state.asset_id = search_visual.asset_id "+
+			"WHERE search_visual.asset_id = pa.id AND search_visual_state.kind = ? AND search_visual_state.state = ? "+
+			"AND LOWER(search_visual.label) LIKE ?"+
+			") "+
+			"OR EXISTS ("+
+			"SELECT 1 FROM xd_photo_ocr_texts AS search_ocr "+
+			"JOIN xd_photo_analysis_states AS search_ocr_state ON search_ocr_state.asset_id = search_ocr.asset_id "+
+			"WHERE search_ocr.asset_id = pa.id AND search_ocr_state.kind = ? AND search_ocr_state.state = ? "+
+			"AND LOWER(search_ocr.text) LIKE ?"+
+			") "+
+			"OR EXISTS ("+
+			"SELECT 1 FROM xd_photo_place_labels AS search_place "+
+			"JOIN xd_photo_analysis_states AS search_place_state ON search_place_state.asset_id = search_place.asset_id "+
+			"WHERE search_place.asset_id = pa.id AND search_place_state.kind = ? AND search_place_state.state = ? "+
+			"AND LOWER(CONCAT_WS(' ', search_place.formatted, search_place.country, search_place.region, search_place.city, search_place.district, search_place.locality)) LIKE ?"+
+			")",
+		like, like, like, like, like, like, like, like,
+		meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisStateReady, like,
+		meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisStateReady, like,
+		meta.PhotoAnalysisKindPlaceLabel, meta.PhotoAnalysisStateReady, like,
+	)
+}
+
 func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB {
 	if options.MediaKind != "" {
 		query = query.Where("xd_media_metadata.media_kind = ?", options.MediaKind)
@@ -151,46 +201,7 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 			`{"is_panorama":true}`,
 		)
 	}
-	if options.Search != "" {
-		like := "%" + strings.ToLower(options.Search) + "%"
-		query = query.Where(
-			"LOWER(n.name) LIKE ? "+
-				"OR LOWER(COALESCE(xd_media_metadata.camera_make, '')) LIKE ? "+
-				"OR LOWER(COALESCE(xd_media_metadata.camera_model, '')) LIKE ? "+
-				"OR LOWER(COALESCE(xd_media_metadata.lens_model, '')) LIKE ? "+
-				"OR LOWER(COALESCE(pm.description, '')) LIKE ? "+
-				"OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.tags_json, ''), '[]')::jsonb) AS media_tag(value) WHERE LOWER(media_tag.value) LIKE ?) "+
-				"OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(NULLIF(pm.people_json, ''), '[]')::jsonb) AS media_person(value) WHERE LOWER(media_person.value) LIKE ?) "+
-				"OR EXISTS ("+
-				"SELECT 1 FROM xd_photo_people AS search_person "+
-				"JOIN xd_photo_person_assets AS search_membership ON search_membership.person_id = search_person.id "+
-				"WHERE search_person.owner_id = pa.owner_id AND search_membership.asset_id = pa.id "+
-				"AND LOWER(COALESCE(search_person.name, '')) LIKE ?"+
-				") "+
-				"OR EXISTS ("+
-				"SELECT 1 FROM xd_photo_visual_labels AS search_visual "+
-				"JOIN xd_photo_analysis_states AS search_visual_state ON search_visual_state.asset_id = search_visual.asset_id "+
-				"WHERE search_visual.asset_id = pa.id AND search_visual_state.kind = ? AND search_visual_state.state = ? "+
-				"AND LOWER(search_visual.label) LIKE ?"+
-				") "+
-				"OR EXISTS ("+
-				"SELECT 1 FROM xd_photo_ocr_texts AS search_ocr "+
-				"JOIN xd_photo_analysis_states AS search_ocr_state ON search_ocr_state.asset_id = search_ocr.asset_id "+
-				"WHERE search_ocr.asset_id = pa.id AND search_ocr_state.kind = ? AND search_ocr_state.state = ? "+
-				"AND LOWER(search_ocr.text) LIKE ?"+
-				") "+
-				"OR EXISTS ("+
-				"SELECT 1 FROM xd_photo_place_labels AS search_place "+
-				"JOIN xd_photo_analysis_states AS search_place_state ON search_place_state.asset_id = search_place.asset_id "+
-				"WHERE search_place.asset_id = pa.id AND search_place_state.kind = ? AND search_place_state.state = ? "+
-				"AND LOWER(CONCAT_WS(' ', search_place.formatted, search_place.country, search_place.region, search_place.city, search_place.district, search_place.locality)) LIKE ?"+
-				")",
-			like, like, like, like, like, like, like, like,
-			meta.PhotoAnalysisKindVisualLabel, meta.PhotoAnalysisStateReady, like,
-			meta.PhotoAnalysisKindOCRText, meta.PhotoAnalysisStateReady, like,
-			meta.PhotoAnalysisKindPlaceLabel, meta.PhotoAnalysisStateReady, like,
-		)
-	}
+	query = applyMediaSearchFilter(query, options.Search)
 	if options.CapturedFrom != nil {
 		query = query.Where("xd_media_metadata.captured_at >= ?", *options.CapturedFrom)
 	}

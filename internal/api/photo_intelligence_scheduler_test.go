@@ -103,7 +103,7 @@ func (r *fakePhotoPersonOwnerRunner) RunOwner(
 	return nil
 }
 
-func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing.T) {
+func TestPhotoIntelligenceMediaEventSchedulesFaceSmartSemanticPlaceAndCluster(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -124,6 +124,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 
 	faceRelease := make(chan struct{})
 	smartRelease := make(chan struct{})
+	semanticRelease := make(chan struct{})
 	placeRelease := make(chan struct{})
 	personRelease := make(chan struct{})
 	face := &fakePhotoFaceOwnerRunner{
@@ -134,6 +135,11 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 	smart := &fakePhotoFaceOwnerRunner{
 		started:   make(chan uint64, 1),
 		release:   smartRelease,
+		processed: 1,
+	}
+	semantic := &fakePhotoFaceOwnerRunner{
+		started:   make(chan uint64, 1),
+		release:   semanticRelease,
 		processed: 1,
 	}
 	place := &fakePhotoPlaceOwnerRunner{
@@ -149,6 +155,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 		BackgroundScheduler:     scheduler,
 		photoFaceRunner:         face,
 		photoSmartRunner:        smart,
+		photoSemanticRunner:     semantic,
 		photoPlaceRunner:        place,
 		photoPersonRunner:       person,
 		photoIntelligenceOwners: make(map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState),
@@ -183,8 +190,11 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 			t.Fatalf("foreign owner snapshot: %+v", snapshot)
 		}
 	}
-	if !kinds["photo.face"] || !kinds["photo.smart_search"] || !kinds["photo.place"] {
-		t.Fatalf("runtime kinds=%v want face+smart_search+place", kinds)
+	if !kinds["photo.face"] ||
+		!kinds["photo.smart_search"] ||
+		!kinds["photo.semantic_search"] ||
+		!kinds["photo.place"] {
+		t.Fatalf("runtime kinds=%v want face+smart_search+semantic_search+place", kinds)
 	}
 
 	close(faceRelease)
@@ -196,6 +206,15 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 	case <-time.After(time.Second):
 		t.Fatal("smart-search task did not start after face released ML CPU")
 	}
+	close(smartRelease)
+	select {
+	case got := <-semantic.started:
+		if got != ownerID {
+			t.Fatalf("semantic owner=%d want=%d", got, ownerID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("semantic-search task did not start after lexical smart search released ML CPU")
+	}
 	select {
 	case got := <-person.started:
 		if got != ownerID {
@@ -204,7 +223,7 @@ func TestPhotoIntelligenceMediaEventSchedulesFaceSmartPlaceAndCluster(t *testing
 	case <-time.After(time.Second):
 		t.Fatal("person-cluster task was not triggered by face completion")
 	}
-	close(smartRelease)
+	close(semanticRelease)
 	close(placeRelease)
 	close(personRelease)
 

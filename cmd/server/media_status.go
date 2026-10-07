@@ -35,6 +35,14 @@ type mediaSmartStatusDTO struct {
 	OCRAnalyzerVersion    string                               `json:"ocr_analyzer_version,omitempty"`
 }
 
+type mediaSemanticStatusDTO struct {
+	Configured      bool                                    `json:"configured"`
+	Reachable       bool                                    `json:"reachable"`
+	Error           string                                  `json:"error,omitempty"`
+	Analyzer        *photointelligence.SemanticAnalyzerInfo `json:"analyzer,omitempty"`
+	AnalyzerVersion string                                  `json:"analyzer_version,omitempty"`
+}
+
 type mediaPersonStatusDTO struct {
 	Enabled         bool   `json:"enabled"`
 	AnalyzerVersion string `json:"analyzer_version"`
@@ -47,6 +55,7 @@ type mediaPlaceStatusDTO struct {
 type mediaStatusDTO struct {
 	Face     mediaFaceStatusDTO                                `json:"face"`
 	Smart    mediaSmartStatusDTO                               `json:"smart_search"`
+	Semantic mediaSemanticStatusDTO                            `json:"semantic_search"`
 	Person   mediaPersonStatusDTO                              `json:"person"`
 	Place    mediaPlaceStatusDTO                               `json:"place"`
 	Database photointelligence.PhotoIntelligenceDatabaseStatus `json:"database"`
@@ -89,6 +98,9 @@ func runMediaStatus(args []string) error {
 			Configured: strings.TrimSpace(cfg.PhotoFaceAnalyzerSocket) != "",
 		},
 		Smart: mediaSmartStatusDTO{
+			Configured: strings.TrimSpace(cfg.PhotoFaceAnalyzerSocket) != "",
+		},
+		Semantic: mediaSemanticStatusDTO{
 			Configured: strings.TrimSpace(cfg.PhotoFaceAnalyzerSocket) != "",
 		},
 		Person: mediaPersonStatusDTO{
@@ -153,6 +165,32 @@ func runMediaStatus(args []string) error {
 					photointelligence.SmartVisualAnalyzerVersion(info)
 				report.Smart.OCRAnalyzerVersion =
 					photointelligence.SmartOCRAnalyzerVersion(info)
+			}
+		}
+	}
+
+	if report.Semantic.Configured {
+		analyzer, analyzerErr := photointelligence.NewUnixSemanticAnalyzer(
+			cfg.PhotoFaceAnalyzerSocket,
+			cfg.PhotoFaceAnalyzerToken,
+			mediaStatusAnalyzerTimeout,
+		)
+		if analyzerErr != nil {
+			report.Semantic.Error = analyzerErr.Error()
+		} else {
+			analyzerCtx, analyzerCancel := context.WithTimeout(
+				context.Background(),
+				mediaStatusAnalyzerTimeout,
+			)
+			defer analyzerCancel()
+			info, infoErr := analyzer.Info(analyzerCtx)
+			if infoErr != nil {
+				report.Semantic.Error = infoErr.Error()
+			} else {
+				report.Semantic.Reachable = true
+				report.Semantic.Analyzer = &info
+				report.Semantic.AnalyzerVersion =
+					photointelligence.SemanticAnalyzerVersion(info)
 			}
 		}
 	}
@@ -273,6 +311,37 @@ func printMediaStatus(report mediaStatusDTO) {
 		"visual labels: %d OCR documents=%d\n",
 		report.Database.VisualLabels,
 		report.Database.OCRDocuments,
+	)
+
+	if !report.Semantic.Configured {
+		fmt.Println("semantic search analysis: disabled")
+	} else if !report.Semantic.Reachable {
+		fmt.Println("semantic search analysis: configured, analyzer unreachable")
+		if report.Semantic.Error != "" {
+			fmt.Printf("semantic analyzer error: %s\n", report.Semantic.Error)
+		}
+	} else {
+		fmt.Println("semantic search analysis: enabled")
+		info := report.Semantic.Analyzer
+		fmt.Printf("semantic analyzer: %s\n", info.Name)
+		fmt.Printf("semantic pipeline: %s\n", info.PipelineVersion)
+		fmt.Printf(
+			"semantic embedding: %s dimensions=%d\n",
+			info.EmbeddingFormat,
+			info.EmbeddingDimensions,
+		)
+		fmt.Printf(
+			"semantic analyzer version: %s\n",
+			report.Semantic.AnalyzerVersion,
+		)
+	}
+	fmt.Printf(
+		"semantic analysis states: %s\n",
+		formatAnalysisStateCounts(report.Database.SemanticAnalysis),
+	)
+	fmt.Printf(
+		"semantic embedding rows: %d\n",
+		report.Database.SemanticEmbeddings,
 	)
 
 	fmt.Println("person clustering: enabled")

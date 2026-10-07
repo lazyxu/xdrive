@@ -452,6 +452,7 @@ export interface MediaItemRange {
   total_count: number
   offset: number
   limit: number
+  search_order?: 'relevance' | 'time' | string
   timeline_groups?: MediaTimelineGroupIndex[]
   timeline_group_sets?: MediaTimelineGroupSets
 }

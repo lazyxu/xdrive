@@ -24,6 +24,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import cv2 as cv
 import numpy as np
+import onnxruntime as ort
+from tokenizers import Tokenizer
 
 PROTOCOL_VERSION = 1
 ANALYZER_NAME = "xdrive-opencv-yunet-sface"
@@ -81,6 +83,26 @@ SMART_OCR_INPUT_SIZE = (736, 736)
 SMART_OCR_MAX_CANDIDATES = 64
 SMART_OCR_LANGUAGE = "zh-en"
 SMART_OCR_MAX_TEXT_CHARS = 8192
+
+SEMANTIC_PROTOCOL_VERSION = 1
+SEMANTIC_ANALYZER_NAME = "xdrive-siglip2-base-patch16-224-int8"
+SEMANTIC_VISION_NAME = "siglip2_vision_int8.onnx"
+SEMANTIC_TEXT_NAME = "siglip2_text_int8.onnx"
+SEMANTIC_TOKENIZER_NAME = "siglip2_tokenizer.json"
+SEMANTIC_VISION_SHA256 = "0dd31785a2713f1113ef2272472165c69d580473dae38d7b47568ac587795e70"
+SEMANTIC_TEXT_SHA256 = "3a0603d3a00c05a80a6ded4743c16aaac7b1e62cdcc7e362e7ce418659b96400"
+SEMANTIC_TOKENIZER_SHA256 = "cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322"
+SEMANTIC_MODEL_VERSION = "siglip2-base-patch16-224-int8-ba1f3b0"
+SEMANTIC_LICENSE = "Apache-2.0"
+SEMANTIC_LICENSE_URL = "https://huggingface.co/google/siglip2-base-patch16-224"
+SEMANTIC_DIMENSIONS = 768
+SEMANTIC_FORMAT = "i8norm-v1"
+SEMANTIC_IMAGE_SIZE = 224
+SEMANTIC_TEXT_TOKENS = 64
+SEMANTIC_PIPELINE_VERSION = (
+    f"onnxruntime-{ort.__version__}-cpu-{SEMANTIC_MODEL_VERSION}"
+    "-rgb224-rescale255-mean05-std05-i8norm-v1"
+)
 
 EMBEDDING_FORMAT = "f32le"
 EMBEDDING_DIMENSIONS = 128
@@ -696,16 +718,180 @@ class SmartRuntime:
             }
 
 
+class SemanticRuntime:
+    def __init__(
+        self,
+        vision_path: str | None = None,
+        text_path: str | None = None,
+        tokenizer_path: str | None = None,
+    ) -> None:
+        self.vision_path = Path(
+            vision_path
+            or os.environ.get(
+                "XD_SEMANTIC_VISION_MODEL",
+                f"/models/{SEMANTIC_VISION_NAME}",
+            )
+        )
+        self.text_path = Path(
+            text_path
+            or os.environ.get(
+                "XD_SEMANTIC_TEXT_MODEL",
+                f"/models/{SEMANTIC_TEXT_NAME}",
+            )
+        )
+        self.tokenizer_path = Path(
+            tokenizer_path
+            or os.environ.get(
+                "XD_SEMANTIC_TOKENIZER",
+                f"/models/{SEMANTIC_TOKENIZER_NAME}",
+            )
+        )
+        for path, expected in (
+            (self.vision_path, SEMANTIC_VISION_SHA256),
+            (self.text_path, SEMANTIC_TEXT_SHA256),
+            (self.tokenizer_path, SEMANTIC_TOKENIZER_SHA256),
+        ):
+            if not path.is_file():
+                raise RuntimeError(f"required semantic model file is missing: {path.name}")
+            actual = sha256_file(path)
+            if actual != expected:
+                raise RuntimeError(
+                    f"semantic model sha256 mismatch for {path.name}: got {actual}"
+                )
+
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = max(1, min(4, os.cpu_count() or 1))
+        options.inter_op_num_threads = 1
+        providers = ["CPUExecutionProvider"]
+        self.vision = ort.InferenceSession(
+            str(self.vision_path),
+            sess_options=options,
+            providers=providers,
+        )
+        self.text = ort.InferenceSession(
+            str(self.text_path),
+            sess_options=options,
+            providers=providers,
+        )
+        self.tokenizer = Tokenizer.from_file(str(self.tokenizer_path))
+        self.tokenizer.enable_truncation(max_length=SEMANTIC_TEXT_TOKENS)
+        self.tokenizer.enable_padding(
+            length=SEMANTIC_TEXT_TOKENS,
+            pad_id=1,
+            pad_token="</s>",
+        )
+        self.lock = threading.Lock()
+        self._validate_contract()
+
+    @staticmethod
+    def _session_contract(
+        session: ort.InferenceSession,
+        input_name: str,
+        output_name: str,
+    ) -> None:
+        inputs = {item.name: item for item in session.get_inputs()}
+        outputs = {item.name: item for item in session.get_outputs()}
+        if input_name not in inputs:
+            raise RuntimeError(f"semantic model input {input_name} is missing")
+        if output_name not in outputs:
+            raise RuntimeError(f"semantic model output {output_name} is missing")
+
+    def _validate_contract(self) -> None:
+        self._session_contract(self.vision, "pixel_values", "pooler_output")
+        self._session_contract(self.text, "input_ids", "pooler_output")
+
+    def info(self) -> dict[str, Any]:
+        model_common = {
+            "name": "SigLIP2 Base Patch16 224",
+            "version": SEMANTIC_MODEL_VERSION,
+            "license": SEMANTIC_LICENSE,
+            "license_url": SEMANTIC_LICENSE_URL,
+        }
+        return {
+            "protocol_version": SEMANTIC_PROTOCOL_VERSION,
+            "name": SEMANTIC_ANALYZER_NAME,
+            "pipeline_version": SEMANTIC_PIPELINE_VERSION,
+            "vision_model": {
+                **model_common,
+                "sha256": SEMANTIC_VISION_SHA256,
+            },
+            "text_model": {
+                **model_common,
+                "sha256": SEMANTIC_TEXT_SHA256,
+            },
+            "tokenizer_sha256": SEMANTIC_TOKENIZER_SHA256,
+            "embedding_format": SEMANTIC_FORMAT,
+            "embedding_dimensions": SEMANTIC_DIMENSIONS,
+            "runtime": {
+                "framework": "onnxruntime",
+                "version": ort.__version__,
+                "device": "cpu",
+            },
+        }
+
+    @staticmethod
+    def _quantize(vector: np.ndarray) -> dict[str, Any]:
+        value = np.asarray(vector, dtype=np.float32).reshape(-1)
+        if value.size != SEMANTIC_DIMENSIONS or not np.isfinite(value).all():
+            raise RuntimeError("semantic model returned invalid embedding")
+        norm = float(np.linalg.norm(value))
+        if not math.isfinite(norm) or norm <= 1e-12:
+            raise RuntimeError("semantic model returned zero-norm embedding")
+        value = value / np.float32(norm)
+        quantized = np.clip(np.rint(value * 127.0), -127, 127).astype(np.int8)
+        return {
+            "embedding": base64.b64encode(quantized.tobytes()).decode("ascii"),
+            "format": SEMANTIC_FORMAT,
+            "dimensions": SEMANTIC_DIMENSIONS,
+        }
+
+    @staticmethod
+    def _image_tensor(image: np.ndarray) -> np.ndarray:
+        rgb = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        resized = cv.resize(
+            rgb,
+            (SEMANTIC_IMAGE_SIZE, SEMANTIC_IMAGE_SIZE),
+            interpolation=cv.INTER_LINEAR,
+        )
+        value = resized.astype(np.float32) / 255.0
+        value = (value - 0.5) / 0.5
+        return value.transpose(2, 0, 1)[np.newaxis, :, :, :].astype(np.float32)
+
+    def embed_image(self, image: np.ndarray) -> dict[str, Any]:
+        tensor = self._image_tensor(image)
+        with self.lock:
+            output = self.vision.run(
+                ["pooler_output"],
+                {"pixel_values": tensor},
+            )[0]
+        return self._quantize(output)
+
+    def embed_text(self, text: str) -> dict[str, Any]:
+        text = text.strip()
+        if not text or len(text) > 1024:
+            raise RequestError(400, "invalid semantic text")
+        encoded = self.tokenizer.encode(text)
+        input_ids = np.asarray([encoded.ids], dtype=np.int64)
+        with self.lock:
+            output = self.text.run(
+                ["pooler_output"],
+                {"input_ids": input_ids},
+            )[0]
+        return self._quantize(output)
+
+
 class AnalyzerState:
     def __init__(
         self,
         runtime: FaceRuntime,
         smart_runtime: SmartRuntime,
+        semantic_runtime: SemanticRuntime,
         preview_origin: str,
         token: str,
     ) -> None:
         self.runtime = runtime
         self.smart_runtime = smart_runtime
+        self.semantic_runtime = semantic_runtime
         self.preview_origin = normalize_origin(preview_origin)
         self.token = token.strip()
 
@@ -781,7 +967,21 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 )
                 self._write_json(200, self.server.state.smart_runtime.info())
                 return
-            if method == "POST" and target in ("/v1/analyze", "/v1/smart-analyze"):
+            if method == "GET" and target == "/v1/semantic-info":
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-semantic-protocol",
+                    SEMANTIC_PROTOCOL_VERSION,
+                    "semantic",
+                )
+                self._write_json(200, self.server.state.semantic_runtime.info())
+                return
+            if method == "POST" and target in (
+                "/v1/analyze",
+                "/v1/smart-analyze",
+                "/v1/semantic-image",
+                "/v1/semantic-text",
+            ):
                 if target == "/v1/analyze":
                     self._require_protocol(
                         headers,
@@ -789,12 +989,19 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                         PROTOCOL_VERSION,
                         "face",
                     )
-                else:
+                elif target == "/v1/smart-analyze":
                     self._require_protocol(
                         headers,
                         "x-xdrive-smart-protocol",
                         SMART_PROTOCOL_VERSION,
                         "smart",
+                    )
+                else:
+                    self._require_protocol(
+                        headers,
+                        "x-xdrive-semantic-protocol",
+                        SEMANTIC_PROTOCOL_VERSION,
+                        "semantic",
                     )
                 content_type = headers.get("content-type", "").split(";", 1)[0]
                 if content_type.strip().lower() != "application/json":
@@ -817,14 +1024,28 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     raise RequestError(400, "invalid JSON body") from exc
                 if not isinstance(task, dict):
                     raise RequestError(400, "analysis task must be an object")
+                if target == "/v1/semantic-text":
+                    text = task.get("text")
+                    if set(task) != {"text"} or not isinstance(text, str):
+                        raise RequestError(400, "invalid semantic text request")
+                    self._write_json(
+                        200,
+                        self.server.state.semantic_runtime.embed_text(text),
+                    )
+                    return
                 image = fetch_preview(task, self.server.state.preview_origin)
                 if target == "/v1/analyze":
                     faces = self.server.state.runtime.analyze(image)
                     self._write_json(200, {"faces": faces})
-                else:
+                elif target == "/v1/smart-analyze":
                     self._write_json(
                         200,
                         self.server.state.smart_runtime.analyze(image),
+                    )
+                else:
+                    self._write_json(
+                        200,
+                        self.server.state.semantic_runtime.embed_image(image),
                     )
                 return
             raise RequestError(404, "not found")
@@ -906,7 +1127,11 @@ def synthetic_image(width: int = 320, height: int = 240) -> np.ndarray:
     return image
 
 
-def self_test(runtime: FaceRuntime, smart_runtime: SmartRuntime) -> None:
+def self_test(
+    runtime: FaceRuntime,
+    smart_runtime: SmartRuntime,
+    semantic_runtime: SemanticRuntime,
+) -> None:
     image = synthetic_image()
     runtime.detector.setInputSize((image.shape[1], image.shape[0]))
     runtime.detector.detect(image)
@@ -948,6 +1173,14 @@ def self_test(runtime: FaceRuntime, smart_runtime: SmartRuntime) -> None:
     )
     if not isinstance(ocr_probe, str):
         raise RuntimeError("CRNN self-test returned invalid text")
+    semantic_image = semantic_runtime.embed_image(
+        np.zeros((SEMANTIC_IMAGE_SIZE, SEMANTIC_IMAGE_SIZE, 3), dtype=np.uint8)
+    )
+    semantic_text = semantic_runtime.embed_text("a photo of a dog")
+    if len(base64.b64decode(semantic_image["embedding"])) != SEMANTIC_DIMENSIONS:
+        raise RuntimeError("semantic image self-test returned invalid embedding")
+    if len(base64.b64decode(semantic_text["embedding"])) != SEMANTIC_DIMENSIONS:
+        raise RuntimeError("semantic text self-test returned invalid embedding")
     print(
         json.dumps(
             {
@@ -955,8 +1188,10 @@ def self_test(runtime: FaceRuntime, smart_runtime: SmartRuntime) -> None:
                 "opencv": cv.__version__,
                 "pipeline_version": PIPELINE_VERSION,
                 "smart_pipeline_version": SMART_PIPELINE_VERSION,
+                "semantic_pipeline_version": SEMANTIC_PIPELINE_VERSION,
                 "embedding_dimensions": int(vector.size),
                 "smart_label_count": len(smart["labels"]),
+                "semantic_dimensions": SEMANTIC_DIMENSIONS,
             },
             separators=(",", ":"),
         )
@@ -1037,6 +1272,11 @@ def healthcheck(socket_path: str, token: str) -> None:
             "X-XDrive-Smart-Protocol",
             SMART_PROTOCOL_VERSION,
         ),
+        (
+            "/v1/semantic-info",
+            "X-XDrive-Semantic-Protocol",
+            SEMANTIC_PROTOCOL_VERSION,
+        ),
     )
     for target, protocol_header, protocol_version in checks:
         connection = UnixHTTPConnection(socket_path, timeout=5)
@@ -1071,6 +1311,7 @@ def serve(args: argparse.Namespace) -> None:
     state = AnalyzerState(
         runtime=FaceRuntime(),
         smart_runtime=SmartRuntime(),
+        semantic_runtime=SemanticRuntime(),
         preview_origin=preview_origin,
         token=args.token,
     )
@@ -1147,7 +1388,7 @@ def main() -> int:
         return 0
 
     if args.self_test:
-        self_test(FaceRuntime(), SmartRuntime())
+        self_test(FaceRuntime(), SmartRuntime(), SemanticRuntime())
         return 0
     if args.benchmark:
         benchmark(FaceRuntime(), SmartRuntime(), args.iterations)

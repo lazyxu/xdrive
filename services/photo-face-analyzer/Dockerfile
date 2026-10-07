@@ -14,6 +14,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XD_SMART_OCR_RECOGNIZER_MODEL=/models/text_recognition_CRNN_CN_2021nov.onnx \
     XD_SMART_IMAGENET_LABELS=/models/imagenet1k_labels.txt \
     XD_SMART_OCR_CHARSET=/models/crnn_cn_charset.txt \
+    XD_SEMANTIC_VISION_MODEL=/models/siglip2_vision_int8.onnx \
+    XD_SEMANTIC_TEXT_MODEL=/models/siglip2_text_int8.onnx \
+    XD_SEMANTIC_TOKENIZER=/models/siglip2_tokenizer.json \
     XD_FACE_SOCKET=/run/xdrive-photo-face/photo-face.sock
 
 RUN apt-get update \

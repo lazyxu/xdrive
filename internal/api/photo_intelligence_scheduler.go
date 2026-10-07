@@ -23,16 +23,18 @@ const (
 	photoIntelligenceOwnerScanLimit    = 64
 	photoFaceBatchSize                 = 4
 	photoSmartBatchSize                = 2
+	photoSemanticBatchSize             = 2
 	photoPlaceBatchSize                = 32
 )
 
 type photoIntelligenceTaskKind string
 
 const (
-	photoIntelligenceFace          photoIntelligenceTaskKind = "face"
-	photoIntelligenceSmartSearch   photoIntelligenceTaskKind = "smart_search"
-	photoIntelligencePlace         photoIntelligenceTaskKind = "place"
-	photoIntelligencePersonCluster photoIntelligenceTaskKind = "person_cluster"
+	photoIntelligenceFace           photoIntelligenceTaskKind = "face"
+	photoIntelligenceSmartSearch    photoIntelligenceTaskKind = "smart_search"
+	photoIntelligenceSemanticSearch photoIntelligenceTaskKind = "semantic_search"
+	photoIntelligencePlace          photoIntelligenceTaskKind = "place"
+	photoIntelligencePersonCluster  photoIntelligenceTaskKind = "person_cluster"
 )
 
 type photoIntelligenceOwnerKey struct {
@@ -61,6 +63,11 @@ type photoFaceOwnerRunner interface {
 }
 
 type photoSmartOwnerRunner interface {
+	CandidateOwnerIDs(context.Context, int) ([]uint64, error)
+	RunOwnerBatch(context.Context, uint64, int) (int, error)
+}
+
+type photoSemanticOwnerRunner interface {
 	CandidateOwnerIDs(context.Context, int) ([]uint64, error)
 	RunOwnerBatch(context.Context, uint64, int) (int, error)
 }
@@ -117,6 +124,18 @@ func (s *Server) StartPhotoIntelligence(ctx context.Context) {
 			PreviewURL: s.photoFacePreviewURL,
 		}
 	}
+	if s.PhotoSemanticAnalyzer != nil &&
+		strings.TrimSpace(s.PhotoFacePreviewBaseURL) != "" {
+		if s.photoSemanticSearch == nil {
+			s.photoSemanticSearch = newPhotoSemanticSearchEngine()
+		}
+		s.photoSemanticRunner = &photointelligence.SemanticRunner{
+			DB:         s.DB,
+			Analyzer:   s.PhotoSemanticAnalyzer,
+			PreviewURL: s.photoFacePreviewURL,
+			OnUpdated:  s.photoSemanticSearch.InvalidateOwner,
+		}
+	}
 	s.photoPersonRunner = &photointelligence.PersonClusterRunner{DB: s.DB}
 	s.photoIntelligenceMu.Unlock()
 
@@ -132,6 +151,9 @@ func (s *Server) StartPhotoIntelligence(ctx context.Context) {
 	}
 	if s.photoSmartRunner != nil {
 		slog.Info("photo_smart_search_intelligence_started")
+	}
+	if s.photoSemanticRunner != nil {
+		slog.Info("photo_semantic_search_intelligence_started")
 	}
 	slog.Info(
 		"photo_person_clustering_started",
@@ -164,6 +186,7 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 		[]string{
 			"photo.face",
 			"photo.smart_search",
+			"photo.semantic_search",
 			"photo.place",
 			"photo.person_cluster",
 		},
@@ -175,7 +198,7 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 		priority background.Priority
 		owners   func(context.Context, int) ([]uint64, error)
 	}
-	sources := make([]candidateSource, 0, 4)
+	sources := make([]candidateSource, 0, 5)
 	if s.photoFaceRunner != nil {
 		sources = append(sources, candidateSource{
 			kind: photoIntelligenceFace, priority: background.PriorityP2,
@@ -186,6 +209,12 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 		sources = append(sources, candidateSource{
 			kind: photoIntelligenceSmartSearch, priority: background.PriorityP3,
 			owners: s.photoSmartRunner.CandidateOwnerIDs,
+		})
+	}
+	if s.photoSemanticRunner != nil {
+		sources = append(sources, candidateSource{
+			kind: photoIntelligenceSemanticSearch, priority: background.PriorityP3,
+			owners: s.photoSemanticRunner.CandidateOwnerIDs,
 		})
 	}
 	if s.photoPlaceRunner != nil {
@@ -243,6 +272,16 @@ func (s *Server) requestPhotoIntelligenceForMedia(ownerID uint64) {
 	if s.photoSmartRunner != nil {
 		_ = s.requestPhotoIntelligenceOwner(
 			photoIntelligenceSmartSearch,
+			ownerID,
+			background.PriorityP3,
+			background.TriggerSystemEvent,
+			background.InitiatorSystem,
+			0,
+		)
+	}
+	if s.photoSemanticRunner != nil {
+		_ = s.requestPhotoIntelligenceOwner(
+			photoIntelligenceSemanticSearch,
 			ownerID,
 			background.PriorityP3,
 			background.TriggerSystemEvent,
@@ -509,6 +548,11 @@ func (s *Server) runPhotoIntelligenceOwnerBatch(
 			return 0, errPhotoIntelligenceUnavailable
 		}
 		return s.photoSmartRunner.RunOwnerBatch(ctx, ownerID, photoSmartBatchSize)
+	case photoIntelligenceSemanticSearch:
+		if s.photoSemanticRunner == nil {
+			return 0, errPhotoIntelligenceUnavailable
+		}
+		return s.photoSemanticRunner.RunOwnerBatch(ctx, ownerID, photoSemanticBatchSize)
 	case photoIntelligencePlace:
 		if s.photoPlaceRunner == nil {
 			return 0, errPhotoIntelligenceUnavailable
@@ -592,6 +636,8 @@ func (s *Server) finishPhotoIntelligenceOwner(
 		batchSize = photoFaceBatchSize
 	case photoIntelligenceSmartSearch:
 		batchSize = photoSmartBatchSize
+	case photoIntelligenceSemanticSearch:
+		batchSize = photoSemanticBatchSize
 	case photoIntelligencePlace:
 		batchSize = photoPlaceBatchSize
 	}
@@ -679,6 +725,8 @@ func (s *Server) photoIntelligenceAvailable(
 		return s.photoFaceRunner != nil
 	case photoIntelligenceSmartSearch:
 		return s.photoSmartRunner != nil
+	case photoIntelligenceSemanticSearch:
+		return s.photoSemanticRunner != nil
 	case photoIntelligencePlace:
 		return s.photoPlaceRunner != nil
 	case photoIntelligencePersonCluster:
@@ -731,6 +779,23 @@ func (s *Server) invalidatePhotoIntelligenceOwner(
 					meta.PhotoAnalysisKindOCRText,
 				},
 			).
+			Updates(map[string]any{
+				"state":        meta.PhotoAnalysisStateStale,
+				"last_error":   "",
+				"completed_at": nil,
+				"updated_at":   now,
+			}).Error
+	case photoIntelligenceSemanticSearch:
+		assetIDs := s.DB.WithContext(ctx).
+			Model(&meta.PhotoAsset{}).
+			Select("id").
+			Where("owner_id = ?", ownerID)
+		if s.photoSemanticSearch != nil {
+			s.photoSemanticSearch.InvalidateOwner(ownerID)
+		}
+		return s.DB.WithContext(ctx).
+			Model(&meta.PhotoAnalysisState{}).
+			Where("asset_id IN (?) AND kind = ?", assetIDs, meta.PhotoAnalysisKindSemanticEmbedding).
 			Updates(map[string]any{
 				"state":        meta.PhotoAnalysisStateStale,
 				"last_error":   "",
@@ -964,6 +1029,7 @@ func (s *Server) normalizePhotoIntelligenceKinds(
 		requested = []string{
 			string(photoIntelligenceFace),
 			string(photoIntelligenceSmartSearch),
+			string(photoIntelligenceSemanticSearch),
 			string(photoIntelligencePlace),
 			string(photoIntelligencePersonCluster),
 		}
@@ -975,6 +1041,7 @@ func (s *Server) normalizePhotoIntelligenceKinds(
 		switch kind {
 		case photoIntelligenceFace,
 			photoIntelligenceSmartSearch,
+			photoIntelligenceSemanticSearch,
 			photoIntelligencePlace,
 			photoIntelligencePersonCluster:
 		default:

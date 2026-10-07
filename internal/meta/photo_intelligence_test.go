@@ -33,6 +33,9 @@ func TestPhotoIntelligenceModelContracts(t *testing.T) {
 	if (PhotoOCRText{}).TableName() != "xd_photo_ocr_texts" {
 		t.Fatal("unexpected photo OCR text table name")
 	}
+	if (PhotoSemanticEmbedding{}).TableName() != "xd_photo_semantic_embeddings" {
+		t.Fatal("unexpected photo semantic embedding table name")
+	}
 }
 
 func TestValidPhotoAnalysisKind(t *testing.T) {
@@ -42,6 +45,7 @@ func TestValidPhotoAnalysisKind(t *testing.T) {
 		PhotoAnalysisKindPlaceLabel,
 		PhotoAnalysisKindVisualLabel,
 		PhotoAnalysisKindOCRText,
+		PhotoAnalysisKindSemanticEmbedding,
 	} {
 		if !ValidPhotoAnalysisKind(kind) {
 			t.Fatalf("expected %q to be a valid photo analysis kind", kind)

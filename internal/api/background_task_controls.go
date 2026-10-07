@@ -116,13 +116,14 @@ func backgroundRuntimeControlActions(
 		case "media.index",
 			"photo.face",
 			"photo.smart_search",
+			"photo.semantic_search",
 			"photo.place",
 			"photo.person_cluster":
 			actions = append(actions, backgroundTaskActionCancel)
 		}
 	}
 	switch kind {
-	case "photo.face", "photo.smart_search", "photo.place", "photo.person_cluster":
+	case "photo.face", "photo.smart_search", "photo.semantic_search", "photo.place", "photo.person_cluster":
 		if ownerID == viewerID || admin {
 			actions = append(actions, backgroundTaskActionReanalyze)
 		}
@@ -505,6 +506,8 @@ func photoIntelligenceKindFromBackgroundKind(
 		return photoIntelligenceFace, true
 	case "photo.smart_search":
 		return photoIntelligenceSmartSearch, true
+	case "photo.semantic_search":
+		return photoIntelligenceSemanticSearch, true
 	case "photo.place":
 		return photoIntelligencePlace, true
 	case "photo.person_cluster":
@@ -539,7 +542,7 @@ func (s *Server) invalidateRuntimeOwnerStateForCancel(
 		state.currentKey = ""
 		state.generation++
 		return true
-	case "photo.face", "photo.smart_search", "photo.place", "photo.person_cluster":
+	case "photo.face", "photo.smart_search", "photo.semantic_search", "photo.place", "photo.person_cluster":
 		kind, ok := photoIntelligenceKindFromBackgroundKind(ref.kind)
 		if !ok {
 			return false
