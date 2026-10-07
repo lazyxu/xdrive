@@ -41,6 +41,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
+| FileOperation Copy source-subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One copied root with 120 child directories and one file each: source-tree reads **242 SELECTs -> 1 recursive CTE with file metadata join**. Destination creates, content-reference retain, hooks/progress and undo remain per node. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
 | 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
@@ -83,7 +84,8 @@ This table is the durable status index for the FileExplorer performance track. A
 - Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
 - CAS physical deletion checks temporary reused upload ranges with `SELECT EXISTS` against the partial index `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`. The guard remains inside the existing per-blob transaction before `Store.Delete`, so active resumable overwrite ranges still keep the old content alive.
 - FileOperation Copy/Move target-descendant validation walks the target's active ancestor chain in PostgreSQL and returns one scalar `EXISTS` result instead of materializing the source subtree IDs in Go. Managed-source subtree protection likewise stays inside PostgreSQL as a recursive CTE joined directly to `xd_sources`, while Delete keeps its existing ID materialization because those IDs are required for share revocation and Trash updates.
-- FileOperation Move obtains logical byte totals for all selected roots with one lazily executed grouped recursive CTE, then reuses the per-root totals for normal, skipped, and replace/merge progress. Move root nodes are loaded without the unused `File` preload; Copy keeps file preloads because recursive copy hooks need file metadata, and Delete keeps its subtree summary contract.
+- FileOperation Move obtains logical byte totals for all selected roots with one lazily executed grouped recursive CTE, then reuses the per-root totals for normal, skipped, and replace/merge progress. Move root nodes are loaded without the unused `File` preload; Delete keeps its subtree summary contract.
+- Ordinary FileOperation Copy preloads the active source descendants and current file metadata with one recursive CTE per copied root, then reuses that in-memory parent/child map during recursive creation. Destination writes, content-reference retain, hooks/progress, undo capture, and replace/merge conflict traversal remain unchanged.
 - Search queries without `/` seed matching path components, expand descendants of matching directories, and reconstruct paths/breadcrumbs only for candidates; slash-containing queries retain full-tree path matching for exact cross-component substring semantics.
 - Search result sorting is server-paged for name/updated/size/type; cursors bind query/type/sort/order, and changing sort reloads the active search from page one instead of re-sorting only the loaded subset.
 - Grid marquee selection coalesces pointer-move work to one animation-frame update.
@@ -771,6 +773,43 @@ Decision: **Accepted.** Move is metadata-only at the root level, so removing roo
 Regression budget: one Move operation may execute at most **one** grouped root-byte recursive CTE regardless of selected-root count, and root loading must not restore per-root File preloads.
 
 Next action: continue the FileExplorer upload preflight batching audit; preserve ordered conflict/partial-success semantics while reducing request and DB-query count.
+
+### FileOperation Copy source-subtree loading
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one copied source directory with **120 direct child directories**;
+- each child directory contains **1 file**;
+- active source subtree size: **241 nodes** including the copied root;
+- evidence method: PostgreSQL SQL trace around the real `copyNodeTxWithHooks` execution plus copied-subtree assertions;
+- no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- the copied root calls `Find(children)` plus GORM `Preload("File")`;
+- each of the 120 child directories repeats the same pair of source reads;
+- source-tree enumeration therefore emits **121 node-list SELECTs + 121 file-preload SELECTs = 242 SELECT statements** before considering destination writes/content-reference bookkeeping.
+
+AFTER / current:
+
+- the first directory in a normal copy loads all active descendants with **1 owner-scoped recursive CTE**;
+- the same statement LEFT JOINs current `xd_files` metadata needed by file-copy hooks and content-reference retain;
+- recursive creation consumes an in-memory `parent_id -> children` map in the same `type ASC, name ASC` sibling order;
+- healthy file descendants no longer issue fallback metadata SELECTs;
+- destination node/file INSERTs, CAS retain/advisory locking, hooks/progress, undo capture, revision behavior and transaction boundaries are unchanged;
+- replace/merge conflict traversal remains dynamic per directory because it must observe target-side state at each level.
+
+Decision: **Accepted.** This removes directory-count-scaled source reads from ordinary recursive Copy without batching or reordering the mutation/data-integrity side of the operation.
+
+Regression budget: one ordinary copied directory root may issue at most **1 source-subtree recursive CTE**, regardless of descendant directory count. Do not reintroduce per-directory `Preload("File")` source enumeration.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestFileOperationCopyLoadsSourceSubtreeOnce$' -count=1`.
+
+Next action: continue the basic sync/delete performance audit; only change paths with another deterministic request, SQL, allocation, or I/O multiplier.
 
 ### FileOperation subtree predicate materialization
 
