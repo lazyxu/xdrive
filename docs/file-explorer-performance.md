@@ -35,6 +35,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
+| Instant-upload ownership existence probe | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 same-key current-file refs or 120 same-key historical-version refs: ownership changes from aggregate `COUNT(*)` over all matches to one indexed `EXISTS` union that needs only a boolean result. The outer fast check and in-transaction ownership recheck both remain. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
@@ -387,6 +388,37 @@ Decision: **Accepted.** This removes request-count-scaled preflight round trips 
 Regression budget: a normal <=200 unique-target batch must use at most **1 batch request / 1 batch SQL statement**; no batch failure may disable the single-target fallback, and duplicate destinations must remain sequentially preflighted.
 
 Next action: upload finalize reused-source open amplification is handled by the dedicated contract above; continue sync/delete basic-path performance without speculative CAS-copy rewrites.
+
+### Instant-upload ownership existence-probe contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- instant-upload dedup ownership lookup against a CAS storage key;
+- deterministic fixture with **120 current-file references** to one key and **120 historical-version references** to another key for the same owner;
+- production Server migration already provides `idx_xd_files_storage_key` and `idx_xd_file_versions_storage_key`;
+- the regression captures the SQL emitted by the real `userOwnsStorageKey` helper and verifies current-file ownership, version-only ownership, foreign-user rejection, and a missing key;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- each ownership check executes `COUNT(*)` over a `UNION ALL` of matching current-file and historical-version references;
+- because the caller only needs a boolean, the aggregate nevertheless requires determining the full matching cardinality;
+- instant upload intentionally performs this check once before entering the transaction and again inside the content-hash lock before retaining the blob.
+
+AFTER / current:
+
+- the same ownership predicate is expressed as one `SELECT EXISTS (... UNION ALL ...)` statement;
+- the storage-key probes remain index-supported and the existence query may stop once ownership is proven instead of aggregating every matching reference;
+- both ownership checks remain in place: the outer check is a fast rejection and the in-transaction check remains the authoritative safety revalidation;
+- current-file, historical-version, trash/history ownership semantics are unchanged because the joins and owner predicate are unchanged.
+
+Decision: **Accepted.** This removes unnecessary full-cardinality aggregation from a hot dedup-upload boolean check without weakening ownership validation or transaction safety.
+
+Regression budget: `userOwnsStorageKey` must remain **1 SQL statement using EXISTS and no COUNT aggregation**, probe both current files and historical versions, and preserve the in-transaction recheck.
+
+Next action: continue the sync/delete/download basic-path audit and only change another deterministic request, SQL, allocation, or I/O multiplier.
 
 ### Archive prepare subtree SQL contract
 
