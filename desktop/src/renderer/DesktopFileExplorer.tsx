@@ -291,10 +291,16 @@ export default function DesktopFileExplorer({
     newTab,
     activateTab,
     closeTab,
+    reorderTab,
+    duplicateTab,
+    closeOtherTabs,
+    closeTabsToRight,
+    restoreClosedTab,
     nextTab,
     previousTab,
     canNewTab,
     canCloseTab,
+    canRestoreClosedTab,
   } = useXDriveFileExplorerWorkspace<AgentCloudNode, AgentCloudSearchResult>({
     items,
     crumbs,
@@ -1233,6 +1239,9 @@ export default function DesktopFileExplorer({
           ? () => folderUploadInputRef.current?.click()
           : undefined}
         onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
+        onOpenItemInNewTab={!trashActive && canNewTab
+          ? (item) => { void openItemInNewTab(item) }
+          : undefined}
         onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -1279,13 +1288,24 @@ export default function DesktopFileExplorer({
             activeTabID={activeTabID}
             canNewTab={canNewTab}
             canCloseTab={canCloseTab}
+            canRestoreClosedTab={canRestoreClosedTab}
             onActivate={(id) => { void activateTab(id) }}
             onNewTab={() => { void newTab() }}
             onCloseTab={(id) => { void closeTab(id) }}
+            onReorderTab={(sourceID, targetID, position) => {
+              reorderTab(sourceID, targetID, position)
+            }}
+            onDuplicateTab={(id) => { void duplicateTab(id) }}
+            onCloseOtherTabs={(id) => { void closeOtherTabs(id) }}
+            onCloseTabsToRight={(id) => { void closeTabsToRight(id) }}
+            onRestoreClosedTab={() => { void restoreClosedTab() }}
           />
         )}
         onNewTab={!trashActive && canNewTab ? () => { void newTab() } : undefined}
         onCloseTab={!trashActive && canCloseTab ? () => { void closeTab() } : undefined}
+        onRestoreClosedTab={!trashActive && canRestoreClosedTab
+          ? () => { void restoreClosedTab() }
+          : undefined}
         onNextTab={!trashActive && tabs.length > 1 ? () => { void nextTab() } : undefined}
         onPreviousTab={!trashActive && tabs.length > 1 ? () => { void previousTab() } : undefined}
         commandBarEnd={trashActive ? undefined : (

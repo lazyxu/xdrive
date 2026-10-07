@@ -493,6 +493,7 @@ export function XDriveFileExplorer({
   tabBar,
   onNewTab,
   onCloseTab,
+  onRestoreClosedTab,
   onNextTab,
   onPreviousTab,
   pathValue,
@@ -514,6 +515,7 @@ export function XDriveFileExplorer({
   onUploadFolder,
   onItemClick,
   onOpenItem,
+  onOpenItemInNewTab,
   onPreviewItem,
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
@@ -570,6 +572,7 @@ export function XDriveFileExplorer({
   tabBar?: ReactNode
   onNewTab?: () => void
   onCloseTab?: () => void
+  onRestoreClosedTab?: () => void
   onNextTab?: () => void
   onPreviousTab?: () => void
   pathValue?: string
@@ -591,6 +594,7 @@ export function XDriveFileExplorer({
   onUploadFolder?: () => void
   onItemClick?: (item: XDriveFileExplorerItem) => void
   onOpenItem?: (item: XDriveFileExplorerItem) => void
+  onOpenItemInNewTab?: (item: XDriveFileExplorerItem) => void
   onPreviewItem?: (item: XDriveFileExplorerItem) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
@@ -2303,6 +2307,21 @@ export function XDriveFileExplorer({
     return true
   }
 
+  const openItemInNewTabFromMouse = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+  ) => {
+    if (
+      event.button !== 1 ||
+      item.kind !== 'dir' ||
+      !onOpenItemInNewTab
+    ) return false
+    event.preventDefault()
+    event.stopPropagation()
+    onOpenItemInNewTab(item)
+    return true
+  }
+
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     const command = xDriveFileExplorerKeyboardCommand(event, keyboardProfile)
 
@@ -2444,6 +2463,11 @@ export function XDriveFileExplorer({
     if (command === 'close-tab' && onCloseTab) {
       event.preventDefault()
       onCloseTab()
+      return
+    }
+    if (command === 'restore-closed-tab' && onRestoreClosedTab) {
+      event.preventDefault()
+      onRestoreClosedTab()
       return
     }
     if ((command === 'next-tab' || command === 'previous-tab') && (onNextTab || onPreviousTab)) {
@@ -2776,6 +2800,14 @@ export function XDriveFileExplorer({
         }}
         onDrop={(event) => dropOnFolder(event, item)}
         onClick={(event) => selectItem(event, item, index)}
+        onMouseDown={(event) => {
+          if (event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
+            event.preventDefault()
+          }
+        }}
+        onAuxClick={(event) => {
+          if (!renaming) openItemInNewTabFromMouse(event, item)
+        }}
         onDoubleClick={() => {
           if (!renaming) onOpenItem?.(item)
         }}
@@ -2900,6 +2932,14 @@ export function XDriveFileExplorer({
         }}
         onDrop={(event) => dropOnFolder(event, item)}
         onClick={(event) => selectItem(event, item, index)}
+        onMouseDown={(event) => {
+          if (event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
+            event.preventDefault()
+          }
+        }}
+        onAuxClick={(event) => {
+          if (!renaming) openItemInNewTabFromMouse(event, item)
+        }}
         onDoubleClick={() => {
           if (!renaming) onOpenItem?.(item)
         }}

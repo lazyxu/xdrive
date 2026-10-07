@@ -11,6 +11,7 @@ const search = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
 const workspace = read('ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts')
 const tabs = read('ui', 'shared', 'src', 'mui', 'FileExplorerTabs.tsx')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const keyboard = read('ui', 'shared', 'src', 'file-explorer-keyboard.ts')
 const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
@@ -141,5 +142,75 @@ test('folders can open in a new shared FileExplorer tab from Web and Desktop', (
       source.includes('void openItemInNewTab(item)'),
       label + ' must delegate folder new-tab navigation to the shared workspace',
     )
+  }
+})
+
+
+test('deep tab workflows stay in shared navigation and shared MUI', () => {
+  for (const token of [
+    'export type XDriveFileExplorerTabDropPosition',
+    'closedTabsRef',
+    'const reorderTab = (',
+    'const duplicateTab = async',
+    'const closeOtherTabs = async',
+    'const closeTabsToRight = async',
+    'const restoreClosedTab = async',
+    'canRestoreClosedTab:',
+    'rememberClosedTabs(',
+    'consumeClosedTab(',
+  ]) {
+    assert.ok(navigation.includes(token), 'shared deep-tab navigation missing: ' + token)
+  }
+
+  for (const token of [
+    'draggable={Boolean(onReorderTab) && tabs.length > 1}',
+    'onAuxClick={(event) =>',
+    'onReorderTab(draggedTabID, tab.id, position)',
+    '复制标签',
+    '关闭其他标签页',
+    '关闭右侧标签页',
+    '恢复关闭的标签页',
+    'canRestoreClosedTab',
+  ]) {
+    assert.ok(tabs.includes(token), 'shared deep-tab strip missing: ' + token)
+  }
+
+  for (const token of [
+    'onOpenItemInNewTab?: (item: XDriveFileExplorerItem) => void',
+    'openItemInNewTabFromMouse',
+    "event.button !== 1",
+    "item.kind !== 'dir'",
+    "command === 'restore-closed-tab'",
+    'onRestoreClosedTab?: () => void',
+  ]) {
+    assert.ok(explorer.includes(token), 'shared FileExplorer tab interaction missing: ' + token)
+  }
+
+  assert.ok(
+    keyboard.includes("| 'restore-closed-tab'"),
+    'keyboard contract must expose restore-closed-tab',
+  )
+  assert.ok(
+    keyboard.includes("if (key === 't') return 'restore-closed-tab'"),
+    'Ctrl/Cmd+Shift+T must restore the most recently closed FileExplorer tab',
+  )
+
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    for (const token of [
+      'reorderTab,',
+      'duplicateTab,',
+      'closeOtherTabs,',
+      'closeTabsToRight,',
+      'restoreClosedTab,',
+      'canRestoreClosedTab,',
+      'onOpenItemInNewTab=',
+      'onReorderTab={(sourceID, targetID, position) =>',
+      'onDuplicateTab={(id) =>',
+      'onCloseOtherTabs={(id) =>',
+      'onCloseTabsToRight={(id) =>',
+      'onRestoreClosedTab={() =>',
+    ]) {
+      assert.ok(source.includes(token), label + ' deep-tab adapter missing: ' + token)
+    }
   }
 })

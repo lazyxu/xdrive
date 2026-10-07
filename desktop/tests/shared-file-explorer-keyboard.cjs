@@ -132,3 +132,25 @@ test('Web and Desktop keep only rename transport adapters and no rename dialogs'
   assert.equal(desktop.includes('renameNode'), false, 'Desktop adapter must not retain rename dialog state')
   assert.equal(desktop.includes('mode="rename"'), false, 'Desktop adapter must not render the old rename dialog')
 })
+
+
+test('native tab restore shortcut is shared across Windows, macOS, and Web profiles', () => {
+  assert.ok(
+    keyboard.includes("| 'restore-closed-tab'"),
+    'shared keyboard command union must expose restore-closed-tab',
+  )
+  assert.ok(
+    keyboard.includes("if (key === 't') return 'restore-closed-tab'"),
+    'primary+Shift+T must map to restore-closed-tab',
+  )
+  assert.ok(
+    explorer.includes("command === 'restore-closed-tab' && onRestoreClosedTab"),
+    'shared FileExplorer must dispatch the restore-closed-tab command',
+  )
+  for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.ok(
+      source.includes('onRestoreClosedTab={!trashActive && canRestoreClosedTab'),
+      label + ' must expose the shared restore shortcut only in the normal files workspace',
+    )
+  }
+})

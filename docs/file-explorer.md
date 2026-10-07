@@ -76,6 +76,23 @@ Group headers are part of the real scroll geometry. Shared layout code maps `sta
 
 Do not insert group headers into the item array, do not renumber filesystem items, and do not make one pseudo-item per header. The logical item indexes remain Server indexes; group headers are presentation geometry only.
 
+## Tabs and native tab workflows
+
+FileExplorer tabs are shared Web/Desktop navigation workspaces, not app-local visual tabs. Each tab owns its committed history, current history index, sort, grouping, and view mode. Search state is keyed by the shared tab workspace id.
+
+Native tab workflows use the same shared navigation state machine:
+
+- middle-clicking a folder opens it in a new tab through the existing shared `openItemInNewTab` path;
+- middle-clicking a tab closes that tab when more than one tab is open;
+- dragging a tab reorders the shared tab array and does **not** issue a directory reload;
+- duplicating a tab clones its complete committed history/sort/grouping/view state, inserts the copy beside the source, loads the source directory, and activates the duplicate only after that load wins the navigation generation fence;
+- **Close other tabs** and **Close tabs to the right** preserve the target workspace and push closed tabs into a bounded in-memory recently-closed stack;
+- restoring a closed tab reopens the latest snapshot at its previous index when possible and activates it only after its directory load succeeds;
+- `Ctrl/Cmd+Shift+T` restores the most recently closed tab;
+- asynchronous duplicate/restore/bulk-close loads participate in the same navigation-generation arbitration as ordinary folder navigation and tab activation. A stale completion must never change the current directory, active tab, address path, or tab labels.
+
+The recently-closed stack is intentionally in-memory. Desktop's existing reconnect snapshot preserves committed open navigation state across a transient Agent disconnect, but this feature does not yet persist tabs/recently-closed state across a full renderer/app restart. Full session restore remains a separate optional persistence feature.
+
 ## File favorites and Quick Access
 
 FileExplorer keeps **folder pinning** and **file favorites** as separate concepts:
