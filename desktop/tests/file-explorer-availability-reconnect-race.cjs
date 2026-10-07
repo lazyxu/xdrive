@@ -877,3 +877,129 @@ test('background reload cannot leave tab sort ahead of the committed directory s
     global.window = originalWindow
   }
 })
+
+
+test('a pending reconnect reload yields to a newer tab activation', async () => {
+  const originalWindow = global.window
+  global.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => {},
+    },
+  }
+
+  try {
+    const runtime = createHookRuntime()
+    const useCloudFiles = loadCloudFilesHook(runtime.react)
+    const useNavigation = loadNavigationHook(runtime.react)
+    const root = { id: 1, name: '我的文件' }
+    const alpha = { id: 2, name: 'Alpha' }
+    const beta = { id: 3, name: 'Beta' }
+    const sort = { key: 'name', direction: 'asc' }
+    let enabled = true
+    let reconnecting = false
+    let releaseReconnectAlpha
+
+    const page = (parentID, offset, limit) => ({
+      items: parentID === root.id
+        ? [alpha, beta]
+        : parentID === alpha.id
+          ? [{ id: 20, name: 'alpha.txt' }]
+          : [{ id: 30, name: 'beta.txt' }],
+      total_count: parentID === root.id ? 2 : 1,
+      offset,
+      limit,
+      sort: 'name',
+      order: 'asc',
+      groups: [],
+    })
+
+    const port = {
+      async getRoot() {
+        return root
+      },
+      async getQuota() {
+        return {
+          quota_bytes: 1000,
+          physical_used_bytes: 100,
+          available_bytes: 900,
+          logical_file_bytes: 100,
+          trash_bytes: 0,
+          history_bytes: 0,
+          over_quota: false,
+        }
+      },
+      async getPage() {
+        throw new Error('unexpected getPage')
+      },
+      getRange(parentID, offset, limit) {
+        if (reconnecting && parentID === alpha.id) {
+          return new Promise((resolve) => {
+            releaseReconnectAlpha = () => resolve(page(parentID, offset, limit))
+          })
+        }
+        return Promise.resolve(page(parentID, offset, limit))
+      },
+    }
+
+    const render = () => runtime.render(() => {
+      const cloud = useCloudFiles({
+        port,
+        enabled,
+        defaultSort: sort,
+        quotaRefreshIntervalMs: 0,
+        preserveStateOnDisable: true,
+        onError: (error) => { throw error },
+      })
+      const navigation = useNavigation({
+        crumbs: cloud.crumbs,
+        viewModeStorageKey: 'reconnect-reload-vs-tab',
+        onLoadDirectory: cloud.loadDirectory,
+      })
+      return { cloud, navigation }
+    })
+
+    render()
+    await flushAsync()
+    let app = render()
+
+    await app.navigation.navigateTo([root, alpha])
+    app = render()
+    assert.equal(await app.navigation.openTab([root, beta]), true)
+    app = render()
+    await app.navigation.activateTab('tab-1')
+    app = render()
+    assert.equal(app.cloud.current?.id, alpha.id)
+    assert.equal(app.navigation.activeTabID, 'tab-1')
+
+    reconnecting = true
+    enabled = false
+    render()
+    enabled = true
+    render()
+    await flushAsync()
+    app = render()
+    assert.equal(typeof releaseReconnectAlpha, 'function')
+
+    const activateBeta = app.navigation.activateTab('tab-2')
+    await activateBeta
+    app = render()
+    assert.equal(app.cloud.current?.id, beta.id)
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+
+    releaseReconnectAlpha()
+    await flushAsync()
+    app = render()
+
+    assert.equal(
+      app.cloud.current?.id,
+      beta.id,
+      'an older reconnect reload must not replace the directory committed by a newer tab activation',
+    )
+    assert.equal(app.navigation.activeTabID, 'tab-2')
+    assert.equal(app.navigation.pathValue, '我的文件/Beta')
+  } finally {
+    global.window = originalWindow
+  }
+})

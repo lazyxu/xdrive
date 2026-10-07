@@ -122,7 +122,13 @@ export function XDriveFileExplorerNavigationPane({
   const pageByParentRef = useRef(pageByParent)
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
   const [loadingIDs, setLoadingIDs] = useState<Set<number>>(() => new Set())
-  const loadingIDsRef = useRef(new Set<number>())
+  const loadingIDsRef = useRef(new Map<number, number>())
+  const loadDirectoryPageRef = useRef(loadDirectoryPage)
+  const loadDirectoryPageGenerationRef = useRef(1)
+  if (loadDirectoryPageRef.current !== loadDirectoryPage) {
+    loadDirectoryPageRef.current = loadDirectoryPage
+    loadDirectoryPageGenerationRef.current += 1
+  }
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
 
   const pathNodes = useMemo(
@@ -191,15 +197,17 @@ export function XDriveFileExplorerNavigationPane({
     node: XDriveFileExplorerNavigationTreeNode,
     append = false,
   ) => {
+    const generation = loadDirectoryPageGenerationRef.current
     const current = pageByParentRef.current[String(node.id)]
     if (!append && current?.loaded) return
     if (append && (!current?.hasMore || !current.nextCursor)) return
-    if (loadingIDsRef.current.has(node.id)) return
+    if (loadingIDsRef.current.get(node.id) === generation) return
 
-    loadingIDsRef.current.add(node.id)
+    loadingIDsRef.current.set(node.id, generation)
     setLoadingIDs((currentIDs) => new Set(currentIDs).add(node.id))
     try {
       const page = await loadDirectoryPage(node.id, append ? current?.nextCursor : undefined)
+      if (generation !== loadDirectoryPageGenerationRef.current) return
       if (append && current?.nextCursor && page.hasMore && page.nextCursor === current.nextCursor) {
         throw new Error('文件夹树分页游标重复。')
       }
@@ -226,14 +234,16 @@ export function XDriveFileExplorerNavigationPane({
         loaded: true,
       })
     } catch (error) {
-      onError?.(error)
+      if (generation === loadDirectoryPageGenerationRef.current) onError?.(error)
     } finally {
-      loadingIDsRef.current.delete(node.id)
-      setLoadingIDs((currentIDs) => {
-        const next = new Set(currentIDs)
-        next.delete(node.id)
-        return next
-      })
+      if (loadingIDsRef.current.get(node.id) === generation) {
+        loadingIDsRef.current.delete(node.id)
+        setLoadingIDs((currentIDs) => {
+          const next = new Set(currentIDs)
+          next.delete(node.id)
+          return next
+        })
+      }
     }
   }, [commitParentPage, loadDirectoryPage, onError])
 

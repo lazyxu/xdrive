@@ -51,6 +51,7 @@ function compileLoadChildren(callbackSource) {
       commitParentPage,
       onError,
       latestPathCrumbsByIDRef,
+      loadDirectoryPageGenerationRef,
     ) => {
       const loadChildren = ${callbackSource}
       return loadChildren
@@ -85,7 +86,8 @@ test('stale navigation-tree child load cannot write old parent crumbs after curr
   const newParent = { id: 2, name: 'NewParent' }
   const child = { id: 3, name: 'Child' }
   const pageByParentRef = { current: {} }
-  const loadingIDsRef = { current: new Set() }
+  const loadingIDsRef = { current: new Map() }
+  const loadDirectoryPageGenerationRef = { current: 1 }
   let loadingIDs = new Set()
   let releasePage
 
@@ -116,6 +118,7 @@ test('stale navigation-tree child load cannot write old parent crumbs after curr
     },
     (error) => { throw error },
     latestPathCrumbsByIDRef,
+    loadDirectoryPageGenerationRef,
   )
 
   const oldNode = {
@@ -140,5 +143,102 @@ test('stale navigation-tree child load cannot write old parent crumbs after curr
     loadedChild.crumbs,
     [root, newParent, child],
     'a tree request started with OldParent must use the latest path crumbs when it commits',
+  )
+})
+
+
+test('a replaced navigation-tree loader supersedes an older pending request for the same parent', async () => {
+  const callbackSource = callbackInitializer(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx'],
+    'loadChildren',
+  )
+  const makeLoadChildren = compileLoadChildren(callbackSource)
+
+  const root = { id: 1, name: '我的文件' }
+  const oldChild = { id: 2, name: 'OldChild' }
+  const newChild = { id: 3, name: 'NewChild' }
+  const node = {
+    id: root.id,
+    name: root.name,
+    crumbs: [root],
+  }
+  const pageByParentRef = { current: {} }
+  const loadingIDsRef = { current: new Map() }
+  const loadDirectoryPageGenerationRef = { current: 1 }
+  const latestPathCrumbsByIDRef = {
+    current: new Map([[root.id, [root]]]),
+  }
+  let loadingIDs = new Set()
+  let releaseOldPage
+  let newLoaderCalls = 0
+
+  const setLoadingIDs = (updater) => {
+    loadingIDs = typeof updater === 'function' ? updater(loadingIDs) : updater
+  }
+  const commitParentPage = (parentID, value) => {
+    pageByParentRef.current = {
+      ...pageByParentRef.current,
+      [String(parentID)]: value,
+    }
+  }
+
+  const oldLoadChildren = makeLoadChildren(
+    pageByParentRef,
+    loadingIDsRef,
+    setLoadingIDs,
+    () => new Promise((resolve) => {
+      releaseOldPage = () => resolve({
+        items: [oldChild],
+        nextCursor: '',
+        hasMore: false,
+      })
+    }),
+    commitParentPage,
+    (error) => { throw error },
+    latestPathCrumbsByIDRef,
+    loadDirectoryPageGenerationRef,
+  )
+
+  const oldPending = oldLoadChildren(node)
+  await flushAsync()
+  assert.equal(typeof releaseOldPage, 'function')
+
+  loadDirectoryPageGenerationRef.current += 1
+
+  const newLoadChildren = makeLoadChildren(
+    pageByParentRef,
+    loadingIDsRef,
+    setLoadingIDs,
+    async () => {
+      newLoaderCalls += 1
+      return {
+        items: [newChild],
+        nextCursor: '',
+        hasMore: false,
+      }
+    },
+    commitParentPage,
+    (error) => { throw error },
+    latestPathCrumbsByIDRef,
+    loadDirectoryPageGenerationRef,
+  )
+
+  const newPending = newLoadChildren(node)
+  await flushAsync()
+
+  assert.equal(
+    newLoaderCalls,
+    1,
+    'a new tree loader generation must not be blocked by an older in-flight request for the same parent',
+  )
+
+  await newPending
+  releaseOldPage()
+  await oldPending
+
+  assert.deepEqual(
+    pageByParentRef.current[String(root.id)]?.children?.map((child) => child.name),
+    ['NewChild'],
+    'an older tree-loader response must not overwrite the page committed by its replacement loader',
   )
 })
