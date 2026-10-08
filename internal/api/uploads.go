@@ -694,10 +694,12 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 			return errUploadExpired
 		}
 		var old meta.UploadPart
+		oldSize := int64(0)
 		findErr := tx.Where("session_id = ? AND part_index = ?", session.ID, index).First(&old).Error
 		if findErr == nil {
 			oldKey = old.StorageKey
 			oldReused = old.Reused
+			oldSize = old.Size
 			if err := tx.Model(&old).Updates(map[string]any{
 				"size": size, "sha256": actualHash, "storage_key": key,
 				"reused": false, "source_storage_key": "", "source_offset": 0,
@@ -715,7 +717,7 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 				return err
 			}
 		}
-		return s.refreshUploadReservation(tx, current)
+		return s.adjustUploadReservationForPart(tx, current, oldSize, size)
 	})
 	if err != nil {
 		_ = s.Store.Delete(c.Request.Context(), key)

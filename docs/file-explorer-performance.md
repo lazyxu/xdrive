@@ -2473,3 +2473,39 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindowsBaselinePathDeltaMatchesFullDeltaForSmallFileBatch$|^TestWindowsRemoteJournalFilePageUsesPathScopedBaselinePersistence$' -count=1`.
 
 Next action: continue basic FileExplorer sync/delete performance auditing. The remaining larger Windows incremental cost is the full baseline clone at page start; handle that separately only if a safe copy-on-write/delta mutation design can preserve reconciliation semantics.
+
+### Resumable upload incremental reservation bookkeeping contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary resumable FileExplorer upload after a session is created; this is **not a first-open or 100k listing workload**;
+- stable structural workload: **128 newly uploaded chunks** in one active session, matching a 1 GiB file at the default 8 MiB chunk size;
+- evidence method: PostgreSQL statement capture around the reservation bookkeeping path plus the existing resumable-upload integration assertions; no wall-clock speedup is quoted.
+
+BEFORE:
+
+- every successful chunk insert called `refreshUploadReservation`;
+- that helper selected **all UploadPart rows already recorded for the session** and summed them in Go before one `reserved_bytes` UPDATE;
+- 128 sequential new chunks therefore executed **128 full-session UploadPart SELECTs** and materialized **1 + 2 + ... + 128 = 8,256 UploadPart rows** only to maintain the reservation counter;
+- idempotent same-hash chunk retries still return before this path, and are unchanged.
+
+AFTER / current:
+
+- the upload transaction already holds the UploadSession row lock and knows the previous part size and the newly committed part size;
+- normal chunk inserts update `reserved_bytes` from that byte delta with **0 full-session UploadPart SELECTs**;
+- same-size part replacement requires **0 reservation UPDATEs** because received-byte coverage is unchanged;
+- invalid or legacy-inconsistent reservation state falls back to the existing full recomputation, preserving capacity safety rather than trusting a bad counter;
+- resume-time repair/recalculation, chunk hashing, object writes, quota reservation, session expiry, and finalize semantics are unchanged.
+
+Decision: **Accepted.** Reservation state is a deterministic function of the already locked session counter plus the committed part-size delta, so rescanning every previously received chunk on each new chunk adds no information on the normal path.
+
+Regression budget: a valid active upload must perform **0 full-session UploadPart scans per newly committed chunk** for reservation maintenance. The fallback full scan remains required only for inconsistent reservation state.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestUploadChunkReservationUsesIncrementalBookkeeping$' -count=1`.
+
+Next action: continue ordinary FileExplorer **upload-finalize / download / sync / delete** performance auditing; do not optimize 100k first-open behavior.
+
