@@ -25,7 +25,7 @@ function extractLifecycleEffect() {
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
       node.arguments[0].getText(sourceFile).includes('actionGenerationRef.current += 1') &&
-      node.arguments[0].getText(sourceFile).includes('actionBusyRef.current = null') &&
+      node.arguments[0].getText(sourceFile).includes('setCreateOpen(false)') &&
       ts.isArrayLiteralExpression(node.arguments[1]) &&
       node.arguments[1].elements.some((element) => (
         ts.isIdentifier(element) &&
@@ -39,7 +39,7 @@ function extractLifecycleEffect() {
   }
   visit(sourceFile)
 
-  assert.ok(callback, 'missing Desktop FileExplorer lifecycle effect')
+  assert.ok(callback, 'missing Desktop FileExplorer account lifecycle effect')
   return { filename, callback }
 }
 
@@ -61,43 +61,56 @@ function compileEffect(filename, callback, dependencies) {
   return new Function(...names, output + '\nreturn effect')(...values)
 }
 
-test('Desktop FileExplorer account lifecycle change closes stale local dialogs', () => {
+test('Desktop FileExplorer account lifecycle closes stale organization dialogs and selections', () => {
   const { filename, callback } = extractLifecycleEffect()
-  const actionGenerationRef = { current: 7 }
-  const actionBusyRef = { current: { key: 'create-folder', generation: 7 } }
-  const actionBusyWrites = []
-  const createOpenWrites = []
-  const previewWrites = []
+  const writes = {
+    tagDialogItems: [],
+    saveSearchOpen: [],
+    renameSavedSearch: [],
+    activeSavedSearchID: [],
+    activeTagID: [],
+  }
 
   const effect = compileEffect(filename, callback, {
-    actionGenerationRef,
-    actionBusyRef,
-    createFolderParentIDRef: { current: 101 },
-    setActionBusy: (value) => actionBusyWrites.push(value),
-    setCreateOpen: (value) => createOpenWrites.push(value),
-    setOpenPreviewItem: (value) => previewWrites.push(value),
-    setTagDialogItems: () => {},
-    setSaveSearchOpen: () => {},
-    setRenameSavedSearch: () => {},
-    setActiveSavedSearchID: () => {},
-    setActiveTagID: () => {},
+    actionGenerationRef: { current: 4 },
+    actionBusyRef: { current: null },
+    setActionBusy: () => {},
+    createFolderParentIDRef: { current: null },
+    setCreateOpen: () => {},
+    setOpenPreviewItem: () => {},
+    setTagDialogItems: (value) => writes.tagDialogItems.push(value),
+    setSaveSearchOpen: (value) => writes.saveSearchOpen.push(value),
+    setRenameSavedSearch: (value) => writes.renameSavedSearch.push(value),
+    setActiveSavedSearchID: (value) => writes.activeSavedSearchID.push(value),
+    setActiveTagID: (value) => writes.activeTagID.push(value),
   })
 
   const cleanup = effect()
 
-  assert.equal(actionGenerationRef.current, 8)
-  assert.equal(actionBusyRef.current, null)
-  assert.deepEqual(actionBusyWrites, [''])
-
   assert.deepEqual(
-    createOpenWrites,
-    [false],
-    'a create-folder dialog opened in account A must close before account B becomes current',
+    writes.tagDialogItems,
+    [[]],
+    'account B must not inherit account-A node ids from an open tag dialog',
   )
   assert.deepEqual(
-    previewWrites,
+    writes.saveSearchOpen,
+    [false],
+    'account-A save-smart-folder dialog must close before account B becomes current',
+  )
+  assert.deepEqual(
+    writes.renameSavedSearch,
     [null],
-    'a preview opened for account-A content must close before account B becomes current',
+    'account-A saved-search rename target must not survive into account B',
+  )
+  assert.deepEqual(
+    writes.activeSavedSearchID,
+    [null],
+    'account-A saved-search selection must not select an unrelated same-id search in account B',
+  )
+  assert.deepEqual(
+    writes.activeTagID,
+    [null],
+    'account-A tag selection must not select an unrelated same-id tag in account B',
   )
 
   if (typeof cleanup === 'function') cleanup()
