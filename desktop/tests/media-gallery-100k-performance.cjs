@@ -358,3 +358,29 @@ test('Gallery renderer first-paint benchmark isolates transport from renderer mo
   assert.ok(gitlabCI.includes("find gallery-perf-results -maxdepth 1 -type f -name '*.json'"))
   assert.ok(gitlabCI.includes("-name '*-trace.json'"))
 })
+
+test('Gallery 100k homogeneous video and Live Photo renderer benchmark is measurement-only', () => {
+  const harness = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'GalleryPerformanceHarness.tsx'),
+    'utf8',
+  )
+  const traceMain = fs.readFileSync(
+    path.join(repo, 'desktop', 'scripts', 'gallery-renderer-first-paint-trace-main.cjs'),
+    'utf8',
+  )
+  const githubCI = fs.readFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'utf8')
+  for (const scenarioName of ['video-cold', 'video-warm', 'live-cold', 'live-warm']) {
+    assert.ok(harness.includes("'" + scenarioName + "'"), 'missing harness scenario: ' + scenarioName)
+    assert.ok(traceMain.includes("'" + scenarioName + "'"), 'missing trace scenario: ' + scenarioName)
+  }
+  assert.ok(harness.includes("scenario.startsWith('video-')"))
+  assert.ok(harness.includes("scenario.startsWith('live-')"))
+  assert.ok(harness.includes('createFixtureVideo()'))
+  assert.ok(harness.includes('xDriveCaptureVideoPosterBlob(source, 0, 96, 64, 512)'))
+  assert.ok(harness.includes('gridCommitToMediaRequestMs'))
+  assert.ok(harness.includes('mediaResolvedToDecodeMs'))
+  assert.ok(githubCI.includes("github.head_ref == 'perf/gallery-media-first-paint-100k'"))
+  assert.ok(githubCI.includes('for scenario in video-cold video-warm live-cold live-warm; do'))
+  assert.ok(githubCI.includes('wc -l)" -eq 24'))
+})
+

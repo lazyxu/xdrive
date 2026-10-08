@@ -531,3 +531,69 @@ Budget evaluation:
 - Long Task red signal: **pass**; the observed maximum is **54 ms**, below the >100 ms red threshold.
 
 Decision: **Accepted / measured / no Gallery image-path production change.** The latest production Gallery still does not show a 100k image first-paint renderer bottleneck under this workload. Per the performance policy, no speculative optimization is retained; the next measurement target is pure-video poster and pure-Live-Photo grids, followed by large-file Web/Desktop transfer throughput/RSS.
+
+## 100k pure-video and pure-Live-Photo renderer first paint
+
+Status: **Accepted / measured / no production change**.
+
+This is the measurement-only follow-up to the accepted mixed 100k image first-paint trace. No Gallery production behavior changed.
+
+Stable workload:
+
+- production shared `XDriveMediaGalleryPage` in the real Web/Desktop renderer bundles;
+- **100,000 logical items** with a 100-item sparse first page;
+- **100,000 video tiles** through the production `XDriveMediaAsyncVideoPoster` path;
+- **100,000 Live Photo tiles** through the production image-thumbnail grid path; ordinary grid rendering does not load Live Photo motion bytes;
+- viewport **1440 x 900**;
+- first-range transport replay **350 ms**;
+- Live Photo thumbnail replay **112 ms cold / 6 ms warm**;
+- video preview replay **5 ms cold / 3 ms warm**, rounded from the accepted **4.711 / 2.825 ms** preview first-byte measurements;
+- the video fixture is generated before timing with Canvas + MediaRecorder and decoded by production `xDriveCaptureVideoPosterBlob`;
+- `video-warm` prewarms that production poster decoder before Gallery activation;
+- **3 fresh renderer processes per Web/Desktop surface and scenario**: 24 samples total.
+
+The existing H.264 poster benchmark remains the codec-specific reference: steady poster capture is about **2–3 ms**, while first-process decoder initialization has varied from **304.9 ms to 5.72 s** on hosted runners. For that reason cold-video first-process initialization remains diagnostic rather than a production optimization trigger.
+
+Predeclared acceptance / decision thresholds:
+
+- range -> virtual-grid commit **<=100 ms**;
+- grid commit -> first media request **<=50 ms**;
+- Live Photo media resolved -> DOM mount **<=50 ms** and -> decode **<=100 ms**;
+- Live Photo range -> first paint **<=400 ms cold / <=250 ms warm**;
+- warm video range -> first poster paint **<=300 ms**;
+- warm video media resolved -> first poster image decode **<=200 ms**;
+- any renderer Long Task **>100 ms** is a red signal;
+- renderer working set above **300 MiB (307,200 KiB)** is a red signal.
+
+Authoritative GitHub renderer baseline — **n=3 per surface/scenario**. Values are median [min, max] except Long Task, which is the maximum observed sample.
+
+| Surface | Scenario | route -> paint | range -> grid | grid -> media request | media resolved -> mount | media resolved -> decode | decode -> paint | range -> paint | Long Task max | renderer working set |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | video cold | **537.3 [533.3, 538.5] ms** | 67.7 [66.2, 68.9] ms | 16.3 [16.1, 16.4] ms | 12.1 [12.1, 15.7] ms | 14.3 [14.2, 16.9] ms | 29.4 [27.9, 30.2] ms | 132.5 [131.3, 136.1] ms | 56 ms | 178,152 [177,860, 180,392] KiB |
+| Desktop | video warm | **535.3 [525.6, 537.5] ms** | 64.4 [61.5, 68.5] ms | 16.1 [16.0, 16.8] ms | 16.7 [13.6, 18.0] ms | 19.1 [15.8, 20.2] ms | 29.0 [27.8, 29.3] ms | **132.4 [125.8, 135.8] ms** | 57 ms | 178,108 [177,940, 179,680] KiB |
+| Web | video cold | **528.2 [526.2, 534.3] ms** | 65.7 [64.5, 67.0] ms | 16.7 [15.8, 17.0] ms | 12.6 [11.1, 15.2] ms | 13.8 [12.4, 17.6] ms | 26.5 [24.0, 29.3] ms | 126.6 [125.5, 133.6] ms | 55 ms | 178,520 [177,672, 180,596] KiB |
+| Web | video warm | **521.7 [517.8, 523.2] ms** | 62.1 [61.8, 63.4] ms | 16.0 [15.8, 16.8] ms | 10.1 [10.0, 10.5] ms | **11.7 [11.3, 11.9] ms** | 27.9 [24.8, 29.9] ms | **120.8 [117.5, 124.5] ms** | 52 ms | 179,372 [179,160, 180,036] KiB |
+| Desktop | Live cold | **625.3 [621.7, 633.9] ms** | 56.1 [53.6, 58.4] ms | 11.9 [11.9, 12.2] ms | 2.3 [2.2, 2.9] ms | 26.1 [22.5, 29.4] ms | 18.1 [17.9, 19.3] ms | **225.4 [220.5, 227.9] ms** | 58 ms | 220,220 [219,188, 220,932] KiB |
+| Desktop | Live warm | **505.6 [499.9, 511.2] ms** | 57.7 [56.6, 57.8] ms | 11.7 [11.5, 11.9] ms | 2.1 [2.0, 2.6] ms | 3.3 [3.1, 4.8] ms | 24.7 [16.8, 31.6] ms | **104.5 [94.4, 112.1] ms** | 57 ms | 184,088 [183,188, 184,888] KiB |
+| Web | Live cold | **632.4 [629.1, 632.6] ms** | 61.4 [56.2, 63.9] ms | 12.3 [11.8, 12.4] ms | 3.1 [2.6, 3.4] ms | 28.9 [26.5, 32.6] ms | 17.3 [17.1, 17.4] ms | **232.2 [229.9, 232.2] ms** | 52 ms | 219,868 [219,596, 220,980] KiB |
+| Web | Live warm | **514.7 [511.5, 516.9] ms** | 60.2 [57.1, 65.1] ms | 11.9 [11.9, 12.1] ms | 2.2 [1.9, 2.4] ms | 3.1 [2.8, 3.1] ms | 25.3 [21.3, 29.6] ms | **109.3 [102.6, 114.4] ms** | **60 ms** | 183,840 [183,336, 184,280] KiB |
+
+Budget evaluation:
+
+- range -> grid: **pass**, worst sample 68.9 ms;
+- grid -> first media request: **pass**, worst sample 17.0 ms;
+- Live Photo media resolved -> DOM mount: **pass**, worst sample 3.4 ms;
+- Live Photo media resolved -> decode: **pass**, worst sample 32.6 ms;
+- Live Photo range -> first paint: **pass**, cold worst 232.2 ms and warm worst 114.4 ms;
+- warm video range -> first poster paint: **pass**, worst sample 135.8 ms;
+- warm video media resolved -> poster decode: **pass**, worst sample 20.2 ms;
+- Long Task red signal: **pass**, observed maximum 60 ms;
+- working-set red signal: **pass**, observed maximum 220,980 KiB (about 216 MiB);
+- placeholders at first measured paint: **0 in all 24 samples**.
+
+Decision: **Accepted / measured / no production change.** Neither the homogeneous video grid nor the homogeneous Live Photo grid exposes a repeatable 100k renderer bottleneck under the declared workload. Per the performance policy, there is no justification for a Gallery cache/scheduler/rendering optimization here.
+
+The cold-video WebM fixture also stayed inside all renderer budgets, but that does not revise the existing rule that codec/process initialization is diagnostic-only; the separate H.264 benchmark remains the authority for that one-time initialization behavior.
+
+Next action: move to **large-file Web/Desktop upload/download throughput and RSS**, beginning with a stable 1 GiB workload before considering 4 GiB.
+

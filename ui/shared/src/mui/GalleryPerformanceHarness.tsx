@@ -6,8 +6,15 @@ import {
   XDriveMediaGalleryPage,
   type MediaGalleryDataSource,
 } from './MediaGallery'
+import { xDriveCaptureVideoPosterBlob } from './MediaGalleryVideoPoster'
 
-export type XDriveGalleryRendererTraceScenario = 'image-cold' | 'image-warm'
+export type XDriveGalleryRendererTraceScenario =
+  | 'image-cold'
+  | 'image-warm'
+  | 'video-cold'
+  | 'video-warm'
+  | 'live-cold'
+  | 'live-warm'
 
 export type XDriveGalleryRendererTraceResult = {
   synthetic: true
@@ -17,6 +24,9 @@ export type XDriveGalleryRendererTraceResult = {
   viewportHeight: number
   replayedRangeDelayMs: number
   replayedThumbnailDelayMs: number
+  replayedPreviewDelayMs: number
+  mediaFirstRequestMs: number
+  mediaFirstResolvedMs: number
   rangeRequestMs: number
   rangeResolvedMs: number
   gridCommittedMs: number
@@ -27,9 +37,12 @@ export type XDriveGalleryRendererTraceResult = {
   firstImagePaintedMs: number
   rangeToGridCommitMs: number
   gridCommitToThumbnailRequestMs: number
+  gridCommitToMediaRequestMs: number
   gridCommitToFirstImageMountMs: number
   thumbnailResolvedToImageMountMs: number
   thumbnailResolvedToDecodeMs: number
+  mediaResolvedToImageMountMs: number
+  mediaResolvedToDecodeMs: number
   decodedToPaintMs: number
   rangeToFirstPaintMs: number
   routeToFirstPaintMs: number
@@ -55,6 +68,8 @@ const pageSize = 100
 const rangeDelayMs = 350
 const coldThumbnailDelayMs = 112
 const warmThumbnailDelayMs = 6
+const coldPreviewDelayMs = 5
+const warmPreviewDelayMs = 3
 const facetDelayMs = 700
 const capturedBase = Date.parse('2026-10-08T00:00:00.000Z')
 
@@ -75,9 +90,17 @@ function waitFrames(count: number) {
   })
 }
 
-function mediaItemForIndex(index: number): MediaItem {
+function mediaItemForIndex(
+  index: number,
+  scenario: XDriveGalleryRendererTraceScenario,
+): MediaItem {
   const slot = index % 20
-  const kind = slot < 14 ? 'image' : slot < 17 ? 'video' : 'live_photo'
+  const forcedVideo = scenario.startsWith('video-')
+  const kind = forcedVideo
+    ? 'video'
+    : scenario.startsWith('live-')
+      ? 'live_photo'
+      : slot < 14 ? 'image' : slot < 17 ? 'video' : 'live_photo'
   const sequence = String(index + 1).padStart(6, '0')
   const video = kind === 'video'
   const live = kind === 'live_photo'
@@ -85,7 +108,7 @@ function mediaItemForIndex(index: number): MediaItem {
     node: {
       id: index + 1,
       name: video
-        ? `clip-${sequence}.mp4`
+        ? `clip-${sequence}.${forcedVideo ? 'webm' : 'mp4'}`
         : live
           ? `live-${sequence}.jpg`
           : `photo-${sequence}.jpg`,
@@ -97,7 +120,7 @@ function mediaItemForIndex(index: number): MediaItem {
     },
     metadata: {
       media_kind: video ? 'video' : 'image',
-      mime_type: video ? 'video/mp4' : 'image/jpeg',
+      mime_type: video ? (forcedVideo ? 'video/webm' : 'video/mp4') : 'image/jpeg',
       width: video ? 1920 : 4032,
       height: video ? 1080 : 3024,
       duration_ms: video ? 120_000 : 0,
@@ -116,13 +139,17 @@ function mediaItemForIndex(index: number): MediaItem {
   }
 }
 
-function rangeFor(limit: number, offset: number): MediaItemRange {
+function rangeFor(
+  limit: number,
+  offset: number,
+  scenario: XDriveGalleryRendererTraceScenario,
+): MediaItemRange {
   const boundedOffset = Math.max(0, Math.min(logicalItems, Math.trunc(offset)))
   const boundedLimit = Math.max(1, Math.min(500, Math.trunc(limit)))
   const end = Math.min(logicalItems, boundedOffset + boundedLimit)
   const items = Array.from(
     { length: Math.max(0, end - boundedOffset) },
-    (_, index) => mediaItemForIndex(boundedOffset + index),
+    (_, index) => mediaItemForIndex(boundedOffset + index, scenario),
   )
   return {
     items,
@@ -161,6 +188,49 @@ async function createFixtureJPEG() {
   return blob
 }
 
+async function createFixtureVideo() {
+  if (typeof MediaRecorder === 'undefined') {
+    throw new Error('Gallery performance MediaRecorder is unavailable.')
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = 96
+  canvas.height = 64
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Gallery performance video canvas is unavailable.')
+  const stream = canvas.captureStream(24)
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+    ? 'video/webm;codecs=vp8'
+    : 'video/webm'
+  const chunks: BlobPart[] = []
+  const recorder = new MediaRecorder(stream, { mimeType })
+  const stopped = new Promise<Blob>((resolve, reject) => {
+    recorder.addEventListener('dataavailable', (event) => {
+      if (event.data.size > 0) chunks.push(event.data)
+    })
+    recorder.addEventListener('error', () => reject(new Error('Gallery performance video recording failed.')), { once: true })
+    recorder.addEventListener('stop', () => {
+      const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
+      if (blob.size < 1) reject(new Error('Gallery performance video fixture is empty.'))
+      else resolve(blob)
+    }, { once: true })
+  })
+  recorder.start()
+  for (let frame = 0; frame < 6; frame += 1) {
+    context.fillStyle = `hsl(${frame * 55} 65% 48%)`
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.fillStyle = '#fff'
+    context.font = '700 18px sans-serif'
+    context.fillText(`xD ${frame + 1}`, 18, 38)
+    await wait(35)
+  }
+  recorder.stop()
+  try {
+    return await stopped
+  } finally {
+    for (const track of stream.getTracks()) track.stop()
+  }
+}
+
 async function decodeURL(url: string) {
   const image = new Image()
   image.src = url
@@ -169,11 +239,13 @@ async function decodeURL(url: string) {
 
 function GalleryRendererTrace({
   scenario,
-  fixture,
+  imageFixture,
+  videoFixture,
   warmURL,
 }: {
   scenario: XDriveGalleryRendererTraceScenario
-  fixture: Blob
+  imageFixture: Blob
+  videoFixture: Blob
   warmURL: string | null
 }) {
   const startedAtRef = useRef(performance.now())
@@ -183,6 +255,8 @@ function GalleryRendererTrace({
     gridCommitted: Number.NaN,
     thumbnailRequest: Number.NaN,
     thumbnailResolved: Number.NaN,
+    mediaRequest: Number.NaN,
+    mediaResolved: Number.NaN,
     imageMounted: Number.NaN,
     imageDecoded: Number.NaN,
     imagePainted: Number.NaN,
@@ -192,9 +266,10 @@ function GalleryRendererTrace({
   const longTaskCountRef = useRef(0)
   const longTaskDurationRef = useRef(0)
   const longestLongTaskRef = useRef(0)
-  const thumbnailDelay = scenario === 'image-cold'
-    ? coldThumbnailDelayMs
-    : warmThumbnailDelayMs
+  const cold = scenario.endsWith('-cold')
+  const videoScenario = scenario.startsWith('video-')
+  const thumbnailDelay = cold ? coldThumbnailDelayMs : warmThumbnailDelayMs
+  const previewDelay = cold ? coldPreviewDelayMs : warmPreviewDelayMs
 
   const elapsed = useMemo(
     () => () => performance.now() - startedAtRef.current,
@@ -202,7 +277,7 @@ function GalleryRendererTrace({
   )
 
   const source = useMemo<MediaGalleryDataSource>(() => ({
-    listItems: async (limit, offset) => rangeFor(limit, offset).items,
+    listItems: async (limit, offset) => rangeFor(limit, offset, scenario).items,
     listItemRange: async (limit, offset) => {
       if (firstRangeRef.current) {
         firstRangeRef.current = false
@@ -210,26 +285,53 @@ function GalleryRendererTrace({
         await wait(rangeDelayMs)
         markersRef.current.rangeResolved = elapsed()
       }
-      return rangeFor(limit, offset)
+      return rangeFor(limit, offset, scenario)
     },
     listAlbums: async () => {
       await wait(facetDelayMs)
       return []
     },
-    listAlbumItems: async (_albumID, limit, offset) => rangeFor(limit, offset).items,
-    listAlbumItemRange: async (_albumID, limit, offset) => rangeFor(limit, offset),
+    listAlbumItems: async (_albumID, limit, offset) => rangeFor(limit, offset, scenario).items,
+    listAlbumItemRange: async (_albumID, limit, offset) => rangeFor(limit, offset, scenario),
     loadThumbnail: async () => {
       if (!Number.isFinite(markersRef.current.thumbnailRequest)) {
         markersRef.current.thumbnailRequest = elapsed()
+      }
+      if (!Number.isFinite(markersRef.current.mediaRequest)) {
+        markersRef.current.mediaRequest = elapsed()
       }
       await wait(thumbnailDelay)
       if (!Number.isFinite(markersRef.current.thumbnailResolved)) {
         markersRef.current.thumbnailResolved = elapsed()
       }
+      if (!Number.isFinite(markersRef.current.mediaResolved)) {
+        markersRef.current.mediaResolved = elapsed()
+      }
       if (warmURL) return warmURL
-      return URL.createObjectURL(fixture)
+      return URL.createObjectURL(imageFixture)
     },
-  }), [elapsed, fixture, thumbnailDelay, warmURL])
+    ...(videoScenario ? {
+      loadPreviewURL: async () => {
+        if (!Number.isFinite(markersRef.current.mediaRequest)) {
+          markersRef.current.mediaRequest = elapsed()
+        }
+        await wait(previewDelay)
+        if (!Number.isFinite(markersRef.current.mediaResolved)) {
+          markersRef.current.mediaResolved = elapsed()
+        }
+        return URL.createObjectURL(videoFixture)
+      },
+    } : {}),
+  }), [
+    elapsed,
+    imageFixture,
+    previewDelay,
+    scenario,
+    thumbnailDelay,
+    videoFixture,
+    videoScenario,
+    warmURL,
+  ])
 
   useEffect(() => {
     let disposed = false
@@ -291,7 +393,10 @@ function GalleryRendererTrace({
           viewportWidth: window.innerWidth,
           viewportHeight: window.innerHeight,
           replayedRangeDelayMs: rangeDelayMs,
-          replayedThumbnailDelayMs: thumbnailDelay,
+          replayedThumbnailDelayMs: videoScenario ? 0 : thumbnailDelay,
+          replayedPreviewDelayMs: videoScenario ? previewDelay : 0,
+          mediaFirstRequestMs: markers.mediaRequest,
+          mediaFirstResolvedMs: markers.mediaResolved,
           rangeRequestMs: markers.rangeRequest,
           rangeResolvedMs: markers.rangeResolved,
           gridCommittedMs: markers.gridCommitted,
@@ -302,9 +407,12 @@ function GalleryRendererTrace({
           firstImagePaintedMs: markers.imagePainted,
           rangeToGridCommitMs: markers.gridCommitted - markers.rangeResolved,
           gridCommitToThumbnailRequestMs: markers.thumbnailRequest - markers.gridCommitted,
+          gridCommitToMediaRequestMs: markers.mediaRequest - markers.gridCommitted,
           gridCommitToFirstImageMountMs: markers.imageMounted - markers.gridCommitted,
           thumbnailResolvedToImageMountMs: markers.imageMounted - markers.thumbnailResolved,
           thumbnailResolvedToDecodeMs: markers.imageDecoded - markers.thumbnailResolved,
+          mediaResolvedToImageMountMs: markers.imageMounted - markers.mediaResolved,
+          mediaResolvedToDecodeMs: markers.imageDecoded - markers.mediaResolved,
           decodedToPaintMs: markers.imagePainted - markers.imageDecoded,
           rangeToFirstPaintMs: markers.imagePainted - markers.rangeResolved,
           routeToFirstPaintMs: markers.imagePainted,
@@ -336,7 +444,7 @@ function GalleryRendererTrace({
       observer?.disconnect()
       longTaskObserver?.disconnect()
     }
-  }, [elapsed, scenario, thumbnailDelay])
+  }, [elapsed, previewDelay, scenario, thumbnailDelay, videoScenario])
 
   return (
     <Box sx={{ width: '100vw', height: '100vh', overflow: 'auto', bgcolor: 'background.default' }}>
@@ -351,20 +459,29 @@ export function XDriveGalleryPerformanceHarness({
   scenario: XDriveGalleryRendererTraceScenario
 }): ReactElement {
   const [fixture, setFixture] = useState<{
-    blob: Blob
+    image: Blob
+    video: Blob
     warmURL: string | null
   } | null>(null)
 
   useEffect(() => {
     let active = true
     let warmURL: string | null = null
-    void createFixtureJPEG()
-      .then(async (blob) => {
-        if (scenario === 'image-warm') {
-          warmURL = URL.createObjectURL(blob)
+    void Promise.all([createFixtureJPEG(), createFixtureVideo()])
+      .then(async ([image, video]) => {
+        if (scenario === 'image-warm' || scenario === 'live-warm') {
+          warmURL = URL.createObjectURL(image)
           await decodeURL(warmURL)
         }
-        if (active) setFixture({ blob, warmURL })
+        if (scenario === 'video-warm') {
+          const source = URL.createObjectURL(video)
+          try {
+            await xDriveCaptureVideoPosterBlob(source, 0, 96, 64, 512)
+          } finally {
+            URL.revokeObjectURL(source)
+          }
+        }
+        if (active) setFixture({ image, video, warmURL })
         else if (warmURL) URL.revokeObjectURL(warmURL)
       })
       .catch((error) => {
@@ -381,7 +498,8 @@ export function XDriveGalleryPerformanceHarness({
   return (
     <GalleryRendererTrace
       scenario={scenario}
-      fixture={fixture.blob}
+      imageFixture={fixture.image}
+      videoFixture={fixture.video}
       warmURL={fixture.warmURL}
     />
   )

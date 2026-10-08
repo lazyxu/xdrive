@@ -3,14 +3,14 @@ const path = require('node:path')
 const { app, BrowserWindow, contentTracing } = require('electron')
 
 const surfaces = new Set(['desktop', 'web'])
-const scenarios = new Set(['image-cold', 'image-warm'])
+const scenarios = new Set(['image-cold', 'image-warm', 'video-cold', 'video-warm', 'live-cold', 'live-warm'])
 const surface = process.argv.find((value) => surfaces.has(value))
 const scenario = process.argv.find((value) => scenarios.has(value))
 const sampleArg = process.argv.find((value) => /^sample-\d+$/.test(value))
 const sample = sampleArg ? Number(sampleArg.slice('sample-'.length)) : 1
 
 if (!surface || !scenario || !Number.isInteger(sample) || sample < 1) {
-  console.error('Usage: electron scripts/gallery-renderer-first-paint-trace-main.cjs <desktop|web> <image-cold|image-warm> [sample-N]')
+  console.error('Usage: electron scripts/gallery-renderer-first-paint-trace-main.cjs <desktop|web> <image-cold|image-warm|video-cold|video-warm|live-cold|live-warm> [sample-N]')
   process.exit(2)
 }
 
