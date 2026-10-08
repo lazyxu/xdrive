@@ -45,6 +45,36 @@ function extractTransferCallbacks() {
   return { filename, snapshotCallback, eventCallback }
 }
 
+
+function extractTransferSnapshotAcceptor() {
+  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'App.tsx')
+  const source = fs.readFileSync(filename, 'utf8')
+  const sourceFile = ts.createSourceFile(
+    filename,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+
+  let initializer = null
+  const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'acceptTransferSnapshot' &&
+      node.initializer
+    ) {
+      initializer = node.initializer.getText(sourceFile)
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  assert.ok(initializer, 'missing transfer snapshot acceptor')
+  return { filename, initializer }
+}
+
 function compileCallback(filename, callbackText, dependencies) {
   const output = ts.transpileModule(
     'const callback = ' + callbackText + ';',
@@ -89,16 +119,27 @@ function snapshot(revision, id) {
 
 test('Desktop transfer bootstrap snapshot cannot overwrite a newer transfer event revision', () => {
   const { filename, snapshotCallback, eventCallback } = extractTransferCallbacks()
+  const acceptorSource = extractTransferSnapshotAcceptor()
   let current = snapshot(0, 'initial')
 
   const setTransfers = (next) => {
     current = typeof next === 'function' ? next(current) : next
   }
   const transfersRevisionRef = { current: 0 }
+  const acceptTransferSnapshot = compileCallback(
+    acceptorSource.filename,
+    acceptorSource.initializer,
+    {
+      useCallback: (callback) => callback,
+      setTransfers,
+      transfersRevisionRef,
+    },
+  )
   const dependencies = {
     active: true,
     setTransfers,
     transfersRevisionRef,
+    acceptTransferSnapshot,
   }
 
   const applySnapshot = compileCallback(filename, snapshotCallback, dependencies)

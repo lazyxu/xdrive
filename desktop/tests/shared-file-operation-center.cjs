@@ -192,7 +192,7 @@ test('shared FileOperation action controller owns cancel retry and clear-history
   assert.ok(desktop.includes("lifecycleKey: \`\${status?.server ?? ''}\\n\${status?.username ?? ''}\`"), 'Desktop FileOperation actions must be scoped to Server+username identity')
   assert.ok(web.includes('clearTransferHistory: async () => { api.clearTransferHistory() }'), 'Web must keep local transfer-history clearing in its adapter')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep Agent transfer-history clearing in its adapter')
-  assert.ok(desktop.includes('onTransferHistoryCleared: setTransfers'), 'Desktop must apply the Agent transfer-history result locally')
+  assert.ok(desktop.includes('onTransferHistoryCleared: (value) => {') && desktop.includes('acceptTransferSnapshot(value)'), 'Desktop must apply the Agent transfer-history result through the revision-safe snapshot acceptor')
 })
 
 test('Explorer multi-select copy move delete queue one operation instead of N renderer requests', () => {
