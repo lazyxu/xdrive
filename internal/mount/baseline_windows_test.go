@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -237,5 +238,57 @@ func TestWindowsBaselineStateTruncatesPartialTail(t *testing.T) {
 	}
 	if info.Size() != validSize {
 		t.Fatalf("partial tail was not truncated: size=%d want=%d", info.Size(), validSize)
+	}
+}
+
+func TestWindowsBaselinePathDeltaMatchesFullDeltaForSmallFileBatch(t *testing.T) {
+	const baselineCount = 10_000
+	parentID := uint64(1)
+	previous := make(map[string]winState, baselineCount+1)
+	previous[""] = winState{node: client.Node{ID: parentID, Type: "dir", Revision: 1}}
+	for index := 0; index < baselineCount; index++ {
+		name := fmt.Sprintf("files/item-%05d.txt", index)
+		previous[name] = winState{
+			node: client.Node{
+				ID:       uint64(index + 2),
+				ParentID: &parentID,
+				Name:     filepath.Base(name),
+				Type:     "file",
+				Size:     10,
+				Revision: 1,
+			},
+			localSize: 10,
+		}
+	}
+	current := cloneBaseline(previous)
+
+	updatedPath := "files/item-05000.txt"
+	updated := current[updatedPath]
+	updated.node.Revision = 2
+	current[updatedPath] = updated
+
+	deletedPath := "files/item-05001.txt"
+	delete(current, deletedPath)
+
+	movedOldPath := "files/item-05002.txt"
+	movedNewPath := "files/renamed-05002.txt"
+	moved := current[movedOldPath]
+	delete(current, movedOldPath)
+	moved.node.Name = filepath.Base(movedNewPath)
+	current[movedNewPath] = moved
+
+	paths := map[string]struct{}{
+		updatedPath:  {},
+		deletedPath:  {},
+		movedOldPath: {},
+		movedNewPath: {},
+	}
+	full := diffBaseline(previous, current)
+	scoped := diffBaselinePaths(previous, current, paths)
+	if !reflect.DeepEqual(scoped, full) {
+		t.Fatalf("path delta=%+v full delta=%+v", scoped, full)
+	}
+	if len(paths) != 4 {
+		t.Fatalf("candidate path count=%d want=4", len(paths))
 	}
 }
