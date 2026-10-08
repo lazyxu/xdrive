@@ -1074,6 +1074,16 @@ export function XDriveFileExplorer({
   )
 
   const interactionScopeKey = virtualCollection?.interactionKey ?? derivedPath
+  const externalDropScopeKeyRef = useRef(interactionScopeKey)
+  const externalDropGenerationRef = useRef(0)
+  if (externalDropScopeKeyRef.current !== interactionScopeKey) {
+    externalDropScopeKeyRef.current = interactionScopeKey
+    externalDropGenerationRef.current += 1
+  }
+  useEffect(() => () => {
+    externalDropGenerationRef.current += 1
+  }, [])
+
   useEffect(() => {
     if (interactionScopeKeyRef.current === null) {
       interactionScopeKeyRef.current = interactionScopeKey
@@ -2257,11 +2267,13 @@ export function XDriveFileExplorer({
     if (item.kind !== 'dir') return
     event.preventDefault()
     event.stopPropagation()
+    const externalDropGeneration = externalDropGenerationRef.current
     const dataTransfer = event.dataTransfer
     const files = Array.from(dataTransfer.files)
     try {
       if (dataTransfer.types.includes('Files') && onExternalFolderDrop) {
         const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (externalDropGenerationRef.current !== externalDropGeneration) return
         if (payload.directories.length > 0) {
           await onExternalFolderDrop(payload, item)
           return
@@ -2299,11 +2311,13 @@ export function XDriveFileExplorer({
   ) => {
     event.preventDefault()
     event.stopPropagation()
+    const externalDropGeneration = externalDropGenerationRef.current
     const dataTransfer = event.dataTransfer
     const files = Array.from(dataTransfer.files)
     try {
       if (dataTransfer.types.includes('Files') && onExternalFolderDropToCrumb) {
         const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (externalDropGenerationRef.current !== externalDropGeneration) return
         if (payload.directories.length > 0) {
           await onExternalFolderDropToCrumb(payload, crumb)
           return
@@ -2325,11 +2339,13 @@ export function XDriveFileExplorer({
   const dropExternalFilesOnBackground = async (event: ReactDragEvent<HTMLElement>) => {
     if (!(onExternalFilesDrop || onExternalFolderDrop) || !event.dataTransfer.types.includes('Files')) return
     event.preventDefault()
+    const externalDropGeneration = externalDropGenerationRef.current
     const dataTransfer = event.dataTransfer
     const files = Array.from(dataTransfer.files)
     try {
       if (onExternalFolderDrop) {
         const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+        if (externalDropGenerationRef.current !== externalDropGeneration) return
         if (payload.directories.length > 0) {
           await onExternalFolderDrop(payload)
           return
