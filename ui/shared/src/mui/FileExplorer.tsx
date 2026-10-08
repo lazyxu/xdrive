@@ -1086,6 +1086,11 @@ export function XDriveFileExplorer({
     selectionIntentRef.current += 1
     quickLookIntentRef.current += 1
     selectionItemCacheRef.current.clear()
+    setPropertiesItems([])
+    propertiesMediaDetailsRequestRef.current += 1
+    mediaDetailsRequestRef.current += 1
+    mediaDetailsCacheRef.current.clear()
+    setMediaDetailsRevision((value) => value + 1)
     setSelectionAnchorID(null)
     setSelectionAnchorIndex(null)
     setActiveItemID(null)
@@ -3170,6 +3175,7 @@ export function XDriveFileExplorer({
 
     return () => controller.abort()
   }, [
+    interactionScopeKey,
     loadMediaDetails,
     propertiesDialogItem?.id,
     propertiesDialogItem?.kind,
@@ -3718,6 +3724,7 @@ export function XDriveFileExplorer({
 
     return () => controller.abort()
   }, [
+    interactionScopeKey,
     loadMediaDetails,
     mediaDetailsColumnsVisible,
     mediaDetailsRefsJSON,
