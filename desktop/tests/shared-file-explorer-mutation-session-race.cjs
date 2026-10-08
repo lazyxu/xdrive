@@ -342,3 +342,78 @@ test('Recent account lifecycle change breaks stale mutation serialization while 
 
   assert.deepEqual(recent.items, [])
 })
+
+
+test('Quick Access stale reorder failure cannot rollback a newer account list', async () => {
+  const runtime = createHookRuntime()
+  const useQuickAccess = loadQuickAccessHook(runtime.react)
+
+  let lifecycleKey = 'server-a:user-a'
+  let rejectA
+  const errors = []
+
+  const loadItems = async () => lifecycleKey === 'server-a:user-a'
+    ? [
+        { ...quickItem(1, 'A1'), position: 0 },
+        { ...quickItem(2, 'A2'), position: 1 },
+      ]
+    : [
+        { ...quickItem(10, 'B1'), position: 0 },
+        { ...quickItem(20, 'B2'), position: 1 },
+      ]
+
+  const reorderItems = () => new Promise((resolve, reject) => {
+    if (lifecycleKey === 'server-a:user-a') {
+      rejectA = () => reject(new Error('stale A reorder failed'))
+      return
+    }
+    resolve()
+  })
+
+  const render = () => runtime.render(() => useQuickAccess({
+    enabled: true,
+    lifecycleKey,
+    loadItems,
+    pinItem: async () => { throw new Error('unexpected pin') },
+    unpinItem: async () => {},
+    reorderItems,
+    onError: (error) => errors.push(error),
+  }))
+
+  render()
+  await flushAsync()
+  let quick = render()
+  assert.deepEqual(quick.items.map((item) => item.id), [1, 2])
+
+  const pendingA = quick.reorder([2, 1])
+  await flushAsync()
+  quick = render()
+  assert.deepEqual(quick.items.map((item) => item.id), [2, 1])
+  assert.equal(typeof rejectA, 'function')
+
+  lifecycleKey = 'server-b:user-b'
+  render()
+  await flushAsync()
+  quick = render()
+  assert.deepEqual(
+    quick.items.map((item) => item.id),
+    [10, 20],
+    'account B must publish its own Quick Access list before stale A settles',
+  )
+
+  rejectA()
+  await pendingA
+  await flushAsync()
+  quick = render()
+
+  assert.deepEqual(
+    quick.items.map((item) => item.id),
+    [10, 20],
+    'late account-A reorder failure must not rollback account B to A items',
+  )
+  assert.deepEqual(
+    errors,
+    [],
+    'late account-A reorder failure must not publish an error into account B',
+  )
+})
