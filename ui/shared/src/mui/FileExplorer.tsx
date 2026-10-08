@@ -3866,7 +3866,10 @@ export function XDriveFileExplorer({
   }
 
   return (
-    <XDriveFileExplorerThumbnailProvider loadThumbnail={loadThumbnail}>
+    <XDriveFileExplorerThumbnailProvider
+      lifecycleKey={interactionScopeKey}
+      loadThumbnail={loadThumbnail}
+    >
     <Paper
       variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
       onKeyDown={handleExplorerKeyDown}
