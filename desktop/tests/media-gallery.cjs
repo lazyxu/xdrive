@@ -126,6 +126,11 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.equal(sharedGallery.includes('<video'), false, 'Gallery MediaDetails must not keep a second standalone Live Photo video player')
   assert.equal(sharedGallery.includes('loadVideo'), false, 'Gallery must not retain a video-specific ordinary-media source contract')
 
+  assert.ok(sharedGallery.includes('XDriveLivePhotoGlyph'), 'Gallery must use the shared Live Photo glyph instead of a generic play icon')
+  assert.ok(sharedGalleryViewer.includes("kind !== 'live_photo'"), 'Gallery Viewer must admit the LIVP still preview kind')
+  assert.ok(webAdapter.includes('api.mediaLivePhotoStillURL(nodeID)'), 'Web Gallery must use the signed LIVP still source')
+  assert.ok(desktopAdapter.includes('agent.getMediaLivePhotoStill(nodeID)'), 'Desktop Gallery must use the protected LIVP still source')
+
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace chrome')
@@ -414,7 +419,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'loadStartedRef.current',
     'loadMotion(onProgress)',
     "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",
-    '按住加载并播放',
+    '按住播放，松开停止',
     'aria-pressed={playing}',
     'aria-busy={loading}',
   ]) {
@@ -806,6 +811,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaPeople(nodeID:',
     'setMediaDescription(nodeID:',
     'mediaThumbnail(nodeID:',
+    'mediaLivePhotoStillTicket(',
     'mediaLivePhotoMotionTicket(',
     'cloudFilePreviewTicket(nodeID:',
   ]) {
@@ -860,6 +866,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('"file-preview-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/cloud/file-preview-ticket'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
+  assert.ok(desktopIPC.includes('GET /v1/media/live-photo-still-ticket'))
   assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion-ticket'))
   assert.match(desktopAdapter, /cloudFilePreviewURL/)
   assert.match(agentClient, /data: ArrayBuffer/)
@@ -868,6 +875,9 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     /mediaLivePhotoMotionTicket\(nodeID: number\)[\s\S]*AgentFilePreviewTicket/,
   )
   assert.ok(desktopMain.includes('filePreviewProxy.createURLFromTicket('))
+  assert.ok(desktopMain.includes("'agent:get-media-live-photo-still'"))
+  assert.ok(preload.includes('getMediaLivePhotoStill:'))
+  assert.ok(webAPI.includes('mediaLivePhotoStillURL('))
   assert.ok(desktopMain.includes("'agent:release-media-live-photo-motion'"))
   assert.ok(preload.includes('mediaLivePhotoProgressByURL'))
   assert.ok(preload.includes('releaseMediaLivePhotoMotion:'))

@@ -250,16 +250,48 @@ The interaction contract is:
 - keyboard Enter/Space provides the same hold/release behavior;
 - ordinary video controls are not shown;
 - audio capability is preserved instead of forcing the motion resource muted;
-- the still image remains visible when motion loading or decoding fails.
+- the still image remains visible when motion loading or decoding fails;
+- presentation follows the native Live Photo model: the still is the primary surface,
+  a subtle Live Photo glyph marks the capability, press-and-hold anywhere on the still
+  plays motion, and releasing returns immediately to the still. Do not present a generic
+  play button or a persistent instructional pill over an idle Live Photo.
 
 Do not migrate inferred/grouped Live Photo semantics into FileExplorer.
 
-A validated `.livp` is the deliberate exception because the still/motion relation is
-self-contained and cryptographically tied to one original file/container. FileExplorer
-may classify that one file as `live_photo`, use the existing media thumbnail for its
-still frame, and render the existing `XDriveLivePhotoSurface` with the existing
-owner-scoped motion endpoint. This is file-format presentation, not Gallery grouping.
-Do not infer standalone JPG/HEIC + MOV relationships inside FileExplorer.
+A structurally validated `.livp` is the deliberate exception because the single
+container itself is reliable still/motion pairing evidence. Its embedded Apple content
+identifier is supplemental integrity evidence: when both members provide identifiers
+they must match, but a missing identifier does not invalidate an otherwise valid LIVP.
+Provider comments, filenames, and timestamps must not be used to infer a relation between
+separate filesystem nodes.
+
+FileExplorer may classify that one file as `live_photo`. Open/Quick Look/Inspector first
+request a short-lived, revision-fenced signed URL for the embedded still byte range and feed
+that URL to the same image renderer used by the Preview Engine. If the runtime cannot decode
+the embedded format (for example HEIC in a browser without HEIC support), the existing 512px
+derived thumbnail is the fallback; list/grid/Recent/Favorites continue to use the bounded
+thumbnail scheduler rather than loading original still bytes.
+
+The signed LIVP still source uses the same safety model as motion: owner/session/node revision
+plus a resource fingerprint containing parent SHA and validated byte offset/size, with
+GET/HEAD + Range support. Desktop hides the upstream still ticket behind the existing
+loopback-only preview proxy; Web uses the signed same-origin URL directly.
+
+The existing `XDriveLivePhotoSurface` overlays motion on that still. The static Live Photo
+badge is shown only after a real still image is available; a generic fallback icon must never
+be decorated as though motion preview were ready. This is file-format
+presentation, not Gallery grouping. Do not infer standalone JPG/HEIC + MOV relationships
+inside FileExplorer.
+
+Gallery consumes the same `live_still` source for a single-file `.livp`, so FileExplorer
+and Gallery do not diverge in still quality or decode fallback. Reliably paired standalone
+JPG/HEIC + MOV Live Photos keep their Gallery relation semantics and use the ordinary still
+image Preview Engine source plus the paired motion resource.
+
+
+The LIVP derived-resource contract is versioned. Parser-contract changes must bump that
+version so already-indexed unsupported/error LIVP rows are automatically re-indexed; users
+must not have to re-upload the original file after a compatibility fix.
 
 Desktop Live Photo motion uses the same protected loopback stream architecture as
 ordinary video preview. xdrive-agent obtains only a signed motion ticket; it does not read

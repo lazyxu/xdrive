@@ -2451,6 +2451,17 @@ func (c *agentController) CloudPutMediaVideoPoster(
 	return cli.PutMediaVideoPoster(ctx, nodeID, revision, data)
 }
 
+func (c *agentController) CloudMediaLivePhotoStillTicket(
+	ctx context.Context,
+	nodeID uint64,
+) (client.FilePreviewTicket, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FilePreviewTicket{}, err
+	}
+	return cli.MediaLivePhotoStillTicket(ctx, nodeID)
+}
+
 func (c *agentController) CloudMediaLivePhotoMotionTicket(
 	ctx context.Context,
 	nodeID uint64,

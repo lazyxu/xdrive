@@ -746,6 +746,44 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("livp still content-type=%q", got)
 	}
 
+	liveStillTicketResponse := request(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-still-ticket", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var liveStillTicket filePreviewTicketDTO
+	if err := json.Unmarshal(liveStillTicketResponse.Body.Bytes(), &liveStillTicket); err != nil {
+		t.Fatal(err)
+	}
+	if liveStillTicket.Kind != "image" ||
+		liveStillTicket.MIMEType != "image/jpeg" ||
+		!strings.HasPrefix(
+			liveStillTicket.URL,
+			fmt.Sprintf("/api/v1/media-live-photo-still/%d?ticket=", liveNode.ID),
+		) {
+		t.Fatalf("livp still ticket=%+v", liveStillTicket)
+	}
+	liveStillRange := requestWithHeaders(
+		t,
+		router,
+		http.MethodGet,
+		liveStillTicket.URL,
+		"",
+		nil,
+		http.StatusPartialContent,
+		map[string]string{"Range": "bytes=0-7"},
+	)
+	if !bytes.Equal(liveStillRange.Body.Bytes(), stillBytes[:8]) {
+		t.Fatalf("livp still range=%x want=%x", liveStillRange.Body.Bytes(), stillBytes[:8])
+	}
+	if got := liveStillRange.Header().Get("Content-Range"); got != fmt.Sprintf("bytes 0-7/%d", len(stillBytes)) {
+		t.Fatalf("livp still content-range=%q", got)
+	}
+
 	motionResponse := request(
 		t,
 		router,

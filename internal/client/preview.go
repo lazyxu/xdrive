@@ -33,6 +33,33 @@ func (c *Client) FilePreviewTicket(ctx context.Context, nodeID uint64) (FilePrev
 	return c.resolvePreviewTicket(out, "/api/v1/file-preview/", "file preview")
 }
 
+func (c *Client) MediaLivePhotoStillTicket(
+	ctx context.Context,
+	nodeID uint64,
+) (FilePreviewTicket, error) {
+	var out FilePreviewTicket
+	if nodeID == 0 {
+		return out, fmt.Errorf("live photo still requires node id")
+	}
+	if err := c.json(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-still-ticket", nodeID),
+		nil,
+		&out,
+	); err != nil {
+		return out, err
+	}
+	if out.Kind != "image" {
+		return FilePreviewTicket{}, fmt.Errorf("live photo still returned invalid ticket kind")
+	}
+	return c.resolvePreviewTicket(
+		out,
+		"/api/v1/media-live-photo-still/",
+		"live photo still",
+	)
+}
+
 func (c *Client) MediaLivePhotoMotionTicket(
 	ctx context.Context,
 	nodeID uint64,

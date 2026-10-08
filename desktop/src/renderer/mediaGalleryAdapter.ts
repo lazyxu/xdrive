@@ -81,7 +81,9 @@ export function createDesktopMediaGalleryDataSource(
         },
       }
     },
-    loadPreviewURL: (nodeID, _kind) => agent.cloudFilePreviewURL(nodeID),
+    loadPreviewURL: (nodeID, kind) => kind === 'live_photo'
+      ? agent.getMediaLivePhotoStill(nodeID)
+      : agent.cloudFilePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),
     addTagsBatch: (nodeIDs, tags) => agent.addMediaTagsBatch(nodeIDs, tags),

@@ -2817,6 +2817,24 @@ function registerIPCHandlers() {
     return { ok: true }
   }, false))
 
+  ipcMain.handle('agent:get-media-live-photo-still', (_event, nodeID: unknown) => runAgentAction<string>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    requireAgentCapability(hello, 'file-preview-stream')
+    if (
+      typeof nodeID !== 'number' ||
+      !Number.isSafeInteger(nodeID) ||
+      nodeID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+    }
+    if (!filePreviewProxy) {
+      throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
+    }
+    const ticket = await requireAgentClient().mediaLivePhotoStillTicket(nodeID)
+    return filePreviewProxy.createURLFromTicket(ticket)
+  }, false))
+
   ipcMain.handle('agent:get-media-live-photo-motion', (
     event,
     nodeID: unknown,

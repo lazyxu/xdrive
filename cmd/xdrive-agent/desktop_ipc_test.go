@@ -166,6 +166,7 @@ type fakeDesktopIPCController struct {
 	cloudPersonSplitName       string
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
+	cloudMediaStillTicket      client.FilePreviewTicket
 	cloudMediaMotionTicket     client.FilePreviewTicket
 	cloudMediaEdit             client.MediaEditRecipe
 	cloudMediaEditNodeID       uint64
@@ -177,6 +178,7 @@ type fakeDesktopIPCController struct {
 	cloudMediaOffset           int
 	cloudMediaAlbumID          string
 	cloudMediaThumbnailID      uint64
+	cloudMediaStillID          uint64
 	cloudMediaMotionID         uint64
 	cloudSources               []client.Source
 	cloudSourceRuns            []client.SyncRun
@@ -1311,6 +1313,11 @@ func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID
 	return f.cloudMediaThumbnail, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudMediaLivePhotoStillTicket(_ context.Context, nodeID uint64) (client.FilePreviewTicket, error) {
+	f.cloudMediaStillID = nodeID
+	return f.cloudMediaStillTicket, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaLivePhotoMotionTicket(_ context.Context, nodeID uint64) (client.FilePreviewTicket, error) {
 	f.cloudMediaMotionID = nodeID
 	return f.cloudMediaMotionTicket, f.err
@@ -2235,6 +2242,12 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ContentType: "image/jpeg",
 			Data:        []byte("fake-jpeg"),
 		},
+		cloudMediaStillTicket: client.FilePreviewTicket{
+			URL:       "https://drive.example/api/v1/media-live-photo-still/31?ticket=signed",
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			Kind:      "image",
+			MIMEType:  "image/jpeg",
+		},
 		cloudMediaMotionTicket: client.FilePreviewTicket{
 			URL:       "https://drive.example/api/v1/media-live-photo-motion/31?ticket=signed",
 			ExpiresAt: time.Now().UTC().Add(time.Hour),
@@ -2810,6 +2823,16 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
 	}
 
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-still-ticket?node_id=31", "")
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"kind\":\"image\"") ||
+		!strings.Contains(res.Body.String(), "media-live-photo-still/31") {
+		t.Fatalf("media still ticket status=%d body=%q", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaStillID != 31 {
+		t.Fatalf("media still ticket id=%d want=31", ctrl.cloudMediaStillID)
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-motion-ticket?node_id=31", "")
 	if res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), "\"kind\":\"video\"") ||
@@ -2847,6 +2870,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?range=maybe",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
+		"/v1/media/live-photo-still-ticket?node_id=0",
 		"/v1/media/live-photo-motion-ticket?node_id=0",
 	} {
 		res = desktopIPCRequest(t, handler, http.MethodGet, path, "")

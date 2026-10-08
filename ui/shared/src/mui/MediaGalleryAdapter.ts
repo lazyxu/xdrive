@@ -187,7 +187,7 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryLivePhotoResource>>
   loadPreviewURL?: (
     nodeID: number,
-    kind: 'image' | 'video',
+    kind: 'image' | 'video' | 'live_photo',
   ) => Promise<XDriveMediaGalleryTransportResult<string>>
   setFavorite?: (
     nodeID: number,

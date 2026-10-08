@@ -692,13 +692,14 @@ export default function DesktopFileExplorer({
 
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
-    kind: 'image' | 'video' | 'audio' | 'pdf',
+    kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
   ) => {
-    if (
-      !previewStreamSupported ||
-      item.kind !== 'file' ||
-      !['pdf', 'video', 'audio', 'image'].includes(kind)
-    ) return null
+    if (!previewStreamSupported || item.kind !== 'file') return null
+    if (kind === 'live_photo') {
+      const result = await window.xdriveDesktop.agent.getMediaLivePhotoStill(Number(item.id))
+      return result.ok ? result.data : null
+    }
+    if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
     const result = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
     return result.ok ? result.data : null
   }, [previewStreamSupported])

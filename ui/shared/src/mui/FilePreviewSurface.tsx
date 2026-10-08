@@ -36,7 +36,7 @@ export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XD
 
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
-  kind: Exclude<XDriveFilePreviewKind, 'none' | 'text' | 'live_photo'>,
+  kind: Exclude<XDriveFilePreviewKind, 'none' | 'text'>,
 ) => Promise<string | null | undefined>
 
 export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = {
@@ -211,7 +211,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       }
     }
 
-    const canLoadOriginal = previewKind !== 'live_photo' && Boolean(loadPreviewURL)
+    const canLoadOriginal = Boolean(loadPreviewURL)
     const canLoadImageFallback =
       (previewKind === 'image' || previewKind === 'live_photo') &&
       Boolean(loadImagePreview)
@@ -220,7 +220,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setLoading(true)
     void (async () => {
       let value: string | null | undefined = null
-      if (loadPreviewURL && previewKind !== 'live_photo') {
+      if (loadPreviewURL) {
         value = await loadPreviewURL(target, previewKind)
       }
       let fallback = false
@@ -268,7 +268,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
 
   const loadImageFallback = useCallback(() => {
     if (
-      previewKind !== 'image' ||
+      (previewKind !== 'image' && previewKind !== 'live_photo') ||
       !target ||
       !loadImagePreview ||
       usingImageFallback
@@ -352,7 +352,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               src={previewURL}
               alt={target?.name || ''}
               draggable={false}
-              onError={() => setFailed(true)}
+              onError={loadImageFallback}
               sx={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
             />
           )}

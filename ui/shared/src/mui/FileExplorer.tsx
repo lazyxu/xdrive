@@ -930,7 +930,7 @@ export function XDriveFileExplorer({
   loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
   loadPreviewURL?: (
     item: XDriveFileExplorerItem,
-    kind: 'image' | 'video' | 'audio' | 'pdf',
+    kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
   ) => Promise<string | null | undefined>
   loadLivePhotoMotion?: (
     item: XDriveFileExplorerItem,

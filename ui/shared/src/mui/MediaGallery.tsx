@@ -5,7 +5,6 @@ import {
   Collections as CollectionsIcon,
   Image as ImageIcon,
   Movie as MovieIcon,
-  PlayCircleOutline as LivePhotoIcon,
   PersonOutline as PersonOutlineIcon,
   Refresh as RefreshIcon,
   Star as StarIcon,
@@ -76,6 +75,7 @@ import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolb
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
+import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveShareDialog } from './ShareDialog'
 import type { XDriveShareDialogAdapter } from './ShareDialog'
 import {
@@ -115,7 +115,7 @@ export type MediaMotionLoader = (
 ) => Promise<XDriveLivePhotoMotionSource | null>
 export type MediaPreviewURLLoader = (
   nodeID: number,
-  kind: 'image' | 'video',
+  kind: 'image' | 'video' | 'live_photo',
 ) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
@@ -2219,7 +2219,7 @@ function MediaTile({
         </Tooltip>
       ) : null}
       <Chip
-        icon={livePhoto ? <LivePhotoIcon /> : video ? <MovieIcon /> : <ImageIcon />}
+        icon={livePhoto ? <XDriveLivePhotoGlyph size={20} /> : video ? <MovieIcon /> : <ImageIcon />}
         label={mediaAssetChipLabel(item)}
         size="small"
         sx={{
@@ -4080,7 +4080,7 @@ export function XDriveMediaGallery({
                     {mediaType.value === 'video'
                       ? <MovieIcon />
                       : mediaType.value === 'live_photo'
-                        ? <LivePhotoIcon />
+                        ? <XDriveLivePhotoGlyph size={20} />
                         : <ImageIcon />}
                   </Box>
                   <Typography variant="subtitle2" fontWeight={700}>

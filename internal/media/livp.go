@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	ContainerKindLIVP   = "livp"
-	LIVPMIMEType        = "application/x-livp"
-	maxLIVPArchiveBytes = int64(6 << 30) // 6 GiB including ZIP overhead
-	maxLIVPImageBytes   = int64(1 << 30) // 1 GiB
-	maxLIVPVideoBytes   = int64(4 << 30) // 4 GiB
+	ContainerKindLIVP          = "livp"
+	LIVPMIMEType               = "application/x-livp"
+	LIVPDerivedResourceVersion = 2
+	maxLIVPArchiveBytes        = int64(6 << 30) // 6 GiB including ZIP overhead
+	maxLIVPImageBytes          = int64(1 << 30) // 1 GiB
+	maxLIVPVideoBytes          = int64(4 << 30) // 4 GiB
 )
 
 // LIVPInfo describes a validated local Live Photo container. The ZIP entries
@@ -42,10 +43,12 @@ const (
 	livpEntryMotion
 )
 
-// InspectLIVP validates a store-only ZIP-based .livp archive and proves its
-// still/motion relation from matching embedded Apple content identifiers.
-// Provider metadata, archive comment, filenames, and timestamps never establish
-// the relation by themselves.
+// InspectLIVP validates a store-only ZIP-based .livp archive. A structurally
+// valid single-container .livp is itself reliable still/motion pairing evidence;
+// embedded Apple content identifiers are supplemental integrity evidence. When
+// both members carry an identifier they must match, but missing identifiers do
+// not invalidate the container. Provider metadata, archive comments, filenames,
+// and timestamps never pair separate filesystem nodes.
 func InspectLIVP(r io.ReaderAt, size int64) (LIVPInfo, error) {
 	var out LIVPInfo
 	if r == nil {
@@ -109,15 +112,16 @@ func InspectLIVP(r io.ReaderAt, size int64) (LIVPInfo, error) {
 
 	stillID := normalizeLivePhotoIdentifier(still.LivePhotoAssetIdentifier)
 	motionID := normalizeLivePhotoIdentifier(motion.LivePhotoAssetIdentifier)
-	if stillID == "" || motionID == "" {
-		return out, errors.New("livp members do not contain complete Apple Live Photo identifiers")
-	}
-	if stillID != motionID {
-		return out, errors.New("livp still and motion identifiers do not match")
+	assetIdentifier := ""
+	if stillID != "" && motionID != "" {
+		if stillID != motionID {
+			return out, errors.New("livp still and motion identifiers do not match")
+		}
+		assetIdentifier = stillID
 	}
 
 	out = LIVPInfo{
-		AssetIdentifier: stillID,
+		AssetIdentifier: assetIdentifier,
 		StillName:       stillFile.Name,
 		StillOffset:     stillOffset,
 		StillSize:       int64(stillFile.UncompressedSize64),
@@ -228,9 +232,6 @@ func ParseLIVPContainerDescriptor(raw string) (LIVPContainerDescriptor, error) {
 		return out, err
 	}
 	out.AssetIdentifier = strings.TrimSpace(out.AssetIdentifier)
-	if out.AssetIdentifier == "" {
-		return LIVPContainerDescriptor{}, errors.New("livp asset identifier is missing")
-	}
 	if !validLIVPContainerResourceDescriptor(out.Still, "image/") ||
 		!validLIVPContainerResourceDescriptor(out.Motion, "video/") {
 		return LIVPContainerDescriptor{}, errors.New("livp resource descriptor is invalid")
