@@ -1133,14 +1133,19 @@ export default function App({
 
   const openCloudTrash = () => setCloudTrashOpen(true)
 
+  const cloudFileActionLifecycleKey = status?.server && status?.username
+    ? `xdrive.desktop.files.navigation_session.v1:${encodeURIComponent(status.server)}:${encodeURIComponent(status.username)}`
+    : ''
+
   const requestCloudFileAction = useCallback((action: DesktopFileExplorerAction) => {
     cloudFileActionSequenceRef.current += 1
     setCloudFileActionIntent({
       id: cloudFileActionSequenceRef.current,
       action,
+      lifecycleKey: cloudFileActionLifecycleKey,
     })
     setView('files')
-  }, [])
+  }, [cloudFileActionLifecycleKey])
 
   const openCloud历史版本 = (node: AgentCloudNode, crumbs = cloudCrumbs) => {
     setCloudHistoryNode(node)
@@ -1945,9 +1950,7 @@ export default function App({
               onLoadDirectory: loadCloudDirectory,
               onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
               navigationState: cloudFileExplorerNavigationState,
-              navigationSessionStorageKey: status?.server && status?.username
-                ? `xdrive.desktop.files.navigation_session.v1:${encodeURIComponent(status.server)}:${encodeURIComponent(status.username)}`
-                : undefined,
+              navigationSessionStorageKey: cloudFileActionLifecycleKey || undefined,
               onNavigationStateChange: rememberCloudFileExplorerNavigationState,
               onOpenTrash: openCloudTrash,
               onOpenHistory: openCloud历史版本,
