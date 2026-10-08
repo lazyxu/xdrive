@@ -166,7 +166,9 @@ export default function WebFileExplorer({
     let active = true
     void api.sources().then((sources) => {
       if (active) setSearchSourceOptions(sources.map((source) => ({ id: source.id, name: source.name })))
-    }).catch(onError)
+    }).catch((error) => {
+      if (active) onError(error)
+    })
     return () => {
       active = false
     }
