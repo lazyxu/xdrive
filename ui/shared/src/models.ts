@@ -349,8 +349,32 @@ export interface StorageDecision {
   reason_codes: string[]
 }
 
+export interface StorageHistoryAnomaly {
+  key:
+    | 'snapshot_missing'
+    | 'snapshot_stale'
+    | 'physical_missing'
+    | 'metadata_inconsistent'
+    | 'blocked_by_upload_stalled'
+    | 'cas_metadata_drift'
+    | 'stale_deleting'
+    | 'unclassified_storage'
+    | 'unreferenced_growth'
+    | 'cache_growth_spike'
+    | string
+  severity: 'warning' | 'bad'
+  title: string
+  message: string
+  observed_at: string
+  current_count?: number
+  current_bytes?: number
+  delta_bytes?: number
+  age_hours?: number
+}
+
 export interface StorageHistory {
   samples: StorageHistoryPoint[]
+  anomalies: StorageHistoryAnomaly[]
   decision: StorageDecision
   sampling_interval_hours: number
   retention_days: number
