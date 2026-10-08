@@ -293,6 +293,9 @@ type desktopIPCController interface {
 	CloudSetMediaTags(context.Context, uint64, []string) (client.MediaTags, error)
 	CloudSetMediaPeople(context.Context, uint64, []string) (client.MediaPeople, error)
 	CloudSetMediaDescription(context.Context, uint64, string) (client.MediaDescription, error)
+	CloudMediaEditRecipe(context.Context, uint64) (client.MediaEditRecipe, error)
+	CloudSaveMediaEditRecipe(context.Context, uint64, client.MediaEditRecipeInput) (client.MediaEditRecipe, error)
+	CloudResetMediaEditRecipe(context.Context, uint64, uint64) (client.MediaEditRecipe, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudSources(context.Context) ([]client.Source, error)
@@ -605,6 +608,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/media/tags", h.mediaTags)
 	mux.HandleFunc("PATCH /v1/media/people", h.mediaPeople)
 	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
+	mux.HandleFunc("GET /v1/media/edit", h.mediaEditRecipe)
+	mux.HandleFunc("PUT /v1/media/edit", h.mediaEditRecipe)
+	mux.HandleFunc("DELETE /v1/media/edit", h.mediaEditRecipe)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
@@ -3350,6 +3356,55 @@ func (h *desktopIPCHandler) mediaDescription(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaEditRecipe(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		result, err := h.ctrl.CloudMediaEditRecipe(r.Context(), nodeID)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, result)
+	case http.MethodPut:
+		var input client.MediaEditRecipeInput
+		if !decodeDesktopIPCJSON(w, r, &input) {
+			return
+		}
+		result, err := h.ctrl.CloudSaveMediaEditRecipe(r.Context(), nodeID, input)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, result)
+	case http.MethodDelete:
+		revision, ok := desktopIPCUint64Query(w, r, "revision")
+		if !ok {
+			return
+		}
+		result, err := h.ctrl.CloudResetMediaEditRecipe(
+			r.Context(),
+			nodeID,
+			revision,
+		)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, result)
+	default:
+		writeDesktopIPCError(
+			w,
+			http.StatusMethodNotAllowed,
+			"method_not_allowed",
+			"method is not allowed",
+		)
+	}
 }
 
 type desktopIPCMediaVideoPosterController interface {

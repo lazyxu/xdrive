@@ -57,7 +57,7 @@ func TestMediaPetFacetsAndItems(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoVisualLabel{},
 	); err != nil {
 		t.Fatal(err)

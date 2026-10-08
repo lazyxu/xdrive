@@ -10,11 +10,16 @@ import {
 import type {
   XDriveByteProgressHandler,
   XDriveFilePreviewKind,
+  XDriveFilePreviewMediaTransform,
   XDriveFilePreviewTarget,
   XDriveFileTextPreview,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
+import {
+  XDriveTransformedImagePreview,
+  XDriveTransformedVideoPreview,
+} from './FilePreviewTransformedMedia'
 
 export type XDriveFilePreviewTextLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
@@ -45,6 +50,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   maxHeight?: number
   imageFit?: 'contain' | 'cover'
   interactiveImage?: boolean
+  mediaTransform?: XDriveFilePreviewMediaTransform
 }
 
 function revokePreviewURL(value: string) {
@@ -62,6 +68,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   maxHeight = 420,
   imageFit = 'contain',
   interactiveImage = false,
+  mediaTransform,
 }: XDriveFilePreviewSurfaceProps<T>) {
   const previewKind = useMemo(
     () => target ? xDriveClassifyFilePreview(target) : 'none',
@@ -379,23 +386,33 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               : 'default',
           }}
         >
-          <Box
-            component="img"
-            src={previewURL}
-            alt={target?.name || ''}
-            draggable={false}
-            onError={loadImageFallback}
-            sx={{
-              width: '100%',
-              height: '100%',
-              objectFit: imageFit,
-              display: 'block',
-              transform: `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`,
-              transformOrigin: 'center',
-              transition: imageDragRef.current ? 'none' : 'transform 100ms ease-out',
-              userSelect: 'none',
-            }}
-          />
+          {mediaTransform ? (
+            <XDriveTransformedImagePreview
+              src={previewURL}
+              alt={target?.name || ''}
+              transform={mediaTransform}
+              viewportTransform={`translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`}
+              onError={loadImageFallback}
+            />
+          ) : (
+            <Box
+              component="img"
+              src={previewURL}
+              alt={target?.name || ''}
+              draggable={false}
+              onError={loadImageFallback}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: imageFit,
+                display: 'block',
+                transform: `translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`,
+                transformOrigin: 'center',
+                transition: imageDragRef.current ? 'none' : 'transform 100ms ease-out',
+                userSelect: 'none',
+              }}
+            />
+          )}
           {interactiveImage ? (
             <Stack
               direction="row"
@@ -459,7 +476,13 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       )
     }
     if (previewKind === 'video') {
-      return (
+      return mediaTransform ? (
+        <XDriveTransformedVideoPreview
+          src={previewURL}
+          transform={mediaTransform}
+          onError={() => setFailed(true)}
+        />
+      ) : (
         <Box
           component="video"
           src={previewURL}

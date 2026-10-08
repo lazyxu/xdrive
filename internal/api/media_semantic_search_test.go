@@ -101,7 +101,7 @@ func TestGallerySemanticSearchRanksLexicalThenSemantic(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
-		&meta.PhotoAsset{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
+		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoMetadata{}, &meta.PhotoResource{},
 		&meta.PhotoAnalysisState{}, &meta.PhotoSemanticEmbedding{},
 		&meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoPlaceLabel{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},

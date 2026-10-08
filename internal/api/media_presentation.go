@@ -12,6 +12,7 @@ type mediaAssetPresentation struct {
 	Tags        []string
 	People      []string
 	Description string
+	EditRecipe  *mediaEditRecipeDTO
 	Resources   []mediaResourceDTO
 }
 
@@ -69,6 +70,32 @@ func (s *Server) photoAssetPresentations(
 		}
 		presentation.People = people
 		presentation.Description = metadata.Description
+		out[primaryNodeID] = presentation
+	}
+
+	var editRecipes []meta.PhotoEditRecipe
+	if err := s.DB.WithContext(ctx).
+		Table("xd_photo_edit_recipes AS edit").
+		Select("edit.*").
+		Joins("JOIN xd_photo_assets AS pa ON pa.id = edit.asset_id").
+		Joins("JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL").
+		Joins("JOIN xd_files AS f ON f.node_id = n.id").
+		Where("edit.asset_id IN ?", assetIDs).
+		Where("edit.owner_id = ?", uid).
+		Where("edit.source_node_id = n.id").
+		Where("edit.source_node_revision = n.revision").
+		Where("edit.source_sha256 = f.sha256").
+		Find(&editRecipes).Error; err != nil {
+		return nil, err
+	}
+	for _, recipe := range editRecipes {
+		primaryNodeID, ok := primaryByAsset[recipe.AssetID]
+		if !ok {
+			continue
+		}
+		presentation := out[primaryNodeID]
+		value := toMediaEditRecipeDTO(recipe, presentation.Kind, true)
+		presentation.EditRecipe = &value
 		out[primaryNodeID] = presentation
 	}
 

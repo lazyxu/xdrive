@@ -321,3 +321,86 @@ func TestMediaCleanupQueries(t *testing.T) {
 		t.Fatalf("burst page=%+v", burstPage)
 	}
 }
+
+func TestMediaEditRecipeQueries(t *testing.T) {
+	requestIndex := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestIndex {
+		case 0:
+			if r.Method != http.MethodGet ||
+				r.URL.Path != "/api/v1/media/items/31/edit" {
+				t.Fatalf("edit get method=%s path=%q", r.Method, r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(MediaEditRecipe{
+				Version: 1, Revision: 1, SourceCurrent: true,
+				MediaKind: "image", CropWidth: 1, CropHeight: 1,
+			})
+		case 1:
+			if r.Method != http.MethodPut ||
+				r.URL.Path != "/api/v1/media/items/31/edit" {
+				t.Fatalf("edit put method=%s path=%q", r.Method, r.URL.Path)
+			}
+			var input MediaEditRecipeInput
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if input.Revision != 1 || input.RotationDegrees != 90 {
+				t.Fatalf("edit input=%+v", input)
+			}
+			_ = json.NewEncoder(w).Encode(MediaEditRecipe{
+				Version: 1, Revision: 2, SourceCurrent: true,
+				MediaKind: "image", RotationDegrees: 90,
+				CropWidth: 1, CropHeight: 1,
+			})
+		case 2:
+			if r.Method != http.MethodDelete ||
+				r.URL.Path != "/api/v1/media/items/31/edit" ||
+				r.URL.Query().Get("revision") != "2" {
+				t.Fatalf(
+					"edit delete method=%s path=%q revision=%q",
+					r.Method,
+					r.URL.Path,
+					r.URL.Query().Get("revision"),
+				)
+			}
+			_ = json.NewEncoder(w).Encode(MediaEditRecipe{
+				Version: 1, SourceCurrent: true,
+				MediaKind: "image", CropWidth: 1, CropHeight: 1,
+			})
+		default:
+			t.Fatalf("unexpected request %d", requestIndex)
+		}
+		requestIndex++
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	got, err := cli.MediaEditRecipe(context.Background(), 31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 1 {
+		t.Fatalf("edit=%+v", got)
+	}
+	got, err = cli.SaveMediaEditRecipe(
+		context.Background(),
+		31,
+		MediaEditRecipeInput{
+			Revision: 1, RotationDegrees: 90,
+			CropWidth: 1, CropHeight: 1,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 2 || got.RotationDegrees != 90 {
+		t.Fatalf("saved edit=%+v", got)
+	}
+	got, err = cli.ResetMediaEditRecipe(context.Background(), 31, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 0 || got.CropWidth != 1 || got.CropHeight != 1 {
+		t.Fatalf("reset edit=%+v", got)
+	}
+}

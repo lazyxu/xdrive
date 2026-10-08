@@ -16,6 +16,7 @@ import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
+import { xDriveMediaEditPreviewTransform } from '../media-edit'
 import { formatBytes } from '../format'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
@@ -300,6 +301,7 @@ export function XDriveMediaDetailsContent({
                       fallback={xDriveMediaFallback(item.metadata.media_kind)}
                       minHeight={160}
                       maxHeight={240}
+                      mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
                     />
                   )}
                 />
@@ -311,6 +313,7 @@ export function XDriveMediaDetailsContent({
                   fallback={xDriveMediaFallback(item.metadata.media_kind)}
                   minHeight={160}
                   maxHeight={240}
+                  mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
                 />
               ) : (
                 <XDriveMediaAsyncThumbnail

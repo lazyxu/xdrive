@@ -88,6 +88,35 @@ type PhotoMetadata struct {
 
 func (PhotoMetadata) TableName() string { return "xd_photo_metadata" }
 
+type PhotoEditRecipe struct {
+	AssetID            uint64  `gorm:"primaryKey;autoIncrement:false"`
+	OwnerID            uint64  `gorm:"not null;index"`
+	Revision           uint64  `gorm:"not null;default:1"`
+	SourceNodeID       uint64  `gorm:"not null;index"`
+	SourceNodeRevision uint64  `gorm:"not null"`
+	SourceSHA256       string  `gorm:"size:64;not null;index"`
+	RotationDegrees    int     `gorm:"not null;default:0"`
+	FlipHorizontal     bool    `gorm:"not null;default:false"`
+	FlipVertical       bool    `gorm:"not null;default:false"`
+	CropX              float64 `gorm:"not null;default:0"`
+	CropY              float64 `gorm:"not null;default:0"`
+	CropWidth          float64 `gorm:"not null;default:1"`
+	CropHeight         float64 `gorm:"not null;default:1"`
+	ExposureEV         float64 `gorm:"not null;default:0"`
+	Contrast           float64 `gorm:"not null;default:0"`
+	Saturation         float64 `gorm:"not null;default:0"`
+	TrimStartMS        int64   `gorm:"not null;default:0"`
+	TrimEndMS          int64   `gorm:"not null;default:0"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+
+	Asset      PhotoAsset `gorm:"foreignKey:AssetID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Owner      User       `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	SourceNode Node       `gorm:"foreignKey:SourceNodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (PhotoEditRecipe) TableName() string { return "xd_photo_edit_recipes" }
+
 type PhotoCollection struct {
 	ID          uint64 `gorm:"primaryKey"`
 	OwnerID     uint64 `gorm:"not null;index;uniqueIndex:idx_xd_photo_collections_owner_key,priority:1"`

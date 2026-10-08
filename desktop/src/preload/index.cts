@@ -293,6 +293,11 @@ const agent = Object.freeze({
   setMediaTags: (nodeID: number, tags: string[]) => ipcRenderer.invoke('agent:set-media-tags', nodeID, tags),
   setMediaPeople: (nodeID: number, people: string[]) => ipcRenderer.invoke('agent:set-media-people', nodeID, people),
   setMediaDescription: (nodeID: number, description: string) => ipcRenderer.invoke('agent:set-media-description', nodeID, description),
+  getMediaEditRecipe: (nodeID: number) => ipcRenderer.invoke('agent:get-media-edit', nodeID),
+  saveMediaEditRecipe: (nodeID: number, input: unknown) =>
+    ipcRenderer.invoke('agent:save-media-edit', nodeID, input),
+  resetMediaEditRecipe: (nodeID: number, revision: number) =>
+    ipcRenderer.invoke('agent:reset-media-edit', nodeID, revision),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),
   getMediaLivePhotoMotion: (

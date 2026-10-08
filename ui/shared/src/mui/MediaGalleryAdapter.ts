@@ -6,6 +6,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaEditRecipe,
+  MediaEditRecipeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   Node,
@@ -217,6 +219,14 @@ export interface XDriveMediaGalleryPort {
     nodeID: number,
     description: string,
   ) => Promise<XDriveMediaGalleryTransportResult<string | { description: string }>>
+  saveEditRecipe?: (
+    nodeID: number,
+    input: MediaEditRecipeInput,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaEditRecipe>>
+  resetEditRecipe?: (
+    nodeID: number,
+    revision: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaEditRecipe>>
   createAlbum?: (
     name: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
@@ -480,6 +490,16 @@ export function createXDriveMediaGalleryDataSource(
           const result = await resolveXDriveTransport(port.setDescription!(nodeID, description))
           return typeof result === 'string' ? result : result.description
         }
+      : undefined,
+    saveEditRecipe: port.saveEditRecipe
+      ? (nodeID, input) => resolveXDriveTransport(
+          port.saveEditRecipe!(nodeID, input),
+        )
+      : undefined,
+    resetEditRecipe: port.resetEditRecipe
+      ? (nodeID, revision) => resolveXDriveTransport(
+          port.resetEditRecipe!(nodeID, revision),
+        )
       : undefined,
     createAlbum: port.createAlbum
       ? (name) => resolveXDriveTransport(port.createAlbum!(name))

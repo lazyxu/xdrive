@@ -64,6 +64,26 @@ type mediaMetadataDTO struct {
 	ThumbnailHeight          int            `json:"thumbnail_height,omitempty"`
 }
 
+type mediaEditRecipeDTO struct {
+	Version         int        `json:"version"`
+	Revision        uint64     `json:"revision"`
+	SourceCurrent   bool       `json:"source_current"`
+	MediaKind       string     `json:"media_kind"`
+	RotationDegrees int        `json:"rotation_degrees"`
+	FlipHorizontal  bool       `json:"flip_horizontal"`
+	FlipVertical    bool       `json:"flip_vertical"`
+	CropX           float64    `json:"crop_x"`
+	CropY           float64    `json:"crop_y"`
+	CropWidth       float64    `json:"crop_width"`
+	CropHeight      float64    `json:"crop_height"`
+	ExposureEV      float64    `json:"exposure_ev"`
+	Contrast        float64    `json:"contrast"`
+	Saturation      float64    `json:"saturation"`
+	TrimStartMS     int64      `json:"trim_start_ms"`
+	TrimEndMS       int64      `json:"trim_end_ms"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+}
+
 type mediaDerivedResourceDTO struct {
 	Role      string `json:"role"`
 	Name      string `json:"name"`
@@ -90,6 +110,7 @@ type mediaItemDTO struct {
 	Tags             []string                  `json:"tags,omitempty"`
 	People           []string                  `json:"people,omitempty"`
 	Description      string                    `json:"description,omitempty"`
+	EditRecipe       *mediaEditRecipeDTO       `json:"edit_recipe,omitempty"`
 	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
@@ -285,6 +306,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 		Tags:             presentation.Tags,
 		People:           presentation.People,
 		Description:      presentation.Description,
+		EditRecipe:       presentation.EditRecipe,
 		Resources:        presentation.Resources,
 		DerivedResources: resources,
 		LivePhoto:        livePhoto,
@@ -622,6 +644,7 @@ func (s *Server) materializeMediaItems(
 				Tags:        presentation.Tags,
 				People:      presentation.People,
 				Description: presentation.Description,
+				EditRecipe:  presentation.EditRecipe,
 				Resources:   presentation.Resources,
 				LivePhoto:   standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
 			})

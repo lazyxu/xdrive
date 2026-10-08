@@ -21,6 +21,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaEditRecipe,
+  MediaEditRecipeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   MediaPersonIdentity,
@@ -546,6 +548,15 @@ declare global {
         setMediaTags: (nodeID: number, tags: string[]) => Promise<DesktopResult<{ tags: string[] }>>
         setMediaPeople: (nodeID: number, people: string[]) => Promise<DesktopResult<AgentMediaPeople>>
         setMediaDescription: (nodeID: number, description: string) => Promise<DesktopResult<AgentMediaDescription>>
+        getMediaEditRecipe: (nodeID: number) => Promise<DesktopResult<MediaEditRecipe>>
+        saveMediaEditRecipe: (
+          nodeID: number,
+          input: MediaEditRecipeInput,
+        ) => Promise<DesktopResult<MediaEditRecipe>>
+        resetMediaEditRecipe: (
+          nodeID: number,
+          revision: number,
+        ) => Promise<DesktopResult<MediaEditRecipe>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>
         getMediaLivePhotoMotion: (
