@@ -121,6 +121,14 @@ may refresh only O(1) disk-capacity information. If no snapshot exists yet, the 
 statistics, but it must **not** fall back to an object-store walk merely because an administrator opened or refreshed
 the page. Staging orphan file details remain an explicit on-demand inspection action rather than an automatic page-load scan.
 
+The storage-history endpoint projects anomaly/cache time series from those persisted daily rows only. It does not perform
+another object-store, media-cache, or staging walk. Historical points include zero-reference CAS and legacy totals from
+their dedicated sample columns plus, when a complete `snapshot_json` is present, staging orphan/reclaimable bytes,
+512px image thumbnails, video posters, 1280px analysis previews, other media derivatives, reserved ordinary-preview and
+video-transcode categories, storage temporary files, and unclassified xDrive-reserved bytes. Samples created before the
+complete physical snapshot contract render those snapshot-derived categories as unavailable rather than silently treating
+them as zero.
+
 ### Database
 
 The PostgreSQL row displays the resolved `XD_POSTGRES_DATA_DIR`.

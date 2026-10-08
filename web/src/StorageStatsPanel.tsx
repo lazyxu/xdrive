@@ -39,6 +39,7 @@ import type {
   StorageDecision,
   StorageHealth,
   StorageHistory,
+  StorageHistoryPoint,
   StorageLegacyObjectPage,
   StorageUnreferencedBlob,
   StorageUnreferencedBlobPage,
@@ -85,6 +86,14 @@ function decisionTone(decision: StorageDecision): 'neutral' | 'warning' {
   if (decision.priority === 'collecting') return 'neutral'
   if (decision.priority === 'observe') return 'neutral'
   return 'warning'
+}
+
+function storageHistorySnapshotBytes(point: StorageHistoryPoint, value: number) {
+  return point.anomaly_snapshot_available ? formatBytes(value) : '—'
+}
+
+function storageHistoryOtherCacheBytes(point: StorageHistoryPoint) {
+  return point.media_other_bytes + point.preview_cache_bytes + point.video_transcode_bytes
 }
 
 function decisionDescription(decision: StorageDecision) {
@@ -684,6 +693,58 @@ export default function StorageStatsPanel({
                               <TableCell align="right">{point.cas_dedup_ratio.toFixed(2)}×</TableCell>
                               <TableCell align="right">{(point.small_lt64_kib_count_share * 100).toFixed(1)}%</TableCell>
                               <TableCell align="right">{(point.large_ge16_mib_byte_share * 100).toFixed(1)}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </XDriveTableSurface>
+                  </Stack>
+                  <Stack spacing={1}>
+                    <XDriveSectionHeader
+                      level="h3"
+                      title="异常与缓存趋势"
+                      subtitle="直接读取每日存储快照，不会为了历史页面重新扫描 Blob、缓存或 staging。"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      旧样本没有完整物理快照时，缓存、staging 和未分类项显示为 —；未引用 Blob 与 Legacy 仍读取历史样本中的独立统计列。
+                    </Typography>
+                    <XDriveTableSurface>
+                      <Table size="small" aria-label="存储异常与缓存趋势" sx={{ minWidth: 1540 }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>时间</TableCell>
+                            <TableCell align="right">未引用 Blob</TableCell>
+                            <TableCell align="right">Legacy</TableCell>
+                            <TableCell align="right">Staging orphan / 可回收</TableCell>
+                            <TableCell align="right">图片缩略图</TableCell>
+                            <TableCell align="right">视频 Poster</TableCell>
+                            <TableCell align="right">分析预览</TableCell>
+                            <TableCell align="right">其他媒体 / Preview / 转码</TableCell>
+                            <TableCell align="right">存储临时文件</TableCell>
+                            <TableCell align="right">未分类</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {history.samples.slice(-12).reverse().map((point) => (
+                            <TableRow key={point.slot_at + ':anomaly'} hover>
+                              <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
+                              <TableCell align="right">
+                                {formatBytes(point.unreferenced_blob_bytes)} · {point.unreferenced_blob_count.toLocaleString()} 个
+                              </TableCell>
+                              <TableCell align="right">
+                                {formatBytes(point.legacy_physical_bytes)} · {point.legacy_blob_count.toLocaleString()} 个
+                              </TableCell>
+                              <TableCell align="right">
+                                {point.anomaly_snapshot_available
+                                  ? `${formatBytes(point.staging_orphan_bytes)} / ${formatBytes(point.staging_reclaimable_bytes)}`
+                                  : '—'}
+                              </TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.media_thumbnail_bytes)}</TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.video_poster_bytes)}</TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.analysis_preview_bytes)}</TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, storageHistoryOtherCacheBytes(point))}</TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.storage_temp_bytes)}</TableCell>
+                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.unclassified_bytes)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>

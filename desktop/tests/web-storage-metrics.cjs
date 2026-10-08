@@ -25,7 +25,7 @@ const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'ren
 test('Web global storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
   assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 28)
-  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 9)
+  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 10)
   assert.equal(storageStats.includes('function StorageStatGrid'), false)
   assert.equal(storageStats.includes('function StorageStat('), false)
   assert.equal(storageStats.includes('function SectionTitle'), false)
@@ -167,4 +167,30 @@ test('global storage delegates durable maintenance to the global Task Center', (
     'onOpenTaskCenter={openGlobalTaskCenter}',
     'onRunStorageMaintenance={runStorageMaintenance}',
   ]) assert.ok(webApp.includes(token), 'Web Task Center handoff missing: ' + token)
+})
+
+
+test('global storage history exposes persisted anomaly and cache trends without rescanning', () => {
+  for (const token of [
+    'title="异常与缓存趋势"',
+    'aria-label="存储异常与缓存趋势"',
+    '未引用 Blob',
+    'Legacy',
+    'Staging orphan / 可回收',
+    '图片缩略图',
+    '视频 Poster',
+    '分析预览',
+    '其他媒体 / Preview / 转码',
+    '存储临时文件',
+    '未分类',
+    'anomaly_snapshot_available',
+    'media_thumbnail_bytes',
+    'video_poster_bytes',
+    'analysis_preview_bytes',
+    'preview_cache_bytes',
+    'video_transcode_bytes',
+    'storage_temp_bytes',
+    'unclassified_bytes',
+    '不会为了历史页面重新扫描',
+  ]) assert.ok(storageStats.includes(token), 'storage anomaly history missing: ' + token)
 })

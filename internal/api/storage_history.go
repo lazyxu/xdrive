@@ -37,6 +37,21 @@ type storageHistoryPointDTO struct {
 	SmallLT256KiBCountShare   float64                `json:"small_lt256_kib_count_share"`
 	LargeGE16MiBByteShare     float64                `json:"large_ge16_mib_byte_share"`
 	Buckets                   []storageSizeBucketDTO `json:"buckets"`
+	UnreferencedBlobCount     int64                  `json:"unreferenced_blob_count"`
+	UnreferencedBlobBytes     int64                  `json:"unreferenced_blob_bytes"`
+	LegacyBlobCount           int64                  `json:"legacy_blob_count"`
+	LegacyPhysicalBytes       int64                  `json:"legacy_physical_bytes"`
+	AnomalySnapshotAvailable  bool                   `json:"anomaly_snapshot_available"`
+	StagingOrphanBytes        int64                  `json:"staging_orphan_bytes"`
+	StagingReclaimableBytes   int64                  `json:"staging_reclaimable_bytes"`
+	MediaThumbnailBytes       int64                  `json:"media_thumbnail_bytes"`
+	VideoPosterBytes          int64                  `json:"video_poster_bytes"`
+	AnalysisPreviewBytes      int64                  `json:"analysis_preview_bytes"`
+	MediaOtherBytes           int64                  `json:"media_other_bytes"`
+	PreviewCacheBytes         int64                  `json:"preview_cache_bytes"`
+	VideoTranscodeBytes       int64                  `json:"video_transcode_bytes"`
+	StorageTempBytes          int64                  `json:"storage_temp_bytes"`
+	UnclassifiedBytes         int64                  `json:"unclassified_bytes"`
 }
 
 type storageDecisionDTO struct {
@@ -251,6 +266,30 @@ func (s *Server) adminStorageHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, history)
 }
 
+func storageHistoryInventoryBytes(inventory *storageInventoryDTO, key string) int64 {
+	if inventory == nil {
+		return 0
+	}
+	for _, item := range inventory.Items {
+		if item.Key == key {
+			return item.Bytes
+		}
+	}
+	return 0
+}
+
+func storageHistorySnapshot(raw string) (storageStatsDTO, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" {
+		return storageStatsDTO{}, false
+	}
+	var stats storageStatsDTO
+	if err := json.Unmarshal([]byte(raw), &stats); err != nil {
+		return storageStatsDTO{}, false
+	}
+	return stats, stats.Inventory != nil && stats.UploadStaging != nil
+}
+
 func (s *Server) loadStorageHistory(ctx context.Context, now time.Time, days int) (storageHistoryDTO, error) {
 	var rows []meta.StorageSample
 	if err := s.DB.WithContext(ctx).
@@ -267,7 +306,8 @@ func (s *Server) loadStorageHistory(ctx context.Context, now time.Time, days int
 			return storageHistoryDTO{}, err
 		}
 		small64, small256, large16 := storageWorkloadShares(buckets, row.CASBlobCount, row.CASPhysicalBytes)
-		points = append(points, storageHistoryPointDTO{
+		snapshot, anomalySnapshotAvailable := storageHistorySnapshot(row.SnapshotJSON)
+		point := storageHistoryPointDTO{
 			SlotAt: row.SlotAt, CapturedAt: row.CapturedAt,
 			CASBlobCount:              row.CASBlobCount,
 			CASPhysicalBytes:          row.CASPhysicalBytes,
@@ -281,7 +321,28 @@ func (s *Server) loadStorageHistory(ctx context.Context, now time.Time, days int
 			SmallLT256KiBCountShare:   small256,
 			LargeGE16MiBByteShare:     large16,
 			Buckets:                   buckets,
-		})
+			UnreferencedBlobCount:     row.UnreferencedBlobCount,
+			UnreferencedBlobBytes:     row.UnreferencedBlobBytes,
+			LegacyBlobCount:           row.LegacyBlobCount,
+			LegacyPhysicalBytes:       row.LegacyPhysicalBytes,
+			AnomalySnapshotAvailable:  anomalySnapshotAvailable,
+		}
+		if snapshot.UploadStaging != nil {
+			point.StagingOrphanBytes = snapshot.UploadStaging.OrphanBytes
+			point.StagingReclaimableBytes = snapshot.UploadStaging.ReclaimableBytes
+		}
+		if snapshot.Inventory != nil {
+			point.MediaThumbnailBytes = storageHistoryInventoryBytes(snapshot.Inventory, "media_thumbnail")
+			point.VideoPosterBytes = storageHistoryInventoryBytes(snapshot.Inventory, "video_poster")
+			point.AnalysisPreviewBytes = storageHistoryInventoryBytes(snapshot.Inventory, "analysis_preview")
+			point.MediaOtherBytes = storageHistoryInventoryBytes(snapshot.Inventory, "media_other")
+			point.PreviewCacheBytes = storageHistoryInventoryBytes(snapshot.Inventory, "preview_cache")
+			point.VideoTranscodeBytes = storageHistoryInventoryBytes(snapshot.Inventory, "video_transcode")
+			point.StorageTempBytes = storageHistoryInventoryBytes(snapshot.Inventory, "write_temp") +
+				storageHistoryInventoryBytes(snapshot.Inventory, "readiness_temp")
+			point.UnclassifiedBytes = snapshot.Inventory.UnclassifiedBytes
+		}
+		points = append(points, point)
 	}
 	return storageHistoryDTO{
 		Samples:               points,
