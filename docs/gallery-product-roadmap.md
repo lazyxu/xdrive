@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie** |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie + Collage** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -565,9 +565,27 @@ slideshow movies:
 Older creative sidecars that advertise only Cutout + Erase remain valid for those two
 tools. Movie capability is checked only when a movie generation actually runs.
 
+### Current: Collage templates
+
+Multi-selection creative output also supports deterministic local photo collages:
+
+- select **2–9 ordinary ready image assets** from the shared Gallery Selection Toolbar;
+- choose one of four fixed layouts: balanced grid, featured-first, columns or rows;
+- the selected order is durable; the first image is the emphasized image for the
+  featured-first layout;
+- the complete ordered source asset/node/revision/SHA list is persisted and revalidated
+  exactly like Automatic Movie, including a second validation inside the output commit
+  transaction;
+- the local Photo Intelligence sidecar center-crops into a 2048×2048 canvas and encodes
+  a high-quality JPEG; there is no browser-side renderer and no freeform canvas state;
+- generation is the same cancellable/retryable `media.creative.collage` Task Center
+  job and output uses the same CAS/quota/canonical-node commit path.
+
+Older sidecars remain valid for Cutout, Erase and Movie. Collage capability is required
+only when a collage generation runs.
+
 ### Still remaining inside Phase 13
 
-- advanced multi-item composition / templates;
 - optional explicit music/template selection for movies;
 - richer object-selection refinement or additional local creative models.
 

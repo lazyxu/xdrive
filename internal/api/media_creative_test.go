@@ -62,6 +62,25 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 	}, value); err == nil {
 		t.Fatal("one-frame movie was accepted")
 	}
+
+	collage, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:          meta.PhotoCreativeKindCollage,
+		SourceNodeIDs: []uint64{11, 22, 33},
+	}, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(collage.SourceNodeIDs) != 3 ||
+		collage.CollageTemplate != photointelligence.CreativeCollageTemplateGrid {
+		t.Fatalf("collage=%+v", collage)
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:            meta.PhotoCreativeKindCollage,
+		SourceNodeIDs:   []uint64{11, 22},
+		CollageTemplate: "freeform",
+	}, value); err == nil {
+		t.Fatal("unsupported collage template was accepted")
+	}
 }
 
 func TestCreativeOutputName(t *testing.T) {
@@ -76,6 +95,10 @@ func TestCreativeOutputName(t *testing.T) {
 	name, err = creativeOutputName("photo.jpg", "", meta.PhotoCreativeKindMovie, "video/mp4")
 	if err != nil || name != "photo-movie.mp4" {
 		t.Fatalf("movie name=%q err=%v", name, err)
+	}
+	name, err = creativeOutputName("photo.jpg", "", meta.PhotoCreativeKindCollage, "image/jpeg")
+	if err != nil || name != "photo-collage.jpg" {
+		t.Fatalf("collage name=%q err=%v", name, err)
 	}
 	if mediaCreativeRunTimeoutFor(meta.PhotoCreativeKindMovie) != mediaCreativeMovieRunTimeout {
 		t.Fatal("movie timeout mismatch")

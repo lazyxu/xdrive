@@ -24,6 +24,7 @@ const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryF
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
 const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
 const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCreativeDialog.tsx')
+const sharedGalleryCollageDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCollageDialog.tsx')
 const sharedGalleryMovieDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMovieDialog.tsx')
 const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
@@ -51,6 +52,7 @@ const sharedGallery = [
   sharedGalleryViewer,
   sharedGalleryEditDialog,
   sharedGalleryCreativeDialog,
+  sharedGalleryCollageDialog,
   sharedGalleryMovieDialog,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
@@ -633,6 +635,44 @@ test('Gallery Creative Tools expose shared durable Cutout and Smart Erase', () =
   }
 })
 
+test('Gallery Collage is a shared multi-selection creative workflow', () => {
+  for (const token of [
+    'XDriveMediaGalleryCollageDialog',
+    'xDriveMediaItemSupportsCollage',
+    'collageSelectionEligible',
+    'selectedMedia.length >= 2',
+    'selectedMedia.length <= 9',
+    'setCollageDialogItems([...selectedMedia])',
+    'onCreateCollage=',
+  ]) {
+    assert.ok(
+      sharedGalleryMain.includes(token) || sharedGallerySelectionToolbar.includes(token),
+      `collage Gallery contract missing: ${token}`,
+    )
+  }
+
+  for (const token of [
+    'data-xdrive-gallery-collage-dialog',
+    '拼图',
+    "kind: 'collage'",
+    'source_node_ids',
+    'collage_template',
+    '2–9 张普通照片',
+    "loadPreviewURL(generation.output_node_id, 'image')",
+    'if (!terminalCollageStates.has(next.state)) poll()',
+    'collageActionGenerationRef',
+    'actionGeneration === collageActionGenerationRef.current',
+  ]) {
+    assert.ok(sharedGalleryCollageDialog.includes(token), `collage dialog contract missing: ${token}`)
+  }
+
+  assert.match(sharedModels, /collage_template\?: 'grid' \| 'featured' \| 'columns' \| 'rows'/)
+  for (const source of [webAdapter, desktopAdapter, sharedGalleryAdapter]) {
+    assert.ok(source.includes('createCreativeGeneration'))
+    assert.equal(source.includes('createCollage'), false)
+  }
+})
+
 test('Gallery Automatic Movie is a shared multi-selection creative workflow', () => {
   for (const token of [
     'XDriveMediaGalleryMovieDialog',
@@ -667,7 +707,7 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
     )
   }
 
-  assert.match(sharedModels, /MediaCreativeKind = 'cutout' \| 'erase' \| 'movie'/)
+  assert.match(sharedModels, /MediaCreativeKind = 'cutout' \| 'erase' \| 'movie' \| 'collage'/)
   assert.match(sharedModels, /source_node_ids\?: number\[\]/)
   assert.match(sharedModels, /frame_duration_ms\?: number/)
   assert.match(sharedModels, /transition_ms\?: number/)

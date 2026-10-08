@@ -14,6 +14,7 @@ const (
 	CreativeCapabilityCutout        = "cutout"
 	CreativeCapabilityErase         = "erase"
 	CreativeCapabilityMovie         = "movie"
+	CreativeCapabilityCollage       = "collage"
 	CreativeMaxPoints               = 6
 	CreativeMaxStrokes              = 64
 	CreativeMaxStrokePoints         = 256
@@ -23,6 +24,12 @@ const (
 	CreativeMovieMaxFrameDurationMS = 5000
 	CreativeMovieMinTransitionMS    = 0
 	CreativeMovieMaxTransitionMS    = 1000
+	CreativeCollageMinImages        = 2
+	CreativeCollageMaxImages        = 9
+	CreativeCollageTemplateGrid     = "grid"
+	CreativeCollageTemplateFeatured = "featured"
+	CreativeCollageTemplateColumns  = "columns"
+	CreativeCollageTemplateRows     = "rows"
 	CreativeMaxResultBytes          = 128 << 20
 )
 
@@ -73,6 +80,8 @@ type CreativeTask struct {
 	Points           []CreativePoint      `json:"points,omitempty"`
 	Strokes          []CreativeStroke     `json:"strokes,omitempty"`
 	MovieFrames      []CreativeMovieFrame `json:"movie_frames,omitempty"`
+	CollageImages    []CreativeMovieFrame `json:"collage_images,omitempty"`
+	CollageTemplate  string               `json:"collage_template,omitempty"`
 	FrameDurationMS  int                  `json:"frame_duration_ms,omitempty"`
 	TransitionMS     int                  `json:"transition_ms,omitempty"`
 }
@@ -90,7 +99,10 @@ func normalizeCreativeCapabilities(values []string) ([]string, error) {
 	for _, value := range values {
 		value = strings.ToLower(strings.TrimSpace(value))
 		switch value {
-		case CreativeCapabilityCutout, CreativeCapabilityErase, CreativeCapabilityMovie:
+		case CreativeCapabilityCutout,
+			CreativeCapabilityErase,
+			CreativeCapabilityMovie,
+			CreativeCapabilityCollage:
 		default:
 			return nil, fmt.Errorf("unsupported creative capability %q", value)
 		}
@@ -168,24 +180,36 @@ func validCreativeUnit(value float64) bool {
 	return value >= 0 && value <= 1
 }
 
-func validateCreativeMovieFrame(frame CreativeMovieFrame) error {
+func validateCreativeSourceImage(frame CreativeMovieFrame, label string) error {
 	rawURL := strings.TrimSpace(frame.PreviewURL)
 	parsed, err := url.Parse(rawURL)
 	if rawURL == "" || err != nil ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
 		parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-		return errors.New("creative movie frame preview URL is invalid")
+		return fmt.Errorf("creative %s preview URL is invalid", label)
 	}
 	if frame.PreviewVersion <= 0 ||
 		frame.PreviewEdge <= 0 ||
 		frame.PreviewEdge > 4096 {
-		return errors.New("creative movie frame preview contract is invalid")
+		return fmt.Errorf("creative %s preview contract is invalid", label)
 	}
 	fingerprint := strings.TrimSpace(frame.InputFingerprint)
 	if fingerprint == "" || len(fingerprint) > 128 {
-		return errors.New("creative movie frame fingerprint is invalid")
+		return fmt.Errorf("creative %s fingerprint is invalid", label)
 	}
 	return nil
+}
+
+func validCreativeCollageTemplate(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case CreativeCollageTemplateGrid,
+		CreativeCollageTemplateFeatured,
+		CreativeCollageTemplateColumns,
+		CreativeCollageTemplateRows:
+		return true
+	default:
+		return false
+	}
 }
 
 func ValidateCreativeTask(task CreativeTask) error {
@@ -226,15 +250,23 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.Strokes) != 0 {
 			return errors.New("cutout does not accept erase strokes")
 		}
-		if len(task.MovieFrames) != 0 || task.FrameDurationMS != 0 || task.TransitionMS != 0 {
-			return errors.New("cutout does not accept movie inputs")
+		if len(task.MovieFrames) != 0 ||
+			len(task.CollageImages) != 0 ||
+			strings.TrimSpace(task.CollageTemplate) != "" ||
+			task.FrameDurationMS != 0 ||
+			task.TransitionMS != 0 {
+			return errors.New("cutout does not accept multi-image inputs")
 		}
 	case CreativeCapabilityErase:
 		if len(task.Points) != 0 || strings.TrimSpace(task.CutoutMode) != "" {
 			return errors.New("erase does not accept cutout prompts")
 		}
-		if len(task.MovieFrames) != 0 || task.FrameDurationMS != 0 || task.TransitionMS != 0 {
-			return errors.New("erase does not accept movie inputs")
+		if len(task.MovieFrames) != 0 ||
+			len(task.CollageImages) != 0 ||
+			strings.TrimSpace(task.CollageTemplate) != "" ||
+			task.FrameDurationMS != 0 ||
+			task.TransitionMS != 0 {
+			return errors.New("erase does not accept multi-image inputs")
 		}
 		if len(task.Strokes) == 0 || len(task.Strokes) > CreativeMaxStrokes {
 			return fmt.Errorf("erase requires between 1 and %d strokes", CreativeMaxStrokes)
@@ -253,8 +285,10 @@ func ValidateCreativeTask(task CreativeTask) error {
 	case CreativeCapabilityMovie:
 		if len(task.Points) != 0 ||
 			len(task.Strokes) != 0 ||
-			strings.TrimSpace(task.CutoutMode) != "" {
-			return errors.New("movie does not accept cutout or erase prompts")
+			strings.TrimSpace(task.CutoutMode) != "" ||
+			len(task.CollageImages) != 0 ||
+			strings.TrimSpace(task.CollageTemplate) != "" {
+			return errors.New("movie does not accept other creative inputs")
 		}
 		if len(task.MovieFrames) < CreativeMovieMinFrames ||
 			len(task.MovieFrames) > CreativeMovieMaxFrames {
@@ -274,12 +308,37 @@ func ValidateCreativeTask(task CreativeTask) error {
 			return errors.New("creative movie transition is invalid")
 		}
 		for _, frame := range task.MovieFrames {
-			if err := validateCreativeMovieFrame(frame); err != nil {
+			if err := validateCreativeSourceImage(frame, "movie frame"); err != nil {
+				return err
+			}
+		}
+	case CreativeCapabilityCollage:
+		if len(task.Points) != 0 ||
+			len(task.Strokes) != 0 ||
+			strings.TrimSpace(task.CutoutMode) != "" ||
+			len(task.MovieFrames) != 0 ||
+			task.FrameDurationMS != 0 ||
+			task.TransitionMS != 0 {
+			return errors.New("collage does not accept other creative inputs")
+		}
+		if len(task.CollageImages) < CreativeCollageMinImages ||
+			len(task.CollageImages) > CreativeCollageMaxImages {
+			return fmt.Errorf(
+				"collage requires between %d and %d images",
+				CreativeCollageMinImages,
+				CreativeCollageMaxImages,
+			)
+		}
+		if !validCreativeCollageTemplate(task.CollageTemplate) {
+			return errors.New("creative collage template is invalid")
+		}
+		for _, image := range task.CollageImages {
+			if err := validateCreativeSourceImage(image, "collage image"); err != nil {
 				return err
 			}
 		}
 	default:
-		return errors.New("creative kind must be erase, cutout, or movie")
+		return errors.New("creative kind must be erase, cutout, movie, or collage")
 	}
 	return nil
 }

@@ -76,6 +76,10 @@ import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import {
+  XDriveMediaGalleryCollageDialog,
+  xDriveMediaItemSupportsCollage,
+} from './MediaGalleryCollageDialog'
+import {
   XDriveMediaGalleryMovieDialog,
   xDriveMediaItemSupportsAutoMovie,
 } from './MediaGalleryMovieDialog'
@@ -2995,6 +2999,7 @@ export function XDriveMediaGallery({
   const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
     () => new Map(),
   )
+  const [collageDialogItems, setCollageDialogItems] = useState<MediaItem[] | null>(null)
   const [movieDialogItems, setMovieDialogItems] = useState<MediaItem[] | null>(null)
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
@@ -3192,6 +3197,10 @@ export function XDriveMediaGallery({
     () => new Set(selectedMediaItems.keys()),
     [selectedMediaItems],
   )
+  const collageSelectionEligible =
+    selectedMedia.length >= 2 &&
+    selectedMedia.length <= 9 &&
+    selectedMedia.every(xDriveMediaItemSupportsCollage)
   const movieSelectionEligible =
     selectedMedia.length >= 2 &&
     selectedMedia.length <= 30 &&
@@ -3262,6 +3271,7 @@ export function XDriveMediaGallery({
 
   useEffect(() => {
     clearMediaSelection()
+    setCollageDialogItems(null)
     setMovieDialogItems(null)
     if (section === 'trash') {
       setSelected(null)
@@ -3602,6 +3612,15 @@ export function XDriveMediaGallery({
           onDownload={!isTrashSection && onDownloadItems
             ? () => runSelectionAction(onDownloadItems, false)
             : undefined}
+          onCreateCollage={
+            !isTrashSection &&
+            collageSelectionEligible &&
+            onCreateCreativeGeneration &&
+            onGetCreativeGeneration &&
+            loadPreviewURL
+              ? () => setCollageDialogItems([...selectedMedia])
+              : undefined
+          }
           onCreateMovie={
             !isTrashSection &&
             movieSelectionEligible &&
@@ -4328,6 +4347,21 @@ export function XDriveMediaGallery({
           <Typography color="text.secondary">还没有可浏览的人物</Typography>
         </Paper>
       ) : null}
+
+      <XDriveMediaGalleryCollageDialog
+        open={Boolean(collageDialogItems)}
+        items={collageDialogItems ?? []}
+        loadThumbnail={loadThumbnail}
+        loadPreviewURL={loadPreviewURL}
+        onCreate={onCreateCreativeGeneration}
+        onGet={onGetCreativeGeneration}
+        onCancel={onCancelCreativeGeneration}
+        onCompleted={() => {
+          clearMediaSelection()
+          if (onRefresh) onRefresh()
+        }}
+        onClose={() => setCollageDialogItems(null)}
+      />
 
       <XDriveMediaGalleryMovieDialog
         open={Boolean(movieDialogItems)}

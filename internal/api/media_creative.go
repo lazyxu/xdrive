@@ -51,6 +51,8 @@ type mediaCreativeRecipe struct {
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	MovieSources    []mediaCreativeMovieSource         `json:"movie_sources,omitempty"`
+	CollageSources  []mediaCreativeMovieSource         `json:"collage_sources,omitempty"`
+	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
 	TransitionMS    int                                `json:"transition_ms,omitempty"`
 }
@@ -62,6 +64,7 @@ type mediaCreativeInput struct {
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64                           `json:"source_node_ids,omitempty"`
+	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
 	TransitionMS    *int                               `json:"transition_ms,omitempty"`
 }
@@ -115,6 +118,7 @@ func normalizeMediaCreativeInput(
 	input.Kind = strings.TrimSpace(input.Kind)
 	input.CutoutMode = strings.TrimSpace(input.CutoutMode)
 	input.OutputName = strings.TrimSpace(input.OutputName)
+	input.CollageTemplate = strings.ToLower(strings.TrimSpace(input.CollageTemplate))
 	if value.Metadata.MediaKind != meta.MediaKindImage ||
 		value.Asset.Kind != meta.PhotoAssetKindImage {
 		return input, errors.New("AI creative tools support plain image assets only")
@@ -124,12 +128,17 @@ func normalizeMediaCreativeInput(
 			return input, err
 		}
 	}
-	if input.Kind == meta.PhotoCreativeKindMovie {
+	if input.Kind == meta.PhotoCreativeKindMovie ||
+		input.Kind == meta.PhotoCreativeKindCollage {
+		label := "movie"
+		if input.Kind == meta.PhotoCreativeKindCollage {
+			label = "collage"
+		}
 		seen := map[uint64]struct{}{value.Node.ID: {}}
 		normalized := []uint64{value.Node.ID}
 		for _, nodeID := range input.SourceNodeIDs {
 			if nodeID == 0 {
-				return input, errors.New("movie source node id is invalid")
+				return input, fmt.Errorf("%s source node id is invalid", label)
 			}
 			if _, exists := seen[nodeID]; exists {
 				continue
@@ -138,21 +147,13 @@ func normalizeMediaCreativeInput(
 			normalized = append(normalized, nodeID)
 		}
 		input.SourceNodeIDs = normalized
-		if input.FrameDurationMS == 0 {
-			input.FrameDurationMS = 2000
-		}
-		transition := 350
-		if input.TransitionMS != nil {
-			transition = *input.TransitionMS
-		}
-		input.TransitionMS = &transition
 		frames := make([]photointelligence.CreativeMovieFrame, 0, len(normalized))
 		for range normalized {
 			frames = append(frames, photointelligence.CreativeMovieFrame{
 				PreviewURL:       "https://xdrive.invalid/creative-frame",
 				PreviewVersion:   mediapkg.CreativePreviewVersion,
 				PreviewEdge:      mediapkg.CreativePreviewEdge,
-				InputFingerprint: "creative-movie-validation",
+				InputFingerprint: "creative-multi-image-validation",
 			})
 		}
 		probe := photointelligence.CreativeTask{
@@ -161,9 +162,31 @@ func normalizeMediaCreativeInput(
 			PreviewVersion:   mediapkg.CreativePreviewVersion,
 			PreviewEdge:      mediapkg.CreativePreviewEdge,
 			InputFingerprint: "creative-validation",
-			MovieFrames:      frames,
-			FrameDurationMS:  input.FrameDurationMS,
-			TransitionMS:     transition,
+		}
+		if input.Kind == meta.PhotoCreativeKindMovie {
+			if input.CollageTemplate != "" {
+				return input, errors.New("movie does not accept collage template")
+			}
+			if input.FrameDurationMS == 0 {
+				input.FrameDurationMS = 2000
+			}
+			transition := 350
+			if input.TransitionMS != nil {
+				transition = *input.TransitionMS
+			}
+			input.TransitionMS = &transition
+			probe.MovieFrames = frames
+			probe.FrameDurationMS = input.FrameDurationMS
+			probe.TransitionMS = transition
+		} else {
+			if input.FrameDurationMS != 0 || input.TransitionMS != nil {
+				return input, errors.New("collage does not accept movie timing")
+			}
+			if input.CollageTemplate == "" {
+				input.CollageTemplate = photointelligence.CreativeCollageTemplateGrid
+			}
+			probe.CollageImages = frames
+			probe.CollageTemplate = input.CollageTemplate
 		}
 		if err := photointelligence.ValidateCreativeTask(probe); err != nil {
 			return input, err
@@ -171,9 +194,10 @@ func normalizeMediaCreativeInput(
 		return input, nil
 	}
 	if len(input.SourceNodeIDs) != 0 ||
+		input.CollageTemplate != "" ||
 		input.FrameDurationMS != 0 ||
 		input.TransitionMS != nil {
-		return input, errors.New("single-image creative tools do not accept movie inputs")
+		return input, errors.New("single-image creative tools do not accept multi-image inputs")
 	}
 	probe := photointelligence.CreativeTask{
 		Kind:             input.Kind,
@@ -250,6 +274,22 @@ func (s *Server) resolveMediaCreativeMovieSources(
 		})
 	}
 	return out, nil
+}
+
+func (s *Server) resolveMediaCreativeCollageSources(
+	ctx context.Context,
+	ownerID uint64,
+	nodeIDs []uint64,
+) ([]mediaCreativeMovieSource, error) {
+	if len(nodeIDs) < photointelligence.CreativeCollageMinImages ||
+		len(nodeIDs) > photointelligence.CreativeCollageMaxImages {
+		return nil, errors.New("collage source count is invalid")
+	}
+	sources, err := s.resolveMediaCreativeMovieSources(ctx, ownerID, nodeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("collage source validation failed: %w", err)
+	}
+	return sources, nil
 }
 
 func (s *Server) mediaCreativeMovieFrames(
@@ -341,15 +381,40 @@ func (s *Server) mediaCreativeMovieFrames(
 	return frames, nil
 }
 
-func validateMediaCreativeMovieSourcesTx(
+func (s *Server) mediaCreativeCollageImages(
+	ctx context.Context,
+	generation meta.PhotoCreativeGeneration,
+	user meta.User,
+	recipe mediaCreativeRecipe,
+) ([]photointelligence.CreativeMovieFrame, error) {
+	if len(recipe.CollageSources) < photointelligence.CreativeCollageMinImages ||
+		len(recipe.CollageSources) > photointelligence.CreativeCollageMaxImages {
+		return nil, errors.New("creative collage source recipe is invalid")
+	}
+	movieRecipe := recipe
+	movieRecipe.MovieSources = recipe.CollageSources
+	return s.mediaCreativeMovieFrames(ctx, generation, user, movieRecipe)
+}
+
+func validateMediaCreativeSourcesTx(
 	tx *gorm.DB,
 	generation meta.PhotoCreativeGeneration,
 	recipe mediaCreativeRecipe,
 ) error {
-	if generation.Kind != meta.PhotoCreativeKindMovie {
+	var sources []mediaCreativeMovieSource
+	switch generation.Kind {
+	case meta.PhotoCreativeKindMovie:
+		sources = recipe.MovieSources
+	case meta.PhotoCreativeKindCollage:
+		if len(recipe.CollageSources) < photointelligence.CreativeCollageMinImages ||
+			len(recipe.CollageSources) > photointelligence.CreativeCollageMaxImages {
+			return errMediaCreativeSourceChanged
+		}
+		sources = recipe.CollageSources
+	default:
 		return nil
 	}
-	for _, source := range recipe.MovieSources {
+	for _, source := range sources {
 		var node meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Preload("File").
@@ -401,6 +466,8 @@ func creativeOutputName(
 		suffix = "-cutout"
 	case meta.PhotoCreativeKindMovie:
 		suffix = "-movie"
+	case meta.PhotoCreativeKindCollage:
+		suffix = "-collage"
 	}
 	name := stem + suffix + extension
 	if err := meta.ValidateName(name); err != nil {
@@ -434,7 +501,8 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 		Points:     append([]photointelligence.CreativePoint(nil), input.Points...),
 		Strokes:    append([]photointelligence.CreativeStroke(nil), input.Strokes...),
 	}
-	if input.Kind == meta.PhotoCreativeKindMovie {
+	switch input.Kind {
+	case meta.PhotoCreativeKindMovie:
 		sources, sourceErr := s.resolveMediaCreativeMovieSources(
 			c.Request.Context(),
 			value.Node.OwnerID,
@@ -447,6 +515,18 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 		recipe.MovieSources = sources
 		recipe.FrameDurationMS = input.FrameDurationMS
 		recipe.TransitionMS = *input.TransitionMS
+	case meta.PhotoCreativeKindCollage:
+		sources, sourceErr := s.resolveMediaCreativeCollageSources(
+			c.Request.Context(),
+			value.Node.OwnerID,
+			input.SourceNodeIDs,
+		)
+		if sourceErr != nil {
+			fail(c, http.StatusBadRequest, sourceErr.Error())
+			return
+		}
+		recipe.CollageSources = sources
+		recipe.CollageTemplate = input.CollageTemplate
 	}
 	recipeJSON, err := json.Marshal(recipe)
 	if err != nil {
@@ -725,6 +805,17 @@ func (s *Server) runMediaCreativeGeneration(
 			errors.New("local creative analyzer does not support automatic movies"),
 		)
 	}
+	if generation.Kind == meta.PhotoCreativeKindCollage &&
+		!photointelligence.CreativeAnalyzerSupports(
+			info,
+			photointelligence.CreativeCapabilityCollage,
+		) {
+		return s.finishMediaCreativeRunError(
+			ctx,
+			generation.ID,
+			errors.New("local creative analyzer does not support collages"),
+		)
+	}
 	analyzerVersion := photointelligence.CreativeAnalyzerVersion(info)
 	_ = s.DB.WithContext(ctx).Model(&meta.PhotoCreativeGeneration{}).
 		Where("id = ? AND state = ?", generation.ID, meta.PhotoCreativeStateRunning).
@@ -761,7 +852,8 @@ func (s *Server) runMediaCreativeGeneration(
 		Points:     recipe.Points,
 		Strokes:    recipe.Strokes,
 	}
-	if generation.Kind == meta.PhotoCreativeKindMovie {
+	switch generation.Kind {
+	case meta.PhotoCreativeKindMovie:
 		frames, frameErr := s.mediaCreativeMovieFrames(
 			ctx,
 			generation,
@@ -774,6 +866,18 @@ func (s *Server) runMediaCreativeGeneration(
 		task.MovieFrames = frames
 		task.FrameDurationMS = recipe.FrameDurationMS
 		task.TransitionMS = recipe.TransitionMS
+	case meta.PhotoCreativeKindCollage:
+		images, imageErr := s.mediaCreativeCollageImages(
+			ctx,
+			generation,
+			user,
+			recipe,
+		)
+		if imageErr != nil {
+			return s.finishMediaCreativeRunError(ctx, generation.ID, imageErr)
+		}
+		task.CollageImages = images
+		task.CollageTemplate = recipe.CollageTemplate
 	}
 	if err := photointelligence.ValidateCreativeTask(task); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
@@ -987,7 +1091,7 @@ func (s *Server) commitMediaCreativeResult(
 			) {
 			return errMediaCreativeSourceChanged
 		}
-		if err := validateMediaCreativeMovieSourcesTx(
+		if err := validateMediaCreativeSourcesTx(
 			tx,
 			generation,
 			recipe,

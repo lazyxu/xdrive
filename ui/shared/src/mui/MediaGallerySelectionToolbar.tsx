@@ -4,6 +4,7 @@ import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined'
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import MovieCreationOutlinedIcon from '@mui/icons-material/MovieCreationOutlined'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
@@ -50,6 +51,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onAddToAlbum,
   onAddTags,
   onDownload,
+  onCreateCollage,
   onCreateMovie,
   onDelete,
   onRestore,
@@ -66,6 +68,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onAddToAlbum?: (album: MediaAlbum) => Promise<void>
   onAddTags?: (tags: string[]) => Promise<void>
   onDownload?: () => Promise<void>
+  onCreateCollage?: () => void
   onCreateMovie?: () => void
   onDelete?: () => Promise<void>
   onRestore?: () => Promise<void>
@@ -180,6 +183,16 @@ export function XDriveMediaGallerySelectionToolbar({
               onClick={() => { void onDownload().catch(() => undefined) }}
             >
               下载
+            </Button>
+          ) : null}
+          {onCreateCollage && !trashMode ? (
+            <Button
+              size="small"
+              disabled={disabled}
+              startIcon={<GridViewRoundedIcon />}
+              onClick={onCreateCollage}
+            >
+              拼图
             </Button>
           ) : null}
           {onCreateMovie && !trashMode ? (

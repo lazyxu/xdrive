@@ -120,7 +120,10 @@ class AnalyzerTests(unittest.TestCase):
 
         creative = self.creative_runtime.info()
         self.assertEqual(creative["protocol_version"], 1)
-        self.assertEqual(creative["capabilities"], ["cutout", "erase", "movie"])
+        self.assertEqual(
+            creative["capabilities"],
+            ["cutout", "erase", "movie", "collage"],
+        )
         self.assertIn("ffmpeg", creative["pipeline_version"])
         self.assertEqual(len(creative["segment_model"]["sha256"]), 64)
 
@@ -432,6 +435,23 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual((width, height), (1920, 1080))
         self.assertIn(b"ftyp", movie[:64])
 
+        collage_images = [
+            image,
+            cv.flip(image, 1),
+            cv.rotate(image, cv.ROTATE_90_CLOCKWISE),
+        ]
+        for template in ("grid", "featured", "columns", "rows"):
+            collage, mime, width, height = self.creative_runtime.generate_collage(
+                collage_images,
+                {
+                    "kind": "collage",
+                    "collage_template": template,
+                },
+            )
+            self.assertEqual(mime, "image/jpeg")
+            self.assertEqual((width, height), (2048, 2048))
+            self.assertTrue(collage.startswith(b"\xff\xd8\xff"))
+
 
     def test_creative_unix_socket_protocol_end_to_end(self) -> None:
         fingerprint = "creative-test-v1-2048"
@@ -467,7 +487,10 @@ class AnalyzerTests(unittest.TestCase):
                 response = connection.getresponse()
                 info = json.loads(response.read())
                 self.assertEqual(response.status, 200)
-                self.assertEqual(info["capabilities"], ["cutout", "erase", "movie"])
+                self.assertEqual(
+                    info["capabilities"],
+                    ["cutout", "erase", "movie", "collage"],
+                )
                 connection.close()
 
                 task = {
@@ -557,6 +580,63 @@ class AnalyzerTests(unittest.TestCase):
                     b"ftyp",
                     base64.b64decode(movie_result["data"])[:64],
                 )
+                connection.close()
+
+                collage_task = {
+                    "kind": "collage",
+                    "preview_url": (
+                        self.preview_origin
+                        + "/api/v1/media-creative-preview/42?ticket=abc"
+                    ),
+                    "preview_version": 1,
+                    "preview_edge": 2048,
+                    "input_fingerprint": fingerprint,
+                    "collage_images": [
+                        {
+                            "preview_url": (
+                                self.preview_origin
+                                + "/api/v1/media-creative-preview/42?ticket=abc"
+                            ),
+                            "preview_version": 1,
+                            "preview_edge": 2048,
+                            "input_fingerprint": fingerprint,
+                        },
+                        {
+                            "preview_url": (
+                                self.preview_origin
+                                + "/api/v1/media-creative-preview/42?ticket=def"
+                            ),
+                            "preview_version": 1,
+                            "preview_edge": 2048,
+                            "input_fingerprint": fingerprint,
+                        },
+                    ],
+                    "collage_template": "grid",
+                }
+                collage_payload = json.dumps(collage_task).encode("utf-8")
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/creative-generate",
+                    body=collage_payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(collage_payload)),
+                        "X-XDrive-Creative-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                collage_result = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(collage_result["mime_type"], "image/jpeg")
+                self.assertTrue(
+                    base64.b64decode(collage_result["data"]).startswith(
+                        b"\xff\xd8\xff"
+                    )
+                )
+                self.assertEqual(collage_result["width"], 2048)
+                self.assertEqual(collage_result["height"], 2048)
                 connection.close()
             finally:
                 server.shutdown()
