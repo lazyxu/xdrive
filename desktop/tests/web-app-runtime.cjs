@@ -55,6 +55,7 @@ test('Hash routes are typed and browsing context stays out of the URL', () => {
     "'media-viewer': { node: number; context?: string }",
     "'text-viewer': { node: number; line?: number; column?: number }",
     "'pdf-viewer': { node: number; page?: number }",
+    "'audio-player': { node: number }",
     "files: { dir?: number }",
   ]) {
     assert.ok(contract.includes(token), 'route contract missing: ' + token)
@@ -63,6 +64,11 @@ test('Hash routes are typed and browsing context stays out of the URL', () => {
   assert.ok(runtime.includes('window.sessionStorage.setItem('))
   assert.ok(runtime.includes('xDriveWriteWebAppBrowseSession(id, context)'))
   assert.equal(contract.includes('nodeIDs='), false, 'large selection lists must never be encoded into route URLs')
+  assert.equal(
+    contract.includes("'audio-player': { node: number; context?: string }"),
+    false,
+    'standalone Audio Player must not expose browsing context',
+  )
 })
 
 test('Web FileExplorer launches Web programs while Desktop ordinary Open uses the OS', () => {

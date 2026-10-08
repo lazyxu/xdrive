@@ -215,7 +215,9 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'shared FilePreviewSurface must forward byte progress into LIVP transport',
   )
   assert.ok(
-    livePhoto.includes('loadMotion(onProgress)') && livePhoto.includes('按住播放，松开停止'),
+    livePhoto.includes('loader(onProgress)') &&
+      livePhoto.includes('loadMotionRef.current = loadMotion') &&
+      livePhoto.includes('按住播放，松开停止'),
     'shared Live Photo surface must fetch motion only after the first hold and preserve hold/release semantics',
   )
   assert.ok(

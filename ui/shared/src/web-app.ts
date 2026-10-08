@@ -93,7 +93,7 @@ export interface XDriveWebAppLaunchMap {
   'media-viewer': { node: number; context?: string }
   'text-viewer': { node: number; line?: number; column?: number }
   'pdf-viewer': { node: number; page?: number }
-  'audio-player': { node: number; context?: string }
+  'audio-player': { node: number }
   'admin-users': { user?: number }
   'admin-audit': Record<string, never>
   'admin-storage': { section?: string; task?: string }
@@ -153,11 +153,15 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
       return { app, params: { scope, task: query.get('task') || undefined } }
     }
     case 'preview':
-    case 'media-viewer':
-    case 'audio-player': {
+    case 'media-viewer': {
       const node = positiveInteger(query.get('node'))
       if (!node) return null
       return { app, params: { node, context: query.get('context') || undefined } } as XDriveWebAppRoute
+    }
+    case 'audio-player': {
+      const node = positiveInteger(query.get('node'))
+      if (!node) return null
+      return { app, params: { node } }
     }
     case 'text-viewer': {
       const node = positiveInteger(query.get('node'))

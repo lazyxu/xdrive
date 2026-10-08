@@ -151,10 +151,14 @@ export function XDriveTransformedImagePreview({
 export function XDriveTransformedVideoPreview({
   src,
   transform,
+  onReady,
+  onWaiting,
   onError,
 }: {
   src: string
   transform: XDriveFilePreviewMediaTransform
+  onReady?: () => void
+  onWaiting?: () => void
   onError?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -194,6 +198,10 @@ export function XDriveTransformedVideoPreview({
         onLoadedMetadata={() => {
           if (trimStart > 0 && videoRef.current) videoRef.current.currentTime = trimStart
         }}
+        onLoadedData={onReady}
+        onCanPlay={onReady}
+        onPlaying={onReady}
+        onWaiting={onWaiting}
         onPlay={() => {
           const video = videoRef.current
           if (!video) return

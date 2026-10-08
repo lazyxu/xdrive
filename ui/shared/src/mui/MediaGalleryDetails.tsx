@@ -293,6 +293,7 @@ export function XDriveMediaDetailsContent({
                   key={item.node.id}
                   label={item.node.name}
                   loadMotion={loadSelectedLivePhotoMotion}
+                  sourceKey={`${item.node.id}:${item.node.revision}`}
                   still={(
                     <XDriveFilePreviewSurface
                       target={previewTarget}
