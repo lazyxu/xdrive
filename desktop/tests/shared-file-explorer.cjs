@@ -47,7 +47,8 @@ test('shared FileExplorer provides command bar, details/grid/column views, and s
 test('shared FileExplorer uses configurable system-style density without breaking virtualization math', () => {
   assert.ok(explorer.includes('const detailsNormalRowHeight = 36'), 'normal details density token is missing')
   assert.ok(explorer.includes('const detailsCompactRowHeight = 28'), 'compact details density token is missing')
-  assert.ok(explorer.includes("const detailsRowHeight = viewPreferences.detailsDensity === 'compact'"), 'details virtualization row height must follow the selected density')
+  assert.ok(explorer.includes('const detailsRowHeight = compactTouch'), 'details virtualization row height must include the compact-touch projection')
+  assert.ok(explorer.includes("viewPreferences.detailsDensity === 'compact'"), 'desktop details virtualization row height must still follow the persisted density')
   assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should remain compact')
   assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
@@ -199,7 +200,7 @@ test('shared FileExplorer provides internal and external drag and drop contracts
     'event.dataTransfer.setDragImage(ghost, 18, 18)',
     "const operation = event.ctrlKey || event.metaKey ? 'copy' : 'move'",
     "event.dataTransfer.types.includes('Files')",
-    'draggable={Boolean(onDropItemsToFolder) && !renaming}',
+    'draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}',
     'updateDragAutoScroll(event.clientY)',
     'onDrop={(event) => dropOnCrumb(event, crumb)}',
     'dropTargetCrumbID',
@@ -399,8 +400,8 @@ test('shared FileExplorer moves lower-priority Toolbar actions into responsive o
     '<MoreHorizRoundedIcon',
     'anchorEl={commandBarOverflowAnchor}',
     'runCommandBarOverflowAction',
-    'commandBarOverflowLevel >= 2 && onCreateFolder',
-    'commandBarOverflowLevel >= 1 && onUploadFolder',
+    '(compactTouch || commandBarOverflowLevel >= 2) && onCreateFolder',
+    '(compactTouch || commandBarOverflowLevel >= 1) && onUploadFolder',
     'commandBarOverflowLevel >= 1 && navigationPane',
   ]) {
     assert.ok(explorer.includes(token), 'responsive Toolbar overflow missing: ' + token)

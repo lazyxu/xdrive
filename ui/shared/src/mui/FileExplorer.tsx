@@ -49,8 +49,13 @@ import {
   ButtonBase,
   CircularProgress,
   Divider,
+  Drawer,
   IconButton,
   InputAdornment,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Menu,
   MenuItem,
   Paper,
@@ -58,6 +63,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatBytes } from '../format'
@@ -66,7 +72,7 @@ import type {
   XDriveFileTextPreview,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTouchItemIntent, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
   xDriveFileExplorerEncodeDragItems,
@@ -1011,6 +1017,19 @@ export function XDriveFileExplorer({
     mouseY: number
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const [touchSelectionMode, setTouchSelectionMode] = useState(false)
+  const [touchSearchOpen, setTouchSearchOpen] = useState(false)
+  const [navigationDrawerOpen, setNavigationDrawerOpen] = useState(false)
+  const lastPointerTypeRef = useRef<string | null>(null)
+  const suppressTouchClickRef = useRef(false)
+  const touchPressRef = useRef<{
+    pointerId: number
+    itemKey: string
+    startX: number
+    startY: number
+    timer: number
+  } | null>(null)
   const commandBarRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
@@ -1059,9 +1078,11 @@ export function XDriveFileExplorer({
   const sort = controlledSort ?? internalSort
   const grouping = controlledGrouping ?? internalGrouping
   const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
-  const detailsRowHeight = viewPreferences.detailsDensity === 'compact'
-    ? detailsCompactRowHeight
-    : detailsNormalRowHeight
+  const detailsRowHeight = compactTouch
+    ? 52
+    : viewPreferences.detailsDensity === 'compact'
+      ? detailsCompactRowHeight
+      : detailsNormalRowHeight
   const gridMetrics = fileExplorerGridMetrics[viewPreferences.gridSize]
   const gridGapPx = gridMetrics.gap * muiSpacingPixel
   const gridPaddingPx = gridMetrics.padding * muiSpacingPixel
@@ -1080,16 +1101,22 @@ export function XDriveFileExplorer({
       ? 1
       : 0
   const visibleDetailsColumns = useMemo(
-    () => detailsLayout.order.filter((key) => detailsLayout.visible.includes(key)),
-    [detailsLayout.order, detailsLayout.visible],
+    () => compactTouch && viewMode === 'details'
+      ? ['name' as XDriveFileExplorerDetailsColumnKey]
+      : detailsLayout.order.filter((key) => detailsLayout.visible.includes(key)),
+    [compactTouch, detailsLayout.order, detailsLayout.visible, viewMode],
   )
   const detailsGridTemplate = useMemo(
-    () => visibleDetailsColumns.map((key) => `${detailsLayout.widths[key]}px`).join(' '),
-    [detailsLayout.widths, visibleDetailsColumns],
+    () => compactTouch && viewMode === 'details'
+      ? 'minmax(0, 1fr)'
+      : visibleDetailsColumns.map((key) => `${detailsLayout.widths[key]}px`).join(' '),
+    [compactTouch, detailsLayout.widths, viewMode, visibleDetailsColumns],
   )
   const detailsMinWidth = useMemo(
-    () => visibleDetailsColumns.reduce((total, key) => total + detailsLayout.widths[key], 0) + 24,
-    [detailsLayout.widths, visibleDetailsColumns],
+    () => compactTouch && viewMode === 'details'
+      ? 0
+      : visibleDetailsColumns.reduce((total, key) => total + detailsLayout.widths[key], 0) + 24,
+    [compactTouch, detailsLayout.widths, viewMode, visibleDetailsColumns],
   )
   const selectedIDs = controlledSelectedIDs ?? internalSelectedIDs
   const selectedIDsRef = useRef(selectedIDs)
@@ -1140,6 +1167,15 @@ export function XDriveFileExplorer({
     setDropTargetID(null)
     setDropTargetCrumbID(null)
     setContextMenu(null)
+    setTouchSelectionMode(false)
+    setTouchSearchOpen(false)
+    setNavigationDrawerOpen(false)
+    lastPointerTypeRef.current = null
+    suppressTouchClickRef.current = false
+    if (touchPressRef.current && typeof window !== 'undefined') {
+      window.clearTimeout(touchPressRef.current.timer)
+    }
+    touchPressRef.current = null
     renameCancelledRef.current = true
     renameSubmitGenerationRef.current += 1
     renameSubmittingRef.current = false
@@ -1191,6 +1227,16 @@ export function XDriveFileExplorer({
   }, [viewPreferences, viewPreferencesKey])
 
   useEffect(() => {
+    if (compactTouch) {
+      setInspectorOpen(false)
+      return
+    }
+    setTouchSelectionMode(false)
+    setTouchSearchOpen(false)
+    setNavigationDrawerOpen(false)
+  }, [compactTouch])
+
+  useEffect(() => {
     const host = commandBarRef.current
     if (!host) return
     const update = () => setCommandBarWidth(host.clientWidth)
@@ -1219,6 +1265,7 @@ export function XDriveFileExplorer({
     if (typeof window === 'undefined') return
     if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
     if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
+    if (touchPressRef.current) window.clearTimeout(touchPressRef.current.timer)
   }, [])
 
   const visibleItems = useMemo(() => {
@@ -1990,6 +2037,116 @@ export function XDriveFileExplorer({
     onItemClick?.(item)
   }
 
+  const toggleTouchSelection = (
+    item: XDriveFileExplorerItem,
+    index: number,
+  ) => {
+    const key = explorerIDKey(item.id)
+    setActiveItemID(item.id)
+    setActiveLogicalIndex(index)
+    resetTypeSelect()
+    if (selectedKeySet.has(key)) {
+      commitSelection(selectedIDs.filter((id) => explorerIDKey(id) !== key))
+    } else {
+      commitSelection([...selectedIDs, item.id], [item])
+    }
+    anchorSelectionAt(item, index)
+    onItemClick?.(item)
+  }
+
+  const cancelTouchItemPress = (pointerId?: number) => {
+    const press = touchPressRef.current
+    if (!press || (pointerId !== undefined && press.pointerId !== pointerId)) return
+    if (typeof window !== 'undefined') window.clearTimeout(press.timer)
+    touchPressRef.current = null
+  }
+
+  const startTouchItemPress = (
+    event: ReactPointerEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+    index: number,
+    renaming: boolean,
+  ) => {
+    lastPointerTypeRef.current = event.pointerType
+    if (!compactTouch || event.pointerType !== 'touch' || renaming || typeof window === 'undefined') return
+    cancelTouchItemPress()
+    const itemKey = explorerIDKey(item.id)
+    const pointerId = event.pointerId
+    const timer = window.setTimeout(() => {
+      const press = touchPressRef.current
+      if (!press || press.pointerId !== pointerId || press.itemKey !== itemKey) return
+      touchPressRef.current = null
+      suppressTouchClickRef.current = true
+      setTouchSelectionMode(true)
+      setActiveItemID(item.id)
+      setActiveLogicalIndex(index)
+      if (!selectedKeySet.has(itemKey)) {
+        commitSelection(touchSelectionMode ? [...selectedIDs, item.id] : [item.id], [item])
+      }
+      anchorSelectionAt(item, index)
+      onItemClick?.(item)
+    }, XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS)
+    touchPressRef.current = {
+      pointerId,
+      itemKey,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer,
+    }
+  }
+
+  const moveTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
+    const press = touchPressRef.current
+    if (!press || press.pointerId !== event.pointerId) return
+    if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 10) {
+      cancelTouchItemPress(event.pointerId)
+    }
+  }
+
+  const finishTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
+    cancelTouchItemPress(event.pointerId)
+    if (!compactTouch || event.pointerType !== 'touch' || typeof window === 'undefined') return
+    window.setTimeout(() => {
+      if (lastPointerTypeRef.current === 'touch') lastPointerTypeRef.current = null
+      suppressTouchClickRef.current = false
+    }, 0)
+  }
+
+  const activateItem = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: XDriveFileExplorerItem,
+    index: number,
+    renaming: boolean,
+  ) => {
+    const pointerType = lastPointerTypeRef.current
+    lastPointerTypeRef.current = null
+    if (suppressTouchClickRef.current) {
+      suppressTouchClickRef.current = false
+      return
+    }
+    const intent = xDriveFileExplorerTouchItemIntent({
+      compactTouch,
+      pointerType,
+      selectionMode: touchSelectionMode,
+    })
+    if (intent === 'desktop-select') {
+      selectItem(event, item, index)
+      return
+    }
+    if (intent === 'toggle-selection') {
+      toggleTouchSelection(item, index)
+      return
+    }
+    if (renaming) return
+    resetTypeSelect()
+    setActiveItemID(item.id)
+    setActiveLogicalIndex(index)
+    commitSelection([item.id], [item])
+    anchorSelectionAt(item, index)
+    onItemClick?.(item)
+    onOpenItem?.(item)
+  }
+
   const toggleKeyboardSelection = (item: XDriveFileExplorerItem) => {
     const key = explorerIDKey(item.id)
     setActiveItemID(item.id)
@@ -2245,6 +2402,10 @@ export function XDriveFileExplorer({
   ) => {
     event.preventDefault()
     event.stopPropagation()
+    const nativePointerType = 'pointerType' in event.nativeEvent
+      ? String((event.nativeEvent as MouseEvent & { pointerType?: string }).pointerType ?? '')
+      : lastPointerTypeRef.current
+    if (compactTouch && nativePointerType === 'touch') return
     openItemContextMenuAt(item, event.clientX + 2, event.clientY - 6)
   }
 
@@ -3504,6 +3665,41 @@ export function XDriveFileExplorer({
     </Box>
   ) : null
 
+  const touchItemActionButton = (
+    item: XDriveFileExplorerItem,
+    placement: 'details' | 'grid',
+  ) => compactTouch ? (
+    <IconButton
+      data-xdrive-file-explorer-item-more
+      aria-label={`更多操作：${item.name}`}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        cancelTouchItemPress()
+      }}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        lastPointerTypeRef.current = null
+        const rect = event.currentTarget.getBoundingClientRect()
+        openItemContextMenuAt(item, rect.left, rect.bottom + 4)
+      }}
+      sx={placement === 'grid'
+        ? {
+            position: 'absolute',
+            top: 2,
+            right: 2,
+            zIndex: 4,
+            width: 44,
+            height: 44,
+            bgcolor: 'background.paper',
+            boxShadow: 1,
+          }
+        : { width: 44, height: 44, flex: '0 0 44px', ml: 0.25 }}
+    >
+      <MoreHorizRoundedIcon fontSize="small" />
+    </IconButton>
+  ) : null
+
   const renderDetailsLogicalItem = (
     item: XDriveFileExplorerItem | undefined,
     index: number,
@@ -3546,7 +3742,7 @@ export function XDriveFileExplorer({
         title={fileExplorerItemHoverTitle(item, Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
-        draggable={Boolean(onDropItemsToFolder) && !renaming}
+        draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}
         onDragStart={(event) => startItemDrag(event, item)}
         onDragEnd={endItemDrag}
         onDragOver={(event) => dragOverFolder(event, item)}
@@ -3557,7 +3753,11 @@ export function XDriveFileExplorer({
           ) setDropTargetID(null)
         }}
         onDrop={(event) => dropOnFolder(event, item)}
-        onClick={(event) => selectItem(event, item, index)}
+        onClick={(event) => activateItem(event, item, index, renaming)}
+        onPointerDown={(event) => startTouchItemPress(event, item, index, renaming)}
+        onPointerMove={moveTouchItemPress}
+        onPointerUp={finishTouchItemPress}
+        onPointerCancel={finishTouchItemPress}
         onMouseDown={(event) => {
           if (event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
             event.preventDefault()
@@ -3619,6 +3819,11 @@ export function XDriveFileExplorer({
             {key === 'name' ? (
               <>
                 <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
+                  {compactTouch && touchSelectionMode ? (
+                    <Box component="span" aria-hidden sx={{ width: 24, height: 24, flex: '0 0 24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: selected ? 'primary.main' : 'text.disabled' }}>
+                      {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
+                    </Box>
+                  ) : null}
                   <Box
                     sx={{
                       width: 24,
@@ -3630,12 +3835,13 @@ export function XDriveFileExplorer({
                   >
                     {thumbnailForItem(item, false)}
                   </Box>
-                  <Box sx={{ minWidth: 0 }}>
+                  <Box sx={{ minWidth: 0, flex: compactTouch ? 1 : undefined }}>
                     {renderItemName(item, false)}
                   </Box>
                   {availabilityIndicator(item)}
+                  {!renaming ? touchItemActionButton(item, 'details') : null}
                 </Stack>
-                {!renaming ? nativeDragOutHandle(item, 'details') : null}
+                {!compactTouch && !renaming ? nativeDragOutHandle(item, 'details') : null}
               </>
             ) : (
               <Typography
@@ -3698,7 +3904,7 @@ export function XDriveFileExplorer({
         title={fileExplorerItemHoverTitle(item, Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
-        draggable={Boolean(onDropItemsToFolder) && !renaming}
+        draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}
         onDragStart={(event) => startItemDrag(event, item)}
         onDragEnd={endItemDrag}
         onDragOver={(event) => dragOverFolder(event, item)}
@@ -3709,7 +3915,11 @@ export function XDriveFileExplorer({
           ) setDropTargetID(null)
         }}
         onDrop={(event) => dropOnFolder(event, item)}
-        onClick={(event) => selectItem(event, item, index)}
+        onClick={(event) => activateItem(event, item, index, renaming)}
+        onPointerDown={(event) => startTouchItemPress(event, item, index, renaming)}
+        onPointerMove={moveTouchItemPress}
+        onPointerUp={finishTouchItemPress}
+        onPointerCancel={finishTouchItemPress}
         onMouseDown={(event) => {
           if (event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
             event.preventDefault()
@@ -3734,6 +3944,7 @@ export function XDriveFileExplorer({
           maxWidth: gridMetrics.maxItemWidth,
           justifySelf: 'center',
           boxSizing: 'border-box',
+          position: 'relative',
           borderRadius: 1,
           p: gridMetrics.itemPadding,
           display: 'flex',
@@ -3764,6 +3975,12 @@ export function XDriveFileExplorer({
           },
         }}
       >
+        {compactTouch && touchSelectionMode ? (
+          <Box component="span" aria-hidden sx={{ position: 'absolute', top: 6, left: 6, zIndex: 4, width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: selected ? 'primary.main' : 'text.disabled', bgcolor: 'background.paper', borderRadius: '50%', boxShadow: 1 }}>
+            {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
+          </Box>
+        ) : null}
+        {!renaming ? touchItemActionButton(item, 'grid') : null}
         <Box
           sx={{
             width: gridMetrics.thumbnailWidth,
@@ -3779,7 +3996,7 @@ export function XDriveFileExplorer({
         >
           {thumbnailForItem(item)}
           {availabilityIndicator(item, true)}
-          {!renaming ? nativeDragOutHandle(item, 'grid') : null}
+          {!compactTouch && !renaming ? nativeDragOutHandle(item, 'grid') : null}
         </Box>
         <Box
           data-xdrive-file-explorer-grid-name
@@ -4112,8 +4329,8 @@ export function XDriveFileExplorer({
           px: 1,
           py: 0.5,
           minWidth: 0,
-          minHeight: 44,
-          '& .MuiIconButton-root': { width: 32, height: 32, borderRadius: 1 },
+          minHeight: compactTouch ? 48 : 44,
+          '& .MuiIconButton-root': { width: compactTouch ? 44 : 32, height: compactTouch ? 44 : 32, borderRadius: 1 },
         }}
       >
         <Tooltip title={fileExplorerShortcutTitle('后退', 'back', keyboardProfile)}>
@@ -4123,13 +4340,15 @@ export function XDriveFileExplorer({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={fileExplorerShortcutTitle('前进', 'forward', keyboardProfile)}>
-          <span>
-            <IconButton size="small" aria-label="前进" disabled={!canGoForward} onClick={onForward}>
-              <ArrowForwardRoundedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {!compactTouch ? (
+          <Tooltip title={fileExplorerShortcutTitle('前进', 'forward', keyboardProfile)}>
+            <span>
+              <IconButton size="small" aria-label="前进" disabled={!canGoForward} onClick={onForward}>
+                <ArrowForwardRoundedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        ) : null}
         <Tooltip title={fileExplorerShortcutTitle('上一级', 'up', keyboardProfile)}>
           <span>
             <IconButton size="small" aria-label="上一级" disabled={!canGoUp} onClick={onUp}>
@@ -4137,15 +4356,17 @@ export function XDriveFileExplorer({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={fileExplorerShortcutTitle('刷新', 'refresh', keyboardProfile)}>
-          <span>
-            <IconButton size="small" aria-label="刷新" disabled={!onRefresh || loading} onClick={onRefresh}>
-              <RefreshRoundedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {!compactTouch ? (
+          <Tooltip title={fileExplorerShortcutTitle('刷新', 'refresh', keyboardProfile)}>
+            <span>
+              <IconButton size="small" aria-label="刷新" disabled={!onRefresh || loading} onClick={onRefresh}>
+                <RefreshRoundedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        ) : null}
 
-        <Box sx={{ flex: 1, minWidth: 120 }}>
+        <Box sx={{ flex: 1, minWidth: compactTouch ? 0 : 120, display: compactTouch && touchSearchOpen ? 'none' : undefined }}>
           {editingPath && onPathSubmit ? (
             <TextField
               fullWidth
@@ -4249,46 +4470,170 @@ export function XDriveFileExplorer({
         </Box>
 
         {searchEnabled ? (
-          <TextField
-            inputRef={searchInputRef}
-            size="small"
-            value={searchValue}
-            onChange={(event) => onSearchValueChange?.(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                submitSearch()
-              }
-            }}
-            placeholder={`在“${crumbs.at(-1)?.name ?? '当前位置'}”中搜索`}
-            aria-label="搜索文件和文件夹"
-            title={fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)}
-            sx={{
-              width: { xs: 180, sm: 280, md: 320, lg: 360 },
-              flexShrink: 0,
-              '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' },
-            }}
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      aria-label="搜索"
-                      title={fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
-                      onClick={submitSearch}
-                    >
-                      <SearchRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+          compactTouch && !touchSearchOpen ? (
+            <IconButton
+              aria-label="搜索文件和文件夹"
+              title="搜索文件和文件夹"
+              onClick={() => setTouchSearchOpen(true)}
+            >
+              <SearchRoundedIcon fontSize="small" />
+            </IconButton>
+          ) : (
+            <TextField
+              inputRef={searchInputRef}
+              autoFocus={compactTouch && touchSearchOpen}
+              size="small"
+              value={searchValue}
+              onChange={(event) => onSearchValueChange?.(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  submitSearch()
+                } else if (compactTouch && event.key === 'Escape') {
+                  event.preventDefault()
+                  setTouchSearchOpen(false)
+                }
+              }}
+              placeholder={compactTouch ? '搜索' : `在“${crumbs.at(-1)?.name ?? '当前位置'}”中搜索`}
+              aria-label="搜索文件和文件夹"
+              title={fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)}
+              sx={compactTouch ? {
+                flex: 1,
+                minWidth: 0,
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: '4px' },
+              } : {
+                width: { xs: 180, sm: 280, md: 320, lg: 360 },
+                flexShrink: 0,
+                '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' },
+              }}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        aria-label={compactTouch ? '关闭搜索' : '搜索'}
+                        title={compactTouch ? '关闭搜索' : fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
+                        onClick={compactTouch ? () => setTouchSearchOpen(false) : submitSearch}
+                      >
+                        {compactTouch ? <CloseRoundedIcon fontSize="small" /> : <SearchRoundedIcon fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          )
         ) : null}
       </Stack>
 
       <Divider />
+
+      <Stack
+        data-xdrive-file-explorer-touch-command-bar
+        direction="row"
+        alignItems="center"
+        spacing={0.5}
+        sx={{
+          display: compactTouch ? 'flex' : 'none',
+          minHeight: 52,
+          px: 1,
+          py: 0.25,
+          minWidth: 0,
+          '& .MuiIconButton-root': { width: 44, height: 44, flex: '0 0 44px' },
+          '& .MuiButton-root': { minHeight: 44 },
+        }}
+      >
+        {navigationPane ? (
+          <IconButton aria-label="位置" title="位置" onClick={() => setNavigationDrawerOpen(true)}>
+            <ViewSidebarRoundedIcon fontSize="small" />
+          </IconButton>
+        ) : null}
+        {touchSelectionMode ? (
+          <>
+            <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0, flex: 1, px: 0.5 }}>
+              已选择 {selectedItems.length} 项
+            </Typography>
+            {onCutItems ? (
+              <IconButton aria-label="剪切所选项目" disabled={selectedItems.length === 0} onClick={() => onCutItems(selectedItems)}>
+                <ContentCutRoundedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+            {onCopyItems ? (
+              <IconButton aria-label="复制所选项目" disabled={selectedItems.length === 0} onClick={() => onCopyItems(selectedItems)}>
+                <ContentCopyRoundedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+            {onDownloadItems ? (
+              <IconButton
+                aria-label="下载所选项目"
+                disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}
+                onClick={() => onDownloadItems(selectedItems)}
+              >
+                <DownloadRoundedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+            {onDeleteItems ? (
+              <IconButton aria-label="删除所选项目" disabled={selectedItems.length === 0} onClick={() => onDeleteItems(selectedItems)} sx={{ color: 'error.main' }}>
+                <DeleteOutlineRoundedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+            <IconButton
+              aria-label="更多所选项目操作"
+              disabled={selectedItems.length === 0}
+              onClick={(event) => {
+                const item = selectedItems[0]
+                if (!item) return
+                const rect = event.currentTarget.getBoundingClientRect()
+                openItemContextMenuAt(item, rect.left, rect.bottom + 4)
+              }}
+            >
+              <MoreHorizRoundedIcon fontSize="small" />
+            </IconButton>
+            <Button
+              size="small"
+              onClick={() => {
+                setTouchSelectionMode(false)
+                clearSelection()
+              }}
+            >
+              完成
+            </Button>
+          </>
+        ) : (
+          <>
+            {onUpload ? (
+              <IconButton aria-label="上传文件" title="上传文件" onClick={onUpload}>
+                <UploadRoundedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+            <Box sx={{ flex: 1, minWidth: 0 }} />
+            <IconButton aria-label="视图" title="视图" onClick={(event) => setViewPreferencesAnchor(event.currentTarget)}>
+              <GridViewRoundedIcon fontSize="small" />
+            </IconButton>
+            <IconButton aria-label="排序与分组" title="排序与分组" onClick={(event) => setArrangeAnchor(event.currentTarget)}>
+              <SortRoundedIcon fontSize="small" />
+            </IconButton>
+            <Button
+              size="small"
+              startIcon={<CheckCircleOutlineRoundedIcon fontSize="small" />}
+              onClick={() => {
+                clearSelection()
+                setTouchSelectionMode(true)
+              }}
+            >
+              选择
+            </Button>
+            <IconButton
+              aria-label="更多文件操作"
+              title="更多文件操作"
+              onClick={(event) => setCommandBarOverflowAnchor(event.currentTarget)}
+            >
+              <MoreHorizRoundedIcon fontSize="small" />
+            </IconButton>
+          </>
+        )}
+      </Stack>
 
       <Stack
         ref={commandBarRef}
@@ -4297,6 +4642,7 @@ export function XDriveFileExplorer({
         alignItems="center"
         spacing={0.75}
         sx={{
+          display: compactTouch ? 'none' : 'flex',
           px: 1.25,
           py: 0.5,
           minHeight: 40,
@@ -4464,7 +4810,7 @@ export function XDriveFileExplorer({
           >
             紧凑详细信息
           </MenuItem>
-          {loadColumnPage && onColumnNavigate ? (
+          {loadColumnPage && onColumnNavigate && !compactTouch ? (
             <MenuItem
               selected={viewMode === 'columns'}
               onClick={() => {
@@ -4617,43 +4963,55 @@ export function XDriveFileExplorer({
         open={Boolean(commandBarOverflowAnchor)}
         onClose={() => setCommandBarOverflowAnchor(null)}
       >
-        {commandBarOverflowLevel >= 2 && onCreateFolder ? (
+        {(compactTouch || commandBarOverflowLevel >= 2) && onCreateFolder ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(onCreateFolder)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><CreateNewFolderRoundedIcon fontSize="small" /></Box>
             新建文件夹
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 2 && onUpload ? (
+        {!compactTouch && commandBarOverflowLevel >= 2 && onUpload ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(onUpload)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UploadRoundedIcon fontSize="small" /></Box>
             上传文件
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 1 && onUploadFolder ? (
+        {(compactTouch || commandBarOverflowLevel >= 1) && onUploadFolder ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(onUploadFolder)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><DriveFolderUploadRoundedIcon fontSize="small" /></Box>
             上传文件夹
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 1 && onUndo ? (
+        {(compactTouch || commandBarOverflowLevel >= 1) && onUndo ? (
           <MenuItem disabled={!canUndo} onClick={() => runCommandBarOverflowAction(onUndo)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UndoRoundedIcon fontSize="small" /></Box>
             撤销
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 1 && onRedo ? (
+        {(compactTouch || commandBarOverflowLevel >= 1) && onRedo ? (
           <MenuItem disabled={!canRedo} onClick={() => runCommandBarOverflowAction(onRedo)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><RedoRoundedIcon fontSize="small" /></Box>
             重做
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 1 && navigationPane ? (
+        {compactTouch && onPaste ? (
+          <MenuItem disabled={!canPaste} onClick={() => runCommandBarOverflowAction(() => onPaste())}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><ContentPasteRoundedIcon fontSize="small" /></Box>
+            粘贴
+          </MenuItem>
+        ) : null}
+        {compactTouch && onRefresh ? (
+          <MenuItem disabled={loading} onClick={() => runCommandBarOverflowAction(onRefresh)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><RefreshRoundedIcon fontSize="small" /></Box>
+            刷新
+          </MenuItem>
+        ) : null}
+        {!compactTouch && commandBarOverflowLevel >= 1 && navigationPane ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(toggleNavigationPane)}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><ViewSidebarRoundedIcon fontSize="small" /></Box>
             {viewPreferences.navigationPaneVisible ? '隐藏导航窗格' : '显示导航窗格'}
           </MenuItem>
         ) : null}
-        {commandBarOverflowLevel >= 1 ? (
+        {!compactTouch && commandBarOverflowLevel >= 1 ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(() => setInspectorOpen((open) => !open))}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><InfoOutlinedIcon fontSize="small" /></Box>
             {inspectorOpen ? '隐藏详细信息' : '显示详细信息'}
@@ -4664,8 +5022,37 @@ export function XDriveFileExplorer({
 
       <Divider />
 
+      <Drawer
+        anchor="left"
+        open={compactTouch && navigationDrawerOpen}
+        onClose={() => setNavigationDrawerOpen(false)}
+        slotProps={{
+          paper: {
+            sx: {
+              width: 'min(86vw, 320px)',
+              maxWidth: '100%',
+              pt: 'env(safe-area-inset-top)',
+              pb: 'env(safe-area-inset-bottom)',
+            },
+          },
+        }}
+      >
+        <Box data-xdrive-file-explorer-touch-navigation-drawer sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 52, px: 1.5 }}>
+            <Typography variant="subtitle1" fontWeight={600}>位置</Typography>
+            <IconButton aria-label="关闭位置" onClick={() => setNavigationDrawerOpen(false)} sx={{ width: 44, height: 44 }}>
+              <CloseRoundedIcon />
+            </IconButton>
+          </Stack>
+          <Divider />
+          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+            {navigationPane}
+          </Box>
+        </Box>
+      </Drawer>
+
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {navigationPane && viewPreferences.navigationPaneVisible ? (
+      {navigationPane && viewPreferences.navigationPaneVisible && !compactTouch ? (
         <>
           <Box
             data-xdrive-file-explorer-navigation-pane
@@ -5106,7 +5493,7 @@ export function XDriveFileExplorer({
           />
         ) : null}
       </Box>
-      {inspectorOpen ? (
+      {inspectorOpen && !compactTouch ? (
         <>
           <Box
             role="separator"
@@ -5307,34 +5694,80 @@ export function XDriveFileExplorer({
         onClose={closeQuickLook}
       />
 
-      <Menu
-        open={Boolean(contextMenu)}
-        onClose={() => setContextMenu(null)}
-        anchorReference="anchorPosition"
-        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
-      >
-        {contextMenuItems.map((menuItem) => (
-          <Fragment key={menuItem.id}>
-            {menuItem.dividerBefore ? <Divider /> : null}
-            <MenuItem
-              disabled={menuItem.disabled}
-              onClick={() => {
-                setContextMenu(null)
-                menuItem.onSelect()
-              }}
-              sx={menuItem.danger ? { color: 'error.main' } : undefined}
-            >
-              {menuItem.icon ? <Box sx={{ mr: 1, display: 'flex' }}>{menuItem.icon}</Box> : null}
-              <Box sx={{ minWidth: 0, flex: 1 }}>{menuItem.label}</Box>
-              {fileExplorerMenuShortcut(menuItem.id, keyboardProfile) ? (
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 3, whiteSpace: 'nowrap' }}>
-                  {fileExplorerMenuShortcut(menuItem.id, keyboardProfile)}
-                </Typography>
-              ) : null}
-            </MenuItem>
-          </Fragment>
-        ))}
-      </Menu>
+      {compactTouch ? (
+        <Drawer
+          anchor="bottom"
+          open={Boolean(contextMenu)}
+          onClose={() => setContextMenu(null)}
+          slotProps={{
+            paper: {
+              sx: {
+                maxHeight: '78dvh',
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                pb: 'env(safe-area-inset-bottom)',
+              },
+            },
+          }}
+        >
+          <Box data-xdrive-file-explorer-touch-action-sheet sx={{ minHeight: 0, overflowY: 'auto' }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 52, px: 2 }}>
+              <Typography variant="subtitle1" fontWeight={600}>文件操作</Typography>
+              <IconButton aria-label="关闭文件操作" onClick={() => setContextMenu(null)} sx={{ width: 44, height: 44 }}>
+                <CloseRoundedIcon />
+              </IconButton>
+            </Stack>
+            <Divider />
+            <List disablePadding>
+              {contextMenuItems.map((menuItem) => (
+                <Fragment key={menuItem.id}>
+                  {menuItem.dividerBefore ? <Divider /> : null}
+                  <ListItemButton
+                    disabled={menuItem.disabled}
+                    onClick={() => {
+                      setContextMenu(null)
+                      menuItem.onSelect()
+                    }}
+                    sx={{ minHeight: 48, color: menuItem.danger ? 'error.main' : undefined }}
+                  >
+                    {menuItem.icon ? <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{menuItem.icon}</ListItemIcon> : null}
+                    <ListItemText primary={menuItem.label} />
+                  </ListItemButton>
+                </Fragment>
+              ))}
+            </List>
+          </Box>
+        </Drawer>
+      ) : (
+        <Menu
+          open={Boolean(contextMenu)}
+          onClose={() => setContextMenu(null)}
+          anchorReference="anchorPosition"
+          anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+        >
+          {contextMenuItems.map((menuItem) => (
+            <Fragment key={menuItem.id}>
+              {menuItem.dividerBefore ? <Divider /> : null}
+              <MenuItem
+                disabled={menuItem.disabled}
+                onClick={() => {
+                  setContextMenu(null)
+                  menuItem.onSelect()
+                }}
+                sx={menuItem.danger ? { color: 'error.main' } : undefined}
+              >
+                {menuItem.icon ? <Box sx={{ mr: 1, display: 'flex' }}>{menuItem.icon}</Box> : null}
+                <Box sx={{ minWidth: 0, flex: 1 }}>{menuItem.label}</Box>
+                {fileExplorerMenuShortcut(menuItem.id, keyboardProfile) ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 3, whiteSpace: 'nowrap' }}>
+                    {fileExplorerMenuShortcut(menuItem.id, keyboardProfile)}
+                  </Typography>
+                ) : null}
+              </MenuItem>
+            </Fragment>
+          ))}
+        </Menu>
+      )}
 
       <Divider />
 

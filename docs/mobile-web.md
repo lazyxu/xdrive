@@ -68,3 +68,17 @@ Exercise 390×844, 899×700, 900×700 and a wide desktop viewport, including nar
 Local validation used Node 24.19.0 with the repository's Web lockfile and Desktop package dependencies. The official Playwright Chromium and headless-shell downloads returned a 195-byte HTML “Site Unavailable” response rather than an archive. The local Vite preview started successfully, but the available remote browser could not connect to that loopback service (`ERR_CONNECTION_REFUSED`). No browser layout, touch, focus, DOM-preservation or physical-device pass is claimed.
 
 Before leaving Draft, run the real app with a bounded API fixture or a test server at the listed viewports. Include More close/Escape/backdrop/focus, narrow → wide → narrow, actual Files/Gallery scroll hosts and the browser Back → account menu/settings → Forward to Viewer path. The latter must also close update confirmation without executing an account action. Keep native iOS/Android keyboard and safe-area checks explicitly separate from desktop browser emulation.
+
+
+### Phase 2 implementation record — 2026-10-08
+
+**Status: Implemented on the dependent mobile FileExplorer branch; browser/device QA pending.**
+
+- Shared FileExplorer now detects the compact touch presentation only when the viewport is below the shared 900 CSS px boundary **and** the primary pointer is coarse. Desktop mouse interaction keeps single-click selection, double-click open, Ctrl/Cmd/Shift selection, resize splitters and drag behavior.
+- Compact touch uses single-tap Open outside selection mode. “选择” or a 450 ms long press enters explicit multi-select; subsequent taps toggle items until “完成”. Scroll motion cancels long-press selection.
+- Details mode projects to a single responsive Name column with a 52 px touch row without writing back desktop column visibility, widths or density. Navigation becomes an on-demand Drawer without mutating the persisted desktop sidebar preference. The desktop Inspector side pane is suppressed on compact touch; Properties remains available from the item action sheet.
+- Every touch item exposes a 44 px More target. Item actions use a bottom sheet on compact touch while desktop keeps the pointer-position context menu. The compact command bar exposes upload, view/sort, selection and overflow actions with 44 px targets.
+- Mobile search collapses to an icon until invoked; Forward/Refresh leave the compact address row and Refresh remains available from the overflow menu.
+- Native touch drag/reorder remains out of scope for this phase. Internal/external desktop drag/drop behavior is unchanged; touch move/copy continues through explicit file actions.
+
+Before this phase is merge-ready, validate tap/long-press/scroll discrimination, selection actions, action-sheet focus and dismissal, navigation Drawer, 360/390/430 px portrait, landscape, and a mouse on a touch-capable Windows device. Native iOS/Android keyboard and safe-area checks remain device acceptance rather than desktop-browser emulation.
