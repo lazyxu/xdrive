@@ -206,6 +206,7 @@ export default function App({
   const [updateCancelling, setUpdateCancelling] = useState(false)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
+  const transfersRevisionRef = useRef(0)
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
@@ -685,7 +686,13 @@ export default function App({
       if (active) setAgent(value)
     })
     void window.xdriveDesktop.agent.getTransfers().then((value) => {
-      if (active) setTransfers(value)
+      if (
+        active &&
+        value.revision >= transfersRevisionRef.current
+      ) {
+        transfersRevisionRef.current = value.revision
+        setTransfers(value)
+      }
     })
     const unsubscribe = window.xdriveDesktop.agent.onState((value) => {
       if (active) setAgent(value)
@@ -694,7 +701,10 @@ export default function App({
       if (active) setLoginHistory(value)
     })
     const unsubscribeTransfers = window.xdriveDesktop.agent.onTransfers((value) => {
-      if (active) setTransfers(value)
+      if (active) {
+        transfersRevisionRef.current = value.revision
+        setTransfers(value)
+      }
     })
     const unsubscribeWindowState = window.xdriveDesktop.onWindowState((value) => {
       if (active) setWindowMaximized(value.maximized)
