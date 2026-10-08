@@ -137,6 +137,7 @@ function loadNavigationSectionState(storageKey: string) {
 }
 
 export function XDriveFileExplorerNavigationPane({
+  lifecycleKey = '',
   currentCrumbs,
   trashActive = false,
   onNavigateTrash,
@@ -184,6 +185,7 @@ export function XDriveFileExplorerNavigationPane({
   onError,
   sectionPreferencesKey = defaultNavigationSectionPreferencesKey,
 }: {
+  lifecycleKey?: string
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
   trashActive?: boolean
   onNavigateTrash?: () => void | Promise<void>
@@ -250,6 +252,7 @@ export function XDriveFileExplorerNavigationPane({
     hasMore: boolean
     loaded: boolean
     generation: number
+    lifecycleKey: string
   }>>({})
   const pageByParentRef = useRef(pageByParent)
   const [expandedIDs, setExpandedIDs] = useState<Set<number>>(() => new Set())
@@ -257,9 +260,17 @@ export function XDriveFileExplorerNavigationPane({
   const loadingIDsRef = useRef(new Map<number, number>())
   const loadDirectoryPageRef = useRef(loadDirectoryPage)
   const loadDirectoryPageGenerationRef = useRef(1)
-  if (loadDirectoryPageRef.current !== loadDirectoryPage) {
+  const lifecycleKeyRef = useRef(lifecycleKey)
+  const loaderChanged = loadDirectoryPageRef.current !== loadDirectoryPage
+  const lifecycleChanged = lifecycleKeyRef.current !== lifecycleKey
+  if (loaderChanged || lifecycleChanged) {
     loadDirectoryPageRef.current = loadDirectoryPage
+    lifecycleKeyRef.current = lifecycleKey
     loadDirectoryPageGenerationRef.current += 1
+    if (lifecycleChanged) {
+      pageByParentRef.current = {}
+      loadingIDsRef.current.clear()
+    }
   }
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
   const [customizeAnchor, setCustomizeAnchor] = useState<HTMLElement | null>(null)
@@ -272,6 +283,15 @@ export function XDriveFileExplorerNavigationPane({
   const [expandedSections, setExpandedSections] = useState<XDriveFileExplorerNavigationSectionState>(
     () => loadNavigationSectionState(sectionPreferencesKey),
   )
+
+  useEffect(() => {
+    pageByParentRef.current = {}
+    setPageByParent({})
+    loadingIDsRef.current.clear()
+    setLoadingIDs(new Set())
+    setExpandedIDs(new Set())
+    setDropTargetID(null)
+  }, [lifecycleKey])
 
   useEffect(() => {
     setExpandedSections(loadNavigationSectionState(sectionPreferencesKey))
@@ -324,27 +344,30 @@ export function XDriveFileExplorerNavigationPane({
       if (path) byID.set(crumb.id, { id: crumb.id, name: crumb.name, kind: 'dir', path })
     }
     for (const page of Object.values(pageByParent)) {
+      if (page.lifecycleKey !== lifecycleKey) continue
       for (const node of page.children) {
         const path = node.crumbs.slice(1).map((crumb) => crumb.name).join('/')
         if (path) byID.set(node.id, { id: node.id, name: node.name, kind: 'dir', path })
       }
     }
     return [...byID.values()]
-  }, [currentCrumbs, pageByParent])
+  }, [currentCrumbs, lifecycleKey, pageByParent])
 
   useEffect(() => {
     onAvailabilityItemsChange?.(navigationAvailabilityItems)
   }, [navigationAvailabilityItems, onAvailabilityItemsChange])
 
-  const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => (
-    (pageByParent[String(node.id)]?.children ?? []).map((candidate) => ({
+  const childrenFor = useCallback((node: XDriveFileExplorerNavigationTreeNode) => {
+    const page = pageByParent[String(node.id)]
+    if (!page || page.lifecycleKey !== lifecycleKey) return []
+    return page.children.map((candidate) => ({
       ...candidate,
       crumbs: [
         ...node.crumbs.map((crumb) => ({ ...crumb })),
         { id: candidate.id, name: candidate.name },
       ],
     }))
-  ), [pageByParent])
+  }, [lifecycleKey, pageByParent])
 
   const commitParentPage = useCallback((
     parentID: number,
@@ -354,6 +377,7 @@ export function XDriveFileExplorerNavigationPane({
       hasMore: boolean
       loaded: boolean
       generation: number
+      lifecycleKey: string
     },
   ) => {
     const next = {
@@ -369,9 +393,17 @@ export function XDriveFileExplorerNavigationPane({
     append = false,
   ) => {
     const generation = loadDirectoryPageGenerationRef.current
+    const requestLifecycleKey = lifecycleKeyRef.current
     const current = pageByParentRef.current[String(node.id)]
-    const appendCurrentGeneration = append && current?.generation === generation
-    if (!append && current?.loaded && current.generation === generation) return
+    const currentLifecycle = current?.lifecycleKey === requestLifecycleKey
+    const appendCurrentGeneration =
+      append && currentLifecycle && current?.generation === generation
+    if (
+      !append &&
+      currentLifecycle &&
+      current?.loaded &&
+      current.generation === generation
+    ) return
     if (
       appendCurrentGeneration &&
       (!current?.hasMore || !current.nextCursor)
@@ -385,7 +417,10 @@ export function XDriveFileExplorerNavigationPane({
         node.id,
         appendCurrentGeneration ? current?.nextCursor : undefined,
       )
-      if (generation !== loadDirectoryPageGenerationRef.current) return
+      if (
+        generation !== loadDirectoryPageGenerationRef.current ||
+        requestLifecycleKey !== lifecycleKeyRef.current
+      ) return
       if (
         appendCurrentGeneration &&
         current?.nextCursor &&
@@ -416,9 +451,13 @@ export function XDriveFileExplorerNavigationPane({
         hasMore: page.hasMore,
         loaded: true,
         generation,
+        lifecycleKey: requestLifecycleKey,
       })
     } catch (error) {
-      if (generation === loadDirectoryPageGenerationRef.current) onError?.(error)
+      if (
+        generation === loadDirectoryPageGenerationRef.current &&
+        requestLifecycleKey === lifecycleKeyRef.current
+      ) onError?.(error)
     } finally {
       if (loadingIDsRef.current.get(node.id) === generation) {
         loadingIDsRef.current.delete(node.id)
@@ -539,7 +578,8 @@ export function XDriveFileExplorerNavigationPane({
 
   const renderNode = (node: XDriveFileExplorerNavigationTreeNode, depth: number) => {
     const children = childrenFor(node)
-    const page = pageByParent[String(node.id)]
+    const candidatePage = pageByParent[String(node.id)]
+    const page = candidatePage?.lifecycleKey === lifecycleKey ? candidatePage : undefined
     const loaded = Boolean(page?.loaded)
     const hasMore = Boolean(page?.hasMore)
     const loading = loadingIDs.has(node.id)

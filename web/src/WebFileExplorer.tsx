@@ -744,6 +744,7 @@ export default function WebFileExplorer({
         )}
         navigationPane={(
           <XDriveFileExplorerNavigationPane
+            lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
             trashActive={trashActive}
             onNavigateTrash={onOpenTrash}
