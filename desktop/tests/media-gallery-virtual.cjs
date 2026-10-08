@@ -139,3 +139,53 @@ test('Gallery thumbnail density changes layout columns without changing logical 
   assert.equal(dense.groups[0].itemCount, 120)
   assert.equal(roomy.groups[0].itemCount, 120)
 })
+
+test('Gallery Timeline window finds a deep viewport without scanning every date group', () => {
+  const groupCount = 100_000
+  const groupStep = 120
+  const groupHeight = 100
+  const groups = Array.from({ length: groupCount }, (_, index) => ({
+    key: `group-${index}`,
+    label: `Group ${index}`,
+    itemCount: 1,
+    startIndex: index,
+    top: index * groupStep,
+    height: groupHeight,
+    headerHeight: 32,
+    itemsTop: index * groupStep + 40,
+    itemsHeight: 60,
+    rowCount: 1,
+  }))
+
+  let indexedReads = 0
+  const trackedGroups = new Proxy(groups, {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && /^\\d+$/.test(property)) indexedReads += 1
+      return Reflect.get(target, property, receiver)
+    },
+  })
+
+  const targetGroup = 90_000
+  const visibleTop = targetGroup * groupStep + 10
+  const window = xDriveMediaGalleryTimelineWindow({
+    layout: {
+      columns: 1,
+      columnWidth: 100,
+      rowStep: 108,
+      totalHeight: (groupCount - 1) * groupStep + groupHeight,
+      groups: trackedGroups,
+    },
+    visibleTop,
+    visibleBottom: visibleTop + 800,
+    overscanRows: 2,
+  })
+
+  assert.ok(window.segments.length > 0)
+  assert.ok(window.startIndex > 89_000)
+  assert.ok(window.endIndex < 91_000)
+  assert.ok(
+    indexedReads < 64,
+    `deep viewport should use binary search + visible groups, indexed reads=${indexedReads}`,
+  )
+})
+
