@@ -60,7 +60,7 @@ export function XDriveFilePropertiesDialog({
               sx={{
                 minHeight: 144,
                 maxHeight: 220,
-                borderRadius: 1.5,
+                borderRadius: 0,
                 bgcolor: 'background.default',
                 display: 'flex',
                 alignItems: 'center',

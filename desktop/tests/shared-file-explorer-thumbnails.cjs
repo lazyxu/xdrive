@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const thumbnail = read('ui', 'shared', 'src', 'mui', 'FileExplorerThumbnail.tsx')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+const properties = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const recent = read('ui', 'shared', 'src', 'mui', 'FileExplorerRecentController.ts')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
@@ -68,6 +69,11 @@ test('FileExplorer file thumbnails use square frames without rounded clipping', 
   assert.ok(
     pane.includes("position: 'relative', overflow: 'visible', borderRadius: 0"),
     'navigation thumbnail frames must remain square while leaving availability badges visible',
+  )
+  assert.ok(
+    properties.includes("data-xdrive-file-properties-preview") &&
+      properties.includes("borderRadius: 0,"),
+    'Properties thumbnail/preview frame must remain square',
   )
 })
 
