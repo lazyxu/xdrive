@@ -148,6 +148,7 @@ export default function WebFileExplorer({
   }, [api, onError])
 
   const recent = useXDriveFileExplorerRecent<Node>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     loadItems: () => api.fileRecent(16),
     touchItem: (nodeID) => api.touchFileRecent(nodeID),
     clearItems: () => api.clearFileRecent(),
@@ -260,6 +261,7 @@ export default function WebFileExplorer({
   )
 
   const quickAccess = useXDriveFileExplorerQuickAccess<Node>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     loadItems: () => api.fileQuickAccess(),
     pinItem: (nodeID) => api.pinFileQuickAccess(nodeID),
     unpinItem: (nodeID) => api.unpinFileQuickAccess(nodeID),
@@ -267,6 +269,7 @@ export default function WebFileExplorer({
   })
 
   const favorites = useXDriveFileExplorerFavorites<Node>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     loadItems: () => api.fileFavorites(),
     favoriteItem: (nodeID) => api.favoriteFile(nodeID),
     unfavoriteItem: (nodeID) => api.unfavoriteFile(nodeID),

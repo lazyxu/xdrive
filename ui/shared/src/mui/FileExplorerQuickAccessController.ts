@@ -27,12 +27,14 @@ function projectQuickAccessItem<TNode extends { id: number; name: string }>(
 export function useXDriveFileExplorerQuickAccess<
   TNode extends { id: number; name: string },
 >({
+  lifecycleKey = '',
   enabled = true,
   loadItems,
   pinItem,
   unpinItem,
   onError,
 }: {
+  lifecycleKey?: string
   enabled?: boolean
   loadItems: () => Promise<XDriveFileQuickAccessItem<TNode>[]>
   pinItem: (nodeID: number) => Promise<XDriveFileQuickAccessItem<TNode>>
@@ -50,10 +52,16 @@ export function useXDriveFileExplorerQuickAccess<
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const pendingMutationCountRef = useRef(0)
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const lifecycleGenerationRef = useRef(1)
 
-  if (enabledRef.current !== enabled) {
+  if (
+    enabledRef.current !== enabled ||
+    lifecycleKeyRef.current !== lifecycleKey
+  ) {
     enabledRef.current = enabled
+    lifecycleKeyRef.current = lifecycleKey
+    loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
@@ -89,11 +97,14 @@ export function useXDriveFileExplorerQuickAccess<
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
     }
-  }, [enabled, loadFresh])
+  }, [enabled, lifecycleKey, loadFresh])
 
   useEffect(() => {
+    setItems([])
+    setLoading(false)
+    setBusyID(null)
     void refresh()
-  }, [refresh])
+  }, [lifecycleKey, refresh])
 
   useEffect(() => () => {
     loadRequestRef.current += 1

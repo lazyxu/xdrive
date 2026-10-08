@@ -49,11 +49,13 @@ export function useXDriveFileExplorerRecent<
     updated_at?: string
   },
 >({
+  lifecycleKey = '',
   enabled = true,
   loadItems,
   touchItem,
   clearItems,
 }: {
+  lifecycleKey?: string
   enabled?: boolean
   loadItems: () => Promise<XDriveFileRecentItem<TNode>[]>
   touchItem: (nodeID: number) => Promise<XDriveFileRecentItem<TNode>>
@@ -68,10 +70,16 @@ export function useXDriveFileExplorerRecent<
   const loadRequestRef = useRef(0)
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const lifecycleGenerationRef = useRef(1)
 
-  if (enabledRef.current !== enabled) {
+  if (
+    enabledRef.current !== enabled ||
+    lifecycleKeyRef.current !== lifecycleKey
+  ) {
     enabledRef.current = enabled
+    lifecycleKeyRef.current = lifecycleKey
+    loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
   }
@@ -107,11 +115,14 @@ export function useXDriveFileExplorerRecent<
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
     }
-  }, [enabled, loadFresh])
+  }, [enabled, lifecycleKey, loadFresh])
 
   useEffect(() => {
+    rawItemsRef.current.clear()
+    setItems([])
+    setLoading(false)
     void refresh()
-  }, [refresh])
+  }, [lifecycleKey, refresh])
 
   useEffect(() => () => {
     loadRequestRef.current += 1
