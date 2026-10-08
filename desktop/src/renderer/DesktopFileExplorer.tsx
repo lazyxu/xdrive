@@ -563,6 +563,8 @@ export default function DesktopFileExplorer({
     enabled: fileTagsSupported && savedSearchesSupported,
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
+  const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
+  organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const [tagDialogItems, setTagDialogItems] = useState<XDriveFileExplorerItem[]>([])
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [renameSavedSearch, setRenameSavedSearch] = useState<AgentFileSavedSearch | null>(null)
@@ -2046,7 +2048,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
         busy={Boolean(organization.busyKey)}
         queryNodeTags={organization.queryNodeTags}
         onSetTag={async (tagID, nodeIDs, assigned) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
           await organization.setTagNodes(tagID, nodeIDs, assigned)
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
           if (searchFilters.tagID === tagID) {
             await applySearch(searchState.query, searchFilters)
           }
@@ -2054,7 +2058,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onCreateTag={organization.createTag}
         onUpdateTag={organization.updateTag}
         onDeleteTag={async (tagID) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
           await organization.deleteTag(tagID)
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
           if (searchFilters.tagID === tagID) {
             setActiveTagID(null)
             clearSearch()
@@ -2068,11 +2074,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onClose={() => setSaveSearchOpen(false)}
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
         onSubmit={async (name) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
           const created = await organization.createSavedSearch({
             name,
             query: searchState.query,
             filters: persistedSearchFilters,
           })
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
           setActiveSavedSearchID(created.id)
           if (searchFilters.availability) {
             onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
@@ -2089,11 +2097,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
         onSubmit={async (name) => {
           if (!renameSavedSearch) return
+          const lifecycleKey = organizationLifecycleKeyRef.current
           await organization.updateSavedSearch(renameSavedSearch.id, {
             name,
             query: renameSavedSearch.query,
             filters: renameSavedSearch.filters,
           })
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
           onFeedback('good', '智能文件夹已重命名。')
         }}
       />
