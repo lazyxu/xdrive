@@ -280,10 +280,6 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if !foundBlocked {
 		t.Fatal("blocked GC detail missing")
 	}
-	if err := db.Delete(&reuseGuard).Error; err != nil {
-		t.Fatal(err)
-	}
-
 	if err := server.captureStorageSample(context.Background(), sampleNow, true); err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +289,26 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if global.UnreferencedBlobCount != 1 || global.UnreferencedBlobBytes != 9 {
 		t.Fatalf("physical unreferenced blobs count=%d bytes=%d want 1/9", global.UnreferencedBlobCount, global.UnreferencedBlobBytes)
+	}
+	if global.PendingGC == nil ||
+		global.PendingGC.BlockedByUploadBlobCount != 1 ||
+		global.PendingGC.BlockedByUploadBlobBytes != 9 ||
+		global.PendingGC.PhysicalMissingBlobCount != 1 ||
+		global.PendingGC.PhysicalMissingMetadataBytes != 123 ||
+		global.PendingGC.AwaitingGCBlobCount != 0 ||
+		global.PendingGC.MetadataInconsistentBlobCount != 0 ||
+		global.PendingGC.DeletingBlobCount != 2 ||
+		global.PendingGC.DeletingBlobMetadataBytes != 132 {
+		t.Fatalf("unexpected pending GC snapshot: %+v", global.PendingGC)
+	}
+	if global.CASHealth == nil ||
+		global.CASHealth.DeletingBlobs != 2 ||
+		global.CASHealth.MissingMetadata != 0 ||
+		global.CASHealth.RefCountMismatches != 0 {
+		t.Fatalf("unexpected CAS health snapshot: %+v", global.CASHealth)
+	}
+	if err := db.Delete(&reuseGuard).Error; err != nil {
+		t.Fatal(err)
 	}
 	if global.DiskTotalBytes == nil || global.DiskUsedBytes == nil || global.DiskAvailableBytes == nil || global.XDrivePhysicalBytes == nil {
 		t.Fatalf("global stats missing disk capacity: %#v", global)
@@ -549,6 +565,22 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	if len(history.Samples) != 1 || history.Samples[0].CASBlobCount != 2 {
 		t.Fatalf("unexpected storage history: %+v", history)
+	}
+	point := history.Samples[0]
+	if !point.GCClassificationSnapshotAvailable ||
+		point.AwaitingGCBlobCount != 1 ||
+		point.AwaitingGCBlobBytes != 9 ||
+		point.BlockedByUploadBlobCount != 0 ||
+		point.PhysicalMissingBlobCount != 1 ||
+		point.PhysicalMissingMetadataBytes != 123 ||
+		point.DeletingBlobMetadataBytes != 132 {
+		t.Fatalf("unexpected GC history point: %+v", point)
+	}
+	if !point.CASHealthSnapshotAvailable ||
+		point.DeletingBlobCount != 2 ||
+		point.MissingMetadataCount != 0 ||
+		point.RefCountMismatchCount != 0 {
+		t.Fatalf("unexpected CAS health history point: %+v", point)
 	}
 	if history.Decision.Priority != "collecting" || history.SamplingIntervalHours != 24 || history.RetentionDays != 180 {
 		t.Fatalf("unexpected storage history decision/config: %+v", history)

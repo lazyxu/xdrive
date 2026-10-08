@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/lazyxu/xdrive/internal/maintenance"
 )
 
 func TestStorageDecisionPrefersSmallFilePacking(t *testing.T) {
@@ -94,6 +96,28 @@ func TestStorageSampleIntervalIsDaily(t *testing.T) {
 
 func TestStorageHistorySnapshotProjectsPersistedAnomalyInventory(t *testing.T) {
 	stats := storageStatsDTO{
+		PendingGC: &storagePendingGCSnapshotDTO{
+			AwaitingGCBlobCount:           2,
+			AwaitingGCBlobBytes:           20,
+			BlockedByUploadBlobCount:      3,
+			BlockedByUploadBlobBytes:      30,
+			PhysicalMissingBlobCount:      4,
+			PhysicalMissingMetadataBytes:  40,
+			MetadataInconsistentBlobCount: 5,
+			MetadataInconsistentBlobBytes: 50,
+			DeletingBlobCount:             9,
+			DeletingBlobMetadataBytes:     90,
+		},
+		CASHealth: &maintenance.CASHealthReport{
+			DeletingBlobs:      9,
+			StaleDeletingBlobs: 2,
+			MissingMetadata:    1,
+			RefCountMismatches: 3,
+			StateMismatches:    4,
+			SizeMismatches:     5,
+			KeyHashMismatches:  6,
+			InvalidStates:      7,
+		},
 		UploadStaging: &uploadStagingStatsDTO{
 			OrphanBytes:      11,
 			ReclaimableBytes: 17,
@@ -118,6 +142,18 @@ func TestStorageHistorySnapshotProjectsPersistedAnomalyInventory(t *testing.T) {
 	got, ok := storageHistorySnapshot(string(raw))
 	if !ok || got.Inventory == nil || got.UploadStaging == nil {
 		t.Fatalf("snapshot not projected: ok=%v snapshot=%+v", ok, got)
+	}
+	if got.PendingGC == nil ||
+		got.PendingGC.BlockedByUploadBlobCount != 3 ||
+		got.PendingGC.PhysicalMissingBlobCount != 4 ||
+		got.PendingGC.DeletingBlobMetadataBytes != 90 {
+		t.Fatalf("pending gc=%+v", got.PendingGC)
+	}
+	if got.CASHealth == nil ||
+		got.CASHealth.DeletingBlobs != 9 ||
+		got.CASHealth.StaleDeletingBlobs != 2 ||
+		got.CASHealth.RefCountMismatches != 3 {
+		t.Fatalf("cas health=%+v", got.CASHealth)
 	}
 	if got.UploadStaging.OrphanBytes != 11 || got.UploadStaging.ReclaimableBytes != 17 {
 		t.Fatalf("staging=%+v", got.UploadStaging)

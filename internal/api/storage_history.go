@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm/clause"
 )
@@ -23,35 +24,54 @@ const (
 )
 
 type storageHistoryPointDTO struct {
-	SlotAt                    time.Time              `json:"slot_at"`
-	CapturedAt                time.Time              `json:"captured_at"`
-	CASBlobCount              int64                  `json:"cas_blob_count"`
-	CASPhysicalBytes          int64                  `json:"cas_physical_bytes"`
-	CASLogicalReferencedBytes int64                  `json:"cas_logical_referenced_bytes"`
-	CASDedupRatio             float64                `json:"cas_dedup_ratio"`
-	CASSavingsRatio           float64                `json:"cas_savings_ratio"`
-	P50BlobSizeBytes          int64                  `json:"p50_blob_size_bytes"`
-	P90BlobSizeBytes          int64                  `json:"p90_blob_size_bytes"`
-	P99BlobSizeBytes          int64                  `json:"p99_blob_size_bytes"`
-	SmallLT64KiBCountShare    float64                `json:"small_lt64_kib_count_share"`
-	SmallLT256KiBCountShare   float64                `json:"small_lt256_kib_count_share"`
-	LargeGE16MiBByteShare     float64                `json:"large_ge16_mib_byte_share"`
-	Buckets                   []storageSizeBucketDTO `json:"buckets"`
-	UnreferencedBlobCount     int64                  `json:"unreferenced_blob_count"`
-	UnreferencedBlobBytes     int64                  `json:"unreferenced_blob_bytes"`
-	LegacyBlobCount           int64                  `json:"legacy_blob_count"`
-	LegacyPhysicalBytes       int64                  `json:"legacy_physical_bytes"`
-	AnomalySnapshotAvailable  bool                   `json:"anomaly_snapshot_available"`
-	StagingOrphanBytes        int64                  `json:"staging_orphan_bytes"`
-	StagingReclaimableBytes   int64                  `json:"staging_reclaimable_bytes"`
-	MediaThumbnailBytes       int64                  `json:"media_thumbnail_bytes"`
-	VideoPosterBytes          int64                  `json:"video_poster_bytes"`
-	AnalysisPreviewBytes      int64                  `json:"analysis_preview_bytes"`
-	MediaOtherBytes           int64                  `json:"media_other_bytes"`
-	PreviewCacheBytes         int64                  `json:"preview_cache_bytes"`
-	VideoTranscodeBytes       int64                  `json:"video_transcode_bytes"`
-	StorageTempBytes          int64                  `json:"storage_temp_bytes"`
-	UnclassifiedBytes         int64                  `json:"unclassified_bytes"`
+	SlotAt                            time.Time              `json:"slot_at"`
+	CapturedAt                        time.Time              `json:"captured_at"`
+	CASBlobCount                      int64                  `json:"cas_blob_count"`
+	CASPhysicalBytes                  int64                  `json:"cas_physical_bytes"`
+	CASLogicalReferencedBytes         int64                  `json:"cas_logical_referenced_bytes"`
+	CASDedupRatio                     float64                `json:"cas_dedup_ratio"`
+	CASSavingsRatio                   float64                `json:"cas_savings_ratio"`
+	P50BlobSizeBytes                  int64                  `json:"p50_blob_size_bytes"`
+	P90BlobSizeBytes                  int64                  `json:"p90_blob_size_bytes"`
+	P99BlobSizeBytes                  int64                  `json:"p99_blob_size_bytes"`
+	SmallLT64KiBCountShare            float64                `json:"small_lt64_kib_count_share"`
+	SmallLT256KiBCountShare           float64                `json:"small_lt256_kib_count_share"`
+	LargeGE16MiBByteShare             float64                `json:"large_ge16_mib_byte_share"`
+	Buckets                           []storageSizeBucketDTO `json:"buckets"`
+	UnreferencedBlobCount             int64                  `json:"unreferenced_blob_count"`
+	UnreferencedBlobBytes             int64                  `json:"unreferenced_blob_bytes"`
+	LegacyBlobCount                   int64                  `json:"legacy_blob_count"`
+	LegacyPhysicalBytes               int64                  `json:"legacy_physical_bytes"`
+	AnomalySnapshotAvailable          bool                   `json:"anomaly_snapshot_available"`
+	GCClassificationSnapshotAvailable bool                   `json:"gc_classification_snapshot_available"`
+	AwaitingGCBlobCount               int64                  `json:"awaiting_gc_blob_count"`
+	AwaitingGCBlobBytes               int64                  `json:"awaiting_gc_blob_bytes"`
+	BlockedByUploadBlobCount          int64                  `json:"blocked_by_upload_blob_count"`
+	BlockedByUploadBlobBytes          int64                  `json:"blocked_by_upload_blob_bytes"`
+	PhysicalMissingBlobCount          int64                  `json:"physical_missing_blob_count"`
+	PhysicalMissingMetadataBytes      int64                  `json:"physical_missing_metadata_bytes"`
+	MetadataInconsistentBlobCount     int64                  `json:"metadata_inconsistent_blob_count"`
+	MetadataInconsistentBlobBytes     int64                  `json:"metadata_inconsistent_blob_bytes"`
+	DeletingBlobMetadataBytes         int64                  `json:"deleting_blob_metadata_bytes"`
+	CASHealthSnapshotAvailable        bool                   `json:"cas_health_snapshot_available"`
+	DeletingBlobCount                 int64                  `json:"deleting_blob_count"`
+	StaleDeletingBlobCount            int64                  `json:"stale_deleting_blob_count"`
+	MissingMetadataCount              int64                  `json:"missing_metadata_count"`
+	RefCountMismatchCount             int64                  `json:"refcount_mismatch_count"`
+	StateMismatchCount                int64                  `json:"state_mismatch_count"`
+	SizeMismatchCount                 int64                  `json:"size_mismatch_count"`
+	KeyHashMismatchCount              int64                  `json:"key_hash_mismatch_count"`
+	InvalidStateCount                 int64                  `json:"invalid_state_count"`
+	StagingOrphanBytes                int64                  `json:"staging_orphan_bytes"`
+	StagingReclaimableBytes           int64                  `json:"staging_reclaimable_bytes"`
+	MediaThumbnailBytes               int64                  `json:"media_thumbnail_bytes"`
+	VideoPosterBytes                  int64                  `json:"video_poster_bytes"`
+	AnalysisPreviewBytes              int64                  `json:"analysis_preview_bytes"`
+	MediaOtherBytes                   int64                  `json:"media_other_bytes"`
+	PreviewCacheBytes                 int64                  `json:"preview_cache_bytes"`
+	VideoTranscodeBytes               int64                  `json:"video_transcode_bytes"`
+	StorageTempBytes                  int64                  `json:"storage_temp_bytes"`
+	UnclassifiedBytes                 int64                  `json:"unclassified_bytes"`
 }
 
 type storageDecisionDTO struct {
@@ -151,12 +171,22 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 	if err != nil {
 		return err
 	}
-	unreferencedCount, unreferencedBytes, err := s.loadUnreferencedPhysicalContentBlobs(ctx)
+	pendingGC, unreferencedCount, unreferencedBytes, err := s.loadUnreferencedContentBlobSnapshot(ctx)
 	if err != nil {
 		return err
 	}
 	stats.UnreferencedBlobCount = unreferencedCount
 	stats.UnreferencedBlobBytes = unreferencedBytes
+	stats.PendingGC = &pendingGC
+
+	health, err := maintenance.CASHealth(
+		s.DB.WithContext(ctx),
+		maintenance.CASDeletingStaleAfter,
+	)
+	if err != nil {
+		return err
+	}
+	stats.CASHealth = &health
 
 	staging, err := s.loadUploadStagingInventoryFresh(ctx)
 	if err != nil {
@@ -326,6 +356,29 @@ func (s *Server) loadStorageHistory(ctx context.Context, now time.Time, days int
 			LegacyBlobCount:           row.LegacyBlobCount,
 			LegacyPhysicalBytes:       row.LegacyPhysicalBytes,
 			AnomalySnapshotAvailable:  anomalySnapshotAvailable,
+		}
+		if snapshot.PendingGC != nil {
+			point.GCClassificationSnapshotAvailable = true
+			point.AwaitingGCBlobCount = snapshot.PendingGC.AwaitingGCBlobCount
+			point.AwaitingGCBlobBytes = snapshot.PendingGC.AwaitingGCBlobBytes
+			point.BlockedByUploadBlobCount = snapshot.PendingGC.BlockedByUploadBlobCount
+			point.BlockedByUploadBlobBytes = snapshot.PendingGC.BlockedByUploadBlobBytes
+			point.PhysicalMissingBlobCount = snapshot.PendingGC.PhysicalMissingBlobCount
+			point.PhysicalMissingMetadataBytes = snapshot.PendingGC.PhysicalMissingMetadataBytes
+			point.MetadataInconsistentBlobCount = snapshot.PendingGC.MetadataInconsistentBlobCount
+			point.MetadataInconsistentBlobBytes = snapshot.PendingGC.MetadataInconsistentBlobBytes
+			point.DeletingBlobMetadataBytes = snapshot.PendingGC.DeletingBlobMetadataBytes
+		}
+		if snapshot.CASHealth != nil {
+			point.CASHealthSnapshotAvailable = true
+			point.DeletingBlobCount = snapshot.CASHealth.DeletingBlobs
+			point.StaleDeletingBlobCount = snapshot.CASHealth.StaleDeletingBlobs
+			point.MissingMetadataCount = snapshot.CASHealth.MissingMetadata
+			point.RefCountMismatchCount = snapshot.CASHealth.RefCountMismatches
+			point.StateMismatchCount = snapshot.CASHealth.StateMismatches
+			point.SizeMismatchCount = snapshot.CASHealth.SizeMismatches
+			point.KeyHashMismatchCount = snapshot.CASHealth.KeyHashMismatches
+			point.InvalidStateCount = snapshot.CASHealth.InvalidStates
 		}
 		if snapshot.UploadStaging != nil {
 			point.StagingOrphanBytes = snapshot.UploadStaging.OrphanBytes
