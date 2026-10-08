@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -88,5 +89,54 @@ func TestStorageSampleIntervalIsDaily(t *testing.T) {
 	base := time.Date(2026, 10, 7, 19, 48, 0, 0, time.UTC)
 	if got, want := base.Truncate(storageSampleInterval), time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("daily slot=%s want=%s", got, want)
+	}
+}
+
+func TestStorageHistorySnapshotProjectsPersistedAnomalyInventory(t *testing.T) {
+	stats := storageStatsDTO{
+		UploadStaging: &uploadStagingStatsDTO{
+			OrphanBytes:      11,
+			ReclaimableBytes: 17,
+		},
+		Inventory: &storageInventoryDTO{
+			Items: []storageInventoryItemDTO{
+				{Key: "media_thumbnail", Bytes: 21},
+				{Key: "video_poster", Bytes: 22},
+				{Key: "analysis_preview", Bytes: 23},
+				{Key: "preview_cache", Bytes: 24},
+				{Key: "video_transcode", Bytes: 25},
+				{Key: "write_temp", Bytes: 26},
+				{Key: "readiness_temp", Bytes: 27},
+			},
+			UnclassifiedBytes: 28,
+		},
+	}
+	raw, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := storageHistorySnapshot(string(raw))
+	if !ok || got.Inventory == nil || got.UploadStaging == nil {
+		t.Fatalf("snapshot not projected: ok=%v snapshot=%+v", ok, got)
+	}
+	if got.UploadStaging.OrphanBytes != 11 || got.UploadStaging.ReclaimableBytes != 17 {
+		t.Fatalf("staging=%+v", got.UploadStaging)
+	}
+	if got.Inventory.UnclassifiedBytes != 28 {
+		t.Fatalf("inventory=%+v", got.Inventory)
+	}
+	if got := storageHistoryInventoryBytes(got.Inventory, "analysis_preview"); got != 23 {
+		t.Fatalf("analysis preview bytes=%d want=23", got)
+	}
+	if got := storageHistoryInventoryBytes(got.Inventory, "missing"); got != 0 {
+		t.Fatalf("missing inventory bytes=%d want=0", got)
+	}
+}
+
+func TestStorageHistorySnapshotToleratesLegacyRows(t *testing.T) {
+	for _, raw := range []string{"", "{}", "{not-json"} {
+		if _, ok := storageHistorySnapshot(raw); ok {
+			t.Fatalf("legacy snapshot %q unexpectedly available", raw)
+		}
 	}
 }

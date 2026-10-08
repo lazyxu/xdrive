@@ -285,6 +285,21 @@ export interface StorageHistoryPoint {
   small_lt256_kib_count_share: number
   large_ge16_mib_byte_share: number
   buckets: StorageSizeBucket[]
+  unreferenced_blob_count: number
+  unreferenced_blob_bytes: number
+  legacy_blob_count: number
+  legacy_physical_bytes: number
+  anomaly_snapshot_available: boolean
+  staging_orphan_bytes: number
+  staging_reclaimable_bytes: number
+  media_thumbnail_bytes: number
+  video_poster_bytes: number
+  analysis_preview_bytes: number
+  media_other_bytes: number
+  preview_cache_bytes: number
+  video_transcode_bytes: number
+  storage_temp_bytes: number
+  unclassified_bytes: number
 }
 
 export interface StorageDecision {

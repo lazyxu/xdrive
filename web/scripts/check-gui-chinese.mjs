@@ -245,7 +245,7 @@ if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 1) thro
 const sharedTableSurfaceExpectations = [
   [files.audit, 1, '审计日志'],
   [files.users, 1, '用户管理'],
-  [files.storageStats, 5, '存储统计'],
+  [files.storageStats, 6, '存储统计'],
 ]
 if ((files.shareList.match(/<XDriveTableSurface\b/g) || []).length !== 1) throw new Error('共享分享列表的表格模式没有复用 TableSurface')
 for (const [source, expected, label] of sharedTableSurfaceExpectations) {
