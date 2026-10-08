@@ -1441,6 +1441,73 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 	})
 }
 
+func markFileOperationDeleteSubtreeTx(
+	tx *gorm.DB,
+	uid uint64,
+	rootID uint64,
+	rootRevision uint64,
+	subtreeIDs []uint64,
+	now time.Time,
+) (bool, error) {
+	if len(subtreeIDs) == 0 {
+		return false, nil
+	}
+	var result struct {
+		RootUpdated bool `gorm:"column:root_updated"`
+	}
+	err := tx.Raw(`
+WITH root_ok AS (
+	SELECT id
+	FROM xd_nodes
+	WHERE id = ?
+	  AND owner_id = ?
+	  AND revision = ?
+),
+updated AS (
+	UPDATE xd_nodes AS n
+	SET deleted_at = CASE
+			WHEN n.deleted_at IS NULL THEN ?
+			ELSE n.deleted_at
+		END,
+		trash_root_id = CASE
+			WHEN n.deleted_at IS NULL THEN ?
+			ELSE n.trash_root_id
+		END,
+		revision = CASE
+			WHEN n.id = ? THEN n.revision + 1
+			ELSE n.revision
+		END,
+		updated_at = ?
+	WHERE n.id IN ?
+	  AND n.owner_id = ?
+	  AND (n.deleted_at IS NULL OR n.id = ?)
+	  AND EXISTS (SELECT 1 FROM root_ok)
+	RETURNING n.id
+)
+SELECT EXISTS (
+	SELECT 1
+	FROM updated
+	WHERE id = ?
+) AS root_updated
+`,
+		rootID,
+		uid,
+		rootRevision,
+		now,
+		rootID,
+		rootID,
+		now,
+		subtreeIDs,
+		uid,
+		rootID,
+		rootID,
+	).Scan(&result).Error
+	if err != nil {
+		return false, err
+	}
+	return result.RootUpdated, nil
+}
+
 func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
 	uid := operation.OwnerID
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1483,18 +1550,18 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 				Update("revoked_at", &now).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&meta.Node{}).
-				Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", subtree.IDs, uid).
-				Updates(map[string]any{"deleted_at": &now, "trash_root_id": node.ID}).Error; err != nil {
+			rootUpdated, err := markFileOperationDeleteSubtreeTx(
+				tx,
+				uid,
+				node.ID,
+				ref.Revision,
+				subtree.IDs,
+				now,
+			)
+			if err != nil {
 				return err
 			}
-			result := tx.Model(&meta.Node{}).
-				Where("id = ? AND owner_id = ? AND revision = ?", node.ID, uid, ref.Revision).
-				Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": now})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
+			if !rootUpdated {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "revision_conflict", Message: "node revision changed"}
 			}
 			plan.Deletes = append(plan.Deletes, fileOperationUndoDelete{
