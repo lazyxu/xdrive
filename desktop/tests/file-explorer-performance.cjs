@@ -452,5 +452,7 @@ test('FileExplorer 100k media renderer trace uses real Web/Desktop Chromium surf
   assert.ok(ciWorkflow.includes('file-explorer-media-renderer-trace:'), 'dedicated media renderer trace CI job is missing')
   assert.ok(ciWorkflow.includes("startsWith(github.head_ref, 'perf/file-explorer-media-')"), 'media trace CI must stay opt-in to FileExplorer media performance branches')
   assert.ok(ciWorkflow.includes('xvfb-run -a ./node_modules/.bin/electron --no-sandbox'), 'media trace CI must execute the real Electron/Chromium renderer with hosted-runner sandbox disabled')
-  assert.ok(webViteConfig.includes("VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ? './' : '/'"), 'Web perf build must use relative assets so Electron loadFile can execute the real renderer')
+  assert.ok(webViteConfig.includes("VITE_XDRIVE_FILE_EXPLORER_PERF === '1'"), 'FileExplorer perf build-time flag is missing')
+  assert.ok(webViteConfig.includes("VITE_XDRIVE_GALLERY_PERF === '1'"), 'Gallery perf build-time flag is missing')
+  assert.ok(webViteConfig.includes("base: performanceFileBuild ? './' : '/'"), 'Web perf builds must use relative assets so Electron loadFile can execute the real renderer')
 })

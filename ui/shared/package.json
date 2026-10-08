@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     "./mui": "./src/mui/index.tsx",
-    "./mui/perf": "./src/mui/FileExplorerPerformanceHarness.tsx"
+    "./mui/perf": "./src/mui/PerformanceHarness.ts"
   },
   "peerDependencies": {
     "@emotion/react": "^11.14.0",

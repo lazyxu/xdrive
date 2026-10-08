@@ -479,6 +479,56 @@ file-explorer-media-renderer-trace:
     paths:
       - desktop/perf-results/
 
+gallery-renderer-first-paint-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        xvfb \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix desktop run build:renderer
+      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix web run build
+      cd desktop
+      rm -rf gallery-perf-results
+      mkdir -p gallery-perf-results
+      for surface in desktop web; do
+        for scenario in image-cold image-warm; do
+          for sample in 1 2 3; do
+            xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
+          done
+        done
+      done
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 12
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 12
+      gzip -f gallery-perf-results/*-trace.json
+  artifacts:
+    name: "gallery-renderer-first-paint-traces-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/gallery-perf-results/
+
 build-source-agent:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache

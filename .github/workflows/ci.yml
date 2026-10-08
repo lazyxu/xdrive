@@ -520,6 +520,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  gallery-renderer-first-paint-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-renderer-first-paint-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Web and Desktop Gallery performance dependencies
+        run: |
+          (cd desktop && npm install --no-audit --no-fund)
+          (cd web && npm install --no-audit --no-fund)
+      - name: Build Gallery performance renderers
+        env:
+          VITE_XDRIVE_GALLERY_PERF: "1"
+        run: |
+          (cd desktop && npm run build:renderer)
+          (cd web && npm run build)
+      - name: Trace Gallery route to first decoded image paint
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          rm -rf gallery-perf-results
+          mkdir -p gallery-perf-results
+          for surface in desktop web; do
+            for scenario in image-cold image-warm; do
+              for sample in 1 2 3; do
+                xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
+              done
+            done
+          done
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 12
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 12
+          echo "=== Gallery renderer first-paint metrics ==="
+          for file in gallery-perf-results/*.json; do
+            case "$file" in
+              *-trace.json) continue ;;
+            esac
+            echo "--- $file"
+            cat "$file"
+          done
+          gzip -f gallery-perf-results/*-trace.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gallery-renderer-first-paint-traces
+          path: desktop/gallery-perf-results
+          if-no-files-found: error
+          retention-days: 7
+
   build-source-agent:
     runs-on: ubuntu-latest
     steps:

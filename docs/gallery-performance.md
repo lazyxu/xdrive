@@ -445,3 +445,89 @@ claimed. Next action: if real installations still show a slow initial image, mea
 route activation → first decoded thumbnail → decoded original on representative originals
 and real Web/Desktop devices, separating ticket, network, decode and paint time. Viewer
 metadata range reuse and Gallery-specific Live Photo composition are separate follow-ups.
+
+## 100k renderer route-to-first-paint trace
+
+Status: **Benchmarking / latest-master rerun pending**.
+
+This follows the accepted 100k first-open and first-visible-media work. Those measurements already show that Server first-range, thumbnail transport, preview transport, timeline CPU, and steady video-poster decode are not multi-second bottlenecks. This trace isolates the remaining Web/Desktop renderer integration path.
+
+Stable workload:
+
+- shared production `XDriveMediaGalleryPage`, mounted in the real Web and Desktop renderer bundles;
+- **100,000 logical items**, sparse range loading with a 100-item first page;
+- 70/15/15 image/video/Live Photo mix, with the first visible item always an ordinary image;
+- viewport **1440 x 900**;
+- real 1600 x 1200 JPEG Blob and Chromium `HTMLImageElement.decode()`;
+- cold trace replays the authoritative first-visible transport result with **350 ms first-range delay + 112 ms thumbnail delay**;
+- warm trace replays **350 ms first-range delay + 6 ms thumbnail delay** and pre-decodes the JPEG before Gallery activation;
+- Albums intentionally resolves after **700 ms** to verify that secondary facets remain outside the first-paint critical path;
+- both Web and Desktop use exactly the same shared Gallery harness and media fixture.
+
+Measured markers:
+
+- Gallery activation -> first range request;
+- first range resolution;
+- virtual-grid React commit;
+- first thumbnail request / resolution;
+- first image DOM mount;
+- first image decode completion;
+- two animation frames after decode as the paint boundary;
+- Long Task count / duration and renderer working set.
+
+Commands:
+
+- build:
+  - `VITE_XDRIVE_GALLERY_PERF=1 npm --prefix desktop run build:renderer`;
+  - `VITE_XDRIVE_GALLERY_PERF=1 npm --prefix web run build`;
+- trace:
+  - `cd desktop && xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs <desktop|web> <image-cold|image-warm> sample-N`;
+- hosted confirmation: **3 samples per surface/scenario** (12 renderer runs total), same build, viewport, transport delays and fixture.
+
+Predeclared decision thresholds:
+
+- **range -> virtual-grid commit <= 100 ms**;
+- **grid commit -> first thumbnail request <= 50 ms**;
+- **thumbnail resolved -> first image DOM mount <= 50 ms**;
+- **thumbnail resolved -> image decode <= 100 ms**;
+- **decode -> paint <= 50 ms**;
+- **range -> first paint <= 400 ms cold / <= 250 ms warm** after the range result is available;
+- any renderer Long Task **>100 ms** on the first-paint critical path is a red signal;
+- total route -> first paint is diagnostic because it intentionally includes the replayed Server/transport delay, but should remain **<=850 ms cold / <=700 ms warm**.
+
+Decision rule:
+
+- measure first without changing Gallery production code;
+- if both Web and Desktop are inside the renderer budgets, record **Accepted / no production change**;
+- if one surface materially exceeds a budget, inspect its Chromium trace and optimize only the measured renderer stage; do not revisit Server range, thumbnail generation, or video transport without new evidence.
+
+First hosted trace attempt — **invalid / not baseline evidence**:
+
+- Desktop produced diagnostic samples at an actual **1280 x 873** viewport because the default Xvfb screen constrained the requested window; cold route -> paint was **619.3 ms** and warm **498.6 ms**, but these numbers are not accepted as the 1440 x 900 baseline.
+- The Web trace did not boot: its Vite build still used absolute `/` asset URLs because only the FileExplorer performance flag selected relative file-build paths. Loading the production bundle through `file://` therefore left `boot=null` and no Gallery grid.
+- The harness now gives both FileExplorer and Gallery performance builds relative assets, runs Xvfb at **1920 x 1200 x 24**, requests Electron content size **1440 x 900**, and rejects any trace whose measured viewport is not exactly **1440 x 900**.
+- No Gallery production code was changed from this invalid attempt.
+
+Latest-master authoritative trace — **master `bdbf804eb360` / n=3 per surface/scenario**:
+
+Values are **median [min, max]** across three fresh Electron renderer processes for each surface/scenario. The trace stage completed all 12 samples; the first CI attempt failed only in the post-trace artifact-count assertion because `*.json` also matched trace JSON files. That assertion is corrected to count metric JSON separately from trace JSON.
+
+| Surface | Scenario | route -> paint | range -> grid | grid -> thumb request | thumb resolved -> image mount | thumb resolved -> decode | decode -> paint | range -> paint | Long Task max | renderer working set |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | cold | **608.8 [607.2, 614.8] ms** | 43.8 [43.3, 47.1] ms | 9.5 [9.4, 9.7] ms | 2.9 [2.7, 3.5] ms | 25.3 [20.8, 30.4] ms | 20.1 [19.3, 20.2] ms | 210.8 [206.2, 218.4] ms | 52 ms | 211,572 [210,748, 211,688] KiB |
+| Desktop | warm | **483.8 [478.8, 488.3] ms** | 44.5 [43.8, 46.7] ms | 9.2 [8.8, 9.4] ms | 1.4 [1.3, 1.4] ms | 2.4 [1.9, 2.6] ms | 17.4 [16.0, 31.4] ms | 81.7 [78.5, 92.4] ms | 54 ms | 177,928 [174,564, 180,636] KiB |
+| Web | cold | **612.8 [604.5, 614.1] ms** | 44.2 [42.3, 44.2] ms | 9.5 [9.2, 9.5] ms | 2.8 [2.7, 2.9] ms | 25.5 [20.9, 29.3] ms | 19.2 [18.9, 20.0] ms | 210.3 [204.9, 214.0] ms | 54 ms | 211,936 [204,084, 212,520] KiB |
+| Web | warm | **480.8 [480.0, 498.1] ms** | 47.4 [47.2, 51.5] ms | 9.2 [9.1, 9.2] ms | 1.5 [1.3, 1.7] ms | 2.7 [2.4, 2.8] ms | 17.9 [17.7, 29.7] ms | 83.2 [83.2, 99.0] ms | 50 ms | 177,520 [177,344, 181,020] KiB |
+
+Budget evaluation:
+
+- range -> grid: **pass** on all 12 samples (budget <=100 ms);
+- grid -> thumbnail request: **pass** (<=50 ms);
+- thumbnail resolved -> DOM mount: **pass** (<=50 ms);
+- thumbnail resolved -> decode: **pass** (<=100 ms);
+- decode -> paint: **pass** (<=50 ms);
+- range -> first paint: **pass** (cold <=400 ms / warm <=250 ms);
+- route -> first paint diagnostic: **pass** (cold <=850 ms / warm <=700 ms);
+- Long Task red signal: **pass**; the observed maximum is **54 ms**, below the >100 ms red threshold.
+
+Decision: **Accepted / measured / no Gallery image-path production change.** The latest production Gallery still does not show a 100k image first-paint renderer bottleneck under this workload. Per the performance policy, no speculative optimization is retained; the next measurement target is pure-video poster and pure-Live-Photo grids, followed by large-file Web/Desktop transfer throughput/RSS.

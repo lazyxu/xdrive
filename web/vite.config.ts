@@ -5,8 +5,12 @@ import react from '@vitejs/plugin-react'
 
 const webRoot = fileURLToPath(new URL('.', import.meta.url))
 
+const performanceFileBuild =
+  process.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ||
+  process.env.VITE_XDRIVE_GALLERY_PERF === '1'
+
 export default defineConfig({
-  base: process.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ? './' : '/',
+  base: performanceFileBuild ? './' : '/',
   plugins: [react()],
   publicDir: '../assets/icon/web',
   resolve: {

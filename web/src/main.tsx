@@ -2,7 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { XDriveAppearanceThemeProvider } from '@xdrive/ui/mui'
 import { normalizeXDriveAppearance, type XDriveAppearance } from '../../ui/shared/src'
-import type { XDriveFileExplorerMediaTraceScenario } from '@xdrive/ui/mui/perf'
+import type {
+  XDriveFileExplorerMediaTraceScenario,
+  XDriveGalleryRendererTraceScenario,
+} from '@xdrive/ui/mui/perf'
 import App from './App'
 import './styles.css'
 
@@ -26,20 +29,39 @@ function Root() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
-const perfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1'
-  ? new URLSearchParams(window.location.search).get('xdriveFileExplorerPerf')
+const perfSearch = new URLSearchParams(window.location.search)
+const fileExplorerPerfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1'
+  ? perfSearch.get('xdriveFileExplorerPerf')
+  : null
+const galleryPerfScenario = import.meta.env.VITE_XDRIVE_GALLERY_PERF === '1'
+  ? perfSearch.get('xdriveGalleryPerf')
   : null
 const perfWindow = window as Window & {
   __xdriveFileExplorerPerfBoot?: string | null
   __xdriveFileExplorerPerfBootError?: string
+  __xdriveGalleryPerfBoot?: string | null
+  __xdriveGalleryPerfBootError?: string
 }
-perfWindow.__xdriveFileExplorerPerfBoot = perfScenario
+perfWindow.__xdriveFileExplorerPerfBoot = fileExplorerPerfScenario
+perfWindow.__xdriveGalleryPerfBoot = galleryPerfScenario
 
-if (perfScenario) {
+if (galleryPerfScenario) {
   void import('@xdrive/ui/mui/perf').then((module) => {
     root.render(
       <XDriveAppearanceThemeProvider appearance="light">
-        <module.XDriveFileExplorerPerformanceHarness scenario={perfScenario as XDriveFileExplorerMediaTraceScenario} />
+        <module.XDriveGalleryPerformanceHarness scenario={galleryPerfScenario as XDriveGalleryRendererTraceScenario} />
+      </XDriveAppearanceThemeProvider>,
+    )
+  }).catch((error) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    perfWindow.__xdriveGalleryPerfBootError = message
+    console.error('__XDRIVE_GALLERY_PERF_BOOT_ERROR__' + message)
+  })
+} else if (fileExplorerPerfScenario) {
+  void import('@xdrive/ui/mui/perf').then((module) => {
+    root.render(
+      <XDriveAppearanceThemeProvider appearance="light">
+        <module.XDriveFileExplorerPerformanceHarness scenario={fileExplorerPerfScenario as XDriveFileExplorerMediaTraceScenario} />
       </XDriveAppearanceThemeProvider>,
     )
   }).catch((error) => {
