@@ -79,6 +79,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 	sortPathsByDepth(paths, true)
 
 	processedSubtrees := make([]string, 0)
+	var baselineByNodeID winBaselineNodeIndex
 	for _, rel := range paths {
 		if underAny(rel, processedSubtrees) {
 			continue
@@ -92,9 +93,16 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			return err
 		}
 		if _, exists := baseline[rel]; !exists {
-			handled, err := p.reconcileMovedPlaceholder(ctx, rel, info, baseline)
-			if err != nil {
-				return err
+			handled, nextIndex, moveErr := p.reconcileMovedPlaceholder(
+				ctx,
+				rel,
+				info,
+				baseline,
+				baselineByNodeID,
+			)
+			baselineByNodeID = nextIndex
+			if moveErr != nil {
+				return moveErr
 			}
 			if handled {
 				if info.IsDir() {
@@ -197,45 +205,58 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 	return true, nil
 }
 
-func (p *winProvider) reconcileMovedPlaceholder(ctx context.Context, rel string, info os.FileInfo, baseline map[string]winState) (bool, error) {
+func (p *winProvider) reconcileMovedPlaceholder(
+	ctx context.Context,
+	rel string,
+	info os.FileInfo,
+	baseline map[string]winState,
+	baselineByNodeID winBaselineNodeIndex,
+) (bool, winBaselineNodeIndex, error) {
 	absPath := filepath.Join(p.root, filepath.FromSlash(rel))
 	nodeID, placeholder, err := cfPlaceholderNodeID(absPath)
 	if err != nil {
-		return false, err
+		return false, baselineByNodeID, err
 	}
 	if !placeholder {
-		return false, nil
+		return false, baselineByNodeID, nil
 	}
 
-	oldRel, base, ok := findBaselinePathByNodeID(baseline, nodeID)
+	oldRel, base, ok, baselineByNodeID := findBaselinePathByNodeIDLazyIndexed(
+		baseline,
+		baselineByNodeID,
+		nodeID,
+	)
 	if !ok || oldRel == rel {
-		return false, nil
+		return false, baselineByNodeID, nil
 	}
 	if err := p.ensureRemoteParent(ctx, rel, baseline); err != nil {
-		return false, err
+		return false, baselineByNodeID, err
 	}
 	parent, ok := baseline[slashDir(rel)]
 	if !ok {
-		return false, fmt.Errorf("Windows sync baseline is missing target parent %q", slashDir(rel))
+		return false, baselineByNodeID, fmt.Errorf("Windows sync baseline is missing target parent %q", slashDir(rel))
 	}
 	name := slashBase(rel)
 	parentID := parent.node.ID
 	updated, err := p.cli.RenameMove(ctx, base.node.ID, base.node.Revision, &name, &parentID)
 	if err != nil {
-		return false, err
+		return false, baselineByNodeID, err
 	}
 
-	deletePrefix(baseline, rel)
-	moveBaselinePrefix(baseline, oldRel, rel)
+	deleteBaselinePrefixIndexed(baseline, baselineByNodeID, rel)
+	moveBaselinePrefixIndexed(baseline, baselineByNodeID, oldRel, rel)
 	state := baseline[rel]
 	state.node = updated
 	state.localModTime = info.ModTime()
 	state.localSize = info.Size()
 	baseline[rel] = state
-	if err := cfMarkPathInSync(absPath); err != nil {
-		return false, err
+	if updated.ID != 0 {
+		baselineByNodeID[updated.ID] = rel
 	}
-	return true, nil
+	if err := cfMarkPathInSync(absPath); err != nil {
+		return false, baselineByNodeID, err
+	}
+	return true, baselineByNodeID, nil
 }
 
 type winBaselineNodeIndex map[uint64]string
@@ -266,6 +287,27 @@ func findBaselinePathByNodeIDIndexed(
 		return "", winState{}, false
 	}
 	return rel, state, true
+}
+
+func findBaselinePathByNodeIDLazyIndexed(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	nodeID uint64,
+) (string, winState, bool, winBaselineNodeIndex) {
+	if index == nil {
+		index = indexBaselinePathsByNodeID(baseline)
+	}
+	if rel, state, ok := findBaselinePathByNodeIDIndexed(baseline, index, nodeID); ok {
+		return rel, state, true, index
+	}
+	// The local batch may add a new placeholder after the lazy index was built.
+	// Preserve correctness for that uncommon case with one fallback scan, then
+	// cache the result so later lookups stay indexed.
+	rel, state, ok := findBaselinePathByNodeID(baseline, nodeID)
+	if ok {
+		index[nodeID] = rel
+	}
+	return rel, state, ok, index
 }
 
 func deleteBaselinePrefixIndexed(
@@ -324,6 +366,31 @@ func moveBaselinePrefix(baseline map[string]winState, oldPrefix, newPrefix strin
 		newPath := newPrefix + suffix
 		delete(baseline, oldPath)
 		baseline[newPath] = state
+	}
+}
+
+func moveBaselinePrefixIndexed(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	oldPrefix string,
+	newPrefix string,
+) {
+	keys := make([]string, 0)
+	for path := range baseline {
+		if path == oldPrefix || strings.HasPrefix(path, oldPrefix+"/") {
+			keys = append(keys, path)
+		}
+	}
+	sortPathsByDepth(keys, true)
+	for _, oldPath := range keys {
+		state := baseline[oldPath]
+		suffix := strings.TrimPrefix(oldPath, oldPrefix)
+		newPath := newPrefix + suffix
+		delete(baseline, oldPath)
+		baseline[newPath] = state
+		if state.node.ID != 0 {
+			index[state.node.ID] = newPath
+		}
 	}
 }
 

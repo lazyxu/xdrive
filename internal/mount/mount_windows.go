@@ -452,6 +452,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 		return depth(localPaths[i]) < depth(localPaths[j])
 	})
+	var baselineByNodeID winBaselineNodeIndex
 	for _, rel := range localPaths {
 		if _, ok := baseline[rel]; ok {
 			continue
@@ -464,7 +465,14 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
 		if info, statErr := os.Lstat(absPath); statErr == nil {
-			handled, moveErr := p.reconcileMovedPlaceholder(ctx, rel, info, baseline)
+			handled, nextIndex, moveErr := p.reconcileMovedPlaceholder(
+				ctx,
+				rel,
+				info,
+				baseline,
+				baselineByNodeID,
+			)
+			baselineByNodeID = nextIndex
 			if moveErr != nil {
 				return moveErr
 			}
