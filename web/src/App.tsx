@@ -537,6 +537,7 @@ function FileManager({
   } = useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: Boolean(profile && !profile.must_change_password),
+    lifecycleKey: username,
     defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
     onError: handleError,
   })
