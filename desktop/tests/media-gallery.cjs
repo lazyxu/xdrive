@@ -426,13 +426,15 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     assert.ok(sharedLivePhotoSurface.includes(token), 'Live Photo surface missing: ' + token)
   }
   assert.equal(sharedLivePhotoSurface.includes('muted'), false, 'Live Photo motion must preserve audio capability')
-  assert.match(webAPI, /responseBlobWithProgress/)
+  assert.match(webAPI, /live-photo-motion-ticket/)
+  assert.match(webAPI, /mediaLivePhotoMotionURL\(nodeID: number\)/)
+  assert.equal(webAPI.includes('responseBlobWithProgress'), false, 'Web Live Photo motion must not buffer the complete response Blob')
   assert.match(preload, /agent:media-live-photo-motion-progress/)
   assert.match(desktopMain, /agent:media-live-photo-motion-progress/)
   assert.match(desktopPreviewProxy, /coveredRanges/)
   assert.match(desktopPreviewProxy, /createURLFromTicket/)
   assert.match(desktopPreviewProxy, /releaseURL\(value: string\)/)
-  assert.match(webAdapter, /mediaLivePhotoMotion\(nodeID, onProgress\)/)
+  assert.match(webAdapter, /mediaLivePhotoMotionURL\(nodeID\)/)
   assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress\)/)
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
   assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')
@@ -669,7 +671,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /category/)
   assert.match(desktopIPC, /Category/)
 
-  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaPets()', 'mediaPetItemRange(', 'mediaSuggestedPeopleWithReview(', 'reviewMediaSuggestedPerson(', 'addMediaSuggestedPersonToPerson(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaPets()', 'mediaPetItemRange(', 'mediaSuggestedPeopleWithReview(', 'reviewMediaSuggestedPerson(', 'addMediaSuggestedPersonToPerson(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotionURL(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -714,7 +716,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.setMediaPeople(',
     'api.setMediaDescription(',
     'api.mediaThumbnail(',
-    'api.mediaLivePhotoMotion(',
+    'api.mediaLivePhotoMotionURL(',
     'api.filePreviewURL(',
   ]) {
     assert.ok(webAdapter.includes(token), `Web Gallery adapter missing ${token}`)

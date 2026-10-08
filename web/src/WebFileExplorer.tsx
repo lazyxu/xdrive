@@ -407,15 +407,14 @@ export default function WebFileExplorer({
 
   const loadLivePhotoMotion = useCallback(async (
     item: XDriveFileExplorerItem,
-    onProgress?: XDriveByteProgressHandler,
+    _onProgress?: XDriveByteProgressHandler,
   ) => {
     if (
       item.kind !== 'file' ||
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
     try {
-      const blob = await api.mediaLivePhotoMotion(Number(item.id), onProgress)
-      return URL.createObjectURL(blob)
+      return await api.mediaLivePhotoMotionURL(Number(item.id))
     } catch {
       return null
     }

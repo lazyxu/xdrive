@@ -67,7 +67,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listAlbumItemRange: (albumID, limit, offset, query) =>
       api.mediaAlbumItemRange(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => api.mediaThumbnail(nodeID),
-    loadLivePhotoMotion: (nodeID, onProgress) => api.mediaLivePhotoMotion(nodeID, onProgress),
+    loadLivePhotoMotion: (nodeID, _onProgress) => api.mediaLivePhotoMotionURL(nodeID),
     loadPreviewURL: (nodeID, kind) => kind === 'live_photo'
       ? api.mediaLivePhotoStillURL(nodeID)
       : api.filePreviewURL(nodeID),

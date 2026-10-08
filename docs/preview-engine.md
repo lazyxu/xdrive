@@ -239,9 +239,13 @@ The interaction contract is:
 - when the transport exposes a positive total byte count, render a determinate circular
   download indicator from actual received bytes; otherwise render indeterminate progress
   and never fabricate a percentage;
-- Web progress reporting observes its authenticated response stream. Desktop progress is
-  derived from the existing video Range requests at the protected loopback proxy; overlapping
-  ranges count unique covered bytes only. Neither platform may introduce extra range fan-out
+- Web resolves a short-lived signed motion URL and gives that URL directly to the native
+  `<video>` element. The browser owns Range/buffering and may start playback as soon as
+  enough data is available; Web must not materialize the complete motion as Blob/ArrayBuffer.
+  Browser media fetches do not expose reliable received-byte totals to page JavaScript, so
+  Web renders indeterminate loading unless a future transport can report real bytes. Desktop
+  progress remains derived from the existing protected loopback Range proxy; overlapping
+  ranges count unique covered bytes only. Neither platform may introduce extra Range fan-out
   or smaller network chunks solely for UI progress, and renderer/IPC notifications must be
   throttled;
 - press-and-hold on mouse or touch starts motion in the same frame once ready;
@@ -293,9 +297,11 @@ The LIVP derived-resource contract is versioned. Parser-contract changes must bu
 version so already-indexed unsupported/error LIVP rows are automatically re-indexed; users
 must not have to re-upload the original file after a compatibility fix.
 
-Desktop Live Photo motion uses the same protected loopback stream architecture as
-ordinary video preview. xdrive-agent obtains only a signed motion ticket; it does not read
-or buffer the motion payload. Electron main hides the signed upstream URL behind the
+Web and Desktop both use the signed Live Photo motion ticket. Web passes the same-origin
+signed URL directly to the browser media element so HTTP Range and buffering remain native;
+it never converts the complete motion response into a renderer Blob. Desktop uses the same
+protected loopback stream architecture as ordinary video preview. xdrive-agent obtains only
+a signed motion ticket; it does not read or buffer the motion payload. Electron main hides the signed upstream URL behind the
 existing loopback-only preview proxy, forwards GET/HEAD and Range headers, and streams the
 upstream 200/206 response directly to the video element. The renderer receives only the
 local URL, never a complete motion `ArrayBuffer` or base64 payload.

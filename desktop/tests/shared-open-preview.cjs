@@ -186,9 +186,19 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
 
   for (const source of [web, desktop]) {
     assert.ok(source.includes('const loadLivePhotoMotion = useCallback'), 'FileExplorer adapter must load LIVP motion')
-    assert.ok(source.includes('onProgress?: XDriveByteProgressHandler'), 'FileExplorer LIVP loader must expose byte progress')
+    assert.ok(source.includes('XDriveByteProgressHandler'), 'FileExplorer LIVP loader must preserve the shared progress-capable contract')
     assert.ok(source.includes('loadLivePhotoMotion={loadLivePhotoMotion}'), 'FileExplorer must pass LIVP motion into shared preview')
   }
+  const webMotionStart = web.indexOf('const loadLivePhotoMotion = useCallback')
+  const webMotionEnd = web.indexOf('const loadPropertiesStats', webMotionStart)
+  assert.ok(webMotionStart >= 0 && webMotionEnd > webMotionStart)
+  const webMotionBlock = web.slice(webMotionStart, webMotionEnd)
+  assert.ok(
+    webMotionBlock.includes('api.mediaLivePhotoMotionURL(Number(item.id))') &&
+      !webMotionBlock.includes('URL.createObjectURL(') &&
+      !webMotionBlock.includes('new Blob('),
+    'Web LIVP motion must use the signed streaming URL rather than a complete Blob',
+  )
   assert.ok(
     preview.includes('loadLivePhotoMotion(target, onProgress)'),
     'shared FilePreviewSurface must forward byte progress into LIVP transport',
