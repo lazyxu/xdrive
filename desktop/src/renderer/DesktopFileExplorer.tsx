@@ -300,6 +300,13 @@ export default function DesktopFileExplorer({
   const [navigationAvailabilityItems, setNavigationAvailabilityItems] = useState<readonly XDriveFileExplorerItem[]>([])
   const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0)
   const availabilityRequestRef = useRef(0)
+
+  useEffect(() => {
+    availabilityRequestRef.current += 1
+    setAvailabilityByID(new Map())
+    setNavigationAvailabilityItems([])
+  }, [navigationSessionStorageKey])
+
   const actionIntentRef = useRef(0)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -874,6 +881,7 @@ export default function DesktopFileExplorer({
     availabilityRefreshToken,
     availabilityRequests,
     fileAvailabilitySupported,
+    navigationSessionStorageKey,
   ])
 
   const hydrationProgressByPath = useMemo(
