@@ -18,6 +18,7 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   XDriveActionButton,
@@ -114,6 +115,9 @@ export default function AdminAuditPanel({
 }: {
   api: XDriveApi
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
+  const auditRowHeight = compactViewport ? 152 : AUDIT_ROW_HEIGHT
+  const auditHeaderHeight = compactViewport ? 0 : AUDIT_HEADER_HEIGHT
   const [action, setAction] = useState<string>()
   const [result, setResult] = useState<'success' | 'failure'>()
   const [actor, setActor] = useState('')
@@ -246,10 +250,10 @@ export default function AdminAuditPanel({
     itemCount: logicalCount,
     scrollTop,
     viewportHeight,
-    rowHeight: AUDIT_ROW_HEIGHT,
-    headerHeight: AUDIT_HEADER_HEIGHT,
+    rowHeight: auditRowHeight,
+    headerHeight: auditHeaderHeight,
     overscanRows: AUDIT_OVERSCAN_ROWS,
-  }), [logicalCount, scrollTop, viewportHeight])
+  }), [auditHeaderHeight, auditRowHeight, logicalCount, scrollTop, viewportHeight])
 
   useEffect(() => {
     if (totalCount === null || virtualWindow.end <= virtualWindow.start) return
@@ -384,121 +388,218 @@ export default function AdminAuditPanel({
                 overflow: 'auto',
               }}
             >
-              <Table
-                stickyHeader
-                size="small"
-                aria-label="审计日志"
-                aria-rowcount={totalCount + 1}
-                sx={{ minWidth: 880, tableLayout: 'fixed' }}
-              >
-                <TableHead>
-                  <TableRow sx={{ height: AUDIT_HEADER_HEIGHT }}>
-                    <TableCell sx={{ width: 180, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>时间</TableCell>
-                    <TableCell sx={{ width: 140, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>操作者</TableCell>
-                    <TableCell sx={{ width: 220, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>操作</TableCell>
-                    <TableCell sx={{ width: 200, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>目标</TableCell>
-                    <TableCell sx={{ width: 90, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>结果</TableCell>
-                    <TableCell sx={{ width: 80, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>详情</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
+              {compactViewport ? (
+                <Box
+                  role="list"
+                  aria-label="审计日志"
+                  aria-setsize={totalCount}
+                  data-xdrive-admin-audit-mobile-list
+                >
                   {virtualWindow.before > 0 ? (
-                    <TableRow aria-hidden sx={{ height: virtualWindow.before }}>
-                      <TableCell colSpan={6} sx={{ p: 0, border: 0, height: virtualWindow.before }} />
-                    </TableRow>
+                    <Box aria-hidden sx={{ height: virtualWindow.before }} />
                   ) : null}
 
                   {visibleRows.map(({ index, event }) => {
                     if (!event) {
                       return (
-                        <TableRow
+                        <Box
                           key={`audit-placeholder-${index}`}
                           aria-hidden
                           data-xdrive-admin-audit-placeholder
-                          sx={{ height: AUDIT_ROW_HEIGHT }}
+                          sx={{ height: auditRowHeight, p: 0.5, boxSizing: 'border-box' }}
                         >
-                          <TableCell colSpan={6} sx={{ py: 0.5, height: AUDIT_ROW_HEIGHT }}>
-                            <Box
-                              sx={{
-                                width: '72%',
-                                height: 8,
-                                borderRadius: 1,
-                                bgcolor: 'action.hover',
-                              }}
-                            />
-                          </TableCell>
-                        </TableRow>
+                          <Box
+                            sx={{
+                              height: '100%',
+                              border: 1,
+                              borderColor: 'divider',
+                              borderRadius: 2,
+                              p: 1.25,
+                            }}
+                          >
+                            <Box sx={{ width: '72%', height: 8, borderRadius: 1, bgcolor: 'action.hover' }} />
+                          </Box>
+                        </Box>
                       )
                     }
 
                     const targetLabel = event.target_label || event.target_id || '—'
                     const targetSuffix = event.target_label && event.target_id ? ' · ' + event.target_id : ''
-                    const cellSx = {
-                      py: 0.5,
-                      height: AUDIT_ROW_HEIGHT,
-                      maxHeight: AUDIT_ROW_HEIGHT,
-                      overflow: 'hidden',
-                    } as const
                     return (
-                      <TableRow
+                      <Box
                         key={event.id}
-                        hover
+                        role="listitem"
                         data-xdrive-admin-audit-row
-                        sx={{ height: AUDIT_ROW_HEIGHT }}
+                        sx={{ height: auditRowHeight, p: 0.5, boxSizing: 'border-box' }}
                       >
-                        <TableCell sx={cellSx}>
-                          <Typography variant="body2" noWrap>
-                            {new Date(event.created_at).toLocaleString()}
-                          </Typography>
-                        </TableCell>
-                        <TableCell sx={cellSx}>
-                          <Stack spacing={0.2} sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" noWrap>{event.actor_username || '匿名'}</Typography>
-                            {event.actor_role ? (
+                        <Box
+                          sx={{
+                            height: '100%',
+                            border: 1,
+                            borderColor: 'divider',
+                            borderRadius: 2,
+                            p: 1.25,
+                            overflow: 'hidden',
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <Stack spacing={0.75} sx={{ height: '100%' }}>
+                            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
                               <Typography variant="caption" color="text.secondary" noWrap>
-                                {actorRoleLabel(event.actor_role)}
+                                {new Date(event.created_at).toLocaleString()}
                               </Typography>
-                            ) : null}
-                          </Stack>
-                        </TableCell>
-                        <TableCell sx={cellSx}>
-                          <Stack spacing={0.2} sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" noWrap>{actionLabel(event.action)}</Typography>
-                            <Typography component="code" variant="caption" color="text.secondary" noWrap>
-                              {event.action}
+                              <XDriveStatusBadge
+                                tone={event.result === 'success' ? 'good' : 'bad'}
+                                label={event.result === 'success' ? '成功' : '失败'}
+                              />
+                            </Stack>
+                            <Stack direction="row" spacing={1} alignItems="baseline" sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={700} noWrap sx={{ minWidth: 0, flex: 1 }}>
+                                {actionLabel(event.action)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" noWrap>
+                                {event.actor_username || '匿名'}
+                                {event.actor_role ? ` · ${actorRoleLabel(event.actor_role)}` : ''}
+                              </Typography>
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary" noWrap title={targetLabel + targetSuffix}>
+                              目标：{targetLabel}{targetSuffix}
                             </Typography>
+                            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mt: 'auto' }}>
+                              <Typography component="code" variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0, flex: 1 }}>
+                                {event.action}
+                              </Typography>
+                              <XDriveActionButton compact onClick={() => setDetailEvent(event)}>
+                                查看
+                              </XDriveActionButton>
+                            </Stack>
                           </Stack>
-                        </TableCell>
-                        <TableCell sx={cellSx}>
-                          <Stack spacing={0.2} sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" noWrap>{targetLabel}{targetSuffix}</Typography>
-                            {event.target_type ? (
-                              <Typography variant="caption" color="text.secondary" noWrap>{event.target_type}</Typography>
-                            ) : null}
-                          </Stack>
-                        </TableCell>
-                        <TableCell sx={cellSx}>
-                          <XDriveStatusBadge
-                            tone={event.result === 'success' ? 'good' : 'bad'}
-                            label={event.result === 'success' ? '成功' : '失败'}
-                          />
-                        </TableCell>
-                        <TableCell sx={cellSx}>
-                          <XDriveActionButton compact onClick={() => setDetailEvent(event)}>
-                            查看
-                          </XDriveActionButton>
-                        </TableCell>
-                      </TableRow>
+                        </Box>
+                      </Box>
                     )
                   })}
 
                   {virtualWindow.after > 0 ? (
-                    <TableRow aria-hidden sx={{ height: virtualWindow.after }}>
-                      <TableCell colSpan={6} sx={{ p: 0, border: 0, height: virtualWindow.after }} />
-                    </TableRow>
+                    <Box aria-hidden sx={{ height: virtualWindow.after }} />
                   ) : null}
-                </TableBody>
-              </Table>
+                </Box>
+              ) : (
+                <Table
+                  stickyHeader
+                  size="small"
+                  aria-label="审计日志"
+                  aria-rowcount={totalCount + 1}
+                  sx={{ minWidth: 880, tableLayout: 'fixed' }}
+                >
+                  <TableHead>
+                    <TableRow sx={{ height: AUDIT_HEADER_HEIGHT }}>
+                      <TableCell sx={{ width: 180, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>时间</TableCell>
+                      <TableCell sx={{ width: 140, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>操作者</TableCell>
+                      <TableCell sx={{ width: 220, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>操作</TableCell>
+                      <TableCell sx={{ width: 200, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>目标</TableCell>
+                      <TableCell sx={{ width: 90, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>结果</TableCell>
+                      <TableCell sx={{ width: 80, height: AUDIT_HEADER_HEIGHT, py: 0.5 }}>详情</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {virtualWindow.before > 0 ? (
+                      <TableRow aria-hidden sx={{ height: virtualWindow.before }}>
+                        <TableCell colSpan={6} sx={{ p: 0, border: 0, height: virtualWindow.before }} />
+                      </TableRow>
+                    ) : null}
+
+                    {visibleRows.map(({ index, event }) => {
+                      if (!event) {
+                        return (
+                          <TableRow
+                            key={`audit-placeholder-${index}`}
+                            aria-hidden
+                            data-xdrive-admin-audit-placeholder
+                            sx={{ height: AUDIT_ROW_HEIGHT }}
+                          >
+                            <TableCell colSpan={6} sx={{ py: 0.5, height: AUDIT_ROW_HEIGHT }}>
+                              <Box
+                                sx={{
+                                  width: '72%',
+                                  height: 8,
+                                  borderRadius: 1,
+                                  bgcolor: 'action.hover',
+                                }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )
+                      }
+
+                      const targetLabel = event.target_label || event.target_id || '—'
+                      const targetSuffix = event.target_label && event.target_id ? ' · ' + event.target_id : ''
+                      const cellSx = {
+                        py: 0.5,
+                        height: AUDIT_ROW_HEIGHT,
+                        maxHeight: AUDIT_ROW_HEIGHT,
+                        overflow: 'hidden',
+                      } as const
+                      return (
+                        <TableRow
+                          key={event.id}
+                          hover
+                          data-xdrive-admin-audit-row
+                          sx={{ height: AUDIT_ROW_HEIGHT }}
+                        >
+                          <TableCell sx={cellSx}>
+                            <Typography variant="body2" noWrap>
+                              {new Date(event.created_at).toLocaleString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell sx={cellSx}>
+                            <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap>{event.actor_username || '匿名'}</Typography>
+                              {event.actor_role ? (
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                  {actorRoleLabel(event.actor_role)}
+                                </Typography>
+                              ) : null}
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={cellSx}>
+                            <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap>{actionLabel(event.action)}</Typography>
+                              <Typography component="code" variant="caption" color="text.secondary" noWrap>
+                                {event.action}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={cellSx}>
+                            <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap>{targetLabel}{targetSuffix}</Typography>
+                              {event.target_type ? (
+                                <Typography variant="caption" color="text.secondary" noWrap>{event.target_type}</Typography>
+                              ) : null}
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={cellSx}>
+                            <XDriveStatusBadge
+                              tone={event.result === 'success' ? 'good' : 'bad'}
+                              label={event.result === 'success' ? '成功' : '失败'}
+                            />
+                          </TableCell>
+                          <TableCell sx={cellSx}>
+                            <XDriveActionButton compact onClick={() => setDetailEvent(event)}>
+                              查看
+                            </XDriveActionButton>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+
+                    {virtualWindow.after > 0 ? (
+                      <TableRow aria-hidden sx={{ height: virtualWindow.after }}>
+                        <TableCell colSpan={6} sx={{ p: 0, border: 0, height: virtualWindow.after }} />
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              )}
             </XDriveTableSurface>
           )}
         </Stack>
