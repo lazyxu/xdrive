@@ -25,6 +25,7 @@ test('shared upload controller owns folder group and child lifecycle', () => {
     'XDriveFileExplorerUploadTransferLifecycle',
     'startGroup:',
     'startChild:',
+    'startChildren?:',
     'begin:',
     'progress:',
     'updateGroup:',
@@ -112,7 +113,8 @@ test('Web folder upload persists one group with queued children', () => {
     "phase: 'scanning'",
     "phase: 'queued'",
     'parent_id: groupID',
-    'root_id: parent.root_id || parent.id',
+    'const rootID = parent.root_id || parent.id',
+    'root_id: rootID',
     'updateGroup(id: string',
     'finishLifecycle(',
   ]) {
@@ -552,5 +554,104 @@ test('folder upload group progress uses incremental bytes and probes each file s
       'group bytes must not regress for monotonic child progress: ' + groupBytes.join(','),
     )
   }
+})
+
+test('Web folder upload batches upfront child registration and persistence', async () => {
+  for (const token of [
+    'startChildren?:',
+    'transferLifecycle.startChildren(groupID, childInputs)',
+    'registeredChildIDs.length !== targets.length',
+  ]) {
+    assert.ok(controller.includes(token), 'shared batch child registration missing: ' + token)
+  }
+  assert.ok(
+    webApp.includes('startChildren: (groupID, inputs) => api.startTransferChildren(groupID, inputs)'),
+    'Web adapter must opt into batch child registration',
+  )
+  assert.ok(
+    webApi.includes('return webTransferStore.startChildren(groupID, inputs)'),
+    'Web API adapter must route child batches to one store mutation',
+  )
+
+  const batchStart = webStore.indexOf('  startChildren(groupID: string, inputs:')
+  const batchEnd = webStore.indexOf('  begin(id: string)', batchStart)
+  assert.ok(batchStart >= 0 && batchEnd > batchStart, 'Web batch child registration is missing')
+  const batchSource = webStore.slice(batchStart, batchEnd)
+  assert.equal(
+    (batchSource.match(/this\.trimHistory\(\)/g) || []).length,
+    1,
+    'one child batch must trim transfer history once',
+  )
+  assert.equal(
+    (batchSource.match(/this\.emit\(\)/g) || []).length,
+    1,
+    'one child batch must persist and notify once',
+  )
+  assert.ok(
+    batchSource.includes('this.items = [...children.slice().reverse(), ...this.items]'),
+    'batch registration must preserve the legacy newest-first child display order',
+  )
+
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  const events = []
+  const uploadTransferIDs = []
+  let batchCalls = 0
+
+  const transferLifecycle = {
+    async startGroup() {
+      events.push('group-created')
+      return 'group-1'
+    },
+    async startChildren(groupID, inputs) {
+      batchCalls += 1
+      events.push('children:' + inputs.map((input) => input.fileName).join(','))
+      assert.equal(groupID, 'group-1')
+      return inputs.map((_input, index) => 'child-' + (index + 1))
+    },
+    async startChild() {
+      throw new Error('Web-capable lifecycle must not fall back to per-child registration')
+    },
+    async begin(id, input) {
+      events.push(input?.group ? 'group-begin:' + id : 'child-begin:' + id)
+    },
+    async progress() {},
+    async updateGroup() {},
+    async finish() {},
+  }
+
+  const hook = runtime.render(() => useUploadController({
+    lifecycleKey: 'server-a:user-a',
+    fileName: (file) => file.name,
+    fileSize: (file) => file.size,
+    preflight: async () => ({ conflict: false }),
+    upload: async (_parentID, _file, _policy, _onProgress, transferID) => {
+      uploadTransferIDs.push(transferID)
+      return { skipped: false }
+    },
+    transferLifecycle,
+    onError: (error) => { throw error },
+    onFeedback: () => {},
+  }))
+
+  const targets = ['a.bin', 'b.bin', 'c.bin'].map((name, index) => ({
+    parentID: 1,
+    file: { name, size: index + 1 },
+    relativePath: 'folder/' + name,
+  }))
+  const result = await hook.runGroup({
+    label: 'folder',
+    itemsTotal: targets.length,
+    bytesTotal: 6,
+    resolveTargets: async () => targets,
+  })
+
+  assert.equal(result.uploaded, 3)
+  assert.equal(batchCalls, 1, 'all queued children must register in one batch')
+  assert.deepEqual(uploadTransferIDs, ['child-1', 'child-2', 'child-3'])
+  assert.ok(
+    events.indexOf('children:a.bin,b.bin,c.bin') < events.indexOf('group-begin:group-1'),
+    'every queued child must still exist before the group begins transferring',
+  )
 })
 

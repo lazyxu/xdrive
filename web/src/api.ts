@@ -373,6 +373,14 @@ export class XDriveApi {
     return webTransferStore.startChild(groupID, input)
   }
 
+  startTransferChildren(groupID: string, inputs: readonly {
+    fileName: string
+    relativePath: string
+    bytesTotal: number
+  }[]) {
+    return webTransferStore.startChildren(groupID, inputs)
+  }
+
   beginTransfer(id: string) {
     webTransferStore.begin(id)
   }

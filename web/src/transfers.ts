@@ -73,6 +73,12 @@ function loadTransferHistory(): XDriveTransferTask[] {
   }
 }
 
+type WebTransferChildInput = {
+  fileName: string
+  relativePath: string
+  bytesTotal?: number
+}
+
 class WebTransferStore {
   private items = loadTransferHistory()
   private listeners = new Set<(items: XDriveTransferTask[]) => void>()
@@ -172,48 +178,54 @@ class WebTransferStore {
     return id
   }
 
-  startChild(groupID: string, input: {
-    fileName: string
-    relativePath: string
-    bytesTotal?: number
-  }) {
+  startChild(groupID: string, input: WebTransferChildInput) {
+    return this.startChildren(groupID, [input])[0]
+  }
+
+  startChildren(groupID: string, inputs: readonly WebTransferChildInput[]) {
     const parent = this.items.find((item) => item.id === groupID)
     if (!parent) throw new Error('传输父任务不存在。')
+    if (inputs.length === 0) return []
+
     const now = Date.now()
-    const id = `web-${now}-${++this.sequence}`
-    const item: XDriveTransferTask = {
-      id,
-      parent_id: groupID,
-      root_id: parent.root_id || parent.id,
-      scope: 'item',
-      phase: 'queued',
-      scan_complete: true,
-      file_name: input.fileName,
-      path: input.relativePath || input.fileName,
-      relative_path: input.relativePath || input.fileName,
-      kind: parent.kind || 'upload',
-      direction: parent.direction || 'upload',
-      state: 'queued',
-      bytes_done: 0,
-      bytes_total: Math.max(0, input.bytesTotal || 0),
-      percent: 0,
-      items_total: 1,
-      items_completed: 0,
-      items_failed: 0,
-      items_running: 0,
-      items_queued: 1,
-      instant_bytes_per_second: 0,
-      average_bytes_per_second: 0,
-      elapsed_ms: 0,
-      retry_count: 0,
-      retryable: false,
-      started_at: nowISO(now),
-      updated_at: nowISO(now),
-    }
-    this.items = [item, ...this.items]
+    const rootID = parent.root_id || parent.id
+    const children: XDriveTransferTask[] = inputs.map((input) => {
+      const id = `web-${now}-${++this.sequence}`
+      return {
+        id,
+        parent_id: groupID,
+        root_id: rootID,
+        scope: 'item',
+        phase: 'queued',
+        scan_complete: true,
+        file_name: input.fileName,
+        path: input.relativePath || input.fileName,
+        relative_path: input.relativePath || input.fileName,
+        kind: parent.kind || 'upload',
+        direction: parent.direction || 'upload',
+        state: 'queued',
+        bytes_done: 0,
+        bytes_total: Math.max(0, input.bytesTotal || 0),
+        percent: 0,
+        items_total: 1,
+        items_completed: 0,
+        items_failed: 0,
+        items_running: 0,
+        items_queued: 1,
+        instant_bytes_per_second: 0,
+        average_bytes_per_second: 0,
+        elapsed_ms: 0,
+        retry_count: 0,
+        retryable: false,
+        started_at: nowISO(now),
+        updated_at: nowISO(now),
+      }
+    })
+    const childIDs = children.map((item) => item.id)
+    this.items = [...children.slice().reverse(), ...this.items]
     this.trimHistory()
     this.emit()
-    return id
+    return childIDs
   }
 
   begin(id: string) {

@@ -63,6 +63,11 @@ export type XDriveFileExplorerUploadTransferLifecycle = {
     relativePath: string
     bytesTotal: number
   }) => string | Promise<string>
+  startChildren?: (groupID: string, inputs: readonly {
+    fileName: string
+    relativePath: string
+    bytesTotal: number
+  }[]) => readonly string[] | Promise<readonly string[]>
   begin: (id: string, input?: {
     group?: XDriveFileExplorerUploadTransferGroupProgress
   }) => void | Promise<void>
@@ -409,15 +414,24 @@ export function useXDriveFileExplorerUploadController<TFile>({
       const totalBytes = childSizes.reduce((sum, size) => sum + size, 0)
       let groupBytesDone = 0
 
-      for (let index = 0; index < targets.length; index += 1) {
-        const target = targets[index]
-        const childID = await transferLifecycle.startChild(groupID, {
-          fileName: fileName(target.file),
-          relativePath: target.relativePath || fileName(target.file),
-          bytesTotal: childSizes[index],
-        })
+      const childInputs = targets.map((target, index) => ({
+        fileName: fileName(target.file),
+        relativePath: target.relativePath || fileName(target.file),
+        bytesTotal: childSizes[index],
+      }))
+      if (transferLifecycle.startChildren && childInputs.length > 0) {
+        const registeredChildIDs = await transferLifecycle.startChildren(groupID, childInputs)
         if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
-        childIDs.push(childID)
+        if (registeredChildIDs.length !== targets.length) {
+          throw new Error('传输子任务数量不匹配。')
+        }
+        childIDs.push(...registeredChildIDs)
+      } else {
+        for (let index = 0; index < childInputs.length; index += 1) {
+          const childID = await transferLifecycle.startChild(groupID, childInputs[index])
+          if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+          childIDs.push(childID)
+        }
       }
 
       const groupProgress = (): XDriveFileExplorerUploadTransferGroupProgress => ({
