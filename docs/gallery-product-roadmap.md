@@ -63,6 +63,25 @@ filters cannot silently violate the selected Gallery destination.
 The existing Server-side query contract remains authoritative. Phase 1 intentionally
 does not add a second Gallery endpoint or duplicate media state.
 
+### Phase 1 workspace polish
+
+The Gallery page renders exactly one visible page title. The shared workspace surface may
+suppress its generic page header when Gallery owns the title and collection controls
+itself; Web and Desktop must not add another platform-local heading.
+
+The first screen uses a compact two-tier shared workspace header: title/current
+collection summary plus search/filter/actions, then Gallery destinations plus
+selection/time-scale/thumbnail-density controls. The root Library does not render a
+second "all photos" heading above the grid. The sparse range total is the authoritative
+result count shown in the Library summary.
+
+Collection-range failures are distinct from successful empty collections. A failed
+initial range shows a blocking **图库加载失败** state with retry and must not
+simultaneously claim that the Gallery is empty. Auxiliary facet or mutation failures
+may remain non-blocking alerts when collection content is still valid. Successful empty
+results distinguish Trash, Favorites, media-type collections and active search/filter
+conditions; an empty filtered Library offers **清除筛选**.
+
 ## Next phase
 
 Phase 2 must build Year / Month / Day semantic navigation on the existing range-based
