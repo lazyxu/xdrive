@@ -33,6 +33,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
+| Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -136,6 +137,42 @@ Decision: **Accepted.** This removes total-trash-size response/render amplificat
 Regression budget: FileExplorer Trash must never require an unpaged full-list request for initial display; ordinary viewport range payloads stay <= **200 items**.
 
 Next action: continue the basic-path audit at ordinary download / sync reconciliation / delete mutation paths and only change another deterministic request, SQL, allocation, or I/O multiplier. Windows overwrite-conflict winner refresh is now an exact node lookup rather than a whole-tree walk.
+
+### Windows full-reconcile remote-deletion pruning contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows full reconciliation after the remote snapshot is already loaded;
+- baseline contains the root plus **1,200 flat files** that are all absent from the remote snapshot;
+- evidence method: production control-flow cardinality plus deterministic helper tests; wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- both Windows full-reconcile implementations iterated missing baseline entries and called `deletePrefix(baseline, rel)` for each one;
+- `deletePrefix` scans the complete current baseline map to find descendants;
+- because the flat workload has no descendant relationships, every one of the 1,200 files triggers another full-map prefix scan;
+- the stable fixture therefore performs **1,200 baseline-wide prefix scans**, with up to **721,800 baseline-key inspections** across those scans.
+
+AFTER / current:
+
+- one pass collects every baseline path absent from the remote snapshot into a missing set;
+- ancestor membership is resolved against that set so missing directory subtrees collapse to their top-level removal roots;
+- physical filesystem cleanup runs once per top-level missing root;
+- baseline cleanup then deletes each missing key directly, with no repeated whole-baseline prefix scan;
+- the flat 1,200-file workload changes remote-deletion baseline scanning from **1,200 whole-map scans -> 1 whole-map collection pass + 1,200 exact deletes**;
+- root preservation, `os.RemoveAll` behavior, remote-path retention, full-walk semantics and change-journal fallback behavior are unchanged.
+
+Decision: **Accepted.** The remote snapshot already identifies the complete surviving path set, so repeated prefix discovery adds no correctness value during full-reconcile cleanup.
+
+Regression budget: full-reconcile remote-deletion cleanup must not call `deletePrefix` once per missing remote path. Missing nested subtrees must collapse to top-level physical removal roots, while baseline keys are removed exactly.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestPruneRemoteDeletedBaseline' -count=1`.
+
+Next action: continue ordinary sync/download/delete performance and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### Resumable upload chunk-buffer allocation contract
 
