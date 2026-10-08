@@ -21,6 +21,7 @@ export type XDriveFileExplorerAvailabilitySnapshot = {
   availableOffline?: boolean
   mixed?: boolean
   syncing?: boolean
+  progress?: number
 }
 
 const availabilityPresentation: Record<
@@ -54,7 +55,7 @@ export function xDriveFileExplorerAvailabilityFromSnapshot(
   state: XDriveFileExplorerAvailabilitySnapshot,
 ): XDriveFileExplorerAvailability {
   const mode = state.mode?.trim().toLowerCase() ?? ''
-  if (state.syncing || mode === 'syncing') return xDriveFileExplorerAvailability('syncing')
+  if (state.syncing || mode === 'syncing') return xDriveFileExplorerAvailability('syncing', state.progress)
   if (state.mixed || mode === 'mixed') return xDriveFileExplorerAvailability('mixed')
   if (state.pinned || mode === 'always-local') return xDriveFileExplorerAvailability('always-local')
   if (state.onlineOnly || mode === 'online-only') return xDriveFileExplorerAvailability('online-only')
