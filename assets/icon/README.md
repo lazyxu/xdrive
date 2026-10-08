@@ -31,7 +31,7 @@ Current Web derivatives are:
 - `apple-touch-icon.png`: 180 × 180;
 - `pwa-192.png`: 192 × 192;
 - `pwa-512.png`: 512 × 512;
-- `site.webmanifest`: references the 192 and 512 PNGs and the shared xDrive theme color.
+- `site.webmanifest`: references the 192 and 512 PNGs, shared xDrive theme color, and the stable root install identity (`id`, `start_url`, `scope`) used by the mobile Web app.
 
 The approved master canvas is 1024 × 1024 with a 1024 × 1024 SVG viewBox.
 

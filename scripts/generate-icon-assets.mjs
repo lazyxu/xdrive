@@ -182,6 +182,12 @@ try {
     theme_color: '#1787FA',
     background_color: '#F5F7FB',
     display: 'standalone',
+    id: '/',
+    start_url: '/',
+    scope: '/',
+    description: 'xDrive 网页文件管理器',
+    lang: 'zh-CN',
+    orientation: 'any',
   }
   fs.writeFileSync(path.join(webDir, 'site.webmanifest'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
