@@ -121,16 +121,29 @@ func retainExistingContentReferenceTx(tx *gorm.DB, file meta.File) error {
 		Update("ref_count", gorm.Expr("ref_count + 1")).Error
 }
 
+func storageObjectSize(ctx context.Context, store storage.Store, key string) (int64, error) {
+	if provider, ok := store.(storage.ObjectStatProvider); ok {
+		info, err := provider.Stat(ctx, key)
+		if err != nil {
+			return 0, err
+		}
+		return info.Size, nil
+	}
+	f, err := store.Open(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	info, statErr := f.Stat()
+	_ = f.Close()
+	if statErr != nil {
+		return 0, statErr
+	}
+	return info.Size(), nil
+}
+
 func (s *Server) ensureContentBlobObject(ctx context.Context, tempKey, targetKey string, expectedSize int64) error {
-	if existing, err := s.Store.Open(ctx, targetKey); err == nil {
-		healthy := false
-		if info, statErr := existing.Stat(); statErr == nil && info.Size() == expectedSize {
-			healthy = true
-		}
-		_ = existing.Close()
-		if healthy {
-			return nil
-		}
+	if size, err := storageObjectSize(ctx, s.Store, targetKey); err == nil && size == expectedSize {
+		return nil
 	}
 	if promoter, ok := s.Store.(storage.ContentPromoter); ok {
 		return promoter.Promote(ctx, tempKey, targetKey, expectedSize)

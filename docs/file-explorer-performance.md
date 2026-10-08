@@ -36,6 +36,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
 | Instant-upload ownership existence probe | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 same-key current-file refs or 120 same-key historical-version refs: ownership changes from aggregate `COUNT(*)` over all matches to one indexed `EXISTS` union that needs only a boolean result. The outer fast check and in-transaction ownership recheck both remain. |
+| Upload CAS metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | Local/ObjectStatProvider CAS health checks in finalize and instant-upload retain use metadata `Stat` without opening payload handles: healthy-object validation **1 Open + 1 fstat + 1 Close -> 1 metadata Stat** per check. Generic Store fallback remains unchanged. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
@@ -419,6 +420,36 @@ Decision: **Accepted.** This removes unnecessary full-cardinality aggregation fr
 Regression budget: `userOwnsStorageKey` must remain **1 SQL statement using EXISTS and no COUNT aggregation**, probe both current files and historical versions, and preserve the in-transaction recheck.
 
 Next action: continue the sync/delete/download basic-path audit and only change another deterministic request, SQL, allocation, or I/O multiplier.
+
+### Upload CAS metadata-stat contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- healthy CAS object validation during upload finalize and instant-upload retain;
+- Local storage implements `storage.ObjectStatProvider`;
+- deterministic unit fixture wraps Local and counts metadata `Stat` versus payload `Open`;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- `ensureContentBlobObject` opened the target CAS object, called `f.Stat()`, then closed it;
+- `retainOwnedContentBlobTx` used the same payload-handle pattern;
+- each healthy-object validation therefore incurred **1 payload Open + 1 fstat + 1 Close** even though only object size metadata was required.
+
+AFTER / current:
+
+- both paths call one shared metadata-size helper;
+- `ObjectStatProvider` backends perform **1 metadata Stat and 0 payload Opens**;
+- stores without metadata support retain the existing `Open + Stat + Close` fallback;
+- expected-size validation, CAS locking, blob state/refcount checks, quota and transaction semantics are unchanged.
+
+Decision: **Accepted.** This removes payload-handle churn from two hot upload dedup/finalize checks without weakening content validation.
+
+Regression budget: ObjectStatProvider paths must remain **0 payload Opens** for metadata-only healthy-object size checks; fallback Store behavior must remain supported.
+
+Next action: continue download/sync/delete basic-path performance and only change another deterministic request, SQL, allocation, or I/O multiplier.
 
 ### Archive prepare subtree SQL contract
 
