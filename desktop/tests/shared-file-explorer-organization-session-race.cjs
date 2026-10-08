@@ -317,3 +317,91 @@ test('FileExplorer organization same-tick duplicate mutation is synchronously si
   )
   assert.deepEqual(errors, [])
 })
+
+
+test('FileExplorer tag-node refresh cannot let an older mutation overwrite newer tag counts', async () => {
+  const runtime = createHookRuntime()
+  const useOrganization = loadOrganizationHook(runtime.react)
+
+  const refreshA = deferred()
+  let listTagsCalls = 0
+  const errors = []
+  const addCalls = []
+
+  const latestTags = [
+    { id: 1, name: 'Red', color: '#ff0000', item_count: 1 },
+    { id: 2, name: 'Blue', color: '#0000ff', item_count: 1 },
+  ]
+  const staleTags = [
+    { id: 1, name: 'Red', color: '#ff0000', item_count: 1 },
+    { id: 2, name: 'Blue', color: '#0000ff', item_count: 0 },
+  ]
+
+  const adapter = {
+    listTags: async () => {
+      listTagsCalls += 1
+      if (listTagsCalls === 1) return []
+      if (listTagsCalls === 2) return refreshA.promise
+      if (listTagsCalls === 3) return latestTags
+      throw new Error('unexpected listTags call ' + listTagsCalls)
+    },
+    createTag: async () => { throw new Error('unused') },
+    updateTag: async () => { throw new Error('unused') },
+    deleteTag: async () => {},
+    queryNodeTags: async () => [],
+    addTagNodes: async (tagID) => {
+      addCalls.push(tagID)
+    },
+    removeTagNodes: async () => {},
+    listSavedSearches: async () => [],
+    createSavedSearch: async () => { throw new Error('unused') },
+    updateSavedSearch: async () => { throw new Error('unused') },
+    deleteSavedSearch: async () => {},
+    reorderSavedSearches: async () => [],
+  }
+
+  const render = () => runtime.render(() => useOrganization({
+    lifecycleKey: 'server-a:user-a',
+    adapter,
+    onError: (error) => errors.push(error),
+  }))
+
+  render()
+  await flushAsync()
+  let organization = render()
+
+  const mutationA = organization.setTagNodes(1, [101], true)
+  for (let attempt = 0; attempt < 20 && listTagsCalls < 2; attempt += 1) {
+    await Promise.resolve()
+  }
+  assert.equal(
+    listTagsCalls,
+    2,
+    'first tag mutation should be waiting on its post-write tag refresh',
+  )
+
+  organization = render()
+  const mutationB = organization.setTagNodes(2, [101], true)
+  await mutationB
+  await flushAsync()
+  organization = render()
+
+  assert.deepEqual(addCalls, [1, 2])
+  assert.deepEqual(
+    organization.tags.map((tag) => [tag.id, tag.item_count]),
+    [[1, 1], [2, 1]],
+    'newer tag mutation refresh should publish the latest tag counts first',
+  )
+
+  refreshA.resolve(staleTags)
+  await mutationA
+  await flushAsync()
+  organization = render()
+
+  assert.deepEqual(
+    organization.tags.map((tag) => [tag.id, tag.item_count]),
+    [[1, 1], [2, 1]],
+    'an older post-mutation listTags response must not overwrite newer tag counts',
+  )
+  assert.deepEqual(errors, [])
+})
