@@ -162,3 +162,17 @@ export async function xDriveWriteWebDownloadToSink(
     throw error
   }
 }
+
+
+export function xDriveStartBrowserDownload(url: string, filename: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+  }
+}
