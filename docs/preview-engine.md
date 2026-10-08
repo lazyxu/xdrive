@@ -483,3 +483,10 @@ Web 的 `preview`、`media-viewer`、`pdf-viewer`、`audio-player` 都是 Previe
 - Viewer 作为覆盖层保持调用方 workspace 挂载，因此关闭/浏览器 Back 后应恢复原 Files/Gallery 状态。
 
 路由和 App Registry 的规范见 `docs/web-app-runtime.md`。
+
+
+### Touch image gestures
+
+交互式图片预览在 coarse pointer 设备上使用原生触屏手势：双指 pinch 在 1×–6× 范围缩放，双击在 1× / 2× 间切换，放大后单指 pan；仅在约 1× 时，水平位移至少 56 CSS px 且明显大于垂直位移才触发可选的上一项/下一项 swipe。触屏时不显示桌面缩放按钮，鼠标滚轮、双击和拖动 pan 契约保持不变。
+
+视频、音频、PDF 和 Live Photo 不进入这套图片 swipe 状态机。特别是 Live Photo 仍由按住/松开控制 motion，避免与横向浏览手势争抢。

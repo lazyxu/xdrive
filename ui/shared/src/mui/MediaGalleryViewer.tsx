@@ -324,6 +324,8 @@ export function XDriveMediaGalleryViewer({
               minHeight={320}
               maxHeight={fullScreen ? 4096 : 760}
               interactiveImage
+              onSwipePrevious={canPrevious ? onPrevious : undefined}
+              onSwipeNext={canNext ? onNext : undefined}
               mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
             />
           )

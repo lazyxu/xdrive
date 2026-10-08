@@ -116,3 +116,12 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 5. 定义直接 deep-link、Back/Forward、无参数和无调用方时的行为；
 6. 文件关联通过统一 resolver 添加，不在 FileExplorer 写新的格式特判；
 7. Web/Desktop 同一业务概念优先复用 shared model/MUI surface，平台传输和 OS integration 保留在 adapter。
+
+
+## 移动 Viewer
+
+移动 Web 的 Viewer 继续使用同一个 Web App Runtime 和浏览上下文，不建立独立 mobile viewer。窄屏且主指针为 coarse 时，immersive Viewer 使用全动态视口高度和安全区内边距；标题栏只保留返回、标题与位置，收藏/信息/标签/分享/下载等动作移到底部 44px 操作栏。
+
+图片预览在 1× 时支持横向 swipe 切换前后项目；放大后单指移动图片，双指 pinch 缩放，双击在 1× / 2× 间切换。单击内容延迟切换 chrome，从而与双击缩放区分。视频继续由原生 media controls 拥有手势；Live Photo 继续保持按住播放、松开停止，不用 Gallery swipe 覆盖其 hold 语义。
+
+手机布局只是呈现投影：Viewer context、前后项 range 查找、Favorite/Info/Share/Download 等命令以及浏览器 Back/Forward 规则保持原契约。
