@@ -565,10 +565,15 @@ func writeArchiveDownloadEntry(
 	}
 	defer f.Close()
 	source := io.Reader(f)
+	var progressReader *archiveProgressReader
 	if onProgress != nil {
-		source = &archiveProgressReader{reader: f, onRead: onProgress}
+		progressReader = &archiveProgressReader{reader: f, onRead: onProgress}
+		source = progressReader
 	}
 	written, err := io.Copy(writer, source)
+	if progressReader != nil {
+		progressReader.Flush()
+	}
 	if err != nil {
 		return err
 	}
