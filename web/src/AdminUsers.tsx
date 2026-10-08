@@ -75,6 +75,26 @@ function gibToBytes(gib: number) {
   return Math.round(Math.max(0, gib || 0) * GIB)
 }
 
+function adminUserCellSx(label: string) {
+  return {
+    display: { xs: 'grid', md: 'table-cell' },
+    gridTemplateColumns: '88px minmax(0, 1fr)',
+    gap: 1,
+    alignItems: 'start',
+    px: { xs: 1.25, md: 2 },
+    py: { xs: 0.75, md: 1 },
+    borderBottom: { xs: 0, md: 1 },
+    '&::before': {
+      content: `"${label}"`,
+      display: { xs: 'block', md: 'none' },
+      color: 'text.secondary',
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      pt: 0.25,
+    },
+  } as const
+}
+
 function initialCreateValues(): CreateForm {
   return {
     username: '',
@@ -304,8 +324,13 @@ export default function AdminUsersPanel({
               <XDriveStatePanel variant="plain" message="暂无用户" />
             ) : (
               <XDriveTableSurface>
-                <Table size="small" aria-label="用户管理" sx={{ minWidth: 900 }}>
-                  <TableHead>
+                <Table
+                  size="small"
+                  aria-label="用户管理"
+                  data-xdrive-admin-users-responsive
+                  sx={{ minWidth: { xs: 0, md: 900 }, display: { xs: 'block', md: 'table' } }}
+                >
+                  <TableHead sx={{ display: { xs: 'none', md: 'table-header-group' } }}>
                     <TableRow>
                       <TableCell sx={{ width: 120 }}>用户</TableCell>
                       <TableCell sx={{ width: 110 }}>角色</TableCell>
@@ -316,23 +341,31 @@ export default function AdminUsersPanel({
                       <TableCell sx={{ width: 260 }}>操作</TableCell>
                     </TableRow>
                   </TableHead>
-                  <TableBody>
+                  <TableBody sx={{ display: { xs: 'block', md: 'table-row-group' } }}>
                     {users.map((user) => (
                       <TableRow
                         key={user.id}
                         hover
                         data-xdrive-admin-user-id={user.id}
                         selected={focusUserID === user.id}
+                        sx={{
+                          display: { xs: 'block', md: 'table-row' },
+                          border: { xs: 1, md: 0 },
+                          borderColor: 'divider',
+                          borderRadius: { xs: 2, md: 0 },
+                          mb: { xs: 1.25, md: 0 },
+                          overflow: { xs: 'hidden', md: 'visible' },
+                        }}
                       >
-                        <TableCell>
-                          <Stack direction="row" spacing={1} alignItems="center">
+                        <TableCell sx={adminUserCellSx('用户')}>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                             <Typography variant="body2" fontWeight={user.id === currentUserID ? 700 : 400}>
                               {user.username}
                             </Typography>
                             {user.id === currentUserID && <XDriveStatusBadge tone="neutral" label="当前用户" />}
                           </Stack>
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={adminUserCellSx('角色')}>
                           <TextField
                             select
                             size="small"
@@ -364,7 +397,7 @@ export default function AdminUsersPanel({
                             <MenuItem value="admin">管理员</MenuItem>
                           </TextField>
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={adminUserCellSx('启用')}>
                           <Switch
                             size="small"
                             checked={!user.disabled}
@@ -392,12 +425,17 @@ export default function AdminUsersPanel({
                             }}
                           />
                         </TableCell>
-                        <TableCell sx={{ display: { xs: 'none', xl: 'table-cell' } }}>
+                        <TableCell
+                          sx={{
+                            ...adminUserCellSx('密码'),
+                            display: { xs: 'grid', md: 'none', xl: 'table-cell' },
+                          }}
+                        >
                           {user.must_change_password
                             ? <XDriveStatusBadge tone="warning" label="需要修改" />
                             : <XDriveStatusBadge tone="good" label="已设置" />}
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={adminUserCellSx('存储')}>
                           <Stack spacing={0.25}>
                             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                               <Typography variant="body2">
@@ -413,10 +451,15 @@ export default function AdminUsersPanel({
                             </Typography>
                           </Stack>
                         </TableCell>
-                        <TableCell sx={{ display: { xs: 'none', xl: 'table-cell' } }}>
+                        <TableCell
+                          sx={{
+                            ...adminUserCellSx('上次登录'),
+                            display: { xs: 'grid', md: 'none', xl: 'table-cell' },
+                          }}
+                        >
                           {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : '从未'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={adminUserCellSx('操作')}>
                           <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                             <XDriveActionButton
                               compact
