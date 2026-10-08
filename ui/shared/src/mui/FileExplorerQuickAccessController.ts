@@ -63,6 +63,7 @@ export function useXDriveFileExplorerQuickAccess<
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
   const lifecycleGenerationRef = useRef(1)
+  const reorderGenerationRef = useRef(0)
 
   if (
     enabledRef.current !== enabled ||
@@ -72,6 +73,7 @@ export function useXDriveFileExplorerQuickAccess<
     lifecycleKeyRef.current = lifecycleKey
     loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
+    reorderGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
     pendingMutationRef.current.clear()
@@ -120,6 +122,7 @@ export function useXDriveFileExplorerQuickAccess<
   useEffect(() => () => {
     loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
+    reorderGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
     pendingMutationRef.current.clear()
@@ -230,6 +233,8 @@ export function useXDriveFileExplorerQuickAccess<
   const reorder = useCallback(async (nodeIDs: number[]) => {
     if (!enabled || !reorderItemsRef.current) return false
     const generation = lifecycleGenerationRef.current
+    const reorderGeneration = reorderGenerationRef.current + 1
+    reorderGenerationRef.current = reorderGeneration
     const previous = items
     const position = new Map(nodeIDs.map((id, index) => [id, index]))
     setItems((current) => [...current].sort(
@@ -241,6 +246,7 @@ export function useXDriveFileExplorerQuickAccess<
     } catch (error) {
       if (
         generation !== lifecycleGenerationRef.current ||
+        reorderGeneration !== reorderGenerationRef.current ||
         !enabledRef.current
       ) return false
       setItems(previous)
