@@ -551,13 +551,9 @@ func (s *Server) enqueueFileOperationWithConflictPolicy(
 			refs = topLevel
 		}
 
-		nodes := make([]meta.Node, 0, len(refs))
-		for index, ref := range refs {
-			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
-			if err != nil {
-				return err
-			}
-			nodes = append(nodes, node)
+		nodes, err := batchLoadNodesTx(tx, uid, refs, true)
+		if err != nil {
+			return err
 		}
 		totalBytes, err := fileOperationSelectionBytesTx(tx, uid, nodes)
 		if err != nil {

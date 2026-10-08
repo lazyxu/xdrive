@@ -113,6 +113,62 @@ func batchLoadNodeTx(tx *gorm.DB, uid uint64, ref batchNodeRef, index int, prelo
 	return node, nil
 }
 
+func batchLoadNodesTx(
+	tx *gorm.DB,
+	uid uint64,
+	refs []batchNodeRef,
+	preload bool,
+) ([]meta.Node, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint64, 0, len(refs))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+
+	var loaded []meta.Node
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, uid).
+		Order("id ASC")
+	if preload {
+		query = query.Preload("File")
+	}
+	if err := query.Find(&loaded).Error; err != nil {
+		return nil, err
+	}
+
+	byID := make(map[uint64]meta.Node, len(loaded))
+	for _, node := range loaded {
+		byID[node.ID] = node
+	}
+	out := make([]meta.Node, 0, len(refs))
+	for index, ref := range refs {
+		node, ok := byID[ref.ID]
+		if !ok {
+			return nil, &batchMutationFailure{
+				Index: index, ID: ref.ID, Status: http.StatusNotFound,
+				Code: "node_not_found", Message: "node not found",
+			}
+		}
+		if node.ParentID == nil {
+			return nil, &batchMutationFailure{
+				Index: index, ID: ref.ID, Status: http.StatusBadRequest,
+				Code: "root_mutation", Message: "root cannot be changed by batch operation",
+			}
+		}
+		if node.Revision != ref.Revision {
+			return nil, &batchMutationFailure{
+				Index: index, ID: ref.ID, Status: http.StatusConflict,
+				Code: "revision_conflict", Message: "node revision changed",
+				CurrentRevision: node.Revision,
+			}
+		}
+		out = append(out, node)
+	}
+	return out, nil
+}
+
 type batchAncestorCoverageRow struct {
 	OriginID uint64 `gorm:"column:origin_id"`
 	Covered  bool   `gorm:"column:covered"`
