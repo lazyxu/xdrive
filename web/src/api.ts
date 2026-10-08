@@ -2287,37 +2287,63 @@ export class XDriveApi {
         itemsQueued: preparedFiles.length,
       })
 
-      polling = (async () => {
-        while (!stopPolling) {
-          try {
-            applyProgress(await this.request<ArchiveDownloadProgress>(
-              `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
-            ))
-          } catch {
-            // Side-channel progress must never abort the archive transport.
+      if (downloadSink.kind === 'blob') {
+        const ticket = await this.request<AuthenticatedDownloadTicket>(
+          `/api/v1/download/archive/prepare/${encodeURIComponent(prepared.transfer_id)}/download-ticket`,
+          { method: 'POST' },
+        )
+        xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), preparedFilename)
+
+        const launchDeadline = Date.now() + 60_000
+        let observedActive = false
+        while (true) {
+          const progress = await this.request<ArchiveDownloadProgress>(
+            `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+          )
+          applyProgress(progress)
+          if (progress.state === 'running') observedActive = true
+          if (progress.state === 'completed') break
+          if (progress.state === 'failed' || progress.state === 'cancelled') {
+            throw new ApiError(409, progress.error || `Archive download ${progress.state}`)
+          }
+          if (!observedActive && Date.now() > launchDeadline) {
+            throw new Error('浏览器未开始归档下载。')
           }
           await new Promise((resolve) => window.setTimeout(resolve, 200))
         }
-      })()
+      } else {
+        polling = (async () => {
+          while (!stopPolling) {
+            try {
+              applyProgress(await this.request<ArchiveDownloadProgress>(
+                `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+              ))
+            } catch {
+              // Side-channel progress must never abort the archive transport.
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 200))
+          }
+        })()
 
-      try {
-        await this.downloadAuthenticated('/api/v1/download/archive', preparedFilename, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
-        }, false, downloadSink)
-      } finally {
-        stopPolling = true
-        await polling
-        polling = null
-      }
+        try {
+          await this.downloadAuthenticated('/api/v1/download/archive', preparedFilename, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
+          }, false, downloadSink)
+        } finally {
+          stopPolling = true
+          await polling
+          polling = null
+        }
 
-      try {
-        applyProgress(await this.request<ArchiveDownloadProgress>(
-          `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
-        ))
-      } catch {
-        // A successful archive response proves every entry was fully streamed.
+        try {
+          applyProgress(await this.request<ArchiveDownloadProgress>(
+            `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+          ))
+        } catch {
+          // A successful archive response proves every entry was fully streamed.
+        }
       }
 
       this.batchTransferUpdates(() => {

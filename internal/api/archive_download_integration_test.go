@@ -193,6 +193,35 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	crossPrepared = waitArchivePrepareCompleted(t, router, tokenA, crossPrepared)
+
+	archiveTicketResponse := request(
+		t, router, http.MethodPost,
+		"/api/v1/download/archive/prepare/"+crossPrepared.TransferID+"/download-ticket",
+		tokenA, nil, http.StatusOK,
+	)
+	var archiveTicket authenticatedDownloadTicketDTO
+	if err := json.Unmarshal(archiveTicketResponse.Body.Bytes(), &archiveTicket); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(
+		archiveTicket.URL,
+		"/api/v1/archive-download/"+crossPrepared.TransferID+"?ticket=",
+	) {
+		t.Fatalf("unexpected archive ticket: %+v", archiveTicket)
+	}
+	request(
+		t, router, http.MethodPost,
+		"/api/v1/download/archive/prepare/"+crossPrepared.TransferID+"/download-ticket",
+		tokenB, nil, http.StatusNotFound,
+	)
+	nativeArchiveResponse := request(
+		t, peerRouter, http.MethodGet, archiveTicket.URL, "", nil, http.StatusOK,
+	)
+	nativeArchiveEntries := readArchiveTestEntries(t, nativeArchiveResponse.Body.Bytes())
+	if nativeArchiveEntries["hello.txt"] != "hello world" {
+		t.Fatalf("ticket archive payload mismatch: %v", nativeArchiveEntries)
+	}
+
 	crossServerResponse := request(
 		t, peerRouter, http.MethodPost, "/api/v1/download/archive", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"ids":[%d],"transfer_id":%q}`, hello.ID, crossPrepared.TransferID)),

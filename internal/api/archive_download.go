@@ -62,15 +62,22 @@ func (s *Server) downloadArchive(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "ids must contain between 1 and 1000 valid node ids")
 		return
 	}
+	s.serveArchiveDownload(c, userID(c), ids, strings.TrimSpace(req.TransferID))
+}
 
-	transferID := strings.TrimSpace(req.TransferID)
+func (s *Server) serveArchiveDownload(
+	c *gin.Context,
+	ownerID uint64,
+	ids []uint64,
+	transferID string,
+) {
 	var manifest archiveDownloadManifest
 	filename := ""
 	loadedPrepared := false
 	if transferID != "" {
 		preparedManifest, preparedFilename, found, err := s.loadArchivePreparedManifest(
 			c.Request.Context(),
-			userID(c),
+			ownerID,
 			transferID,
 			ids,
 		)
@@ -93,7 +100,7 @@ func (s *Server) downloadArchive(c *gin.Context) {
 	}
 	if !loadedPrepared {
 		var err error
-		manifest, err = s.buildArchiveDownloadManifest(c.Request.Context(), userID(c), ids)
+		manifest, err = s.buildArchiveDownloadManifest(c.Request.Context(), ownerID, ids)
 		if err != nil {
 			switch {
 			case errors.Is(err, gorm.ErrRecordNotFound):
@@ -115,7 +122,7 @@ func (s *Server) downloadArchive(c *gin.Context) {
 	if transferID != "" {
 		if loadedPrepared {
 			if err := s.seedArchiveDownloadProgress(
-				userID(c),
+				ownerID,
 				transferID,
 				ids,
 				filename,
@@ -129,7 +136,7 @@ func (s *Server) downloadArchive(c *gin.Context) {
 			}
 		}
 		if transferID != "" {
-			if err := s.beginArchiveDownloadProgress(userID(c), transferID, ids, manifest); err != nil {
+			if err := s.beginArchiveDownloadProgress(ownerID, transferID, ids, manifest); err != nil {
 				switch {
 				case errors.Is(err, errArchiveProgressNotFound):
 					// Legacy/process-local tickets remain optional. The durable prepared
