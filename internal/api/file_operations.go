@@ -1450,6 +1450,14 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindDelete}
 		operationProgress := newFileOperationProgressCoalescer(s, ctx, operation.ID)
+		rootIDs := make([]uint64, 0, len(roots))
+		for _, root := range roots {
+			rootIDs = append(rootIDs, root.ID)
+		}
+		subtrees, err := activeSubtreeSummariesDB(tx, uid, rootIDs)
+		if err != nil {
+			return err
+		}
 		for index, ref := range refs {
 			node := roots[index]
 			if err := operationProgress.begin(node.Name); err != nil {
@@ -1458,9 +1466,9 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			if node.Type == meta.NodeTypeFile && node.File == nil {
 				return gorm.ErrRecordNotFound
 			}
-			subtree, err := activeSubtreeSummaryDB(tx, uid, node.ID)
-			if err != nil {
-				return err
+			subtree, ok := subtrees[node.ID]
+			if !ok {
+				return gorm.ErrRecordNotFound
 			}
 			protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, subtree.IDs)
 			if err != nil {

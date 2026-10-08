@@ -162,4 +162,33 @@ func TestActiveSubtreeSummaryUsesSingleRecursiveQuery(t *testing.T) {
 	if fileSummary.Bytes != files[0].Size {
 		t.Fatalf("file subtree bytes=%d want=%d", fileSummary.Bytes, files[0].Size)
 	}
+
+	rootIDs := make([]uint64, 0, len(directories))
+	for _, directory := range directories {
+		rootIDs = append(rootIDs, directory.ID)
+	}
+	counter.start()
+	summaries, err := activeSubtreeSummariesDB(db, user.ID, rootIDs)
+	multiRootQueryCount := counter.stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if multiRootQueryCount != 1 {
+		t.Fatalf("multi-root active subtree summary used %d SQL statements; want exactly 1", multiRootQueryCount)
+	}
+	if len(summaries) != childCount {
+		t.Fatalf("multi-root summary count=%d want=%d", len(summaries), childCount)
+	}
+	for index, directory := range directories {
+		summary, ok := summaries[directory.ID]
+		if !ok {
+			t.Fatalf("missing subtree summary for root %d", directory.ID)
+		}
+		if len(summary.IDs) != 2 {
+			t.Fatalf("root %d subtree ids=%v want 2 nodes", directory.ID, summary.IDs)
+		}
+		if summary.Bytes != files[index].Size {
+			t.Fatalf("root %d subtree bytes=%d want=%d", directory.ID, summary.Bytes, files[index].Size)
+		}
+	}
 }

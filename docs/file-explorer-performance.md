@@ -52,6 +52,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation enqueue root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected file roots: owner/revision/root validation with file metadata **240 SELECTs -> 2 SELECTs** (one ordered locked node batch + one File preload); validation still reports the first failing requested item. |
 | FileOperation execution root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected roots: Copy/Delete locked root validation with File metadata **240 SELECTs -> 2 SELECTs**; Move root validation **120 SELECTs -> 1 SELECT** with no File preload. Recursive mutation/conflict/progress semantics are unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
+| FileOperation delete multi-root subtree aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directory roots, one file each: execution-time subtree summary recursion **120 CTEs -> 1 grouped CTE**; per-root managed-source/share/Trash/revision/undo semantics remain unchanged. |
 | FileOperation progress write coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 top-level Move/Delete roots: operation current-item + completion progress writes **240 UPDATEs -> 121 UPDATEs**. Every root still performs one `status=running` cancel checkpoint; the previous root's item/byte delta is folded into the next checkpoint and the final delta is flushed. Copy file-byte deltas use the same coalescer. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | Legacy delete reference batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 legacy non-CAS keys: post-commit File/FileVersion reference checks **120 SQL statements -> 1 UNION query**; referenced keys remain protected and physical Store.Delete remains one call per unreferenced key. |
@@ -103,6 +104,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
 - FileOperation enqueue locks selected roots in one deterministic ID-ordered query and batch-preloads their file metadata, then replays missing/root/revision validation in original request order. This replaces one node query plus one File preload per selected file without changing the first reported failing item.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
+- Multi-root FileOperation Delete resolves all already top-level delete roots through one grouped recursive subtree query, returning an independent ID list and byte total per root. The worker still applies managed-source protection, share revocation, Trash marking, revision validation, undo capture, and progress in original request order.
 - Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
 - CAS physical deletion checks temporary reused upload ranges with `SELECT EXISTS` against the partial index `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`. The guard remains inside the existing per-blob transaction before `Store.Delete`, so active resumable overwrite ranges still keep the old content alive.
 - FileOperation Copy/Move target-descendant validation walks the target's active ancestor chain in PostgreSQL and returns one scalar `EXISTS` result instead of materializing the source subtree IDs in Go. Managed-source subtree protection likewise stays inside PostgreSQL as a recursive CTE joined directly to `xd_sources`, while Delete keeps its existing ID materialization because those IDs are required for share revocation and Trash updates.
@@ -1235,6 +1237,40 @@ Regression command:
 Decision: **accept** the combined subtree summary. It removes a redundant full-tree traversal from a core FileExplorer delete path without changing delete semantics.
 
 Regression budget: FileOperation delete must not separately call both recursive byte aggregation and recursive subtree-ID enumeration for the same selected root.
+
+### FileOperation delete multi-root subtree aggregation
+
+Status: **Accepted / structural; wall-clock unmeasured**.
+
+Problem and workload:
+
+- Delete enqueue already reduces the selection to non-overlapping top-level roots;
+- execution still called the single-root subtree summary independently for every selected root;
+- stable fixture: **120 selected sibling directories**, each containing **1 file**;
+- evidence is deterministic SQL statement count around subtree-summary loading only; per-root mutation SQL is intentionally outside this optimization.
+
+BEFORE:
+
+- each delete root executes one recursive subtree CTE for IDs + bytes;
+- the 120-root fixture therefore performs **120 recursive subtree SQL statements** before the worker can run per-root protection and Trash updates.
+
+AFTER / current:
+
+- `activeSubtreeSummariesDB` seeds all selected root IDs together and carries `root_id` through one recursive CTE;
+- one grouped stats stage returns the byte total for each root while the same result set returns that root's ordered active node IDs;
+- the 120-root fixture performs **1 recursive subtree SQL statement** and returns 120 independent summaries;
+- `activeSubtreeSummaryDB` delegates to the grouped helper, so the existing single-root **2 -> 1** contract remains intact;
+- the Delete worker still processes roots in original request order and keeps managed-source protection, share revocation, Trash root assignment, root revision validation, undo capture, cancellation checkpoints, and progress semantics unchanged.
+
+Structural delta: **120 -> 1 recursive subtree CTE (-99.2%)** on the deterministic multi-root fixture. No wall-clock speedup is claimed.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestActiveSubtreeSummaryUsesSingleRecursiveQuery$' -count=1`.
+
+Decision: **accept** grouped multi-root subtree loading. It removes the remaining selected-root multiplier from Delete's recursive read phase without batching or weakening the mutation semantics.
+
+Regression budget: one FileOperation Delete execution may use at most **1 grouped recursive subtree summary query** for its already top-level selected roots.
 
 ### FileOperation Move root-byte aggregation
 
