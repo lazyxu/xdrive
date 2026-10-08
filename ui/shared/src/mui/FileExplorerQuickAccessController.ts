@@ -211,6 +211,7 @@ export function useXDriveFileExplorerQuickAccess<
 
   const reorder = useCallback(async (nodeIDs: number[]) => {
     if (!enabled || !reorderItemsRef.current) return false
+    const generation = lifecycleGenerationRef.current
     const previous = items
     const position = new Map(nodeIDs.map((id, index) => [id, index]))
     setItems((current) => [...current].sort(
@@ -220,6 +221,10 @@ export function useXDriveFileExplorerQuickAccess<
       await reorderItemsRef.current(nodeIDs)
       return true
     } catch (error) {
+      if (
+        generation !== lifecycleGenerationRef.current ||
+        !enabledRef.current
+      ) return false
       setItems(previous)
       onErrorRef.current(error)
       return false
