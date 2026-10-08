@@ -218,6 +218,7 @@ export default function App({
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
+  const cloudFileDialogLifecycleRef = useRef('')
   const [cloudFileActionIntent, setCloudFileActionIntent] = useState<DesktopFileExplorerActionIntent | null>(null)
   const cloudFileActionSequenceRef = useRef(0)
   const [cloudFileExplorerNavigationSnapshot, setCloudFileExplorerNavigationSnapshot] = useState<{
@@ -812,6 +813,13 @@ export default function App({
   }, [agent.connected, agent.hello?.agent_version])
 
   useEffect(() => {
+    const fileDialogLifecycleKey = `${status?.server ?? ''}\n${status?.username ?? ''}`
+    if (cloudFileDialogLifecycleRef.current !== fileDialogLifecycleKey) {
+      cloudFileDialogLifecycleRef.current = fileDialogLifecycleKey
+      setCloudHistoryNode(null)
+      setCloudHistoryCrumbs([])
+      setCloudShareNode(null)
+    }
     if (!agent.connected || !configured) {
       setSettings(null)
       setConflicts([])
@@ -826,7 +834,15 @@ export default function App({
     // Refresh lightweight settings/conflict state when the Agent revision changes.
     // Diagnostics are intentionally excluded because they perform network/system checks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, settingsOpen, agent.connected, configured, status?.revision])
+  }, [
+    view,
+    settingsOpen,
+    agent.connected,
+    configured,
+    status?.revision,
+    status?.server,
+    status?.username,
+  ])
 
   useEffect(() => {
     if (view !== 'diagnostics' || !agent.connected || !configured) return
