@@ -63,3 +63,39 @@ test('Web and Desktop reuse shared existing-share list presentation', () => {
   assert.ok(web.includes('createWebShareDialogAdapter'), 'Web share API mapping should live in the file-dialog adapter layer')
   assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ShareDialog.tsx')), false, 'Web must not keep a pass-through Share dialog wrapper')
 })
+
+
+test('shared Share dialog uses compact full-screen presentation and compact list on touch', () => {
+  for (const token of [
+    'useXDriveCompactTouchDialog()',
+    'fullScreen={compactTouch}',
+    'slotProps={{ paper: dialogPaper }}',
+    "variant={compactTouch ? 'compact' : listVariant}",
+  ]) {
+    assert.ok(sharedDialog.includes(token), 'mobile share Dialog contract missing: ' + token)
+  }
+})
+
+test('created share link exposes native Web Share only when supported on compact touch', () => {
+  for (const token of [
+    "typeof navigator.share === 'function'",
+    "await navigator.share({",
+    'title: `xDrive 分享 — ${node.name}`',
+    'url: createdLink',
+    "error instanceof DOMException && error.name === 'AbortError'",
+    "message: '无法打开系统分享，请使用复制链接。'",
+    'onShare={nativeShareAvailable ? () => void shareCreatedLink() : undefined}',
+    'shareLabel="系统分享"',
+  ]) {
+    assert.ok(sharedDialog.includes(token), 'native share contract missing: ' + token)
+  }
+
+  for (const token of [
+    'onShare?: () => void',
+    'ShareRoundedIcon',
+    '{onShare ? (',
+    '{shareLabel}',
+  ]) {
+    assert.ok(shared.includes(token), 'created-share native action missing: ' + token)
+  }
+})

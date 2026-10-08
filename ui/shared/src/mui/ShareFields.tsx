@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import { InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveActionButton } from './ActionButton'
@@ -12,13 +13,17 @@ export type XDriveShareExpiryMode = 'datetime' | 'days'
 export function XDriveCreatedShareLink({
   value,
   onCopy,
+  onShare,
   copyLabel = '复制',
+  shareLabel = '系统分享',
   copyIntent = 'secondary',
   sx,
 }: {
   value: string
   onCopy: () => void
+  onShare?: () => void
   copyLabel?: ReactNode
+  shareLabel?: ReactNode
   copyIntent?: XDriveActionIntent
   sx?: SxProps<Theme>
 }) {
@@ -45,13 +50,23 @@ export function XDriveCreatedShareLink({
           },
         }}
       />
-      <XDriveActionButton
-        intent={copyIntent}
-        startIcon={<ContentCopyRoundedIcon />}
-        onClick={onCopy}
-      >
-        {copyLabel}
-      </XDriveActionButton>
+      <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+        <XDriveActionButton
+          intent={copyIntent}
+          startIcon={<ContentCopyRoundedIcon />}
+          onClick={onCopy}
+        >
+          {copyLabel}
+        </XDriveActionButton>
+        {onShare ? (
+          <XDriveActionButton
+            startIcon={<ShareRoundedIcon />}
+            onClick={onShare}
+          >
+            {shareLabel}
+          </XDriveActionButton>
+        ) : null}
+      </Stack>
     </Stack>
   )
 }

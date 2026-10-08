@@ -6,7 +6,7 @@ import type { FileShare } from '../models'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
 import { XDriveSectionHeader } from './SectionHeader'
 import {
@@ -98,6 +98,11 @@ export function XDriveShareDialog({
   const [passwordError, setPasswordError] = useState('')
   const [maxDownloadsError, setMaxDownloadsError] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
+  const nativeShareAvailable =
+    compactTouch &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function'
   const loadRequestRef = useRef(0)
   const nodeLifecycleGenerationRef = useRef(0)
 
@@ -195,6 +200,23 @@ export function XDriveShareDialog({
     }
   }
 
+  const shareCreatedLink = async () => {
+    if (!createdLink || !nativeShareAvailable || !node) return
+    const lifecycleGeneration = nodeLifecycleGenerationRef.current
+    try {
+      await navigator.share({
+        title: `xDrive 分享 — ${node.name}`,
+        url: createdLink,
+      })
+      if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
+      setFeedback({ tone: 'good', message: '已调用系统分享' })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
+      setFeedback({ tone: 'bad', message: '无法打开系统分享，请使用复制链接。' })
+    }
+  }
+
   const revoke = async (share: FileShare) => {
     const lifecycleGeneration = nodeLifecycleGenerationRef.current
     setRevokingID(share.id)
@@ -221,8 +243,9 @@ export function XDriveShareDialog({
         }}
         maxWidth="md"
         fullWidth
+        fullScreen={compactTouch}
         scroll="paper"
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: dialogPaper }}
       >
         <XDriveDialogTitle
           title={node ? `分享 — ${node.name}` : '分享'}
@@ -239,7 +262,9 @@ export function XDriveShareDialog({
             <XDriveCreatedShareLink
               value={createdLink}
               onCopy={() => void copyCreatedLink()}
+              onShare={nativeShareAvailable ? () => void shareCreatedLink() : undefined}
               copyLabel="复制链接"
+              shareLabel="系统分享"
               copyIntent="primary"
               sx={{ mb: 2.25 }}
             />
@@ -292,7 +317,7 @@ export function XDriveShareDialog({
           ) : (
             <XDriveShareList
               shares={shares}
-              variant={listVariant}
+              variant={compactTouch ? 'compact' : listVariant}
               revokeDisabled={revokingID !== null}
               onRevoke={(share) => void revoke(share)}
             />
