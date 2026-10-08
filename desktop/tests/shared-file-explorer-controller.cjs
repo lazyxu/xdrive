@@ -176,7 +176,9 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     'xDriveFileExplorerClipboardFromItems',
     'xDriveFileExplorerCanPaste',
     'xDriveFileExplorerClipboardOperationPlan',
-    "mode === 'cut' ? 'move' : 'copy'",
+    "operationOverride ?? (mode === 'cut' ? 'move' : 'copy')",
+    "const effectiveNodes = operation === 'move'",
+    "clearClipboard: operation === 'move'",
     'xDriveFileExplorerDropOperationPlan',
     'xDriveFileExplorerDropItemsPlan',
     'xDriveFileExplorerDropItemsToParentPlan',
@@ -193,6 +195,8 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     "setFromItems('copy', selected)",
     "setFromItems('cut', selected)",
     'xDriveFileExplorerClipboardOperationPlan(',
+    'operationOverride?: XDriveFileExplorerCopyMoveOperation',
+    'if (plan.count === 0) return null',
     'clipboardGeneration: generationRef.current',
     'plan.clipboardGeneration !== generationRef.current',
   ]) {
@@ -205,6 +209,7 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     'xDriveFileExplorerRunQueuedOperation({',
     'submit: () => submitOperation(plan)',
     "await runPlan('paste', plan",
+    'planPaste(currentID, operationOverride)',
     'completePaste(plan)',
     'xDriveFileExplorerDropItemsPlan(',
     "await runPlan('drop-items', plan, clearSearch)",
@@ -219,7 +224,7 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     assert.ok(source.includes('useXDriveFileExplorerOperationController<'), `${label} must consume the shared queued-operation controller`)
     assert.ok(source.includes('onCopyItems={trashActive ? undefined : copyItems}'), `${label} must retain shared copy wiring`)
     assert.ok(source.includes('onCutItems={trashActive ? undefined : cutItems}'), `${label} must retain shared cut wiring`)
-    assert.ok(source.includes('onPaste={trashActive ? undefined : () => { void pasteClipboard() }}'), `${label} must wire shared paste execution`)
+    assert.ok(source.includes('onPaste={trashActive ? undefined : (operationOverride) => { void pasteClipboard(operationOverride) }}'), `${label} must wire shared paste execution`)
     assert.equal(source.includes('xDriveFileExplorerRunQueuedOperation({'), false, `${label} must not execute queued operations locally`)
     assert.equal(source.includes('xDriveFileExplorerDropItemsPlan(operation, selected, target, nodeByID)'), false, `${label} must not plan internal folder drops locally`)
     assert.equal(source.includes('xDriveFileExplorerDropItemsToParentPlan('), false, `${label} must not plan breadcrumb drops locally`)

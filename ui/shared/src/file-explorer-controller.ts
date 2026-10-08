@@ -187,9 +187,11 @@ export function xDriveFileExplorerClipboardOperationPlan<
   mode: XDriveFileExplorerClipboardMode,
   nodes: TNode[],
   targetParentID: number,
+  operationOverride?: XDriveFileExplorerCopyMoveOperation,
 ) {
-  const operation: XDriveFileExplorerCopyMoveOperation = mode === 'cut' ? 'move' : 'copy'
-  const effectiveNodes = mode === 'cut'
+  const operation: XDriveFileExplorerCopyMoveOperation =
+    operationOverride ?? (mode === 'cut' ? 'move' : 'copy')
+  const effectiveNodes = operation === 'move'
     ? nodes.filter((node) => node.parent_id !== targetParentID)
     : nodes
 
@@ -198,7 +200,7 @@ export function xDriveFileExplorerClipboardOperationPlan<
     parentID: targetParentID,
     items: effectiveNodes.map((node) => ({ id: node.id, revision: node.revision })),
     count: effectiveNodes.length,
-    clearClipboard: mode === 'cut',
+    clearClipboard: operation === 'move',
   }
 }
 

@@ -23,6 +23,7 @@ export type XDriveFileExplorerKeyboardCommand =
   | 'copy-path'
   | 'cut'
   | 'paste'
+  | 'paste-move'
   | 'delete'
   | 'properties'
   | 'open'
@@ -82,6 +83,7 @@ export function xDriveFileExplorerShortcutLabel(
   case 'copy-path': return mac ? '⌥⌘C' : 'Ctrl+Shift+C'
   case 'cut': return mac ? '⌘X' : 'Ctrl+X'
   case 'paste': return mac ? '⌘V' : 'Ctrl+V / Shift+Insert'
+  case 'paste-move': return mac ? '⌥⌘V' : ''
   case 'delete': return mac ? '⌘⌫' : 'Delete / Ctrl+D'
   case 'properties': return mac ? '⌘I' : 'Alt+Enter'
   case 'open': return mac ? '⌘↓ / ⌘O' : 'Enter'
@@ -158,6 +160,17 @@ export function xDriveFileExplorerKeyboardCommand(
     !event.shiftKey
   ) {
     return 'copy-path'
+  }
+
+  if (
+    profile === 'macos' &&
+    key === 'v' &&
+    Boolean(event.metaKey) &&
+    Boolean(event.altKey) &&
+    !event.ctrlKey &&
+    !event.shiftKey
+  ) {
+    return 'paste-move'
   }
 
   if (

@@ -7,6 +7,7 @@ import {
 import type {
   XDriveFileExplorerClipboard,
   XDriveFileExplorerClipboardMode,
+  XDriveFileExplorerCopyMoveOperation,
   XDriveFileExplorerOperationNode,
   XDriveFileExplorerSelectionItem,
 } from '../file-explorer-controller'
@@ -39,14 +40,20 @@ export function useXDriveFileExplorerClipboard<
     setFromItems('cut', selected)
   }
 
-  const planPaste = (targetParentID: number) => {
+  const planPaste = (
+    targetParentID: number,
+    operationOverride?: XDriveFileExplorerCopyMoveOperation,
+  ) => {
     if (!clipboard?.nodes.length) return null
+    const plan = xDriveFileExplorerClipboardOperationPlan(
+      clipboard.mode,
+      clipboard.nodes,
+      targetParentID,
+      operationOverride,
+    )
+    if (plan.count === 0) return null
     return {
-      ...xDriveFileExplorerClipboardOperationPlan(
-        clipboard.mode,
-        clipboard.nodes,
-        targetParentID,
-      ),
+      ...plan,
       clipboardGeneration: generationRef.current,
     }
   }

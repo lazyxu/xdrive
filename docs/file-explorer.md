@@ -141,7 +141,7 @@ Current native-alignment rules include:
 
 Do not add a `Shift+Delete` permanent-delete shortcut merely for Windows parity. Permanent deletion remains an explicit Trash action with its existing confirmation semantics.
 
-Finder's `Option+Command+V` move-after-copy semantics require a clipboard-operation contract change and are intentionally separate from this keyboard-only alignment.
+Finder-style **Move Item Here** is supported through `Option+Command+V` on macOS. It reuses the current shared clipboard snapshot but overrides only that paste operation to `move`; a successful move clears the clipboard, while ordinary `Command+V` after `Command+C` remains copy. The move uses the same durable FileOperation, conflict handling, lifecycle fencing, and same-parent no-op filtering as existing Cut/Paste. Web/Desktop do not implement separate move-paste logic outside the shared clipboard/operation controllers.
 
 ## Details columns
 
