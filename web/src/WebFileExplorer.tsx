@@ -116,8 +116,8 @@ export default function WebFileExplorer({
   onRefreshCurrentDirectoryIfIdle: (
     expectedCurrentID: number | undefined,
   ) => Promise<boolean | void>
-  onUploadFiles: (files: FileList | null) => Promise<void>
-  onUploadFolderFiles: (files: FileList | null) => Promise<void>
+  onUploadFiles: (parentID: number, files: FileList | null) => Promise<void>
+  onUploadFolderFiles: (parentID: number, files: FileList | null) => Promise<void>
   onUploadDroppedFiles: (parentID: number, files: File[]) => Promise<void>
   onUploadDroppedFolderEntries: (
     parentID: number,
@@ -143,6 +143,13 @@ export default function WebFileExplorer({
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadPickerParentIDRef = useRef<number | null>(null)
+  const folderUploadPickerParentIDRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    uploadPickerParentIDRef.current = null
+    folderUploadPickerParentIDRef.current = null
+  }, [navigationSessionStorageKey])
   const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
   useEffect(() => {
     let active = true
@@ -558,10 +565,22 @@ export default function WebFileExplorer({
     refreshCurrentDirectoryIfIdle: onRefreshCurrentDirectoryIfIdle,
   })
 
+  const openUploadPicker = () => {
+    if (!current) return
+    uploadPickerParentIDRef.current = current.id
+    uploadInputRef.current?.click()
+  }
+
+  const openFolderUploadPicker = () => {
+    if (!current) return
+    folderUploadPickerParentIDRef.current = current.id
+    folderUploadInputRef.current?.click()
+  }
+
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
     onCreateFolder,
-    onUpload: () => uploadInputRef.current?.click(),
-    onUploadFolder: () => folderUploadInputRef.current?.click(),
+    onUpload: openUploadPicker,
+    onUploadFolder: openFolderUploadPicker,
     onRefresh: refresh,
   })
 
@@ -573,7 +592,9 @@ export default function WebFileExplorer({
         type="file"
         multiple
         onChange={(event) => {
-          void onUploadFiles(event.target.files)
+          const parentID = uploadPickerParentIDRef.current
+          uploadPickerParentIDRef.current = null
+          if (parentID !== null) void onUploadFiles(parentID, event.target.files)
           event.target.value = ''
         }}
       />
@@ -589,7 +610,9 @@ export default function WebFileExplorer({
         type="file"
         multiple
         onChange={(event) => {
-          void onUploadFolderFiles(event.target.files)
+          const parentID = folderUploadPickerParentIDRef.current
+          folderUploadPickerParentIDRef.current = null
+          if (parentID !== null) void onUploadFolderFiles(parentID, event.target.files)
           event.target.value = ''
         }}
       />
@@ -630,8 +653,8 @@ export default function WebFileExplorer({
         onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
         onCrumbClick={trashActive ? undefined : (_crumb, index) => { void navigateToCrumb(index) }}
         onCreateFolder={trashActive ? undefined : onCreateFolder}
-        onUpload={trashActive ? undefined : () => uploadInputRef.current?.click()}
-        onUploadFolder={trashActive ? undefined : () => folderUploadInputRef.current?.click()}
+        onUpload={trashActive ? undefined : openUploadPicker}
+        onUploadFolder={trashActive ? undefined : openFolderUploadPicker}
         onOpenItem={trashActive ? undefined : (item) => { void openItem(item, openWebNode) }}
         onOpenItemInNewTab={!trashActive && canNewTab
           ? (item) => { void openItemInNewTab(item) }

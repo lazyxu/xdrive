@@ -241,6 +241,8 @@ export default function DesktopFileExplorer({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const createFolderParentIDRef = useRef<number | null>(null)
+  const uploadPickerParentIDRef = useRef<number | null>(null)
+  const folderUploadPickerParentIDRef = useRef<number | null>(null)
   const [actionBusy, setActionBusy] = useState('')
   const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
   const actionGenerationRef = useRef(1)
@@ -251,6 +253,8 @@ export default function DesktopFileExplorer({
     actionBusyRef.current = null
     setActionBusy('')
     createFolderParentIDRef.current = null
+    uploadPickerParentIDRef.current = null
+    folderUploadPickerParentIDRef.current = null
     setCreateOpen(false)
     setOpenPreviewItem(null)
     setTagDialogItems([])
@@ -1251,9 +1255,8 @@ export default function DesktopFileExplorer({
     }),
   })
 
-  const uploadFolderFiles = async (files: File[]) => {
-    if (!current || files.length === 0 || !uploadConflictSupported) return
-    const expectedCurrentID = current.id
+  const uploadFolderFiles = async (expectedCurrentID: number, files: File[]) => {
+    if (files.length === 0 || !uploadConflictSupported) return
     const entries = files.map((file) => ({
       file,
       relativePath: file.webkitRelativePath || file.name,
@@ -1287,6 +1290,7 @@ export default function DesktopFileExplorer({
     if (!current || actionBusyRef.current || fileOperationBusy || uploadBusy) return
     const expectedCurrentID = current.id
     if (uploadConflictSupported) {
+      uploadPickerParentIDRef.current = expectedCurrentID
       uploadInputRef.current?.click()
       return
     }
@@ -1317,6 +1321,18 @@ export default function DesktopFileExplorer({
     } finally {
       finishActionBusy(busyToken)
     }
+  }
+
+  const openFolderUploadPicker = () => {
+    if (
+      !current ||
+      actionBusyRef.current ||
+      fileOperationBusy ||
+      uploadBusy ||
+      !uploadConflictSupported
+    ) return
+    folderUploadPickerParentIDRef.current = current.id
+    folderUploadInputRef.current?.click()
   }
 
   const createFolder = async (name: string) => {
@@ -1360,7 +1376,7 @@ export default function DesktopFileExplorer({
     if (actionIntent.action === 'upload-files') {
       void uploadFiles()
     } else if (actionIntent.action === 'upload-folder') {
-      folderUploadInputRef.current?.click()
+      openFolderUploadPicker()
     } else {
       createFolderParentIDRef.current = current.id
       setCreateOpen(true)
@@ -1658,7 +1674,7 @@ export default function DesktopFileExplorer({
     },
     onUpload: () => { void uploadFiles() },
     onUploadFolder: uploadConflictSupported
-      ? () => folderUploadInputRef.current?.click()
+      ? openFolderUploadPicker
       : undefined,
     uploadDisabled: explorerActionBusy,
     onRefresh: refresh,
@@ -1674,7 +1690,9 @@ export default function DesktopFileExplorer({
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ''
-          if (current) void uploadConflictAwareFiles(current.id, files, 'upload')
+          const parentID = uploadPickerParentIDRef.current
+          uploadPickerParentIDRef.current = null
+          if (parentID !== null) void uploadConflictAwareFiles(parentID, files, 'upload')
         }}
       />
       <input
@@ -1691,7 +1709,9 @@ export default function DesktopFileExplorer({
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
           event.target.value = ''
-          void uploadFolderFiles(files)
+          const parentID = folderUploadPickerParentIDRef.current
+          folderUploadPickerParentIDRef.current = null
+          if (parentID !== null) void uploadFolderFiles(parentID, files)
         }}
       />
 
@@ -1733,7 +1753,7 @@ export default function DesktopFileExplorer({
         }}
         onUpload={trashActive ? undefined : () => { void uploadFiles() }}
         onUploadFolder={!trashActive && uploadConflictSupported
-          ? () => folderUploadInputRef.current?.click()
+          ? openFolderUploadPicker
           : undefined}
         onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
         onOpenItemInNewTab={!trashActive && canNewTab
