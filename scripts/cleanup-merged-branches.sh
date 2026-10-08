@@ -7,12 +7,20 @@ superseded_label="${XD_CLEANUP_SUPERSEDED_LABEL:-superseded}"
 GH_BIN="${GH_BIN:-gh}"
 GIT_BIN="${GIT_BIN:-git}"
 dry_run=0
+exact_branch=""
+expected_sha=""
 
 usage() {
   cat <<'EOF'
-Usage: cleanup-merged-branches.sh [--dry-run]
+Usage:
+  cleanup-merged-branches.sh [--dry-run]
+  cleanup-merged-branches.sh --branch <name> --expected-sha <sha> [--dry-run]
 
-Deletes only remote branches that are provably redundant:
+Event mode (--branch + --expected-sha) verifies exactly one fetched remote
+branch and deletes it with git when its current tip still equals the PR event's
+recorded head SHA. Event mode performs no GitHub REST requests.
+
+Scan mode deletes only remote branches that are provably redundant:
   1. the current branch tip exactly matches the head SHA of a merged PR from
      this repository;
   2. a PR from this repository is closed without merge, is explicitly labeled
@@ -28,15 +36,62 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
+    --branch)
+      [[ $# -ge 2 ]] || { echo "--branch requires a value" >&2; exit 2; }
+      exact_branch="$2"
+      shift 2
+      ;;
+    --expected-sha)
+      [[ $# -ge 2 ]] || { echo "--expected-sha requires a value" >&2; exit 2; }
+      expected_sha="$2"
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
 [[ -n "$repo" ]] || { echo "GITHUB_REPOSITORY is required" >&2; exit 2; }
+command -v "$GIT_BIN" >/dev/null 2>&1 || { echo "$GIT_BIN is required" >&2; exit 1; }
+
+if [[ -n "$exact_branch" || -n "$expected_sha" ]]; then
+  [[ -n "$exact_branch" && -n "$expected_sha" ]] || {
+    echo "--branch and --expected-sha must be provided together" >&2
+    exit 2
+  }
+  [[ "$exact_branch" != "$default_branch" ]] || {
+    echo "cleanup: keep $exact_branch — default branch is never deleted"
+    exit 0
+  }
+  "$GIT_BIN" check-ref-format "refs/heads/$exact_branch" >/dev/null 2>&1 || {
+    echo "invalid branch name: $exact_branch" >&2
+    exit 2
+  }
+  [[ "$expected_sha" =~ ^[0-9a-fA-F]{40}$ ]] || {
+    echo "invalid expected SHA: $expected_sha" >&2
+    exit 2
+  }
+
+  current_sha="$("$GIT_BIN" rev-parse --verify "refs/remotes/origin/$exact_branch" 2>/dev/null || true)"
+  if [[ -z "$current_sha" ]]; then
+    echo "cleanup: $exact_branch — branch is already absent"
+    exit 0
+  fi
+  if [[ "$current_sha" != "$expected_sha" ]]; then
+    echo "cleanup: keep $exact_branch — tip advanced to $current_sha"
+    exit 0
+  fi
+
+  echo "cleanup: $exact_branch — tip matches closed PR head $expected_sha"
+  if [[ "$dry_run" != "1" ]]; then
+    "$GIT_BIN" push origin ":refs/heads/$exact_branch" >/dev/null
+  fi
+  echo "cleanup: removed 1 redundant branch(es)"
+  exit 0
+fi
+
 [[ -n "$superseded_label" ]] || { echo "XD_CLEANUP_SUPERSEDED_LABEL must not be empty" >&2; exit 2; }
 command -v "$GH_BIN" >/dev/null 2>&1 || { echo "$GH_BIN is required" >&2; exit 1; }
-command -v "$GIT_BIN" >/dev/null 2>&1 || { echo "$GIT_BIN is required" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 
 declare -A deleted=()

@@ -5,14 +5,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/scripts/cleanup-merged-branches.sh"
 WORKFLOW="$ROOT/.github/workflows/cleanup-merged-branches.yml"
 
-grep -Fq 'group: cleanup-redundant-branches-${{ github.event_name }}' "$WORKFLOW"
-! grep -Fxq '  group: cleanup-redundant-branches' "$WORKFLOW"
+grep -Fq "types: [closed, labeled]" "$WORKFLOW"
+! grep -Fq '  push:' "$WORKFLOW"
+grep -Fq "group: cleanup-redundant-branches-\${{ github.event_name }}-\${{ github.event.pull_request.number || 'manual' }}" "$WORKFLOW"
+grep -Fq "if: github.event_name == 'pull_request_target'" "$WORKFLOW"
+grep -Fq -- '--branch "$XD_CLEANUP_BRANCH"' "$WORKFLOW"
+grep -Fq -- '--expected-sha "$XD_CLEANUP_EXPECTED_SHA"' "$WORKFLOW"
+grep -Fq "if: github.event_name == 'workflow_dispatch'" "$WORKFLOW"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
 DELETE_LOG="$TMP/deletes.log"
+PUSH_LOG="$TMP/pushes.log"
 : > "$DELETE_LOG"
+: > "$PUSH_LOG"
 
 cat > "$TMP/bin/mock-gh" <<'SH'
 #!/usr/bin/env bash
@@ -133,6 +140,20 @@ case "${1:-}" in
   fetch)
     exit 0
     ;;
+  check-ref-format)
+    exit 0
+    ;;
+  rev-parse)
+    case "${3:-}" in
+      refs/remotes/origin/event/merged) printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+      refs/remotes/origin/event/advanced) printf '%s\n' cccccccccccccccccccccccccccccccccccccccc ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  push)
+    printf '%s\n' "$*" >> "$PUSH_LOG"
+    exit 0
+    ;;
   for-each-ref)
     cat <<'EOF'
 origin/master
@@ -161,6 +182,7 @@ SH
 chmod +x "$TMP/bin/mock-git"
 
 export DELETE_LOG
+export PUSH_LOG
 export GITHUB_REPOSITORY="lazyxu/xdrive"
 export GH_BIN="$TMP/bin/mock-gh"
 export GIT_BIN="$TMP/bin/mock-git"
@@ -191,5 +213,36 @@ grep -q 'cleanup: merged/rebased — tip matches merged PR head aaaa' "$TMP/dry-
 grep -q 'cleanup: superseded/closed — tip matches closed superseded PR #104 head ssss' "$TMP/dry-run.out"
 grep -q 'cleanup: ancestor-only — tip is already contained in master' "$TMP/dry-run.out"
 grep -q 'removed 3 redundant branch(es)' "$TMP/dry-run.out"
+
+# Event mode must not depend on GitHub REST availability and must delete only
+# the exact unchanged PR head.
+: > "$PUSH_LOG"
+GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
+  --branch event/merged \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/event.out"
+grep -qx 'push origin :refs/heads/event/merged' "$PUSH_LOG"
+grep -q 'tip matches closed PR head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$TMP/event.out"
+
+: > "$PUSH_LOG"
+GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
+  --branch event/advanced \
+  --expected-sha bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb > "$TMP/event-advanced.out"
+[[ ! -s "$PUSH_LOG" ]]
+grep -q 'keep event/advanced — tip advanced to cccccccccccccccccccccccccccccccccccccccc' "$TMP/event-advanced.out"
+
+: > "$PUSH_LOG"
+GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
+  --branch master \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/event-master.out"
+[[ ! -s "$PUSH_LOG" ]]
+grep -q 'default branch is never deleted' "$TMP/event-master.out"
+
+: > "$PUSH_LOG"
+GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
+  --branch event/merged \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  --dry-run > "$TMP/event-dry.out"
+[[ ! -s "$PUSH_LOG" ]]
+grep -q 'removed 1 redundant branch(es)' "$TMP/event-dry.out"
 
 echo "redundant branch cleanup tests passed"

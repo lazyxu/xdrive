@@ -1,8 +1,6 @@
 name: Cleanup redundant branches
 
 on:
-  push:
-    branches: ["master"]
   pull_request_target:
     types: [closed, labeled]
   workflow_dispatch:
@@ -12,29 +10,49 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # A merged PR emits both push and pull_request_target events. Keep those
-  # event families in separate queues so the skipped PR-close run cannot
-  # replace the pending push cleanup before it starts.
-  group: cleanup-redundant-branches-${{ github.event_name }}
+  # Serialize cleanup for one PR without letting unrelated PR events replace it.
+  group: cleanup-redundant-branches-${{ github.event_name }}-${{ github.event.pull_request.number || 'manual' }}
   cancel-in-progress: false
 
 jobs:
   cleanup:
-    # A merged PR also pushes master, so let the push event own that cleanup and
-    # avoid racing a second delete pass from the PR-closed event.
     if: >-
-      github.event_name != 'pull_request_target' ||
-      github.event.action == 'labeled' ||
-      github.event.pull_request.merged == false
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        (
+          (github.event.action == 'closed' && github.event.pull_request.merged == true) ||
+          (
+            github.event.action == 'labeled' &&
+            (
+              github.event.pull_request.merged == true ||
+              github.event.label.name == 'superseded'
+            )
+          )
+        )
+      )
     runs-on: ubuntu-latest
     steps:
-      # pull_request_target has a write-capable token, so always execute the
-      # cleanup script from the trusted default branch, never from PR code.
+      # pull_request_target has a write-capable token, so always execute cleanup
+      # code from the trusted default branch, never from PR code.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
-      - name: Delete safely redundant branches
+
+      - name: Delete exact closed-PR branch
+        if: github.event_name == 'pull_request_target'
+        env:
+          XD_CLEANUP_BRANCH: ${{ github.event.pull_request.head.ref }}
+          XD_CLEANUP_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          bash scripts/cleanup-merged-branches.sh
+          --branch "$XD_CLEANUP_BRANCH"
+          --expected-sha "$XD_CLEANUP_EXPECTED_SHA"
+
+      - name: Scan redundant branches
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/cleanup-merged-branches.sh
