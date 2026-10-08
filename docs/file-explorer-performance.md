@@ -2474,6 +2474,43 @@ Regression commands:
 
 Next action: continue basic FileExplorer sync/delete performance auditing. The remaining larger Windows incremental cost is the full baseline clone at page start; handle that separately only if a safe copy-on-write/delta mutation design can preserve reconciliation semantics.
 
+### FileOperation Delete root-update coalescing contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- durable FileOperation Delete execution used by FileExplorer;
+- stable workload: **120 top-level sibling files**, each with current File metadata;
+- PostgreSQL integration invokes the real `executeQueuedBatchDelete` path and counts only `UPDATE xd_nodes` statements during execution;
+- roots are loaded by `batchLoadNodesTx(..., preload=true)`, which takes `FOR UPDATE` locks and validates every requested revision before mutation;
+- the BEFORE baseline was validated by the phase-1 authoritative API race run before production code changed;
+- wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- each root subtree is marked deleted/trash-root with one `xd_nodes` UPDATE;
+- each already locked/revision-validated root then receives a second `xd_nodes` UPDATE only to increment root revision/update time;
+- **120 roots -> 240 `xd_nodes` UPDATE statements**.
+
+AFTER / current:
+
+- one root-scoped SQL statement marks active subtree rows deleted, assigns `trash_root_id`, increments only the selected root revision, and updates timestamps;
+- the same statement carries a root revision precondition and returns whether that exact root was updated, preserving the old defensive revision-conflict outcome even though roots are already locked;
+- a selected root already soft-deleted earlier in the same transaction keeps its existing `deleted_at` / `trash_root_id` while still receiving the same revision +1 / `updated_at` mutation as before;
+- **120 roots -> 120 `xd_nodes` UPDATE statements**;
+- Share revocation remains one statement per root and different roots are intentionally not batched, preserving per-root progress/cancellation checkpoints and trash-root identity.
+
+Decision: **Accepted.** The second root-only statement repeated mutation work already guarded by the selected-root lock/revision validation. Folding it into the subtree statement removes one SQL round trip per root without changing Delete ordering, undo-plan revisions, cancellation checkpoints, or Trash semantics.
+
+Regression budget: Delete execution must perform at most **1 `xd_nodes` UPDATE per selected top-level root**. Root revision mismatch must mutate zero subtree rows and surface the existing `revision_conflict`; an already-deleted selected root must preserve its prior Trash identity while still receiving the revision bump.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestFileOperationDelete(NodeUpdatesCoalesced|RootsAreRevisionLockedBeforeMutation)$|^TestMarkFileOperationDeleteSubtreePreservesSemantics$' -count=1`.
+
+Next action: continue ordinary FileExplorer **upload-finalize / download / sync / delete** performance auditing; the remaining larger Windows incremental cost is the full baseline clone at journal-page start.
+
 ### Resumable upload incremental reservation bookkeeping contract
 
 Status: **Accepted / complexity-only / unmeasured wall-clock**.
