@@ -4,7 +4,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 
 export type XDriveFilePropertiesDialogSection = 'general' | 'content' | 'technical'
 
@@ -27,6 +27,7 @@ export function XDriveFilePropertiesDialog({
   properties: XDriveFilePropertiesDialogProperty[]
   onClose: () => void
 }) {
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   const sections = ([
     ['general', '常规'],
     ['content', '内容'],
@@ -47,9 +48,10 @@ export function XDriveFilePropertiesDialog({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
       aria-label="文件属性"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle title={title} onClose={onClose} />
       <XDriveDialogContent dividers>

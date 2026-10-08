@@ -103,7 +103,14 @@ function loadVersionHistoryDialog(react) {
     }
     if (request === '../format') return { formatBytes: (value) => String(value) }
     if (request === './DialogTitle') {
-      return { XDriveDialogTitle: 'XDriveDialogTitle', xDriveDialogPaperProps: {} }
+      return {
+        XDriveDialogTitle: 'XDriveDialogTitle',
+        xDriveDialogPaperProps: {},
+        useXDriveCompactTouchDialog: () => ({
+          compactTouch: false,
+          dialogPaper: {},
+        }),
+      }
     }
     if (request === './ActionButton') return { XDriveActionButton: 'XDriveActionButton' }
     if (request === './ConfirmDialog') return { XDriveConfirmDialog: 'XDriveConfirmDialog' }
