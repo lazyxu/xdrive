@@ -5,6 +5,7 @@ import {
   xDriveFileExplorerRunQueuedOperation,
 } from '../file-explorer-controller'
 import type {
+  XDriveFileExplorerCopyMoveOperation,
   XDriveFileExplorerOperationNode,
   XDriveFileExplorerQueuedOperationPlan,
   XDriveFileExplorerSelectionItem,
@@ -47,7 +48,10 @@ export function useXDriveFileExplorerOperationController<
   nodeByID: ReadonlyMap<number, TNode>
   currentID?: number | null
   disabled?: boolean
-  planPaste: (targetParentID: number) => XDriveFileExplorerPastePlan | null
+  planPaste: (
+    targetParentID: number,
+    operationOverride?: XDriveFileExplorerCopyMoveOperation,
+  ) => XDriveFileExplorerPastePlan | null
   completePaste: (plan: {
     clearClipboard: boolean
     clipboardGeneration: number
@@ -109,14 +113,16 @@ export function useXDriveFileExplorerOperationController<
     }
   }
 
-  const pasteClipboard = async () => {
+  const pasteClipboard = async (
+    operationOverride?: XDriveFileExplorerCopyMoveOperation,
+  ) => {
     if (
       currentID === null ||
       currentID === undefined ||
       disabled ||
       busyActionRef.current
     ) return
-    const plan = planPaste(currentID)
+    const plan = planPaste(currentID, operationOverride)
     if (!plan) return
     await runPlan('paste', plan, () => {
       completePaste(plan)

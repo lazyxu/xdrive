@@ -146,10 +146,11 @@ test('shared FileExplorer supports clipboard keyboard, command-bar and context-m
   for (const token of [
     'onCopyItems?: (items: XDriveFileExplorerItem[]) => void',
     'onCutItems?: (items: XDriveFileExplorerItem[]) => void',
-    'onPaste?: () => void',
+    'onPaste?: (operationOverride?: XDriveFileExplorerCopyMoveOperation) => void',
     "command === 'copy'",
     "command === 'cut'",
     "command === 'paste'",
+    "command === 'paste-move'",
     "label: '复制'",
     "label: '剪切'",
     "label: '粘贴'",

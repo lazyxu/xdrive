@@ -64,7 +64,10 @@ import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
   xDriveFileExplorerEncodeDragItems,
 } from '../file-explorer-drag'
-import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
+import type {
+  XDriveFileExplorerCopyMoveOperation,
+  XDriveFileExplorerKeyboardNavigationKey,
+} from '../file-explorer-controller'
 import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 import {
   XDRIVE_FILE_EXPLORER_MEDIA_DETAILS_BATCH_LIMIT,
@@ -813,7 +816,7 @@ export function XDriveFileExplorer({
   onCopyItems?: (items: XDriveFileExplorerItem[]) => void
   onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
   onCutItems?: (items: XDriveFileExplorerItem[]) => void
-  onPaste?: () => void
+  onPaste?: (operationOverride?: XDriveFileExplorerCopyMoveOperation) => void
   canPaste?: boolean
   onUndo?: () => void
   canUndo?: boolean
@@ -2060,7 +2063,7 @@ export function XDriveFileExplorer({
         label: '粘贴',
         icon: <ContentPasteRoundedIcon fontSize="small" />,
         disabled: !canPaste,
-        onSelect: onPaste,
+        onSelect: () => onPaste(),
       })
     }
     if (menuItems.length === 0) return
@@ -2886,9 +2889,13 @@ export function XDriveFileExplorer({
       onCutItems(selectedItems)
       return
     }
-    if (command === 'paste' && onPaste && canPaste) {
+    if (
+      (command === 'paste' || command === 'paste-move') &&
+      onPaste &&
+      canPaste
+    ) {
       event.preventDefault()
-      onPaste()
+      onPaste(command === 'paste-move' ? 'move' : undefined)
       return
     }
     if (command === 'delete' && onDeleteItems && selectedItems.length > 0) {
@@ -3915,7 +3922,7 @@ export function XDriveFileExplorer({
                 startIcon={<ContentPasteRoundedIcon />}
                 title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
                 disabled={!canPaste}
-                onClick={onPaste}
+                onClick={() => onPaste()}
               >
                 粘贴
               </XDriveFileExplorerCommandButton>

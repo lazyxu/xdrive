@@ -1484,7 +1484,7 @@ export default function DesktopFileExplorer({
         onCopyItems={trashActive ? undefined : copyItems}
         onCopyPaths={trashActive ? undefined : copyItemPaths}
         onCutItems={trashActive ? undefined : cutItems}
-        onPaste={trashActive ? undefined : () => { void pasteClipboard() }}
+        onPaste={trashActive ? undefined : (operationOverride) => { void pasteClipboard(operationOverride) }}
         canPaste={!trashActive && fileOperationCanPaste}
         canUndo={!trashActive && canUndo}
         onUndo={trashActive ? undefined : onUndo}

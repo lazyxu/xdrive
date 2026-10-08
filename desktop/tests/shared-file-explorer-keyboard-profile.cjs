@@ -68,6 +68,7 @@ test('shared FileExplorer dispatches commands instead of embedding OS key bindin
     "command === 'copy'",
     "command === 'cut'",
     "command === 'paste'",
+    "command === 'paste-move'",
     "command === 'delete'",
   ]) {
     assert.ok(explorer.includes(token), 'FileExplorer command dispatch missing: ' + token)
@@ -85,6 +86,25 @@ test('shared FileExplorer dispatches commands instead of embedding OS key bindin
   ]) {
     assert.equal(explorer.includes(legacy), false, 'OS key binding leaked back into FileExplorer: ' + legacy)
   }
+})
+
+test('macOS Option+Command+V resolves to Finder-style move paste', () => {
+  for (const token of [
+    "| 'paste-move'",
+    "case 'paste-move': return mac ? '⌥⌘V' : ''",
+    "key === 'v'",
+    "return 'paste-move'",
+  ]) {
+    assert.ok(keyboard.includes(token), 'macOS move-paste keyboard contract missing: ' + token)
+  }
+  assert.ok(
+    explorer.includes("command === 'paste' || command === 'paste-move'"),
+    'FileExplorer must dispatch both normal paste and move paste',
+  )
+  assert.ok(
+    explorer.includes("onPaste(command === 'paste-move' ? 'move' : undefined)"),
+    'move paste must be a one-shot operation override',
+  )
 })
 
 test('Web detects browser platform while Desktop uses the authoritative desktop platform', () => {

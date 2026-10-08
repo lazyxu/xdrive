@@ -199,7 +199,7 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(explorerOperationController.includes('xDriveFileExplorerRunQueuedOperation({'), 'shared Explorer operation controller must own queued-operation completion')
   assert.ok(explorerOperationController.includes('xDriveFileExplorerDropItemsPlan('), 'shared Explorer operation controller must own folder-drop planning')
   assert.ok(explorerOperationController.includes('xDriveFileExplorerDropItemsToParentPlan('), 'shared Explorer operation controller must own breadcrumb-drop planning')
-  assert.ok(explorerOperationController.includes('planPaste(currentID)'), 'shared Explorer operation controller must own paste planning')
+  assert.ok(explorerOperationController.includes('planPaste(currentID, operationOverride)'), 'shared Explorer operation controller must own paste planning')
 
   assert.ok(webExplorer.includes('useXDriveFileExplorerOperationController<Node, XDriveFileOperation>'), 'Web paste/drop must use the shared Explorer operation controller')
   assert.ok(webExplorer.includes('submitOperation: (plan) => api.createFileOperation('), 'Web paste/drop transport is not queued')

@@ -594,7 +594,7 @@ export default function WebFileExplorer({
         onCopyItems={trashActive ? undefined : copyItems}
         onCopyPaths={trashActive ? undefined : (selected) => { void copyItemPaths(selected) }}
         onCutItems={trashActive ? undefined : cutItems}
-        onPaste={trashActive ? undefined : () => { void pasteClipboard() }}
+        onPaste={trashActive ? undefined : (operationOverride) => { void pasteClipboard(operationOverride) }}
         canPaste={!trashActive && fileOperationCanPaste}
         canUndo={!trashActive && canUndo}
         onUndo={trashActive ? undefined : onUndo}
