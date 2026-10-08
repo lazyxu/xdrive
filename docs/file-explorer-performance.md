@@ -47,6 +47,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows local-delete baseline pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat local deletions: successful-delete baseline pruning **1,200 baseline-wide prefix scans / up to 721,800 key inspections -> 1 final baseline scan**; processed/deleted subtree coverage uses ancestor-set lookup instead of a growing linear prefix slice. Server DELETE cardinality/order are unchanged. |
 | Windows local-change existence probe reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent local-change paths: filesystem existence probes in `reconcileLocalChanges` **2,400 `Lstat` calls -> 1,200** by recording missing deletion candidates during the first pass; Server DELETE cardinality/order and 404/409 handling are unchanged. |
 | Windows local file-rename baseline fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent file renames in a 100k-entry baseline: prefix-wide baseline scans **2,400 -> 0**; directory rename and directory-target fallback retain subtree semantics. |
+| Windows full-reconcile local-file delete baseline fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 locally missing flat files with unchanged remote revisions: successful-delete baseline prefix scans **1,200 -> 0**; directory/type-mismatch cleanup retains subtree semantics. |
 | Windows empty always-local policy fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Default policy with a 100,000-entry baseline: `applyAlwaysLocal` baseline inspections **100,000 -> 0** when no normalized `AlwaysLocalPaths` exist; configured always-local pin/hydrate behavior is unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
@@ -2367,4 +2368,39 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindowsLocalFileRename' -count=1`.
 
 Next action: continue basic FileExplorer sync/delete performance auditing and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Windows full-reconcile local-file delete baseline fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI full remote reconciliation fallback;
+- stable structural workload: **1,200 flat file nodes** present in the baseline and remote snapshot, locally missing, with unchanged revisions;
+- every item still performs the existing revision-fenced Server `DELETE`; this contract changes only post-success in-memory baseline bookkeeping;
+- evidence method: behavior tests over a 100k-entry baseline plus a production source-shape regression; no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- every successful local-missing delete called `deletePrefix(baseline, rel)`;
+- for files, that helper scans the entire baseline even though a file cannot own descendants;
+- 1,200 successful flat-file deletes therefore performed **1,200 prefix-wide baseline scans**.
+
+AFTER / current:
+
+- when both baseline and current remote node types are `file`, successful Server DELETE removes the exact baseline key with `delete(baseline, rel)`;
+- the same 1,200-file workload performs **0 prefix-wide baseline scans** in post-delete bookkeeping;
+- directory nodes retain `deletePrefix` because descendant baseline entries must be removed;
+- a baseline/remote type mismatch also retains the subtree fallback rather than assuming file semantics;
+- Server DELETE cardinality, revision checks, error handling, remote walk, path ordering, placeholder behavior, and final baseline persistence are unchanged.
+
+Decision: **Accepted.** File deletion has exact-key baseline semantics; namespace-wide descendant discovery contributes no information for a file node.
+
+Regression budget: successful full-reconcile deletion of a file must not call `deletePrefix`. Directory or type-mismatch cleanup must retain subtree deletion.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsRemoteFullLocal' -count=1`.
+
+Next action: continue the basic sync/delete performance audit. The next larger candidate is reducing full-baseline clone/diff work for small Windows incremental batches, but that should be handled separately because it changes persistence-delta plumbing rather than simple map bookkeeping.
 

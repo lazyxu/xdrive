@@ -919,6 +919,19 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	return false, nil
 }
 
+func deleteRemoteFullLocalMissingBaseline(
+	baseline map[string]winState,
+	rel string,
+	baselineType string,
+	remoteType string,
+) {
+	if baselineType == "file" && remoteType == "file" {
+		delete(baseline, rel)
+		return
+	}
+	deletePrefix(baseline, rel)
+}
+
 func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 	remote, err := p.cli.Walk(ctx)
 	if err != nil {
@@ -951,7 +964,12 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 
 		if exists && !localExists && rn.Revision == base.node.Revision {
 			if err := p.cli.Delete(ctx, base.node.ID, base.node.Revision); err == nil {
-				deletePrefix(baseline, rel)
+				deleteRemoteFullLocalMissingBaseline(
+					baseline,
+					rel,
+					base.node.Type,
+					rn.Type,
+				)
 				continue
 			}
 		}
