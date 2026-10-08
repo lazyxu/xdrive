@@ -156,6 +156,8 @@ export default function WebFileExplorer({
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
+  const renameLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
+  renameLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
 
   useEffect(() => {
     uploadPickerParentIDRef.current = null
@@ -650,12 +652,16 @@ export default function WebFileExplorer({
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
     const expectedCurrentID = current.id
+    const lifecycleKey = renameLifecycleKeyRef.current
     try {
       await api.rename(node.id, node.revision, name)
+      if (renameLifecycleKeyRef.current !== lifecycleKey) return
       clearSearch()
       await refreshCurrentDirectory(expectedCurrentID)
+      if (renameLifecycleKeyRef.current !== lifecycleKey) return
       onFeedback('good', '已重命名。')
     } catch (error) {
+      if (renameLifecycleKeyRef.current !== lifecycleKey) return
       onError(error)
       throw error
     }
