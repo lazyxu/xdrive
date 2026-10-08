@@ -38,6 +38,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
 | Instant-upload ownership existence probe | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 same-key current-file refs or 120 same-key historical-version refs: ownership changes from aggregate `COUNT(*)` over all matches to one indexed `EXISTS` union that needs only a boolean result. The outer fast check and in-transaction ownership recheck both remain. |
 | Upload CAS metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | Local/ObjectStatProvider CAS health checks in finalize and instant-upload retain use metadata `Stat` without opening payload handles: healthy-object validation **1 Open + 1 fstat + 1 Close -> 1 metadata Stat** per check. Generic Store fallback remains unchanged. |
+| Upload finalize existing-CAS write elision | **Accepted / structural contract** | Structural / unmeasured wall-clock | A completed upload whose declared SHA256 already has a ready same-size CAS object: finalize full-file assembled Store writes **1 -> 0**; every uploaded byte is still read and SHA256/MD5-verified. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
 | Archive download progress coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | Fast 8 MiB transfer at 64 KiB/read: progress-state callbacks **128 -> 1** inside one <100ms interval; production rate is capped to about **10 Hz per active file** plus terminal flush. ZIP/object reads are unchanged. |
@@ -83,6 +84,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Windows remote change-journal pages build one `nodeID -> baseline path` index per page. File upsert/delete lookup is O(1) after that build; incremental file delete removes the exact baseline entry directly and file rename moves the exact entry directly. Directory create/move/delete continues to use the existing full-reconcile safety path.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
 - Upload finalize keeps a reused source object open across fixed-block overwrite parts with the same source storage key. Interleaved newly uploaded staging chunks do not force that source handle to reopen; staging parts keep their existing per-object open/close behavior.
+- If an upload declares SHA256 and a matching ready CAS blob exists on an `ObjectStatProvider`, finalize still reads every uploaded part and recomputes SHA256/MD5 but hashes directly without writing a duplicate assembled temp object. Stores without metadata stat, missing/stale CAS metadata, or missing/wrong-size CAS objects retain the original assemble-and-promote path.
 - Multi-file and folder uploads batch conflict preflight for unique destination names, with at most **200 targets per request**. Shared orchestration consumes results in original file order, excludes duplicate destination names from upfront batching, and falls back to the legacy per-file preflight when the batch transport is unavailable or fails.
 - Archive prepare loads every descendant of a selected top-level directory with one owner-scoped recursive CTE per root, joining `xd_files` metadata in the same statement. Manifest DFS order, duplicate-root naming, stored-object validation, entry caps, and ZIP streaming remain unchanged.
 - Archive prepare stored-object validation uses `storage.ObjectStatProvider` when available. Production `storage.Local` validates existence and size with metadata-only `os.Stat` instead of opening/closing each payload before download; backends without metadata stat retain the existing `Open -> Stat -> Close` fallback.
@@ -162,6 +164,39 @@ Decision: **Accepted.** The change removes chunk-count-scaled large payload allo
 Regression budget: payload-buffer instances must remain **O(1) per upload pass**, each bounded to one negotiated chunk (Server maximum **16 MiB**); no full-file buffering.
 
 Next action: Server upload-finalize staging/object-store I/O is audited by the dedicated reused-source contract below; keep the client buffer contract unchanged.
+
+### Upload finalize existing-CAS write-elision contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- a completed resumable upload whose declared SHA256 already has a ready CAS blob of the same size;
+- the uploading user does **not** need to own that blob, so the cross-user instant-upload prohibition is unchanged;
+- evidence is deterministic Store write counting around the real finalize handler;
+- final SHA256/MD5 verification still consumes every uploaded byte.
+
+BEFORE:
+
+- finalize reads all uploaded parts and hashes them;
+- finalize also writes one full assembled temporary object of **N bytes**;
+- CAS preparation then discovers that the **N-byte CAS object already exists**, so the assembled temporary object is deleted;
+- full-file assembled writes for this workload: **1**.
+
+AFTER / current:
+
+- ready CAS metadata plus metadata `Stat` establishes that a same-size target object already exists;
+- finalize reads all uploaded parts and recomputes SHA256/MD5 exactly as before;
+- bytes flow directly into the hash writers, not a duplicate Store object;
+- full-file assembled writes: **0**;
+- a hash mismatch still returns `file_hash_mismatch`; an existing CAS object is not proof that the uploaded bytes matched;
+- stores without `ObjectStatProvider`, missing/stale CAS metadata, or missing/wrong-size CAS objects keep the original path.
+
+Decision: **Accepted.** This removes one whole-file write and its temporary storage footprint from duplicate-content finalization without enabling cross-user instant upload or weakening payload verification.
+
+Regression budget: existing-CAS finalize must perform **0 full-file assembled Store.Put calls** while still reading/hash-validating the complete upload. Unique-content finalize must retain the existing assemble-and-promote behavior.
+
+Next action: continue the basic download/sync/delete audit and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### Upload finalize reused-source open contract
 
