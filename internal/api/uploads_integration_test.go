@@ -84,6 +84,52 @@ func TestChunkedUploadResumeHashHistoryAndConflict(t *testing.T) {
 	token := createTestUser(t, db, router, "chunk-user", "chunk-password")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 
+	// Starting a new upload must not synchronously drain unrelated expired
+	// sessions. Expired rows remain janitor-owned and are excluded from resume,
+	// quota, and capacity accounting.
+	var rootNode meta.Node
+	if err := db.First(&rootNode, root.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	expiredParentID := root.ID
+	expiredResume := meta.UploadSession{
+		ID:             uuid.NewString(),
+		OwnerID:        rootNode.OwnerID,
+		ParentID:       &expiredParentID,
+		Name:           "expired-resume.bin",
+		RequestedName:  "expired-resume.bin",
+		ConflictPolicy: meta.UploadConflictPolicyFail,
+		TotalSize:      1,
+		ChunkSize:      4 << 20,
+		ChunkCount:     1,
+		ResumeKey:      "expired-resume-key",
+		Status:         meta.UploadStatusActive,
+		ExpiresAt:      time.Now().Add(-time.Hour),
+	}
+	if err := db.Create(&expiredResume).Error; err != nil {
+		t.Fatal(err)
+	}
+	expiredInitBody := fmt.Sprintf(
+		`{"parent_id":%d,"name":"expired-resume.bin","size":1,"chunk_size":4194304,"resume_key":"expired-resume-key"}`,
+		root.ID,
+	)
+	expiredInit := request(t, router, http.MethodPost, "/api/v1/uploads", token, strings.NewReader(expiredInitBody), http.StatusCreated)
+	var freshAfterExpired uploadSessionDTO
+	if err := json.Unmarshal(expiredInit.Body.Bytes(), &freshAfterExpired); err != nil {
+		t.Fatal(err)
+	}
+	if freshAfterExpired.ID == "" || freshAfterExpired.ID == expiredResume.ID {
+		t.Fatalf("expired resume session was reused: old=%s new=%s", expiredResume.ID, freshAfterExpired.ID)
+	}
+	var expiredStillPresent int64
+	if err := db.Model(&meta.UploadSession{}).Where("id = ?", expiredResume.ID).Count(&expiredStillPresent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if expiredStillPresent != 1 {
+		t.Fatalf("upload start synchronously cleaned expired session: remaining=%d want=1", expiredStillPresent)
+	}
+	request(t, router, http.MethodDelete, "/api/v1/uploads/"+freshAfterExpired.ID, token, nil, http.StatusNoContent)
+
 	store.availableOverride = 100
 	type concurrentInitResult struct {
 		code int
