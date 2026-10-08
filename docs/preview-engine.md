@@ -548,3 +548,14 @@ Viewer navigation is capability-scoped rather than a property of every file view
 ### Shared media viewer content
 
 Web and Desktop/Gallery media viewing share `XDriveMediaViewerContent`. That layer owns the semantic composition of an opened `MediaItem`: confirmed Live Photo pairing, thumbnail/original preview loaders, saved edit recipes, media fallback, and image swipe hooks. Platform shells may provide different chrome and adapters, but they must not fork media interpretation.
+
+
+### Media readiness and lifecycle
+
+For video, audio, and PDF, obtaining a signed preview URL is not the same as presenting usable content.
+
+- Video remains busy until the browser has decoded initial media data; later `waiting` transitions are busy again until `canplay` / `playing`.
+- Audio remains busy until metadata is available and re-enters busy while buffering.
+- PDF remains busy until the iframe load event. URL-ticket and iframe failures use the same shared fallback contract.
+- Media elements are keyed by node identity, revision, and preview URL so stale readiness events cannot promote a newer target.
+- Live Photo motion ownership is keyed by media identity/revision. Re-rendering the same media with a new loader callback must not discard an already acquired motion source; identity changes and unmounts must dispose owned sources, including late arrivals.

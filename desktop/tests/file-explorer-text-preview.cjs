@@ -83,8 +83,14 @@ test('shared Preview Engine owns classification and renderer surface', () => {
   assert.equal(preview.includes("mimeType.startsWith('audio/')"), false, 'MIME metadata must not broaden audio previewability')
   assert.equal(preview.includes("mimeType === 'application/pdf'"), false, 'MIME metadata must not broaden PDF previewability')
   assert.equal(previewSurface.includes('dangerouslySetInnerHTML'), false, 'Preview Surface must never inject active markup')
-  assert.ok(previewSurface.includes('onError={() => setFailed(true)}'), 'Video renderer must fall back when browser decoding fails')
-  assert.ok((previewSurface.match(/onError=\{\(\) => setFailed\(true\)\}/g) || []).length >= 2, 'Video and Audio renderers must both fall back on decode errors')
+  assert.ok(
+    previewSurface.includes("key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}"),
+    'Video/Audio/PDF renderer identity must include node, revision, and preview URL so stale media events cannot own a replacement target',
+  )
+  assert.ok(
+    (previewSurface.match(/onError=\{markMediaFailed\}/g) || []).length >= 3,
+    'Video, Audio, and PDF renderers must all use the shared failure path owned by the keyed current renderer',
+  )
 })
 
 test('shared Inspector delegates preview rendering to FilePreviewSurface', () => {

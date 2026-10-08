@@ -40,6 +40,7 @@ export type XDriveLivePhotoSurfaceProps = {
   still: ReactNode
   stillReady?: boolean
   loadMotion?: XDriveLivePhotoMotionLoader
+  sourceKey?: string | number
   label?: string
 }
 
@@ -65,6 +66,7 @@ export function XDriveLivePhotoSurface({
   still,
   stillReady = true,
   loadMotion,
+  sourceKey,
   label = '实况照片',
 }: XDriveLivePhotoSurfaceProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -72,6 +74,8 @@ export function XDriveLivePhotoSurface({
   const motionSourceRef = useRef<XDriveLivePhotoMotionSource | null>(null)
   const loadGenerationRef = useRef(0)
   const loadStartedRef = useRef(false)
+  const loadMotionRef = useRef(loadMotion)
+  loadMotionRef.current = loadMotion
   const holdActiveRef = useRef(false)
   const [motionURL, setMotionURL] = useState('')
   const [loading, setLoading] = useState(false)
@@ -116,8 +120,9 @@ export function XDriveLivePhotoSurface({
   }, [failed])
 
   const requestMotion = useCallback(() => {
+    const loader = loadMotionRef.current
     if (
-      !loadMotion ||
+      !loader ||
       loadStartedRef.current ||
       motionURLRef.current ||
       failed
@@ -133,7 +138,7 @@ export function XDriveLivePhotoSurface({
       setLoadProgress(livePhotoProgressPercent(loadedBytes, totalBytes))
     }
 
-    void loadMotion(onProgress)
+    void loader(onProgress)
       .then((value) => {
         if (!value) {
           if (loadGenerationRef.current === generation) {
@@ -163,7 +168,7 @@ export function XDriveLivePhotoSurface({
           setFailed(true)
         }
       })
-  }, [failed, loadMotion])
+  }, [failed])
 
   const beginHold = useCallback(() => {
     if (!stillReady) return
@@ -205,7 +210,7 @@ export function XDriveLivePhotoSurface({
       motionURLRef.current = ''
       if (resolved) disposeLivePhotoMotion(resolved)
     }
-  }, [loadMotion, stopPlayback])
+  }, [sourceKey, stopPlayback])
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary) return

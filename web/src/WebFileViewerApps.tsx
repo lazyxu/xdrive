@@ -60,6 +60,7 @@ import type {
   XDriveWebViewerCandidate,
   XDriveWebViewerPredicate,
 } from './webViewerContext'
+import { xDriveWebTextSelection } from './webTextViewer'
 
 function WebViewerFrame({
   title,
@@ -946,12 +947,11 @@ function WebTextViewerApp({
 
   useEffect(() => {
     if (!preview || !route.params.line || !textRef.current) return
-    const lines = preview.text.split('\n')
-    const lineIndex = Math.max(0, Math.min(lines.length - 1, route.params.line - 1))
-    let start = 0
-    for (let index = 0; index < lineIndex; index += 1) start += lines[index].length + 1
-    start += Math.max(0, (route.params.column ?? 1) - 1)
-    const end = Math.min(preview.text.length, start + Math.max(1, lines[lineIndex]?.length ?? 1))
+    const { start, end } = xDriveWebTextSelection(
+      preview.text,
+      route.params.line,
+      route.params.column,
+    )
     const element = textRef.current
     element.focus()
     element.setSelectionRange(start, end)

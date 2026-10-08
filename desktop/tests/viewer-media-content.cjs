@@ -12,6 +12,7 @@ const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.ts
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webViewers = read('web', 'src', 'WebFileViewerApps.tsx')
 const docs = read('docs', 'preview-engine.md')
+const webAppContract = read('ui', 'shared', 'src', 'web-app.ts')
 
 test('Web and Gallery use one semantic media content layer', () => {
   assert.ok(index.includes("export * from './MediaViewerContent'"))
@@ -67,5 +68,7 @@ test('only viewers with a real browsing contract carry previous/next context', (
   assert.ok(resolver.includes("app: 'pdf-viewer', params: { node: node.id }"))
   assert.ok(resolver.includes("app: 'audio-player', params: { node: node.id }"))
   assert.equal(resolver.includes("app: 'audio-player', params: { node: node.id, context: contextID }"), false)
+  assert.ok(webAppContract.includes("'audio-player': { node: number }"))
+  assert.equal(webAppContract.includes("'audio-player': { node: number; context?: string }"), false)
   assert.ok(docs.includes('Viewer navigation scope'))
 })

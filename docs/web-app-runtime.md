@@ -19,7 +19,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `media-viewer` | 图片 / 视频 / 实况查看器 | immersive | `node`, `context?` |
 | `text-viewer` | 文本 / 代码查看器 | viewer | `node`, `line?`, `column?` |
 | `pdf-viewer` | PDF 查看器 | viewer | `node`, `page?` |
-| `audio-player` | 音频播放器 | viewer | `node`, `context?` |
+| `audio-player` | 音频播放器 | viewer | `node` |
 | `admin-users` | 用户管理 | workspace | `user?` |
 | `admin-audit` | 审计日志 | workspace | 无 |
 | `admin-storage` | 全局存储 | workspace | `section?`, `task?` |
@@ -52,7 +52,7 @@ Sidebar 的“任务”与管理员专用“全局任务”是独立入口，分
 
 上传和下载从任务页面移到头像旁的共享传输浮层。该浮层不是 Web 程序，也不写浏览器历史；打开、关闭或查看传输历史都保留当前目录与页面。Viewer 打开或账号切换时关闭浮层。速度口径与任务范围见 [传输与任务](transfers-and-tasks.md)。
 
-多选列表、目录排序/分组、Search filter、Gallery collection target 等浏览上下文通过 `sessionStorage` 保存，只把短的 `context` session ID 放进 URL。直接 deep-link 没有 context 时仍能打开目标文件，只是不提供集合前后切换。
+多选列表、目录排序/分组、Search filter、Gallery collection target 等浏览上下文通过 `sessionStorage` 保存；只有 Quick Look / Preview 与 Media Viewer 把短的 `context` session ID 放进 URL。Text、PDF、Audio 是单文件程序，不携带集合 context，也不提供上一项/下一项。直接 deep-link 没有 context 时仍能打开 Preview / Media Viewer 的目标文件，只是不提供集合前后切换。
 
 ## 历史模型
 
@@ -129,4 +129,4 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 
 图片预览在 1× 时支持横向 swipe 切换前后项目；放大后单指移动图片，双指 pinch 缩放，双击在 1× / 2× 间切换。单击内容延迟切换 chrome，从而与双击缩放区分。视频继续由原生 media controls 拥有手势；Live Photo 继续保持按住播放、松开停止，不用 Gallery swipe 覆盖其 hold 语义。
 
-手机布局只是呈现投影：Viewer context、前后项 range 查找、Favorite/Info/Share/Download 等命令以及浏览器 Back/Forward 规则保持原契约。
+手机布局只是呈现投影：只有 Preview / Media Viewer 保留 Viewer context 与前后项 range 查找；Text/PDF/Audio 继续保持单文件程序。Favorite/Info/Share/Download 等适用命令以及浏览器 Back/Forward 规则保持原契约。
