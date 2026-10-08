@@ -38,6 +38,7 @@ import {
   createXDriveSourceManagerAdapter,
   XDriveStatePanel,
   XDriveTaskCenterPage,
+  XDriveTransferPopover,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
   xDriveFileExplorerUploadGroupLabel,
@@ -88,7 +89,7 @@ import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
-import { xDriveWebAppForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
+import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
@@ -244,6 +245,8 @@ function App({
   const [username, setUsername] = useState(() => localStorage.getItem(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
+  const transferApiRef = useRef<XDriveApi | null>(null)
+  const transferLifetimeRef = useRef(0)
 
   const publicShareToken = useMemo(() => {
     const match = window.location.hash.match(/^#\/s\/([^/]+)\/?$/)
@@ -264,6 +267,7 @@ function App({
   }, [])
 
   const clearSession = useCallback((notice = '') => {
+    transferApiRef.current?.disposeTransfers()
     localStorage.removeItem(ACCESS_KEY)
     localStorage.removeItem(LEGACY_TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
@@ -278,6 +282,23 @@ function App({
     () => new XDriveApi(session, persistSession),
     [session.accessToken, session.refreshToken, session.accessExpiresAt, persistSession],
   )
+
+  useEffect(() => {
+    transferApiRef.current = api
+    api.setTransferSessionKey(username ? `${window.location.origin}:${username}` : '')
+  }, [api, username])
+
+  useEffect(() => {
+    const lifetime = ++transferLifetimeRef.current
+    return () => {
+      const ownedApi = transferApiRef.current
+      // StrictMode replays effects while retaining the same live application.
+      // Dispose after that synchronous replay; explicit logout remains immediate.
+      queueMicrotask(() => {
+        if (lifetime === transferLifetimeRef.current) ownedApi?.disposeTransfers()
+      })
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -456,18 +477,18 @@ function FileManager({
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
   const { route, launch: launchWebApp, closeViewer } = useXDriveWebAppRuntime()
-  const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app)
+  const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app, route.params)
   const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
   const setAppView = useCallback((view: AppView) => {
-    const app = xDriveWebAppForWorkspaceKey(view)
-    if (!app) return
-    launchWebApp({ app, params: {} } as XDriveWebAppRoute)
+    const next = xDriveWebAppRouteForWorkspaceKey(view)
+    if (next) launchWebApp(next)
   }, [launchWebApp])
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
+  const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -643,7 +664,7 @@ function FileManager({
     redoOperation: (id) => api.redoFileOperation(id),
     resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
     clearOperationHistory: () => api.clearFileOperationHistory(),
-    clearTransferHistory: async () => { api.clearTransferHistory() },
+    clearTransferHistory: async () => { api.clearTransferHistory('local') },
     rememberOperation: rememberFileOperation,
     refreshOperations: refreshFileOperations,
     onError: handleError,
@@ -683,8 +704,9 @@ function FileManager({
     operationActions: fileOperationActions,
     backgroundTaskPort,
     backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
-    backgroundTasksVisible: appView === 'transfers' || appView === 'overview',
+    backgroundTasksVisible: appView === 'transfers' || appView === 'global-tasks' || appView === 'overview',
     globalTasksEnabled: profile?.role === 'admin',
+    backgroundScope: appView === 'global-tasks' ? 'global' : 'mine',
     onBackgroundTaskError: handleError,
   })
 
@@ -711,16 +733,14 @@ function FileManager({
 
   const openGlobalTaskCenter = useCallback(() => {
     setTaskCenterFocus(null)
-    taskCenter.pageProps.onBackgroundScopeChange?.('global')
-    setAppView('transfers')
-  }, [taskCenter.pageProps.onBackgroundScopeChange])
+    setAppView('global-tasks')
+  }, [setAppView])
 
   const runStorageMaintenance = useCallback(async (
     kind: 'storage_verify' | 'storage_repair',
   ) => {
     const result = await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
     const taskID = (result.result_task_id || result.task_id || '').trim()
-    taskCenter.pageProps.onBackgroundScopeChange?.('global')
     if (taskID) {
       taskCenterFocusSequenceRef.current += 1
       setTaskCenterFocus({
@@ -728,15 +748,15 @@ function FileManager({
         requestID: taskCenterFocusSequenceRef.current,
       })
     }
-    setAppView('transfers')
-  }, [api, taskCenter.pageProps.onBackgroundScopeChange])
+    setAppView('global-tasks')
+  }, [api, setAppView])
 
   useEffect(() => {
-    if (appView !== 'transfers') setTaskCenterFocus(null)
+    if (appView !== 'transfers' && appView !== 'global-tasks') setTaskCenterFocus(null)
   }, [appView])
 
   useEffect(() => {
-    if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {
+    if (profile && profile.role !== 'admin' && (appView.startsWith('admin-') || appView === 'global-tasks')) {
       setAppView('files')
     }
   }, [appView, profile])
@@ -1058,7 +1078,16 @@ function FileManager({
             }}
           >
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
-          <WebAccountMenu
+          <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 1 }}>
+            <XDriveTransferPopover
+              transfers={transfers}
+              sessionKey={`${window.location.origin}:${username}`}
+              disabled={viewerActive}
+              open={transferPopoverOpen}
+              onOpenChange={setTransferPopoverOpen}
+              onClearHistory={() => { api.clearTransferHistory('network') }}
+            />
+            <WebAccountMenu
               disabled={viewerActive}
               username={username}
               api={api}
@@ -1068,6 +1097,7 @@ function FileManager({
               onAppearanceChange={onAppearanceChange}
               onLogout={onLogout}
             />
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -1083,14 +1113,15 @@ function FileManager({
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
+          showGlobalTasks={profile?.role === 'admin'}
           showLocalStorage
           sections={webSidebarSections}
           storageSummary={xDriveWorkspaceStorageSummary(quota)}
           onSelect={(destination, event) => {
-            const app = xDriveWebAppForWorkspaceKey(destination)
-            if (!app) return
+            const next = xDriveWebAppRouteForWorkspaceKey(destination)
+            if (!next) return
             if (event.ctrlKey || event.metaKey) {
-              launchWebApp({ app, params: {} } as XDriveWebAppRoute, { newTab: true })
+              launchWebApp(next, { newTab: true })
               return
             }
             setAppView(destination as AppView)
@@ -1132,7 +1163,7 @@ function FileManager({
               void loadDirectory(id, nextCrumbs)
             }}
             onOpenGallery={() => setAppView('gallery')}
-            onOpenTransfers={() => setAppView('transfers')}
+            onOpenTransfers={() => setTransferPopoverOpen(true)}
           />
         ) : appView === 'files' ? (
           <Box
@@ -1245,7 +1276,7 @@ function FileManager({
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
             onError={handleError}
           />
-        ) : appView === 'transfers' ? (
+        ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
             backgroundFocusTaskID={taskCenterFocus?.taskID}

@@ -809,8 +809,8 @@ func (c *agentController) FinishTransfer(id, state, message string, skipped bool
 	return handle.Finish(state, finishErr)
 }
 
-func (c *agentController) ClearTransferHistory() (uint64, []transfer.Task) {
-	c.transfers.ClearHistory()
+func (c *agentController) ClearTransferHistory(scopes ...string) (uint64, []transfer.Task) {
+	c.transfers.ClearHistory(scopes...)
 	return c.transfers.Snapshot()
 }
 
@@ -1398,7 +1398,7 @@ func (c *agentController) ResolveConflict(id, choice string) error {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Minute)
 	defer cancel()
-	if err := applyConflictChoice(ctx, cli, root, record, choice); err != nil {
+	if err := applyConflictChoice(ctx, cli, root, record, choice, c.transfers); err != nil {
 		return err
 	}
 

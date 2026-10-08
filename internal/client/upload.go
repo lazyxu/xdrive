@@ -139,6 +139,7 @@ func (c *Client) PutUploadChunk(ctx context.Context, id string, index int, sha s
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Chunk-SHA256", sha)
+	defer observeUploadRequest(req)()
 	resp, err := c.do(req)
 	if err != nil {
 		return out, err

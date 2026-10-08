@@ -246,7 +246,7 @@ test('core destinations omit unsupported local storage and retain the task badge
   const withLocal = xDriveCoreWorkspaceDestinations({ transferBadge: 7, showLocalStorage: true })
   assert.deepEqual(keys(withLocal), ['files', 'gallery', 'sources', 'transfers', 'local-storage', 'cloud-storage'])
   const tasks = withLocal.find((item) => item.key === 'transfers')
-  assert.equal(tasks.label, '传输')
+  assert.equal(tasks.label, '任务')
   assert.equal(tasks.compactLabel, '任务')
   assert.equal(tasks.badge, 7)
 })

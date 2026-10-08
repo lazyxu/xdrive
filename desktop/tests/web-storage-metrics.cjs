@@ -162,8 +162,8 @@ test('global storage delegates durable maintenance to the global Task Center', (
   ]) assert.ok(storageStats.includes(token), 'storage maintenance handoff missing: ' + token)
 
   for (const token of [
-    "taskCenter.pageProps.onBackgroundScopeChange?.('global')",
-    "setAppView('transfers')",
+    "setAppView('global-tasks')",
+    "setAppView('global-tasks')",
     "api.controlBackgroundTask(\`system-maintenance:\${kind}\`, 'run', true)",
     'onOpenTaskCenter={openGlobalTaskCenter}',
     'onRunStorageMaintenance={runStorageMaintenance}',

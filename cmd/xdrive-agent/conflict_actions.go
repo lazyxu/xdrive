@@ -8,6 +8,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/conflictstate"
+	"github.com/lazyxu/xdrive/internal/transfer"
 )
 
 type conflictActionClient interface {
@@ -22,6 +23,7 @@ func applyConflictChoice(
 	root string,
 	record conflictstate.Record,
 	choice string,
+	manager *transfer.Manager,
 ) error {
 	remote, err := cli.Walk(ctx)
 	if err != nil {
@@ -42,10 +44,14 @@ func applyConflictChoice(
 		if !originalOK {
 			return fmt.Errorf("服务器原文件已不存在，无法用本地版本覆盖")
 		}
-		if _, err := os.Stat(conflictAbs); err != nil {
+		info, err := os.Stat(conflictAbs)
+		if err != nil {
 			return fmt.Errorf("本地冲突副本不可用: %w", err)
 		}
-		if _, err := cli.OverwriteFileResumable(ctx, original.ID, original.Revision, conflictAbs, nil); err != nil {
+		handle, progress := startAgentCloudTransfer(manager, transfer.KindUpload, "upload", filepath.Base(conflictAbs), conflictAbs, info.Size())
+		_, err = cli.OverwriteFileResumable(agentUploadTransferContext(ctx, handle), original.ID, original.Revision, conflictAbs, progress)
+		finishAgentCloudTransfer(handle, err)
+		if err != nil {
 			return fmt.Errorf("保留本地版本失败: %w", err)
 		}
 		if conflictOK {

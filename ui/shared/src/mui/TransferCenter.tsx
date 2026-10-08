@@ -16,6 +16,7 @@ import {
   formatXDriveTransferDuration,
   xDriveTransferActive,
   xDriveTransferAggregateBytes,
+  xDriveTransferCurrentBytesPerSecond,
   xDriveTransferEtaMs,
   xDriveTransferIsGroup,
   xDriveTransferItemProgress,
@@ -24,6 +25,7 @@ import {
   xDriveTransferPhaseLabel,
   xDriveTransferStateLabel,
   xDriveTransferTree,
+  xDriveTransferTreeSpeed,
   type XDriveTransferTask,
   type XDriveTransferTreeNode,
 } from '..'
@@ -35,6 +37,7 @@ import { XDriveStatusBadge } from './StatusBadge'
 
 function transferTone(state: string) {
   if (state === 'completed') return 'good' as const
+  if (state === 'handed_off') return 'neutral' as const
   if (state === 'failed') return 'bad' as const
   if (state === 'partial' || state === 'retrying' || state === 'cancelling' || state === 'cancelled') {
     return 'warning' as const
@@ -48,6 +51,12 @@ function transferTime(value?: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
+function transferStateLabel(item: XDriveTransferTask) {
+  return item.speed_source === 'server' && item.state === 'completed'
+    ? '服务端已发送'
+    : xDriveTransferStateLabel(item.state)
+}
+
 function transferBytes(item: XDriveTransferTask) {
   return item.bytes_total > 0
     ? `${formatBytes(item.bytes_done)} / ${formatBytes(item.bytes_total)}`
@@ -57,20 +66,28 @@ function transferBytes(item: XDriveTransferTask) {
 function TransferLeafItem({
   item,
   compact = false,
+  now = Date.now(),
   retryDisabled,
   retryLoading,
   onRetry,
 }: {
   item: XDriveTransferTask
   compact?: boolean
+  now?: number
   retryDisabled: boolean
   retryLoading: boolean
   onRetry?: (id: string) => void
 }) {
   const percent = xDriveTransferPercent(item)
-  const eta = xDriveTransferEtaMs(item)
   const active = xDriveTransferActive(item)
   const byteProgress = transferBytes(item)
+  const instantSpeed = xDriveTransferCurrentBytesPerSecond(item, now)
+  const eta = instantSpeed > 0 ? xDriveTransferEtaMs({
+    ...item,
+    instant_bytes_per_second: instantSpeed,
+    average_bytes_per_second: 0,
+  }) : undefined
+  const speedLabel = item.speed_source === 'server' ? '服务端发送速度' : '当前速度'
 
   if (compact) {
     return (
@@ -78,10 +95,13 @@ function TransferLeafItem({
         <Stack direction="row" spacing={1} alignItems="center">
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
-              <Typography variant="body2" fontWeight={650} noWrap title={item.relative_path || item.path || item.file_name}>
+              <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0, maxWidth: '100%' }} title={item.relative_path || item.path || item.file_name}>
                 {item.relative_path || item.file_name || item.path || item.id}
               </Typography>
-              <XDriveStatusBadge tone={transferTone(item.state)} label={xDriveTransferStateLabel(item.state)} />
+              <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
+              <Typography variant="caption" color="text.secondary">
+                {xDriveTransferKindLabel(item.kind || item.direction)}
+              </Typography>
             </Stack>
             {item.relative_path && item.relative_path !== item.file_name ? (
               <Typography variant="caption" color="text.secondary" noWrap display="block" title={item.relative_path}>
@@ -107,17 +127,18 @@ function TransferLeafItem({
           <Typography variant="caption" fontWeight={700}>
             {item.bytes_total > 0
               ? `${percent.toFixed(1)}%`
-              : active ? xDriveTransferPhaseLabel(item.phase) || '处理中' : xDriveTransferStateLabel(item.state)}
+              : active ? xDriveTransferPhaseLabel(item.phase) || '处理中' : transferStateLabel(item)}
           </Typography>
         </Stack>
         <LinearProgress
+          aria-label={`${item.file_name || item.path || '文件'}传输进度`}
           variant={item.bytes_total > 0 ? 'determinate' : active ? 'indeterminate' : 'determinate'}
           value={item.bytes_total > 0 ? percent : item.state === 'completed' ? 100 : 0}
           sx={{ height: 5, borderRadius: 999 }}
         />
         <Stack direction="row" spacing={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
           <Typography variant="caption" color="text.secondary">
-            {formatBytesPerSecond(item.instant_bytes_per_second)}
+            {speedLabel} {formatBytes(instantSpeed)}/s
           </Typography>
           <Typography variant="caption" color="text.secondary">
             已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
@@ -141,7 +162,7 @@ function TransferLeafItem({
             <Typography variant="subtitle2" fontWeight={700} noWrap title={item.path || item.file_name}>
               {item.file_name || item.path || item.id}
             </Typography>
-            <XDriveStatusBadge tone={transferTone(item.state)} label={xDriveTransferStateLabel(item.state)} />
+            <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)}
             </Typography>
@@ -179,7 +200,7 @@ function TransferLeafItem({
         />
 
         <XDriveDescriptionGrid columns={4}>
-          <XDriveDescriptionItem label="状态">{xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label="状态">{transferStateLabel(item)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="当前大小">{formatBytes(item.bytes_done)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总大小">{item.bytes_total > 0 ? formatBytes(item.bytes_total) : '未知'}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="百分比">{item.bytes_total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
@@ -187,8 +208,8 @@ function TransferLeafItem({
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="完成时间">{transferTime(item.completed_at)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(item.instant_bytes_per_second)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'}>{formatBytesPerSecond(item.average_bytes_per_second)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="方向">{xDriveTransferKindLabel(item.direction)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
@@ -201,40 +222,44 @@ function TransferLeafItem({
 function TransferGroupItem({
   node,
   depth = 0,
+  compact = false,
+  now = Date.now(),
   retryDisabled,
   retryingID,
   onRetry,
 }: {
   node: XDriveTransferTreeNode
   depth?: number
+  compact?: boolean
+  now?: number
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
 }) {
   const item = node.task
-  const [expanded, setExpanded] = useState(() => xDriveTransferActive(item))
+  const [expanded, setExpanded] = useState(() => !compact && xDriveTransferActive(item))
   const children = node.children.map((child) => child.task)
   const bytes = xDriveTransferAggregateBytes(item, children)
   const progress = xDriveTransferItemProgress(item, children)
   const percent = bytes.total > 0 ? Math.max(0, Math.min(100, bytes.done * 100 / bytes.total)) : 0
   const active = xDriveTransferActive(item)
   const scanIncomplete = item.scan_complete === false
-  const childInstantSpeed = children.reduce(
-    (sum, child) => sum + Math.max(0, child.instant_bytes_per_second || 0),
-    0,
-  )
   const childAverageSpeed = children.reduce(
     (sum, child) => sum + Math.max(0, child.average_bytes_per_second || 0),
     0,
   )
-  const instantSpeed = childInstantSpeed > 0 ? childInstantSpeed : item.instant_bytes_per_second
-  const averageSpeed = childAverageSpeed > 0 ? childAverageSpeed : item.average_bytes_per_second
-  const eta = scanIncomplete ? undefined : xDriveTransferEtaMs({
+  const speed = xDriveTransferTreeSpeed(node, now)
+  const instantSpeed = speed.bytesPerSecond
+  const speedLabel = speed.serverReported ? '服务端发送速度' : '当前速度'
+  const averageSpeed = item.speed_source || children.length === 0
+    ? item.average_bytes_per_second
+    : childAverageSpeed
+  const eta = scanIncomplete || instantSpeed <= 0 ? undefined : xDriveTransferEtaMs({
     ...item,
     bytes_done: bytes.done,
     bytes_total: bytes.total,
     instant_bytes_per_second: instantSpeed,
-    average_bytes_per_second: averageSpeed,
+    average_bytes_per_second: 0,
   })
   const processed = Math.min(progress.total, progress.completed + progress.failed)
   const phaseLabel = xDriveTransferPhaseLabel(item.phase)
@@ -250,17 +275,18 @@ function TransferGroupItem({
             size="small"
             aria-label={expanded ? '收起子任务' : '展开子任务'}
             onClick={() => setExpanded((value) => !value)}
-            sx={{ width: 30, height: 30, borderRadius: 1 }}
+            aria-expanded={expanded}
+            sx={{ width: 36, height: 36, borderRadius: 1, flexShrink: 0 }}
           >
             {expanded ? <ExpandMoreRoundedIcon /> : <ChevronRightRoundedIcon />}
           </IconButton>
         </Tooltip>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Typography variant={depth === 0 ? 'subtitle2' : 'body2'} fontWeight={700} noWrap title={item.path || item.file_name}>
+            <Typography variant={depth === 0 ? 'subtitle2' : 'body2'} fontWeight={700} noWrap sx={{ minWidth: 0, maxWidth: '100%' }} title={item.path || item.file_name}>
               {item.file_name || item.path || item.id}
             </Typography>
-            <XDriveStatusBadge tone={transferTone(item.state)} label={xDriveTransferStateLabel(item.state)} />
+            <XDriveStatusBadge tone={transferTone(item.state)} label={transferStateLabel(item)} />
             <Typography variant="caption" color="text.secondary">
               {xDriveTransferKindLabel(item.kind || item.direction)} · 文件夹任务
             </Typography>
@@ -301,6 +327,7 @@ function TransferGroupItem({
         </Stack>
 
         <LinearProgress
+          aria-label={`${item.file_name || item.path || '文件夹'}传输进度`}
           variant={scanIncomplete && bytes.done <= 0 ? 'indeterminate' : bytes.total > 0 ? 'determinate' : active ? 'indeterminate' : 'determinate'}
           value={bytes.total > 0 ? percent : item.state === 'completed' ? 100 : 0}
           sx={{ height: 7, borderRadius: 999, mb: 1 }}
@@ -322,16 +349,24 @@ function TransferGroupItem({
           <Typography variant="caption" color="text.secondary">等待 {progress.queued.toLocaleString('zh-CN')}</Typography>
         </Stack>
 
-        <XDriveDescriptionGrid columns={4}>
+        {compact ? (
+          <Stack direction="row" spacing={1.5} flexWrap="wrap">
+            <Typography variant="caption" color="text.secondary">{speedLabel} {formatBytes(instantSpeed)}/s</Typography>
+            <Typography variant="caption" color="text.secondary">已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}</Typography>
+            {eta !== undefined ? (
+              <Typography variant="caption" color="text.secondary">剩余约 {formatXDriveTransferDuration(eta)}</Typography>
+            ) : null}
+          </Stack>
+        ) : <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speedLabel}>{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+          <XDriveDescriptionItem label={speed.serverReported ? '平均服务端发送速度' : '平均速度'}>{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
           <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
-        </XDriveDescriptionGrid>
+        </XDriveDescriptionGrid>}
         {item.error ? <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{item.error}</XDriveStatusAlert> : null}
       </Box>
 
@@ -347,6 +382,8 @@ function TransferGroupItem({
                     key={child.task.id}
                     node={child}
                     depth={depth + 1}
+                    compact={compact}
+                    now={now}
                     retryDisabled={retryDisabled}
                     retryingID={retryingID}
                     onRetry={onRetry}
@@ -356,6 +393,7 @@ function TransferGroupItem({
                     key={child.task.id}
                     item={child.task}
                     compact
+                    now={now}
                     retryDisabled={retryDisabled}
                     retryLoading={retryingID === child.task.id}
                     onRetry={onRetry}
@@ -370,13 +408,17 @@ function TransferGroupItem({
   )
 }
 
-function TransferTreeItem({
+export function XDriveTransferTreeItem({
   node,
+  compact = false,
+  now = Date.now(),
   retryDisabled,
   retryingID,
   onRetry,
 }: {
   node: XDriveTransferTreeNode
+  compact?: boolean
+  now?: number
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
@@ -385,6 +427,8 @@ function TransferTreeItem({
     return (
       <TransferGroupItem
         node={node}
+        compact={compact}
+        now={now}
         retryDisabled={retryDisabled}
         retryingID={retryingID}
         onRetry={onRetry}
@@ -394,6 +438,8 @@ function TransferTreeItem({
   return (
     <TransferLeafItem
       item={node.task}
+      compact={compact}
+      now={now}
       retryDisabled={retryDisabled}
       retryLoading={retryingID === node.task.id}
       onRetry={onRetry}
@@ -420,6 +466,7 @@ export function XDriveTransferCenter({
     task.state === 'completed' || task.state === 'partial' || task.state === 'cancelled'
   ))
   const failed = roots.filter(({ task }) => task.state === 'failed')
+  const handedOff = roots.filter(({ task }) => task.state === 'handed_off')
 
   if (loading && roots.length === 0) return <XDriveStatePanel loading message="正在加载传输记录…" />
 
@@ -428,6 +475,7 @@ export function XDriveTransferCenter({
     ['已完成', completed],
     ['失败', failed],
   ]
+  if (handedOff.length > 0) groups.push(['由浏览器下载', handedOff])
 
   return (
     <Stack spacing={2}>
@@ -447,7 +495,7 @@ export function XDriveTransferCenter({
           ) : (
             <Stack spacing={1.25}>
               {items.map((node) => (
-                <TransferTreeItem
+                <XDriveTransferTreeItem
                   key={node.task.id}
                   node={node}
                   retryDisabled={retryDisabled}

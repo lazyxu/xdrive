@@ -12,7 +12,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `files` | 文件管理器 | workspace | `dir?` |
 | `gallery` | 图库 | workspace | `section?` |
 | `sync-folders` | 同步文件夹 | workspace | `source?` |
-| `tasks` | 任务中心 | workspace | `scope?`, `task?` |
+| `tasks` | 任务 / 全局任务 | workspace | `scope?`, `task?` |
 | `local-storage` | 本地存储 | workspace | 无 |
 | `cloud-storage` | 云端存储 | workspace | 无 |
 | `preview` | 预览 / Quick Look | immersive | `node`, `context?` |
@@ -44,8 +44,13 @@ Canonical 文件身份使用 node ID。路径可以由上层调用者解析后�
 #/app/media-viewer?node=456&context=<session-id>
 #/app/text-viewer?node=789&line=120&column=8
 #/app/pdf-viewer?node=901&page=3
+#/app/tasks?scope=mine
 #/app/tasks?scope=global&task=system-maintenance:storage_verify
 ```
+
+Sidebar 的“任务”与管理员专用“全局任务”是独立入口，分别启动 `tasks?scope=mine` 和 `tasks?scope=global`。它们共用一个 Web 程序与共享任务页面，`task` 参数仍可定位具体后台任务。内部 workspace key 保留 `transfers` 作为“任务”的兼容键，并增加 `global-tasks`；旧的无 scope `tasks` 链接继续进入个人任务。
+
+上传和下载从任务页面移到头像旁的共享传输浮层。该浮层不是 Web 程序，也不写浏览器历史；打开、关闭或查看传输历史都保留当前目录与页面。Viewer 打开或账号切换时关闭浮层。速度口径与任务范围见 [传输与任务](transfers-and-tasks.md)。
 
 多选列表、目录排序/分组、Search filter、Gallery collection target 等浏览上下文通过 `sessionStorage` 保存，只把短的 `context` session ID 放进 URL。直接 deep-link 没有 context 时仍能打开目标文件，只是不提供集合前后切换。
 

@@ -21,7 +21,8 @@ The first delivery is the shared workspace shell. It does not change file select
 
 - `XDriveWorkspaceSidebar` is still the only full navigation component consumed by Web and Desktop.
 - Responsive Web uses compact navigation below the shared MUI `md` breakpoint (900 CSS px). At 900 px and above, retain the sidebar. Desktop's non-responsive shell retains its existing sidebar and 960 px width adjustment.
-- The compact primary destinations are `overview`, `files`, `gallery`, `transfers`, followed by a More button. Home comes from the caller's sections. The compact transfer label is “任务”; the existing workspace key remains `transfers` and the existing Web route remains `tasks`.
+- The compact primary destinations are `overview`, `files`, `gallery`, `transfers`, followed by a More button. Home comes from the caller's sections. “任务” contains file operations, sync runs and other background/local work; the existing internal workspace key remains `transfers` and the Web route remains `tasks?scope=mine`. Uploads and downloads are in the shared top-right transfer popup, with live upload/download rates.
+- Administrators also receive “全局任务” (`global-tasks`) in More, opening `tasks?scope=global`; ordinary users do not receive this destination. The same capability gate applies to the wide sidebar and the server administrator API.
 - More derives all remaining destinations from the same core model and extension sections. Preserve ordering, section labels, badges, optional local storage and caller-provided role filtering. More is local UI state, not a new route.
 - Selection flows through the existing `onSelect(destination, event)` callback, preserving Ctrl/Cmd. Opening or dismissing More does not navigate. Choosing an entry closes More and invokes the callback once.
 - New compact navigation targets are at least 44 CSS px tall. The bottom navigation is in layout flow, outside the content scroll container, with safe-area padding.
@@ -35,11 +36,13 @@ The first delivery is the shared workspace shell. It does not change file select
 - Viewer remains a sibling overlay over the existing workspace. Its background retains layout and DOM but is inert while Viewer is active. The More portal is closed/disabled. Do not key or replace the workspace by Viewer route.
 - `100dvh` is a viewport layout choice, not a claim that virtual-keyboard behavior is solved on every browser. Native iOS/Android keyboard and safe-area validation remains part of device acceptance.
 - Retain the existing viewport metadata in this phase. Enabling `viewport-fit=cover` changes the coordinate space for Viewer, authentication and public-share surfaces too; enable it only with those surfaces' safe-area acceptance. Shell padding already respects any safe-area insets the browser reports.
-- Viewer also closes the account menu, settings and account update-confirmation portals. These are part of Shell chrome and must not survive above the Viewer or reopen on return.
+- Viewer also closes the transfer popup, account menu, settings and account update-confirmation portals. These are part of Shell chrome and must not survive above the Viewer or reopen on return.
 
 ## Implementation boundaries
 
 Shared files own the core navigation model, compact navigation, Shell and Content. `web/src/App.tsx` continues to own route mapping, role-filtered administration and the authenticated viewport/Viewer boundary. The password-change surface also consumes shared Content; its document scrolling must remain usable.
+
+The topbar transfer popup uses the same shared MUI component as Desktop. At narrow widths its paper is constrained to the viewport, its list scrolls internally, and touch controls retain 44 px targets. Opening the popup preserves the current workspace and browser history. See [Transfers and tasks](transfers-and-tasks.md) for transfer scope, rate semantics and history separation.
 
 No server API, browser-history policy, directory/tab state, selection, persisted desktop pane width or column preferences change in this phase. Do not duplicate navigation rules or introduce a mobile router.
 

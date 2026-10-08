@@ -16,8 +16,9 @@ import (
 const authenticatedDownloadTicketTTL = 10 * time.Minute
 
 type authenticatedDownloadTicketDTO struct {
-	URL       string    `json:"url"`
-	ExpiresAt time.Time `json:"expires_at"`
+	TransferID string    `json:"transfer_id,omitempty"`
+	URL        string    `json:"url"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 func (s *Server) fileDownloadTicket(c *gin.Context) {
@@ -50,8 +51,9 @@ func (s *Server) fileDownloadTicket(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
-		URL:       fmt.Sprintf("/api/v1/file-download/%d?ticket=%s", id, url.QueryEscape(ticket)),
-		ExpiresAt: expiresAt.UTC(),
+		TransferID: s.createDownloadProgress(c.Request.Context(), ticket, metadata.Size),
+		URL:        fmt.Sprintf("/api/v1/file-download/%d?ticket=%s", id, url.QueryEscape(ticket)),
+		ExpiresAt:  expiresAt.UTC(),
 	})
 }
 
@@ -101,6 +103,7 @@ func (s *Server) fileVersionDownloadTicket(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
+		TransferID: s.createDownloadProgress(c.Request.Context(), ticket, metadata.Size),
 		URL: fmt.Sprintf(
 			"/api/v1/file-version-download/%d/%d?ticket=%s",
 			id,
@@ -146,6 +149,7 @@ func (s *Server) fileDownloadTicketStream(c *gin.Context) {
 	if !ok {
 		return
 	}
+	defer s.trackDownloadProgress(c, claims)()
 	metadata, err := loadCurrentFileDownloadMetadata(
 		c.Request.Context(),
 		s.DB,
@@ -186,6 +190,7 @@ func (s *Server) fileVersionDownloadTicketStream(c *gin.Context) {
 	if !ok {
 		return
 	}
+	defer s.trackDownloadProgress(c, claims)()
 	metadata, err := loadFileVersionDownloadMetadata(
 		c.Request.Context(),
 		s.DB,
@@ -280,8 +285,9 @@ func (s *Server) archiveDownloadTicket(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
-		URL:       fmt.Sprintf("/api/v1/archive-download/%s?ticket=%s", url.PathEscape(run.ID), url.QueryEscape(token)),
-		ExpiresAt: expiresAt.UTC(),
+		TransferID: s.createDownloadProgress(c.Request.Context(), token, 0),
+		URL:        fmt.Sprintf("/api/v1/archive-download/%s?ticket=%s", url.PathEscape(run.ID), url.QueryEscape(token)),
+		ExpiresAt:  expiresAt.UTC(),
 	})
 }
 
@@ -295,6 +301,7 @@ func (s *Server) archiveDownloadTicketStream(c *gin.Context) {
 	if !ok {
 		return
 	}
+	defer s.trackDownloadProgress(c, claims)()
 	var run meta.ArchivePrepareRun
 	if err := s.DB.WithContext(c.Request.Context()).
 		Where("id = ? AND owner_id = ?", runID, claims.UserID).

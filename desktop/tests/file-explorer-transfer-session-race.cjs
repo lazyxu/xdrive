@@ -89,6 +89,7 @@ test('Desktop transfer projection resets and reloads across account lifecycle', 
     transfers: [{ id: 'account-a-transfer', root_id: 'account-a-transfer' }],
   }
   const writes = []
+  let transferPopoverOpen = true
   const transfersRevisionRef = { current: 9 }
   const setTransfers = (value) => {
     current = typeof value === 'function' ? value(current) : value
@@ -117,6 +118,7 @@ test('Desktop transfer projection resets and reloads across account lifecycle', 
     status: { server: 'server-b', username: 'user-b' },
     transfersRevisionRef,
     setTransfers,
+    setTransferPopoverOpen: (value) => { transferPopoverOpen = value },
     window,
     acceptTransferSnapshot,
   })
@@ -125,6 +127,7 @@ test('Desktop transfer projection resets and reloads across account lifecycle', 
 
   assert.equal(transfersRevisionRef.current, 0)
   assert.deepEqual(current, { revision: 0, transfers: [] })
+  assert.equal(transferPopoverOpen, false, 'account changes must close the previous account transfer popup')
   assert.equal(snapshotCalls, 1)
 
   pendingB.resolve({

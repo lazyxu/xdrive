@@ -30,9 +30,10 @@ test('Web native archive handoff keeps server-side progress authoritative', () =
   for (const token of [
     "/download/archive/prepare/${encodeURIComponent(prepared.transfer_id)}/download-ticket",
     'xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), preparedFilename)',
-    "if (progress.state === 'running') observedActive = true",
-    "if (progress.state === 'completed') break",
-    "progress.state === 'failed' || progress.state === 'cancelled'",
+    "if (network.state === 'running') observedActive = true",
+    "if (network.state === 'completed') break",
+    "if (network.state === 'failed')",
+    "if (network.state === 'cancelled')",
     'Date.now() + 60_000',
     '浏览器未开始归档下载。',
   ]) {

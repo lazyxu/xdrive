@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 const downloadStreamMaxTTL = 30 * time.Minute
@@ -45,6 +46,7 @@ func (m Manager) IssueDownloadStream(
 		ResourceRevision: resourceRevision,
 		TokenType:        "download_stream",
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			Subject:   fmt.Sprintf("%d", userID),

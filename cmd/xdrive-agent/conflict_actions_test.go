@@ -48,7 +48,7 @@ func TestApplyConflictChoiceKeepServer(t *testing.T) {
 		OriginalPath: "docs/a.txt", ConflictPath: "docs/a conflict.txt",
 		OriginalNodeID: 10, ConflictNodeID: 20,
 	}
-	if err := applyConflictChoice(context.Background(), f, t.TempDir(), record, "server"); err != nil {
+	if err := applyConflictChoice(context.Background(), f, t.TempDir(), record, "server", nil); err != nil {
 		t.Fatal(err)
 	}
 	if f.overwritten != 0 {
@@ -76,7 +76,7 @@ func TestApplyConflictChoiceKeepLocal(t *testing.T) {
 		OriginalPath: "docs/a.txt", ConflictPath: "docs/a conflict.txt",
 		OriginalNodeID: 10, ConflictNodeID: 20,
 	}
-	if err := applyConflictChoice(context.Background(), f, root, record, "local"); err != nil {
+	if err := applyConflictChoice(context.Background(), f, root, record, "local", nil); err != nil {
 		t.Fatal(err)
 	}
 	if f.overwritten != 10 || f.overwriteRev != 3 || f.overwritePath != conflictPath {

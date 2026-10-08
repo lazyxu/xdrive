@@ -597,7 +597,7 @@ const agent = Object.freeze({
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),
   retryTransfer: (id: string) => ipcRenderer.invoke('agent:retry-transfer', id),
   transferLifecycle: (input: unknown) => ipcRenderer.invoke('agent:transfer-lifecycle', input),
-  clearTransferHistory: () => ipcRenderer.invoke('agent:clear-transfer-history'),
+  clearTransferHistory: (scope?: 'all' | 'network' | 'local') => ipcRenderer.invoke('agent:clear-transfer-history', scope),
   openFolder: () => ipcRenderer.invoke('agent:open-folder'),
   onState: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)

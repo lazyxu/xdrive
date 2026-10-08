@@ -48,6 +48,9 @@ func TestMigrateCreatesArchivePrepareRuns(t *testing.T) {
 	if !db.Migrator().HasTable(&meta.ArchivePrepareRun{}) {
 		t.Fatal("archive prepare run table was not created")
 	}
+	if !db.Migrator().HasTable(&meta.DownloadProgress{}) {
+		t.Fatal("native download progress table was not created")
+	}
 	user := meta.User{
 		Username:       "archive-prepare-migrate",
 		PasswordHash:   "unused",

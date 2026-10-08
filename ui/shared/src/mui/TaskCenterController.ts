@@ -15,7 +15,7 @@ import type {
   XDriveFileOperation,
   XDriveFileOperationConflictResolution,
 } from '..'
-import { xDriveActiveTransferCount, xDriveTransferHasHistory } from '../transfers'
+import { xDriveActiveTransferCount, xDriveNetworkTransferTasks, xDriveTransferHasHistory } from '../transfers'
 import type { XDriveTransferTask } from '../transfers'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
 
@@ -302,6 +302,7 @@ export function useXDriveTaskCenterController({
   backgroundTasksEnabled = false,
   backgroundTasksVisible = false,
   globalTasksEnabled = false,
+  backgroundScope: requestedBackgroundScope,
   onBackgroundTaskError,
 }: {
   transfers: XDriveTransferTask[]
@@ -316,11 +317,15 @@ export function useXDriveTaskCenterController({
   backgroundTasksEnabled?: boolean
   backgroundTasksVisible?: boolean
   globalTasksEnabled?: boolean
+  backgroundScope?: XDriveBackgroundTaskScope
   onBackgroundTaskError?: (error: unknown) => void
 }) {
   const activeTransferCount = xDriveActiveTransferCount(transfers)
+  const networkIDs = new Set(xDriveNetworkTransferTasks(transfers).map((task) => task.id))
+  const localTransfers = transfers.filter((task) => !networkIDs.has(task.id))
+  const activeLocalTaskCount = xDriveActiveTransferCount(localTransfers)
   const activeOperationCount = xDriveActiveFileOperationCount(operations)
-  const hasHistory = xDriveTransferHasHistory(transfers) || xDriveFileOperationHasHistory(operations)
+  const hasHistory = xDriveTransferHasHistory(localTransfers) || xDriveFileOperationHasHistory(operations)
   const [backgroundScope, setBackgroundScope] = useState<XDriveBackgroundTaskScope>('mine')
   const [backgroundControlKey, setBackgroundControlKey] = useState('')
 
@@ -341,14 +346,14 @@ export function useXDriveTaskCenterController({
       summaryFileOperationCount +
       Math.max(summaryFileOperationCount, activeOperationCount)
     : activeOperationCount
-  const badgeCount = activeTransferCount + activeBackgroundCount
+  const badgeCount = activeLocalTaskCount + activeBackgroundCount
 
   const background = useXDriveBackgroundTasks({
     port: backgroundTaskPort,
     enabled: backgroundTasksEnabled,
     visible: backgroundTasksVisible,
     globalEnabled: globalTasksEnabled,
-    scope: backgroundScope,
+    scope: requestedBackgroundScope ?? backgroundScope,
     onError: onBackgroundTaskError,
   })
 
@@ -381,7 +386,7 @@ export function useXDriveTaskCenterController({
   ])
 
   const pageProps: XDriveTaskCenterPageProps = {
-    transfers,
+    transfers: localTransfers,
     operations,
     backgroundTasks: background.mine,
     globalBackgroundTasks: background.globalTasks,
@@ -424,6 +429,7 @@ export function useXDriveTaskCenterController({
 
   return {
     activeTransferCount,
+    activeLocalTaskCount,
     activeOperationCount,
     activeBackgroundCount,
     badgeCount,

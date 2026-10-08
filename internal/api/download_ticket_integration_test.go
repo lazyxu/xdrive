@@ -45,7 +45,7 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.DownloadProgress{}); err != nil {
 		t.Fatal(err)
 	}
 

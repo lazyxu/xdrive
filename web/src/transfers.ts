@@ -42,9 +42,9 @@ function trimRootHistory(items: XDriveTransferTask[]) {
 }
 
 
-function loadTransferHistory(): XDriveTransferTask[] {
+function loadTransferHistory(storageKey = STORAGE_KEY): XDriveTransferTask[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]')
     if (!Array.isArray(parsed)) return []
     const now = Date.now()
     return trimRootHistory(
@@ -56,6 +56,7 @@ function loadTransferHistory(): XDriveTransferTask[] {
           return {
             ...normalized,
             state: 'failed',
+            instant_bytes_per_second: 0,
             items_running: 0,
             items_failed: normalized.scope === 'group'
               ? normalized.items_failed
@@ -79,12 +80,40 @@ type WebTransferChildInput = {
   bytesTotal?: number
 }
 
+type NetworkSample = {
+  bytes: number
+  baseBytes: number
+  sampledBytes: number
+  sampledAt: number
+  windowBytes: number
+  windowAt: number
+  startedAt: number
+  remoteAt?: number
+}
+
 class WebTransferStore {
   private items = loadTransferHistory()
   private listeners = new Set<(items: XDriveTransferTask[]) => void>()
   private sequence = 0
   private batchDepth = 0
   private batchChanged = false
+  private sessionKey = ''
+  private storageKey = STORAGE_KEY
+  private networkSamples = new Map<string, NetworkSample>()
+
+  setSessionKey(key: string) {
+    if (key === this.sessionKey && this.storageKey !== STORAGE_KEY) return
+    this.batchUpdates(() => {
+      for (const item of this.items) {
+        if (xDriveTransferActive(item)) this.finishLifecycle(item.id, { state: 'cancelled' })
+      }
+    })
+    this.sessionKey = key
+    this.storageKey = key ? `${STORAGE_KEY}:${encodeURIComponent(key)}` : ''
+    this.networkSamples.clear()
+    this.items = key ? loadTransferHistory(this.storageKey) : []
+    this.emit()
+  }
 
   snapshot() {
     return [...this.items]
@@ -115,6 +144,7 @@ class WebTransferStore {
     path?: string
     kind: 'upload' | 'download'
     bytesTotal?: number
+    speedSource?: 'client' | 'server'
   }) {
     const now = Date.now()
     const id = `web-${now}-${++this.sequence}`
@@ -146,6 +176,7 @@ class WebTransferStore {
       updated_at: nowISO(now),
     }
     this.items = [item, ...this.items]
+    if (input.speedSource) this.initializeNetwork(item, input.speedSource, now)
     this.trimHistory()
     this.emit()
     return id
@@ -158,6 +189,7 @@ class WebTransferStore {
     itemsTotal?: number
     kind?: 'upload' | 'download'
     direction?: 'upload' | 'download'
+    speedSource?: 'client' | 'server'
   }) {
     const now = Date.now()
     const id = `web-${now}-${++this.sequence}`
@@ -189,6 +221,7 @@ class WebTransferStore {
       updated_at: nowISO(now),
     }
     this.items = [item, ...this.items]
+    if (input.speedSource) this.initializeNetwork(item, input.speedSource, now)
     this.trimHistory()
     this.emit()
     return id
@@ -239,9 +272,85 @@ class WebTransferStore {
     })
     const childIDs = children.map((item) => item.id)
     this.items = [...children.slice().reverse(), ...this.items]
+    if (parent.speed_source) {
+      for (const item of children) this.initializeNetwork(item, parent.speed_source, now)
+    }
     this.trimHistory()
     this.emit()
     return childIDs
+  }
+
+  private initializeNetwork(item: XDriveTransferTask, source: 'client' | 'server', now: number) {
+    item.speed_source = source
+    item.instant_bytes_per_second = 0
+    item.average_bytes_per_second = 0
+    this.networkSamples.set(item.id, { bytes: 0, baseBytes: 0, sampledBytes: 0, sampledAt: now, windowBytes: 0, windowAt: now, startedAt: now })
+  }
+
+  trackNetwork(id: string, source: 'client' | 'server') {
+    if (this.networkSamples.has(id)) return
+    this.patch(id, (item) => {
+      const next = { ...item }
+      this.initializeNetwork(next, source, Date.now())
+      return next
+    })
+  }
+
+  // Logical file progress includes resumed/deduplicated bytes. Only an actual
+  // transport byte counter may advance these rates and their freshness stamp.
+  networkProgress(id: string, bytesDone: number, sampledAt?: string) {
+    if (!Number.isFinite(bytesDone) || bytesDone < 0) return
+    const item = this.items.find((task) => task.id === id)
+    if (!item || !xDriveTransferActive(item)) return
+    if (!this.networkSamples.has(id)) this.trackNetwork(id, item.speed_source ?? 'client')
+    const sample = this.networkSamples.get(id)
+    if (!sample) return
+    const now = Date.now()
+    const remote = sampledAt === undefined ? undefined : Date.parse(sampledAt)
+    if (remote !== undefined && !Number.isFinite(remote)) return
+    if (remote !== undefined && sample.remoteAt === undefined) {
+      sample.remoteAt = remote
+      sample.sampledAt = remote
+      sample.startedAt = remote
+      sample.sampledBytes = bytesDone
+      sample.windowAt = remote
+      sample.windowBytes = bytesDone
+      sample.bytes = bytesDone
+      sample.baseBytes = bytesDone
+      return
+    }
+    const at = remote ?? now
+    if (bytesDone <= sample.bytes || (remote !== undefined && at < sample.sampledAt)) return
+    const delta = bytesDone - sample.bytes
+    sample.bytes = bytesDone
+    this.batchUpdates(() => {
+      if (at > sample.sampledAt) {
+        sample.windowBytes = sample.sampledBytes
+        sample.windowAt = sample.sampledAt
+      }
+      if (at > sample.windowAt) {
+        const instant = (bytesDone - sample.windowBytes) / ((at - sample.windowAt) / 1000)
+        const elapsed = (at - sample.startedAt) / 1000
+        const average = elapsed > 0 ? (bytesDone - sample.baseBytes) / elapsed : 0
+        sample.sampledBytes = bytesDone
+        sample.sampledAt = at
+        sample.remoteAt = remote
+        this.patch(id, (task) => ({
+          ...task,
+          instant_bytes_per_second: instant,
+          average_bytes_per_second: average,
+          speed_updated_at: nowISO(now),
+        }))
+      }
+      if (item.parent_id && item.speed_source === 'client') {
+        const parent = this.items.find((task) => task.id === item.parent_id)
+        if (parent && parent.speed_source !== 'server') {
+          this.trackNetwork(parent.id, 'client')
+          const previous = this.networkSamples.get(parent.id)?.bytes ?? 0
+          this.networkProgress(parent.id, previous + delta)
+        }
+      }
+    })
   }
 
   begin(id: string) {
@@ -289,8 +398,8 @@ class WebTransferStore {
         items_failed: Math.max(0, progress.itemsFailed),
         items_running: Math.max(0, progress.itemsRunning),
         items_queued: Math.max(0, progress.itemsQueued),
-        instant_bytes_per_second: Number.isFinite(instant) ? instant : 0,
-        average_bytes_per_second: Number.isFinite(average) ? average : 0,
+        instant_bytes_per_second: item.speed_source ? item.instant_bytes_per_second : Number.isFinite(instant) ? instant : 0,
+        average_bytes_per_second: item.speed_source ? item.average_bytes_per_second : Number.isFinite(average) ? average : 0,
         elapsed_ms: elapsed,
         updated_at: nowISO(now),
       }
@@ -325,7 +434,7 @@ class WebTransferStore {
         items_running: 0,
         items_queued: 0,
         instant_bytes_per_second: 0,
-        average_bytes_per_second: Number.isFinite(average) ? average : 0,
+        average_bytes_per_second: item.speed_source ? item.average_bytes_per_second : Number.isFinite(average) ? average : 0,
         elapsed_ms: elapsed,
         error: input.error || (input.state === 'failed' ? '传输失败' : ''),
         updated_at: nowISO(now),
@@ -350,8 +459,8 @@ class WebTransferStore {
         bytes_done: nextDone,
         bytes_total: nextTotal,
         percent: nextTotal > 0 ? Math.max(0, Math.min(100, (nextDone / nextTotal) * 100)) : item.percent,
-        instant_bytes_per_second: Number.isFinite(instant) ? instant : 0,
-        average_bytes_per_second: Number.isFinite(average) ? average : 0,
+        instant_bytes_per_second: item.speed_source ? item.instant_bytes_per_second : Number.isFinite(instant) ? instant : 0,
+        average_bytes_per_second: item.speed_source ? item.average_bytes_per_second : Number.isFinite(average) ? average : 0,
         elapsed_ms: elapsed,
         updated_at: nowISO(now),
       }
@@ -378,7 +487,7 @@ class WebTransferStore {
         bytes_total: total,
         percent: total > 0 ? 100 : item.percent,
         instant_bytes_per_second: 0,
-        average_bytes_per_second: Number.isFinite(average) ? average : 0,
+        average_bytes_per_second: item.speed_source ? item.average_bytes_per_second : Number.isFinite(average) ? average : 0,
         elapsed_ms: elapsed,
         updated_at: nowISO(now),
         completed_at: nowISO(now),
@@ -430,7 +539,24 @@ class WebTransferStore {
     }))
   }
 
-  clearHistory() {
+  handedOff(id: string) {
+    const now = Date.now()
+    this.patch(id, (item) => ({
+      ...item,
+      state: 'handed_off',
+      speed_source: undefined,
+      instant_bytes_per_second: 0,
+      average_bytes_per_second: 0,
+      items_running: 0,
+      items_queued: 0,
+      error: '',
+      elapsed_ms: Math.max(0, now - new Date(item.started_at).getTime()),
+      updated_at: nowISO(now),
+      completed_at: nowISO(now),
+    }))
+  }
+
+  clearHistory(scope: 'all' | 'network' | 'local' = 'all') {
     const activeRoots = new Set(
       this.items
         .filter(xDriveTransferActive)
@@ -442,6 +568,9 @@ class WebTransferStore {
       const rootID = item.root_id || item.id
       if (item.id !== rootID || activeRoots.has(rootID)) continue
       const root = rootByID.get(rootID)
+      const network = root && (root.direction === 'upload' || root.direction === 'download' || root.kind === 'hydration')
+      if (scope === 'network' && !network) continue
+      if (scope === 'local' && network) continue
       if (root && !xDriveTransferActive(root)) removeRoots.add(rootID)
     }
     if (removeRoots.size === 0) return
@@ -451,6 +580,10 @@ class WebTransferStore {
 
   private trimHistory() {
     this.items = trimRootHistory(this.items)
+    const ids = new Set(this.items.map((item) => item.id))
+    for (const id of this.networkSamples.keys()) {
+      if (!ids.has(id)) this.networkSamples.delete(id)
+    }
   }
 
   private patch(id: string, updater: (item: XDriveTransferTask) => XDriveTransferTask) {
@@ -471,7 +604,7 @@ class WebTransferStore {
 
   private emit() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      if (this.storageKey) localStorage.setItem(this.storageKey, JSON.stringify(this.items))
     } catch {
       // Transfer tracking must never block file I/O.
     }

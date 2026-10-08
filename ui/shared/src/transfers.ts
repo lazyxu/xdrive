@@ -15,6 +15,7 @@ export type XDriveTransferState =
   | 'retrying'
   | 'cancelling'
   | 'cancelled'
+  | 'handed_off'
   | string
 
 export type XDriveTransferTask = {
@@ -40,6 +41,10 @@ export type XDriveTransferTask = {
   items_queued?: number
   instant_bytes_per_second: number
   average_bytes_per_second: number
+  // On a group, an explicit source identifies its own network sample (for
+  // example an archive response), rather than the sum of its logical children.
+  speed_source?: 'client' | 'server'
+  speed_updated_at?: string
   elapsed_ms: number
   error?: string
   retry_count: number
@@ -68,7 +73,7 @@ export function xDriveNormalizeTransferTask(
 ): XDriveTransferTask {
   const scope: XDriveTransferScope = task.scope === 'group' ? 'group' : 'item'
   const state = task.state || 'running'
-  const itemTerminal = state === 'completed' || state === 'failed' || state === 'cancelled'
+  const itemTerminal = state === 'completed' || state === 'failed' || state === 'cancelled' || state === 'handed_off'
   const itemFailed = state === 'failed' ? 1 : 0
   const itemCompleted = state === 'completed' ? 1 : 0
   return {
@@ -132,7 +137,8 @@ export function xDriveTransferTerminal(
   return task.state === 'completed' ||
     task.state === 'partial' ||
     task.state === 'failed' ||
-    task.state === 'cancelled'
+    task.state === 'cancelled' ||
+    task.state === 'handed_off'
 }
 
 export function xDriveTransferRootTasks(
@@ -242,6 +248,125 @@ export function xDriveTransferHasHistory(
   return xDriveTransferRootTasks(tasks).some(xDriveTransferTerminal)
 }
 
+export type XDriveTransferSpeedSummary = {
+  bytesPerSecond: number
+  clientBytesPerSecond: number
+  serverBytesPerSecond: number
+  serverReported: boolean
+}
+
+export type XDriveTransferDirectionSummary = XDriveTransferSpeedSummary & {
+  activeCount: number
+}
+
+export type XDriveNetworkTransferSummary = {
+  upload: XDriveTransferDirectionSummary
+  download: XDriveTransferDirectionSummary
+  activeCount: number
+  historyCount: number
+}
+
+export function xDriveNetworkTransferTasks(tasks: readonly XDriveTransferTask[]) {
+  return tasks.filter((task) => (
+    (task.direction === 'upload' || task.direction === 'download') &&
+    task.kind !== 'dehydration'
+  ))
+}
+
+export function xDriveTransferCurrentBytesPerSecond(
+  task: XDriveTransferTask,
+  now = Date.now(),
+) {
+  if (!xDriveTransferActive(task) || task.state === 'queued') return 0
+  if (task.phase === 'queued' || task.phase === 'finalizing') return 0
+  const explicitSample = Boolean(task.speed_source && task.speed_updated_at)
+  if (task.bytes_done <= 0 && !explicitSample) return 0
+  const sampledAt = Date.parse(task.speed_updated_at ?? task.updated_at)
+  const age = now - sampledAt
+  if (!Number.isFinite(age) || age < -1000 || age >= 3000) return 0
+  if (task.state === 'retrying') {
+    const retryStartedAt = Date.parse(task.started_at)
+    if (!Number.isFinite(retryStartedAt) || sampledAt < retryStartedAt) return 0
+  }
+  const speed = task.instant_bytes_per_second
+  return Number.isFinite(speed) && speed > 0 ? speed : 0
+}
+
+export function xDriveTransferTreeSpeed(
+  node: XDriveTransferTreeNode,
+  now = Date.now(),
+): XDriveTransferSpeedSummary {
+  const empty = {
+    bytesPerSecond: 0,
+    clientBytesPerSecond: 0,
+    serverBytesPerSecond: 0,
+    serverReported: node.task.speed_source === 'server',
+  }
+  if (node.children.length > 0 && !node.task.speed_source) {
+    return node.children.reduce((sum, child) => {
+      const speed = xDriveTransferTreeSpeed(child, now)
+      return {
+        bytesPerSecond: sum.bytesPerSecond + speed.bytesPerSecond,
+        clientBytesPerSecond: sum.clientBytesPerSecond + speed.clientBytesPerSecond,
+        serverBytesPerSecond: sum.serverBytesPerSecond + speed.serverBytesPerSecond,
+        serverReported: sum.serverReported || speed.serverReported,
+      }
+    }, empty)
+  }
+  if (!xDriveTransferActive(node.task)) return empty
+  const speed = xDriveTransferCurrentBytesPerSecond(node.task, now)
+  return {
+    bytesPerSecond: speed,
+    clientBytesPerSecond: node.task.speed_source === 'server' ? 0 : speed,
+    serverBytesPerSecond: node.task.speed_source === 'server' ? speed : 0,
+    serverReported: node.task.speed_source === 'server',
+  }
+}
+
+export function xDriveTransferTreeActive(node: XDriveTransferTreeNode): boolean {
+  return xDriveTransferActive(node.task) || node.children.some(xDriveTransferTreeActive)
+}
+
+export function xDriveNetworkTransferSummary(
+  tasks: readonly XDriveTransferTask[],
+  now = Date.now(),
+): XDriveNetworkTransferSummary {
+  const directionSummary = (): XDriveTransferDirectionSummary => ({
+    bytesPerSecond: 0,
+    clientBytesPerSecond: 0,
+    serverBytesPerSecond: 0,
+    serverReported: false,
+    activeCount: 0,
+  })
+  const result: XDriveNetworkTransferSummary = {
+    upload: directionSummary(),
+    download: directionSummary(),
+    activeCount: 0,
+    historyCount: 0,
+  }
+  const active = { upload: new Set<string>(), download: new Set<string>() }
+  const history = new Set<string>()
+  for (const node of xDriveTransferTree(xDriveNetworkTransferTasks(tasks))) {
+    const direction = node.task.direction as 'upload' | 'download'
+    const rootID = xDriveTransferRootID(node.task)
+    if (xDriveTransferTerminal(node.task)) history.add(rootID)
+    if (!xDriveTransferTreeActive(node)) continue
+    active[direction].add(rootID)
+    const speed = xDriveTransferTreeSpeed(node, now)
+    result[direction].bytesPerSecond += speed.bytesPerSecond
+    result[direction].clientBytesPerSecond += speed.clientBytesPerSecond
+    result[direction].serverBytesPerSecond += speed.serverBytesPerSecond
+    result[direction].serverReported ||= speed.serverReported
+  }
+  result.upload.activeCount = active.upload.size
+  result.download.activeCount = active.download.size
+  const activeRoots = new Set([...active.upload, ...active.download])
+  for (const id of activeRoots) history.delete(id)
+  result.activeCount = activeRoots.size
+  result.historyCount = history.size
+  return result
+}
+
 export function xDriveTransferKindLabel(value: string) {
   switch (value) {
     case 'upload': return '上传'
@@ -270,6 +395,7 @@ export function xDriveTransferStateLabel(value: string) {
     case 'retrying': return '正在重试'
     case 'cancelling': return '正在取消'
     case 'cancelled': return '已取消'
+    case 'handed_off': return '由浏览器下载'
     case 'partial': return '部分完成'
     case 'completed': return '已完成'
     case 'failed': return '失败'

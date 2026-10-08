@@ -31,11 +31,11 @@ test('Web archive download creates one download group and one child per prepared
     "prepared.state !== 'completed'",
     'this.startTransferChildren(',
     '/api/v1/download/archive/progress/',
-    'applyProgress(await this.request<ArchiveDownloadProgress>',
+    'applyProgress(await tracking.api().request<ArchiveDownloadProgress>',
     'this.progressTransfer(childID, file.done, file.size)',
     'this.updateTransferGroup(groupID',
     'JSON.stringify({ ids, transfer_id: prepared.transfer_id })',
-    '}, false, downloadSink)',
+    '}, false, downloadSink, groupID)',
     "this.finishTransfer(groupID, { state: 'completed' })",
   ]) {
     assert.ok(api.includes(token), 'Web archive hierarchy missing: ' + token)

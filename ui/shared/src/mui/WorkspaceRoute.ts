@@ -5,6 +5,7 @@ export const XDRIVE_CORE_WORKSPACE_KEYS = [
   'gallery',
   'sources',
   'transfers',
+  'global-tasks',
   'local-storage',
   'cloud-storage',
 ] as const

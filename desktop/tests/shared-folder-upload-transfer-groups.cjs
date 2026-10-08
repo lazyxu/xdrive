@@ -57,17 +57,28 @@ test('shared upload controller owns folder group and child lifecycle', () => {
 })
 
 test('leaf and group transfer speeds use the correct source', () => {
-  const center = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
-  const groupStart = center.indexOf('function TransferGroupItem')
-  assert.ok(groupStart > 0, 'group component is missing')
-  const leafSource = center.slice(0, groupStart)
-  const groupSource = center.slice(groupStart)
-  assert.ok(leafSource.includes('formatBytesPerSecond(item.instant_bytes_per_second)'), 'leaf instant speed must use the leaf task')
-  assert.ok(leafSource.includes('formatBytesPerSecond(item.average_bytes_per_second)'), 'leaf average speed must use the leaf task')
-  assert.ok(groupSource.includes('const childInstantSpeed = children.reduce('), 'group instant speed must aggregate children')
-  assert.ok(groupSource.includes('const childAverageSpeed = children.reduce('), 'group average speed must aggregate children')
-  assert.ok(groupSource.includes('label="当前速度">{formatBytesPerSecond(instantSpeed)}'), 'group UI must render aggregate instant speed')
-  assert.ok(groupSource.includes('label="平均速度">{formatBytesPerSecond(averageSpeed)}'), 'group UI must render aggregate average speed')
+  const ts = require('typescript')
+  const output = ts.transpileModule(read('ui', 'shared', 'src', 'transfers.ts'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const loaded = { exports: {} }
+  new Function('exports', 'require', 'module', output)(loaded.exports, require, loaded)
+  const { xDriveTransferTree, xDriveTransferTreeSpeed, xDriveTransferCurrentBytesPerSecond } = loaded.exports
+  const now = Date.now()
+  const leaf = {
+    id: 'leaf', parent_id: 'folder', root_id: 'folder', file_name: 'leaf.bin',
+    kind: 'upload', direction: 'upload', state: 'running', phase: 'transferring',
+    bytes_done: 1024, bytes_total: 4096, percent: 25,
+    instant_bytes_per_second: 1024, average_bytes_per_second: 5000,
+    elapsed_ms: 1000, retry_count: 0, retryable: false,
+    started_at: new Date(now - 1000).toISOString(), updated_at: new Date(now).toISOString(),
+  }
+  const group = { ...leaf, id: 'folder', parent_id: undefined, scope: 'group', instant_bytes_per_second: 99999 }
+  const sibling = { ...leaf, id: 'sibling', instant_bytes_per_second: 2048 }
+  const root = xDriveTransferTree([group, leaf, sibling])[0]
+  assert.equal(xDriveTransferCurrentBytesPerSecond(leaf, now), 1024, 'a leaf keeps its own fresh network rate')
+  assert.equal(xDriveTransferTreeSpeed(root, now).bytesPerSecond, 3072, 'a folder counts child rates once')
+  assert.equal(xDriveTransferTreeSpeed(root, now + 3000).bytesPerSecond, 0, 'a stalled folder does not fall back to parent or average rates')
 })
 
 test('completed skipped children count as processed group bytes without inventing transfer speed', () => {

@@ -106,6 +106,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-retry",
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
+	"transfer-history-scope",
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -351,7 +352,7 @@ type desktopIPCController interface {
 	ProgressTransfer(string, int64, int64) error
 	UpdateTransferGroup(string, transfer.GroupProgress) error
 	FinishTransfer(string, string, string, bool) error
-	ClearTransferHistory() (uint64, []transfer.Task)
+	ClearTransferHistory(...string) (uint64, []transfer.Task)
 	Diagnostics(context.Context) diagnostics.Report
 	Reconnect(context.Context) error
 	RepairSyncRoot(context.Context) error
@@ -4751,8 +4752,13 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (h *desktopIPCHandler) clearTransferHistory(w http.ResponseWriter, _ *http.Request) {
-	revision, items := h.ctrl.ClearTransferHistory()
+func (h *desktopIPCHandler) clearTransferHistory(w http.ResponseWriter, r *http.Request) {
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if scope != "" && scope != "all" && scope != "network" && scope != "local" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_scope", "transfer history scope must be all, network or local")
+		return
+	}
+	revision, items := h.ctrl.ClearTransferHistory(scope)
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
 }
 
