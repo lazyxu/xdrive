@@ -85,7 +85,9 @@ test('shared FileExplorer shell accepts one reusable left navigation pane', () =
     'navigationPane?: ReactNode',
     'data-xdrive-file-explorer-navigation-pane',
     '{navigationPane}',
-    '<Divider orientation="vertical" flexItem />',
+    'data-xdrive-file-explorer-navigation-splitter',
+    'viewPreferences.navigationPaneWidth',
+    'viewPreferences.navigationPaneVisible',
   ]) {
     assert.ok(explorer.includes(token), 'FileExplorer navigation-pane shell missing: ' + token)
   }
@@ -155,4 +157,26 @@ test('navigation tree is a complete internal and external drop target', () => {
     desktop.includes('void dropExternalFolderEntriesToCrumb(payload, target)'),
     'Desktop navigation tree must support dropped local folders when folder upload is available',
   )
+})
+
+
+test('navigation sections collapse independently and persist locally', () => {
+  for (const token of [
+    "type XDriveFileExplorerNavigationSection = 'quickAccess' | 'favorites' | 'recent' | 'tree'",
+    "defaultNavigationSectionPreferencesKey = 'xdrive.files.navigation_sections'",
+    'loadNavigationSectionState',
+    'window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))',
+    "toggleSection('quickAccess')",
+    "toggleSection('favorites')",
+    "toggleSection('recent')",
+    "toggleSection('tree')",
+    'expandedSections.quickAccess',
+    'expandedSections.favorites',
+    'expandedSections.recent',
+    'expandedSections.tree',
+  ]) {
+    assert.ok(pane.includes(token), 'navigation section persistence missing: ' + token)
+  }
+  assert.ok(pane.includes("width: '100%'"), 'navigation pane must inherit the resizable shell width')
+  assert.equal(pane.includes('width: 232'), false, 'navigation pane must not keep a fixed width')
 })

@@ -214,3 +214,12 @@ test('deep tab workflows stay in shared navigation and shared MUI', () => {
     }
   }
 })
+
+
+test('active tabs use neutral surface hierarchy instead of a strong primary underline', () => {
+  assert.ok(tabs.includes("bgcolor: active ? 'background.paper' : 'transparent'"))
+  assert.ok(tabs.includes("borderTopColor: active ? 'divider' : 'transparent'"))
+  assert.ok(tabs.includes("borderBottomColor: active ? 'background.paper' : 'transparent'"))
+  assert.ok(tabs.includes("fontWeight: active ? 600 : 400"))
+  assert.equal(tabs.includes('inset 0 -2px 0 var(--mui-palette-primary-main)'), false)
+})

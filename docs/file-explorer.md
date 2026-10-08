@@ -420,6 +420,13 @@ The Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like i
 - the folder tree is manually expanded by the user and does not auto-expand or highlight itself merely because navigation changed elsewhere;
 - Trash, Quick Access, Favorites, and Recent item icons reserve the same left disclosure-slot width as the root folder row, so their visual icon column lines up with **我的文件**;
 - Grid item visual boxes are square at every density and file/folder fallback icons use the same size token within each density.
+- the left navigation pane is resizable from **176–320px**, can be hidden/restored from shared FileExplorer chrome, and persists its local width/visibility through the existing view-preference state;
+- the Details/Inspector pane is resizable from **260–480px** and persists its local width while retaining the existing explicit show/hide control;
+- Quick Access, Favorites, Recent, and the folder tree are independently collapsible and persist local section state;
+- standard Details rows are single-line at **36px normal / 28px compact**; secondary labels do not create a second line in the normal file list;
+- active tabs use neutral surface hierarchy plus a one-pixel divider edge rather than a strong primary-color underline;
+- native Desktop drag-out affordances are invisible until the owning row/tile is hovered or keyboard-focused; Grid keeps the affordance as a top-right overlay and Details does not reserve permanent name-column width for it;
+- Grid icon density uses **five** shared steps (`tiny / small / medium / large / huge`), and the View menu plus Ctrl/Cmd-wheel both use the same ordered size model.
 
 These are presentation contracts only. Search/filter/group ordering, range identity, navigation generations, and Server/Agent ownership remain unchanged.
 

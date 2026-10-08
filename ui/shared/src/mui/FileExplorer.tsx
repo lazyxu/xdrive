@@ -39,6 +39,7 @@ import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
 import ViewCarouselRoundedIcon from '@mui/icons-material/ViewCarouselRounded'
 import ViewColumnRoundedIcon from '@mui/icons-material/ViewColumnRounded'
+import ViewSidebarRoundedIcon from '@mui/icons-material/ViewSidebarRounded'
 import {
   Box,
   Breadcrumbs,
@@ -144,11 +145,14 @@ export type XDriveFileExplorerDetailsLayout = {
 }
 
 export type XDriveFileExplorerDetailsDensity = 'normal' | 'compact'
-export type XDriveFileExplorerGridSize = 'small' | 'medium' | 'large'
+export type XDriveFileExplorerGridSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge'
 
 export type XDriveFileExplorerViewPreferences = {
   detailsDensity: XDriveFileExplorerDetailsDensity
   gridSize: XDriveFileExplorerGridSize
+  navigationPaneVisible: boolean
+  navigationPaneWidth: number
+  inspectorWidth: number
 }
 
 const defaultDetailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [
@@ -228,7 +232,14 @@ function loadFileExplorerDetailsLayout(storageKey?: string) {
   }
 }
 
-const fileExplorerGridSizeOrder: XDriveFileExplorerGridSize[] = ['small', 'medium', 'large']
+const fileExplorerNavigationPaneMinWidth = 176
+const fileExplorerNavigationPaneMaxWidth = 320
+const fileExplorerNavigationPaneDefaultWidth = 232
+const fileExplorerInspectorMinWidth = 260
+const fileExplorerInspectorMaxWidth = 480
+const fileExplorerInspectorDefaultWidth = 312
+
+const fileExplorerGridSizeOrder: XDriveFileExplorerGridSize[] = ['tiny', 'small', 'medium', 'large', 'huge']
 
 const fileExplorerGridMetrics: Record<XDriveFileExplorerGridSize, {
   minColumnWidth: number
@@ -244,6 +255,20 @@ const fileExplorerGridMetrics: Record<XDriveFileExplorerGridSize, {
   itemGap: number
   estimatedRowHeight: number
 }> = {
+  tiny: {
+    minColumnWidth: 72,
+    maxItemWidth: 112,
+    minItemHeight: 84,
+    thumbnailWidth: 36,
+    thumbnailHeight: 36,
+    iconSize: 32,
+    folderIconSize: 32,
+    gap: 0.5,
+    padding: 0.75,
+    itemPadding: 0.5,
+    itemGap: 0.375,
+    estimatedRowHeight: 96,
+  },
   small: {
     minColumnWidth: 88,
     maxItemWidth: 136,
@@ -286,21 +311,56 @@ const fileExplorerGridMetrics: Record<XDriveFileExplorerGridSize, {
     itemGap: 1,
     estimatedRowHeight: 186,
   },
+  huge: {
+    minColumnWidth: 188,
+    maxItemWidth: 292,
+    minItemHeight: 216,
+    thumbnailWidth: 152,
+    thumbnailHeight: 152,
+    iconSize: 104,
+    folderIconSize: 104,
+    gap: 1.5,
+    padding: 1.75,
+    itemPadding: 1.5,
+    itemGap: 1,
+    estimatedRowHeight: 236,
+  },
 }
 
 export function xDriveDefaultFileExplorerViewPreferences(): XDriveFileExplorerViewPreferences {
-  return { detailsDensity: 'normal', gridSize: 'medium' }
+  return {
+    detailsDensity: 'normal',
+    gridSize: 'medium',
+    navigationPaneVisible: true,
+    navigationPaneWidth: fileExplorerNavigationPaneDefaultWidth,
+    inspectorWidth: fileExplorerInspectorDefaultWidth,
+  }
 }
 
 export function xDriveNormalizeFileExplorerViewPreferences(value: unknown): XDriveFileExplorerViewPreferences {
   const fallback = xDriveDefaultFileExplorerViewPreferences()
   if (!value || typeof value !== 'object') return fallback
-  const input = value as { detailsDensity?: unknown; gridSize?: unknown }
+  const input = value as {
+    detailsDensity?: unknown
+    gridSize?: unknown
+    navigationPaneVisible?: unknown
+    navigationPaneWidth?: unknown
+    inspectorWidth?: unknown
+  }
   const detailsDensity: XDriveFileExplorerDetailsDensity = input.detailsDensity === 'compact' ? 'compact' : 'normal'
   const gridSize: XDriveFileExplorerGridSize = fileExplorerGridSizeOrder.includes(input.gridSize as XDriveFileExplorerGridSize)
     ? input.gridSize as XDriveFileExplorerGridSize
     : fallback.gridSize
-  return { detailsDensity, gridSize }
+  const navigationPaneVisible = typeof input.navigationPaneVisible === 'boolean'
+    ? input.navigationPaneVisible
+    : fallback.navigationPaneVisible
+  const navigationPaneWidth = typeof input.navigationPaneWidth === 'number' && Number.isFinite(input.navigationPaneWidth)
+    ? Math.round(Math.max(fileExplorerNavigationPaneMinWidth, Math.min(fileExplorerNavigationPaneMaxWidth, input.navigationPaneWidth)))
+    : fallback.navigationPaneWidth
+  const inspectorWidth = typeof input.inspectorWidth === 'number' && Number.isFinite(input.inspectorWidth)
+    ? Math.round(Math.max(fileExplorerInspectorMinWidth, Math.min(fileExplorerInspectorMaxWidth, input.inspectorWidth)))
+    : fallback.inspectorWidth
+  return { detailsDensity, gridSize, navigationPaneVisible, navigationPaneWidth, inspectorWidth }
 }
 
 export function xDriveFileExplorerNextGridSize(
@@ -656,8 +716,8 @@ export function XDriveFileExplorerCommandButton({ sx, ...props }: ButtonProps) {
   )
 }
 
-const detailsNormalRowHeight = 38
-const detailsCompactRowHeight = 30
+const detailsNormalRowHeight = 36
+const detailsCompactRowHeight = 28
 const detailsHeaderHeight = 32
 const detailsVirtualizationThreshold = 240
 const detailsOverscan = 10
@@ -899,6 +959,8 @@ export function XDriveFileExplorer({
   const propertiesMediaDetailsRequestRef = useRef(0)
   const [, setMediaDetailsRevision] = useState(0)
   const detailsResizeRef = useRef<{ key: XDriveFileExplorerDetailsColumnKey; startX: number; startWidth: number } | null>(null)
+  const navigationPaneResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     mouseX: number
     mouseY: number
@@ -2267,6 +2329,69 @@ export function XDriveFileExplorer({
     setViewPreferencesAnchor(null)
   }
 
+  const toggleNavigationPane = () => {
+    setViewPreferences((current) => ({
+      ...current,
+      navigationPaneVisible: !current.navigationPaneVisible,
+    }))
+  }
+
+  const startNavigationPaneResize = (event: ReactPointerEvent<HTMLElement>) => {
+    event.preventDefault()
+    navigationPaneResizeRef.current = {
+      startX: event.clientX,
+      startWidth: viewPreferences.navigationPaneWidth,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const moveNavigationPaneResize = (event: ReactPointerEvent<HTMLElement>) => {
+    const state = navigationPaneResizeRef.current
+    if (!state) return
+    const width = Math.round(Math.max(
+      fileExplorerNavigationPaneMinWidth,
+      Math.min(fileExplorerNavigationPaneMaxWidth, state.startWidth + event.clientX - state.startX),
+    ))
+    setViewPreferences((current) => (
+      current.navigationPaneWidth === width ? current : { ...current, navigationPaneWidth: width }
+    ))
+  }
+
+  const endNavigationPaneResize = (event: ReactPointerEvent<HTMLElement>) => {
+    navigationPaneResizeRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const startInspectorResize = (event: ReactPointerEvent<HTMLElement>) => {
+    event.preventDefault()
+    inspectorResizeRef.current = {
+      startX: event.clientX,
+      startWidth: viewPreferences.inspectorWidth,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const moveInspectorResize = (event: ReactPointerEvent<HTMLElement>) => {
+    const state = inspectorResizeRef.current
+    if (!state) return
+    const width = Math.round(Math.max(
+      fileExplorerInspectorMinWidth,
+      Math.min(fileExplorerInspectorMaxWidth, state.startWidth - (event.clientX - state.startX)),
+    ))
+    setViewPreferences((current) => (
+      current.inspectorWidth === width ? current : { ...current, inspectorWidth: width }
+    ))
+  }
+
+  const endInspectorResize = (event: ReactPointerEvent<HTMLElement>) => {
+    inspectorResizeRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
   const handleViewWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (viewMode !== 'grid' || !(event.ctrlKey || event.metaKey) || event.deltaY === 0) return
     event.preventDefault()
@@ -3139,7 +3264,7 @@ export function XDriveFileExplorer({
 
   const nativeDragOutHandle = (
     item: XDriveFileExplorerItem,
-    overlay = false,
+    placement: 'details' | 'grid',
   ) => onNativeDragOutItem ? (
     <Box
       component="span"
@@ -3162,9 +3287,10 @@ export function XDriveFileExplorer({
         event.stopPropagation()
       }}
       sx={{
-        position: overlay ? 'absolute' : 'static',
-        top: overlay ? 4 : undefined,
-        right: overlay ? 4 : undefined,
+        position: 'absolute',
+        top: placement === 'grid' ? 4 : '50%',
+        right: 4,
+        transform: placement === 'details' ? 'translateY(-50%)' : undefined,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -3173,11 +3299,13 @@ export function XDriveFileExplorer({
         height: 20,
         borderRadius: 0.75,
         color: 'text.secondary',
-        bgcolor: overlay ? 'background.paper' : 'transparent',
-        boxShadow: overlay ? 1 : undefined,
+        bgcolor: 'background.paper',
+        boxShadow: 1,
         cursor: 'grab',
-        opacity: 0.55,
-        zIndex: overlay ? 3 : undefined,
+        opacity: 0,
+        pointerEvents: 'none',
+        zIndex: 3,
+        transition: 'opacity 120ms ease',
         '&:hover': { opacity: 1, bgcolor: 'action.hover' },
         '&:active': { cursor: 'grabbing' },
       }}
@@ -3276,6 +3404,10 @@ export function XDriveFileExplorer({
           outlineColor: 'primary.main',
           outlineOffset: -2,
           '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+          '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
+            opacity: 0.72,
+            pointerEvents: 'auto',
+          },
           '&:focus-visible': {
             outline: '2px solid',
             outlineColor: 'primary.main',
@@ -3284,31 +3416,36 @@ export function XDriveFileExplorer({
         }}
       >
         {visibleDetailsColumns.map((key) => (
-          <Box key={key} role="cell" sx={{ minWidth: 0, overflow: 'hidden' }}>
+          <Box
+            key={key}
+            role="cell"
+            sx={{
+              minWidth: 0,
+              overflow: 'hidden',
+              position: key === 'name' ? 'relative' : undefined,
+            }}
+          >
             {key === 'name' ? (
-              <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
-                <Box
-                          sx={{
-                            width: 24,
-                            height: 24,
-                            flex: '0 0 24px',
-                            overflow: 'hidden',
-                            borderRadius: 0,
-                          }}
-                        >
-                          {thumbnailForItem(item, false)}
-                        </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  {renderItemName(item, false)}
-                  {viewPreferences.detailsDensity === 'normal' && item.secondaryLabel ? (
-                    <Typography variant="caption" color="text.secondary" noWrap display="block">
-                      {item.secondaryLabel}
-                    </Typography>
-                  ) : null}
-                </Box>
-                {availabilityIndicator(item)}
-                {!renaming ? nativeDragOutHandle(item) : null}
-              </Stack>
+              <>
+                <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
+                  <Box
+                    sx={{
+                      width: 24,
+                      height: 24,
+                      flex: '0 0 24px',
+                      overflow: 'hidden',
+                      borderRadius: 0,
+                    }}
+                  >
+                    {thumbnailForItem(item, false)}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    {renderItemName(item, false)}
+                  </Box>
+                  {availabilityIndicator(item)}
+                </Stack>
+                {!renaming ? nativeDragOutHandle(item, 'details') : null}
+              </>
             ) : (
               <Typography variant="body2" color="text.secondary" noWrap>
                 {detailsColumnText(item, key)}
@@ -3413,6 +3550,10 @@ export function XDriveFileExplorer({
           contentVisibility: 'auto',
           containIntrinsicSize: `${gridMetrics.maxItemWidth}px ${gridMetrics.estimatedRowHeight}px`,
           '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' },
+          '&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]': {
+            opacity: 0.72,
+            pointerEvents: 'auto',
+          },
           '&:focus-visible': {
             outline: '2px solid',
             outlineColor: 'primary.main',
@@ -3434,7 +3575,7 @@ export function XDriveFileExplorer({
         >
           {thumbnailForItem(item)}
           {availabilityIndicator(item, true)}
-          {!renaming ? nativeDragOutHandle(item, true) : null}
+          {!renaming ? nativeDragOutHandle(item, 'grid') : null}
         </Box>
         {renderItemName(item, true)}
       </ButtonBase>
@@ -4054,6 +4195,17 @@ export function XDriveFileExplorer({
 
         {commandBarEnd}
 
+        {navigationPane ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ViewSidebarRoundedIcon />}
+            title={viewPreferences.navigationPaneVisible ? '隐藏导航窗格' : '显示导航窗格'}
+            aria-pressed={viewPreferences.navigationPaneVisible}
+            onClick={toggleNavigationPane}
+          >
+            导航窗格
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+
         <XDriveFileExplorerCommandButton
           startIcon={<InfoOutlinedIcon />}
           title={fileExplorerShortcutTitle('显示或隐藏详细信息窗格', 'toggle-inspector', keyboardProfile)}
@@ -4091,6 +4243,12 @@ export function XDriveFileExplorer({
           </MenuItem>
           <Divider />
           <MenuItem
+            selected={viewMode === 'grid' && viewPreferences.gridSize === 'tiny'}
+            onClick={() => chooseGridSize('tiny')}
+          >
+            超小图标
+          </MenuItem>
+          <MenuItem
             selected={viewMode === 'grid' && viewPreferences.gridSize === 'small'}
             onClick={() => chooseGridSize('small')}
           >
@@ -4107,6 +4265,12 @@ export function XDriveFileExplorer({
             onClick={() => chooseGridSize('large')}
           >
             大图标
+          </MenuItem>
+          <MenuItem
+            selected={viewMode === 'grid' && viewPreferences.gridSize === 'huge'}
+            onClick={() => chooseGridSize('huge')}
+          >
+            超大图标
           </MenuItem>
           <Divider />
           <MenuItem disabled sx={{ fontSize: 12 }}>
@@ -4217,15 +4381,49 @@ export function XDriveFileExplorer({
       <Divider />
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {navigationPane ? (
+      {navigationPane && viewPreferences.navigationPaneVisible ? (
         <>
           <Box
             data-xdrive-file-explorer-navigation-pane
-            sx={{ minWidth: 0, minHeight: 0, flex: '0 0 auto', display: 'flex' }}
+            sx={{
+              width: viewPreferences.navigationPaneWidth,
+              minWidth: viewPreferences.navigationPaneWidth,
+              maxWidth: viewPreferences.navigationPaneWidth,
+              minHeight: 0,
+              flex: '0 0 auto',
+              display: 'flex',
+            }}
           >
             {navigationPane}
           </Box>
-          <Divider orientation="vertical" flexItem />
+          <Box
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整导航窗格宽度"
+            data-xdrive-file-explorer-navigation-splitter
+            onPointerDown={startNavigationPaneResize}
+            onPointerMove={moveNavigationPaneResize}
+            onPointerUp={endNavigationPaneResize}
+            onPointerCancel={endNavigationPaneResize}
+            sx={{
+              width: 6,
+              flex: '0 0 6px',
+              cursor: 'col-resize',
+              position: 'relative',
+              touchAction: 'none',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: '50%',
+                width: '1px',
+                bgcolor: 'divider',
+                transform: 'translateX(-0.5px)',
+              },
+              '&:hover::after': { bgcolor: 'text.disabled' },
+            }}
+          />
         </>
       ) : null}
       <Box
@@ -4593,12 +4791,39 @@ export function XDriveFileExplorer({
       </Box>
       {inspectorOpen ? (
         <>
-          <Divider orientation="vertical" flexItem />
+          <Box
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整详细信息窗格宽度"
+            data-xdrive-file-explorer-inspector-splitter
+            onPointerDown={startInspectorResize}
+            onPointerMove={moveInspectorResize}
+            onPointerUp={endInspectorResize}
+            onPointerCancel={endInspectorResize}
+            sx={{
+              width: 6,
+              flex: '0 0 6px',
+              cursor: 'col-resize',
+              position: 'relative',
+              touchAction: 'none',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: '50%',
+                width: '1px',
+                bgcolor: 'divider',
+                transform: 'translateX(-0.5px)',
+              },
+              '&:hover::after': { bgcolor: 'text.disabled' },
+            }}
+          />
           <Box
             data-xdrive-file-explorer-inspector
             aria-label="文件详细信息"
             sx={{
-              width: 'clamp(248px, 27vw, 328px)',
+              width: viewPreferences.inspectorWidth,
               flexShrink: 0,
               minHeight: 0,
               overflowY: 'auto',

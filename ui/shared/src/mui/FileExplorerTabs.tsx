@@ -163,9 +163,11 @@ export function XDriveFileExplorerTabs({
                 borderRight: 1,
                 borderColor: 'divider',
                 bgcolor: active ? 'background.paper' : 'transparent',
-                boxShadow: active
-                  ? 'inset 0 -2px 0 var(--mui-palette-primary-main)'
-                  : 'none',
+                borderTop: 1,
+                borderTopColor: active ? 'divider' : 'transparent',
+                borderBottom: 1,
+                borderBottomColor: active ? 'background.paper' : 'transparent',
+                boxShadow: 'none',
                 '&::before': currentDrop ? {
                   content: '""',
                   position: 'absolute',
@@ -204,7 +206,11 @@ export function XDriveFileExplorerTabs({
                 }}
               >
                 <FolderRoundedIcon sx={{ fontSize: 17, color: '#ffcb3d', flexShrink: 0 }} />
-                <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                <Typography
+                  variant="body2"
+                  noWrap
+                  sx={{ minWidth: 0, fontWeight: active ? 600 : 400 }}
+                >
                   {tab.label}
                 </Typography>
               </ButtonBase>
