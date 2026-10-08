@@ -481,7 +481,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'playsInline',
     'preload="metadata"',
     'loadStartedRef.current',
-    'loadMotion(onProgress)',
+    'loader(onProgress)',
     "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",
     '按住播放，松开停止',
     'aria-pressed={playing}',

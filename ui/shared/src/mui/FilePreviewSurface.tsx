@@ -94,6 +94,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [textPreview, setTextPreview] = useState<XDriveFileTextPreview | null>(null)
   const [previewURL, setPreviewURL] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mediaReady, setMediaReady] = useState(false)
   const [failed, setFailed] = useState(false)
   const previewURLRef = useRef('')
   const previewGenerationRef = useRef(0)
@@ -323,6 +324,17 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (current) revokePreviewURL(current)
   }, [])
 
+  const markMediaReady = useCallback((url: string) => {
+    if (previewURLRef.current !== url) return
+    setMediaReady(true)
+  }, [])
+
+  const markMediaFailed = useCallback((url: string) => {
+    if (previewURLRef.current !== url) return
+    setMediaReady(false)
+    setFailed(true)
+  }, [])
+
   useEffect(() => {
     let active = true
     const generation = previewGenerationRef.current + 1
@@ -332,6 +344,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setTextPreview(null)
     assignPreviewURL('')
     setLoading(false)
+    setMediaReady(false)
     setFailed(false)
 
     // Images own their two decode-gated layers, including pending-source display.
@@ -392,6 +405,34 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewTargetRevision,
   ])
 
+  const mediaPresentationLoading = Boolean(previewURL) &&
+    (previewKind === 'video' || previewKind === 'audio' || previewKind === 'pdf') &&
+    !mediaReady &&
+    !failed
+
+  const withMediaLoading = (content: ReactNode) => (
+    <Box
+      data-xdrive-preview-media-loading={mediaPresentationLoading || undefined}
+      sx={{ position: 'relative', width: '100%', height: '100%', minHeight: 0 }}
+    >
+      {content}
+      {mediaPresentationLoading ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'grid',
+            placeItems: 'center',
+            pointerEvents: 'none',
+            bgcolor: 'rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <CircularProgress size={26} aria-label="正在加载预览" />
+        </Box>
+      ) : null}
+    </Box>
+  )
+
   const body = (() => {
     if (target && previewKind === 'live_photo') {
       return (
@@ -411,6 +452,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               still={still}
               stillReady={ready}
               loadMotion={livePhotoMotionLoader}
+              motionKey={JSON.stringify([target.id, target.revision])}
               label={target.name ? `${target.name} 实况照片` : '实况照片'}
             />
           )}
@@ -526,7 +568,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         </Box>
       )
     }
-    if (failed) return fallback
+    if (failed) {
+      return fallback ?? (
+        <Typography role="alert" color="text.secondary">此文件暂时无法预览</Typography>
+      )
+    }
     if (previewKind === 'text' && textPreview) {
       return (
         <Stack spacing={0.5} sx={{ width: '100%', minWidth: 0, minHeight: 0, p: 1, alignSelf: 'stretch' }}>
@@ -556,11 +602,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
     if (!previewURL) return fallback
     if (previewKind === 'video') {
-      return mediaTransform ? (
+      return withMediaLoading(mediaTransform ? (
         <XDriveTransformedVideoPreview
           src={previewURL}
           transform={mediaTransform}
-          onError={() => setFailed(true)}
+          onReady={() => markMediaReady(previewURL)}
+          onError={() => markMediaFailed(previewURL)}
         />
       ) : (
         <Box
@@ -569,33 +616,39 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           controls
           playsInline
           preload="metadata"
-          onError={() => setFailed(true)}
+          onLoadedData={() => markMediaReady(previewURL)}
+          onCanPlay={() => markMediaReady(previewURL)}
+          onError={() => markMediaFailed(previewURL)}
           sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
         />
-      )
+      ))
     }
     if (previewKind === 'audio') {
-      return (
+      return withMediaLoading(
         <Box sx={{ width: '100%', px: 1.5, display: 'flex', alignItems: 'center' }}>
           <Box
             component="audio"
             src={previewURL}
             controls
             preload="metadata"
-            onError={() => setFailed(true)}
+            onLoadedMetadata={() => markMediaReady(previewURL)}
+            onCanPlay={() => markMediaReady(previewURL)}
+            onError={() => markMediaFailed(previewURL)}
             sx={{ width: '100%' }}
           />
-        </Box>
+        </Box>,
       )
     }
     if (previewKind === 'pdf') {
-      return (
+      return withMediaLoading(
         <Box
           component="iframe"
           src={previewURL}
           title={target?.name || 'PDF 预览'}
+          onLoad={() => markMediaReady(previewURL)}
+          onError={() => markMediaFailed(previewURL)}
           sx={{ width: '100%', height: '100%', border: 0, bgcolor: 'background.paper' }}
-        />
+        />,
       )
     }
     return fallback
@@ -604,7 +657,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   return (
     <Box
       data-xdrive-file-preview-kind={previewKind}
-      aria-busy={loading || undefined}
+      aria-busy={loading || mediaPresentationLoading || undefined}
       sx={{
         width: '100%',
         minWidth: 0,

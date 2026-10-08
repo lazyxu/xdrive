@@ -103,6 +103,7 @@ export function XDriveMediaViewerContent({
         key={item.node.id}
         label={item.node.name}
         loadMotion={loadOpenLivePhotoMotion}
+        motionKey={JSON.stringify([item.node.id, item.node.revision])}
         still={(
           <XDriveFilePreviewSurface
             target={target}
