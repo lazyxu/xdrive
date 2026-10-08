@@ -894,7 +894,10 @@ export default function WebFileExplorer({
             lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
             trashActive={trashActive}
-            onNavigateTrash={onOpenTrash}
+            onNavigateTrash={() => {
+              beginNavigationIntent()
+              onOpenTrash()
+            }}
             loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => {
               onCloseTrash()

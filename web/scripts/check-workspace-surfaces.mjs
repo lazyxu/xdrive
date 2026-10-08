@@ -120,7 +120,9 @@ requireText(fileExplorerActions, [
 
 requireText(webFileExplorer, [
   'presentation="workspace"',
-  'onNavigateTrash={onOpenTrash}',
+  'onNavigateTrash={() => {',
+  'beginNavigationIntent()',
+  'onOpenTrash()',
   'trashActive ? trash.items : explorerItems',
   'xDriveFileExplorerBackgroundMenuItems({',
   'xDriveFileExplorerStandardItemMenuItems({',
@@ -128,7 +130,9 @@ requireText(webFileExplorer, [
 
 requireText(desktopFileExplorer, [
   'presentation="workspace"',
-  'onNavigateTrash={onOpenTrash}',
+  'onNavigateTrash={() => {',
+  'beginNavigationIntent()',
+  'onOpenTrash()',
   'trashActive ? trash.items : explorerItems',
   'xDriveFileExplorerBackgroundMenuItems({',
   'xDriveFileExplorerStandardItemMenuItems({',

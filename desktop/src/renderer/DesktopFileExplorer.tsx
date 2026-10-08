@@ -1899,7 +1899,10 @@ const desktopTransferLifecycleChildBatchSize = 1000
             lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
             trashActive={trashActive}
-            onNavigateTrash={onOpenTrash}
+            onNavigateTrash={() => {
+              beginNavigationIntent()
+              onOpenTrash()
+            }}
             loadDirectoryPage={loadTreeDirectoryPage}
             onNavigate={(nextCrumbs) => {
               onCloseTrash()
