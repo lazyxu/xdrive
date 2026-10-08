@@ -59,6 +59,7 @@ import type {
   XDriveFileExplorerGrouping,
   XDriveFileExplorerSearchAvailabilityOption,
   XDriveFileExplorerSearchSourceOption,
+  XDriveFileExplorerMediaDetailsRef,
 } from '@xdrive/shared'
 
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
@@ -125,6 +126,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported = false,
   previewStreamSupported = false,
   propertiesStatsSupported = false,
+  mediaDetailsSupported = false,
   fileAvailabilitySupported = false,
   openWithSupported = false,
   quickAccessSupported = false,
@@ -174,6 +176,7 @@ export default function DesktopFileExplorer({
   textPreviewSupported?: boolean
   previewStreamSupported?: boolean
   propertiesStatsSupported?: boolean
+  mediaDetailsSupported?: boolean
   fileAvailabilitySupported?: boolean
   openWithSupported?: boolean
   quickAccessSupported?: boolean
@@ -581,6 +584,17 @@ export default function DesktopFileExplorer({
       signal.removeEventListener('abort', cancel)
     }
   }, [propertiesStatsSupported])
+
+  const loadMediaDetails = useCallback(async (
+    refs: readonly XDriveFileExplorerMediaDetailsRef[],
+    signal: AbortSignal,
+  ) => {
+    if (!mediaDetailsSupported || signal.aborted) return []
+    const result = await window.xdriveDesktop.agent.cloudFileMediaDetails([...refs])
+    if (signal.aborted) return []
+    if (!result.ok) throw new Error(result.error.message)
+    return result.data
+  }, [mediaDetailsSupported])
 
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
@@ -1350,6 +1364,7 @@ export default function DesktopFileExplorer({
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
+        loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}
         getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}

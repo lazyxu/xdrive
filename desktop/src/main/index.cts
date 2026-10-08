@@ -76,6 +76,7 @@ import {
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
   type AgentCloudFilePropertiesStats,
+  type AgentCloudFileMediaDetails,
   type AgentBackgroundTask,
   type AgentBackgroundTaskPage,
   type AgentBackgroundTaskActiveSummary,
@@ -3037,6 +3038,15 @@ function registerIPCHandlers() {
         rememberCancelledFilePropertiesRequest(requestID)
       }
       return { cancelled: true }
+    }, false),
+  )
+  ipcMain.handle(
+    'agent:cloud-file-media-details',
+    (_event, items: unknown) => runAgentAction<AgentCloudFileMediaDetails[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      requireAgentCapability(hello, 'file-media-details')
+      return requireAgentClient().cloudFileMediaDetails(normalizeCloudBatchItems(items))
     }, false),
   )
 

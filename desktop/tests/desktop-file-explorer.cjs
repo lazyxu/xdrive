@@ -386,3 +386,10 @@ test('Desktop FileExplorer remounts shared navigation when session identity key 
     'Desktop FileExplorer must remount when the Server+username navigation session key changes so old-account tabs cannot survive into or be persisted under the new account',
   )
 })
+
+
+test('Desktop media Details columns use capability-gated Agent IPC and the shared FileExplorer loader', () => {
+  assert.ok(explorer.includes('mediaDetailsSupported = false'), 'Desktop media-details capability gate is missing')
+  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudFileMediaDetails([...refs])'), 'Desktop media-details Agent bridge is missing')
+  assert.ok(explorer.includes('loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}'), 'Desktop media-details loader is not wired')
+})

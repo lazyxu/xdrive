@@ -434,6 +434,8 @@ export default function App({
     agent.hello?.capabilities.includes('file-recent') ?? false
   const filePropertiesStatsSupported =
     agent.hello?.capabilities.includes('file-properties-stats') ?? false
+  const fileMediaDetailsSupported =
+    agent.hello?.capabilities.includes('file-media-details') ?? false
   const fileAvailabilitySupported = Boolean(
     agent.hello?.platform === 'windows' &&
     agent.hello?.capabilities.includes('file-availability-batch'),
@@ -1924,6 +1926,7 @@ export default function App({
               textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               propertiesStatsSupported: filePropertiesStatsSupported,
+              mediaDetailsSupported: fileMediaDetailsSupported,
               fileAvailabilitySupported,
               openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,

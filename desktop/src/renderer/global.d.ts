@@ -45,6 +45,7 @@ import type {
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
+  XDriveFileExplorerMediaDetails,
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerGrouping,
   XDriveFileQuickAccessItem,
@@ -554,6 +555,9 @@ declare global {
         cloudCancelFilePropertiesStats: (
           requestID: string,
         ) => Promise<DesktopResult<{ cancelled: boolean }>>
+        cloudFileMediaDetails: (
+          items: AgentCloudBatchNodeRef[],
+        ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (

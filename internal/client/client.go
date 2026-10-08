@@ -224,6 +224,14 @@ type FilePropertiesStats struct {
 	Sources            []FilePropertiesSource `json:"sources,omitempty"`
 }
 
+type FileMediaDetails struct {
+	ID         uint64 `json:"id"`
+	Revision   uint64 `json:"revision"`
+	Width      int    `json:"width,omitempty"`
+	Height     int    `json:"height,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
+}
+
 type BackgroundTaskProgress struct {
 	Phase       string   `json:"phase,omitempty"`
 	Current     int64    `json:"current,omitempty"`
@@ -829,6 +837,20 @@ func (c *Client) FilePropertiesStats(ctx context.Context, items []BatchNodeRef) 
 		&out,
 	)
 	return out, err
+}
+
+func (c *Client) FileMediaDetails(ctx context.Context, items []BatchNodeRef) ([]FileMediaDetails, error) {
+	var out struct {
+		Items []FileMediaDetails `json:"items"`
+	}
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/nodes/media-details",
+		map[string]any{"items": items},
+		&out,
+	)
+	return out.Items, err
 }
 
 func (c *Client) CreateFileOperation(ctx context.Context, operationType string, items []BatchNodeRef, parentID uint64) (FileOperation, error) {

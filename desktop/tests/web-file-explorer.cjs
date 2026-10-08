@@ -361,3 +361,11 @@ test('Web FileExplorer persists tab sessions in an account-scoped shared navigat
     'Web and Desktop must share the same session-restore implementation',
   )
 })
+
+
+test('Web media Details columns use the bounded batch endpoint only through the shared loader', () => {
+  assert.ok(api.includes("'/api/v1/nodes/media-details'"), 'Web media-details endpoint is missing')
+  assert.ok(api.includes('signal,'), 'Web media-details request must accept AbortSignal')
+  assert.ok(explorer.includes('loadMediaDetails={loadMediaDetails}'), 'Web media-details loader is not wired to shared FileExplorer')
+  assert.ok(explorer.includes('api.fileMediaDetails(refs, signal)'), 'Web media-details transport must stay adapter-local')
+})

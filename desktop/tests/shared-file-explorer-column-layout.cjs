@@ -52,17 +52,21 @@ test('Details columns support single and all-column auto fit', () => {
 })
 
 
-test('Details adds optional created/status/availability columns without changing the default four-column layout', () => {
+test('Details adds optional created/status/availability/media columns without changing the default four-column layout', () => {
   for (const token of [
     "const defaultDetailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [",
     "'created',",
     "'status',",
     "'availability',",
+    "'dimensions',",
+    "'duration',",
     'visible: [...defaultDetailsColumnKeys]',
     'order: [...detailsColumnKeys]',
     "created: { label: '创建时间'",
     "status: { label: '状态'",
     "availability: { label: '可用性'",
+    "dimensions: { label: '尺寸'",
+    "duration: { label: '时长'",
   ]) {
     assert.ok(explorer.includes(token), 'optional Details column contract missing: ' + token)
   }
@@ -104,5 +108,31 @@ test('legacy Details layouts keep new columns hidden while normalization appends
     explorer.includes('visible: [...detailsColumnKeys]'),
     false,
     'new optional columns must not become visible by default after upgrade',
+  )
+})
+
+
+test('media Details columns use a bounded viewport-only projection and stay display-only', () => {
+  for (const token of [
+    'loadMediaDetails?: (',
+    "visibleDetailsColumns.includes('dimensions')",
+    "visibleDetailsColumns.includes('duration')",
+    'XDRIVE_FILE_EXPLORER_MEDIA_DETAILS_BATCH_LIMIT',
+    'fileExplorerMediaDetailsCacheLimit = 512',
+    'xDriveFileExplorerMediaDetailsRefs(candidates)',
+    'xDriveFileExplorerMediaDetailsKey',
+    'xDriveMediaFormatDuration(details?.duration_ms)',
+  ]) {
+    assert.ok(explorer.includes(token), `media Details projection missing: ${token}`)
+  }
+  assert.equal(
+    explorer.includes("dimensions: { label: '尺寸', defaultWidth: 140, minWidth: 100, maxWidth: 260, sortKey:"),
+    false,
+    'dimensions must remain display-only',
+  )
+  assert.equal(
+    explorer.includes("duration: { label: '时长', defaultWidth: 110, minWidth: 80, maxWidth: 220, sortKey:"),
+    false,
+    'duration must remain display-only',
   )
 })

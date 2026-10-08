@@ -414,6 +414,14 @@ export type AgentCloudFilePropertiesStats = {
   }>
 }
 
+export type AgentCloudFileMediaDetails = {
+  id: number
+  revision: number
+  width?: number
+  height?: number
+  duration_ms?: number
+}
+
 export type AgentCloudUploadConflictPreflight = {
   conflict: boolean
   target_type?: 'file' | 'dir'
@@ -1825,6 +1833,15 @@ export class AgentIPCClient {
       { items },
       5 * 60_000,
       signal,
+    )
+  }
+
+  cloudFileMediaDetails(items: AgentCloudBatchNodeRef[]) {
+    return this.request<AgentCloudFileMediaDetails[]>(
+      'POST',
+      '/v1/cloud/media-details',
+      { items },
+      10_000,
     )
   }
 
