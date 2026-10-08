@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from 'r
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
-import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material'
 import {
   xDriveClassifyFilePreview,
 } from '../file-preview'
@@ -50,6 +50,8 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   maxHeight?: number | string
   imageFit?: 'contain' | 'cover'
   interactiveImage?: boolean
+  onSwipePrevious?: () => void
+  onSwipeNext?: () => void
   mediaTransform?: XDriveFilePreviewMediaTransform
 }
 
@@ -68,6 +70,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   maxHeight = 420,
   imageFit = 'contain',
   interactiveImage = false,
+  onSwipePrevious,
+  onSwipeNext,
   mediaTransform,
 }: XDriveFilePreviewSurfaceProps<T>) {
   const previewKind = useMemo(
@@ -94,6 +98,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [usingImageFallback, setUsingImageFallback] = useState(false)
   const previewURLRef = useRef('')
   const previewGenerationRef = useRef(0)
+  const coarsePointer = useMediaQuery('(pointer: coarse)')
   const imageDragRef = useRef<{
     pointerID: number
     startX: number
@@ -101,11 +106,25 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     originX: number
     originY: number
   } | null>(null)
+  const imagePointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const imagePinchRef = useRef<{ distance: number; scale: number } | null>(null)
+  const imageSwipeRef = useRef<{
+    pointerID: number
+    startX: number
+    startY: number
+    startedAt: number
+  } | null>(null)
+  const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
+  const touchDoubleTapAtRef = useRef(0)
   const [imageScale, setImageScale] = useState(1)
   const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
 
   const resetImageViewport = useCallback(() => {
     imageDragRef.current = null
+    imagePointersRef.current.clear()
+    imagePinchRef.current = null
+    imageSwipeRef.current = null
+    lastTouchTapRef.current = null
     setImageScale(1)
     setImageOffset({ x: 0, y: 0 })
   }, [])
@@ -120,14 +139,67 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     resetImageViewport()
   }, [resetImageViewport, target?.id, target?.revision])
 
-  const handleImagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (!interactiveImage || imageScale <= 1 || event.button !== 0) return
-    event.preventDefault()
+  const captureImagePointer = (event: ReactPointerEvent<HTMLElement>) => {
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
       // Pointer capture is best-effort across browsers and Electron.
     }
+  }
+
+  const releaseImagePointer = (event: ReactPointerEvent<HTMLElement>) => {
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // Ignore renderers that already released pointer capture.
+    }
+  }
+
+  const handleImagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (!interactiveImage || event.button !== 0) return
+
+    if (event.pointerType === 'touch') {
+      event.preventDefault()
+      imagePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      captureImagePointer(event)
+
+      const points = [...imagePointersRef.current.values()]
+      if (points.length >= 2) {
+        const [first, second] = points
+        imagePinchRef.current = {
+          distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+          scale: imageScale,
+        }
+        imageDragRef.current = null
+        imageSwipeRef.current = null
+        lastTouchTapRef.current = null
+        return
+      }
+
+      if (imageScale > 1) {
+        imageDragRef.current = {
+          pointerID: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: imageOffset.x,
+          originY: imageOffset.y,
+        }
+      } else {
+        imageSwipeRef.current = {
+          pointerID: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          startedAt: Date.now(),
+        }
+      }
+      return
+    }
+
+    if (imageScale <= 1) return
+    event.preventDefault()
+    captureImagePointer(event)
     imageDragRef.current = {
       pointerID: event.pointerId,
       startX: event.clientX,
@@ -138,6 +210,19 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   }, [imageOffset.x, imageOffset.y, imageScale, interactiveImage])
 
   const handleImagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType === 'touch' && imagePointersRef.current.has(event.pointerId)) {
+      imagePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      const pinch = imagePinchRef.current
+      const points = [...imagePointersRef.current.values()]
+      if (pinch && points.length >= 2) {
+        event.preventDefault()
+        const [first, second] = points
+        const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
+        setImageZoom(pinch.scale * distance / pinch.distance)
+        return
+      }
+    }
+
     const drag = imageDragRef.current
     if (!drag || drag.pointerID !== event.pointerId) return
     event.preventDefault()
@@ -145,19 +230,67 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       x: drag.originX + event.clientX - drag.startX,
       y: drag.originY + event.clientY - drag.startY,
     })
-  }, [])
+  }, [setImageZoom])
 
   const handleImagePointerRelease = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    const drag = imageDragRef.current
-    if (!drag || drag.pointerID !== event.pointerId) return
-    imageDragRef.current = null
-    try {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
+    const touch = event.pointerType === 'touch'
+    const wasPinching = touch && imagePinchRef.current !== null
+
+    if (touch) {
+      imagePointersRef.current.delete(event.pointerId)
+      if (imagePointersRef.current.size < 2) imagePinchRef.current = null
+
+      const swipe = imageSwipeRef.current
+      if (!wasPinching && swipe?.pointerID === event.pointerId) {
+        const dx = event.clientX - swipe.startX
+        const dy = event.clientY - swipe.startY
+        const absX = Math.abs(dx)
+        const absY = Math.abs(dy)
+        const elapsed = Date.now() - swipe.startedAt
+        const horizontalSwipe = imageScale <= 1.01 && elapsed <= 700 && absX >= 56 && absX > absY * 1.25
+
+        if (horizontalSwipe) {
+          lastTouchTapRef.current = null
+          if (dx < 0) onSwipeNext?.()
+          else onSwipePrevious?.()
+        } else if (absX < 12 && absY < 12 && elapsed <= 450) {
+          const now = Date.now()
+          const previous = lastTouchTapRef.current
+          if (
+            previous &&
+            now - previous.at <= 320 &&
+            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 32
+          ) {
+            lastTouchTapRef.current = null
+            touchDoubleTapAtRef.current = now
+            setImageZoom(imageScale > 1 ? 1 : 2)
+          } else {
+            lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
+          }
+        }
       }
-    } catch {
-      // Ignore renderers that already released pointer capture.
+      imageSwipeRef.current = null
     }
+
+    const drag = imageDragRef.current
+    if (drag?.pointerID === event.pointerId) imageDragRef.current = null
+    releaseImagePointer(event)
+  }, [imageScale, onSwipeNext, onSwipePrevious, setImageZoom])
+
+  const handleImagePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    imagePointersRef.current.delete(event.pointerId)
+    if (imagePointersRef.current.size < 2) imagePinchRef.current = null
+    if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
+    if (imageSwipeRef.current?.pointerID === event.pointerId) imageSwipeRef.current = null
+    lastTouchTapRef.current = null
+    releaseImagePointer(event)
+  }, [])
+
+  const handleImagePointerLostCapture = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    imagePointersRef.current.delete(event.pointerId)
+    if (imagePointersRef.current.size < 2) imagePinchRef.current = null
+    if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
+    if (imageSwipeRef.current?.pointerID === event.pointerId) imageSwipeRef.current = null
   }, [])
 
   const handleImageWheel = useCallback((event: WheelEvent<HTMLElement>) => {
@@ -365,16 +498,18 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       return (
         <Box
           data-xdrive-preview-zoom={interactiveImage || undefined}
+          data-xdrive-preview-pinch={interactiveImage || undefined}
+          data-xdrive-preview-swipe={interactiveImage && Boolean(onSwipePrevious || onSwipeNext) || undefined}
           onWheel={handleImageWheel}
           onDoubleClick={() => {
-            if (!interactiveImage) return
+            if (!interactiveImage || Date.now() - touchDoubleTapAtRef.current < 500) return
             setImageZoom(imageScale > 1 ? 1 : 2)
           }}
           onPointerDown={handleImagePointerDown}
           onPointerMove={handleImagePointerMove}
           onPointerUp={handleImagePointerRelease}
-          onPointerCancel={handleImagePointerRelease}
-          onLostPointerCapture={() => { imageDragRef.current = null }}
+          onPointerCancel={handleImagePointerCancel}
+          onLostPointerCapture={handleImagePointerLostCapture}
           sx={{
             position: 'relative',
             width: '100%',
@@ -413,7 +548,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               }}
             />
           )}
-          {interactiveImage ? (
+          {interactiveImage && !coarsePointer ? (
             <Stack
               direction="row"
               spacing={0.25}

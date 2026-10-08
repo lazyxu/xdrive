@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -18,6 +18,7 @@ import {
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   XDriveFilePreviewSurface,
@@ -86,8 +87,21 @@ function WebViewerFrame({
   onClose: () => void
   children: ReactNode
 }) {
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const compactImmersive = compactTouch && immersive
   const rootRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<number | null>(null)
+  const touchTapTimerRef = useRef<number | null>(null)
+  const touchPointersRef = useRef(new Set<number>())
+  const touchTapRef = useRef<{
+    pointerID: number
+    startX: number
+    startY: number
+    moved: boolean
+    multi: boolean
+    interactive: boolean
+  } | null>(null)
+  const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const [chromeVisible, setChromeVisible] = useState(true)
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
 
@@ -103,13 +117,90 @@ function WebViewerFrame({
     }
   }, [immersive])
 
+  const clearTouchTapTimer = useCallback(() => {
+    if (touchTapTimerRef.current !== null) {
+      window.clearTimeout(touchTapTimerRef.current)
+      touchTapTimerRef.current = null
+    }
+  }, [])
+
+  const handleTouchPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!compactImmersive || event.pointerType !== 'touch') return
+    touchPointersRef.current.add(event.pointerId)
+    if (touchPointersRef.current.size > 1) {
+      if (touchTapRef.current) touchTapRef.current.multi = true
+      clearTouchTapTimer()
+      return
+    }
+    const target = event.target instanceof HTMLElement ? event.target : null
+    touchTapRef.current = {
+      pointerID: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      multi: false,
+      interactive: Boolean(target?.closest(
+        'button, input, textarea, select, video, audio, iframe, [role="button"], [role="slider"], [contenteditable="true"]',
+      )),
+    }
+  }
+
+  const handleTouchPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const tap = touchTapRef.current
+    if (!tap || tap.pointerID !== event.pointerId) return
+    if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 10) tap.moved = true
+  }
+
+  const handleTouchPointerRelease = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'touch') return
+    touchPointersRef.current.delete(event.pointerId)
+    const tap = touchTapRef.current
+    if (!tap || tap.pointerID !== event.pointerId) return
+    touchTapRef.current = null
+    if (tap.moved || tap.multi || tap.interactive) return
+
+    const now = Date.now()
+    const previous = lastTouchTapRef.current
+    if (
+      previous &&
+      now - previous.at <= 320 &&
+      Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 32
+    ) {
+      lastTouchTapRef.current = null
+      clearTouchTapTimer()
+      return
+    }
+
+    lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
+    const hideChrome = chromeVisible
+    clearTouchTapTimer()
+    touchTapTimerRef.current = window.setTimeout(() => {
+      touchTapTimerRef.current = null
+      if (hideChrome) {
+        if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+        setChromeVisible(false)
+      } else {
+        showChrome()
+      }
+    }, 260)
+  }
+
+  const handleTouchPointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    touchPointersRef.current.delete(event.pointerId)
+    if (touchTapRef.current?.pointerID === event.pointerId) touchTapRef.current = null
+  }
+
   useEffect(() => {
     rootRef.current?.focus()
     showChrome()
     return () => {
       if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+      clearTouchTapTimer()
+      touchPointersRef.current.clear()
+      touchTapRef.current = null
     }
-  }, [showChrome])
+  }, [clearTouchTapTimer, showChrome])
 
   useEffect(() => {
     if (!slideshow || !slideshowPlaying) return
@@ -152,7 +243,11 @@ function WebViewerFrame({
       ref={rootRef}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
-      onMouseMove={showChrome}
+      onMouseMove={compactTouch ? undefined : showChrome}
+      onPointerDownCapture={handleTouchPointerDown}
+      onPointerMoveCapture={handleTouchPointerMove}
+      onPointerUpCapture={handleTouchPointerRelease}
+      onPointerCancelCapture={handleTouchPointerCancel}
       data-xdrive-web-viewer
       sx={{
         position: 'fixed',
@@ -161,7 +256,8 @@ function WebViewerFrame({
         display: 'flex',
         flexDirection: 'column',
         minWidth: 0,
-        minHeight: 0,
+        minHeight: compactImmersive ? '100vh' : 0,
+        height: compactImmersive ? '100dvh' : undefined,
         outline: 0,
         bgcolor: immersive ? 'black' : 'background.default',
         color: immersive ? 'common.white' : 'text.primary',
@@ -172,8 +268,10 @@ function WebViewerFrame({
         alignItems="center"
         spacing={1}
         sx={{
-          minHeight: 52,
-          px: 1.5,
+          minHeight: compactImmersive ? 56 : 52,
+          px: compactImmersive ? 1 : 1.5,
+          pt: compactImmersive ? 'env(safe-area-inset-top)' : 0,
+          '& .MuiIconButton-root': compactImmersive ? { width: 44, height: 44 } : undefined,
           flexShrink: 0,
           borderBottom: 1,
           borderColor: immersive ? 'rgba(255,255,255,.18)' : 'divider',
@@ -201,8 +299,8 @@ function WebViewerFrame({
             {positionLabel}
           </Typography>
         ) : null}
-        {actions}
-        {slideshow && (canPrevious || canNext) ? (
+        {!compactImmersive ? actions : null}
+        {!compactImmersive && slideshow && (canPrevious || canNext) ? (
           <Tooltip title={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}>
             <IconButton
               size="small"
@@ -220,47 +318,95 @@ function WebViewerFrame({
 
       <Box sx={{ position: 'relative', flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
         {children}
-        <IconButton
-          aria-label="上一个项目"
-          disabled={!canPrevious}
-          onClick={onPrevious}
-          sx={{
-            position: 'absolute',
-            left: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            bgcolor: 'background.paper',
-            boxShadow: 2,
-            opacity: immersive && !chromeVisible ? 0 : 1,
-            pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-            transition: 'opacity 160ms ease',
-            '&:hover': { bgcolor: 'background.paper' },
-          }}
-        >
-          <KeyboardArrowLeftRoundedIcon />
-        </IconButton>
-        <IconButton
-          aria-label="下一个项目"
-          disabled={!canNext}
-          onClick={onNext}
-          sx={{
-            position: 'absolute',
-            right: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            bgcolor: 'background.paper',
-            boxShadow: 2,
-            opacity: immersive && !chromeVisible ? 0 : 1,
-            pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
-            transition: 'opacity 160ms ease',
-            '&:hover': { bgcolor: 'background.paper' },
-          }}
-        >
-          <KeyboardArrowRightRoundedIcon />
-        </IconButton>
+        {!compactImmersive ? (
+          <>
+          <IconButton
+            aria-label="上一个项目"
+            disabled={!canPrevious}
+            onClick={onPrevious}
+            sx={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              bgcolor: 'background.paper',
+              boxShadow: 2,
+              opacity: immersive && !chromeVisible ? 0 : 1,
+              pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
+              transition: 'opacity 160ms ease',
+              '&:hover': { bgcolor: 'background.paper' },
+            }}
+          >
+            <KeyboardArrowLeftRoundedIcon />
+          </IconButton>
+          <IconButton
+            aria-label="下一个项目"
+            disabled={!canNext}
+            onClick={onNext}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              bgcolor: 'background.paper',
+              boxShadow: 2,
+              opacity: immersive && !chromeVisible ? 0 : 1,
+              pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
+              transition: 'opacity 160ms ease',
+              '&:hover': { bgcolor: 'background.paper' },
+            }}
+          >
+            <KeyboardArrowRightRoundedIcon />
+          </IconButton>
+  
+          </>
+        ) : null}
       </Box>
 
-      {quickLook ? (
+      {compactImmersive && (actions || canPrevious || canNext || slideshow) ? (
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="center"
+          spacing={0.5}
+          data-xdrive-web-viewer-mobile-actions
+          sx={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 2,
+            minHeight: 56,
+            px: 1,
+            pb: 'env(safe-area-inset-bottom)',
+            bgcolor: 'rgba(0,0,0,.72)',
+            color: 'common.white',
+            opacity: chromeVisible ? 1 : 0,
+            pointerEvents: chromeVisible ? 'auto' : 'none',
+            transition: 'opacity 160ms ease',
+            '& .MuiIconButton-root': { width: 44, height: 44, color: 'inherit' },
+            '& .MuiIconButton-colorError': { color: 'error.main' },
+          }}
+        >
+          <IconButton aria-label="上一个项目" disabled={!canPrevious} onClick={onPrevious}>
+            <KeyboardArrowLeftRoundedIcon />
+          </IconButton>
+          <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{actions}</Box>
+          {slideshow && (canPrevious || canNext) ? (
+            <IconButton
+              aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
+              onClick={() => setSlideshowPlaying((value) => !value)}
+            >
+              {slideshowPlaying ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
+            </IconButton>
+          ) : null}
+          <IconButton aria-label="下一个项目" disabled={!canNext} onClick={onNext}>
+            <KeyboardArrowRightRoundedIcon />
+          </IconButton>
+        </Stack>
+      ) : null}
+
+      {quickLook && !compactImmersive ? (
         <Typography
           variant="caption"
           textAlign="center"
@@ -566,6 +712,8 @@ function WebPreviewApp({
           )}
           loadLivePhotoMotion={() => api.mediaLivePhotoMotionURL(viewer.node!.id)}
           interactiveImage
+          onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
+          onSwipeNext={viewer.next ? viewer.goNext : undefined}
           fallback={(
             <Box sx={{ width: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
               此文件暂无可用预览
@@ -717,6 +865,8 @@ function WebMediaViewerApp({
             ? (_target, onProgress) => gallerySource.loadLivePhotoMotion!(viewer.node!.id, onProgress)
             : undefined}
           interactiveImage
+          onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
+          onSwipeNext={viewer.next ? viewer.goNext : undefined}
           minHeight={0}
           maxHeight="none"
         />

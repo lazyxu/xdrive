@@ -148,6 +148,8 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
         loadPreviewURL={loadPreviewURL}
         loadLivePhotoMotion={loadLivePhotoMotion}
         interactiveImage
+        onSwipePrevious={canPrevious ? onPrevious : undefined}
+        onSwipeNext={canNext ? onNext : undefined}
         fallback={(
           <Stack spacing={1} alignItems="center" sx={{ color: 'text.secondary', px: 4 }}>
             <InsertDriveFileRoundedIcon sx={{ fontSize: 64 }} />

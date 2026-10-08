@@ -125,6 +125,11 @@ test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip an
     'releasePointerCapture',
     'onWheel={handleImageWheel}',
     'setImageZoom(imageScale > 1 ? 1 : 2)',
+    'imagePointersRef',
+    'imagePinchRef',
+    'imageSwipeRef',
+    'data-xdrive-preview-pinch',
+    'data-xdrive-preview-swipe',
     'Math.min(6, Math.max(1',
   ]) {
     assert.ok(preview.includes(token), 'shared image zoom/pan contract missing: ' + token)
