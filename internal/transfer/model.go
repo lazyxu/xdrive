@@ -124,6 +124,7 @@ type Manager struct {
 	limit    int
 	order    []string
 	entries  map[string]*entry
+	roots    map[string]struct{}
 }
 
 type Handle struct {
@@ -140,6 +141,7 @@ func NewManager(limit int) *Manager {
 		changed:  make(chan struct{}),
 		limit:    limit,
 		entries:  make(map[string]*entry),
+		roots:    make(map[string]struct{}),
 	}
 }
 
@@ -220,6 +222,7 @@ func (m *Manager) Start(spec Spec) *Handle {
 	}
 	m.entries[id] = &entry{task: item, retry: spec.Retry, lastAt: now, rateStartedAt: now}
 	m.order = append(m.order, id)
+	m.roots[rootID] = struct{}{}
 	m.trimLocked()
 	m.touchLocked()
 	return &Handle{manager: m, id: id}
@@ -362,6 +365,7 @@ func (m *Manager) Clear() {
 	}
 	m.entries = make(map[string]*entry)
 	m.order = nil
+	m.roots = make(map[string]struct{})
 	m.touchLocked()
 }
 
@@ -416,6 +420,9 @@ func (m *Manager) ClearHistory() {
 		return
 	}
 	m.order = kept
+	for rootID := range removeRoots {
+		delete(m.roots, rootID)
+	}
 	m.touchLocked()
 }
 
@@ -793,13 +800,13 @@ func (m *Manager) snapshotLocked() []Task {
 }
 
 func (m *Manager) trimLocked() {
-	if m.limit <= 0 || len(m.order) == 0 {
+	if m.limit <= 0 || len(m.roots) <= m.limit {
 		return
 	}
-	for {
-		rootOrder := make([]string, 0, len(m.order))
-		seen := make(map[string]bool)
-		activeRoots := make(map[string]bool)
+	for len(m.roots) > m.limit {
+		rootOrder := make([]string, 0, len(m.roots))
+		seen := make(map[string]bool, len(m.roots))
+		activeRoots := make(map[string]bool, len(m.roots))
 		for _, id := range m.order {
 			e := m.entries[id]
 			if e == nil {
@@ -813,9 +820,6 @@ func (m *Manager) trimLocked() {
 			if activeState(e.task.State) {
 				activeRoots[rootID] = true
 			}
-		}
-		if len(rootOrder) <= m.limit {
-			return
 		}
 
 		removeRoot := ""
@@ -844,6 +848,7 @@ func (m *Manager) trimLocked() {
 			kept = append(kept, id)
 		}
 		m.order = kept
+		delete(m.roots, removeRoot)
 	}
 }
 
