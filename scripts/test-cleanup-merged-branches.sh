@@ -3,6 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/scripts/cleanup-merged-branches.sh"
+WORKFLOW="$ROOT/.github/workflows/cleanup-merged-branches.yml"
+
+grep -Fq 'group: cleanup-redundant-branches-${{ github.event_name }}' "$WORKFLOW"
+! grep -Fxq '  group: cleanup-redundant-branches' "$WORKFLOW"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin"
