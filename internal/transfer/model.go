@@ -152,6 +152,13 @@ func (m *Manager) Start(spec Spec) *Handle {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	handle := m.startLocked(spec, now)
+	m.trimLocked()
+	m.touchLocked()
+	return handle
+}
+
+func (m *Manager) startLocked(spec Spec, now time.Time) *Handle {
 	m.nextID++
 	id := fmt.Sprintf("transfer-%d", m.nextID)
 	total := max64(spec.TotalBytes, 0)
@@ -223,8 +230,6 @@ func (m *Manager) Start(spec Spec) *Handle {
 	m.entries[id] = &entry{task: item, retry: spec.Retry, lastAt: now, rateStartedAt: now}
 	m.order = append(m.order, id)
 	m.roots[rootID] = struct{}{}
-	m.trimLocked()
-	m.touchLocked()
 	return &Handle{manager: m, id: id}
 }
 
@@ -250,6 +255,35 @@ func (m *Manager) Handle(id string) *Handle {
 
 func (m *Manager) StartChildByID(parentID string, spec Spec) *Handle {
 	return m.StartChild(m.Handle(parentID), spec)
+}
+
+func (m *Manager) StartChildrenByID(parentID string, specs []Spec) []*Handle {
+	if m == nil || parentID == "" || len(specs) == 0 {
+		return nil
+	}
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	parent := m.entries[parentID]
+	if parent == nil {
+		return nil
+	}
+	rootID := transferRootID(parent.task)
+	handles := make([]*Handle, 0, len(specs))
+	for _, spec := range specs {
+		spec.Scope = ScopeItem
+		spec.ParentID = parentID
+		if spec.RootID == "" {
+			spec.RootID = rootID
+		}
+		if spec.Phase == "" {
+			spec.Phase = PhaseTransferring
+		}
+		handles = append(handles, m.startLocked(spec, now))
+	}
+	m.trimLocked()
+	m.touchLocked()
+	return handles
 }
 
 func (m *Manager) StartChild(parent *Handle, spec Spec) *Handle {

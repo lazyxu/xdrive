@@ -1240,20 +1240,23 @@ func (c *agentController) CloudDownloadFolder(
 		}
 	}
 
-	childHandles := make([]*transfer.Handle, len(manifest.Files))
+	childSpecs := make([]transfer.Spec, len(manifest.Files))
 	for index, file := range manifest.Files {
-		total := max(int64(0), file.Node.Size)
-		childHandles[index] = c.transfers.StartChild(group, transfer.Spec{
+		childSpecs[index] = transfer.Spec{
 			FileName:     file.Node.Name,
 			Path:         filepath.Join(rootPath, filepath.FromSlash(file.RelativePath)),
 			RelativePath: pathpkg.Join(root.Name, file.RelativePath),
 			Kind:         transfer.KindDownload,
 			Direction:    "download",
 			Phase:        transfer.PhaseQueued,
-			TotalBytes:   total,
-		})
-		if childHandles[index] == nil {
-			err := fmt.Errorf("cannot create folder download child transfer")
+			TotalBytes:   max(int64(0), file.Node.Size),
+		}
+	}
+	childHandles := make([]*transfer.Handle, 0)
+	if len(childSpecs) > 0 {
+		childHandles = c.transfers.StartChildrenByID(group.ID(), childSpecs)
+		if len(childHandles) != len(childSpecs) {
+			err := fmt.Errorf("cannot create folder download child transfers")
 			_ = group.Finish(transfer.StateFailed, err)
 			return agentCloudFolderDownloadResult{}, err
 		}

@@ -1565,6 +1565,21 @@ func (f *fakeDesktopIPCController) StartTransferChild(parentID string, spec tran
 	return handle.ID(), nil
 }
 
+func (f *fakeDesktopIPCController) StartTransferChildren(parentID string, specs []transfer.Spec) ([]string, error) {
+	if f.transfers == nil {
+		return nil, errors.New("transfer manager unavailable")
+	}
+	handles := f.transfers.StartChildrenByID(parentID, specs)
+	if len(handles) != len(specs) {
+		return nil, errors.New("transfer parent not found")
+	}
+	ids := make([]string, len(handles))
+	for index, handle := range handles {
+		ids[index] = handle.ID()
+	}
+	return ids, nil
+}
+
 func (f *fakeDesktopIPCController) BeginTransfer(id string, progress *transfer.GroupProgress) error {
 	if f.transfers == nil {
 		return errors.New("transfer manager unavailable")
@@ -3317,6 +3332,97 @@ func TestDesktopIPCTransfers(t *testing.T) {
 	}
 	if len(snapshot.Transfers) != 0 {
 		t.Fatalf("clear history retained terminal transfers: %+v", snapshot.Transfers)
+	}
+}
+
+func TestDesktopIPCTransferLifecycleChildBatch(t *testing.T) {
+	const childCount = 1000
+	manager := transfer.NewManager(20)
+	ctrl := &fakeDesktopIPCController{revision: 1, transfers: manager}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+
+	res := desktopIPCRequest(t, handler, http.MethodGet, "/v1/hello", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"transfer-lifecycle-child-batch\"") {
+		t.Fatalf("hello missing transfer child batch capability: status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/transfers/lifecycle", `{"action":"start_group","file_name":"Folder","kind":"upload","direction":"upload"}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("start group status=%d body=%s", res.Code, res.Body.String())
+	}
+	var group struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&group); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.Snapshot()
+
+	children := make([]map[string]any, childCount)
+	for index := range children {
+		children[index] = map[string]any{
+			"file_name":     fmt.Sprintf("file-%04d.bin", index),
+			"relative_path": fmt.Sprintf("Folder/file-%04d.bin", index),
+			"kind":          "upload",
+			"direction":     "upload",
+			"bytes_total":   index + 1,
+			"items_total":   1,
+		}
+	}
+	payload, err := json.Marshal(map[string]any{
+		"action":    "start_children",
+		"parent_id": group.ID,
+		"children":  children,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(payload)) <= desktopIPCMaxBodyBytes {
+		t.Fatalf("batch payload=%d must exceed general IPC body limit=%d", len(payload), desktopIPCMaxBodyBytes)
+	}
+	if int64(len(payload)) >= desktopIPCTransferLifecycleMaxBodyBytes {
+		t.Fatalf("batch payload=%d must fit lifecycle IPC body limit=%d", len(payload), desktopIPCTransferLifecycleMaxBodyBytes)
+	}
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/transfers/lifecycle", string(payload))
+	if res.Code != http.StatusOK {
+		t.Fatalf("start children status=%d body=%s", res.Code, res.Body.String())
+	}
+	var batch struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.IDs) != childCount {
+		t.Fatalf("child ids=%d want=%d", len(batch.IDs), childCount)
+	}
+
+	tooManyChildren := append(children, map[string]any{
+		"file_name":     "overflow.bin",
+		"relative_path": "Folder/overflow.bin",
+		"kind":          "upload",
+		"direction":     "upload",
+		"bytes_total":   1,
+		"items_total":   1,
+	})
+	tooManyPayload, err := json.Marshal(map[string]any{
+		"action":    "start_children",
+		"parent_id": group.ID,
+		"children":  tooManyChildren,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/transfers/lifecycle", string(tooManyPayload))
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "too_many_transfer_children") {
+		t.Fatalf("oversized child batch status=%d body=%s", res.Code, res.Body.String())
+	}
+	after, tasks := manager.Snapshot()
+	if after != before+1 {
+		t.Fatalf("batch revision=%d want=%d", after, before+1)
+	}
+	if len(tasks) != childCount+1 {
+		t.Fatalf("tasks=%d want=%d", len(tasks), childCount+1)
 	}
 }
 

@@ -4629,7 +4629,7 @@ function registerIPCHandlers() {
     }, false)
   })
   ipcMain.handle('agent:transfer-lifecycle', (_event, input: unknown) =>
-    runAgentAction<{ id?: string; ok?: boolean }>(async () => {
+    runAgentAction<{ id?: string; ids?: string[]; ok?: boolean }>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'transfer-lifecycle')
       if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -4639,12 +4639,16 @@ function registerIPCHandlers() {
       if (
         action !== 'start_group' &&
         action !== 'start_child' &&
+        action !== 'start_children' &&
         action !== 'begin' &&
         action !== 'progress' &&
         action !== 'update_group' &&
         action !== 'finish'
       ) {
         throw new AgentIPCError('invalid_input', 0, 'Invalid transfer lifecycle action.')
+      }
+      if (action === 'start_children') {
+        requireAgentCapability(hello, 'transfer-lifecycle-child-batch')
       }
       return requireAgentClient().transferLifecycle(input as AgentTransferLifecycleInput)
     }, false),

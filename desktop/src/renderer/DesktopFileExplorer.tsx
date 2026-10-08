@@ -177,6 +177,7 @@ export default function DesktopFileExplorer({
   favoritesSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
+  transferLifecycleBatchSupported = false,
   transfers = [],
   actionIntent,
   onActionIntentConsumed,
@@ -232,6 +233,7 @@ export default function DesktopFileExplorer({
   favoritesSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
+  transferLifecycleBatchSupported?: boolean
   transfers?: readonly AgentTransfer[]
   actionIntent?: DesktopFileExplorerActionIntent | null
   onActionIntentConsumed?: (id: number) => void
@@ -676,6 +678,39 @@ export default function DesktopFileExplorer({
         if (!result.ok || !result.data.id) throw new Error(result.ok ? '未创建传输子任务。' : result.error.message)
         return result.data.id
       },
+      startChildren: transferLifecycleBatchSupported ? async (groupID, inputs) => {
+        const ids: string[] = []
+        for (
+          let start = 0;
+          start < inputs.length;
+          start += desktopTransferLifecycleChildBatchSize
+        ) {
+          const batch = inputs.slice(
+            start,
+            start + desktopTransferLifecycleChildBatchSize,
+          )
+          const result = await window.xdriveDesktop.agent.transferLifecycle({
+            action: 'start_children',
+            parent_id: groupID,
+            children: batch.map((input) => ({
+              file_name: input.fileName,
+              relative_path: input.relativePath,
+              kind: 'upload',
+              direction: 'upload',
+              bytes_total: input.bytesTotal,
+              items_total: 1,
+            })),
+          })
+          if (!result.ok || !result.data.ids) {
+            throw new Error(result.ok ? '未批量创建传输子任务。' : result.error.message)
+          }
+          if (result.data.ids.length !== batch.length) {
+            throw new Error('传输子任务数量不匹配。')
+          }
+          ids.push(...result.data.ids)
+        }
+        return ids
+      } : undefined,
       begin: async (id, input) => {
         const group = input?.group
         const result = await window.xdriveDesktop.agent.transferLifecycle({
@@ -1189,6 +1224,8 @@ export default function DesktopFileExplorer({
   }
 
   type DesktopUploadTarget = { parentID: number; file: File; relativePath?: string }
+
+const desktopTransferLifecycleChildBatchSize = 1000
 
   const uploadConflictAwareTargets = async (
     resolveTargets: () => Promise<readonly DesktopUploadTarget[]>,

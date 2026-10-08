@@ -180,6 +180,55 @@ test('Desktop folder upload uses Agent transfer lifecycle instead of duplicate r
 })
 
 
+test('Desktop and Agent batch transfer child registration avoid per-child setup churn', () => {
+  for (const token of [
+    'StartTransferChildren(string, []transfer.Spec)',
+    '"transfer-lifecycle-child-batch"',
+    'case "start_children":',
+  ]) {
+    assert.ok(agentIPC.includes(token), 'Agent batch lifecycle IPC missing: ' + token)
+  }
+  assert.ok(
+    agentController.includes('StartTransferChildren(parentID string, specs []transfer.Spec)'),
+    'Agent controller batch child bridge is missing',
+  )
+  assert.ok(
+    agentClient.includes("'start_children'"),
+    'Electron Agent lifecycle type must allow batch child registration',
+  )
+  assert.ok(
+    desktopExplorer.includes('startChildren: transferLifecycleBatchSupported ? async'),
+    'Desktop upload adapter must opt into batch child registration when supported',
+  )
+  assert.ok(
+    desktopExplorer.includes("action: 'start_children'"),
+    'Desktop upload adapter must issue one batch lifecycle action',
+  )
+  assert.ok(
+    desktopExplorer.includes('desktopTransferLifecycleChildBatchSize = 1000'),
+    'Desktop batch child registration must bound each Agent IPC request',
+  )
+  assert.ok(
+    desktopExplorer.includes('start += desktopTransferLifecycleChildBatchSize') &&
+      desktopExplorer.includes('inputs.slice('),
+    'Desktop must chunk oversized child sets instead of exceeding the Agent IPC body limit',
+  )
+  assert.ok(
+    desktopApp.includes("capabilities.includes('transfer-lifecycle-child-batch')"),
+    'Desktop batch child registration must be capability-gated for old Agents',
+  )
+  assert.ok(
+    agentCloud.includes('c.transfers.StartChildrenByID(group.ID(), childSpecs)'),
+    'Agent folder download must batch upfront Transfer Center child registration',
+  )
+  assert.equal(
+    agentCloud.includes('c.transfers.StartChild(group, transfer.Spec{'),
+    false,
+    'Agent folder download must not register queued children one-by-one',
+  )
+})
+
+
 function loadUploadController(react) {
   const ts = require('typescript')
   const filename = path.join(

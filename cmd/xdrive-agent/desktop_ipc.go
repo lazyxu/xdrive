@@ -31,13 +31,15 @@ import (
 )
 
 const (
-	desktopIPCAPIVersion       = 1
-	desktopIPCProtocolMin      = 2
-	desktopIPCProtocolMax      = 2
-	desktopIPCDiscoveryName    = "desktop-ipc.json"
-	desktopIPCMaxBodyBytes     = 64 << 10
-	desktopIPCDefaultEventWait = 25 * time.Second
-	desktopIPCMaxEventWait     = 30 * time.Second
+	desktopIPCAPIVersion                    = 1
+	desktopIPCProtocolMin                   = 2
+	desktopIPCProtocolMax                   = 2
+	desktopIPCDiscoveryName                 = "desktop-ipc.json"
+	desktopIPCMaxBodyBytes                  = 64 << 10
+	desktopIPCTransferLifecycleMaxBodyBytes = 1 << 20
+	desktopIPCTransferLifecycleMaxChildren  = 1000
+	desktopIPCDefaultEventWait              = 25 * time.Second
+	desktopIPCMaxEventWait                  = 30 * time.Second
 )
 
 type desktopIPCDiscovery struct {
@@ -103,6 +105,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-events",
 	"transfer-retry",
 	"transfer-lifecycle",
+	"transfer-lifecycle-child-batch",
 	"diagnostics",
 	"diagnostic-actions",
 	"open-folder",
@@ -343,6 +346,7 @@ type desktopIPCController interface {
 	RetryTransfer(context.Context, string) error
 	StartTransferGroup(transfer.Spec) (string, error)
 	StartTransferChild(string, transfer.Spec) (string, error)
+	StartTransferChildren(string, []transfer.Spec) ([]string, error)
 	BeginTransfer(string, *transfer.GroupProgress) error
 	ProgressTransfer(string, int64, int64) error
 	UpdateTransferGroup(string, transfer.GroupProgress) error
@@ -4604,8 +4608,17 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 		State        string `json:"state,omitempty"`
 		Error        string `json:"error,omitempty"`
 		Skipped      bool   `json:"skipped,omitempty"`
+		Children     []struct {
+			FileName     string `json:"file_name,omitempty"`
+			Path         string `json:"path,omitempty"`
+			RelativePath string `json:"relative_path,omitempty"`
+			Kind         string `json:"kind,omitempty"`
+			Direction    string `json:"direction,omitempty"`
+			BytesTotal   int64  `json:"bytes_total,omitempty"`
+			ItemsTotal   int64  `json:"items_total,omitempty"`
+		} `json:"children,omitempty"`
 	}
-	if !decodeDesktopIPCJSON(w, r, &input) {
+	if !decodeDesktopIPCJSONLimit(w, r, &input, desktopIPCTransferLifecycleMaxBodyBytes) {
 		return
 	}
 	input.Action = strings.TrimSpace(input.Action)
@@ -4657,6 +4670,38 @@ func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Req
 			return
 		}
 		writeDesktopIPCJSON(w, http.StatusOK, map[string]string{"id": id})
+	case "start_children":
+		if input.ParentID == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_parent", "parent_id is required")
+			return
+		}
+		if len(input.Children) == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_transfer_children", "children are required")
+			return
+		}
+		if len(input.Children) > desktopIPCTransferLifecycleMaxChildren {
+			writeDesktopIPCError(w, http.StatusBadRequest, "too_many_transfer_children", "too many transfer children")
+			return
+		}
+		specs := make([]transfer.Spec, len(input.Children))
+		for index, child := range input.Children {
+			specs[index] = transfer.Spec{
+				FileName:     strings.TrimSpace(child.FileName),
+				Path:         strings.TrimSpace(child.Path),
+				RelativePath: strings.TrimSpace(child.RelativePath),
+				Kind:         strings.TrimSpace(child.Kind),
+				Direction:    strings.TrimSpace(child.Direction),
+				TotalBytes:   child.BytesTotal,
+				TotalItems:   child.ItemsTotal,
+				Phase:        transfer.PhaseQueued,
+			}
+		}
+		ids, err := h.ctrl.StartTransferChildren(input.ParentID, specs)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, map[string][]string{"ids": ids})
 	case "begin":
 		if input.ID == "" {
 			writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
@@ -4869,7 +4914,11 @@ func makeDesktopIPCStatus(snapshot agentSnapshot, revision uint64) desktopIPCSta
 }
 
 func decodeDesktopIPCJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, desktopIPCMaxBodyBytes)
+	return decodeDesktopIPCJSONLimit(w, r, target, desktopIPCMaxBodyBytes)
+}
+
+func decodeDesktopIPCJSONLimit(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
