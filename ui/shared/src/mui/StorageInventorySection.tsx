@@ -1,5 +1,5 @@
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded'
-import { Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
+import { Box, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, useMediaQuery } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
 import type {
   StorageCacheCleanup,
@@ -60,6 +60,7 @@ export function XDriveStorageInventorySection({
   cleanupCache?: (kind: StorageCacheCleanupKind) => Promise<StorageCacheCleanup>
   onCleanupComplete?: (result: StorageCacheCleanup) => void
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
   const [displayInventory, setDisplayInventory] = useState(inventory)
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const [cleanupRequest, setCleanupRequest] = useState<{
@@ -135,41 +136,36 @@ export function XDriveStorageInventorySection({
           <XDriveMetricCard title="未分类文件数据" value={formatBytes(displayInventory.unclassified_bytes)} suffix="不可自动删除" />
         </XDriveMetricGrid>
 
-        <XDriveTableSurface>
-          <Table size="small" aria-label="全实例物理存储占用明细" sx={{ minWidth: 1040 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>数据类型</TableCell>
-                <TableCell>宿主机绝对路径</TableCell>
-                <TableCell align="right">文件数</TableCell>
-                <TableCell align="right">占用</TableCell>
-                <TableCell align="right">可回收</TableCell>
-                <TableCell>状态</TableCell>
-                <TableCell align="right">操作</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {displayInventory.items.map((item) => (
-                <TableRow key={item.key} hover>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 420 }}>
-                    <Typography
-                      component="code"
-                      variant="caption"
-                      sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}
-                    >
-                      {item.path}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">{item.files > 0 ? item.files.toLocaleString() : '—'}</TableCell>
-                  <TableCell align="right">{formatBytes(item.bytes)}</TableCell>
-                  <TableCell align="right">
-                    {item.reclaimable_bytes > 0 ? formatBytes(item.reclaimable_bytes) : '—'}
-                  </TableCell>
-                  <TableCell>{inventoryStatus(item)}</TableCell>
-                  <TableCell align="right">
+        {compactViewport ? (
+          <Stack
+            spacing={1}
+            data-xdrive-storage-inventory-mobile-list
+            aria-label="全实例物理存储占用明细"
+          >
+            {displayInventory.items.map((item) => (
+              <Box
+                key={item.key}
+                sx={{
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  px: 1.5,
+                  py: 1.25,
+                }}
+              >
+                <Stack spacing={1}>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="flex-start"
+                    justifyContent="space-between"
+                  >
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" fontWeight={700}>{item.label}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {inventoryStatus(item)}
+                      </Typography>
+                    </Box>
                     {cleanupCache && item.deletable && item.cleanup_kind ? (
                       <XDriveActionButton
                         compact
@@ -179,13 +175,102 @@ export function XDriveStorageInventorySection({
                       >
                         清理
                       </XDriveActionButton>
-                    ) : '—'}
-                  </TableCell>
+                    ) : null}
+                  </Stack>
+
+                  <Typography
+                    component="code"
+                    variant="caption"
+                    sx={{
+                      fontFamily: 'monospace',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {item.path}
+                  </Typography>
+
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                      gap: 1,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">文件</Typography>
+                      <Typography variant="body2">
+                        {item.files > 0 ? item.files.toLocaleString() : '—'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">占用</Typography>
+                      <Typography variant="body2">{formatBytes(item.bytes)}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">可回收</Typography>
+                      <Typography variant="body2">
+                        {item.reclaimable_bytes > 0 ? formatBytes(item.reclaimable_bytes) : '—'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        ) : (
+          <XDriveTableSurface>
+            <Table size="small" aria-label="全实例物理存储占用明细" sx={{ minWidth: 1040 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>数据类型</TableCell>
+                  <TableCell>宿主机绝对路径</TableCell>
+                  <TableCell align="right">文件数</TableCell>
+                  <TableCell align="right">占用</TableCell>
+                  <TableCell align="right">可回收</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell align="right">操作</TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </XDriveTableSurface>
+              </TableHead>
+              <TableBody>
+                {displayInventory.items.map((item) => (
+                  <TableRow key={item.key} hover>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 420 }}>
+                      <Typography
+                        component="code"
+                        variant="caption"
+                        sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}
+                      >
+                        {item.path}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">{item.files > 0 ? item.files.toLocaleString() : '—'}</TableCell>
+                    <TableCell align="right">{formatBytes(item.bytes)}</TableCell>
+                    <TableCell align="right">
+                      {item.reclaimable_bytes > 0 ? formatBytes(item.reclaimable_bytes) : '—'}
+                    </TableCell>
+                    <TableCell>{inventoryStatus(item)}</TableCell>
+                    <TableCell align="right">
+                      {cleanupCache && item.deletable && item.cleanup_kind ? (
+                        <XDriveActionButton
+                          compact
+                          intent="danger"
+                          disabled={cleanupLoading || item.reclaimable_bytes <= 0}
+                          onClick={() => setCleanupRequest({ kind: item.cleanup_kind!, itemKey: item.key })}
+                        >
+                          清理
+                        </XDriveActionButton>
+                      ) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </XDriveTableSurface>
+        )}
 
         <Typography variant="caption" color="text.secondary">
           生成时间：{new Date(displayInventory.generated_at).toLocaleString()}
