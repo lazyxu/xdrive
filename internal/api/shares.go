@@ -310,6 +310,187 @@ func (s *Server) publicShareDownload(c *gin.Context) {
 	http.ServeContent(c.Writer, c.Request, node.Name, node.File.UpdatedAt, file)
 }
 
+const publicShareDownloadTicketTTL = 5 * time.Minute
+
+type publicShareDownloadTicketDTO struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (s *Server) publicShareDownloadTicket(c *gin.Context) {
+	rawToken := strings.TrimSpace(c.GetHeader("X-XDrive-Share-Token"))
+	share, node, err := s.resolvePublicShare(rawToken, time.Now())
+	if err != nil {
+		writePublicShareLookupError(c, err)
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if share.PasswordHash != "" {
+		if req.Password == "" || auth.CheckPassword(share.PasswordHash, req.Password) != nil {
+			fail(c, http.StatusUnauthorized, "share_password_invalid")
+			return
+		}
+	}
+
+	now := time.Now()
+	var ticket string
+	var expiresAt time.Time
+	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var current meta.Share
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND token_hash = ?", share.ID, hashShareToken(rawToken)).
+			First(&current).Error; err != nil {
+			return err
+		}
+		if shareStatus(current, now) != "active" {
+			return errShareUnavailable
+		}
+
+		var owner meta.User
+		if err := tx.Select("id", "disabled_at").First(&owner, current.OwnerID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errShareUnavailable
+			}
+			return err
+		}
+		if owner.DisabledAt != nil {
+			return errShareUnavailable
+		}
+
+		var activeNode meta.Node
+		if err := tx.Where(
+			"id = ? AND owner_id = ? AND type = ? AND revision = ? AND deleted_at IS NULL",
+			current.NodeID,
+			current.OwnerID,
+			meta.NodeTypeFile,
+			node.Revision,
+		).First(&activeNode).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errShareUnavailable
+			}
+			return err
+		}
+
+		ticket, expiresAt, err = s.Auth.IssuePublicShareDownload(
+			current.ID,
+			activeNode.ID,
+			activeNode.Revision,
+			publicShareDownloadTicketTTL,
+		)
+		if err != nil {
+			return err
+		}
+		result := tx.Model(&meta.Share{}).
+			Where("id = ? AND download_count = ?", current.ID, current.DownloadCount).
+			Update("download_count", gorm.Expr("download_count + 1"))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errShareUnavailable
+		}
+		return nil
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "share_not_found")
+		case errors.Is(err, errShareUnavailable):
+			fail(c, http.StatusGone, "share_unavailable")
+		default:
+			fail(c, http.StatusInternalServerError, "create public share download ticket failed")
+		}
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, publicShareDownloadTicketDTO{
+		URL: fmt.Sprintf(
+			"/api/v1/public-share-download/%d?ticket=%s",
+			share.ID,
+			url.QueryEscape(ticket),
+		),
+		ExpiresAt: expiresAt.UTC(),
+	})
+}
+
+func (s *Server) publicShareDownloadTicketStream(c *gin.Context) {
+	shareID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid share id")
+		return
+	}
+	claims, err := s.Auth.ParsePublicShareDownload(strings.TrimSpace(c.Query("ticket")))
+	if err != nil || claims.ShareID != shareID {
+		fail(c, http.StatusUnauthorized, "invalid public share download ticket")
+		return
+	}
+
+	var share meta.Share
+	if err := s.DB.WithContext(c.Request.Context()).First(&share, shareID).Error; err != nil {
+		writePublicShareLookupError(c, err)
+		return
+	}
+	now := time.Now()
+	if share.RevokedAt != nil ||
+		(share.ExpiresAt != nil && !now.Before(*share.ExpiresAt)) ||
+		share.NodeID != claims.NodeID {
+		fail(c, http.StatusGone, "share_download_ticket_stale")
+		return
+	}
+
+	var owner meta.User
+	if err := s.DB.WithContext(c.Request.Context()).
+		Select("id", "disabled_at").
+		First(&owner, share.OwnerID).Error; err != nil || owner.DisabledAt != nil {
+		fail(c, http.StatusGone, "share_download_ticket_stale")
+		return
+	}
+
+	var node meta.Node
+	if err := s.DB.WithContext(c.Request.Context()).Preload("File").
+		Where(
+			"id = ? AND owner_id = ? AND type = ? AND revision = ? AND deleted_at IS NULL",
+			claims.NodeID,
+			share.OwnerID,
+			meta.NodeTypeFile,
+			claims.NodeRevision,
+		).
+		First(&node).Error; err != nil || node.File == nil {
+		fail(c, http.StatusGone, "share_download_ticket_stale")
+		return
+	}
+	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
+	if err != nil {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	defer file.Close()
+
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(node.Name))
+	c.Header("ETag", fmt.Sprintf("\"%d\"", node.Revision))
+	if node.File.SHA256 != "" {
+		c.Header("X-Content-SHA256", node.File.SHA256)
+	}
+	http.ServeContent(
+		c.Writer,
+		c.Request,
+		node.Name,
+		node.File.UpdatedAt,
+		file,
+	)
+}
+
 func (s *Server) resolvePublicShare(rawToken string, now time.Time) (meta.Share, meta.Node, error) {
 	rawToken = strings.TrimSpace(rawToken)
 	if rawToken == "" {

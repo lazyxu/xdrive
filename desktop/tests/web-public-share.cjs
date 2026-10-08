@@ -44,6 +44,7 @@ test('Web public share keeps download and password behavior unchanged', () => {
   for (const token of [
     'api.publicShare(token)',
     'api.downloadPublicShare(token, password, share.name)',
+    "setNotice('已交给浏览器下载。')",
     'share.requires_password',
     'placeholder="分享密码"',
     'share.max_downloads > 0',
@@ -53,4 +54,21 @@ test('Web public share keeps download and password behavior unchanged', () => {
   ]) {
     assert.ok(publicShare.includes(token), `Public Share behavior missing: ${token}`)
   }
+})
+
+
+test('Web public share delegates the file stream to a short-lived native ticket', () => {
+  const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
+  for (const token of [
+    '/api/v1/public/share/download-ticket',
+    'X-XDrive-Share-Token',
+    'xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)',
+  ]) {
+    assert.ok(api.includes(token), `Public Share native handoff missing: ${token}`)
+  }
+  const start = api.indexOf('async downloadPublicShare(')
+  const end = api.indexOf('downloadURL(nodeID: number)', start)
+  const method = api.slice(start, end)
+  assert.equal(method.includes('response.blob()'), false)
+  assert.equal(method.includes('URL.createObjectURL'), false)
 })

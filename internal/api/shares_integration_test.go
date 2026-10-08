@@ -312,4 +312,113 @@ func TestShareDownloadLimitIsAtomic(t *testing.T) {
 	if stored.DownloadCount != 1 {
 		t.Fatalf("download_count=%d want=1", stored.DownloadCount)
 	}
+
+	ticketShareRes := request(
+		t, router, http.MethodPost, fmt.Sprintf("/api/v1/files/%d/shares", file.ID),
+		ownerToken, strings.NewReader(`{"password":"ticket-password","max_downloads":1}`), http.StatusCreated,
+	)
+	var ticketShare createdShareDTO
+	if err := json.Unmarshal(ticketShareRes.Body.Bytes(), &ticketShare); err != nil {
+		t.Fatal(err)
+	}
+
+	requestWithHeaders(
+		t, router, http.MethodPost, "/api/v1/public/share/download-ticket", "",
+		strings.NewReader(`{"password":"wrong-password"}`), http.StatusUnauthorized,
+		map[string]string{
+			"Content-Type":         "application/json",
+			"X-XDrive-Share-Token": ticketShare.Token,
+		},
+	)
+
+	type ticketIssueResult struct {
+		status int
+		body   []byte
+	}
+	startTicket := make(chan struct{})
+	ticketResults := make(chan ticketIssueResult, 2)
+	var ticketWG sync.WaitGroup
+	for range 2 {
+		ticketWG.Add(1)
+		go func() {
+			defer ticketWG.Done()
+			<-startTicket
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/public/share/download-ticket",
+				strings.NewReader(`{"password":"ticket-password"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-XDrive-Share-Token", ticketShare.Token)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			ticketResults <- ticketIssueResult{status: rec.Code, body: rec.Body.Bytes()}
+		}()
+	}
+	close(startTicket)
+	ticketWG.Wait()
+	close(ticketResults)
+
+	ticketSuccesses, ticketGone := 0, 0
+	var downloadTicket publicShareDownloadTicketDTO
+	for result := range ticketResults {
+		switch result.status {
+		case http.StatusOK:
+			ticketSuccesses++
+			if err := json.Unmarshal(result.body, &downloadTicket); err != nil {
+				t.Fatal(err)
+			}
+		case http.StatusGone:
+			ticketGone++
+		default:
+			t.Fatalf("unexpected ticket issuance status: %d", result.status)
+		}
+	}
+	if ticketSuccesses != 1 || ticketGone != 1 {
+		t.Fatalf("ticket issuance results success=%d gone=%d want 1/1", ticketSuccesses, ticketGone)
+	}
+	if !strings.HasPrefix(
+		downloadTicket.URL,
+		fmt.Sprintf("/api/v1/public-share-download/%d?ticket=", ticketShare.ID),
+	) {
+		t.Fatalf("ticket=%+v", downloadTicket)
+	}
+
+	var ticketStored meta.Share
+	if err := db.First(&ticketStored, ticketShare.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ticketStored.DownloadCount != 1 {
+		t.Fatalf("ticket issuance download_count=%d want=1", ticketStored.DownloadCount)
+	}
+
+	rangeOne := requestWithHeaders(
+		t, router, http.MethodGet, downloadTicket.URL, "", nil, http.StatusPartialContent,
+		map[string]string{"Range": "bytes=0-3"},
+	)
+	if got := rangeOne.Body.String(); got != "race" {
+		t.Fatalf("first ticket range=%q want=%q", got, "race")
+	}
+	rangeTwo := requestWithHeaders(
+		t, router, http.MethodGet, downloadTicket.URL, "", nil, http.StatusPartialContent,
+		map[string]string{"Range": "bytes=5-8"},
+	)
+	if got := rangeTwo.Body.String(); got != "cont" {
+		t.Fatalf("second ticket range=%q want=%q", got, "cont")
+	}
+	fullTicketDownload := request(
+		t, router, http.MethodGet, downloadTicket.URL, "", nil, http.StatusOK,
+	)
+	if got := fullTicketDownload.Body.String(); got != "race-content" {
+		t.Fatalf("ticket retry download=%q want=%q", got, "race-content")
+	}
+	request(t, router, http.MethodHead, downloadTicket.URL, "", nil, http.StatusOK)
+
+	if err := db.First(&ticketStored, ticketShare.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ticketStored.DownloadCount != 1 {
+		t.Fatalf("ticket range/retry changed download_count=%d want=1", ticketStored.DownloadCount)
+	}
+
 }
