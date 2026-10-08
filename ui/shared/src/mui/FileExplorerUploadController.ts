@@ -405,12 +405,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
 
       const targets = await resolveTargets()
       if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
-      const totalBytes = targets.reduce(
-        (sum, target) => sum + Math.max(0, fileSize(target.file)),
-        0,
-      )
-      const childDone = targets.map(() => 0)
       const childSizes = targets.map((target) => Math.max(0, fileSize(target.file)))
+      const totalBytes = childSizes.reduce((sum, size) => sum + size, 0)
+      let groupBytesDone = 0
 
       for (let index = 0; index < targets.length; index += 1) {
         const target = targets[index]
@@ -425,7 +422,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
 
       const groupProgress = (): XDriveFileExplorerUploadTransferGroupProgress => ({
         scanComplete: true,
-        bytesDone: childDone.reduce((sum, value) => sum + Math.max(0, value), 0),
+        bytesDone: groupBytesDone,
         bytesTotal: totalBytes,
         itemsTotal: targets.length,
         itemsCompleted: aggregate.uploaded + aggregate.skipped,
@@ -466,6 +463,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
         const childID = childIDs[index]
         const name = fileName(target.file)
         let conflictPolicy: XDriveUploadConflictPolicy = 'fail'
+        let childBytesDone = 0
 
         aggregate.running = 1
         await transferLifecycle.begin(childID)
@@ -527,10 +525,12 @@ export function useXDriveFileExplorerUploadController<TFile>({
           const onProgress = (percent: number) => {
             if (!isCurrentLifecycle(lifecycleGeneration)) return
             const normalized = Math.max(0, Math.min(100, percent || 0))
-            childDone[index] = childSizes[index] * normalized / 100
+            const nextChildDone = childSizes[index] * normalized / 100
+            groupBytesDone += nextChildDone - childBytesDone
+            childBytesDone = nextChildDone
             if (trackProgress) setProgress(normalized)
             void Promise.resolve(
-              transferLifecycle.progress(childID, childDone[index], childSizes[index]),
+              transferLifecycle.progress(childID, childBytesDone, childSizes[index]),
             ).catch(() => {})
             void Promise.resolve(
               transferLifecycle.updateGroup(groupID, groupProgress()),
@@ -554,8 +554,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
             })
           } else {
             aggregate.uploaded += 1
-            childDone[index] = childSizes[index]
-            await transferLifecycle.progress(childID, childDone[index], childSizes[index])
+            groupBytesDone += childSizes[index] - childBytesDone
+            childBytesDone = childSizes[index]
+            await transferLifecycle.progress(childID, childBytesDone, childSizes[index])
             await transferLifecycle.finish(childID, { state: 'completed' })
           }
           terminalChildren.add(childID)

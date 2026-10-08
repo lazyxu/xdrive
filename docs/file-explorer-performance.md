@@ -27,6 +27,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
 | Desktop folder-download progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For F manifest files, each group-progress publication no longer scans F child byte slots. Aggregate bytes are maintained by current-file deltas: **O(F) -> O(1) per progress publication**, and the two F-length `int64` progress arrays are removed. |
 | Hierarchical Transfer history trim fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | One group + 1,000 completed child tasks below the 200-root history limit: `trimLocked` history-entry inspections during start/finish **1,003,001 -> 0**. Root-tree retention/eviction semantics are unchanged. |
+| Folder-upload group progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N folder-upload targets, every group-progress publication changes from scanning N child byte slots to an incremental byte total: **O(N) -> O(1)** per publication; `fileSize` probes during target setup **2N -> N** and the N-length `childDone` array is removed. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
@@ -2000,7 +2001,42 @@ Regression commands:
 
 - `go test ./internal/transfer -run '^TestManagerHistoryTrimFastPathUsesRootCardinality$|^TestManagerHistoryLimitCountsRootTransfersNotChildren$|^TestManagerClearHistoryKeepsCompletedChildrenOfActiveGroup$' -count=1`.
 
-Next action: optimize shared FileExplorer folder-upload group progress aggregation, then Web child registration/persistence, while preserving upfront child visibility.
+Next action: optimize Web child registration/persistence while preserving upfront child visibility.
+
+### Folder-upload group progress aggregation contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- shared FileExplorer upload controller used by Web and Desktop;
+- a folder upload with **N targets** keeps the existing sequential upload order and creates all queued child transfer tasks before the group starts;
+- evidence is deterministic controller execution plus source-shape regression; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- target setup evaluates `fileSize(target.file)` once while reducing total bytes and again while building child sizes: **2N probes**;
+- an N-length `childDone` array stores every child byte position;
+- each `groupProgress()` publication recomputes `bytesDone` with `childDone.reduce(...)`: **N slot inspections per publication**;
+- frequent upload progress callbacks therefore multiply progress bookkeeping by folder cardinality.
+
+AFTER / current:
+
+- child sizes are computed once and their total is reduced from that cached list: **N file-size probes**;
+- one scalar `groupBytesDone` tracks aggregate progress;
+- the currently executing child keeps one local `childBytesDone`; each callback applies only `next - previous` to the aggregate;
+- each group-progress publication reads the aggregate in **O(1)**;
+- the N-length `childDone` array is removed;
+- skipped/preflight-failed/cancelled children retain their prior zero-or-partial transferred-byte semantics; successful children advance the aggregate to their full size.
+
+Decision: **Accepted.** Progress accounting must not become more expensive merely because a folder contains more queued siblings.
+
+Regression budget: group progress aggregation must not scan per-child byte slots. `fileSize` is evaluated once per target during group setup. All children must still be registered before the group begins transfer.
+
+Regression command:
+
+- `node --test desktop/tests/shared-folder-upload-transfer-groups.cjs`.
+
 
 ### Windows empty always-local policy fast-path contract
 

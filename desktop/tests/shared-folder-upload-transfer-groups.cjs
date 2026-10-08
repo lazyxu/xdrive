@@ -467,3 +467,90 @@ test('FileExplorer upload completion after unmount cannot publish stale feedback
   )
   assert.deepEqual(errors, [])
 })
+
+test('folder upload group progress uses incremental bytes and probes each file size once', async () => {
+  assert.equal(
+    controller.includes('childDone.reduce'),
+    false,
+    'group progress must not scan all child byte slots on every publication',
+  )
+  assert.equal(
+    controller.includes('const childDone = targets.map'),
+    false,
+    'folder upload must not retain an O(N) child progress array',
+  )
+  for (const token of [
+    'let groupBytesDone = 0',
+    'bytesDone: groupBytesDone',
+    'const nextChildDone = childSizes[index] * normalized / 100',
+    'groupBytesDone += nextChildDone - childBytesDone',
+    'groupBytesDone += childSizes[index] - childBytesDone',
+  ]) {
+    assert.ok(controller.includes(token), 'incremental group progress missing: ' + token)
+  }
+
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  const sizes = new Map([
+    ['a.bin', 10],
+    ['b.bin', 20],
+    ['c.bin', 30],
+  ])
+  let sizeCalls = 0
+  let childSequence = 0
+  const groupBytes = []
+
+  const transferLifecycle = {
+    async startGroup() { return 'group-1' },
+    async startChild() { return 'child-' + (++childSequence) },
+    async begin(_id, input) {
+      if (input?.group) groupBytes.push(input.group.bytesDone)
+    },
+    async progress() {},
+    async updateGroup(_id, progress) {
+      groupBytes.push(progress.bytesDone)
+    },
+    async finish() {},
+  }
+
+  const controllerHook = runtime.render(() => useUploadController({
+    lifecycleKey: 'server-a:user-a',
+    fileName: (file) => file.name,
+    fileSize: (file) => {
+      sizeCalls += 1
+      return sizes.get(file.name) || 0
+    },
+    preflight: async () => ({ conflict: false }),
+    upload: async (_parentID, file, _policy, onProgress) => {
+      onProgress?.(50)
+      return { skipped: false }
+    },
+    transferLifecycle,
+    onError: (error) => { throw error },
+    onFeedback: () => {},
+  }))
+
+  const targets = [...sizes.keys()].map((name, index) => ({
+    parentID: index + 1,
+    file: { name },
+    relativePath: 'folder/' + name,
+  }))
+  const result = await controllerHook.runGroup({
+    label: 'folder',
+    itemsTotal: targets.length,
+    bytesTotal: 60,
+    resolveTargets: async () => targets,
+  })
+
+  assert.equal(result.uploaded, 3)
+  assert.equal(sizeCalls, 3, 'fileSize must be evaluated once per target')
+  assert.equal(groupBytes[0], 0)
+  assert.equal(groupBytes.at(-1), 60)
+  for (let index = 1; index < groupBytes.length; index += 1) {
+    assert.ok(
+      groupBytes[index] >= groupBytes[index - 1],
+      'group bytes must not regress for monotonic child progress: ' + groupBytes.join(','),
+    )
+  }
+})
+
