@@ -43,7 +43,7 @@ function callbackInitializer(relativePath, variableName) {
 
 function compileChildrenFor(callbackSource) {
   const source = `
-    module.exports = (pageByParent, pathChildByParent) => {
+    module.exports = (pageByParent, lifecycleKey) => {
       const childrenFor = ${callbackSource}
       return childrenFor
     }
@@ -70,6 +70,7 @@ function compileLoadChildren(callbackSource) {
       onError,
       latestPathCrumbsByIDRef,
       loadDirectoryPageGenerationRef,
+      lifecycleKeyRef,
     ) => {
       const loadChildren = ${callbackSource}
       return loadChildren
@@ -137,6 +138,7 @@ test('stale navigation-tree child load cannot write old parent crumbs after curr
     (error) => { throw error },
     latestPathCrumbsByIDRef,
     loadDirectoryPageGenerationRef,
+    { current: 'test-lifecycle' },
   )
 
   const oldNode = {
@@ -215,6 +217,7 @@ test('a replaced navigation-tree loader supersedes an older pending request for 
     (error) => { throw error },
     latestPathCrumbsByIDRef,
     loadDirectoryPageGenerationRef,
+    { current: 'test-lifecycle' },
   )
 
   const oldPending = oldLoadChildren(node)
@@ -239,6 +242,7 @@ test('a replaced navigation-tree loader supersedes an older pending request for 
     (error) => { throw error },
     latestPathCrumbsByIDRef,
     loadDirectoryPageGenerationRef,
+    { current: 'test-lifecycle' },
   )
 
   const newPending = newLoadChildren(node)
@@ -309,6 +313,7 @@ test('a replaced navigation-tree loader must reload a page already cached by the
     (error) => { throw error },
     latestPathCrumbsByIDRef,
     loadDirectoryPageGenerationRef,
+    { current: 'test-lifecycle' },
   )
 
   await oldLoadChildren(node)
@@ -335,6 +340,7 @@ test('a replaced navigation-tree loader must reload a page already cached by the
     (error) => { throw error },
     latestPathCrumbsByIDRef,
     loadDirectoryPageGenerationRef,
+    { current: 'test-lifecycle' },
   )
 
   await newLoadChildren(node)
@@ -375,6 +381,7 @@ test('cached navigation-tree child rebases crumbs when parent path metadata chan
       hasMore: false,
       loaded: true,
       generation: 1,
+      lifecycleKey: 'test-lifecycle',
     },
   }
 
@@ -385,7 +392,7 @@ test('cached navigation-tree child rebases crumbs when parent path metadata chan
     name: newParent.name,
     crumbs: [root, newParent],
   }
-  const childrenFor = makeChildrenFor(pageByParent, new Map())
+  const childrenFor = makeChildrenFor(pageByParent, 'test-lifecycle')
   const renderedChild = childrenFor(currentParentNode)[0]
 
   assert.ok(renderedChild)

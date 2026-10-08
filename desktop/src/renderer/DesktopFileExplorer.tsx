@@ -1858,6 +1858,7 @@ export default function DesktopFileExplorer({
         )}
         navigationPane={(
           <XDriveFileExplorerNavigationPane
+            lifecycleKey={navigationSessionStorageKey ?? ''}
             currentCrumbs={crumbs}
             trashActive={trashActive}
             onNavigateTrash={onOpenTrash}
