@@ -180,3 +180,10 @@ test('navigation sections collapse independently and persist locally', () => {
   assert.ok(pane.includes("width: '100%'"), 'navigation pane must inherit the resizable shell width')
   assert.equal(pane.includes('width: 232'), false, 'navigation pane must not keep a fixed width')
 })
+
+
+test('navigation sections use spacing instead of repeated divider chrome', () => {
+  assert.equal(pane.includes('<Divider'), false, 'FileExplorer navigation sections should not be separated by repeated dividers')
+  assert.equal(pane.includes('  Divider,'), false, 'navigation pane should not import Divider after section separators are removed')
+  assert.ok((pane.match(/py: 0\.5/g) || []).length >= 4, 'navigation sections should use compact vertical spacing')
+})

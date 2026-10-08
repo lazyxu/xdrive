@@ -27,6 +27,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import NavigateNextRoundedIcon from '@mui/icons-material/NavigateNextRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
@@ -169,6 +170,12 @@ const detailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [
   'dimensions',
   'duration',
 ]
+const detailsRightAlignedColumnKeys = new Set<XDriveFileExplorerDetailsColumnKey>([
+  'size',
+  'dimensions',
+  'duration',
+])
+
 const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, {
   label: string
   defaultWidth: number
@@ -240,6 +247,13 @@ const fileExplorerInspectorMaxWidth = 480
 const fileExplorerInspectorDefaultWidth = 312
 
 const fileExplorerGridSizeOrder: XDriveFileExplorerGridSize[] = ['tiny', 'small', 'medium', 'large', 'huge']
+const fileExplorerGridSizeStatusLabel: Record<XDriveFileExplorerGridSize, string> = {
+  tiny: '超小图标',
+  small: '小图标',
+  medium: '中图标',
+  large: '大图标',
+  huge: '超大图标',
+}
 
 const fileExplorerGridMetrics: Record<XDriveFileExplorerGridSize, {
   minColumnWidth: number
@@ -656,7 +670,7 @@ export function XDriveFileExplorerAvailabilityBadge({
                 bottom: '-0.12em',
                 fontSize: '0.58em',
                 color: 'success.main',
-                bgcolor: 'background.paper',
+                bgcolor: 'background.default',
                 borderRadius: '50%',
               }}
             />
@@ -950,6 +964,7 @@ export function XDriveFileExplorer({
   const [arrangeAnchor, setArrangeAnchor] = useState<HTMLElement | null>(null)
   const [detailsColumnsAnchor, setDetailsColumnsAnchor] = useState<HTMLElement | null>(null)
   const [viewPreferencesAnchor, setViewPreferencesAnchor] = useState<HTMLElement | null>(null)
+  const [commandBarOverflowAnchor, setCommandBarOverflowAnchor] = useState<HTMLElement | null>(null)
   const [draggedDetailsColumn, setDraggedDetailsColumn] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
   const [detailsColumnDropTarget, setDetailsColumnDropTarget] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
   const [detailsLayout, setDetailsLayout] = useState<XDriveFileExplorerDetailsLayout>(() => loadFileExplorerDetailsLayout(detailsPreferencesKey))
@@ -966,6 +981,7 @@ export function XDriveFileExplorer({
     mouseY: number
     items: XDriveFileExplorerMenuItem[]
   } | null>(null)
+  const commandBarRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const pendingScrollTopRef = useRef(0)
@@ -992,6 +1008,7 @@ export function XDriveFileExplorer({
   const [renameSubmitting, setRenameSubmitting] = useState(false)
   const [renameError, setRenameError] = useState('')
   const [scrollTop, setScrollTop] = useState(0)
+  const [commandBarWidth, setCommandBarWidth] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [viewportWidth, setViewportWidth] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
@@ -1026,6 +1043,11 @@ export function XDriveFileExplorer({
     )
   }, [gridGapPx, gridMetrics.minColumnWidth, gridPaddingPx, viewportWidth])
   const gridRowStep = gridMetrics.estimatedRowHeight + gridGapPx
+  const commandBarOverflowLevel = commandBarWidth > 0 && commandBarWidth < 820
+    ? 2
+    : commandBarWidth > 0 && commandBarWidth < 1080
+      ? 1
+      : 0
   const visibleDetailsColumns = useMemo(
     () => detailsLayout.order.filter((key) => detailsLayout.visible.includes(key)),
     [detailsLayout.order, detailsLayout.visible],
@@ -1122,6 +1144,17 @@ export function XDriveFileExplorer({
     if (!viewPreferencesKey || typeof window === 'undefined') return
     window.localStorage.setItem(viewPreferencesKey, JSON.stringify(viewPreferences))
   }, [viewPreferences, viewPreferencesKey])
+
+  useEffect(() => {
+    const host = commandBarRef.current
+    if (!host) return
+    const update = () => setCommandBarWidth(host.clientWidth)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const host = scrollHostRef.current
@@ -2305,6 +2338,11 @@ export function XDriveFileExplorer({
 
   const contextMenuItems = contextMenu?.items ?? []
 
+  const runCommandBarOverflowAction = (action: () => void) => {
+    setCommandBarOverflowAnchor(null)
+    action()
+  }
+
   const setViewMode = (mode: XDriveFileExplorerViewMode) => {
     if (controlledViewMode === undefined) setInternalViewMode(mode)
     onViewModeChange?.(mode)
@@ -3267,6 +3305,13 @@ export function XDriveFileExplorer({
     ), 0),
     [selectedItems],
   )
+  const selectedHasFiles = selectedItems.some((item) => item.kind === 'file')
+  const selectionStatusText = selectedItems.length > 0
+    ? `已选择 ${selectedItems.length} 项${selectedHasFiles ? ` · ${formatBytes(selectedSize)}` : ''}`
+    : ''
+  const viewStatusText = viewMode === 'details'
+    ? `详细信息 · ${viewPreferences.detailsDensity === 'compact' ? '紧凑' : '标准'}`
+    : `图标 · ${fileExplorerGridSizeStatusLabel[viewPreferences.gridSize]}`
 
   const nativeDragOutHandle = (
     item: XDriveFileExplorerItem,
@@ -3429,6 +3474,7 @@ export function XDriveFileExplorer({
               minWidth: 0,
               overflow: 'hidden',
               position: key === 'name' ? 'relative' : undefined,
+              textAlign: detailsRightAlignedColumnKeys.has(key) ? 'right' : 'left',
             }}
           >
             {key === 'name' ? (
@@ -3453,7 +3499,12 @@ export function XDriveFileExplorer({
                 {!renaming ? nativeDragOutHandle(item, 'details') : null}
               </>
             ) : (
-              <Typography variant="body2" color="text.secondary" noWrap>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                noWrap
+                sx={{ textAlign: 'inherit', fontVariantNumeric: 'tabular-nums' }}
+              >
                 {detailsColumnText(item, key)}
               </Typography>
             )}
@@ -3475,9 +3526,12 @@ export function XDriveFileExplorer({
           aria-hidden
           data-xdrive-file-explorer-placeholder
           sx={{
+            width: '100%',
             minWidth: 0,
             minHeight: gridMetrics.minItemHeight,
             maxWidth: gridMetrics.maxItemWidth,
+            justifySelf: 'center',
+            boxSizing: 'border-box',
             borderRadius: 1,
             p: gridMetrics.itemPadding,
             bgcolor: 'action.hover',
@@ -3535,13 +3589,17 @@ export function XDriveFileExplorer({
         }}
         onKeyDown={(event) => itemKeyDown(event, item)}
         sx={{
+          width: '100%',
           minWidth: 0,
           minHeight: gridMetrics.minItemHeight,
           maxWidth: gridMetrics.maxItemWidth,
+          justifySelf: 'center',
+          boxSizing: 'border-box',
           borderRadius: 1,
           p: gridMetrics.itemPadding,
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'center',
           justifyContent: 'flex-start',
           gap: gridMetrics.itemGap,
           textAlign: 'center',
@@ -3577,13 +3635,25 @@ export function XDriveFileExplorer({
             overflow: 'hidden',
             borderRadius: 0,
             position: 'relative',
+            flex: '0 0 auto',
           }}
         >
           {thumbnailForItem(item)}
           {availabilityIndicator(item, true)}
           {!renaming ? nativeDragOutHandle(item, 'grid') : null}
         </Box>
-        {renderItemName(item, true)}
+        <Box
+          data-xdrive-file-explorer-grid-name
+          sx={{
+            width: '100%',
+            minHeight: 32,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+          }}
+        >
+          {renderItemName(item, true)}
+        </Box>
       </ButtonBase>
     )
   }
@@ -4078,6 +4148,8 @@ export function XDriveFileExplorer({
       <Divider />
 
       <Stack
+        ref={commandBarRef}
+        data-xdrive-file-explorer-command-bar
         direction="row"
         alignItems="center"
         spacing={0.75}
@@ -4085,99 +4157,83 @@ export function XDriveFileExplorer({
           px: 1.25,
           py: 0.5,
           minHeight: 40,
+          minWidth: 0,
+          overflow: 'hidden',
           '& .MuiButton-root': { minHeight: 30, px: 1, borderRadius: 1 },
         }}
       >
-        {selectedItems.length > 0 ? (
-          <>
-            <Typography
-              variant="body2"
-              fontWeight={700}
-              sx={{ px: 0.5, whiteSpace: 'nowrap' }}
-            >
-              已选择 {selectedItems.length} 项
-            </Typography>
-            {onCutItems ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<ContentCutRoundedIcon />}
-                title={fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
-                onClick={() => onCutItems(selectedItems)}
-              >
-                剪切
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onCopyItems ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<ContentCopyRoundedIcon />}
-                title={fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
-                onClick={() => onCopyItems(selectedItems)}
-              >
-                复制
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onDownloadItems && selectedItems.some((item) => (
-              item.kind === 'file' || folderDownloadSupported
-            )) ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<DownloadRoundedIcon />}
-                onClick={() => onDownloadItems(selectedItems)}
-              >
-                下载
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onDeleteItems ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<DeleteOutlineRoundedIcon />}
-                title={fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
-                onClick={() => onDeleteItems(selectedItems)}
-                sx={{ color: 'error.main' }}
-              >
-                删除
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            <XDriveFileExplorerCommandButton
-              startIcon={<CloseRoundedIcon />}
-              onClick={clearSelection}
-            >
-              取消选择
-            </XDriveFileExplorerCommandButton>
-          </>
-        ) : (
-          <>
-            {onPaste ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<ContentPasteRoundedIcon />}
-                title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
-                disabled={!canPaste}
-                onClick={() => onPaste()}
-              >
-                粘贴
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onCreateFolder ? (
-              <XDriveFileExplorerCommandButton
-                startIcon={<CreateNewFolderRoundedIcon />}
-                title={fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)}
-                onClick={onCreateFolder}
-              >
-                新建文件夹
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onUpload ? (
-              <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
-                上传文件
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {onUploadFolder ? (
-              <XDriveFileExplorerCommandButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={onUploadFolder}>
-                上传文件夹
-              </XDriveFileExplorerCommandButton>
-            ) : null}
-            {commandBarStart}
-          </>
-        )}
+        {onCreateFolder && commandBarOverflowLevel < 2 ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<CreateNewFolderRoundedIcon />}
+            title={fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)}
+            onClick={onCreateFolder}
+          >
+            新建文件夹
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onUpload && commandBarOverflowLevel < 2 ? (
+          <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
+            上传文件
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onUploadFolder && commandBarOverflowLevel === 0 ? (
+          <XDriveFileExplorerCommandButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={onUploadFolder}>
+            上传文件夹
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {commandBarStart}
+        {onCutItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentCutRoundedIcon />}
+            title={fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
+            disabled={selectedItems.length === 0}
+            onClick={() => onCutItems(selectedItems)}
+          >
+            剪切
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onCopyItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentCopyRoundedIcon />}
+            title={fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
+            disabled={selectedItems.length === 0}
+            onClick={() => onCopyItems(selectedItems)}
+          >
+            复制
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onPaste ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<ContentPasteRoundedIcon />}
+            title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
+            disabled={!canPaste}
+            onClick={() => onPaste()}
+          >
+            粘贴
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onDownloadItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<DownloadRoundedIcon />}
+            disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}
+            onClick={() => onDownloadItems(selectedItems)}
+          >
+            下载
+          </XDriveFileExplorerCommandButton>
+        ) : null}
+        {onDeleteItems ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<DeleteOutlineRoundedIcon />}
+            title={fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
+            disabled={selectedItems.length === 0}
+            onClick={() => onDeleteItems(selectedItems)}
+            sx={{ color: 'error.main' }}
+          >
+            删除
+          </XDriveFileExplorerCommandButton>
+        ) : null}
 
-        {onUndo ? (
+        {onUndo && commandBarOverflowLevel === 0 ? (
           <XDriveFileExplorerCommandButton
             startIcon={<UndoRoundedIcon />}
             title={fileExplorerShortcutTitle('撤销', 'undo', keyboardProfile)}
@@ -4187,7 +4243,7 @@ export function XDriveFileExplorer({
             撤销
           </XDriveFileExplorerCommandButton>
         ) : null}
-        {onRedo ? (
+        {onRedo && commandBarOverflowLevel === 0 ? (
           <XDriveFileExplorerCommandButton
             startIcon={<RedoRoundedIcon />}
             title={fileExplorerShortcutTitle('重做', 'redo', keyboardProfile)}
@@ -4202,7 +4258,22 @@ export function XDriveFileExplorer({
 
         {commandBarEnd}
 
-        {navigationPane ? (
+        {commandBarOverflowLevel > 0 ? (
+          <Tooltip title="更多文件操作">
+            <IconButton
+              size="small"
+              aria-label="更多文件操作"
+              aria-haspopup="menu"
+              aria-expanded={Boolean(commandBarOverflowAnchor)}
+              onClick={(event) => setCommandBarOverflowAnchor(event.currentTarget)}
+              sx={{ width: 30, height: 30, flexShrink: 0 }}
+            >
+              <MoreHorizRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+
+        {navigationPane && commandBarOverflowLevel === 0 ? (
           <XDriveFileExplorerCommandButton
             startIcon={<ViewSidebarRoundedIcon />}
             title={viewPreferences.navigationPaneVisible ? '隐藏导航窗格' : '显示导航窗格'}
@@ -4213,14 +4284,16 @@ export function XDriveFileExplorer({
           </XDriveFileExplorerCommandButton>
         ) : null}
 
-        <XDriveFileExplorerCommandButton
-          startIcon={<InfoOutlinedIcon />}
-          title={fileExplorerShortcutTitle('显示或隐藏详细信息窗格', 'toggle-inspector', keyboardProfile)}
-          aria-pressed={inspectorOpen}
-          onClick={() => setInspectorOpen((open) => !open)}
-        >
-          详细信息
-        </XDriveFileExplorerCommandButton>
+        {commandBarOverflowLevel === 0 ? (
+          <XDriveFileExplorerCommandButton
+            startIcon={<InfoOutlinedIcon />}
+            title={fileExplorerShortcutTitle('显示或隐藏详细信息窗格', 'toggle-inspector', keyboardProfile)}
+            aria-pressed={inspectorOpen}
+            onClick={() => setInspectorOpen((open) => !open)}
+          >
+            详细信息
+          </XDriveFileExplorerCommandButton>
+        ) : null}
 
         <XDriveFileExplorerCommandButton
           startIcon={<GridViewRoundedIcon />}
@@ -4384,6 +4457,55 @@ export function XDriveFileExplorer({
           </MenuItem>
         </Menu>
       </Stack>
+      <Menu
+        anchorEl={commandBarOverflowAnchor}
+        open={Boolean(commandBarOverflowAnchor)}
+        onClose={() => setCommandBarOverflowAnchor(null)}
+      >
+        {commandBarOverflowLevel >= 2 && onCreateFolder ? (
+          <MenuItem onClick={() => runCommandBarOverflowAction(onCreateFolder)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><CreateNewFolderRoundedIcon fontSize="small" /></Box>
+            新建文件夹
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 2 && onUpload ? (
+          <MenuItem onClick={() => runCommandBarOverflowAction(onUpload)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UploadRoundedIcon fontSize="small" /></Box>
+            上传文件
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 1 && onUploadFolder ? (
+          <MenuItem onClick={() => runCommandBarOverflowAction(onUploadFolder)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><DriveFolderUploadRoundedIcon fontSize="small" /></Box>
+            上传文件夹
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 1 && onUndo ? (
+          <MenuItem disabled={!canUndo} onClick={() => runCommandBarOverflowAction(onUndo)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UndoRoundedIcon fontSize="small" /></Box>
+            撤销
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 1 && onRedo ? (
+          <MenuItem disabled={!canRedo} onClick={() => runCommandBarOverflowAction(onRedo)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><RedoRoundedIcon fontSize="small" /></Box>
+            重做
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 1 && navigationPane ? (
+          <MenuItem onClick={() => runCommandBarOverflowAction(toggleNavigationPane)}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><ViewSidebarRoundedIcon fontSize="small" /></Box>
+            {viewPreferences.navigationPaneVisible ? '隐藏导航窗格' : '显示导航窗格'}
+          </MenuItem>
+        ) : null}
+        {commandBarOverflowLevel >= 1 ? (
+          <MenuItem onClick={() => runCommandBarOverflowAction(() => setInspectorOpen((open) => !open))}>
+            <Box sx={{ width: 24, mr: 1, display: 'flex' }}><InfoOutlinedIcon fontSize="small" /></Box>
+            {inspectorOpen ? '隐藏详细信息' : '显示详细信息'}
+          </MenuItem>
+        ) : null}
+      </Menu>
+
 
       <Divider />
 
@@ -4551,19 +4673,35 @@ export function XDriveFileExplorer({
                       minWidth: 0,
                       flex: 1,
                       height: '100%',
-                      justifyContent: 'flex-start',
+                      justifyContent: detailsRightAlignedColumnKeys.has(key) ? 'flex-end' : 'flex-start',
                       pr: 1.5,
                       fontSize: 12,
-                      color: 'inherit',
+                      color: detailsColumnMeta[key].sortKey === sort.key ? 'text.primary' : 'inherit',
                       cursor: detailsColumnMeta[key].sortKey ? 'pointer' : 'default',
                     }}
                   >
-                    <Typography component="span" variant="caption" noWrap color="inherit">
-                      {detailsColumnMeta[key].label}
-                      {detailsColumnMeta[key].sortKey === sort.key
-                        ? (sort.direction === 'asc' ? ' ↑' : ' ↓')
-                        : ''}
-                    </Typography>
+                    <Stack
+                      direction="row"
+                      spacing={0.375}
+                      alignItems="center"
+                      justifyContent={detailsRightAlignedColumnKeys.has(key) ? 'flex-end' : 'flex-start'}
+                      sx={{ minWidth: 0, width: '100%' }}
+                    >
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        noWrap
+                        color="inherit"
+                        fontWeight={detailsColumnMeta[key].sortKey === sort.key ? 600 : 500}
+                      >
+                        {detailsColumnMeta[key].label}
+                      </Typography>
+                      {detailsColumnMeta[key].sortKey === sort.key ? (
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {sort.direction === 'asc' ? '↑' : '↓'}
+                        </Typography>
+                      ) : null}
+                    </Stack>
                   </ButtonBase>
                   <Box
                     role="separator"
@@ -4595,7 +4733,7 @@ export function XDriveFileExplorer({
                         top: 0,
                         bottom: 0,
                         borderLeft: 1,
-                        borderColor: 'primary.main',
+                        borderColor: 'text.disabled',
                       },
                     }}
                   />
@@ -4834,16 +4972,29 @@ export function XDriveFileExplorer({
               flexShrink: 0,
               minHeight: 0,
               overflowY: 'auto',
-              bgcolor: 'background.paper',
+              bgcolor: 'background.default',
             }}
           >
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 40, px: 1.5 }}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
+                minHeight: 36,
+                px: 1.25,
+                bgcolor: 'background.default',
+                borderBottom: 1,
+                borderColor: 'divider',
+              }}
+            >
               <Typography variant="subtitle2">详细信息</Typography>
               <IconButton size="small" aria-label="关闭详细信息" onClick={() => setInspectorOpen(false)}>
                 <CloseRoundedIcon fontSize="small" />
               </IconButton>
             </Stack>
-            <Divider />
             {selectedItems.length === 0 ? (
               <XDriveStatePanel variant="plain" compact message="选择一个项目以查看预览和属性。" />
             ) : selectedItems.length > 1 ? (
@@ -4860,18 +5011,22 @@ export function XDriveFileExplorer({
                 ) : null}
               </Stack>
             ) : inspectorItem ? (
-              <Stack spacing={1.5} sx={{ p: 1.5 }}>
+              <Stack spacing={0} sx={{ pb: 1 }}>
                 <Box
                   data-xdrive-file-explorer-preview
                   sx={{
                     minHeight: 176,
                     maxHeight: 220,
-                    borderRadius: 1,
-                    bgcolor: 'background.default',
+                    borderRadius: 0,
+                    bgcolor: 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     overflow: 'hidden',
+                    px: 1.25,
+                    py: 1,
+                    borderBottom: 1,
+                    borderColor: 'divider',
                   }}
                 >
                   <XDriveFilePreviewSurface
@@ -4889,20 +5044,29 @@ export function XDriveFileExplorer({
                     maxHeight={220}
                   />
                 </Box>
-                <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>{inspectorItem.name}</Typography>
+                <Typography
+                  variant="subtitle2"
+                  sx={{ px: 1.5, py: 1.25, overflowWrap: 'anywhere' }}
+                >
+                  {inspectorItem.name}
+                </Typography>
                 {inspectorPropertySections.map((section) => (
-                  <Stack key={section.key} spacing={1}>
-                    <Divider />
-                    <Typography variant="caption" color="text.secondary">
+                  <Box
+                    key={section.key}
+                    sx={{ px: 1.5, py: 1.25, borderTop: 1, borderColor: 'divider' }}
+                  >
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                       {section.label}
                     </Typography>
-                    {section.properties.map((property) => (
-                      <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '88px minmax(0, 1fr)', gap: 1 }}>
-                        <Typography variant="caption" color="text.secondary">{property.label}</Typography>
-                        <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
-                      </Box>
-                    ))}
-                  </Stack>
+                    <Stack spacing={0.75}>
+                      {section.properties.map((property) => (
+                        <Box key={property.label} sx={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: 1.25 }}>
+                          <Typography variant="caption" color="text.secondary">{property.label}</Typography>
+                          <Typography variant="body2" component="div" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{property.value}</Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Box>
                 ))}
               </Stack>
             ) : null}
@@ -4979,18 +5143,31 @@ export function XDriveFileExplorer({
       <Divider />
 
       <Stack
+        data-xdrive-file-explorer-status-bar
         direction="row"
         alignItems="center"
         justifyContent="space-between"
         spacing={2}
         sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
       >
-        <Typography variant="caption">
-          {logicalItemCount} 个项目{selectedIDs.length > 0 ? ` · 已选择 ${selectedIDs.length} 个` : ''}
-        </Typography>
-        <Typography variant="caption">
-          {statusText ?? (selectedIDs.length > 0 && selectedSize > 0 ? `已选择 ${formatBytes(selectedSize)}` : '')}
-        </Typography>
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+          <Typography variant="caption" noWrap>
+            {logicalItemCount} 个项目
+          </Typography>
+          {selectionStatusText ? (
+            <Typography variant="caption" noWrap color="text.primary">
+              {selectionStatusText}
+            </Typography>
+          ) : null}
+        </Stack>
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+          {statusText ? (
+            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{statusText}</Box>
+          ) : null}
+          <Typography variant="caption" noWrap>
+            {viewStatusText}
+          </Typography>
+        </Stack>
       </Stack>
     </Paper>
     </XDriveFileExplorerThumbnailProvider>
