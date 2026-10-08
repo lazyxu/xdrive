@@ -492,6 +492,7 @@ function FileManager({
     transferLifecycle: {
       startGroup: (input) => api.startTransferGroup(input),
       startChild: (groupID, input) => api.startTransferChild(groupID, input),
+      startChildren: (groupID, inputs) => api.startTransferChildren(groupID, inputs),
       begin: (id, input) => {
         if (input?.group) api.updateTransferGroup(id, input.group)
         api.beginTransfer(id)

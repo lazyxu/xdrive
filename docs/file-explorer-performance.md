@@ -28,6 +28,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For F manifest files, each group-progress publication no longer scans F child byte slots. Aggregate bytes are maintained by current-file deltas: **O(F) -> O(1) per progress publication**, and the two F-length `int64` progress arrays are removed. |
 | Hierarchical Transfer history trim fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | One group + 1,000 completed child tasks below the 200-root history limit: `trimLocked` history-entry inspections during start/finish **1,003,001 -> 0**. Root-tree retention/eviction semantics are unchanged. |
 | Folder-upload group progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N folder-upload targets, every group-progress publication changes from scanning N child byte slots to an incremental byte total: **O(N) -> O(1)** per publication; `fileSize` probes during target setup **2N -> N** and the N-length `childDone` array is removed. |
+| Web folder-upload child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N queued child tasks under one Web folder-upload group, upfront parent lookup/history trim/full-history persistence/listener publication **N -> 1** via the optional batch lifecycle; all child IDs still exist before group transfer begins. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
@@ -2001,7 +2002,7 @@ Regression commands:
 
 - `go test ./internal/transfer -run '^TestManagerHistoryTrimFastPathUsesRootCardinality$|^TestManagerHistoryLimitCountsRootTransfersNotChildren$|^TestManagerClearHistoryKeepsCompletedChildrenOfActiveGroup$' -count=1`.
 
-Next action: optimize Web child registration/persistence while preserving upfront child visibility.
+Next action: completed by the Web child registration/persistence contract below; continue basic FileExplorer download/sync/delete audits.
 
 ### Folder-upload group progress aggregation contract
 
@@ -2036,6 +2037,42 @@ Regression budget: group progress aggregation must not scan per-child byte slots
 Regression command:
 
 - `node --test desktop/tests/shared-folder-upload-transfer-groups.cjs`.
+
+### Web folder-upload child registration/persistence contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Web FileExplorer folder upload with **N queued child tasks** under one transfer group;
+- all children must remain visible in Transfer Center before the group begins transferring;
+- evidence is deterministic shared-controller execution plus Web store source-shape regression; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- shared upload orchestration calls the Web `startChild` adapter N times;
+- each call performs a parent-task lookup, prepends a new task array, trims root history, serializes the full transfer history into `localStorage`, copies a snapshot, and notifies listeners;
+- child registration therefore performs **N parent lookups, N history trims, N full-history persistence writes, and N listener publications**;
+- because every persistence write serializes the growing child list, cumulative registration serialization grows with both child count and retained history size.
+
+AFTER / current:
+
+- the shared lifecycle exposes optional `startChildren` while retaining `startChild` as the compatibility path;
+- Web opts into `startChildren`; Desktop/Agent keeps the existing per-child lifecycle unchanged;
+- Web resolves the parent once, constructs all queued child tasks in target order, prepends them in the same legacy newest-first display order, then runs one history trim and one emit/persistence step;
+- the same N-child registration performs **1 parent lookup, 1 history trim, 1 full-history persistence write, and 1 listener publication**;
+- returned child IDs stay in target order, so subsequent upload/progress/finish calls retain their existing file-to-transfer mapping;
+- all queued children still exist before `begin(groupID)`, so upfront Transfer Center visibility is preserved.
+
+Decision: **Accepted.** Upfront child visibility is part of the transfer contract, but persisting and publishing the entire growing transfer history after every child has no semantic value.
+
+Regression budget: Web folder-upload batches with more than one child must use one `startChildren` call and one store emit for registration. The single-child `startChild` API remains compatible. Desktop transfer lifecycle behavior is unchanged.
+
+Regression command:
+
+- `node --test desktop/tests/shared-folder-upload-transfer-groups.cjs`.
+
+Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 
 ### Windows empty always-local policy fast-path contract
