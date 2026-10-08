@@ -112,3 +112,23 @@ test('Web archive download batches prepared child registration', () => {
   )
 })
 
+test('Web archive progress and terminal lifecycle updates use one TransferStore batch', () => {
+  assert.ok(webTransfers.includes('batchUpdates<T>(run: () => T): T'))
+  assert.ok(webTransfers.includes('private batchDepth = 0'))
+  assert.ok(webTransfers.includes('private batchChanged = false'))
+  assert.ok(webTransfers.includes('if (this.batchDepth > 0)'))
+  assert.ok(api.includes('batchTransferUpdates<T>(run: () => T)'))
+  assert.ok(
+    (api.match(/this\.batchTransferUpdates\(\(\) => \{/g) || []).length >= 3,
+    'archive progress, success finalization and failure cleanup must each batch lifecycle mutations',
+  )
+
+  const applyStart = api.indexOf('const applyProgress = (progress: ArchiveDownloadProgress) => {')
+  const pollStart = api.indexOf("polling = (async () => {", applyStart)
+  assert.ok(applyStart >= 0 && pollStart > applyStart)
+  assert.ok(
+    api.slice(applyStart, pollStart).includes('this.batchTransferUpdates(() => {'),
+    'one polled archive progress snapshot must be applied inside one batch',
+  )
+})
+

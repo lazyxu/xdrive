@@ -30,6 +30,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Folder-upload group progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N folder-upload targets, every group-progress publication changes from scanning N child byte slots to an incremental byte total: **O(N) -> O(1)** per publication; `fileSize` probes during target setup **2N -> N** and the N-length `childDone` array is removed. |
 | Web folder-upload child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N queued child tasks under one Web folder-upload group, upfront parent lookup/history trim/full-history persistence/listener publication **N -> 1** via the optional batch lifecycle; all child IDs still exist before group transfer begins. |
 | Web archive-download child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N prepared archive leaf files, Transfer Center child registration reuses the Web batch primitive: parent lookup/history trim/full-history persistence/listener publication **N -> 1**; archive prepare, progress polling and payload streaming are unchanged. |
+| Web archive progress persistence batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | For one progress snapshot over N prepared leaf files, TransferStore history trim/full-history persistence/listener publication changes from **up to N+1 -> 1** in steady progress; lifecycle states and 200 ms Server polling are unchanged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
@@ -2108,7 +2109,46 @@ Regression command:
 
 - `node --test desktop/tests/shared-web-archive-download-transfer-groups.cjs`.
 
-Next action: audit archive progress polling so one 200 ms server progress snapshot does not persist/notify the complete Web transfer history once per child; keep archive data-plane streaming unchanged.
+### Web archive-download progress persistence batching contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Web FileExplorer archive/folder download with **N prepared leaf files** and the existing 200 ms Server progress polling;
+- stable structural example: **1,000 child transfers + 1 group transfer**;
+- evidence combines an executable Web TransferStore batching regression with source-shape coverage of archive progress/success/failure wiring;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every child `begin`, `progress`, or terminal `finish` calls TransferStore `patch`;
+- each successful `patch` trims root history, serializes the complete transfer list to `localStorage`, snapshots it, and publishes every listener;
+- a steady 1,000-file progress snapshot therefore performs **1,001 history trims, 1,001 full-history persistence writes, and 1,001 listener publications** (1,000 child progress updates + 1 group update);
+- state-transition snapshots can perform more because begin/finish mutations are additional child patches;
+- success fallback completion and failure/cancel cleanup also repeat persistence once per unfinished child.
+
+AFTER / current:
+
+- TransferStore exposes a nest-safe `batchUpdates` scope for lifecycle patches;
+- archive `applyProgress` batches every child mutation and its group aggregate update;
+- successful terminal catch-up batches child progress/completion plus group completion;
+- failure cleanup batches unfinished-child cancellation plus group failure;
+- the outer batch performs **one history trim, one full-history persistence write, one snapshot, and one listener publication** when any lifecycle item changed;
+- ordinary single-file upload/download mutations outside a batch keep their existing immediate persistence/publication behavior;
+- Server progress polling remains 200 ms and archive payload streaming is unchanged.
+
+Decision: **Accepted.** A single Server progress snapshot is one coherent UI state transition; serializing and publishing the same transfer tree after each child mutation has no correctness or user-visible value.
+
+Regression budget: one archive progress snapshot must cause at most **1** TransferStore trim/persistence/listener publication regardless of child count. Nested batch scopes must flush only at the outer boundary, and unbatched single-transfer progress must still publish immediately.
+
+Regression commands:
+
+- `node --test desktop/tests/web-transfer-store-batch.cjs`;
+- `node --test desktop/tests/shared-web-archive-download-transfer-groups.cjs`.
+
+Next action: continue basic FileExplorer sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
 
 
 ### Windows empty always-local policy fast-path contract

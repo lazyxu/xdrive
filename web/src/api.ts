@@ -370,6 +370,10 @@ export class XDriveApi {
     webTransferStore.finishLifecycle(id, input)
   }
 
+  batchTransferUpdates<T>(run: () => T) {
+    return webTransferStore.batchUpdates(run)
+  }
+
   clearFileOperationHistory() {
     return this.request<void>('/api/v1/file-operations', {
       method: 'DELETE',
@@ -2136,34 +2140,36 @@ export class XDriveApi {
     let polling: Promise<void> | null = null
 
     const applyProgress = (progress: ArchiveDownloadProgress) => {
-      for (const file of progress.files) {
-        const childID = childIDs.get(file.path)
-        if (!childID) continue
-        const previous = childStates.get(file.path)
-        if (file.state === 'transferring' && previous !== 'transferring') {
-          this.beginTransfer(childID)
+      this.batchTransferUpdates(() => {
+        for (const file of progress.files) {
+          const childID = childIDs.get(file.path)
+          if (!childID) continue
+          const previous = childStates.get(file.path)
+          if (file.state === 'transferring' && previous !== 'transferring') {
+            this.beginTransfer(childID)
+          }
+          this.progressTransfer(childID, file.done, file.size)
+          if (
+            (file.state === 'completed' || file.state === 'failed' || file.state === 'cancelled') &&
+            previous !== file.state
+          ) {
+            this.finishTransfer(childID, {
+              state: file.state,
+              ...(file.error ? { error: file.error } : {}),
+            })
+          }
+          childStates.set(file.path, file.state)
         }
-        this.progressTransfer(childID, file.done, file.size)
-        if (
-          (file.state === 'completed' || file.state === 'failed' || file.state === 'cancelled') &&
-          previous !== file.state
-        ) {
-          this.finishTransfer(childID, {
-            state: file.state,
-            ...(file.error ? { error: file.error } : {}),
-          })
-        }
-        childStates.set(file.path, file.state)
-      }
-      this.updateTransferGroup(groupID, {
-        scanComplete: true,
-        bytesDone: progress.bytes_done,
-        bytesTotal: progress.bytes_total,
-        itemsTotal: progress.items_total,
-        itemsCompleted: progress.items_completed,
-        itemsFailed: progress.items_failed,
-        itemsRunning: progress.items_running,
-        itemsQueued: progress.items_queued,
+        this.updateTransferGroup(groupID, {
+          scanComplete: true,
+          bytesDone: progress.bytes_done,
+          bytesTotal: progress.bytes_total,
+          itemsTotal: progress.items_total,
+          itemsCompleted: progress.items_completed,
+          itemsFailed: progress.items_failed,
+          itemsRunning: progress.items_running,
+          itemsQueued: progress.items_queued,
+        })
       })
     }
 
@@ -2251,36 +2257,40 @@ export class XDriveApi {
         // A successful archive response proves every entry was fully streamed.
       }
 
-      for (const file of preparedFiles) {
-        const childID = childIDs.get(file.path)
-        if (!childID || childStates.get(file.path) === 'completed') continue
-        this.progressTransfer(childID, file.size, file.size)
-        this.finishTransfer(childID, { state: 'completed' })
-        childStates.set(file.path, 'completed')
-      }
-      this.updateTransferGroup(groupID, {
-        scanComplete: true,
-        bytesDone: preparedTotalBytes,
-        bytesTotal: preparedTotalBytes,
-        itemsTotal: preparedFiles.length,
-        itemsCompleted: preparedFiles.length,
-        itemsFailed: 0,
-        itemsRunning: 0,
-        itemsQueued: 0,
+      this.batchTransferUpdates(() => {
+        for (const file of preparedFiles) {
+          const childID = childIDs.get(file.path)
+          if (!childID || childStates.get(file.path) === 'completed') continue
+          this.progressTransfer(childID, file.size, file.size)
+          this.finishTransfer(childID, { state: 'completed' })
+          childStates.set(file.path, 'completed')
+        }
+        this.updateTransferGroup(groupID, {
+          scanComplete: true,
+          bytesDone: preparedTotalBytes,
+          bytesTotal: preparedTotalBytes,
+          itemsTotal: preparedFiles.length,
+          itemsCompleted: preparedFiles.length,
+          itemsFailed: 0,
+          itemsRunning: 0,
+          itemsQueued: 0,
+        })
+        this.finishTransfer(groupID, { state: 'completed' })
       })
-      this.finishTransfer(groupID, { state: 'completed' })
       return true
     } catch (error) {
       stopPolling = true
       if (polling) await polling
-      for (const [path, childID] of childIDs) {
-        const state = childStates.get(path)
-        if (state === 'completed' || state === 'failed' || state === 'cancelled') continue
-        this.finishTransfer(childID, { state: 'cancelled' })
-      }
-      this.finishTransfer(groupID, {
-        state: 'failed',
-        error: error instanceof Error ? error.message : String(error),
+      this.batchTransferUpdates(() => {
+        for (const [path, childID] of childIDs) {
+          const state = childStates.get(path)
+          if (state === 'completed' || state === 'failed' || state === 'cancelled') continue
+          this.finishTransfer(childID, { state: 'cancelled' })
+        }
+        this.finishTransfer(groupID, {
+          state: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        })
       })
       throw error
     }

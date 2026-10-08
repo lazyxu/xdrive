@@ -83,6 +83,8 @@ class WebTransferStore {
   private items = loadTransferHistory()
   private listeners = new Set<(items: XDriveTransferTask[]) => void>()
   private sequence = 0
+  private batchDepth = 0
+  private batchChanged = false
 
   snapshot() {
     return [...this.items]
@@ -92,6 +94,20 @@ class WebTransferStore {
     this.listeners.add(listener)
     listener(this.snapshot())
     return () => { this.listeners.delete(listener) }
+  }
+
+  batchUpdates<T>(run: () => T): T {
+    this.batchDepth += 1
+    try {
+      return run()
+    } finally {
+      this.batchDepth -= 1
+      if (this.batchDepth === 0 && this.batchChanged) {
+        this.batchChanged = false
+        this.trimHistory()
+        this.emit()
+      }
+    }
   }
 
   create(input: {
@@ -444,10 +460,13 @@ class WebTransferStore {
       changed = true
       return updater(item)
     })
-    if (changed) {
-      this.trimHistory()
-      this.emit()
+    if (!changed) return
+    if (this.batchDepth > 0) {
+      this.batchChanged = true
+      return
     }
+    this.trimHistory()
+    this.emit()
   }
 
   private emit() {
