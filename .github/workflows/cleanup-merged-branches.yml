@@ -12,7 +12,10 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: cleanup-redundant-branches
+  # A merged PR emits both push and pull_request_target events. Keep those
+  # event families in separate queues so the skipped PR-close run cannot
+  # replace the pending push cleanup before it starts.
+  group: cleanup-redundant-branches-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
