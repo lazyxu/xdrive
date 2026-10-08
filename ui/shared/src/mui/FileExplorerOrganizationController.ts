@@ -19,6 +19,7 @@ export function useXDriveFileExplorerOrganization({
   const refreshGenerationRef = useRef(0)
   const lifecycleGenerationRef = useRef(0)
   const reorderGenerationRef = useRef(0)
+  const tagNodeRefreshGenerationRef = useRef(0)
   const reorderTailRef = useRef<Promise<void>>(Promise.resolve())
   const mutationRef = useRef<{
     key: string
@@ -60,6 +61,7 @@ export function useXDriveFileExplorerOrganization({
     lifecycleGenerationRef.current += 1
     refreshGenerationRef.current += 1
     reorderGenerationRef.current += 1
+    tagNodeRefreshGenerationRef.current += 1
     reorderTailRef.current = Promise.resolve()
     mutationRef.current = null
     setTags([])
@@ -69,6 +71,7 @@ export function useXDriveFileExplorerOrganization({
       lifecycleGenerationRef.current += 1
       refreshGenerationRef.current += 1
       reorderGenerationRef.current += 1
+      tagNodeRefreshGenerationRef.current += 1
       reorderTailRef.current = Promise.resolve()
       mutationRef.current = null
     }
@@ -150,12 +153,22 @@ export function useXDriveFileExplorerOrganization({
       () => assigned ? adapter.addTagNodes(tagID, nodeIDs) : adapter.removeTagNodes(tagID, nodeIDs),
     )
     if (lifecycleGenerationRef.current !== lifecycleGeneration) return
+    const refreshGeneration = tagNodeRefreshGenerationRef.current + 1
+    tagNodeRefreshGenerationRef.current = refreshGeneration
     try {
       const nextTags = await adapter.listTags()
-      if (lifecycleGenerationRef.current !== lifecycleGeneration) return
+      if (
+        lifecycleGenerationRef.current !== lifecycleGeneration ||
+        tagNodeRefreshGenerationRef.current !== refreshGeneration
+      ) return
       setTags(nextTags)
     } catch (error) {
-      if (lifecycleGenerationRef.current === lifecycleGeneration) onErrorRef.current(error)
+      if (
+        lifecycleGenerationRef.current === lifecycleGeneration &&
+        tagNodeRefreshGenerationRef.current === refreshGeneration
+      ) {
+        onErrorRef.current(error)
+      }
     }
   }, [adapter, run])
 
