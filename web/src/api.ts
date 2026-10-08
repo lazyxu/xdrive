@@ -2190,12 +2190,20 @@ export class XDriveApi {
       const preparedTotalBytes = prepared.total_bytes ?? 0
       const preparedFilename = prepared.filename || filename
 
-      for (const file of preparedFiles) {
-        const childID = this.startTransferChild(groupID, {
+      const registeredChildIDs = this.startTransferChildren(
+        groupID,
+        preparedFiles.map((file) => ({
           fileName: file.path.split('/').at(-1) || file.path,
           relativePath: file.path,
           bytesTotal: file.size,
-        })
+        })),
+      )
+      if (registeredChildIDs.length !== preparedFiles.length) {
+        throw new Error('归档下载传输子任务数量不匹配。')
+      }
+      for (let index = 0; index < preparedFiles.length; index += 1) {
+        const file = preparedFiles[index]
+        const childID = registeredChildIDs[index]
         childIDs.set(file.path, childID)
         childStates.set(file.path, 'queued')
       }
