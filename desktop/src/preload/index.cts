@@ -49,6 +49,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
+  getMediaMemories: (anchorDate = '', limit = 24) =>
+    ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit),
+  getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset),
   getMediaSuggestedPeople: (limit = 24) =>
     ipcRenderer.invoke('agent:get-media-suggested-people', limit),
   getMediaSuggestedPersonItems: (

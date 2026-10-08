@@ -35,6 +35,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
+  MediaMemory,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -57,6 +58,7 @@ import {
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
@@ -122,6 +124,12 @@ export interface MediaGalleryDataSource {
   permanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   listAlbums: () => Promise<MediaAlbum[]>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
+  listMemories?: (anchorDate?: string, limit?: number) => Promise<MediaMemory[]>
+  listMemoryItemRange?: (
+    memoryID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<MediaItemRange>
   listSuggestedPeople?: (limit?: number) => Promise<MediaSuggestedPerson[]>
   listSuggestedPersonItems?: (
     personID: string,
@@ -210,7 +218,7 @@ export interface MediaGalleryDataSource {
 }
 
 type MediaGalleryCollectionTarget = {
-  kind: 'all' | 'album' | 'suggested-person' | 'person' | 'trash'
+  kind: 'all' | 'album' | 'suggested-person' | 'person' | 'memory' | 'trash'
   id?: string
   query: MediaGalleryQuery
   requestID: number
@@ -264,6 +272,10 @@ function mediaGallerySectionDraft(
   return emptyMediaGalleryFilterDraft
 }
 
+export function xDriveMediaGalleryUTCDateKey(now = new Date()) {
+  return now.toISOString().slice(0, 10)
+}
+
 function emptyMediaTimelineGroupSets(): MediaTimelineGroupSets {
   return { year: [], month: [], day: [] }
 }
@@ -298,6 +310,7 @@ export function XDriveMediaGalleryPage({
 }: XDriveMediaGalleryPageProps) {
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
+  const [memories, setMemories] = useState<MediaMemory[]>([])
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
@@ -308,6 +321,7 @@ export function XDriveMediaGalleryPage({
   const [currentSuggestedPerson, setCurrentSuggestedPerson] =
     useState<MediaSuggestedPerson | null>(null)
   const [currentPerson, setCurrentPerson] = useState<MediaPersonIdentity | null>(null)
+  const [currentMemory, setCurrentMemory] = useState<MediaMemory | null>(null)
   const [section, setSection] = useState<MediaGallerySection>('library')
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
@@ -348,6 +362,11 @@ export function XDriveMediaGalleryPage({
           throw new Error('当前客户端不支持人物图库范围加载')
         }
         return source.listPersonItemRange(target.id, limit, offset, target.query)
+      case 'memory':
+        if (!target.id || !source.listMemoryItemRange) {
+          throw new Error('当前客户端不支持回忆范围加载')
+        }
+        return source.listMemoryItemRange(target.id, limit, offset)
       case 'suggested-person':
         if (!target.id || !source.listSuggestedPersonItemRange) {
           throw new Error('当前客户端不支持人物建议范围加载')
@@ -439,11 +458,14 @@ export function XDriveMediaGalleryPage({
     suggestedPerson: MediaSuggestedPerson | null = null,
     person: MediaPersonIdentity | null = null,
     targetKind: 'default' | 'trash' = 'default',
+    memory: MediaMemory | null = null,
   ) => {
     const request = ++requestID.current
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
       ? { kind: 'trash', query: {}, requestID: request }
-      : mediaGalleryTarget(
+      : memory
+        ? { kind: 'memory', id: memory.id, query: {}, requestID: request }
+        : mediaGalleryTarget(
           request,
           album,
           nextQuery,
@@ -475,6 +497,7 @@ export function XDriveMediaGalleryPage({
         setCurrentAlbum(null)
         setCurrentSuggestedPerson(null)
         setCurrentPerson(null)
+        setCurrentMemory(null)
         setAlbums(nextAlbums)
         setPlaces(nextPlaces)
         setSuggestedPeople(nextSuggestedPeople)
@@ -500,6 +523,7 @@ export function XDriveMediaGalleryPage({
         target.kind === 'suggested-person' ? suggestedPerson : null,
       )
       setCurrentPerson(target.kind === 'person' ? person : null)
+      setCurrentMemory(target.kind === 'memory' ? memory : null)
       setItems([...range.items])
       setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
       virtualCollection.primePage({
@@ -527,8 +551,50 @@ export function XDriveMediaGalleryPage({
     virtualCollection.reset,
   ])
 
+  const loadMemories = useCallback(async () => {
+    if (!source.listMemories) {
+      setMemories([])
+      setError('当前客户端不支持回忆')
+      return
+    }
+    const request = ++requestID.current
+    collectionTargetRef.current = null
+    setCollectionTarget(null)
+    setCurrentAlbum(null)
+    setCurrentSuggestedPerson(null)
+    setCurrentPerson(null)
+    setCurrentMemory(null)
+    setItems([])
+    setTimelineGroupSets(emptyMediaTimelineGroupSets())
+    virtualCollection.reset(`media-gallery:memories:index:${request}`)
+    setLoading(true)
+    setError('')
+    try {
+      const nextMemories = await source.listMemories(
+        xDriveMediaGalleryUTCDateKey(),
+        48,
+      )
+      if (request !== requestID.current) return
+      setMemories(nextMemories)
+    } catch (loadError) {
+      if (request !== requestID.current) return
+      reportError(loadError)
+    } finally {
+      if (request === requestID.current) setLoading(false)
+    }
+  }, [reportError, source, virtualCollection.reset])
+
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
-    if (nextSection === 'memories') return
+    if (nextSection !== 'memories') setCurrentMemory(null)
+    if (nextSection === 'memories') {
+      placesExpandedRef.current = false
+      setSection(nextSection)
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      void loadMemories()
+      return
+    }
     placesExpandedRef.current = nextSection === 'places'
     setSection(nextSection)
     setActiveMediaType('')
@@ -541,7 +607,7 @@ export function XDriveMediaGalleryPage({
       return
     }
     void loadFirstPage(null, nextQuery)
-  }, [loadFirstPage])
+  }, [loadFirstPage, loadMemories])
 
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
@@ -678,6 +744,15 @@ export function XDriveMediaGalleryPage({
     return created
   }, [draftFilters, source])
 
+  const openMemory = useCallback((memory: MediaMemory) => {
+    setCurrentMemory(memory)
+    setSection('memories')
+    setActiveMediaType('')
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setQuery({})
+    void loadFirstPage(null, {}, null, null, 'default', memory)
+  }, [loadFirstPage])
+
   const openAlbum = useCallback((album: MediaAlbum) => {
     setSection('albums')
     setActiveMediaType('')
@@ -737,6 +812,10 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const leaveCollection = useCallback(() => {
+    if (currentMemory) {
+      void loadMemories()
+      return
+    }
     if (section === 'media-types' && activeMediaType) {
       setActiveMediaType('')
     }
@@ -745,7 +824,7 @@ export function XDriveMediaGalleryPage({
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(null, nextQuery)
-  }, [activeMediaType, loadFirstPage, section])
+  }, [activeMediaType, currentMemory, loadFirstPage, loadMemories, section])
 
   const adoptSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,
@@ -1126,12 +1205,14 @@ export function XDriveMediaGalleryPage({
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         albums={albums}
         places={places}
+        memories={memories}
         suggestedPeople={suggestedPeople}
         people={people}
         activePlaceID={query.place}
         currentAlbum={currentAlbum}
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
+        currentMemory={currentMemory}
         loading={loading}
         timelineGroupSets={timelineGroupSets}
         error={error}
@@ -1206,6 +1287,7 @@ export function XDriveMediaGalleryPage({
         onOpenMediaType={openMediaType}
         onOpenAlbum={openAlbum}
         onOpenPlace={openPlace}
+        onOpenMemory={openMemory}
         onOpenSuggestedPerson={openSuggestedPerson}
         onOpenPerson={openPerson}
         onAdoptSuggestedPerson={
@@ -1229,13 +1311,20 @@ export function XDriveMediaGalleryPage({
         onMergePeople={source.mergePeople ? mergePeople : undefined}
         onSplitPerson={source.splitPerson ? splitPerson : undefined}
         onBack={leaveCollection}
-        onRefresh={() => void loadFirstPage(
-          currentAlbum,
-          query,
-          currentSuggestedPerson,
-          currentPerson,
-          section === 'trash' ? 'trash' : 'default',
-        )}
+        onRefresh={() => {
+          if (section === 'memories' && !currentMemory) {
+            void loadMemories()
+            return
+          }
+          void loadFirstPage(
+            currentAlbum,
+            query,
+            currentSuggestedPerson,
+            currentPerson,
+            section === 'trash' ? 'trash' : 'default',
+            currentMemory,
+          )
+        }}
       />
       {shareDialog ? (
         <XDriveShareDialog
@@ -1326,12 +1415,14 @@ export interface XDriveMediaGalleryProps {
   collectionKey?: string
   albums?: MediaAlbum[]
   places?: MediaPlaceFacet[]
+  memories?: MediaMemory[]
   suggestedPeople?: MediaSuggestedPerson[]
   people?: MediaPersonIdentity[]
   activePlaceID?: string
   currentAlbum?: MediaAlbum | null
   currentSuggestedPerson?: MediaSuggestedPerson | null
   currentPerson?: MediaPersonIdentity | null
+  currentMemory?: MediaMemory | null
   loading?: boolean
   timelineGroupSets?: MediaTimelineGroupSets
   error?: string
@@ -1363,6 +1454,7 @@ export interface XDriveMediaGalleryProps {
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
+  onOpenMemory?: (memory: MediaMemory) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
   onOpenPerson?: (person: MediaPersonIdentity) => void
   onAdoptSuggestedPerson?: (
@@ -2313,12 +2405,14 @@ export function XDriveMediaGallery({
   collectionKey = '',
   albums = [],
   places = [],
+  memories = [],
   suggestedPeople = [],
   people = [],
   activePlaceID,
   currentAlbum = null,
   currentSuggestedPerson = null,
   currentPerson = null,
+  currentMemory = null,
   loading = false,
   timelineGroupSets = emptyMediaTimelineGroupSets(),
   error = '',
@@ -2350,6 +2444,7 @@ export function XDriveMediaGallery({
   onOpenMediaType,
   onOpenAlbum,
   onOpenPlace,
+  onOpenMemory,
   onOpenSuggestedPerson,
   onOpenPerson,
   onAdoptSuggestedPerson,
@@ -2597,6 +2692,7 @@ export function XDriveMediaGallery({
     collectionKey,
     clearMediaSelection,
     currentAlbum?.id,
+    currentMemory?.id,
     currentPerson?.id,
     currentSuggestedPerson?.id,
     section,
@@ -2616,7 +2712,13 @@ export function XDriveMediaGallery({
   const activePlace = activePlaceID
     ? places.find((place) => place.id === activePlaceID)
     : undefined
-  const isRootSection = !currentAlbum && !currentSuggestedPerson && !currentPerson && !activePlaceID
+  const isRootSection =
+    !currentAlbum &&
+    !currentSuggestedPerson &&
+    !currentPerson &&
+    !currentMemory &&
+    !activePlaceID
+  const showMemoriesIndex = isRootSection && section === 'memories'
   const showAlbumIndex = isRootSection && section === 'albums'
   const showPlacesIndex = isRootSection && section === 'places'
   const showPeopleIndex = isRootSection && section === 'people'
@@ -2629,14 +2731,16 @@ export function XDriveMediaGallery({
     isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
-  const galleryTitle = currentAlbum?.name ||
+  const galleryTitle = currentMemory?.title || currentAlbum?.name ||
     (currentPerson
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
         ? '人物建议'
         : activePlace
           ? activePlace.name
-          : section === 'albums'
+          : section === 'memories'
+            ? '回忆'
+            : section === 'albums'
             ? '相册'
             : section === 'people'
               ? '人物'
@@ -2649,7 +2753,9 @@ export function XDriveMediaGallery({
                     : section === 'media-types'
                     ? mediaTypeLabel || '媒体类型'
                     : '图库')
-  const gallerySubtitle = currentAlbum
+  const gallerySubtitle = currentMemory
+    ? currentMemory.subtitle || `${currentMemory.item_count.toLocaleString('zh-CN')} 个项目`
+    : currentAlbum
     ? `${currentAlbum.item_count.toLocaleString('zh-CN')} 个项目`
     : currentPerson
       ? `${currentPerson.item_count.toLocaleString('zh-CN')} 张照片 · 长期人物${currentPerson.hidden ? ' · 已隐藏' : ''}`
@@ -2657,7 +2763,9 @@ export function XDriveMediaGallery({
         ? `${currentSuggestedPerson.item_count.toLocaleString('zh-CN')} 张照片 · 自动聚类建议`
         : activePlace
           ? `${activePlace.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS`
-          : section === 'albums'
+          : section === 'memories'
+            ? '近期、往年今日与行程回忆'
+            : section === 'albums'
             ? '手动相册、智能相册和导入相册'
             : section === 'people'
               ? '已保存人物与本地人脸分析建议'
@@ -2673,6 +2781,7 @@ export function XDriveMediaGallery({
                       : '按媒体资产类型快速进入照片集合'
                     : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'
   const canBack = Boolean(
+    currentMemory ||
     currentAlbum ||
     currentSuggestedPerson ||
     currentPerson ||
@@ -2838,7 +2947,7 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
       ) : null}
 
-      {showPhotoCollection && !isTrashSection ? filters : null}
+      {showPhotoCollection && !isTrashSection && !currentMemory ? filters : null}
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
@@ -2907,6 +3016,15 @@ export function XDriveMediaGallery({
 
       {error ? (
         <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+      ) : null}
+
+      {showMemoriesIndex ? (
+        <XDriveMediaGalleryMemories
+          memories={memories}
+          loading={loading}
+          loadThumbnail={loadThumbnail}
+          onOpenMemory={onOpenMemory}
+        />
       ) : null}
 
       {showAlbumIndex && albums.length > 0 ? (

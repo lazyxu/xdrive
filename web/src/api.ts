@@ -24,6 +24,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
+  MediaMemory,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -712,6 +713,31 @@ export class XDriveApi {
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
     })
     return this.request<MediaPlaceFacet[]>(`/api/v1/media/places?${query.toString()}`)
+  }
+
+  mediaMemories(anchorDate = '', limit = 24) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    if (anchorDate.trim()) query.set('anchor_date', anchorDate.trim())
+    return this.request<MediaMemory[]>(
+      `/api/v1/media/memories?${query.toString()}`,
+    )
+  }
+
+  mediaMemoryItemRange(
+    memoryID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItemRange>(
+      `/api/v1/media/memories/${encodeURIComponent(memoryID)}/items?${query.toString()}`,
+    )
   }
 
   mediaSuggestedPeople(limit = 24) {

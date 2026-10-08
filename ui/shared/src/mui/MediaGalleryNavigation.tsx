@@ -19,12 +19,7 @@ type GallerySectionOption = {
 
 const gallerySections: GallerySectionOption[] = [
   { value: 'library', label: '图库' },
-  {
-    value: 'memories',
-    label: '回忆',
-    disabled: true,
-    disabledReason: '回忆会在本地 Memories 阶段启用',
-  },
+  { value: 'memories', label: '回忆' },
   { value: 'people', label: '人物' },
   { value: 'places', label: '地点' },
   { value: 'albums', label: '相册' },

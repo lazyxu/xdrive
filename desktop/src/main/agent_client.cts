@@ -740,6 +740,21 @@ export type AgentMediaPlaceFacet = {
   attribution_url?: string
 }
 
+export type AgentMediaMemory = {
+  id: string
+  kind: 'recent_day' | 'on_this_day' | 'trip' | string
+  title: string
+  subtitle?: string
+  start_date?: string
+  end_date?: string
+  anchor_date?: string
+  place_name?: string
+  item_count: number
+  year_count?: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
 export type AgentMediaSuggestedPerson = {
   id: string
   face_count: number
@@ -1246,6 +1261,31 @@ export class AgentIPCClient {
   mediaPlaces(limit = 24) {
     const query = new URLSearchParams({ limit: String(limit) })
     return this.request<AgentMediaPlaceFacet[]>('GET', `/v1/media/places?${query.toString()}`)
+  }
+
+  mediaMemories(anchorDate = '', limit = 24) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (anchorDate.trim()) query.set('anchor_date', anchorDate.trim())
+    return this.request<AgentMediaMemory[]>(
+      'GET',
+      `/v1/media/memories?${query.toString()}`,
+    )
+  }
+
+  mediaMemoryItemRange(
+    memoryID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      memory_id: memoryID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/memory-items?${query.toString()}`,
+    )
   }
 
   mediaSuggestedPeople(limit = 24) {

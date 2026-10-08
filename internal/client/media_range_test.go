@@ -161,3 +161,67 @@ func TestMediaItemRangeQueries(t *testing.T) {
 		t.Fatal("negative media range offset unexpectedly succeeded")
 	}
 }
+
+func TestMediaMemoriesQueries(t *testing.T) {
+	requestIndex := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestIndex {
+		case 0:
+			if r.URL.Path != "/api/v1/media/memories" {
+				t.Fatalf("memories path=%q", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("anchor_date"); got != "2026-10-08" {
+				t.Fatalf("anchor_date=%q", got)
+			}
+			if got := r.URL.Query().Get("limit"); got != "24" {
+				t.Fatalf("memory limit=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode([]MediaMemory{{
+				ID: "recent:2026-10-08", Kind: "recent_day",
+				Title: "今天", ItemCount: 4,
+			}})
+		case 1:
+			if r.URL.Path != "/api/v1/media/memories/recent:2026-10-08/items" {
+				t.Fatalf("memory items path=%q", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("range"); got != "true" {
+				t.Fatalf("memory range=%q", got)
+			}
+			if got := r.URL.Query().Get("limit"); got != "40" {
+				t.Fatalf("memory item limit=%q", got)
+			}
+			if got := r.URL.Query().Get("offset"); got != "20" {
+				t.Fatalf("memory item offset=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(MediaItemRange{
+				Items:      []MediaItem{{Node: Node{ID: 31, Name: "photo.jpg", Type: "file"}}},
+				TotalCount: 4, Offset: 20, Limit: 40,
+			})
+		default:
+			t.Fatalf("unexpected request %d", requestIndex)
+		}
+		requestIndex++
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	memories, err := cli.MediaMemories(context.Background(), "2026-10-08", 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memories) != 1 || memories[0].ID != "recent:2026-10-08" {
+		t.Fatalf("memories=%+v", memories)
+	}
+	page, err := cli.MediaMemoryItemsRange(
+		context.Background(),
+		"recent:2026-10-08",
+		40,
+		20,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.TotalCount != 4 || len(page.Items) != 1 || page.Items[0].Node.ID != 31 {
+		t.Fatalf("memory page=%+v", page)
+	}
+}

@@ -253,6 +253,8 @@ type desktopIPCController interface {
 	CloudMediaTrash(context.Context, int, int) (client.MediaItemRange, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
+	CloudMediaMemories(context.Context, string, int) ([]client.MediaMemory, error)
+	CloudMediaMemoryItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
 	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaSuggestedPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
@@ -556,6 +558,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
+	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
+	mux.HandleFunc("GET /v1/media/memory-items", h.mediaMemoryItems)
 	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
 	mux.HandleFunc("GET /v1/media/people/suggestion-items", h.mediaSuggestedPersonItems)
 	mux.HandleFunc("GET /v1/media/people/identities", h.mediaPersonIdentities)
@@ -2376,6 +2380,69 @@ func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaMemories(w http.ResponseWriter, r *http.Request) {
+	limit := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_media_memory_limit",
+				"limit must be between 1 and 100",
+			)
+			return
+		}
+		limit = value
+	}
+	anchorDate := strings.TrimSpace(r.URL.Query().Get("anchor_date"))
+	if anchorDate != "" {
+		if _, err := time.Parse("2006-01-02", anchorDate); err != nil {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_media_memory_anchor_date",
+				"anchor_date must use YYYY-MM-DD",
+			)
+			return
+		}
+	}
+	items, err := h.ctrl.CloudMediaMemories(r.Context(), anchorDate, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaMemoryItems(w http.ResponseWriter, r *http.Request) {
+	memoryID := strings.TrimSpace(r.URL.Query().Get("memory_id"))
+	if memoryID == "" || len(memoryID) > 128 {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_memory",
+			"valid memory_id is required",
+		)
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	page, err := h.ctrl.CloudMediaMemoryItemsRange(
+		r.Context(),
+		memoryID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) mediaSuggestedPeople(w http.ResponseWriter, r *http.Request) {

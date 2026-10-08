@@ -30,7 +30,7 @@ presentation and product intelligence.
 | 6 | Desktop Inspector / responsive Drawer replacing the large details dialog | **Current** |
 | 7 | Map Places | **Current** |
 | 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical + semantic relevance** |
-| 9 | Memories / Recent Days / Trips / On This Day | Planned |
+| 9 | Memories / Recent Days / Trips / On This Day | **Current** |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | Planned |
 | 11 | Pets / people groups / suggestion review | Planned |
 | 12 | Basic non-destructive photo/video editing | Planned |
@@ -47,8 +47,8 @@ workspace with explicit internal destinations:
 - **相册** owns manual, smart, and imported albums.
 - **收藏** reuses the existing Server-side favorite query.
 - **媒体类型** provides a product entry point over existing asset-kind queries.
-- **回忆** is present in the navigation model but disabled until Phase 9 has real local
-  Memories data. No placeholder data or fake generated memories are allowed.
+- **回忆** owns local, deterministic Recent Days / Trips / On This Day projections.
+  No placeholder data, provider-supplied memories, or fake generated memories are allowed.
 
 Opening a person, place, album, or media type keeps that section as the navigation
 context, and Back returns to the section index instead of dumping the user into the
@@ -303,3 +303,51 @@ introducing a second Gallery search surface:
 
 Web/Desktop continue to share the same Gallery controller and `MediaGalleryQuery.search`
 contract in `ui/shared`; platform code still only transports requests.
+
+
+## Phase 9 — local Memories projections
+
+Memories is now a real shared Gallery destination. It deliberately does **not** add a
+second photo database, copy album memberships, or persist automatically generated
+memory membership.
+
+The Server derives three deterministic card types from canonical local media state:
+
+- **近期回忆 / Recent Days**: capture-date days from the most recent 14-day window
+  with at least two visible media assets;
+- **往年今日 / On This Day**: media captured on the same month/day in years before
+  the card's anchor year;
+- **行程 / Trips**: GPS-bearing capture days are reduced to a dominant city-scale
+  grid cell. The historically most frequent cell is treated as the owner's local
+  baseline; consecutive non-local capture days, allowing one empty day between
+  captures, become a trip only when they span at least two capture days and at least
+  four GPS-bearing assets. Once a trip date range is selected, the card count and detail
+  collection both use all ready visible media in that range, including camera media
+  without GPS.
+
+These are **read projections**, not PhotoCollection rows. Card IDs encode only the
+deterministic rule inputs (`recent:<date>`, `on-this-day:<anchor-year>:<MM-DD>`,
+`trip:v1:<start>:<end>`); opening a card recomputes its detail membership from current
+canonical media data. Deleting, restoring, reindexing, or changing local metadata
+therefore naturally changes Memories without reconciliation jobs.
+
+The initial date boundary follows the same UTC capture-date semantics as the existing
+Gallery Year/Month/Day timeline. A future Gallery-wide user-timezone contract should
+move Timeline and Memories together rather than giving Memories a private date model.
+
+Web/Desktop transport remains thin:
+
+- Server: `GET /media/memories` plus range-backed
+  `GET /media/memories/:memoryID/items`;
+- Go client / Desktop Agent IPC / Web API only serialize memory id, anchor date and
+  range window;
+- `ui/shared` owns `MediaMemory`, the Memories card surface, section state, and the
+  memory collection target.
+
+The Memories root does not start a media VirtualCollection. Only opening one card
+creates a sparse `kind='memory'` range collection; Viewer 2.0, Selection Toolbar,
+Inspector, thumbnail scheduling, Favorite/Download/Delete, and preview behavior are
+then the same shared components used by every other Gallery collection.
+
+Trips use only xDrive-local GPS and optional local place labels. They do not consume
+provider trip/albums/person semantics, online location services, or AI inference.

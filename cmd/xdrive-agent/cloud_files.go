@@ -1881,6 +1881,30 @@ func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]cl
 	return cli.MediaPlaces(ctx, limit)
 }
 
+func (c *agentController) CloudMediaMemories(
+	ctx context.Context,
+	anchorDate string,
+	limit int,
+) ([]client.MediaMemory, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaMemories(ctx, anchorDate, limit)
+}
+
+func (c *agentController) CloudMediaMemoryItemsRange(
+	ctx context.Context,
+	memoryID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaMemoryItemsRange(ctx, memoryID, limit, offset)
+}
+
 func (c *agentController) CloudMediaSuggestedPeople(
 	ctx context.Context,
 	limit int,

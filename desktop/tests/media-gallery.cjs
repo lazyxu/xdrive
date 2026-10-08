@@ -14,6 +14,7 @@ const sharedGalleryVideoPoster = read('ui', 'shared', 'src', 'mui', 'MediaGaller
 const sharedGalleryUtils = read('ui', 'shared', 'src', 'mui', 'MediaGalleryUtils.ts')
 const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilters.tsx')
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
+const sharedGalleryMemories = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMemories.tsx')
 const sharedGalleryPlacesMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMap.tsx')
 const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMapModel.ts')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
@@ -32,6 +33,7 @@ const sharedGallery = [
   sharedGalleryUtils,
   sharedGalleryFilters,
   sharedGalleryNavigation,
+  sharedGalleryMemories,
   sharedGalleryPlacesMap,
   sharedGalleryPlacesMapModel,
   sharedGallerySelectionToolbar,
@@ -128,7 +130,20 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
     assert.ok(sharedGalleryNavigation.includes(label), 'Gallery navigation missing: ' + label)
   }
   assert.match(sharedGalleryNavigation, /value: 'memories'/)
-  assert.match(sharedGalleryNavigation, /disabled: true/)
+  assert.doesNotMatch(sharedGalleryNavigation, /value: 'memories'[\s\S]{0,160}disabled: true/)
+  for (const token of [
+    'XDriveMediaGalleryMemories',
+    "case 'recent_day':",
+    "case 'on_this_day':",
+    "case 'trip':",
+    'data-xdrive-media-gallery-memory',
+    "kind: 'memory'",
+    'source.listMemoryItemRange',
+    'xDriveMediaGalleryUTCDateKey()',
+    'now.toISOString().slice(0, 10)',
+  ]) {
+    assert.ok(sharedGallery.includes(token), `Gallery Memories contract missing: ${token}`)
+  }
   assert.match(sharedGalleryFilters, /export function XDriveMediaGalleryFilterToolbar/)
   assert.match(sharedGalleryFilters, /<Popover/)
   assert.match(sharedGalleryFilters, /showSearch=\{false\}/)
@@ -467,6 +482,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
     'listTrashItemRange:',
     'listSuggestedPersonItemRange:',
     'listPersonItemRange:',
+    'listMemoryItemRange:',
     'listAlbumItemRange:',
   ]) {
     assert.ok(sharedGalleryAdapter.includes(token), `shared Gallery range adapter missing: ${token}`)
@@ -483,7 +499,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /category/)
   assert.match(desktopIPC, /Category/)
 
-  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -493,6 +509,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.mediaTrashRange(',
     'api.mediaAlbums()',
     'api.mediaPlaces(',
+    'api.mediaMemories(',
+    'api.mediaMemoryItemRange(',
     'api.mediaSuggestedPeople(',
     'api.mediaSuggestedPersonItems(',
     'api.mediaSuggestedPersonItemRange(',
@@ -530,6 +548,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaTrash:',
     'getMediaAlbums:',
     'getMediaPlaces:',
+    'getMediaMemories:',
+    'getMediaMemoryItemRange:',
     'getMediaSuggestedPeople:',
     'getMediaSuggestedPersonItems:',
     'getMediaSuggestedPersonItemRange:',
@@ -567,6 +587,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaTrash(',
     'mediaAlbums()',
     'mediaPlaces(',
+    'mediaMemories(',
+    'mediaMemoryItemRange(',
     'mediaSuggestedPeople(',
     'mediaSuggestedPersonItems(',
     'mediaSuggestedPersonItemRange(',
@@ -609,6 +631,8 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/trash'))
   assert.ok(desktopIPC.includes('GET /v1/media/albums'))
   assert.ok(desktopIPC.includes('GET /v1/media/places'))
+  assert.ok(desktopIPC.includes('GET /v1/media/memories'))
+  assert.ok(desktopIPC.includes('GET /v1/media/memory-items'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestions'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestion-items'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/identities'))
