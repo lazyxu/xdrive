@@ -221,6 +221,19 @@ export interface StorageUnreferencedBlobPage {
   next_cursor?: string
 }
 
+export interface StoragePendingGC {
+  awaiting_gc_blob_count: number
+  awaiting_gc_blob_bytes: number
+  blocked_by_upload_blob_count: number
+  blocked_by_upload_blob_bytes: number
+  physical_missing_blob_count: number
+  physical_missing_metadata_bytes: number
+  metadata_inconsistent_blob_count: number
+  metadata_inconsistent_blob_bytes: number
+  deleting_blob_count: number
+  deleting_blob_metadata_bytes: number
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number
@@ -240,6 +253,8 @@ export interface StorageStats {
   cas_physical_bytes?: number
   unreferenced_blob_count?: number
   unreferenced_blob_bytes?: number
+  pending_gc?: StoragePendingGC
+  cas_health?: StorageHealth
   cas_logical_referenced_bytes?: number
   cas_dedup_saved_bytes?: number
   cas_dedup_ratio?: number
@@ -290,6 +305,25 @@ export interface StorageHistoryPoint {
   legacy_blob_count: number
   legacy_physical_bytes: number
   anomaly_snapshot_available: boolean
+  gc_classification_snapshot_available: boolean
+  awaiting_gc_blob_count: number
+  awaiting_gc_blob_bytes: number
+  blocked_by_upload_blob_count: number
+  blocked_by_upload_blob_bytes: number
+  physical_missing_blob_count: number
+  physical_missing_metadata_bytes: number
+  metadata_inconsistent_blob_count: number
+  metadata_inconsistent_blob_bytes: number
+  deleting_blob_metadata_bytes: number
+  cas_health_snapshot_available: boolean
+  deleting_blob_count: number
+  stale_deleting_blob_count: number
+  missing_metadata_count: number
+  refcount_mismatch_count: number
+  state_mismatch_count: number
+  size_mismatch_count: number
+  key_hash_mismatch_count: number
+  invalid_state_count: number
   staging_orphan_bytes: number
   staging_reclaimable_bytes: number
   media_thumbnail_bytes: number

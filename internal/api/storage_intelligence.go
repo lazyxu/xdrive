@@ -57,38 +57,53 @@ type storageUnreferencedBlobPageDTO struct {
 	NextCursor string                       `json:"next_cursor,omitempty"`
 }
 
+type storagePendingGCSnapshotDTO struct {
+	AwaitingGCBlobCount           int64 `json:"awaiting_gc_blob_count"`
+	AwaitingGCBlobBytes           int64 `json:"awaiting_gc_blob_bytes"`
+	BlockedByUploadBlobCount      int64 `json:"blocked_by_upload_blob_count"`
+	BlockedByUploadBlobBytes      int64 `json:"blocked_by_upload_blob_bytes"`
+	PhysicalMissingBlobCount      int64 `json:"physical_missing_blob_count"`
+	PhysicalMissingMetadataBytes  int64 `json:"physical_missing_metadata_bytes"`
+	MetadataInconsistentBlobCount int64 `json:"metadata_inconsistent_blob_count"`
+	MetadataInconsistentBlobBytes int64 `json:"metadata_inconsistent_blob_bytes"`
+	DeletingBlobCount             int64 `json:"deleting_blob_count"`
+	DeletingBlobMetadataBytes     int64 `json:"deleting_blob_metadata_bytes"`
+}
+
 type storageStatsDTO struct {
-	Scope                     string                 `json:"scope"`
-	DiskTotalBytes            *int64                 `json:"disk_total_bytes,omitempty"`
-	DiskUsedBytes             *int64                 `json:"disk_used_bytes,omitempty"`
-	DiskAvailableBytes        *int64                 `json:"disk_available_bytes,omitempty"`
-	XDrivePhysicalBytes       *int64                 `json:"xdrive_physical_bytes,omitempty"`
-	UploadStaging             *uploadStagingStatsDTO `json:"upload_staging,omitempty"`
-	Inventory                 *storageInventoryDTO   `json:"inventory,omitempty"`
-	FileCount                 int64                  `json:"file_count,omitempty"`
-	LogicalFileBytes          int64                  `json:"logical_file_bytes,omitempty"`
-	AverageFileSizeBytes      float64                `json:"average_file_size_bytes,omitempty"`
-	P50FileSizeBytes          int64                  `json:"p50_file_size_bytes,omitempty"`
-	P90FileSizeBytes          int64                  `json:"p90_file_size_bytes,omitempty"`
-	P99FileSizeBytes          int64                  `json:"p99_file_size_bytes,omitempty"`
-	FileBuckets               []storageSizeBucketDTO `json:"file_buckets,omitempty"`
-	CASBlobCount              int64                  `json:"cas_blob_count,omitempty"`
-	CASPhysicalBytes          int64                  `json:"cas_physical_bytes,omitempty"`
-	UnreferencedBlobCount     int64                  `json:"unreferenced_blob_count,omitempty"`
-	UnreferencedBlobBytes     int64                  `json:"unreferenced_blob_bytes,omitempty"`
-	CASLogicalReferencedBytes int64                  `json:"cas_logical_referenced_bytes,omitempty"`
-	CASDedupSavedBytes        int64                  `json:"cas_dedup_saved_bytes,omitempty"`
-	CASDedupRatio             float64                `json:"cas_dedup_ratio,omitempty"`
-	CASSavingsRatio           float64                `json:"cas_savings_ratio,omitempty"`
-	AverageBlobSizeBytes      float64                `json:"average_blob_size_bytes,omitempty"`
-	P50BlobSizeBytes          int64                  `json:"p50_blob_size_bytes,omitempty"`
-	P90BlobSizeBytes          int64                  `json:"p90_blob_size_bytes,omitempty"`
-	P99BlobSizeBytes          int64                  `json:"p99_blob_size_bytes,omitempty"`
-	LegacyBlobCount           int64                  `json:"legacy_blob_count,omitempty"`
-	LegacyPhysicalBytes       int64                  `json:"legacy_physical_bytes,omitempty"`
-	Buckets                   []storageSizeBucketDTO `json:"buckets,omitempty"`
-	PhysicalSnapshotAt        *time.Time             `json:"physical_snapshot_at,omitempty"`
-	GeneratedAt               time.Time              `json:"generated_at"`
+	Scope                     string                       `json:"scope"`
+	DiskTotalBytes            *int64                       `json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes             *int64                       `json:"disk_used_bytes,omitempty"`
+	DiskAvailableBytes        *int64                       `json:"disk_available_bytes,omitempty"`
+	XDrivePhysicalBytes       *int64                       `json:"xdrive_physical_bytes,omitempty"`
+	UploadStaging             *uploadStagingStatsDTO       `json:"upload_staging,omitempty"`
+	Inventory                 *storageInventoryDTO         `json:"inventory,omitempty"`
+	FileCount                 int64                        `json:"file_count,omitempty"`
+	LogicalFileBytes          int64                        `json:"logical_file_bytes,omitempty"`
+	AverageFileSizeBytes      float64                      `json:"average_file_size_bytes,omitempty"`
+	P50FileSizeBytes          int64                        `json:"p50_file_size_bytes,omitempty"`
+	P90FileSizeBytes          int64                        `json:"p90_file_size_bytes,omitempty"`
+	P99FileSizeBytes          int64                        `json:"p99_file_size_bytes,omitempty"`
+	FileBuckets               []storageSizeBucketDTO       `json:"file_buckets,omitempty"`
+	CASBlobCount              int64                        `json:"cas_blob_count,omitempty"`
+	CASPhysicalBytes          int64                        `json:"cas_physical_bytes,omitempty"`
+	UnreferencedBlobCount     int64                        `json:"unreferenced_blob_count,omitempty"`
+	UnreferencedBlobBytes     int64                        `json:"unreferenced_blob_bytes,omitempty"`
+	PendingGC                 *storagePendingGCSnapshotDTO `json:"pending_gc,omitempty"`
+	CASHealth                 *maintenance.CASHealthReport `json:"cas_health,omitempty"`
+	CASLogicalReferencedBytes int64                        `json:"cas_logical_referenced_bytes,omitempty"`
+	CASDedupSavedBytes        int64                        `json:"cas_dedup_saved_bytes,omitempty"`
+	CASDedupRatio             float64                      `json:"cas_dedup_ratio,omitempty"`
+	CASSavingsRatio           float64                      `json:"cas_savings_ratio,omitempty"`
+	AverageBlobSizeBytes      float64                      `json:"average_blob_size_bytes,omitempty"`
+	P50BlobSizeBytes          int64                        `json:"p50_blob_size_bytes,omitempty"`
+	P90BlobSizeBytes          int64                        `json:"p90_blob_size_bytes,omitempty"`
+	P99BlobSizeBytes          int64                        `json:"p99_blob_size_bytes,omitempty"`
+	LegacyBlobCount           int64                        `json:"legacy_blob_count,omitempty"`
+	LegacyPhysicalBytes       int64                        `json:"legacy_physical_bytes,omitempty"`
+	Buckets                   []storageSizeBucketDTO       `json:"buckets,omitempty"`
+	PhysicalSnapshotAt        *time.Time                   `json:"physical_snapshot_at,omitempty"`
+	GeneratedAt               time.Time                    `json:"generated_at"`
 }
 
 type storageStatsRow struct {
@@ -318,16 +333,11 @@ func (s *Server) adminStorageUnreferencedBlobs(c *gin.Context) {
 			item.PhysicalSize = info.Size()
 		}
 
-		switch {
-		case !item.PhysicalExists:
-			item.GCStatus = "physical_missing"
-		case blob.State != meta.ContentBlobStateDeleting:
-			item.GCStatus = "metadata_inconsistent"
-		case item.ReusedUploadParts > 0:
-			item.GCStatus = "blocked_by_upload"
-		default:
-			item.GCStatus = "awaiting_gc"
-		}
+		item.GCStatus = storageUnreferencedGCStatus(
+			item.PhysicalExists,
+			blob.State,
+			item.ReusedUploadParts,
+		)
 		items = append(items, item)
 	}
 
@@ -507,39 +517,106 @@ FROM cas_unique`
 	return storageStatsFromRow("global", statsRow), nil
 }
 
-func (s *Server) loadUnreferencedPhysicalContentBlobs(
+func storageUnreferencedGCStatus(
+	physicalExists bool,
+	state string,
+	reusedUploadParts int64,
+) string {
+	switch {
+	case !physicalExists:
+		return "physical_missing"
+	case state != meta.ContentBlobStateDeleting:
+		return "metadata_inconsistent"
+	case reusedUploadParts > 0:
+		return "blocked_by_upload"
+	default:
+		return "awaiting_gc"
+	}
+}
+
+func (s *Server) loadUnreferencedContentBlobSnapshot(
 	ctx context.Context,
-) (int64, int64, error) {
+) (storagePendingGCSnapshotDTO, int64, int64, error) {
+	var snapshot storagePendingGCSnapshotDTO
 	var blobs []meta.ContentBlob
 	if err := s.DB.WithContext(ctx).
-		Select("storage_key").
 		Where("ref_count = 0").
 		Order("storage_key ASC").
 		Find(&blobs).Error; err != nil {
-		return 0, 0, err
+		return snapshot, 0, 0, err
 	}
 
-	var count, bytes int64
+	reusedCounts := make(map[string]int64)
+	if len(blobs) > 0 {
+		var rows []struct {
+			SourceStorageKey string `gorm:"column:source_storage_key"`
+			Count            int64  `gorm:"column:count"`
+		}
+		const query = `SELECT p.source_storage_key, COUNT(*) AS count
+FROM xd_upload_parts AS p
+JOIN xd_content_blobs AS b ON b.storage_key = p.source_storage_key
+WHERE p.reused = TRUE AND b.ref_count = 0
+GROUP BY p.source_storage_key`
+		if err := s.DB.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
+			return snapshot, 0, 0, err
+		}
+		for _, row := range rows {
+			reusedCounts[row.SourceStorageKey] = row.Count
+		}
+	}
+
+	var physicalCount, physicalBytes int64
 	for _, blob := range blobs {
+		if err := ctx.Err(); err != nil {
+			return snapshot, 0, 0, err
+		}
+		if blob.State == meta.ContentBlobStateDeleting {
+			snapshot.DeletingBlobCount++
+			snapshot.DeletingBlobMetadataBytes += blob.Size
+		}
+
+		var physicalExists bool
+		var physicalSize int64
 		file, err := s.Store.Open(ctx, blob.StorageKey)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
+			if !errors.Is(err, os.ErrNotExist) {
+				return snapshot, 0, 0, err
 			}
-			return 0, 0, err
+		} else {
+			info, statErr := file.Stat()
+			closeErr := file.Close()
+			if statErr != nil {
+				return snapshot, 0, 0, statErr
+			}
+			if closeErr != nil {
+				return snapshot, 0, 0, closeErr
+			}
+			physicalExists = true
+			physicalSize = info.Size()
+			physicalCount++
+			physicalBytes += physicalSize
 		}
-		info, statErr := file.Stat()
-		closeErr := file.Close()
-		if statErr != nil {
-			return 0, 0, statErr
+
+		switch storageUnreferencedGCStatus(
+			physicalExists,
+			blob.State,
+			reusedCounts[blob.StorageKey],
+		) {
+		case "awaiting_gc":
+			snapshot.AwaitingGCBlobCount++
+			snapshot.AwaitingGCBlobBytes += physicalSize
+		case "blocked_by_upload":
+			snapshot.BlockedByUploadBlobCount++
+			snapshot.BlockedByUploadBlobBytes += physicalSize
+		case "physical_missing":
+			snapshot.PhysicalMissingBlobCount++
+			snapshot.PhysicalMissingMetadataBytes += blob.Size
+		case "metadata_inconsistent":
+			snapshot.MetadataInconsistentBlobCount++
+			snapshot.MetadataInconsistentBlobBytes += physicalSize
 		}
-		if closeErr != nil {
-			return 0, 0, closeErr
-		}
-		count++
-		bytes += info.Size()
 	}
-	return count, bytes, nil
+	return snapshot, physicalCount, physicalBytes, nil
 }
 
 type rowScanner func(dest ...any) error
