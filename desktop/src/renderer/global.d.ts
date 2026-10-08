@@ -86,6 +86,8 @@ declare global {
   }
   type DesktopLoginHistory = { profiles: DesktopLoginProfile[]; secure_password_storage: boolean; auto_login_error?: string }
   type DesktopWindowState = { maximized: boolean; minimized: boolean; fullscreen: boolean }
+  type DesktopBrowserCacheStats = { used_bytes: number }
+  type DesktopBrowserCacheClearResult = { released_bytes: number; cleared_entries: number }
   type DesktopViewTarget = 'overview' | 'cloud' | 'sources' | 'transfers' | 'files' | 'conflicts' | 'diagnostics' | 'settings' | 'settings-update'
 
   type AgentHello = {
@@ -400,6 +402,8 @@ declare global {
       getStartup: () => Promise<DesktopStartup>
       getPreferences: () => Promise<DesktopPreferences>
       getLoginHistory: () => Promise<DesktopLoginHistory>
+      getBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheStats>>
+      clearBrowserCache: () => Promise<DesktopResult<DesktopBrowserCacheClearResult>>
       onLoginHistory: (callback: (history: DesktopLoginHistory) => void) => () => void
       probeServer: (server: string) => Promise<DesktopResult<{ version?: string }>>
       clearSavedPassword: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>

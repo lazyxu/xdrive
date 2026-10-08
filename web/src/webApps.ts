@@ -15,6 +15,7 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
   gallery: { id: 'gallery', title: '图库', presentation: 'workspace', workspaceKey: 'gallery', sidebar: true },
   'sync-folders': { id: 'sync-folders', title: '同步文件夹', presentation: 'workspace', workspaceKey: 'sources', sidebar: true },
   tasks: { id: 'tasks', title: '任务中心', presentation: 'workspace', workspaceKey: 'transfers', sidebar: true },
+  'local-storage': { id: 'local-storage', title: '本地存储', presentation: 'workspace', workspaceKey: 'local-storage', sidebar: true },
   'cloud-storage': { id: 'cloud-storage', title: '云端存储', presentation: 'workspace', workspaceKey: 'cloud-storage', sidebar: true },
   preview: { id: 'preview', title: '预览', presentation: 'immersive', sidebar: false },
   'media-viewer': { id: 'media-viewer', title: '媒体查看器', presentation: 'immersive', sidebar: false },

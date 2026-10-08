@@ -28,6 +28,7 @@ import {
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
   createXDriveCloudStorageDataSource,
+  XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -60,7 +61,8 @@ import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
-  XDriveRemoteWorkspaceViewKey,
+  XDriveWorkspaceViewKey,
+  XDriveLocalStorageDataSource,
   MediaGallerySection,
 } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
@@ -88,6 +90,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAp
 import { xDriveWebAppForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
+import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const ACCESS_KEY = 'xdrive.access_token'
@@ -110,7 +113,7 @@ type ConfirmAction = {
   run: () => Promise<void>
 }
 
-type AppView = XDriveRemoteWorkspaceViewKey<
+type AppView = XDriveWorkspaceViewKey<
   'overview' | 'admin-users' | 'admin-audit' | 'admin-storage'
 >
 
@@ -572,6 +575,12 @@ function FileManager({
     tolerateStatsError: true,
     statsUnavailableMessage: '当前服务端未提供账号文件大小分布。',
   }), [api, applyQuota])
+  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
+    load: async () => ({
+      browserStorage: await createWebBrowserStorageSnapshot(),
+    }),
+    clearBrowserCache: clearWebBrowserCache,
+  }), [])
 
   useEffect(() => {
     let active = true
@@ -1043,6 +1052,7 @@ function FileManager({
           responsive
           selected={appView}
           transferBadge={taskCenter.badge}
+          showLocalStorage
           sections={webSidebarSections}
           storageSummary={xDriveWorkspaceStorageSummary(quota)}
           onSelect={(destination, event) => {
@@ -1210,6 +1220,8 @@ function FileManager({
             backgroundFocusTaskID={taskCenterFocus?.taskID}
             backgroundFocusRequestID={taskCenterFocus?.requestID}
           />
+        ) : appView === 'local-storage' ? (
+          <XDriveLocalStoragePage source={localStorageSource} />
         ) : appView === 'cloud-storage' ? (
           <XDriveCloudStoragePage source={cloudStorageSource} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (

@@ -49,6 +49,7 @@ import {
   XDriveConfirmDialog,
   XDriveCloudStoragePage,
   createXDriveCloudStorageDataSource,
+  XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
@@ -75,6 +76,7 @@ import type {
   XDriveSidebarSectionModel,
   XDriveWorkspaceViewKey,
   XDriveStatusTone,
+  XDriveLocalStorageDataSource,
 } from '@xdrive/ui/mui'
 import {
   XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
@@ -86,8 +88,6 @@ import {
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
-import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
-import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
 import { DesktopConflictsPage } from './DesktopConflictsPage'
 import { DesktopDiagnosticsPage } from './DesktopDiagnosticsPage'
@@ -619,22 +619,42 @@ export default function App({
       ? undefined
       : '当前 xdrive-agent 不支持账号文件大小分布，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
-  const localStorageSource = useMemo<DesktopLocalStorageDataSource>(() => ({
+  const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
     load: async () => {
-      const [treeResult, cacheResult] = await Promise.all([
+      const [browserResult, treeResult, cacheResult] = await Promise.all([
+        window.xdriveDesktop.getBrowserCache(),
         window.xdriveDesktop.agent.getStorageTree(),
         window.xdriveDesktop.agent.getCache(),
       ])
-      if (!treeResult.ok) throw new Error(treeResult.error.message)
-      if (!cacheResult.ok) throw new Error(cacheResult.error.message)
+      if (!browserResult.ok) throw new Error(browserResult.error.message)
+      const desktopReason = !cacheResult.ok
+        ? cacheResult.error.message
+        : !treeResult.ok
+          ? treeResult.error.message
+          : undefined
       return {
-        supported: true,
-        storagePoliciesSupported,
-        cacheStats: cacheResult.data,
-        storageTree: treeResult.data,
+        browserStorage: {
+          supported: true,
+          cache_bytes: browserResult.data.used_bytes,
+          clear_supported: true,
+          scope_label: 'Electron HTTP 缓存',
+          detail: 'Desktop 的浏览器缓存由 Electron 单独管理；清理不会删除 Cookie、登录状态、token、主题、布局或其他应用偏好。',
+        },
+        desktopStorage: {
+          supported: cacheResult.ok || treeResult.ok,
+          reason: desktopReason,
+          storagePoliciesSupported: storagePoliciesSupported && treeResult.ok,
+          cacheStats: cacheResult.ok ? cacheResult.data : null,
+          storageTree: treeResult.ok ? treeResult.data : null,
+        },
       }
     },
-    releaseCache: async () => {
+    clearBrowserCache: async () => {
+      const result = await window.xdriveDesktop.clearBrowserCache()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    releaseDesktopCache: async () => {
       const result = await window.xdriveDesktop.agent.releaseCache()
       if (!result.ok) throw new Error(result.error.message)
       return {
@@ -2071,7 +2091,7 @@ export default function App({
         )}
 
         {view === 'local-storage' && (
-          <DesktopLocalStoragePage source={localStorageSource} />
+          <XDriveLocalStoragePage source={localStorageSource} />
         )}
 
         {view === 'cloud-storage' && (

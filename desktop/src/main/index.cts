@@ -1645,6 +1645,30 @@ function registerIPCHandlers() {
   ipcMain.handle('desktop:get-startup', () => ({ start_at_login: desktopPreferences.start_at_login }))
   ipcMain.handle('desktop:get-preferences', () => publicDesktopPreferences())
   ipcMain.handle('desktop:get-login-history', () => loginHistorySnapshot())
+  ipcMain.handle('desktop:get-browser-cache', async () => {
+    try {
+      const usedBytes = await session.defaultSession.getCacheSize()
+      return { ok: true, data: { used_bytes: usedBytes } }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
+  ipcMain.handle('desktop:clear-browser-cache', async () => {
+    try {
+      const before = await session.defaultSession.getCacheSize()
+      await session.defaultSession.clearCache()
+      const after = await session.defaultSession.getCacheSize()
+      return {
+        ok: true,
+        data: {
+          released_bytes: Math.max(0, before - after),
+          cleared_entries: 0,
+        },
+      }
+    } catch (error) {
+      return { ok: false, error: agentError(error) }
+    }
+  })
   ipcMain.handle('desktop:probe-server', async (_event, serverValue: unknown) => {
     if (typeof serverValue !== 'string' || !serverValue.trim()) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server is required.' } }

@@ -616,6 +616,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getStartup: () => ipcRenderer.invoke('desktop:get-startup'),
   getPreferences: () => ipcRenderer.invoke('desktop:get-preferences'),
   getLoginHistory: () => ipcRenderer.invoke('desktop:get-login-history'),
+  getBrowserCache: () => ipcRenderer.invoke('desktop:get-browser-cache'),
+  clearBrowserCache: () => ipcRenderer.invoke('desktop:clear-browser-cache'),
   onLoginHistory: (callback: (history: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, history: unknown) => callback(history)
     ipcRenderer.on('desktop:login-history', handler)
