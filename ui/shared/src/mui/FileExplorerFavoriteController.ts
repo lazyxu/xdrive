@@ -66,6 +66,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   const loadRequestRef = useRef(0)
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const pendingMutationCountRef = useRef(0)
+  const pendingMutationRef = useRef(new Map<string, {
+    generation: number
+    promise: Promise<boolean>
+  }>())
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
   const lifecycleGenerationRef = useRef(1)
@@ -80,6 +84,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     lifecycleGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
+    pendingMutationRef.current.clear()
   }
 
   loadItemsRef.current = loadItems
@@ -126,15 +131,19 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     lifecycleGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
+    pendingMutationRef.current.clear()
   }, [])
 
   const favoriteIDs = useMemo(() => new Set(items.map((item) => item.id)), [items])
 
   const enqueueMutation = useCallback((
+    mutationKey: string,
     nodeID: number,
     operation: (generation: number) => Promise<boolean>,
   ) => {
     const generation = lifecycleGenerationRef.current
+    const pending = pendingMutationRef.current.get(mutationKey)
+    if (pending?.generation === generation) return pending.promise
     loadRequestRef.current += 1
     setLoading(false)
     pendingMutationCountRef.current += 1
@@ -146,18 +155,27 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
       return operation(generation)
     }
     const queued = mutationTailRef.current.then(run, run)
+    const holder = {
+      generation,
+      promise: Promise.resolve(false) as Promise<boolean>,
+    }
     const tracked = queued.finally(() => {
+      if (pendingMutationRef.current.get(mutationKey) === holder) {
+        pendingMutationRef.current.delete(mutationKey)
+      }
       if (generation !== lifecycleGenerationRef.current) return
       pendingMutationCountRef.current = Math.max(0, pendingMutationCountRef.current - 1)
       if (pendingMutationCountRef.current === 0) setBusyID(null)
     })
+    holder.promise = tracked
+    pendingMutationRef.current.set(mutationKey, holder)
     mutationTailRef.current = tracked.then(() => undefined, () => undefined)
     return tracked
   }, [])
 
   const favorite = useCallback((nodeID: number) => {
     if (!enabled || nodeID <= 0) return Promise.resolve(false)
-    return enqueueMutation(nodeID, async (generation) => {
+    return enqueueMutation(`favorite:${nodeID}`, nodeID, async (generation) => {
       try {
         const next = projectFavoriteItem(await favoriteItemRef.current(nodeID))
         if (generation !== lifecycleGenerationRef.current || !enabledRef.current) return true
@@ -176,7 +194,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
 
   const unfavorite = useCallback((nodeID: number) => {
     if (!enabled || nodeID <= 0) return Promise.resolve(false)
-    return enqueueMutation(nodeID, async (generation) => {
+    return enqueueMutation(`unfavorite:${nodeID}`, nodeID, async (generation) => {
       try {
         await unfavoriteItemRef.current(nodeID)
         if (generation !== lifecycleGenerationRef.current || !enabledRef.current) return true
