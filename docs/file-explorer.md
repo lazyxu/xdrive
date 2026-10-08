@@ -532,3 +532,23 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 - Do not copy Finder's Markup, Create PDF, media trimming or other editor workflows into FileExplorer unless a separate product requirement explicitly adds them.
 
 These five capabilities are the complete scope of this Finder-alignment phase. They must not be used as justification to introduce Gallery View, Alias semantics, free-form toolbar customization, device syncing or other Finder-specific features.
+
+
+## Quick Look
+
+FileExplorer Quick Look is a shared Web/Desktop browsing surface over the Preview Engine.
+
+- Space opens the active file; Space/Escape closes it.
+- Opening from a multi-selection freezes the selected file set in current result order. Previous/
+  Next stays inside that set and never collapses or rewrites the original multi-selection.
+- Opening from a single file browses the current result set, including VirtualCollection-backed
+  Search and large directories without materializing the whole collection.
+- Images use the shared interactive zoom/pan renderer.
+- Fullscreen uses the shared immersive preview chrome; Escape exits fullscreen before closing.
+- Fullscreen can play a bounded 5-second slideshow over the current Quick Look session and stops
+  when there is no next item.
+- Header actions are limited to safe contextual actions already supplied by FileExplorer:
+  system-open when the platform has it, Download/Save As, Share, and Tags.
+- Live Photo owns Space/Enter while its press-and-hold surface is focused so motion playback
+  cannot accidentally close Quick Look.
+- Markup, PDF signing, and image/audio/video editing are intentionally not Quick Look features.

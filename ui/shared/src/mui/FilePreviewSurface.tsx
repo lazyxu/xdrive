@@ -47,7 +47,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   loadLivePhotoMotion?: XDriveFilePreviewMotionLoader<T>
   fallback?: ReactNode
   minHeight?: number
-  maxHeight?: number
+  maxHeight?: number | string
   imageFit?: 'contain' | 'cover'
   interactiveImage?: boolean
   mediaTransform?: XDriveFilePreviewMediaTransform

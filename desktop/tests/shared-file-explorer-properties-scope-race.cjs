@@ -60,6 +60,7 @@ test('FileExplorer interaction scope change clears stale Properties session and 
   const { filename, callback } = extractInteractionScopeEffect()
 
   const propertiesWrites = []
+  const quickLookSessionWrites = []
   const mediaDetailsCacheRef = {
     current: new Map([
       ['1:7', { id: 1, revision: 7, width: 111, height: 222 }],
@@ -105,6 +106,7 @@ test('FileExplorer interaction scope change clears stale Properties session and 
     setActiveLogicalIndex: () => {},
     setQuickLookItemID: () => {},
     setQuickLookLogicalIndex: () => {},
+    setQuickLookSessionIDs: (value) => quickLookSessionWrites.push(value),
     controlledSelectedIDs: undefined,
     setInternalSelectedIDs: () => {},
     onSelectionChange: () => {},
@@ -124,6 +126,11 @@ test('FileExplorer interaction scope change clears stale Properties session and 
     propertiesWrites,
     [[]],
     'scope change must close an old Properties dialog before the new workspace can reuse item ids',
+  )
+  assert.deepEqual(
+    quickLookSessionWrites,
+    [null],
+    'scope change must discard a frozen Quick Look multi-selection session',
   )
   assert.equal(
     propertiesMediaDetailsRequestRef.current,

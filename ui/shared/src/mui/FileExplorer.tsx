@@ -1039,6 +1039,7 @@ export function XDriveFileExplorer({
   })
   const [quickLookItemID, setQuickLookItemID] = useState<XDriveFileExplorerID | null>(null)
   const [quickLookLogicalIndex, setQuickLookLogicalIndex] = useState<number | null>(null)
+  const [quickLookSessionIDs, setQuickLookSessionIDs] = useState<XDriveFileExplorerID[] | null>(null)
   const [draggedItems, setDraggedItems] = useState<XDriveFileExplorerItem[]>([])
   const [dropTargetID, setDropTargetID] = useState<XDriveFileExplorerID | null>(null)
   const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
@@ -1149,6 +1150,7 @@ export function XDriveFileExplorer({
     setActiveLogicalIndex(null)
     setQuickLookItemID(null)
     setQuickLookLogicalIndex(null)
+    setQuickLookSessionIDs(null)
     if (controlledSelectedIDs === undefined) setInternalSelectedIDs([])
     onSelectionChange?.([])
   }, [controlledSelectedIDs, derivedPath, interactionScopeKey, onSelectionChange])
@@ -1378,24 +1380,25 @@ export function XDriveFileExplorer({
   const quickLookIndex = quickLookItemID === null
     ? -1
     : (quickLookIndexByKey.get(explorerIDKey(quickLookItemID)) ?? -1)
+  const quickLookSessionIndex = quickLookItemID === null || !quickLookSessionIDs
+    ? -1
+    : quickLookSessionIDs.findIndex((id) => explorerIDKey(id) === explorerIDKey(quickLookItemID))
   const quickLookItem = quickLookItemID === null
     ? null
-    : virtualCollectionEnabled
-      ? logicalItemByID(quickLookItemID) ?? null
-      : quickLookIndex >= 0
-        ? quickLookFiles[quickLookIndex]
-        : null
+    : logicalItemByID(quickLookItemID)
+      ?? (quickLookIndex >= 0 ? quickLookFiles[quickLookIndex] : null)
 
   useEffect(() => {
     if (
       !virtualCollectionEnabled &&
+      !quickLookSessionIDs &&
       quickLookItemID !== null &&
       quickLookIndex < 0
     ) {
       setQuickLookItemID(null)
       setQuickLookLogicalIndex(null)
     }
-  }, [quickLookIndex, quickLookItemID, virtualCollectionEnabled])
+  }, [quickLookIndex, quickLookItemID, quickLookSessionIDs, virtualCollectionEnabled])
 
   useEffect(() => {
     if (logicalItemCount === 0) {
@@ -1990,13 +1993,26 @@ export function XDriveFileExplorer({
     if (item.kind !== 'file') return
     resetTypeSelect()
     quickLookIntentRef.current += 1
+    const itemKey = explorerIDKey(item.id)
     const index = logicalIndexOf(item.id) ?? activeLogicalIndex ?? 0
+    const selectedSessionItems = selectedKeySet.has(itemKey)
+      ? selectedItems
+          .filter((candidate) => candidate.kind === 'file')
+          .sort((left, right) => (
+            (logicalIndexOf(left.id) ?? Number.MAX_SAFE_INTEGER) -
+            (logicalIndexOf(right.id) ?? Number.MAX_SAFE_INTEGER)
+          ))
+      : []
+    const selectionSession = selectedSessionItems.length > 1
+      ? selectedSessionItems.map((candidate) => candidate.id)
+      : null
     setActiveItemID(item.id)
     setActiveLogicalIndex(index)
-    if (!selectedKeySet.has(explorerIDKey(item.id))) {
+    if (!selectedKeySet.has(itemKey)) {
       commitSelection([item.id], [item])
       anchorSelectionAt(item, index)
     }
+    setQuickLookSessionIDs(selectionSession)
     setQuickLookItemID(item.id)
     setQuickLookLogicalIndex(index)
     onPreviewItem?.(item)
@@ -2008,10 +2024,27 @@ export function XDriveFileExplorer({
     releaseInteractionMetadata()
     setQuickLookItemID(null)
     setQuickLookLogicalIndex(null)
+    setQuickLookSessionIDs(null)
     if (item) scheduleItemFocus(item.id)
   }
 
   const moveQuickLook = (delta: -1 | 1) => {
+    if (quickLookSessionIDs) {
+      if (quickLookSessionIndex < 0) return
+      const targetID = quickLookSessionIDs[quickLookSessionIndex + delta]
+      if (targetID === undefined) return
+      const target = logicalItemByID(targetID)
+      if (!target || target.kind !== 'file') return
+      const targetIndex = logicalIndexOf(target.id)
+      setQuickLookItemID(target.id)
+      setQuickLookLogicalIndex(targetIndex ?? null)
+      setActiveItemID(target.id)
+      setActiveLogicalIndex(targetIndex ?? null)
+      onPreviewItem?.(target)
+      if (targetIndex !== undefined) focusItemAtIndex(targetIndex)
+      return
+    }
+
     if (!virtualCollectionEnabled) {
       if (quickLookIndex < 0) return
       const target = quickLookFiles[quickLookIndex + delta]
@@ -3209,6 +3242,33 @@ export function XDriveFileExplorer({
       !['rename', 'delete', 'properties', 'cut', 'copy', 'move', 'version-history'].includes(item.id)
     )),
   ].slice(0, 4) : []
+  const quickLookActions: XDriveFileExplorerMenuItem[] = quickLookItem ? (() => {
+    const actions: XDriveFileExplorerMenuItem[] = []
+    const seen = new Set<string>()
+    for (const action of getItemMenuItems?.(quickLookItem) ?? []) {
+      if (action.danger || !['system-open', 'download', 'share'].includes(action.id) || seen.has(action.id)) continue
+      seen.add(action.id)
+      actions.push(action)
+    }
+    if (onDownloadItems && !seen.has('download')) {
+      seen.add('download')
+      actions.push({
+        id: 'download',
+        label: '下载',
+        icon: <DownloadRoundedIcon fontSize="small" />,
+        onSelect: () => onDownloadItems([quickLookItem]),
+      })
+    }
+    if (onManageTags && !seen.has('tags')) {
+      actions.push({
+        id: 'tags',
+        label: '标签',
+        icon: <LocalOfferRoundedIcon fontSize="small" />,
+        onSelect: () => onManageTags([quickLookItem]),
+      })
+    }
+    return actions.slice(0, 4)
+  })() : []
   const inspectorPropertySections = ([
     ['general', '常规'],
     ['content', '内容'],
@@ -5194,10 +5254,13 @@ export function XDriveFileExplorer({
         open={quickLookItem !== null}
         item={quickLookItem}
         positionLabel={quickLookItem
-          ? virtualCollectionEnabled && quickLookLogicalIndex !== null
-            ? `${quickLookLogicalIndex + 1} / ${logicalItemCount}`
-            : `${quickLookIndex + 1} / ${quickLookFiles.length}`
+          ? quickLookSessionIDs
+            ? `${quickLookSessionIndex + 1} / ${quickLookSessionIDs.length} 已选择`
+            : virtualCollectionEnabled && quickLookLogicalIndex !== null
+              ? `${quickLookLogicalIndex + 1} / ${logicalItemCount}`
+              : `${quickLookIndex + 1} / ${quickLookFiles.length}`
           : undefined}
+        actions={quickLookActions}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
         loadLivePhotoMotion={loadLivePhotoMotion}
@@ -5207,12 +5270,16 @@ export function XDriveFileExplorer({
             ? loadThumbnail
             : undefined
         }
-        canPrevious={virtualCollectionEnabled
-          ? (quickLookLogicalIndex ?? -1) > 0
-          : quickLookIndex > 0}
-        canNext={virtualCollectionEnabled
-          ? quickLookLogicalIndex !== null && quickLookLogicalIndex < logicalItemCount - 1
-          : quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}
+        canPrevious={quickLookSessionIDs
+          ? quickLookSessionIndex > 0
+          : virtualCollectionEnabled
+            ? (quickLookLogicalIndex ?? -1) > 0
+            : quickLookIndex > 0}
+        canNext={quickLookSessionIDs
+          ? quickLookSessionIndex >= 0 && quickLookSessionIndex < quickLookSessionIDs.length - 1
+          : virtualCollectionEnabled
+            ? quickLookLogicalIndex !== null && quickLookLogicalIndex < logicalItemCount - 1
+            : quickLookIndex >= 0 && quickLookIndex < quickLookFiles.length - 1}
         onPrevious={() => moveQuickLook(-1)}
         onNext={() => moveQuickLook(1)}
         onClose={closeQuickLook}
