@@ -40,6 +40,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
 | FileExplorer Trash sparse ranges | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201 trash roots: initial response/materialization **1,201 items -> first 200 items + authoritative total**; later viewport ranges are <=200 items and omit repeated count work. Legacy unpaged Trash API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
+| Windows change-journal same-path upsert index fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline, ordinary same-path upsert page: full `nodeID -> path` index builds **1 -> 0**; rename/move/new-path ambiguity and delete retain lazy full-index fallback. |
 | Windows directory journal fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Brand-new (revision-1) remote directory create and known-directory delete journal events no longer trigger `Client.Walk()`: **full-tree Walk fallback -> 0 full-walk requests**. Directory move/rename, restored/moved-in unknown directories, and an existing baseline directory missing locally retain full reconciliation. |
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
@@ -534,6 +535,41 @@ Decision: **Accepted.** This removes change-count x baseline-size CPU amplificat
 Regression budget: `applyRemoteChangePage` must build at most **1 baseline node index per journal page** and must not call the linear `findBaselinePathByNodeID` for each change. Incremental file delete/rename must not call `deletePrefix` / `moveBaselinePrefix`.
 
 Next action: continue delete-path performance at content-reference release / physical blob cleanup, and only change it if deterministic SQL or object-store amplification is found.
+
+### Windows change-journal same-path upsert index fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI remote change-journal page;
+- stable structural workload: **100,000 baseline entries** and an ordinary file upsert whose journal `Path` still matches the same baseline entry/node ID;
+- evidence method: deterministic helper behavior plus production source-shape guard; no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- every non-empty remote change page eagerly built `indexBaselinePathsByNodeID(baseline)`;
+- even one same-path file metadata/content update allocated and populated a full **100,000-entry** node index before applying the change.
+
+AFTER / current:
+
+- the page starts with no node index;
+- an upsert first resolves `baseline[change.Path]` and verifies the node ID;
+- ordinary same-path file/directory upserts therefore build **0 full baseline indexes**;
+- if the supplied path is absent/mismatched, the existing lazy node-ID index is built and reused for the rest of the page;
+- delete changes still build the lazy index because the Server delete journal intentionally has no path payload;
+- rename/move detection and directory safety fallbacks are unchanged.
+
+Decision: **Accepted.** Exact-path lookup already proves identity for the common same-path upsert case, so a namespace-sized reverse index adds no correctness there.
+
+Regression budget: a same-path upsert must not build the full baseline node index. Rename/move/new-path ambiguity and delete must retain the existing lazy indexed fallback.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsRemoteJournal(SamePath|RenameStillBuildsLazy)' -count=1`.
+
+Next action: continue small-batch Windows baseline clone/persistence-diff auditing separately; do not mix those changes into this path-resolution fast path.
+
 
 ### Windows local moved-placeholder baseline index contract
 

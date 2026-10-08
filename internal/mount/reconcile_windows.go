@@ -329,6 +329,21 @@ func findBaselinePathByNodeIDLazyIndexed(
 	return rel, state, ok, index
 }
 
+func findBaselineChangePath(
+	baseline map[string]winState,
+	index winBaselineNodeIndex,
+	nodeID uint64,
+	path string,
+) (string, winState, bool, winBaselineNodeIndex) {
+	rel := filepath.ToSlash(strings.Trim(path, "/"))
+	if rel != "" && rel != "." {
+		if state, ok := baseline[rel]; ok && state.node.ID == nodeID {
+			return rel, state, true, index
+		}
+	}
+	return findBaselinePathByNodeIDLazyIndexed(baseline, index, nodeID)
+}
+
 func deleteBaselinePrefixIndexed(
 	baseline map[string]winState,
 	index winBaselineNodeIndex,
@@ -680,7 +695,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	baseline := cloneBaseline(p.baseline)
 	hydrated := cloneHydrated(p.hydrated)
 	p.mu.Unlock()
-	baselineByNodeID := indexBaselinePathsByNodeID(baseline)
+	var baselineByNodeID winBaselineNodeIndex
 	directoryDeletePaths := make([]string, 0)
 
 	// A directory move/rename can remap an entire subtree whose descendants do
@@ -700,7 +715,13 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if rel == "" || rel == "." {
 				return true, nil
 			}
-			oldRel, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
+			oldRel, oldState, exists, nextIndex := findBaselineChangePath(
+				baseline,
+				baselineByNodeID,
+				change.NodeID,
+				change.Path,
+			)
+			baselineByNodeID = nextIndex
 			if !exists {
 				// Brand-new directories start at revision 1. A missing baseline
 				// entry with a later revision can be a restore or a directory
@@ -726,7 +747,12 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			// A directory revision change without a path change is harmless
 			// metadata churn; update it incrementally.
 		case "delete":
-			oldRel, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
+			oldRel, oldState, exists, nextIndex := findBaselinePathByNodeIDLazyIndexed(
+				baseline,
+				baselineByNodeID,
+				change.NodeID,
+			)
+			baselineByNodeID = nextIndex
 			if exists && oldState.node.Type == "dir" {
 				directoryDeletePaths = append(directoryDeletePaths, oldRel)
 			}
@@ -748,7 +774,12 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	for _, change := range changes {
 		switch change.Operation {
 		case "delete":
-			oldRel, base, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
+			oldRel, base, exists, nextIndex := findBaselinePathByNodeIDLazyIndexed(
+				baseline,
+				baselineByNodeID,
+				change.NodeID,
+			)
+			baselineByNodeID = nextIndex
 			if !exists {
 				continue
 			}
@@ -792,7 +823,13 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				continue
 			}
 
-			oldRel, _, oldExists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, rn.ID)
+			oldRel, _, oldExists, nextIndex := findBaselineChangePath(
+				baseline,
+				baselineByNodeID,
+				rn.ID,
+				rel,
+			)
+			baselineByNodeID = nextIndex
 			if p.policy.excludedPath(rel) {
 				if oldExists {
 					if err := os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
@@ -829,7 +866,9 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 					state.node = rn
 					baseline[rel] = state
 				}
-				baselineByNodeID[rn.ID] = rel
+				if baselineByNodeID != nil {
+					baselineByNodeID[rn.ID] = rel
+				}
 				continue
 			}
 			if rn.Type != "file" {
@@ -887,7 +926,9 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if exists && localExists && base.node.Revision == rn.Revision {
 				base.node = rn
 				baseline[rel] = base
-				baselineByNodeID[rn.ID] = rel
+				if baselineByNodeID != nil {
+					baselineByNodeID[rn.ID] = rel
+				}
 				continue
 			}
 
@@ -904,7 +945,9 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			}
 			if st, err := os.Stat(abs); err == nil {
 				baseline[rel] = winState{node: rn, localModTime: st.ModTime(), localSize: st.Size()}
-				baselineByNodeID[rn.ID] = rel
+				if baselineByNodeID != nil {
+					baselineByNodeID[rn.ID] = rel
+				}
 			}
 		}
 	}
