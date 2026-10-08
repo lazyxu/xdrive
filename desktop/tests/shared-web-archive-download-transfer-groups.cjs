@@ -29,7 +29,7 @@ test('Web archive download creates one download group and one child per prepared
     '/api/v1/download/archive/prepare/',
     "prepared.state === 'queued'",
     "prepared.state !== 'completed'",
-    'this.startTransferChild(groupID',
+    'this.startTransferChildren(',
     '/api/v1/download/archive/progress/',
     'applyProgress(await this.request<ArchiveDownloadProgress>',
     'this.progressTransfer(childID, file.done, file.size)',
@@ -79,3 +79,36 @@ test('archive transport does not create a second leaf transfer when externally m
   assert.ok(api.includes('if (trackTransfer) webTransferStore.complete('), 'ordinary download completion tracking missing')
   assert.ok(api.includes("await this.downloadAuthenticated('/api/v1/download/archive'"), 'archive transport call missing')
 })
+
+test('Web archive download batches prepared child registration', () => {
+  const start = api.indexOf('  async downloadArchive(')
+  const end = api.indexOf('  private async downloadAuthenticated(', start)
+  assert.ok(start >= 0 && end > start, 'downloadArchive source is missing')
+  const source = api.slice(start, end)
+
+  for (const token of [
+    'const registeredChildIDs = this.startTransferChildren(',
+    'preparedFiles.map((file) => ({',
+    'registeredChildIDs.length !== preparedFiles.length',
+    'const childID = registeredChildIDs[index]',
+  ]) {
+    assert.ok(source.includes(token), 'archive batch child registration missing: ' + token)
+  }
+  assert.equal(
+    source.includes('this.startTransferChild(groupID'),
+    false,
+    'archive prepare must not persist one child transfer at a time',
+  )
+  const registrationIndex = source.indexOf(
+    'const registeredChildIDs = this.startTransferChildren(',
+  )
+  const firstGroupUpdateAfterRegistration = source.indexOf(
+    'this.updateTransferGroup(groupID',
+    registrationIndex,
+  )
+  assert.ok(
+    registrationIndex >= 0 && firstGroupUpdateAfterRegistration > registrationIndex,
+    'all prepared child transfers must still exist before group progress begins',
+  )
+})
+
