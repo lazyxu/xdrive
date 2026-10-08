@@ -34,6 +34,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
 | Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
+| Windows local-delete baseline pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat local deletions: successful-delete baseline pruning **1,200 baseline-wide prefix scans / up to 721,800 key inspections -> 1 final baseline scan**; processed/deleted subtree coverage uses ancestor-set lookup instead of a growing linear prefix slice. Server DELETE cardinality/order are unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -1675,3 +1676,42 @@ The FileExplorer surface can separate the logical directory item count from load
 
 
 Before sparse runtime is enabled, item interactions must also be logical-index aware. Active item, rename recovery, marquee hit-testing, and keyboard targets resolve against loaded sparse logical indexes. Shift ranges are committed only when every logical item in the requested range is loaded; otherwise FileExplorer requests that range instead of silently selecting a partial loaded subset. Full Ctrl+A / cross-unloaded-range bulk selection remains a separate selection-model problem and must not be faked by selecting only loaded items.
+
+### Windows local-delete prefix-set and baseline pruning contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI full/local-change reconcile push path;
+- stable structural workload: **1,200 flat baseline files** deleted locally;
+- every file remains an independent Server DELETE root, so network mutation cardinality is intentionally unchanged;
+- evidence method: deterministic prefix-set/baseline helper behavior plus source-shape regression for both reconcile paths; no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- every successful delete immediately called `deletePrefix(baseline, rel)`;
+- for 1,200 flat files plus the root entry, repeated shrinking-map scans inspect up to **721,800 baseline keys**;
+- subtree suppression used `underAny(rel, deletedPrefix)`, linearly scanning every previously successful prefix; 1,200 independent roots perform **719,400 prefix comparisons**;
+- local-change new-directory suppression used the same growing-prefix-list shape.
+
+AFTER / current:
+
+- successful delete roots are recorded in `winPathPrefixSet`;
+- ancestor coverage walks only the candidate path's ancestors and performs map lookups, independent of the number of previously processed sibling roots;
+- baseline cleanup runs once after the delete loop and removes entries covered by any successful root;
+- 1,200 flat successful deletions therefore require **1 final baseline scan** instead of 1,200 baseline scans;
+- full reconcile keeps HTTP 404 as successful local cleanup and keeps 409 as non-cleanup; local-change reconcile keeps both 404/409 as non-cleanup exactly as before;
+- if a later DELETE fails fatally, baseline entries for earlier successful DELETEs are still pruned before returning, matching the old partial-progress behavior;
+- Server DELETE request order/cardinality, revision checks, subtree suppression, rename ordering, CfAPI behavior and baseline persistence are unchanged.
+
+Decision: **Accepted.** The old repeated local map scans and linear prefix-list coverage added CPU work proportional to the product of deletion count and baseline/prefix count without contributing to server-side correctness.
+
+Regression budget: successful local-delete baseline cleanup must perform at most **one full baseline traversal per reconcile delete phase**. Prefix coverage must be ancestor-set based and must not reintroduce a growing linear prefix scan.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindows(PathPrefixSet|DeleteBaselinePrefixes|LocalDeletePruningSourceShape)$' -count=1`.
+
+Next action: continue ordinary sync/delete/download performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
