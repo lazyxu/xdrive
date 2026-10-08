@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
@@ -151,7 +151,7 @@ export function XDriveCoreWorkspaceNavItems({
     <>
       <XDriveSidebarNavItem
         selected={selected === 'files'}
-        icon={<FolderRoundedIcon fontSize="small" />}
+        icon={<CloudOutlinedIcon fontSize="small" />}
         primary="文件"
         appearance={appearance}
         onClick={() => onSelect('files')}

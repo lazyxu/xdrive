@@ -17,6 +17,15 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedRoute.includes("export type XDriveCoreWorkspaceKey = typeof XDRIVE_CORE_WORKSPACE_KEYS[number]"), 'shared route model must derive the core workspace key union')
   assert.ok(sharedNav.includes('export function XDriveCoreWorkspaceNavItems'))
   assert.ok(sharedNav.includes('showLocalStorage = false'), 'local storage must be opt-in because it is Desktop-only')
+  assert.ok(
+    sharedNav.includes('icon={<CloudOutlinedIcon fontSize="small" />}\n        primary="文件"'),
+    'Files should use a cloud icon rather than a local-folder glyph',
+  )
+  assert.ok(
+    sharedNav.includes('icon={<CloudRoundedIcon fontSize="small" />}\n        primary="云端存储"'),
+    'Cloud Storage should keep a distinct filled cloud glyph',
+  )
+  assert.equal(sharedNav.includes('FolderRoundedIcon'), false, 'shared core Files navigation must not look like a local folder')
   const labels = [
     'primary="文件"',
     'primary="图库"',

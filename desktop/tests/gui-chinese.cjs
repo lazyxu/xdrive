@@ -241,7 +241,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     assert.ok(rendererApp.includes(icon), `missing Desktop-only sidebar icon: ${icon}`)
   }
   for (const icon of [
-    'FolderRoundedIcon',
+    'CloudOutlinedIcon',
     'PhotoLibraryRoundedIcon',
     'CloudSyncRoundedIcon',
     'SwapVertRoundedIcon',
