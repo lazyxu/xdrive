@@ -163,6 +163,9 @@ func (p *winProvider) applyStoragePolicySnapshot() error {
 }
 
 func (p *winProvider) applyAlwaysLocal(baseline map[string]winState) error {
+	if !p.policy.hasAlwaysLocal() {
+		return nil
+	}
 	paths := make([]string, 0, len(baseline))
 	for rel, state := range baseline {
 		if rel == "" || state.node.Type != "file" || !p.policy.alwaysLocalPath(rel) {
