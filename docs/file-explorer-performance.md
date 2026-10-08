@@ -26,6 +26,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Recursive tree scan: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response**. #788 also bounded root lookup before the exact lookup follow-up below. No wall-clock speedup claimed. |
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
 | Desktop folder-download progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For F manifest files, each group-progress publication no longer scans F child byte slots. Aggregate bytes are maintained by current-file deltas: **O(F) -> O(1) per progress publication**, and the two F-length `int64` progress arrays are removed. |
+| Hierarchical Transfer history trim fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | One group + 1,000 completed child tasks below the 200-root history limit: `trimLocked` history-entry inspections during start/finish **1,003,001 -> 0**. Root-tree retention/eviction semantics are unchanged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
@@ -1966,6 +1967,40 @@ Regression command:
 - `go test ./internal/mount -run '^TestWindowsLocalChangeExistenceProbeSourceShape$' -count=1`.
 
 Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Hierarchical Transfer history trim fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- shared Go Transfer Manager used by Desktop/Agent FileExplorer upload/download task trees;
+- stable structural workload: **1 active group + 1,000 child tasks**, history limit **200 roots**;
+- every child is created and then completed, while all tasks remain under the same root;
+- evidence is deterministic source-shape/runtime regression; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every `Start` and terminal `Complete/Fail` calls `trimLocked`;
+- `trimLocked` first scans the complete task order just to discover that root cardinality is still 1;
+- one group plus 1,000 create+complete child cycles therefore performs **1,003,001 history-entry inspections** before doing no eviction.
+
+AFTER / current:
+
+- Manager maintains the distinct root IDs incrementally;
+- when `len(roots) <= history limit`, `trimLocked` returns before allocating root-order maps or scanning task history;
+- the same workload performs **0 history-entry inspections** in trim;
+- once root cardinality really exceeds the limit, the existing oldest-terminal-root selection still scans and evicts whole root trees exactly as before.
+
+Decision: **Accepted.** Child cardinality must not determine history-retention cost because the configured limit is defined in root transfers, not child tasks.
+
+Regression budget: child create/finish under an in-limit root set must return from `trimLocked` before the history loop. Clear, clear-history, and trim eviction must keep the root set synchronized with retained trees.
+
+Regression commands:
+
+- `go test ./internal/transfer -run '^TestManagerHistoryTrimFastPathUsesRootCardinality$|^TestManagerHistoryLimitCountsRootTransfersNotChildren$|^TestManagerClearHistoryKeepsCompletedChildrenOfActiveGroup$' -count=1`.
+
+Next action: optimize shared FileExplorer folder-upload group progress aggregation, then Web child registration/persistence, while preserving upfront child visibility.
 
 ### Windows empty always-local policy fast-path contract
 

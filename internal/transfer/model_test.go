@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -362,6 +364,55 @@ func TestManagerLifecycleByIDAndGroupTerminalStates(t *testing.T) {
 	}
 	if err := group.Finish(StateRunning, nil); err == nil {
 		t.Fatal("expected invalid non-terminal finish state to fail")
+	}
+}
+
+func TestManagerHistoryTrimFastPathUsesRootCardinality(t *testing.T) {
+	m := NewManager(200)
+	group := m.StartGroup(Spec{FileName: "folder", Kind: KindUpload, Direction: "upload"})
+	if group == nil {
+		t.Fatal("group is nil")
+	}
+	for i := 0; i < 1000; i++ {
+		child := m.StartChildByID(group.ID(), Spec{
+			FileName:     fmt.Sprintf("file-%04d.bin", i),
+			RelativePath: fmt.Sprintf("folder/file-%04d.bin", i),
+			Kind:         KindUpload,
+			Direction:    "upload",
+			Phase:        PhaseQueued,
+			TotalBytes:   1,
+		})
+		if child == nil {
+			t.Fatalf("child %d is nil", i)
+		}
+		child.Complete()
+	}
+	if len(m.roots) != 1 {
+		t.Fatalf("root cardinality=%d want=1", len(m.roots))
+	}
+	_, tasks := m.Snapshot()
+	if len(tasks) != 1001 {
+		t.Fatalf("task count=%d want=1001", len(tasks))
+	}
+
+	source, err := os.ReadFile("model.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	start := strings.Index(text, "func (m *Manager) trimLocked()")
+	if start < 0 {
+		t.Fatal("trimLocked source not found")
+	}
+	relativeEnd := strings.Index(text[start:], "func transferRootID")
+	if relativeEnd < 0 {
+		t.Fatal("trimLocked source end not found")
+	}
+	fn := text[start : start+relativeEnd]
+	guard := strings.Index(fn, "len(m.roots) <= m.limit")
+	scan := strings.Index(fn, "rootOrder :=")
+	if guard < 0 || scan < 0 || guard > scan {
+		t.Fatal("root-cardinality guard must run before history scan")
 	}
 }
 
