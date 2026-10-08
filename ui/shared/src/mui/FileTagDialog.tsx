@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
@@ -54,9 +54,12 @@ export function XDriveFileTagDialog({
   const [color, setColor] = useState(defaultTagColor)
   const [editingTagID, setEditingTagID] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const dialogGenerationRef = useRef(0)
   const signature = nodeIDs.join(',')
 
   useEffect(() => {
+    const generation = dialogGenerationRef.current + 1
+    dialogGenerationRef.current = generation
     if (!open || nodeIDs.length === 0) {
       setAssignments([])
       setEditingTagID(null)
@@ -76,6 +79,9 @@ export function XDriveFileTagDialog({
     })
     return () => {
       active = false
+      if (dialogGenerationRef.current === generation) {
+        dialogGenerationRef.current += 1
+      }
     }
   }, [open, queryNodeTags, signature])
 
@@ -88,11 +94,13 @@ export function XDriveFileTagDialog({
   }, [assignments])
 
   const toggle = async (tag: XDriveFileTag) => {
+    const generation = dialogGenerationRef.current
     const assignedCount = counts.get(tag.id) ?? 0
     const assign = assignedCount !== nodeIDs.length
     setError('')
     try {
       await onSetTag(tag.id, nodeIDs, assign)
+      if (dialogGenerationRef.current !== generation) return
       setAssignments((current) => current.map((entry) => {
         const has = entry.tags.some((item) => item.id === tag.id)
         if (assign && !has) return { ...entry, tags: [...entry.tags, tag] }
@@ -100,17 +108,21 @@ export function XDriveFileTagDialog({
         return entry
       }))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (dialogGenerationRef.current === generation) {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     }
   }
 
   const submitTag = async () => {
+    const generation = dialogGenerationRef.current
     const trimmed = name.trim()
     if (!trimmed) return
     setError('')
     try {
       if (editingTagID !== null) {
         const updated = await onUpdateTag(editingTagID, { name: trimmed, color })
+        if (dialogGenerationRef.current !== generation) return
         setAssignments((current) => current.map((entry) => ({
           ...entry,
           tags: entry.tags.map((tag) => tag.id === editingTagID ? { ...tag, ...updated } : tag),
@@ -121,12 +133,16 @@ export function XDriveFileTagDialog({
         return
       }
       const tag = await onCreateTag(trimmed, color)
+      if (dialogGenerationRef.current !== generation) return
+      await onSetTag(tag.id, nodeIDs, true)
+      if (dialogGenerationRef.current !== generation) return
       setName('')
       setColor(defaultTagColor)
-      await onSetTag(tag.id, nodeIDs, true)
       setAssignments((current) => current.map((entry) => ({ ...entry, tags: [...entry.tags, tag] })))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      if (dialogGenerationRef.current === generation) {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     }
   }
 
