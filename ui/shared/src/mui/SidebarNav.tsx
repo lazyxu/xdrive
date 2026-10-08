@@ -1,12 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react'
-import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
-import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
-import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
 import { Box, Chip, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material'
 import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
+import { xDriveCoreWorkspaceDestinations } from './WorkspaceNavigation'
 
 export const XDRIVE_SIDEBAR_WIDTH = 184
 export const XDRIVE_SIDEBAR_COMPACT_WIDTH = 176
@@ -149,51 +144,17 @@ export function XDriveCoreWorkspaceNavItems({
 }) {
   return (
     <>
-      <XDriveSidebarNavItem
-        selected={selected === 'files'}
-        icon={<CloudOutlinedIcon fontSize="small" />}
-        primary="文件"
-        appearance={appearance}
-        onClick={(event) => onSelect('files', event)}
-      />
-      <XDriveSidebarNavItem
-        selected={selected === 'gallery'}
-        icon={<PhotoLibraryRoundedIcon fontSize="small" />}
-        primary="图库"
-        appearance={appearance}
-        onClick={(event) => onSelect('gallery', event)}
-      />
-      <XDriveSidebarNavItem
-        selected={selected === 'sources'}
-        icon={<CloudSyncRoundedIcon fontSize="small" />}
-        primary="同步文件夹"
-        appearance={appearance}
-        onClick={(event) => onSelect('sources', event)}
-      />
-      <XDriveSidebarNavItem
-        selected={selected === 'transfers'}
-        icon={<SwapVertRoundedIcon fontSize="small" />}
-        primary="传输"
-        badge={transferBadge}
-        appearance={appearance}
-        onClick={(event) => onSelect('transfers', event)}
-      />
-      {showLocalStorage ? (
+      {xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map((destination) => (
         <XDriveSidebarNavItem
-          selected={selected === 'local-storage'}
-          icon={<StorageRoundedIcon fontSize="small" />}
-          primary="本地存储"
+          key={destination.key}
+          selected={selected === destination.key}
+          icon={destination.icon}
+          primary={destination.label}
+          badge={destination.badge}
           appearance={appearance}
-          onClick={(event) => onSelect('local-storage', event)}
+          onClick={(event) => onSelect(destination.key, event)}
         />
-      ) : null}
-      <XDriveSidebarNavItem
-        selected={selected === 'cloud-storage'}
-        icon={<CloudRoundedIcon fontSize="small" />}
-        primary="云端存储"
-        appearance={appearance}
-        onClick={(event) => onSelect('cloud-storage', event)}
-      />
+      ))}
     </>
   )
 }

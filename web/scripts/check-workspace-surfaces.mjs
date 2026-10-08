@@ -63,7 +63,8 @@ requireText(workspaceContent, [
   "const files = presentation === 'files'",
   "p: '34px 40px 48px'",
   "'@media (max-width: 960px)'",
-  "'@media (min-width: 900px)'",
+  "height: '100%'",
+  "overflowY: 'auto'",
   "overflow: 'hidden'",
 ], 'XDriveWorkspaceContent')
 
@@ -148,12 +149,19 @@ requireText(app, [
   'XDriveWorkspaceSidebar',
   'XDriveWorkspaceContent',
   'className="web-workspace-shell"',
-  "sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}",
+  "sx={{ flex: 1, minHeight: 0 }}",
   'presentation={xDriveWorkspacePresentation(appView)}',
-  "height: { md: '100vh' }",
-  "overflow: { md: 'hidden' }",
-  "height: { xs: 560, md: '100%' }",
+  "height: '100vh'",
+  "'@supports (height: 100dvh)'",
+  "height: '100dvh'",
+  "overflow: 'hidden'",
+  'disabled={viewerActive}',
+  "inert: viewerActive ? '' : undefined",
 ], 'Web files workspace')
+
+if (app.includes("height: { xs: 560, md: '100%' }") || webFileExplorer.includes('minHeight: 420')) {
+  throw new Error('Web Files must shrink to the available viewport instead of enforcing a fixed mobile height')
+}
 
 if (app.includes('<XDriveWorkspaceSurface presentation="page" title="文件">')) {
   throw new Error('Web files workspace must not render a duplicate page header')

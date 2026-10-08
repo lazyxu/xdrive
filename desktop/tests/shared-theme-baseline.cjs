@@ -41,7 +41,13 @@ test('Web keeps only platform and feature CSS outside the shared baseline', () =
   assert.equal(/^:root\s*\{/m.test(webStyles), false, 'Web must not keep a local root palette block')
   assert.equal(/^:root\[data-xdrive-theme='dark'\]\s*\{/m.test(webStyles), false, 'Web must not keep a local dark root palette block')
   assert.equal(webStyles.includes('* { box-sizing: border-box; }'), false, 'Web box sizing must come from CssBaseline')
-  assert.ok(webStyles.includes('body { min-width: 320px; min-height: 100vh; }'), 'Web responsive minimums remain platform-local')
+  const bodyStyles = webStyles.match(/^body\s*\{([^}]*)\}/m)?.[1] ?? ''
+  assert.match(bodyStyles, /min-width:\s*320px\s*;/, 'Web responsive minimum width remains platform-local')
+  assert.deepEqual(
+    [...bodyStyles.matchAll(/\bmin-height:\s*([^;]+);/g)].map((match) => match[1].trim()),
+    ['100vh', '100dvh'],
+    'Web viewport minimum must preserve a vh fallback before the dynamic viewport value',
+  )
   for (const selector of [
     '.external-source-list',
     '.external-source-card-header',

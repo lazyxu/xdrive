@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedNav = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
+const sharedModel = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
@@ -16,32 +17,33 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedRoute.includes('export const XDRIVE_CORE_WORKSPACE_KEYS = ['), 'shared route model must own core workspace keys')
   assert.ok(sharedRoute.includes("export type XDriveCoreWorkspaceKey = typeof XDRIVE_CORE_WORKSPACE_KEYS[number]"), 'shared route model must derive the core workspace key union')
   assert.ok(sharedNav.includes('export function XDriveCoreWorkspaceNavItems'))
-  assert.ok(sharedNav.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
+  assert.ok(sharedModel.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
+  assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
   assert.ok(
-    sharedNav.includes('icon={<CloudOutlinedIcon fontSize="small" />}\n        primary="文件"'),
+    sharedModel.includes("key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize=\"small\" />"),
     'Files should use a cloud icon rather than a local-folder glyph',
   )
   assert.ok(
-    sharedNav.includes('icon={<CloudRoundedIcon fontSize="small" />}\n        primary="云端存储"'),
+    sharedModel.includes("key: 'cloud-storage', label: '云端存储', icon: <CloudRoundedIcon fontSize=\"small\" />"),
     'Cloud Storage should keep a distinct filled cloud glyph',
   )
-  assert.equal(sharedNav.includes('FolderRoundedIcon'), false, 'shared core Files navigation must not look like a local folder')
+  assert.equal(sharedModel.includes('FolderRoundedIcon'), false, 'shared core Files navigation must not look like a local folder')
   const labels = [
-    'primary="文件"',
-    'primary="图库"',
-    'primary="同步文件夹"',
-    'primary="传输"',
-    'primary="本地存储"',
-    'primary="云端存储"',
+    "label: '文件'",
+    "label: '图库'",
+    "label: '同步文件夹'",
+    "label: '传输'",
+    "label: '本地存储'",
+    "label: '云端存储'",
   ]
   let cursor = -1
   for (const label of labels) {
-    const next = sharedNav.indexOf(label)
+    const next = sharedModel.indexOf(label)
     assert.ok(next > cursor, `shared core navigation order missing or changed: ${label}`)
     cursor = next
   }
-  assert.ok(sharedNav.includes('{showLocalStorage ? ('), 'local storage destination must remain capability-gated')
-  assert.ok(sharedNav.includes('badge={transferBadge}'), 'shared transfer destination must own the transfer badge slot')
+  assert.ok(sharedModel.includes('...(showLocalStorage'), 'local storage destination must remain capability-gated')
+  assert.ok(sharedModel.includes('badge: transferBadge'), 'shared transfer destination must own the transfer badge slot')
 })
 
 test('shared sidebar exposes one destination, section and badge contract', () => {
@@ -55,7 +57,7 @@ test('shared sidebar exposes one destination, section and badge contract', () =>
     'placement?: XDriveSidebarSectionPlacement',
     'items: XDriveSidebarDestinationModel[]',
   ]) {
-    assert.ok((sharedNav + sharedSidebar).includes(token), `shared sidebar contract missing: ${token}`)
+    assert.ok((sharedNav + sharedSidebar + sharedModel).includes(token), `shared sidebar contract missing: ${token}`)
   }
   assert.equal(sharedSidebar.includes('leadingItems'), false, 'complete sidebar should not keep a second extension API')
   assert.equal(sharedSidebar.includes('trailingItems'), false, 'complete sidebar should not keep a second extension API')
