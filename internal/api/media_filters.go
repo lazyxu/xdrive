@@ -26,6 +26,7 @@ type mediaQueryOptions struct {
 	Search         string
 	AssetKind      string
 	Category       string
+	FolderID       *uint64
 	CapturedFrom   *time.Time
 	CapturedTo     *time.Time
 	HasLocation    *bool
@@ -60,6 +61,14 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	if out.Category != "" && !validMediaCategory(out.Category) {
 		fail(c, http.StatusBadRequest, "category is invalid")
 		return mediaQueryOptions{}, false
+	}
+	if raw := strings.TrimSpace(c.Query("folder_id")); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || value == 0 {
+			fail(c, http.StatusBadRequest, "folder_id must be a positive integer")
+			return mediaQueryOptions{}, false
+		}
+		out.FolderID = &value
 	}
 	var err error
 	out.Cameras, err = normalizeMediaFacetValues("camera", c.QueryArray("camera"))
@@ -246,6 +255,9 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 	}
 	if options.AssetKind != "" {
 		query = query.Where("pa.kind = ?", options.AssetKind)
+	}
+	if options.FolderID != nil {
+		query = query.Where("n.parent_id = ?", *options.FolderID)
 	}
 	switch options.Category {
 	case "gif":

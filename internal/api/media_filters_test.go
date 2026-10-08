@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&camera=SONY%20ILCE-7M4&camera=Apple%20iPhone%2015%20Pro&format=VIDEO%2FQUICKTIME&format=image%2Fjpeg&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&folder_id=42&camera=SONY%20ILCE-7M4&camera=Apple%20iPhone%2015%20Pro&format=VIDEO%2FQUICKTIME&format=image%2Fjpeg&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
 		nil,
 	)
 	ctx.Request = req
@@ -27,6 +28,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	if query.Search != "iPhone" ||
 		query.AssetKind != "live_photo" ||
 		query.Category != "panorama" ||
+		query.FolderID == nil || *query.FolderID != 42 ||
 		query.HasLocation == nil || !*query.HasLocation ||
 		query.Favorite == nil || !*query.Favorite ||
 		query.Tag != "Travel" ||
@@ -42,6 +44,27 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	if query.CapturedTo == nil ||
 		!query.CapturedTo.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("captured_to=%v", query.CapturedTo)
+	}
+}
+
+func TestMediaQueryFromRequestRejectsInvalidFolderID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, raw := range []string{"0", "-1", "nope"} {
+		t.Run(raw, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(
+				"GET",
+				"/api/v1/media/items?folder_id="+raw,
+				nil,
+			)
+			if _, ok := mediaQueryFromRequest(ctx); ok {
+				t.Fatalf("invalid folder_id %q was accepted", raw)
+			}
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("folder_id=%q status=%d body=%s", raw, recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }
 

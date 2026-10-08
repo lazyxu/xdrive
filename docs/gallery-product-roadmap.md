@@ -151,6 +151,32 @@ requests are ignored after a newer request or page unmount.
 
 
 
+### Synchronization-folder / directory browsing contract
+
+Gallery directory browsing borrows KFS's strongest navigation idea: **the current path is
+first-class state**. The implementation does not copy KFS's old visual shell and does not
+import provider directory semantics.
+
+- A Gallery **同步文件夹** root is derived only from an owned xDrive `Source.TargetNodeID`.
+- Directory navigation is derived only from the local `xd_nodes` parent tree.
+- Media scope is direct-directory scope: `folder_id=<node id>` means photos whose local
+  primary Node is directly inside that directory. Nested directories stay navigable
+  rather than being silently flattened into the parent photo wall.
+- Folder cards expose direct media count, direct child-folder count, and an optional
+  locally indexed cover. They do not run recursive subtree aggregation on ordinary
+  Gallery first-load paths.
+- Breadcrumbs are bounded to the selected synchronization-folder root. A folder outside
+  that root, another user's folder, or a non-directory target is rejected.
+- Camera/format/search/date/favorite/person/place filters compose with `folder_id`, and
+  facet counts preserve the folder scope.
+- The contract is local-only: Yike/Synology provider albums, provider thumbnails, provider
+  EXIF, and provider directory metadata are not required for Gallery folder browsing.
+
+The Server exposes synchronization-folder roots and one-directory-at-a-time navigation
+through dedicated Gallery endpoints. Web/Desktop wiring remains a later focused client
+slice so this Server PR cannot regress Gallery first-visible rendering.
+
+
 ## Phase 3 — multi-select and shared Selection Toolbar
 
 Gallery selection is owned entirely by the shared Web/Desktop surface. Users can enter
