@@ -47,6 +47,19 @@ Provider delivery rules:
 13. Keep long-lived branches to a minimum.
 
 
+
+## Race and concurrency specialization policy
+
+- For a race/concurrency specialization task, **test first and do not change production behavior until a real failure is reproduced**. Continue running or extending the relevant race/stress/interleaving tests until one of them fails because of an actual product concurrency/lifecycle bug.
+- A test harness, fixture, mock, parser, selector, timing assumption, CI infrastructure issue, or unrelated existing failure does **not** count as the required reproduction. Fix the test/harness itself and rerun without changing production code.
+- The first-red evidence must be deterministic enough to identify the violated contract (for example: stale completion overwrites a newer scope, old lifecycle retains busy ownership, duplicate same-tick submission, old request crosses account/session identity, or a newer revision is regressed). Record that failing assertion/path in the PR description or test name.
+- If no real race failure can be reproduced, keep testing/auditing; do not land speculative synchronization, generation fences, locks, cancellation, or lifecycle resets merely because a race appears theoretically possible.
+- Only after a real first-red is confirmed may production code be changed. Make the smallest fix that addresses the reproduced ordering/lifecycle failure, and preserve existing platform semantics unless the failing contract proves they are wrong.
+- After the fix, require the **same reproducer** to turn green, then run the materially related race/concurrency suite and normal subsystem tests. A replacement test that avoids the original failing interleaving is not sufficient.
+- Race/concurrency branches follow the normal related-work rule: inspect and continue viable related branches/PRs first, avoid duplicate fixes, and keep the GitHub branch at exactly one work commit. Test-first revisions and production fixes must be amended into that same work commit rather than accumulated as fixup commits.
+- Merge only after the reproduced race is fixed, the relevant regression suite is green, and the repository's normal authoritative CI gate passes. Do not merge a branch that is only statically plausible, partially tested, or still failing the original race.
+- This policy applies equally to FileExplorer, Gallery/Photo UI, transfers, thumbnails, background tasks, sync, navigation/session lifecycle, caches, and any other subsystem where the task is specifically a race/concurrency investigation.
+
 ## Performance specialization policy
 
 - Before starting or continuing a performance task, inspect only the materially related open branches/PRs/MRs and the canonical performance document for that subsystem. Continue a viable related branch before opening a duplicate implementation. Already-merged, superseded, or abandoned performance branches must not be treated as active work.
