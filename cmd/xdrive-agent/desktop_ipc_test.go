@@ -172,6 +172,11 @@ type fakeDesktopIPCController struct {
 	cloudMediaEditNodeID       uint64
 	cloudMediaEditRevision     uint64
 	cloudMediaEditInput        client.MediaEditRecipeInput
+	cloudMediaCreative         client.MediaCreativeGeneration
+	cloudMediaCreativeNodeID   uint64
+	cloudMediaCreativeInput    client.MediaCreativeInput
+	cloudMediaCreativeID       string
+	cloudMediaCreativeCancelID string
 	cloudMediaKind             string
 	cloudMediaQuery            client.MediaQuery
 	cloudMediaLimit            int
@@ -1356,6 +1361,34 @@ func (f *fakeDesktopIPCController) CloudResetMediaEditRecipe(
 	}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudCreateMediaCreativeGeneration(
+	_ context.Context,
+	nodeID uint64,
+	input client.MediaCreativeInput,
+) (client.MediaCreativeGeneration, error) {
+	f.cloudMediaCreativeNodeID = nodeID
+	f.cloudMediaCreativeInput = input
+	return f.cloudMediaCreative, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaCreativeGeneration(
+	_ context.Context,
+	generationID string,
+) (client.MediaCreativeGeneration, error) {
+	f.cloudMediaCreativeID = generationID
+	return f.cloudMediaCreative, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCancelMediaCreativeGeneration(
+	_ context.Context,
+	generationID string,
+) (client.MediaCreativeGeneration, error) {
+	f.cloudMediaCreativeCancelID = generationID
+	result := f.cloudMediaCreative
+	result.State = "cancelled"
+	return result, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err
@@ -2218,6 +2251,11 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			Version: 1, Revision: 1, SourceCurrent: true,
 			MediaKind: "image", CropWidth: 1, CropHeight: 1,
 		},
+		cloudMediaCreative: client.MediaCreativeGeneration{
+			ID: "creative-1", Kind: "cutout", State: "queued",
+			SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
+			CreatedAt: now, UpdatedAt: now,
+		},
 		cloudMediaPlaces: []client.MediaPlaceFacet{{
 			ID: "place:135:10381", Name: "约 1.355°, 103.815°",
 			Latitude: 1.355, Longitude: 103.815, ItemCount: 2,
@@ -2861,6 +2899,65 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/creative?node_id=31",
+		`{"kind":"cutout","cutout_mode":"object","points":[{"x":0.5,"y":0.4,"foreground":true}]}`,
+	)
+	if res.Code != http.StatusAccepted ||
+		!strings.Contains(res.Body.String(), "\"id\":\"creative-1\"") {
+		t.Fatalf("media creative create status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaCreativeNodeID != 31 ||
+		ctrl.cloudMediaCreativeInput.Kind != "cutout" ||
+		ctrl.cloudMediaCreativeInput.CutoutMode != "object" ||
+		len(ctrl.cloudMediaCreativeInput.Points) != 1 ||
+		!ctrl.cloudMediaCreativeInput.Points[0].Foreground {
+		t.Fatalf(
+			"media creative input node=%d input=%+v",
+			ctrl.cloudMediaCreativeNodeID,
+			ctrl.cloudMediaCreativeInput,
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/creative?generation_id=creative-1",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		ctrl.cloudMediaCreativeID != "creative-1" ||
+		!strings.Contains(res.Body.String(), "\"state\":\"queued\"") {
+		t.Fatalf(
+			"media creative get status=%d id=%q body=%s",
+			res.Code,
+			ctrl.cloudMediaCreativeID,
+			res.Body.String(),
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/creative/cancel?generation_id=creative-1",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		ctrl.cloudMediaCreativeCancelID != "creative-1" ||
+		!strings.Contains(res.Body.String(), "\"state\":\"cancelled\"") {
+		t.Fatalf(
+			"media creative cancel status=%d id=%q body=%s",
+			res.Code,
+			ctrl.cloudMediaCreativeCancelID,
+			res.Body.String(),
+		)
+	}
+
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")
 	if res.Code != http.StatusOK ||
 		res.Header().Get("Content-Type") != "image/jpeg" ||
@@ -2909,6 +3006,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/bursts?limit=0",
 		"/v1/media/burst-items?burst_id=",
 		"/v1/media/pet-items?pet_kind=hamster",
+		"/v1/media/creative?generation_id=",
 		"/v1/media/people/suggestions?limit=0",
 		"/v1/media/people/suggestions?include_reviewed=maybe",
 		"/v1/media/people/suggestion-items?person_id=invalid",

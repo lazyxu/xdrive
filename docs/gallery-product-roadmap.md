@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | Planned |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase UI** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -508,3 +508,47 @@ adding FFmpeg to the main xDrive Server.
 
 Reset deletes only the saved recipe. The original file and all ordinary Gallery
 metadata remain unchanged.
+
+
+## Phase 13 — local Creative Tools
+
+Phase 13 is intentionally optional and stays behind the local Photo Intelligence
+sidecar. The main xDrive Server remains CGO-free and does not load segmentation or
+inpainting models.
+
+### Current: Cutout + Smart Erase
+
+The durable creative-generation foundation is now surfaced as one shared Viewer
+**创作** action for Web and Desktop:
+
+- **AI 抠图 / Cutout** accepts normalized foreground/background point prompts;
+- **智能消除 / Smart Erase** accepts normalized brush strokes and radius;
+- both use the existing local 2048px creative working preview;
+- generation is a durable, cancellable Task Center job;
+- the dialog polls the persisted generation until completed/failed/cancelled;
+- completed output is committed as a **new canonical file in the source folder**;
+- the original file, edit recipe, favorite/tags/people/albums and source binding are
+  never overwritten by a creative generation.
+
+The shared `MediaGalleryCreativeDialog` owns prompt drawing, task progress, cancel,
+result preview and retry. `MediaGalleryViewer` owns only the single Creative entry.
+Web/Desktop platform adapters expose the same `create/get/cancel` generation
+contract; neither platform runs image models or implements creative logic.
+
+Creative Tools deliberately operate on the original image bytes rather than silently
+baking a saved non-destructive edit recipe. The dialog states this when a recipe is
+present. Exporting an edited recipe into Creative Tools can be added later as an
+explicit operation rather than changing the current source-fingerprint contract.
+
+Only ordinary ready image assets are enabled in the first UI. Live Photo, RAW pairs,
+Burst logical assets and video remain excluded until each has an explicit whole-asset
+creative contract.
+
+### Still remaining inside Phase 13
+
+- automatic movie / slideshow creation;
+- advanced multi-item composition / templates;
+- richer object-selection refinement or additional local creative models.
+
+Those follow-ups must reuse the same durable generation / Task Center / canonical
+output architecture instead of introducing a second creative execution path.

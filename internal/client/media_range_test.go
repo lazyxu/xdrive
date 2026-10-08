@@ -404,3 +404,89 @@ func TestMediaEditRecipeQueries(t *testing.T) {
 		t.Fatalf("reset edit=%+v", got)
 	}
 }
+
+func TestMediaCreativeGenerationQueries(t *testing.T) {
+	requestIndex := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestIndex {
+		case 0:
+			if r.Method != http.MethodPost ||
+				r.URL.Path != "/api/v1/media/items/31/creative" {
+				t.Fatalf("creative create method=%s path=%q", r.Method, r.URL.Path)
+			}
+			var input MediaCreativeInput
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				t.Fatal(err)
+			}
+			if input.Kind != "cutout" ||
+				input.CutoutMode != "object" ||
+				len(input.Points) != 1 ||
+				!input.Points[0].Foreground {
+				t.Fatalf("creative create input=%+v", input)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
+				ID: "creative-1", Kind: "cutout", State: "queued",
+				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
+			})
+		case 1:
+			if r.Method != http.MethodGet ||
+				r.URL.Path != "/api/v1/media/creative/creative-1" {
+				t.Fatalf("creative get method=%s path=%q", r.Method, r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
+				ID: "creative-1", Kind: "cutout", State: "running",
+				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
+			})
+		case 2:
+			if r.Method != http.MethodPost ||
+				r.URL.Path != "/api/v1/media/creative/creative-1/cancel" {
+				t.Fatalf("creative cancel method=%s path=%q", r.Method, r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
+				ID: "creative-1", Kind: "cutout", State: "cancelled",
+				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
+			})
+		default:
+			t.Fatalf("unexpected request %d", requestIndex)
+		}
+		requestIndex++
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	generation, err := cli.CreateMediaCreativeGeneration(
+		context.Background(),
+		31,
+		MediaCreativeInput{
+			Kind:       "cutout",
+			CutoutMode: "object",
+			Points:     []MediaCreativePoint{{X: 0.5, Y: 0.4, Foreground: true}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generation.ID != "creative-1" || generation.State != "queued" {
+		t.Fatalf("created generation=%+v", generation)
+	}
+
+	generation, err = cli.MediaCreativeGeneration(context.Background(), "creative-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generation.State != "running" {
+		t.Fatalf("running generation=%+v", generation)
+	}
+
+	generation, err = cli.CancelMediaCreativeGeneration(
+		context.Background(),
+		"creative-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generation.State != "cancelled" {
+		t.Fatalf("cancelled generation=%+v", generation)
+	}
+}

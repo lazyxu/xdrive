@@ -2508,6 +2508,40 @@ func (c *agentController) CloudResetMediaEditRecipe(
 	return cli.ResetMediaEditRecipe(ctx, nodeID, revision)
 }
 
+func (c *agentController) CloudCreateMediaCreativeGeneration(
+	ctx context.Context,
+	nodeID uint64,
+	input client.MediaCreativeInput,
+) (client.MediaCreativeGeneration, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaCreativeGeneration{}, err
+	}
+	return cli.CreateMediaCreativeGeneration(ctx, nodeID, input)
+}
+
+func (c *agentController) CloudMediaCreativeGeneration(
+	ctx context.Context,
+	generationID string,
+) (client.MediaCreativeGeneration, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaCreativeGeneration{}, err
+	}
+	return cli.MediaCreativeGeneration(ctx, generationID)
+}
+
+func (c *agentController) CloudCancelMediaCreativeGeneration(
+	ctx context.Context,
+	generationID string,
+) (client.MediaCreativeGeneration, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaCreativeGeneration{}, err
+	}
+	return cli.CancelMediaCreativeGeneration(ctx, generationID)
+}
+
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

@@ -23,6 +23,7 @@ const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaG
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
 const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
+const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCreativeDialog.tsx')
 const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
 const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
@@ -48,6 +49,7 @@ const sharedGallery = [
   sharedGalleryFilmstrip,
   sharedGalleryViewer,
   sharedGalleryEditDialog,
+  sharedGalleryCreativeDialog,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -556,6 +558,77 @@ test('Gallery basic non-destructive editing is one shared Preview Engine contrac
     false,
     'shared editing must not require FFmpeg',
   )
+})
+
+test('Gallery Creative Tools expose shared durable Cutout and Smart Erase', () => {
+  for (const token of [
+    'AutoFixHighRoundedIcon',
+    'XDriveMediaGalleryCreativeDialog',
+    'xDriveMediaItemSupportsCreative',
+    'aria-label="创作图片"',
+    'onCreateCreativeGeneration',
+    'onGetCreativeGeneration',
+    'onCancelCreativeGeneration',
+  ]) {
+    assert.ok(sharedGalleryViewer.includes(token) || sharedGalleryMain.includes(token),
+      `Viewer Creative Tools contract missing: ${token}`)
+  }
+
+  for (const token of [
+    'data-xdrive-media-creative-dialog',
+    'AI 抠图',
+    '智能消除',
+    '保留主体',
+    '排除区域',
+    'cutout_mode: \'object\'',
+    "kind: 'cutout'",
+    "kind: 'erase'",
+    'strokes',
+    '取消任务',
+    '结果已保存到原图所在文件夹',
+    '结果保存为新文件，原图不会被修改',
+    'if (!terminalCreativeStates.has(next.state)) poll()',
+  ]) {
+    assert.ok(sharedGalleryCreativeDialog.includes(token),
+      `Creative dialog contract missing: ${token}`)
+  }
+
+  for (const token of [
+    'createCreativeGeneration:',
+    'getCreativeGeneration:',
+    'cancelCreativeGeneration:',
+  ]) {
+    assert.ok(sharedGalleryAdapter.includes(token), `shared creative adapter missing: ${token}`)
+    assert.ok(webAdapter.includes(token), `Web creative adapter missing: ${token}`)
+    assert.ok(desktopAdapter.includes(token), `Desktop creative adapter missing: ${token}`)
+  }
+
+  for (const token of [
+    'createMediaCreativeGeneration(',
+    'mediaCreativeGeneration(',
+    'cancelMediaCreativeGeneration(',
+    '/creative',
+  ]) {
+    assert.ok(webAPI.includes(token), `Web creative transport missing: ${token}`)
+    assert.ok(agentClient.includes(token), `Agent creative transport missing: ${token}`)
+  }
+
+  for (const token of [
+    'agent:create-media-creative',
+    'agent:get-media-creative',
+    'agent:cancel-media-creative',
+  ]) {
+    assert.ok(preload.includes(token), `Desktop preload creative contract missing: ${token}`)
+    assert.ok(desktopMain.includes(token), `Desktop main creative contract missing: ${token}`)
+  }
+
+  for (const token of [
+    'POST /v1/media/creative',
+    'GET /v1/media/creative',
+    'POST /v1/media/creative/cancel',
+  ]) {
+    assert.ok(desktopIPC.includes(token), `Desktop Agent creative route missing: ${token}`)
+  }
 })
 
 test('Gallery contracts are node-level and connector-neutral', () => {

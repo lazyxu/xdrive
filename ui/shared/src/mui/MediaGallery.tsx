@@ -44,6 +44,8 @@ import type {
   MediaDuplicateGroupList,
   MediaEditRecipe,
   MediaEditRecipeInput,
+  MediaCreativeGeneration,
+  MediaCreativeInput,
   MediaBurstReview,
   MediaBurstReviewList,
   MediaPersonIdentity,
@@ -254,6 +256,16 @@ export interface MediaGalleryDataSource {
     nodeID: number,
     revision: number,
   ) => Promise<MediaEditRecipe>
+  createCreativeGeneration?: (
+    nodeID: number,
+    input: MediaCreativeInput,
+  ) => Promise<MediaCreativeGeneration>
+  getCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
+  cancelCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
   createAlbum?: (name: string) => Promise<MediaAlbum>
   createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
   updateSmartAlbum?: (
@@ -1637,6 +1649,13 @@ export function XDriveMediaGalleryPage({
         onSetDescription={source.setDescription ? setDescription : undefined}
         onSaveEditRecipe={source.saveEditRecipe ? saveEditRecipe : undefined}
         onResetEditRecipe={source.resetEditRecipe ? resetEditRecipe : undefined}
+        onCreateCreativeGeneration={
+          source.createCreativeGeneration
+            ? (item, input) => source.createCreativeGeneration!(item.node.id, input)
+            : undefined
+        }
+        onGetCreativeGeneration={source.getCreativeGeneration}
+        onCancelCreativeGeneration={source.cancelCreativeGeneration}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
         onRenameAlbum={
           source.renameAlbum || source.updateSmartAlbum
@@ -1842,6 +1861,16 @@ export interface XDriveMediaGalleryProps {
     item: MediaItem,
     revision: number,
   ) => Promise<MediaEditRecipe>
+  onCreateCreativeGeneration?: (
+    item: MediaItem,
+    input: MediaCreativeInput,
+  ) => Promise<MediaCreativeGeneration>
+  onGetCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
+  onCancelCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
@@ -2888,6 +2917,9 @@ export function XDriveMediaGallery({
   onSetDescription,
   onSaveEditRecipe,
   onResetEditRecipe,
+  onCreateCreativeGeneration,
+  onGetCreativeGeneration,
+  onCancelCreativeGeneration,
   onCreateAlbum,
   onRenameAlbum,
   onDeleteAlbum,
@@ -4263,6 +4295,12 @@ export function XDriveMediaGallery({
         onInfo={openPreviewInfo}
         onSaveEditRecipe={onSaveEditRecipe ? saveLocalEditRecipe : undefined}
         onResetEditRecipe={onResetEditRecipe ? resetLocalEditRecipe : undefined}
+        onCreateCreativeGeneration={onCreateCreativeGeneration}
+        onGetCreativeGeneration={onGetCreativeGeneration}
+        onCancelCreativeGeneration={onCancelCreativeGeneration}
+        onCreativeCompleted={onRefresh
+          ? () => onRefresh()
+          : undefined}
         onDownload={onDownloadItems
           ? (item) => onDownloadItems([item])
           : undefined}

@@ -128,6 +128,8 @@ import {
   type AgentMediaDescription,
   type AgentMediaEditRecipe,
   type AgentMediaEditRecipeInput,
+  type AgentMediaCreativeGeneration,
+  type AgentMediaCreativeInput,
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentCreateSourceInput,
@@ -2791,6 +2793,82 @@ function registerIPCHandlers() {
         )
       }
       return requireAgentClient().resetMediaEditRecipe(nodeID, revision)
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:create-media-creative',
+    (
+      _event,
+      nodeID: unknown,
+      input: unknown,
+    ) => runAgentAction<AgentMediaCreativeGeneration>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof nodeID !== 'number' ||
+        !Number.isSafeInteger(nodeID) ||
+        nodeID <= 0 ||
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input)
+      ) {
+        throw new AgentIPCError(
+          'invalid_input',
+          0,
+          'Media node id and creative input are required.',
+        )
+      }
+      return requireAgentClient().createMediaCreativeGeneration(
+        nodeID,
+        input as AgentMediaCreativeInput,
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-creative',
+    (
+      _event,
+      generationID: unknown,
+    ) => runAgentAction<AgentMediaCreativeGeneration>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof generationID !== 'string' ||
+        generationID.trim() === '' ||
+        generationID.trim().length > 64
+      ) {
+        throw new AgentIPCError(
+          'invalid_input',
+          0,
+          'Creative generation id is invalid.',
+        )
+      }
+      return requireAgentClient().mediaCreativeGeneration(generationID.trim())
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:cancel-media-creative',
+    (
+      _event,
+      generationID: unknown,
+    ) => runAgentAction<AgentMediaCreativeGeneration>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof generationID !== 'string' ||
+        generationID.trim() === '' ||
+        generationID.trim().length > 64
+      ) {
+        throw new AgentIPCError(
+          'invalid_input',
+          0,
+          'Creative generation id is invalid.',
+        )
+      }
+      return requireAgentClient().cancelMediaCreativeGeneration(generationID.trim())
     }, false),
   )
 

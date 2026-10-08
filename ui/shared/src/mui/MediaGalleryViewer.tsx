@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
@@ -11,6 +12,8 @@ import { Box, IconButton, Stack, Tooltip } from '@mui/material'
 import type {
   MediaEditRecipe,
   MediaEditRecipeInput,
+  MediaCreativeGeneration,
+  MediaCreativeInput,
   MediaItem,
 } from '../models'
 import {
@@ -25,6 +28,10 @@ import type {
 } from './FilePreviewSurface'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
+import {
+  XDriveMediaGalleryCreativeDialog,
+  xDriveMediaItemSupportsCreative,
+} from './MediaGalleryCreativeDialog'
 import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
@@ -54,6 +61,10 @@ export function XDriveMediaGalleryViewer({
   onInfo,
   onSaveEditRecipe,
   onResetEditRecipe,
+  onCreateCreativeGeneration,
+  onGetCreativeGeneration,
+  onCancelCreativeGeneration,
+  onCreativeCompleted,
   onDownload,
   onShare,
   onDelete,
@@ -81,6 +92,17 @@ export function XDriveMediaGalleryViewer({
     item: MediaItem,
     revision: number,
   ) => Promise<MediaEditRecipe>
+  onCreateCreativeGeneration?: (
+    item: MediaItem,
+    input: MediaCreativeInput,
+  ) => Promise<MediaCreativeGeneration>
+  onGetCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
+  onCancelCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<MediaCreativeGeneration>
+  onCreativeCompleted?: (generation: MediaCreativeGeneration) => void
   onDownload?: (item: MediaItem) => Promise<void>
   onShare?: (item: MediaItem) => void
   onDelete?: (item: MediaItem) => Promise<void>
@@ -88,6 +110,7 @@ export function XDriveMediaGalleryViewer({
 }) {
   const [fullScreen, setFullScreen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [creativeOpen, setCreativeOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [busyAction, setBusyAction] = useState<ViewerAction>('')
 
@@ -148,6 +171,7 @@ export function XDriveMediaGalleryViewer({
 
   const close = () => {
     setDeleteOpen(false)
+    setCreativeOpen(false)
     setEditOpen(false)
     setFullScreen(false)
     onClose()
@@ -171,6 +195,20 @@ export function XDriveMediaGalleryViewer({
                 : <StarBorderRoundedIcon fontSize="small" />}
             </IconButton>
           </span>
+        </Tooltip>
+      ) : null}
+      {onCreateCreativeGeneration &&
+      onGetCreativeGeneration &&
+      loadPreviewURL &&
+      xDriveMediaItemSupportsCreative(item) ? (
+        <Tooltip title="创作">
+          <IconButton
+            size="small"
+            aria-label="创作图片"
+            onClick={() => setCreativeOpen(true)}
+          >
+            <AutoFixHighRoundedIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
       ) : null}
       {onSaveEditRecipe && xDriveMediaItemSupportsBasicEditing(item) ? (
@@ -291,6 +329,17 @@ export function XDriveMediaGalleryViewer({
           )
         ) : null}
       </XDriveOpenPreviewDialog>
+
+      <XDriveMediaGalleryCreativeDialog
+        open={creativeOpen}
+        item={item}
+        loadPreviewURL={loadPreviewURL}
+        onCreate={onCreateCreativeGeneration}
+        onGet={onGetCreativeGeneration}
+        onCancel={onCancelCreativeGeneration}
+        onCompleted={onCreativeCompleted}
+        onClose={() => setCreativeOpen(false)}
+      />
 
       <XDriveMediaGalleryEditDialog
         open={editOpen}

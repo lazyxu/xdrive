@@ -29,6 +29,8 @@ import type {
   MediaBurstReviewList,
   MediaEditRecipe,
   MediaEditRecipeInput,
+  MediaCreativeGeneration,
+  MediaCreativeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   MediaPersonIdentity,
@@ -1160,6 +1162,32 @@ export class XDriveApi {
     return this.request<MediaEditRecipe>(
       `/api/v1/media/items/${nodeID}/edit?revision=${encodeURIComponent(String(revision))}`,
       { method: 'DELETE' },
+    )
+  }
+
+  createMediaCreativeGeneration(
+    nodeID: number,
+    input: MediaCreativeInput,
+  ) {
+    return this.request<MediaCreativeGeneration>(
+      `/api/v1/media/items/${nodeID}/creative`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+    )
+  }
+
+  mediaCreativeGeneration(generationID: string) {
+    return this.request<MediaCreativeGeneration>(
+      `/api/v1/media/creative/${encodeURIComponent(generationID)}`,
+    )
+  }
+
+  cancelMediaCreativeGeneration(generationID: string) {
+    return this.request<MediaCreativeGeneration>(
+      `/api/v1/media/creative/${encodeURIComponent(generationID)}/cancel`,
+      { method: 'POST' },
     )
   }
 
