@@ -72,6 +72,7 @@ import {
   type AgentStorageTreeNode,
   type AgentCacheStats,
   type AgentCacheReleaseResult,
+  type AgentLocalDiskSpace,
   type AgentCloudNode,
   type AgentCloudBatchNodeRef,
   type AgentCloudBatchResult,
@@ -1739,6 +1740,11 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().cacheStats()
+  }, false))
+  ipcMain.handle('agent:get-local-disk-space', () => runAgentAction<AgentLocalDiskSpace>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'local-disk-space')
+    return requireAgentClient().localDiskSpace()
   }, false))
   ipcMain.handle('agent:release-cache', () => runAgentAction<AgentCacheReleaseResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

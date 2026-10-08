@@ -23,9 +23,18 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     'cloudFileFavorites()',
     'openPath(relativePath)',
     '打开 xDrive 文件夹',
+    '上传文件',
+    '上传文件夹',
+    '新建文件夹',
     '云端文件',
     '图库',
     '传输',
+    'title="最近活动"',
+    '本地磁盘空间不足',
+    'getLocalDiskSpace()',
+    'failedTransfer',
+    'failedOperation',
+    'failedBackgroundTask',
   ]) assert.ok(overview.includes(token), `Desktop home missing: ${token}`)
   for (const diagnostic of ['IPC ', 'title="Agent"', '修订号', '桌面桥接']) {
     assert.equal(overview.includes(diagnostic), false, `Desktop home must not expose diagnostic chrome: ${diagnostic}`)
@@ -51,4 +60,27 @@ test('Desktop conflicts uses standard MUI surfaces instead of bespoke conflict-r
     assert.equal(styles.includes(`.${legacy}`), false)
   }
   assert.ok(conflicts.includes('<XDriveStatePanel message="没有未解决的冲突。" />'))
+})
+
+
+test('Desktop home delegates file creation actions back to FileExplorer', () => {
+  const app = read('desktop', 'src', 'renderer', 'App.tsx')
+  const explorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  for (const token of [
+    'requestCloudFileAction',
+    'actionIntent: cloudFileActionIntent',
+    'onActionIntentConsumed',
+  ]) assert.ok(app.includes(token), 'Desktop App missing delegated file action: ' + token)
+  for (const token of [
+    "actionIntent.action === 'upload-files'",
+    "actionIntent.action === 'upload-folder'",
+    'setCreateOpen(true)',
+    'folderUploadInputRef.current?.click()',
+    'void uploadFiles()',
+  ]) assert.ok(explorer.includes(token), 'FileExplorer action intent missing: ' + token)
+  assert.equal(
+    overview.includes('cloudUploadFile(') || overview.includes('cloudCreateDirectory('),
+    false,
+    'Home must not duplicate FileExplorer upload/create transport logic',
+  )
 })

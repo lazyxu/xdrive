@@ -71,6 +71,7 @@ var desktopIPCCapabilities = []string{
 	"file-availability-batch",
 	"storage-tree",
 	"cache-management",
+	"local-disk-space",
 	"cloud-files",
 	"cloud-change-feed",
 	"background-tasks",
@@ -186,6 +187,7 @@ type desktopIPCController interface {
 	SetSelectiveSyncRule(path, mode string) error
 	StorageTree(context.Context) (agentStorageTreeNode, error)
 	CacheStats() (mount.CacheStats, error)
+	LocalDiskSpace() diagnostics.DiskSpaceInfo
 	ReleaseReclaimableCache() (mount.CacheReleaseResult, error)
 	CloudRoot(context.Context) (client.Node, error)
 	CloudList(context.Context, uint64) ([]client.Node, error)
@@ -496,6 +498,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/settings/sync-rule", h.setSyncRule)
 	mux.HandleFunc("GET /v1/storage-tree", h.storageTree)
 	mux.HandleFunc("GET /v1/cache", h.cacheStats)
+	mux.HandleFunc("GET /v1/local-disk-space", h.localDiskSpace)
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
@@ -931,6 +934,10 @@ func (h *desktopIPCHandler) cacheStats(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, stats)
+}
+
+func (h *desktopIPCHandler) localDiskSpace(w http.ResponseWriter, _ *http.Request) {
+	writeDesktopIPCJSON(w, http.StatusOK, h.ctrl.LocalDiskSpace())
 }
 
 func (h *desktopIPCHandler) releaseCache(w http.ResponseWriter, _ *http.Request) {

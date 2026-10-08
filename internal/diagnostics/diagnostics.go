@@ -30,6 +30,31 @@ const (
 	lowDiskWarningFreeBytes = uint64(20 * 1024 * 1024 * 1024)
 )
 
+type DiskSpaceInfo struct {
+	Supported  bool   `json:"supported"`
+	Reason     string `json:"reason,omitempty"`
+	FreeBytes  uint64 `json:"free_bytes"`
+	TotalBytes uint64 `json:"total_bytes"`
+	Status     string `json:"status"`
+}
+
+func DiskSpace(path string) DiskSpaceInfo {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return DiskSpaceInfo{Reason: "local disk path is unavailable"}
+	}
+	free, total, err := platformDiskSpace(path)
+	if err != nil {
+		return DiskSpaceInfo{Reason: err.Error()}
+	}
+	return DiskSpaceInfo{
+		Supported:  true,
+		FreeBytes:  free,
+		TotalBytes: total,
+		Status:     diskSpaceStatus(free, total),
+	}
+}
+
 func diskSpaceStatus(free, total uint64) string {
 	if total > 0 && free*100/total < lowDiskWarningPercent && free < lowDiskWarningFreeBytes {
 		return Warn

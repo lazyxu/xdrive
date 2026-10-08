@@ -8,6 +8,7 @@ const agent = Object.freeze({
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
   getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
   getCache: () => ipcRenderer.invoke('agent:get-cache'),
+  getLocalDiskSpace: () => ipcRenderer.invoke('agent:get-local-disk-space'),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getMediaItems: (
     kind = '',
