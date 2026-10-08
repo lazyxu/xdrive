@@ -185,9 +185,9 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'shared Preview Engine must admit live_photo through the signed preview URL loader',
   )
   assert.ok(
-    preview.includes("previewKind !== 'image' && previewKind !== 'live_photo'") &&
-      preview.includes('onError={loadImageFallback}'),
-    'LIVP original still decode failure must fall back to the existing thumbnail loader',
+    preview.includes('<XDriveDecodedImagePreview') &&
+      preview.includes('loadImagePreview={loadImagePreview}'),
+    'LIVP still preview must share the decode-gated original/thumbnail renderer',
   )
 
   for (const source of [web, desktop]) {

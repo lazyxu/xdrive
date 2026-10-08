@@ -28,7 +28,8 @@ const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGal
 const sharedGalleryCollageDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCollageDialog.tsx')
 const sharedGalleryMusicPickerDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMusicPickerDialog.tsx')
 const sharedGalleryMovieDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMovieDialog.tsx')
-const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
+const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx') +
+  read('ui', 'shared', 'src', 'mui', 'FilePreviewImage.tsx')
 const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
 const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
