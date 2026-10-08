@@ -120,8 +120,14 @@ test('User Management prevents duplicate modal submissions', () => {
 })
 
 test('Web admin tables stay useful at common desktop widths', () => {
-  assert.ok(adminUsers.includes('minWidth: 900'), 'User Management table should avoid unnecessary wide-screen scrolling')
-  assert.ok(adminUsers.includes("display: { xs: 'none', xl: 'table-cell' }"), 'User Management should collapse lower-priority columns below xl')
+  assert.ok(
+    adminUsers.includes("minWidth: { xs: 0, md: 900 }"),
+    'User Management should use mobile card width while preserving the 900px desktop table contract',
+  )
+  assert.ok(
+    adminUsers.includes("display: { xs: 'grid', md: 'none', xl: 'table-cell' }"),
+    'User Management should expose lower-priority password/login metadata in mobile cards while keeping medium desktop compact',
+  )
   assert.ok(adminAudit.includes('minWidth: 880'), 'Audit table should keep its core columns compact')
   assert.ok(adminAudit.includes('审计事件详情'), 'Audit should move source and metadata into a local detail dialog')
   assert.ok(adminAudit.includes('setDetailEvent(event)'), 'Audit table should expose a details action')
