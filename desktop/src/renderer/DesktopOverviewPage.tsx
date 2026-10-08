@@ -1,11 +1,3 @@
-import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
-import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadRounded'
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
-import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
-import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
-import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
-import { Box, ListItemButton, ListItemText, Paper, Stack, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   formatBytes,
@@ -18,32 +10,18 @@ import {
   xDriveTransferRootTasks,
 } from '@xdrive/shared'
 import {
-  XDriveActionButton,
-  XDriveMetricCard,
-  XDriveMetricGrid,
-  XDriveSectionHeader,
-  XDriveStatusAlert,
-  XDriveWorkspaceSurface,
-  XDriveFileExplorerAvailabilityBadge,
-  XDriveFileExplorerItemIcon,
-  XDriveFileExplorerThumbnail,
-  XDriveFileExplorerThumbnailProvider,
-  xDriveFileSupportsThumbnail,
+  XDriveHomePage,
 } from '@xdrive/ui/mui'
-import type { XDriveFileExplorerItem } from '@xdrive/ui/mui'
+import type {
+  XDriveFileExplorerItem,
+  XDriveHomeAlert,
+  XDriveHomeListItem,
+} from '@xdrive/ui/mui'
 import type { DesktopFileExplorerAction } from './DesktopFileExplorer'
 
 function recentTime(value: string) {
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString()
-}
-
-function cloudUsageLabel(quota?: AgentCloudQuota | null) {
-  if (!quota) return '—'
-  if (quota.quota_bytes > 0) {
-    return `${formatBytes(quota.physical_used_bytes)} / ${formatBytes(quota.quota_bytes)}`
-  }
-  return formatBytes(quota.physical_used_bytes)
 }
 
 export function DesktopOverviewPage({
@@ -191,7 +169,7 @@ export function DesktopOverviewPage({
     return URL.createObjectURL(new Blob([result.data.data], { type: contentType }))
   }, [])
 
-  const overviewExplorerItem = (
+  const explorerItem = (
     item: AgentCloudRecentItem | AgentCloudFavoriteItem,
   ): XDriveFileExplorerItem => ({
     id: item.node.id,
@@ -203,7 +181,7 @@ export function DesktopOverviewPage({
     path: item.path.replace(/^\/+/, ''),
   })
 
-  const overviewAvailability = (item: XDriveFileExplorerItem) => {
+  const availability = (item: XDriveFileExplorerItem) => {
     if (!fileAvailabilitySupported) return undefined
     const state = availabilityByID.get(Number(item.id))
     if (state === null) return xDriveFileExplorerAvailabilityError()
@@ -218,25 +196,6 @@ export function DesktopOverviewPage({
     })
   }
 
-  const overviewItemVisual = (
-    item: AgentCloudRecentItem | AgentCloudFavoriteItem,
-  ) => {
-    const explorerItem = overviewExplorerItem(item)
-    const availability = overviewAvailability(explorerItem)
-    return (
-      <Box sx={{ width: 34, height: 34, mr: 1.25, flex: '0 0 34px', position: 'relative', overflow: 'visible' }}>
-        <XDriveFileExplorerThumbnail
-          item={explorerItem}
-          eligible={explorerItem.kind === 'file' && xDriveFileSupportsThumbnail(explorerItem.name, 'file')}
-          fallback={<XDriveFileExplorerItemIcon item={explorerItem} size={24} folderSize={25} />}
-        />
-        {availability ? (
-          <XDriveFileExplorerAvailabilityBadge availability={availability} overlay compact />
-        ) : null}
-      </Box>
-    )
-  }
-
   const openCloudItem = async (
     item: AgentCloudRecentItem | AgentCloudFavoriteItem,
   ) => {
@@ -248,6 +207,25 @@ export function DesktopOverviewPage({
     const result = await window.xdriveDesktop.agent.openPath(relativePath)
     if (!result.ok) onError(result.error.message)
   }
+
+  const recentHomeItems: XDriveHomeListItem[] = recentItems.map((item) => {
+    const projected = explorerItem(item)
+    return {
+      item: projected,
+      secondary: [item.path, recentTime(item.accessed_at)].filter(Boolean).join(' · '),
+      availability: availability(projected),
+      onOpen: () => { void openCloudItem(item) },
+    }
+  })
+  const favoriteHomeItems: XDriveHomeListItem[] = favoriteItems.map((item) => {
+    const projected = explorerItem(item)
+    return {
+      item: projected,
+      secondary: item.path,
+      availability: availability(projected),
+      onOpen: () => { void openCloudItem(item) },
+    }
+  })
 
   const failedTransfer = xDriveTransferRootTasks(transfers).find(
     (task) => task.state === 'failed' || task.state === 'partial',
@@ -264,225 +242,96 @@ export function DesktopOverviewPage({
     localDiskSpace?.supported &&
     localDiskSpace.status !== 'PASS',
   )
-  const needsAttention = Boolean(
-    status?.last_error ||
-    status?.paused ||
-    status?.has_conflict ||
-    failedTransfer ||
-    failedOperation ||
-    failedBackgroundTask ||
-    lowDisk
-  )
+
+  const alerts: XDriveHomeAlert[] = []
+  if (status?.last_error) {
+    alerts.push({ key: 'sync-error', tone: 'bad', title: '同步异常', message: status.last_error })
+  }
+  if (status?.paused) {
+    alerts.push({ key: 'sync-paused', tone: 'warning', title: '同步已暂停', message: '此设备当前不会继续后台同步。' })
+  }
+  if (status?.has_conflict) {
+    alerts.push({
+      key: 'conflicts',
+      tone: 'warning',
+      title: '有冲突需要处理',
+      message: `${status.conflict_count || 0} 个同步冲突等待处理。`,
+    })
+  }
+  if (lowDisk && localDiskSpace) {
+    alerts.push({
+      key: 'low-disk',
+      tone: 'warning',
+      title: '本地磁盘空间不足',
+      message: `剩余 ${formatBytes(localDiskSpace.free_bytes)} / ${formatBytes(localDiskSpace.total_bytes)}。释放本地缓存或清理磁盘后可避免下载与同步失败。`,
+    })
+  }
+  if (failedTransfer) {
+    alerts.push({
+      key: 'transfer-failed',
+      tone: 'bad',
+      title: '传输失败',
+      message: `${xDriveTransferKindLabel(failedTransfer.kind)} · ${failedTransfer.file_name}${failedTransfer.error ? ' · ' + failedTransfer.error : ''}`,
+    })
+  }
+  if (failedOperation) {
+    alerts.push({
+      key: 'operation-failed',
+      tone: 'bad',
+      title: '文件操作失败',
+      message: `${xDriveFileOperationTypeLabel(failedOperation.type)}${failedOperation.error ? ' · ' + failedOperation.error : ''}`,
+    })
+  }
+  if (failedBackgroundTask) {
+    alerts.push({
+      key: 'background-failed',
+      tone: 'bad',
+      title: failedBackgroundTask.kind === 'source.sync' || failedBackgroundTask.domain === 'sync_run'
+        ? '同步任务失败'
+        : '后台任务失败',
+      message: `${xDriveBackgroundTaskKindLabel(failedBackgroundTask.kind)}${failedBackgroundTask.source_name ? ' · ' + failedBackgroundTask.source_name : ''}${failedBackgroundTask.error ? ' · ' + failedBackgroundTask.error : ''}`,
+    })
+  }
+
+  const recentActivity = recentSync
+    ? [
+        xDriveBackgroundTaskKindLabel(recentSync.kind),
+        recentSync.source_name,
+        xDriveBackgroundTaskStateLabel(recentSync.state),
+        recentTime(recentSync.finished_at || recentSync.updated_at),
+      ].filter(Boolean).join(' · ')
+    : undefined
 
   return (
-    <XDriveFileExplorerThumbnailProvider
+    <XDriveHomePage
       lifecycleKey={overviewLifecycleKey}
+      quota={quota ? {
+        physicalUsedBytes: quota.physical_used_bytes,
+        quotaBytes: quota.quota_bytes,
+      } : null}
+      sync={{
+        value: status?.paused ? '已暂停' : status?.sync_status || '正常',
+        tone: status?.last_error ? 'bad' : status?.paused ? 'warning' : 'good',
+      }}
+      activeTaskCount={activeTaskCount}
+      conflictCount={status?.conflict_count || 0}
+      conflictTone={status?.has_conflict ? 'warning' : 'good'}
+      alerts={alerts}
+      recentActivity={recentActivity}
+      recentItems={recentHomeItems}
+      favoriteItems={favoriteHomeItems}
+      recentAvailable={recentSupported}
+      favoritesAvailable={favoritesSupported}
       loadThumbnail={loadThumbnail}
-    >
-    <XDriveWorkspaceSurface
-      presentation="page"
-      title="主页"
-      subtitle="继续最近工作，查看同步状态与需要处理的事项。"
-    >
-      <Stack spacing={2.25}>
-        {needsAttention ? (
-          <Stack spacing={1}>
-            {status?.last_error ? (
-              <XDriveStatusAlert tone="bad" title="同步异常">
-                {status.last_error}
-              </XDriveStatusAlert>
-            ) : null}
-            {status?.paused ? (
-              <XDriveStatusAlert tone="warning" title="同步已暂停">
-                此设备当前不会继续后台同步。
-              </XDriveStatusAlert>
-            ) : null}
-            {status?.has_conflict ? (
-              <XDriveStatusAlert tone="warning" title="有冲突需要处理">
-                {status.conflict_count || 0} 个同步冲突等待处理。
-              </XDriveStatusAlert>
-            ) : null}
-            {lowDisk && localDiskSpace ? (
-              <XDriveStatusAlert tone="warning" title="本地磁盘空间不足">
-                剩余 {formatBytes(localDiskSpace.free_bytes)} / {formatBytes(localDiskSpace.total_bytes)}。释放本地缓存或清理磁盘后可避免下载与同步失败。
-              </XDriveStatusAlert>
-            ) : null}
-            {failedTransfer ? (
-              <XDriveStatusAlert tone="bad" title="传输失败">
-                {xDriveTransferKindLabel(failedTransfer.kind)} · {failedTransfer.file_name}
-                {failedTransfer.error ? ' · ' + failedTransfer.error : ''}
-              </XDriveStatusAlert>
-            ) : null}
-            {failedOperation ? (
-              <XDriveStatusAlert tone="bad" title="文件操作失败">
-                {xDriveFileOperationTypeLabel(failedOperation.type)}
-                {failedOperation.error ? ' · ' + failedOperation.error : ''}
-              </XDriveStatusAlert>
-            ) : null}
-            {failedBackgroundTask ? (
-              <XDriveStatusAlert
-                tone="bad"
-                title={failedBackgroundTask.kind === 'source.sync' || failedBackgroundTask.domain === 'sync_run'
-                  ? '同步任务失败'
-                  : '后台任务失败'}
-              >
-                {xDriveBackgroundTaskKindLabel(failedBackgroundTask.kind)}
-                {failedBackgroundTask.source_name ? ' · ' + failedBackgroundTask.source_name : ''}
-                {failedBackgroundTask.error ? ' · ' + failedBackgroundTask.error : ''}
-              </XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        ) : null}
-
-        <XDriveMetricGrid>
-          <XDriveMetricCard
-            title="云端存储"
-            value={cloudUsageLabel(quota)}
-            suffix={quota?.quota_bytes ? '当前账号' : '不限配额'}
-          />
-          <XDriveMetricCard
-            title="同步"
-            value={status?.paused ? '已暂停' : status?.sync_status || '正常'}
-            tone={status?.last_error ? 'bad' : status?.paused ? 'warning' : 'good'}
-          />
-          <XDriveMetricCard
-            title="活动任务"
-            value={activeTaskCount.toLocaleString()}
-            suffix={activeTaskCount > 0 ? '正在进行' : '当前空闲'}
-            tone={activeTaskCount > 0 ? 'busy' : 'good'}
-          />
-          <XDriveMetricCard
-            title="冲突"
-            value={(status?.conflict_count || 0).toLocaleString()}
-            suffix="个未解决"
-            tone={status?.has_conflict ? 'warning' : 'good'}
-          />
-        </XDriveMetricGrid>
-
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-          <XDriveSectionHeader level="h3" title="快捷操作" />
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
-            <XDriveActionButton
-              startIcon={<FolderOpenRoundedIcon />}
-              loading={openFolderLoading}
-              loadingLabel="正在打开…"
-              onClick={onOpenFolder}
-            >
-              打开 xDrive 文件夹
-            </XDriveActionButton>
-            <XDriveActionButton startIcon={<UploadFileRoundedIcon />} onClick={() => onRequestFileAction('upload-files')}>
-              上传文件
-            </XDriveActionButton>
-            {folderUploadSupported ? (
-              <XDriveActionButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={() => onRequestFileAction('upload-folder')}>
-                上传文件夹
-              </XDriveActionButton>
-            ) : null}
-            <XDriveActionButton startIcon={<CreateNewFolderRoundedIcon />} onClick={() => onRequestFileAction('create-folder')}>
-              新建文件夹
-            </XDriveActionButton>
-            <XDriveActionButton startIcon={<InsertDriveFileRoundedIcon />} onClick={onOpenFiles}>
-              云端文件
-            </XDriveActionButton>
-            <XDriveActionButton startIcon={<PhotoLibraryRoundedIcon />} onClick={onOpenGallery}>
-              图库
-            </XDriveActionButton>
-            <XDriveActionButton startIcon={<SwapVertRoundedIcon />} onClick={onOpenTransfers}>
-              传输
-            </XDriveActionButton>
-            {status?.has_conflict ? (
-              <XDriveActionButton intent="warning" onClick={onOpenConflicts}>
-                处理冲突
-              </XDriveActionButton>
-            ) : null}
-          </Stack>
-        </Paper>
-
-        {recentSync ? (
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-            <XDriveSectionHeader level="h3" title="最近活动" />
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              {xDriveBackgroundTaskKindLabel(recentSync.kind)}
-              {recentSync.source_name ? ' · ' + recentSync.source_name : ''}
-              {' · '}
-              {xDriveBackgroundTaskStateLabel(recentSync.state)}
-              {' · '}
-              {recentTime(recentSync.finished_at || recentSync.updated_at)}
-            </Typography>
-          </Paper>
-        ) : null}
-
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
-            gap: 2,
-          }}
-        >
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
-            <XDriveSectionHeader
-              level="h3"
-              title="最近使用"
-              actions={<XDriveActionButton compact onClick={onOpenFiles}>查看全部</XDriveActionButton>}
-            />
-            <Stack spacing={0.5} sx={{ mt: 1 }}>
-              {recentSupported && recentItems.length > 0 ? recentItems.map((item) => (
-                <ListItemButton
-                  key={item.node.id}
-                  onClick={() => { void openCloudItem(item) }}
-                  sx={{ borderRadius: 1, px: 1 }}
-                >
-                  {overviewItemVisual(item)}
-                  <ListItemText
-                    primary={item.node.name}
-                    secondary={[item.path, recentTime(item.accessed_at)].filter(Boolean).join(' · ')}
-                    slotProps={{
-                      primary: { noWrap: true },
-                      secondary: { noWrap: true },
-                    }}
-                  />
-                </ListItemButton>
-              )) : (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                  暂无最近访问文件。
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
-
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
-            <XDriveSectionHeader
-              level="h3"
-              title="收藏"
-              actions={<XDriveActionButton compact onClick={onOpenFiles}>查看全部</XDriveActionButton>}
-            />
-            <Stack spacing={0.5} sx={{ mt: 1 }}>
-              {favoritesSupported && favoriteItems.length > 0 ? favoriteItems.map((item) => (
-                <ListItemButton
-                  key={item.node.id}
-                  onClick={() => { void openCloudItem(item) }}
-                  sx={{ borderRadius: 1, px: 1 }}
-                >
-                  {overviewItemVisual(item)}
-                  <ListItemText
-                    primary={item.node.name}
-                    secondary={item.path}
-                    slotProps={{
-                      primary: { noWrap: true },
-                      secondary: { noWrap: true },
-                    }}
-                  />
-                </ListItemButton>
-              )) : (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                  暂无收藏文件。
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
-        </Box>
-      </Stack>
-    </XDriveWorkspaceSurface>
-    </XDriveFileExplorerThumbnailProvider>
+      openLocalFolderLoading={openFolderLoading}
+      onOpenLocalFolder={onOpenFolder}
+      onUploadFiles={() => onRequestFileAction('upload-files')}
+      onUploadFolder={folderUploadSupported ? () => onRequestFileAction('upload-folder') : undefined}
+      onCreateFolder={() => onRequestFileAction('create-folder')}
+      onOpenFiles={onOpenFiles}
+      onOpenGallery={onOpenGallery}
+      onOpenTransfers={onOpenTransfers}
+      onOpenConflicts={onOpenConflicts}
+    />
   )
 }

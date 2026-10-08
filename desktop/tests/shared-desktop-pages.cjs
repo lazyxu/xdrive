@@ -6,6 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const overview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const sharedHome = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
 const conflicts = read('desktop', 'src', 'renderer', 'DesktopConflictsPage.tsx')
 const styles = read('desktop', 'src', 'renderer', 'styles.css')
 const metrics = read('ui', 'shared', 'src', 'mui', 'MetricCards.tsx')
@@ -13,15 +14,13 @@ const metrics = read('ui', 'shared', 'src', 'mui', 'MetricCards.tsx')
 test('Desktop home prioritizes user work and actions over diagnostic internals', () => {
   assert.ok(metrics.includes('sx?: SxProps<Theme>'))
   assert.ok(metrics.includes('...(Array.isArray(sx) ? sx : sx ? [sx] : [])'))
-  assert.ok(overview.includes('title="主页"'))
-  assert.equal((overview.match(/<XDriveMetricCard\b/g) || []).length, 4)
+  assert.ok(overview.includes('<XDriveHomePage'))
+  assert.ok(sharedHome.includes('title="主页"'))
+  assert.equal((sharedHome.match(/<XDriveMetricCard\b/g) || []).length, 4)
   for (const token of [
     'title="快捷操作"',
-    'title="最近使用"',
-    'title="收藏"',
-    'cloudFileRecent(6)',
-    'cloudFileFavorites()',
-    'openPath(relativePath)',
+    "itemSection('最近使用'",
+    "itemSection('收藏'",
     '打开 xDrive 文件夹',
     '上传文件',
     '上传文件夹',
@@ -30,16 +29,21 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     '图库',
     '传输',
     'title="最近活动"',
+  ]) assert.ok(sharedHome.includes(token), `shared Home missing: ${token}`)
+  for (const token of [
+    'cloudFileRecent(6)',
+    'cloudFileFavorites()',
+    'openPath(relativePath)',
     '本地磁盘空间不足',
     'getLocalDiskSpace()',
     'failedTransfer',
     'failedOperation',
     'failedBackgroundTask',
-  ]) assert.ok(overview.includes(token), `Desktop home missing: ${token}`)
+  ]) assert.ok(overview.includes(token), `Desktop Home adapter missing: ${token}`)
   for (const diagnostic of ['IPC ', 'title="Agent"', '修订号', '桌面桥接']) {
     assert.equal(overview.includes(diagnostic), false, `Desktop home must not expose diagnostic chrome: ${diagnostic}`)
   }
-  assert.ok(overview.includes('<Paper variant="outlined"'))
+  assert.ok(sharedHome.includes('<Paper variant="outlined"'))
   for (const legacy of ['status-grid', 'status-card', 'status-dot', 'system-card']) {
     assert.equal(overview.includes(legacy), false)
     assert.equal(styles.includes(`.${legacy}`), false)

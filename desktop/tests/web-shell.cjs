@@ -42,7 +42,8 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
   }
 
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must use the shared complete sidebar renderer')
-  assert.ok(webApp.includes("const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
+  assert.ok(webApp.includes("const webSidebarSections: XDriveSidebarSectionModel[] = ["), 'Web sidebar must use the shared section model')
+  assert.ok(webApp.includes("...(profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
   assert.ok(webApp.includes("label: '管理'"), 'missing admin section label')
   assert.ok(webApp.includes("ariaLabel: '管理员功能'"), 'missing admin navigation landmark')
   for (const label of ['用户管理', '审计日志', '全局存储']) {
