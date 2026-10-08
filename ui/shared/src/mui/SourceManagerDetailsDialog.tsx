@@ -16,7 +16,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 import { XDrivePaginationControls } from './PaginationControls'
 import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
@@ -115,14 +115,16 @@ export function XDriveSourceDetailsDialog({
   const detail = row ? externalSourceDetailView(row) : null
   const card = row ? externalSourceCardView(row) : null
 
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
       open={Boolean(row)}
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
         title={row ? `${row.source.name} · 同步文件夹详情` : '同步文件夹详情'}

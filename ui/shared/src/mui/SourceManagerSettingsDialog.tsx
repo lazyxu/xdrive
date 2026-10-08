@@ -8,7 +8,7 @@ import {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActionSpacer, XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 import {
   XDriveSourceNameField,
   XDriveSourceRunModeField,
@@ -127,6 +127,7 @@ export function XDriveSourceSettingsDialog({
     ? externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     : null
 
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
       open={!!setting}
@@ -135,8 +136,9 @@ export function XDriveSourceSettingsDialog({
       }}
       maxWidth="sm"
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
         title={setting ? `${setting.source.name} · 设置` : '同步文件夹设置'}

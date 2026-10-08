@@ -195,3 +195,31 @@ test('SourceManager delegates the list page to an internal presentation module',
   assert.equal(sourceManager.includes('<XDriveSourceSummaryCard'), false, 'source summary cards must not remain inline')
   assert.equal(sourceManager.includes('externalSourceCardView(row)'), false, 'list view-model mapping must not remain inline')
 })
+
+
+test('long Source dialogs reuse the shared compact-touch full-screen contract', () => {
+  const dialogTitle = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
+  assert.ok(dialogTitle.includes('export function useXDriveCompactTouchDialog()'))
+
+  for (const [name, source] of [
+    ['create', sourceCreate],
+    ['settings', sourceSettings],
+    ['details', sourceDetails],
+  ]) {
+    assert.ok(source.includes('useXDriveCompactTouchDialog()'), name + ' Source dialog must consume shared compact Dialog hook')
+    assert.ok(source.includes('fullScreen={compactTouch}'), name + ' Source dialog must become full-screen on compact touch')
+    assert.ok(source.includes('slotProps={{ paper: dialogPaper }}'), name + ' Source dialog must use responsive paper props')
+  }
+
+  assert.ok(sourceDialogs.includes('const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()'))
+  assert.ok(sourceDialogs.includes('fullScreen={compactTouch}'), 'failed-items Source dialog must become full-screen on compact touch')
+  assert.ok(sourceDialogs.includes('slotProps={{ paper: dialogPaper }}'))
+
+  assert.ok(sourceDialogs.includes('title="删除同步文件夹？"'))
+  assert.ok(sourceDialogs.includes('title={`清除已保存的${credentialLabel}？`}'))
+  assert.equal(
+    (sourceDialogs.match(/fullScreen=\{compactTouch\}/g) || []).length,
+    1,
+    'short Source confirmation/error dialogs must remain ordinary modals',
+  )
+})
