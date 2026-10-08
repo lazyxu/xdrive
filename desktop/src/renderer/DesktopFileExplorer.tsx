@@ -23,6 +23,7 @@ import {
   xDriveFileExplorerAvailabilityFromSnapshot,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerSearchFiltersActive,
+  xDriveFileExplorerSearchFiltersSignature,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -571,6 +572,9 @@ export default function DesktopFileExplorer({
   const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
   const [activeTagID, setActiveTagID] = useState<number | null>(null)
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
+  const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
+  organizationSearchScopeKeyRef.current = organizationSearchScopeKey
   const canSaveSmartFolder = Boolean(
     searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
   )
@@ -1948,13 +1952,16 @@ const desktopTransferLifecycleChildBatchSize = 1000
             onReplaceSavedSearch={(savedSearch) => {
               if (!canSaveSmartFolder) return
               const lifecycleKey = organizationLifecycleKeyRef.current
+              const searchScopeKey = organizationSearchScopeKeyRef.current
               void organization.updateSavedSearch(savedSearch.id, {
                 name: savedSearch.name,
                 query: searchState.query,
                 filters: persistedSearchFilters,
               }).then(() => {
                 if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-                setActiveSavedSearchID(savedSearch.id)
+                if (organizationSearchScopeKeyRef.current === searchScopeKey) {
+                  setActiveSavedSearchID(savedSearch.id)
+                }
                 onFeedback('good', '智能文件夹已更新。')
               })
             }}
@@ -2051,8 +2058,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
         queryNodeTags={organization.queryNodeTags}
         onSetTag={async (tagID, nodeIDs, assigned) => {
           const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           await organization.setTagNodes(tagID, nodeIDs, assigned)
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
+          if (
+            organizationLifecycleKeyRef.current !== lifecycleKey ||
+            organizationSearchScopeKeyRef.current !== searchScopeKey
+          ) return
           if (searchFilters.tagID === tagID) {
             await applySearch(searchState.query, searchFilters)
           }
@@ -2061,8 +2072,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onUpdateTag={organization.updateTag}
         onDeleteTag={async (tagID) => {
           const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           await organization.deleteTag(tagID)
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
+          if (
+            organizationLifecycleKeyRef.current !== lifecycleKey ||
+            organizationSearchScopeKeyRef.current !== searchScopeKey
+          ) return
           if (searchFilters.tagID === tagID) {
             setActiveTagID(null)
             clearSearch()
@@ -2077,13 +2092,16 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
         onSubmit={async (name) => {
           const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           const created = await organization.createSavedSearch({
             name,
             query: searchState.query,
             filters: persistedSearchFilters,
           })
           if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          setActiveSavedSearchID(created.id)
+          if (organizationSearchScopeKeyRef.current === searchScopeKey) {
+            setActiveSavedSearchID(created.id)
+          }
           if (searchFilters.availability) {
             onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
           } else {

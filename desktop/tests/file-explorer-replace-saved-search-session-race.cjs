@@ -69,6 +69,7 @@ test('Desktop FileExplorer replace-saved-search completion cannot cross account 
   const { filename, initializer } = extractReplaceSavedSearchHandler()
   const pending = deferred()
   const organizationLifecycleKeyRef = { current: 'server-a:user-a' }
+  const organizationSearchScopeKeyRef = { current: 'scope-a' }
   const activeIDs = []
   const feedback = []
   let updateCalls = 0
@@ -86,6 +87,7 @@ test('Desktop FileExplorer replace-saved-search completion cannot cross account 
         },
       },
       organizationLifecycleKeyRef,
+      organizationSearchScopeKeyRef,
       searchState: { query: 'kind:image' },
       persistedSearchFilters: { tagID: 5 },
       setActiveSavedSearchID: (id) => activeIDs.push(id),
