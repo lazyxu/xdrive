@@ -120,7 +120,9 @@ test('optional deep-link arguments are consumed by their owning apps', () => {
   assert.ok(app.includes("focusSection={route.app === 'admin-storage' ? route.params.section : undefined}"))
   assert.ok(app.includes("route.app === 'admin-storage' && route.params.task"))
   assert.ok(sourceManager.includes('onSelectedSourceChange?.(row.source.id)'))
-  assert.ok(gallery.includes('routeSectionInitializedRef'))
+  assert.ok(gallery.includes('routeSectionAppliedRef'))
+  assert.ok(gallery.includes("const nextSection = initialSection ?? 'library'"))
+  assert.ok(gallery.includes('routeSectionAppliedRef.current === nextSection'))
 })
 
 test('Web App Runtime design document records the navigation and platform boundary', () => {

@@ -74,7 +74,7 @@ Web：
 - 文本 / 代码 / 配置 → `text-viewer`。
 - PDF → `pdf-viewer`。
 - 音频 → `audio-player`。
-- 未关联格式不自动下载；显示没有可用 Web 打开程序，下载仍是显式动作。
+- 未关联格式不自动下载；显示“没有可用 Web 打开程序”的 fallback，并直接提供下载、分享、属性三个显式动作。
 - Space → 路由级 `preview` 程序。
 - 文件右键提供“在新浏览器标签页打开”。文件的 Ctrl/Cmd+Click 保持多选语义；Sidebar 的 Ctrl/Cmd+Click 可以打开新的浏览器标签页。
 - 文件夹自己的“在新文件标签页中打开”继续表示 FileExplorer 内部 Tab，与浏览器 Tab 明确区分。

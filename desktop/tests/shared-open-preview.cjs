@@ -264,7 +264,7 @@ test('FileExplorer Quick Look matches the shared Finder-style browsing contract'
     'setQuickLookSessionIDs(selectionSession)',
     'quickLookSessionIndex',
     'actions={quickLookActions}',
-    "['system-open', 'download', 'share']",
+    "['open', 'system-open', 'download', 'share']",
     "id: 'tags'",
   ]) {
     assert.ok(explorer.includes(token), 'Quick Look session/actions missing: ' + token)
