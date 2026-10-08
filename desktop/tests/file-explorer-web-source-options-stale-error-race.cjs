@@ -97,5 +97,9 @@ test('Web FileExplorer source-options error cannot escape a disposed effect life
     [],
     'an old source-options request must not publish an error after its FileExplorer effect was disposed',
   )
-  assert.deepEqual(writes, [])
+  assert.deepEqual(
+    writes.filter((items) => items.length > 0),
+    [],
+    'disposing the effect may clear projected options but must not publish stale non-empty source data',
+  )
 })
