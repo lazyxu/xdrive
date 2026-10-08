@@ -587,6 +587,12 @@ test('Gallery Creative Tools expose shared durable Cutout and Smart Erase', () =
     '保留主体',
     '排除区域',
     'cutout_mode: \'object\'',
+    'cutout_expand',
+    'cutout_feather',
+    '边缘调整',
+    '羽化',
+    'cutoutPointDragRef',
+    'startCutoutPointDrag',
     "kind: 'cutout'",
     "kind: 'erase'",
     'strokes',
@@ -598,6 +604,11 @@ test('Gallery Creative Tools expose shared durable Cutout and Smart Erase', () =
     assert.ok(sharedGalleryCreativeDialog.includes(token),
       `Creative dialog contract missing: ${token}`)
   }
+
+  assert.match(sharedModels, /cutout_expand\?: number/)
+  assert.match(sharedModels, /cutout_feather\?: number/)
+  assert.match(agentClient, /cutout_expand\?: number/)
+  assert.match(agentClient, /cutout_feather\?: number/)
 
   for (const token of [
     'createCreativeGeneration:',

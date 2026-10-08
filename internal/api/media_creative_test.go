@@ -18,12 +18,33 @@ func creativeTestAsset() editableMediaAsset {
 func TestNormalizeMediaCreativeInput(t *testing.T) {
 	value := creativeTestAsset()
 	cutout, err := normalizeMediaCreativeInput(mediaCreativeInput{
-		Kind:       meta.PhotoCreativeKindCutout,
-		CutoutMode: "object",
-		Points:     []photointelligence.CreativePoint{{X: 0.5, Y: 0.5, Foreground: true}},
+		Kind:          meta.PhotoCreativeKindCutout,
+		CutoutMode:    "object",
+		CutoutExpand:  0.02,
+		CutoutFeather: 0.01,
+		Points:        []photointelligence.CreativePoint{{X: 0.5, Y: 0.5, Foreground: true}},
 	}, value)
-	if err != nil || cutout.Kind != meta.PhotoCreativeKindCutout {
+	if err != nil ||
+		cutout.Kind != meta.PhotoCreativeKindCutout ||
+		cutout.CutoutExpand != 0.02 ||
+		cutout.CutoutFeather != 0.01 {
 		t.Fatalf("cutout=%+v err=%v", cutout, err)
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:         meta.PhotoCreativeKindCutout,
+		CutoutMode:   "object",
+		CutoutExpand: 0.031,
+		Points:       []photointelligence.CreativePoint{{X: 0.5, Y: 0.5, Foreground: true}},
+	}, value); err == nil {
+		t.Fatal("oversized cutout expansion was accepted")
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:          meta.PhotoCreativeKindCutout,
+		CutoutMode:    "object",
+		CutoutFeather: 0.031,
+		Points:        []photointelligence.CreativePoint{{X: 0.5, Y: 0.5, Foreground: true}},
+	}, value); err == nil {
+		t.Fatal("oversized cutout feather was accepted")
 	}
 	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
 		Kind: meta.PhotoCreativeKindCutout, CutoutMode: "person",

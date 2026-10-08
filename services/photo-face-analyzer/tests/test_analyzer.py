@@ -143,6 +143,7 @@ class AnalyzerTests(unittest.TestCase):
             creative["capabilities"],
             [
                 "cutout",
+                "cutout_refine",
                 "erase",
                 "movie",
                 "movie_templates",
@@ -470,12 +471,27 @@ class AnalyzerTests(unittest.TestCase):
             {
                 "kind": "cutout",
                 "cutout_mode": "object",
+                "cutout_expand": 0.01,
+                "cutout_feather": 0.005,
                 "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
             },
         )
         self.assertEqual(mime, "image/png")
         self.assertEqual((width, height), (256, 256))
         self.assertTrue(cutout.startswith(b"\x89PNG\r\n\x1a\n"))
+
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        mask[35:65, 35:65] = 255
+        expanded = self.creative_runtime._refine_cutout_mask(mask, 0.02, 0.0)
+        contracted = self.creative_runtime._refine_cutout_mask(mask, -0.02, 0.0)
+        feathered = self.creative_runtime._refine_cutout_mask(mask, 0.0, 0.02)
+        self.assertGreater(np.count_nonzero(expanded), np.count_nonzero(mask))
+        self.assertLess(np.count_nonzero(contracted), np.count_nonzero(mask))
+        self.assertTrue(np.any((feathered > 0) & (feathered < 255)))
+        with self.assertRaises(ValueError):
+            self.creative_runtime._refine_cutout_mask(mask, 0.031, 0.0)
+        with self.assertRaises(ValueError):
+            self.creative_runtime._refine_cutout_mask(mask, 0.0, 0.031)
 
         erase, mime, width, height = self.creative_runtime.generate(
             image,
@@ -611,13 +627,14 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(
                     info["capabilities"],
                     [
-                "cutout",
-                "erase",
-                "movie",
-                "movie_templates",
-                "movie_music",
-                "collage",
-            ],
+                        "cutout",
+                        "cutout_refine",
+                        "erase",
+                        "movie",
+                        "movie_templates",
+                        "movie_music",
+                        "collage",
+                    ],
                 )
                 connection.close()
 
@@ -631,6 +648,8 @@ class AnalyzerTests(unittest.TestCase):
                     "preview_edge": 2048,
                     "input_fingerprint": fingerprint,
                     "cutout_mode": "object",
+                    "cutout_expand": -0.01,
+                    "cutout_feather": 0.01,
                     "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
                 }
                 payload = json.dumps(task).encode("utf-8")

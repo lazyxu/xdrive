@@ -24,6 +24,9 @@ CREATIVE_MODEL_LICENSE_URL = (
 )
 CREATIVE_INPUT_SIZE = 1024
 CREATIVE_MAX_PROMPT_POINTS = 6
+CREATIVE_CUTOUT_MIN_EXPAND = -0.03
+CREATIVE_CUTOUT_MAX_EXPAND = 0.03
+CREATIVE_CUTOUT_MAX_FEATHER = 0.03
 CREATIVE_MAX_STROKES = 64
 CREATIVE_MAX_STROKE_POINTS = 256
 CREATIVE_OUTPUT_MIME = "image/png"
@@ -46,7 +49,7 @@ CREATIVE_COLLAGE_MAX_BYTES = 32 * 1024 * 1024
 CREATIVE_COLLAGE_TEMPLATES = {"grid", "featured", "columns", "rows"}
 CREATIVE_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-efficientsam-ti-2025april-int8"
-    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v5-music-collage-v1"
+    "-1024-prompt-mask-cutout-refine-v1-telea-erase-ffmpeg-slideshow-v5-music-collage-v1"
 )
 
 
@@ -118,6 +121,7 @@ class CreativeRuntime:
             },
             "capabilities": [
                 "cutout",
+                "cutout_refine",
                 "erase",
                 "movie",
                 "movie_templates",
@@ -291,6 +295,50 @@ class CreativeRuntime:
         )
 
     @staticmethod
+    def _refine_cutout_mask(
+        mask: np.ndarray,
+        expand: float,
+        feather: float,
+    ) -> np.ndarray:
+        if (
+            isinstance(expand, bool)
+            or not isinstance(expand, (int, float))
+            or not np.isfinite(float(expand))
+            or float(expand) < CREATIVE_CUTOUT_MIN_EXPAND
+            or float(expand) > CREATIVE_CUTOUT_MAX_EXPAND
+            or isinstance(feather, bool)
+            or not isinstance(feather, (int, float))
+            or not np.isfinite(float(feather))
+            or float(feather) < 0
+            or float(feather) > CREATIVE_CUTOUT_MAX_FEATHER
+        ):
+            raise ValueError("creative cutout refinement is invalid")
+        if mask.ndim != 2 or mask.dtype != np.uint8:
+            raise RuntimeError("creative cutout mask is invalid")
+        scale = max(1, min(mask.shape[:2]))
+        refined = mask
+        radius = int(round(abs(float(expand)) * scale))
+        if radius > 0:
+            size = radius * 2 + 1
+            kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (size, size))
+            refined = (
+                cv.dilate(refined, kernel, iterations=1)
+                if float(expand) > 0
+                else cv.erode(refined, kernel, iterations=1)
+            )
+        feather_px = int(round(float(feather) * scale))
+        if feather_px > 0:
+            size = feather_px * 2 + 1
+            refined = cv.GaussianBlur(
+                refined,
+                (size, size),
+                sigmaX=max(0.5, feather_px / 2.0),
+                sigmaY=max(0.5, feather_px / 2.0),
+                borderType=cv.BORDER_REPLICATE,
+            )
+        return refined
+
+    @staticmethod
     def _encode_png(image: np.ndarray) -> tuple[bytes, int, int]:
         height, width = image.shape[:2]
         ok, encoded = cv.imencode(
@@ -306,11 +354,14 @@ class CreativeRuntime:
         self,
         image: np.ndarray,
         points: list[dict[str, Any]],
+        expand: float = 0.0,
+        feather: float = 0.0,
     ) -> tuple[bytes, int, int]:
         points = self.validate_points(points)
         if image.ndim != 3 or image.shape[2] != 3:
             raise RuntimeError("creative input image dimensions are invalid")
         mask = self._segment_mask(image, points)
+        mask = self._refine_cutout_mask(mask, expand, feather)
         bgra = cv.cvtColor(image, cv.COLOR_BGR2BGRA)
         bgra[:, :, 3] = mask
         return self._encode_png(bgra)
@@ -778,7 +829,12 @@ class CreativeRuntime:
                 raise ValueError("cutout_mode must be object")
             if task.get("strokes") not in (None, []):
                 raise ValueError("cutout does not accept erase strokes")
-            data, width, height = self.cutout(image, task.get("points"))
+            data, width, height = self.cutout(
+                image,
+                task.get("points"),
+                task.get("cutout_expand", 0.0),
+                task.get("cutout_feather", 0.0),
+            )
         elif kind == "erase":
             if task.get("points") not in (None, []) or task.get("cutout_mode") not in (None, ""):
                 raise ValueError("erase does not accept cutout prompts")

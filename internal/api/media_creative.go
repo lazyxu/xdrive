@@ -54,6 +54,8 @@ type mediaCreativeMusicSource struct {
 type mediaCreativeRecipe struct {
 	OutputName      string                             `json:"output_name,omitempty"`
 	CutoutMode      string                             `json:"cutout_mode,omitempty"`
+	CutoutExpand    float64                            `json:"cutout_expand,omitempty"`
+	CutoutFeather   float64                            `json:"cutout_feather,omitempty"`
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	MovieSources    []mediaCreativeMovieSource         `json:"movie_sources,omitempty"`
@@ -69,6 +71,8 @@ type mediaCreativeInput struct {
 	Kind            string                             `json:"kind"`
 	OutputName      string                             `json:"output_name,omitempty"`
 	CutoutMode      string                             `json:"cutout_mode,omitempty"`
+	CutoutExpand    float64                            `json:"cutout_expand,omitempty"`
+	CutoutFeather   float64                            `json:"cutout_feather,omitempty"`
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64                           `json:"source_node_ids,omitempty"`
@@ -173,6 +177,8 @@ func normalizeMediaCreativeInput(
 			PreviewVersion:   mediapkg.CreativePreviewVersion,
 			PreviewEdge:      mediapkg.CreativePreviewEdge,
 			InputFingerprint: "creative-validation",
+			CutoutExpand:     input.CutoutExpand,
+			CutoutFeather:    input.CutoutFeather,
 		}
 		if input.Kind == meta.PhotoCreativeKindMovie {
 			if input.CollageTemplate != "" {
@@ -229,6 +235,8 @@ func normalizeMediaCreativeInput(
 		PreviewEdge:      mediapkg.CreativePreviewEdge,
 		InputFingerprint: "creative-validation",
 		CutoutMode:       input.CutoutMode,
+		CutoutExpand:     input.CutoutExpand,
+		CutoutFeather:    input.CutoutFeather,
 		Points:           input.Points,
 		Strokes:          input.Strokes,
 	}
@@ -627,10 +635,12 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 		return
 	}
 	recipe := mediaCreativeRecipe{
-		OutputName: input.OutputName,
-		CutoutMode: input.CutoutMode,
-		Points:     append([]photointelligence.CreativePoint(nil), input.Points...),
-		Strokes:    append([]photointelligence.CreativeStroke(nil), input.Strokes...),
+		OutputName:    input.OutputName,
+		CutoutMode:    input.CutoutMode,
+		CutoutExpand:  input.CutoutExpand,
+		CutoutFeather: input.CutoutFeather,
+		Points:        append([]photointelligence.CreativePoint(nil), input.Points...),
+		Strokes:       append([]photointelligence.CreativeStroke(nil), input.Strokes...),
 	}
 	switch input.Kind {
 	case meta.PhotoCreativeKindMovie:
@@ -972,6 +982,18 @@ func (s *Server) runMediaCreativeGeneration(
 	if err := json.Unmarshal([]byte(generation.RecipeJSON), &recipe); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
 	}
+	if generation.Kind == meta.PhotoCreativeKindCutout &&
+		(recipe.CutoutExpand != 0 || recipe.CutoutFeather != 0) &&
+		!photointelligence.CreativeAnalyzerSupports(
+			info,
+			photointelligence.CreativeCapabilityCutoutRefine,
+		) {
+		return s.finishMediaCreativeRunError(
+			ctx,
+			generation.ID,
+			errors.New("local creative analyzer does not support cutout refinement"),
+		)
+	}
 	if generation.Kind == meta.PhotoCreativeKindMovie {
 		template := strings.TrimSpace(recipe.MovieTemplate)
 		if template == "" {
@@ -1020,9 +1042,11 @@ func (s *Server) runMediaCreativeGeneration(
 			source.Revision,
 			source.File.SHA256,
 		),
-		CutoutMode: recipe.CutoutMode,
-		Points:     recipe.Points,
-		Strokes:    recipe.Strokes,
+		CutoutMode:    recipe.CutoutMode,
+		CutoutExpand:  recipe.CutoutExpand,
+		CutoutFeather: recipe.CutoutFeather,
+		Points:        recipe.Points,
+		Strokes:       recipe.Strokes,
 	}
 	switch generation.Kind {
 	case meta.PhotoCreativeKindMovie:

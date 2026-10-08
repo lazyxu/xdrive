@@ -16,6 +16,7 @@ func testCreativeInfo() CreativeAnalyzerInfo {
 		},
 		Capabilities: []string{
 			CreativeCapabilityCutout,
+			CreativeCapabilityCutoutRefine,
 			CreativeCapabilityErase,
 			CreativeCapabilityMovie,
 			CreativeCapabilityMovieTemplate,
@@ -37,6 +38,9 @@ func TestValidateCreativeAnalyzerInfo(t *testing.T) {
 	}
 	if err := ValidateCreativeAnalyzerInfo(info); err != nil {
 		t.Fatalf("legacy cutout/erase analyzer was rejected: %v", err)
+	}
+	if CreativeAnalyzerSupports(info, CreativeCapabilityCutoutRefine) {
+		t.Fatal("legacy analyzer unexpectedly reports cutout-refine support")
 	}
 	if CreativeAnalyzerSupports(info, CreativeCapabilityMovie) {
 		t.Fatal("legacy analyzer unexpectedly reports movie support")
@@ -71,6 +75,21 @@ func TestValidateCreativeTask(t *testing.T) {
 	if err := ValidateCreativeTask(cutout); err != nil {
 		t.Fatal(err)
 	}
+	cutout.CutoutExpand = 0.02
+	cutout.CutoutFeather = 0.01
+	if err := ValidateCreativeTask(cutout); err != nil {
+		t.Fatalf("cutout refinement was rejected: %v", err)
+	}
+	cutout.CutoutExpand = 0.031
+	if err := ValidateCreativeTask(cutout); err == nil {
+		t.Fatal("oversized cutout expansion was accepted")
+	}
+	cutout.CutoutExpand = 0
+	cutout.CutoutFeather = 0.031
+	if err := ValidateCreativeTask(cutout); err == nil {
+		t.Fatal("oversized cutout feather was accepted")
+	}
+	cutout.CutoutFeather = 0
 	person := cutout
 	person.CutoutMode = "person"
 	person.Points = nil
@@ -87,6 +106,11 @@ func TestValidateCreativeTask(t *testing.T) {
 	if err := ValidateCreativeTask(erase); err != nil {
 		t.Fatal(err)
 	}
+	erase.CutoutExpand = 0.01
+	if err := ValidateCreativeTask(erase); err == nil {
+		t.Fatal("erase cutout refinement was accepted")
+	}
+	erase.CutoutExpand = 0
 	erase.Strokes[0].Radius = 0.5
 	if err := ValidateCreativeTask(erase); err == nil {
 		t.Fatal("oversized erase brush was accepted")

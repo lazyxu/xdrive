@@ -104,8 +104,11 @@ export function XDriveMediaGalleryCreativeDialog({
   const imageRef = useRef<HTMLImageElement | null>(null)
   const completedRef = useRef('')
   const creativeActionGenerationRef = useRef(0)
+  const cutoutPointDragRef = useRef<number | null>(null)
   const [mode, setMode] = useState<CreativeMode>('cutout')
   const [cutoutForeground, setCutoutForeground] = useState(true)
+  const [cutoutExpand, setCutoutExpand] = useState(0)
+  const [cutoutFeather, setCutoutFeather] = useState(0)
   const [points, setPoints] = useState<MediaCreativePoint[]>([])
   const [strokes, setStrokes] = useState<MediaCreativeStroke[]>([])
   const [activeStroke, setActiveStroke] = useState<MediaCreativeStroke | null>(null)
@@ -134,8 +137,8 @@ export function XDriveMediaGalleryCreativeDialog({
   const helper = useMemo(() => {
     if (mode === 'cutout') {
       return points.length
-        ? `已标记 ${points.length} 个提示点；绿色保留，红色排除。`
-        : '先用“保留主体”在主体上点一下；必要时用“排除区域”补充背景点。'
+        ? `已标记 ${points.length} 个提示点；绿色保留，红色排除；现有提示点可直接拖动微调。`
+        : '先用“保留主体”在主体上点一下；必要时用“排除区域”补充背景点，之后可拖动提示点微调。'
     }
     return strokes.length
       ? `已绘制 ${strokes.length} 条消除笔迹。`
@@ -154,7 +157,10 @@ export function XDriveMediaGalleryCreativeDialog({
 
   useEffect(() => {
     creativeActionGenerationRef.current += 1
+    cutoutPointDragRef.current = null
     setBusy(false)
+    setCutoutExpand(0)
+    setCutoutFeather(0)
     if (!open || !item || !supported || !loadPreviewURL) {
       setSourceURL('')
       return
@@ -250,6 +256,9 @@ export function XDriveMediaGalleryCreativeDialog({
     setSourceURL('')
     setResultURL('')
     setGeneration(null)
+    cutoutPointDragRef.current = null
+    setCutoutExpand(0)
+    setCutoutFeather(0)
     setPoints([])
     setStrokes([])
     setActiveStroke(null)
@@ -269,6 +278,42 @@ export function XDriveMediaGalleryCreativeDialog({
         foreground: cutoutForeground,
       },
     ])
+  }
+
+  const startCutoutPointDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (mode !== 'cutout' || generating) return
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    cutoutPointDragRef.current = index
+  }
+
+  const moveCutoutPointDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    const index = cutoutPointDragRef.current
+    if (index === null || generating || !imageRef.current) return
+    event.stopPropagation()
+    const point = normalizedPoint(event, imageRef.current)
+    if (!point) return
+    setPoints((current) => current.map((value, currentIndex) => (
+      currentIndex === index
+        ? { ...value, x: point.x, y: point.y }
+        : value
+    )))
+  }
+
+  const finishCutoutPointDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (cutoutPointDragRef.current === null) return
+    event.stopPropagation()
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    cutoutPointDragRef.current = null
   }
 
   const startEraseStroke = (event: ReactPointerEvent<HTMLImageElement>) => {
@@ -312,6 +357,8 @@ export function XDriveMediaGalleryCreativeDialog({
             kind: 'cutout',
             output_name: outputName.trim() || undefined,
             cutout_mode: 'object',
+            cutout_expand: cutoutExpand,
+            cutout_feather: cutoutFeather,
             points,
           }
         : {
@@ -490,6 +537,61 @@ export function XDriveMediaGalleryCreativeDialog({
             ) : null}
           </Stack>
 
+          {mode === 'cutout' ? (
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={2}
+              alignItems={{ md: 'center' }}
+            >
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 300 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 72 }}>
+                  边缘调整
+                </Typography>
+                <Slider
+                  value={cutoutExpand}
+                  min={-0.02}
+                  max={0.02}
+                  step={0.002}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(value) => `${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`}
+                  onChange={(_event, value) => setCutoutExpand(value as number)}
+                  disabled={generating}
+                  sx={{ width: 180 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 46 }}>
+                  {cutoutExpand === 0
+                    ? '0%'
+                    : `${cutoutExpand > 0 ? '+' : ''}${(cutoutExpand * 100).toFixed(1)}%`}
+                </Typography>
+              </Stack>
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 280 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 48 }}>
+                  羽化
+                </Typography>
+                <Slider
+                  value={cutoutFeather}
+                  min={0}
+                  max={0.02}
+                  step={0.002}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(value) => `${(value * 100).toFixed(1)}%`}
+                  onChange={(_event, value) => setCutoutFeather(value as number)}
+                  disabled={generating}
+                  sx={{ width: 180 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 40 }}>
+                  {(cutoutFeather * 100).toFixed(1)}%
+                </Typography>
+              </Stack>
+            </Stack>
+          ) : null}
+
+          {mode === 'cutout' ? (
+            <Typography variant="caption" color="text.secondary">
+              边缘调整：负值收缩，正值扩展；百分比按图片短边计算。
+            </Typography>
+          ) : null}
+
           <Typography variant="body2" color="text.secondary">
             {helper}
           </Typography>
@@ -552,19 +654,29 @@ export function XDriveMediaGalleryCreativeDialog({
                 />
                 {mode === 'cutout' ? points.map((point, index) => (
                   <Box
-                    key={`${index}:${point.x}:${point.y}`}
+                    component="button"
+                    type="button"
+                    key={`${index}:${point.foreground}`}
+                    aria-label={point.foreground ? '拖动保留主体提示点' : '拖动排除区域提示点'}
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => startCutoutPointDrag(event, index)}
+                    onPointerMove={moveCutoutPointDrag}
+                    onPointerUp={finishCutoutPointDrag}
+                    onPointerCancel={finishCutoutPointDrag}
                     sx={{
                       position: 'absolute',
                       left: `${point.x * 100}%`,
                       top: `${point.y * 100}%`,
-                      width: 14,
-                      height: 14,
+                      width: 18,
+                      height: 18,
+                      p: 0,
                       borderRadius: '50%',
                       bgcolor: point.foreground ? 'success.main' : 'error.main',
                       border: '2px solid white',
                       boxShadow: 1,
                       transform: 'translate(-50%, -50%)',
-                      pointerEvents: 'none',
+                      cursor: generating ? 'wait' : 'grab',
+                      touchAction: 'none',
                     }}
                   />
                 )) : null}

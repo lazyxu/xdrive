@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie Templates + Music + Collage** |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout Refine + Smart Erase + Auto Movie Templates/Music + Collage** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -544,6 +544,28 @@ Only ordinary ready image assets are enabled in the first UI. Live Photo, RAW pa
 Burst logical assets and video remain excluded until each has an explicit whole-asset
 creative contract.
 
+### Current: Cutout refinement
+
+Cutout keeps the same EfficientSAM model and durable `media.creative.cutout` task, but
+the shared Web/Desktop dialog now exposes the refinement controls needed for practical
+object selection:
+
+- existing foreground/background prompt points can be dragged after placement instead
+  of deleting and recreating a point to make a small correction;
+- `cutout_expand` adjusts the mask by up to ±3% of the shorter image edge using a
+  deterministic elliptical dilate/erode step; the shared UI intentionally exposes the
+  tighter ±2% everyday range;
+- `cutout_feather` applies deterministic alpha feathering up to 3% of the shorter
+  image edge; the shared UI exposes 0–2%;
+- zero-valued refinement preserves the previous Cutout output contract exactly;
+- non-zero refinement requires the optional `cutout_refine` sidecar capability, so an
+  older Cutout-capable sidecar never silently ignores the requested edge settings;
+- refinement parameters remain part of the same persisted creative recipe and output
+  is still committed as a new canonical PNG beside the source image.
+
+No additional segmentation model, browser-side image processing or platform-specific
+implementation is introduced.
+
 ### Current: Automatic Movie
 
 The same durable creative-generation pipeline now also supports multi-image local
@@ -613,9 +635,11 @@ movie:
 The music picker and movie dialog remain shared Web/Desktop MUI. The main xDrive Server
 continues to be CGO-free and never decodes or mixes the audio itself.
 
-### Still remaining inside Phase 13
+### Phase 13 baseline complete
 
-- richer object-selection refinement or additional local creative models.
-
-Those follow-ups must reuse the same durable generation / Task Center / canonical
-output architecture instead of introducing a second creative execution path.
+The planned local Creative Tools baseline is complete with Cutout refinement, Smart
+Erase, Collage, Automatic Movie templates and canonical xDrive music. Additional local
+creative models remain optional future expansion rather than a prerequisite for the
+Gallery product baseline. Any such expansion must continue to reuse the same durable
+generation / Task Center / canonical output architecture instead of introducing a
+second creative execution path.

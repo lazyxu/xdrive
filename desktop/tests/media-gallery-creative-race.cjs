@@ -128,11 +128,14 @@ test('Gallery creative generation completion cannot cross selected item lifecycl
     setResultURL: (value) => resultWrites.push(value),
     setError: (value) => errorWrites.push(value),
     setGeneration: (value) => generationWrites.push(value),
+    setCutoutExpand: () => {},
+    setCutoutFeather: () => {},
     setPoints: (value) => pointsWrites.push(value),
     setStrokes: (value) => strokesWrites.push(value),
     setActiveStroke: (value) => activeStrokeWrites.push(value),
     completedRef,
     creativeActionGenerationRef,
+    cutoutPointDragRef: { current: null },
     setBusy: (value) => busyWrites.push(value),
   }
 
@@ -159,6 +162,8 @@ test('Gallery creative generation completion cannot cross selected item lifecycl
       completedRef,
       mode: 'cutout',
       outputName: '',
+      cutoutExpand: 0.02,
+      cutoutFeather: 0.01,
       points: [{ x: 0.5, y: 0.5, foreground: true }],
       strokes: [],
       setGeneration: (value) => generationWrites.push(value),

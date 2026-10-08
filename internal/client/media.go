@@ -107,6 +107,8 @@ type MediaCreativeInput struct {
 	Kind            string                `json:"kind"`
 	OutputName      string                `json:"output_name,omitempty"`
 	CutoutMode      string                `json:"cutout_mode,omitempty"`
+	CutoutExpand    float64               `json:"cutout_expand,omitempty"`
+	CutoutFeather   float64               `json:"cutout_feather,omitempty"`
 	Points          []MediaCreativePoint  `json:"points,omitempty"`
 	Strokes         []MediaCreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64              `json:"source_node_ids,omitempty"`
