@@ -59,6 +59,7 @@ export function useXDriveFileExplorerTrash({
   const [deleteTarget, setDeleteTarget] = useState<Node | null>(null)
   const requestRef = useRef(0)
   const workingGenerationRef = useRef(0)
+  const workingRef = useRef<{ generation: number } | null>(null)
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
   const onErrorRef = useRef(onError)
@@ -68,6 +69,7 @@ export function useXDriveFileExplorerTrash({
     lifecycleKeyRef.current = lifecycleKey
     requestRef.current += 1
     workingGenerationRef.current += 1
+    workingRef.current = null
   }
   enabledRef.current = enabled
   onErrorRef.current = onError
@@ -111,14 +113,17 @@ export function useXDriveFileExplorerTrash({
   })
 
   const beginWorking = useCallback((key: string) => {
+    if (workingRef.current) return null
     const generation = workingGenerationRef.current + 1
     workingGenerationRef.current = generation
+    workingRef.current = { generation }
     setWorkingKey(key)
     return generation
   }, [])
 
   const finishWorking = useCallback((generation: number) => {
-    if (generation !== workingGenerationRef.current) return
+    if (workingRef.current?.generation !== generation) return
+    workingRef.current = null
     setWorkingKey('')
   }, [])
 
@@ -171,6 +176,7 @@ export function useXDriveFileExplorerTrash({
   useEffect(() => {
     requestRef.current += 1
     workingGenerationRef.current += 1
+    workingRef.current = null
     countedRangeKeyRef.current = ''
     setLoading(false)
     setWorkingKey('')
@@ -182,6 +188,7 @@ export function useXDriveFileExplorerTrash({
     if (!enabled) {
       requestRef.current += 1
       workingGenerationRef.current += 1
+      workingRef.current = null
       setLoading(false)
       setWorkingKey('')
       setDeleteTarget(null)
@@ -245,8 +252,9 @@ export function useXDriveFileExplorerTrash({
 
   const restore = useCallback(async (item: XDriveFileExplorerItem) => {
     const node = nodeByID.get(Number(item.id))
-    if (!node || workingKey) return
+    if (!node) return
     const workingGeneration = beginWorking(`restore:${node.id}`)
+    if (workingGeneration === null) return
     try {
       await adapter.restoreTrash(node)
       if (
@@ -263,7 +271,7 @@ export function useXDriveFileExplorerTrash({
     } finally {
       finishWorking(workingGeneration)
     }
-  }, [adapter, beginWorking, changed, finishWorking, nodeByID, workingKey])
+  }, [adapter, beginWorking, changed, finishWorking, nodeByID])
 
   const requestPermanentDelete = useCallback((item: XDriveFileExplorerItem) => {
     const node = nodeByID.get(Number(item.id))
@@ -276,8 +284,9 @@ export function useXDriveFileExplorerTrash({
 
   const confirmPermanentDelete = useCallback(async () => {
     const node = deleteTarget
-    if (!node || workingKey) return
+    if (!node) return
     const workingGeneration = beginWorking(`delete:${node.id}`)
+    if (workingGeneration === null) return
     try {
       await adapter.deleteTrash(node)
       if (
@@ -297,7 +306,7 @@ export function useXDriveFileExplorerTrash({
     } finally {
       finishWorking(workingGeneration)
     }
-  }, [adapter, beginWorking, changed, deleteTarget, finishWorking, workingKey])
+  }, [adapter, beginWorking, changed, deleteTarget, finishWorking])
 
   const getItemMenuItems = useCallback((
     item: XDriveFileExplorerItem,
