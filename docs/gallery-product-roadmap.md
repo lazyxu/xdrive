@@ -32,7 +32,7 @@ presentation and product intelligence.
 | 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical + semantic relevance** |
 | 9 | Memories / Recent Days / Trips / On This Day | **Current** |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
-| 11 | Pets / people groups / suggestion review | Planned |
+| 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | Planned |
 | 13 | Optional AI erase / cutout / automatic movies / advanced creation | Planned |
 
@@ -42,7 +42,7 @@ Phase 1 changes Gallery from one vertically stacked management page into a photo
 workspace with explicit internal destinations:
 
 - **图库** owns the main photo collection.
-- **人物** owns durable people and automatic suggestions.
+- **人物与宠物** owns durable people, automatic person review, and local pet-type collections.
 - **地点** owns local-GPS place browsing.
 - **相册** owns manual, smart, and imported albums.
 - **收藏** reuses the existing Server-side favorite query.
@@ -401,3 +401,47 @@ Transport remains thin and symmetric:
 - Server: duplicate-group list/items and Burst-review list/items read endpoints;
 - Go client / Desktop Agent IPC / Electron / Web only serialize IDs, limits and ranges;
 - `ui/shared` owns Cleanup Review cards, state, recommended markers and review flow.
+
+
+## Phase 11 — People review and Pets
+
+Phase 11 matures the existing local People foundation instead of replacing it.
+
+### Suggestion review
+
+Automatic `PhotoPersonCluster` rows remain rebuildable derived suggestions. User review
+intent is stored separately in owner-scoped `PhotoPersonSuggestionReview` rows keyed by
+the current cluster snapshot key:
+
+- no review row means **待确认**;
+- `dismissed` means **暂不处理** for that exact cluster snapshot;
+- `accepted` records that the snapshot was explicitly adopted into a new durable
+  person or added to an existing durable person.
+
+The default Suggested People API omits reviewed snapshots. Review mode can include them
+so the shared Gallery can show dismissed suggestions and restore them. A cluster whose
+membership changes receives a new cluster key and therefore becomes a new reviewable
+suggestion; automatic clustering never rewrites durable person membership.
+
+The shared People UI now distinguishes **已确认人物** from **待确认建议**. Pending
+suggestions support **保存为人物 / 添加到已有人物 / 暂不处理**; dismissed suggestions
+can be restored. Existing rename, hide/unhide, cover, merge, split, durable person
+filters, and smart albums remain unchanged.
+
+### Pets
+
+Pets is a local **type collection**, not pet identity recognition. The existing pinned
+MobileNetV2 visual-label pipeline now persists the ImageNet label index in
+`PhotoVisualLabel`. Current pet facets use only ready visual-label evidence:
+
+- ImageNet dog classes 151–268 → **狗**;
+- ImageNet cat classes 281–285 → **猫**.
+
+Opening a pet facet creates the same sparse shared Gallery collection used by other
+destinations. Web/Desktop share `MediaPetFacet`, controller state, card UI, Viewer,
+Selection Toolbar, Inspector, and range loading through `ui/shared`.
+
+xDrive does **not** infer that two cat/dog photos show the same individual animal, does
+not write pet names into `PhotoPerson` or `PeopleJSON`, and does not consume provider
+pet/person APIs. Named individual-pet identities require a future pet-specific
+crop/embedding/identity contract and are intentionally outside this phase.

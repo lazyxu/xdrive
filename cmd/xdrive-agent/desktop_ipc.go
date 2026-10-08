@@ -262,12 +262,17 @@ type desktopIPCController interface {
 	CloudMediaDuplicateItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
 	CloudMediaBurstReviews(context.Context, int) (client.MediaBurstReviewList, error)
 	CloudMediaBurstReviewItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
+	CloudMediaPets(context.Context) ([]client.MediaPetFacet, error)
+	CloudMediaPetItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
+	CloudMediaSuggestedPeopleWithReview(context.Context, bool, int) ([]client.MediaSuggestedPerson, error)
 	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaSuggestedPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudMediaPeople(context.Context, bool, int, int) ([]client.MediaPersonIdentity, error)
 	CloudMediaPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
+	CloudReviewMediaSuggestedPerson(context.Context, string, string) (client.MediaPersonSuggestionReview, error)
+	CloudAddMediaSuggestedPersonToIdentity(context.Context, string, uint64, string) (client.MediaPersonIdentity, error)
 	CloudAdoptMediaSuggestedPerson(context.Context, string, string) (client.MediaPersonIdentity, error)
 	CloudUpdateMediaPerson(context.Context, string, uint64, client.UpdateMediaPersonIdentityInput) (client.MediaPersonIdentity, error)
 	CloudMergeMediaPeople(context.Context, string, uint64, []string) (client.MediaPersonIdentity, error)
@@ -573,10 +578,14 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/duplicate-items", h.mediaDuplicateItems)
 	mux.HandleFunc("GET /v1/media/bursts", h.mediaBurstReviews)
 	mux.HandleFunc("GET /v1/media/burst-items", h.mediaBurstReviewItems)
+	mux.HandleFunc("GET /v1/media/pets", h.mediaPets)
+	mux.HandleFunc("GET /v1/media/pet-items", h.mediaPetItems)
 	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
 	mux.HandleFunc("GET /v1/media/people/suggestion-items", h.mediaSuggestedPersonItems)
 	mux.HandleFunc("GET /v1/media/people/identities", h.mediaPersonIdentities)
 	mux.HandleFunc("GET /v1/media/people/identity-items", h.mediaPersonItems)
+	mux.HandleFunc("PATCH /v1/media/people/suggestion-review", h.reviewMediaSuggestedPerson)
+	mux.HandleFunc("POST /v1/media/people/add-suggestion", h.addMediaSuggestedPersonToIdentity)
 	mux.HandleFunc("POST /v1/media/people/adopt", h.adoptMediaSuggestedPerson)
 	mux.HandleFunc("PATCH /v1/media/person", h.updateMediaPerson)
 	mux.HandleFunc("POST /v1/media/person/merge", h.mergeMediaPeople)
@@ -2586,6 +2595,43 @@ func (h *desktopIPCHandler) mediaBurstReviewItems(w http.ResponseWriter, r *http
 	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
+func (h *desktopIPCHandler) mediaPets(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudMediaPets(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaPetItems(w http.ResponseWriter, r *http.Request) {
+	petKind := strings.TrimSpace(r.URL.Query().Get("pet_kind"))
+	if petKind != "dog" && petKind != "cat" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_pet_kind",
+			"pet_kind must be dog or cat",
+		)
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	page, err := h.ctrl.CloudMediaPetItemsRange(
+		r.Context(),
+		petKind,
+		limit,
+		offset,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
 func (h *desktopIPCHandler) mediaSuggestedPeople(w http.ResponseWriter, r *http.Request) {
 	limit := 24
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -2601,7 +2647,31 @@ func (h *desktopIPCHandler) mediaSuggestedPeople(w http.ResponseWriter, r *http.
 		}
 		limit = value
 	}
-	items, err := h.ctrl.CloudMediaSuggestedPeople(r.Context(), limit)
+	includeReviewed := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_reviewed")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_media_suggestion_review_filter",
+				"include_reviewed must be true or false",
+			)
+			return
+		}
+		includeReviewed = value
+	}
+	var items []client.MediaSuggestedPerson
+	var err error
+	if includeReviewed {
+		items, err = h.ctrl.CloudMediaSuggestedPeopleWithReview(
+			r.Context(),
+			true,
+			limit,
+		)
+	} else {
+		items, err = h.ctrl.CloudMediaSuggestedPeople(r.Context(), limit)
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -2729,6 +2799,80 @@ func (h *desktopIPCHandler) mediaPersonItems(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) reviewMediaSuggestedPerson(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SuggestionID string `json:"suggestion_id"`
+		State        string `json:"state"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidSuggestedPersonID(input.SuggestionID) {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_suggested_person",
+			"valid suggestion_id is required",
+		)
+		return
+	}
+	if input.State != "pending" && input.State != "dismissed" {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_suggestion_review_state",
+			"state must be pending or dismissed",
+		)
+		return
+	}
+	review, err := h.ctrl.CloudReviewMediaSuggestedPerson(
+		r.Context(),
+		input.SuggestionID,
+		input.State,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, review)
+}
+
+func (h *desktopIPCHandler) addMediaSuggestedPersonToIdentity(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	var input struct {
+		PersonID     string `json:"person_id"`
+		Revision     uint64 `json:"revision"`
+		SuggestionID string `json:"suggestion_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidPersonIdentityID(input.PersonID) ||
+		!desktopIPCValidSuggestedPersonID(input.SuggestionID) ||
+		input.Revision == 0 {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_person_suggestion",
+			"valid person_id, suggestion_id, and revision are required",
+		)
+		return
+	}
+	person, err := h.ctrl.CloudAddMediaSuggestedPersonToIdentity(
+		r.Context(),
+		input.PersonID,
+		input.Revision,
+		input.SuggestionID,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, person)
 }
 
 func (h *desktopIPCHandler) adoptMediaSuggestedPerson(w http.ResponseWriter, r *http.Request) {

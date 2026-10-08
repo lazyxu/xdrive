@@ -123,7 +123,7 @@ PIPELINE_VERSION = (
 
 SMART_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-mobilenetv2-2022apr"
-    "-ppocrv3-cn-2023may-crnn-cn-2021nov-v1"
+    "-ppocrv3-cn-2023may-crnn-cn-2021nov-v2-label-index"
 )
 
 
@@ -644,6 +644,7 @@ class SmartRuntime:
                 continue
             labels.append(
                 {
+                    "index": index,
                     "label": self.labels[index],
                     "confidence": confidence,
                 }

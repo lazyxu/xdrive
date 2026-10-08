@@ -357,6 +357,7 @@ func (r *SmartRunner) finishSmartAnalysis(
 		labels = append(labels, meta.PhotoVisualLabel{
 			AssetID:    assetID,
 			Label:      item.Label,
+			LabelIndex: item.Index,
 			Confidence: item.Confidence,
 			CreatedAt:  now,
 			UpdatedAt:  now,

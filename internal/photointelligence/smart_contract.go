@@ -43,6 +43,7 @@ type SmartAnalysisTask struct {
 }
 
 type SmartVisualLabel struct {
+	Index      int     `json:"index"`
 	Label      string  `json:"label"`
 	Confidence float64 `json:"confidence"`
 }
@@ -159,6 +160,9 @@ func ValidateSmartAnalysisResult(
 	byLabel := make(map[string]SmartVisualLabel, len(result.Labels))
 	for _, item := range result.Labels {
 		label := strings.TrimSpace(item.Label)
+		if item.Index < 0 || item.Index >= 1000 {
+			return SmartAnalysisResult{}, errors.New("smart visual label index is invalid")
+		}
 		if label == "" || utf8.RuneCountInString(label) > MaxSmartLabelRunes {
 			return SmartAnalysisResult{}, errors.New("smart visual label is invalid")
 		}
@@ -171,6 +175,7 @@ func ValidateSmartAnalysisResult(
 		key := strings.ToLower(label)
 		if previous, exists := byLabel[key]; !exists || item.Confidence > previous.Confidence {
 			byLabel[key] = SmartVisualLabel{
+				Index:      item.Index,
 				Label:      label,
 				Confidence: item.Confidence,
 			}

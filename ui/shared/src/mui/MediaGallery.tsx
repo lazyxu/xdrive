@@ -36,6 +36,8 @@ import type {
   MediaItem,
   MediaItemRange,
   MediaMemory,
+  MediaPetFacet,
+  MediaPersonSuggestionReview,
   MediaDuplicateGroup,
   MediaDuplicateGroupList,
   MediaBurstReview,
@@ -64,6 +66,7 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
+import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
@@ -147,7 +150,16 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
   ) => Promise<MediaItemRange>
-  listSuggestedPeople?: (limit?: number) => Promise<MediaSuggestedPerson[]>
+  listPets?: () => Promise<MediaPetFacet[]>
+  listPetItemRange?: (
+    petKind: string,
+    limit: number,
+    offset: number,
+  ) => Promise<MediaItemRange>
+  listSuggestedPeople?: (
+    includeReviewed?: boolean,
+    limit?: number,
+  ) => Promise<MediaSuggestedPerson[]>
   listSuggestedPersonItems?: (
     personID: string,
     limit: number,
@@ -177,6 +189,15 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItemRange>
+  reviewSuggestedPerson?: (
+    suggestionID: string,
+    state: 'pending' | 'dismissed',
+  ) => Promise<MediaPersonSuggestionReview>
+  addSuggestedPersonToPerson?: (
+    suggestionID: string,
+    personID: string,
+    revision: number,
+  ) => Promise<MediaPersonIdentity>
   adoptSuggestedPerson?: (
     suggestionID: string,
     name: string,
@@ -247,6 +268,7 @@ type MediaGalleryCollectionTarget = {
     | 'memory'
     | 'duplicate-review'
     | 'burst-review'
+    | 'pet'
     | 'trash'
   id?: string
   query: MediaGalleryQuery
@@ -364,6 +386,7 @@ export function XDriveMediaGalleryPage({
     useState<MediaDuplicateGroupList | null>(null)
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
+  const [pets, setPets] = useState<MediaPetFacet[]>([])
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
@@ -374,6 +397,7 @@ export function XDriveMediaGalleryPage({
   const [currentSuggestedPerson, setCurrentSuggestedPerson] =
     useState<MediaSuggestedPerson | null>(null)
   const [currentPerson, setCurrentPerson] = useState<MediaPersonIdentity | null>(null)
+  const [currentPet, setCurrentPet] = useState<MediaPetFacet | null>(null)
   const [currentMemory, setCurrentMemory] = useState<MediaMemory | null>(null)
   const [currentCleanupReview, setCurrentCleanupReview] =
     useState<MediaCleanupReviewTarget | null>(null)
@@ -432,6 +456,11 @@ export function XDriveMediaGalleryPage({
           throw new Error('当前客户端不支持连拍审查范围加载')
         }
         return source.listBurstReviewItemRange(target.id, limit, offset)
+      case 'pet':
+        if (!target.id || !source.listPetItemRange) {
+          throw new Error('当前客户端不支持宠物集合范围加载')
+        }
+        return source.listPetItemRange(target.id, limit, offset)
       case 'suggested-person':
         if (!target.id || !source.listSuggestedPersonItemRange) {
           throw new Error('当前客户端不支持人物建议范围加载')
@@ -525,6 +554,7 @@ export function XDriveMediaGalleryPage({
     targetKind: 'default' | 'trash' = 'default',
     memory: MediaMemory | null = null,
     cleanupReview: MediaCleanupReviewTarget | null = null,
+    pet: MediaPetFacet | null = null,
   ) => {
     const request = ++requestID.current
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
@@ -540,7 +570,9 @@ export function XDriveMediaGalleryPage({
           }
         : memory
           ? { kind: 'memory', id: memory.id, query: {}, requestID: request }
-          : mediaGalleryTarget(
+          : pet
+            ? { kind: 'pet', id: pet.id, query: {}, requestID: request }
+            : mediaGalleryTarget(
           request,
           album,
           nextQuery,
@@ -556,13 +588,23 @@ export function XDriveMediaGalleryPage({
     try {
       const rangePromise = loadTargetRange(target, 0, pageSize)
       if (target.kind === 'all') {
-        const [range, nextAlbums, nextPlaces, nextSuggestedPeople, nextPeople] = await Promise.all([
+        const [
+          range,
+          nextAlbums,
+          nextPlaces,
+          nextPets,
+          nextSuggestedPeople,
+          nextPeople,
+        ] = await Promise.all([
           rangePromise,
           source.listAlbums(),
           source.listPlaces
             ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
             : Promise.resolve([]),
-          source.listSuggestedPeople ? source.listSuggestedPeople(24) : Promise.resolve([]),
+          source.listPets ? source.listPets() : Promise.resolve([]),
+          source.listSuggestedPeople
+            ? source.listSuggestedPeople(true, 100)
+            : Promise.resolve([]),
           listAllPeople(),
         ])
         if (
@@ -572,11 +614,15 @@ export function XDriveMediaGalleryPage({
         setCurrentAlbum(null)
         setCurrentSuggestedPerson(null)
         setCurrentPerson(null)
+        setCurrentPet(null)
         setCurrentMemory(null)
         setCurrentCleanupReview(null)
         setAlbums(nextAlbums)
         setPlaces(nextPlaces)
-        setSuggestedPeople(nextSuggestedPeople)
+        setPets(nextPets)
+        setSuggestedPeople(
+          nextSuggestedPeople.filter((item) => item.review_state !== 'accepted'),
+        )
         setPersonIdentities(nextPeople)
         setItems([...range.items])
         setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
@@ -599,6 +645,7 @@ export function XDriveMediaGalleryPage({
         target.kind === 'suggested-person' ? suggestedPerson : null,
       )
       setCurrentPerson(target.kind === 'person' ? person : null)
+      setCurrentPet(target.kind === 'pet' ? pet : null)
       setCurrentMemory(target.kind === 'memory' ? memory : null)
       setCurrentCleanupReview(
         target.kind === 'duplicate-review' || target.kind === 'burst-review'
@@ -706,6 +753,7 @@ export function XDriveMediaGalleryPage({
   }, [reportError, source, virtualCollection.reset])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    setCurrentPet(null)
     if (nextSection !== 'memories') setCurrentMemory(null)
     if (nextSection !== 'cleanup') setCurrentCleanupReview(null)
     if (nextSection === 'memories') {
@@ -931,6 +979,24 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [draftFilters, loadFirstPage])
 
+  const openPet = useCallback((pet: MediaPetFacet) => {
+    setCurrentPet(pet)
+    setSection('people')
+    setActiveMediaType('')
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setQuery({})
+    void loadFirstPage(
+      null,
+      {},
+      null,
+      null,
+      'default',
+      null,
+      null,
+      pet,
+    )
+  }, [loadFirstPage])
+
   const openSuggestedPerson = useCallback((person: MediaSuggestedPerson) => {
     setSection('people')
     setActiveMediaType('')
@@ -963,6 +1029,11 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const leaveCollection = useCallback(() => {
+    if (currentPet) {
+      setCurrentPet(null)
+      void loadFirstPage(null, {})
+      return
+    }
     if (currentCleanupReview) {
       void loadCleanup()
       return
@@ -983,11 +1054,65 @@ export function XDriveMediaGalleryPage({
     activeMediaType,
     currentCleanupReview,
     currentMemory,
+    currentPet,
     loadCleanup,
     loadFirstPage,
     loadMemories,
     section,
   ])
+
+  const reviewSuggestedPerson = useCallback(async (
+    suggestion: MediaSuggestedPerson,
+    state: 'pending' | 'dismissed',
+  ) => {
+    if (!source.reviewSuggestedPerson) {
+      throw new Error('当前客户端不支持人物建议审核')
+    }
+    setError('')
+    try {
+      const review = await source.reviewSuggestedPerson(suggestion.id, state)
+      setSuggestedPeople((current) => current.map((item) => (
+        item.id === suggestion.id
+          ? {
+              ...item,
+              review_state: review.review_state || undefined,
+              target_person_id: review.target_person_id,
+            }
+          : item
+      )))
+      return review
+    } catch (personError) {
+      setError(xDriveMediaGalleryErrorMessage(personError))
+      onError?.(personError)
+      throw personError
+    }
+  }, [onError, source])
+
+  const addSuggestedPersonToPerson = useCallback(async (
+    suggestion: MediaSuggestedPerson,
+    person: MediaPersonIdentity,
+  ) => {
+    if (!source.addSuggestedPersonToPerson) {
+      throw new Error('当前客户端不支持将人物建议加入已有人物')
+    }
+    setError('')
+    try {
+      const updated = await source.addSuggestedPersonToPerson(
+        suggestion.id,
+        person.id,
+        person.revision,
+      )
+      replacePerson(updated)
+      setSuggestedPeople((current) => (
+        current.filter((item) => item.id !== suggestion.id)
+      ))
+      return updated
+    } catch (personError) {
+      setError(xDriveMediaGalleryErrorMessage(personError))
+      onError?.(personError)
+      throw personError
+    }
+  }, [onError, replacePerson, source])
 
   const adoptSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,
@@ -1385,12 +1510,14 @@ export function XDriveMediaGalleryPage({
         memories={memories}
         duplicateGroups={duplicateGroups}
         burstReviews={burstReviews}
+        pets={pets}
         suggestedPeople={suggestedPeople}
         people={people}
         activePlaceID={query.place}
         currentAlbum={currentAlbum}
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
+        currentPet={currentPet}
         currentMemory={currentMemory}
         currentCleanupReview={currentCleanupReview}
         loading={loading}
@@ -1470,8 +1597,17 @@ export function XDriveMediaGalleryPage({
         onOpenMemory={openMemory}
         onOpenDuplicateGroup={openDuplicateGroup}
         onOpenBurstReview={openBurstReview}
+        onOpenPet={openPet}
         onOpenSuggestedPerson={openSuggestedPerson}
         onOpenPerson={openPerson}
+        onReviewSuggestedPerson={
+          source.reviewSuggestedPerson ? reviewSuggestedPerson : undefined
+        }
+        onAddSuggestedPersonToPerson={
+          source.addSuggestedPersonToPerson
+            ? addSuggestedPersonToPerson
+            : undefined
+        }
         onAdoptSuggestedPerson={
           source.adoptSuggestedPerson ? adoptSuggestedPerson : undefined
         }
@@ -1510,6 +1646,7 @@ export function XDriveMediaGalleryPage({
             section === 'trash' ? 'trash' : 'default',
             currentMemory,
             currentCleanupReview,
+            currentPet,
           )
         }}
       />
@@ -1605,12 +1742,14 @@ export interface XDriveMediaGalleryProps {
   memories?: MediaMemory[]
   duplicateGroups?: MediaDuplicateGroupList | null
   burstReviews?: MediaBurstReviewList | null
+  pets?: MediaPetFacet[]
   suggestedPeople?: MediaSuggestedPerson[]
   people?: MediaPersonIdentity[]
   activePlaceID?: string
   currentAlbum?: MediaAlbum | null
   currentSuggestedPerson?: MediaSuggestedPerson | null
   currentPerson?: MediaPersonIdentity | null
+  currentPet?: MediaPetFacet | null
   currentMemory?: MediaMemory | null
   currentCleanupReview?: MediaCleanupReviewTarget | null
   loading?: boolean
@@ -1647,8 +1786,17 @@ export interface XDriveMediaGalleryProps {
   onOpenMemory?: (memory: MediaMemory) => void
   onOpenDuplicateGroup?: (group: MediaDuplicateGroup) => void
   onOpenBurstReview?: (group: MediaBurstReview) => void
+  onOpenPet?: (pet: MediaPetFacet) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
   onOpenPerson?: (person: MediaPersonIdentity) => void
+  onReviewSuggestedPerson?: (
+    suggestion: MediaSuggestedPerson,
+    state: 'pending' | 'dismissed',
+  ) => Promise<MediaPersonSuggestionReview>
+  onAddSuggestedPersonToPerson?: (
+    suggestion: MediaSuggestedPerson,
+    person: MediaPersonIdentity,
+  ) => Promise<MediaPersonIdentity>
   onAdoptSuggestedPerson?: (
     suggestion: MediaSuggestedPerson,
     name: string,
@@ -2624,12 +2772,14 @@ export function XDriveMediaGallery({
   memories = [],
   duplicateGroups = null,
   burstReviews = null,
+  pets = [],
   suggestedPeople = [],
   people = [],
   activePlaceID,
   currentAlbum = null,
   currentSuggestedPerson = null,
   currentPerson = null,
+  currentPet = null,
   currentMemory = null,
   currentCleanupReview = null,
   loading = false,
@@ -2666,8 +2816,11 @@ export function XDriveMediaGallery({
   onOpenMemory,
   onOpenDuplicateGroup,
   onOpenBurstReview,
+  onOpenPet,
   onOpenSuggestedPerson,
   onOpenPerson,
+  onReviewSuggestedPerson,
+  onAddSuggestedPersonToPerson,
   onAdoptSuggestedPerson,
   onRenamePerson,
   onTogglePersonHidden,
@@ -2704,6 +2857,11 @@ export function XDriveMediaGallery({
   const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false)
 
   const [showHiddenPeople, setShowHiddenPeople] = useState(false)
+  const [showDismissedSuggestions, setShowDismissedSuggestions] = useState(false)
+  const [suggestionReviewBusyID, setSuggestionReviewBusyID] =
+    useState<string | null>(null)
+  const [suggestionTargetDialog, setSuggestionTargetDialog] =
+    useState<MediaSuggestedPerson | null>(null)
   const [personNameDialog, setPersonNameDialog] = useState<{
     mode: 'adopt' | 'rename'
     suggestion?: MediaSuggestedPerson
@@ -2917,6 +3075,7 @@ export function XDriveMediaGallery({
     currentCleanupReview?.group.id,
     currentMemory?.id,
     currentPerson?.id,
+    currentPet?.id,
     currentSuggestedPerson?.id,
     section,
   ])
@@ -2939,6 +3098,7 @@ export function XDriveMediaGallery({
     !currentAlbum &&
     !currentSuggestedPerson &&
     !currentPerson &&
+    !currentPet &&
     !currentMemory &&
     !currentCleanupReview &&
     !activePlaceID
@@ -2961,11 +3121,21 @@ export function XDriveMediaGallery({
       ? currentCleanupReview.group.recommended_keep_node_id
       : currentCleanupReview.group.recommended_node_id
     : undefined
+  const pendingSuggestedPeople = suggestedPeople.filter(
+    (person) => !person.review_state,
+  )
+  const dismissedSuggestedPeople = suggestedPeople.filter(
+    (person) => person.review_state === 'dismissed',
+  )
+  const visibleSuggestedPeople = showDismissedSuggestions
+    ? [...pendingSuggestedPeople, ...dismissedSuggestedPeople]
+    : pendingSuggestedPeople
+
   const galleryTitle = currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
       ? '完全重复项'
       : '连拍精选'
-    : currentMemory?.title || currentAlbum?.name ||
+    : currentPet?.name || currentMemory?.title || currentAlbum?.name ||
     (currentPerson
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
@@ -2979,7 +3149,7 @@ export function XDriveMediaGallery({
             : section === 'albums'
             ? '相册'
             : section === 'people'
-              ? '人物'
+              ? '人物与宠物'
               : section === 'places'
                 ? '地点'
                 : section === 'favorites'
@@ -2993,6 +3163,8 @@ export function XDriveMediaGallery({
     ? currentCleanupReview.kind === 'duplicate'
       ? `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 个完全相同副本 · ${currentCleanupReview.group.recommendation_reason}`
       : `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 张连拍 · ${currentCleanupReview.group.recommendation_reason}`
+    : currentPet
+      ? `${currentPet.item_count.toLocaleString('zh-CN')} 张照片 · 本地视觉类型集合`
     : currentMemory
     ? currentMemory.subtitle || `${currentMemory.item_count.toLocaleString('zh-CN')} 个项目`
     : currentAlbum
@@ -3010,7 +3182,7 @@ export function XDriveMediaGallery({
             : section === 'albums'
             ? '手动相册、智能相册和导入相册'
             : section === 'people'
-              ? '已保存人物与本地人脸分析建议'
+              ? '已确认人物、待审核建议与本地宠物类型集合'
               : section === 'places'
                 ? '按照片本地 GPS 与本地地名索引浏览'
                 : section === 'favorites'
@@ -3024,6 +3196,7 @@ export function XDriveMediaGallery({
                     : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'
   const canBack = Boolean(
     currentCleanupReview ||
+    currentPet ||
     currentMemory ||
     currentAlbum ||
     currentSuggestedPerson ||
@@ -3190,7 +3363,7 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
       ) : null}
 
-      {showPhotoCollection && !isTrashSection && !currentMemory && !currentCleanupReview
+      {showPhotoCollection && !isTrashSection && !currentMemory && !currentPet && !currentCleanupReview
         ? filters
         : null}
 
@@ -3444,6 +3617,14 @@ export function XDriveMediaGallery({
         </Stack>
       ) : null}
 
+      {showPeopleIndex ? (
+        <XDriveMediaGalleryPets
+          pets={pets}
+          loadThumbnail={loadThumbnail}
+          onOpenPet={onOpenPet}
+        />
+      ) : null}
+
       {showPeopleIndex && people.length > 0 ? (
         <Box>
           <Stack
@@ -3455,7 +3636,7 @@ export function XDriveMediaGallery({
           >
             <Stack direction="row" spacing={0.75} alignItems="baseline">
               <Typography variant="subtitle1" fontWeight={700}>
-                人物
+                已确认人物
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 已保存的长期人物，不受自动聚类重建影响
@@ -3546,20 +3727,38 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {showPeopleIndex && suggestedPeople.length > 0 ? (
+      {showPeopleIndex && (
+        pendingSuggestedPeople.length > 0 ||
+        dismissedSuggestedPeople.length > 0
+      ) ? (
         <Box>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
-            spacing={0.75}
-            alignItems={{ xs: 'flex-start', sm: 'baseline' }}
+            spacing={1}
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+            justifyContent="space-between"
             sx={{ mb: 1.25 }}
           >
-            <Typography variant="subtitle1" fontWeight={700}>
-              人物建议
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              由本地人脸分析自动聚类；尚未写入手工人物标签
-            </Typography>
+            <Stack direction="row" spacing={0.75} alignItems="baseline">
+              <Typography variant="subtitle1" fontWeight={700}>
+                待确认建议
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                本地人脸聚类快照；确认后成为长期人物
+              </Typography>
+            </Stack>
+            {dismissedSuggestedPeople.length > 0 ? (
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    size="small"
+                    checked={showDismissedSuggestions}
+                    onChange={(event) => setShowDismissedSuggestions(event.target.checked)}
+                  />
+                )}
+                label="显示暂不处理"
+              />
+            ) : null}
           </Stack>
           <Box
             sx={{
@@ -3568,7 +3767,7 @@ export function XDriveMediaGallery({
               gap: 1.5,
             }}
           >
-            {suggestedPeople.map((person) => (
+            {visibleSuggestedPeople.map((person) => (
               <Paper
                 key={person.id}
                 variant="outlined"
@@ -3616,30 +3815,94 @@ export function XDriveMediaGallery({
                   />
                 </Box>
                 <Box sx={{ px: 1.5, py: 1.2 }}>
-                  <Typography variant="body2" fontWeight={650} noWrap>
-                    未命名人物
-                  </Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Typography variant="body2" fontWeight={650} noWrap sx={{ flex: 1 }}>
+                      未命名人物
+                    </Typography>
+                    {person.review_state === 'dismissed' ? (
+                      <Chip size="small" label="暂不处理" />
+                    ) : null}
+                  </Stack>
                   <Typography variant="caption" color="text.secondary">
                     {person.item_count.toLocaleString('zh-CN')} 张照片
                     {person.face_count !== person.item_count
                       ? ` · ${person.face_count.toLocaleString('zh-CN')} 张脸`
                       : ''}
                   </Typography>
-                  {onAdoptSuggestedPerson ? (
-                    <Button
-                      size="small"
-                      variant="text"
-                      sx={{ mt: 0.5, px: 0 }}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setPersonName('')
-                        setPersonDialogError('')
-                        setPersonNameDialog({ mode: 'adopt', suggestion: person })
-                      }}
-                    >
-                      保存为人物
-                    </Button>
-                  ) : null}
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    useFlexGap
+                    flexWrap="wrap"
+                    sx={{ mt: 0.5 }}
+                  >
+                    {person.review_state === 'dismissed' ? (
+                      onReviewSuggestedPerson ? (
+                        <Button
+                          size="small"
+                          variant="text"
+                          disabled={suggestionReviewBusyID === person.id}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSuggestionReviewBusyID(person.id)
+                            void onReviewSuggestedPerson(person, 'pending')
+                              .catch(() => undefined)
+                              .finally(() => setSuggestionReviewBusyID(null))
+                          }}
+                        >
+                          恢复
+                        </Button>
+                      ) : null
+                    ) : (
+                      <>
+                        {onAdoptSuggestedPerson ? (
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setPersonName('')
+                              setPersonDialogError('')
+                              setPersonNameDialog({ mode: 'adopt', suggestion: person })
+                            }}
+                          >
+                            保存为人物
+                          </Button>
+                        ) : null}
+                        {onAddSuggestedPersonToPerson &&
+                        people.some((value) => !value.hidden) ? (
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setPersonDialogError('')
+                              setSuggestionTargetDialog(person)
+                            }}
+                          >
+                            添加到已有人物
+                          </Button>
+                        ) : null}
+                        {onReviewSuggestedPerson ? (
+                          <Button
+                            size="small"
+                            variant="text"
+                            color="inherit"
+                            disabled={suggestionReviewBusyID === person.id}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setSuggestionReviewBusyID(person.id)
+                              void onReviewSuggestedPerson(person, 'dismissed')
+                                .catch(() => undefined)
+                                .finally(() => setSuggestionReviewBusyID(null))
+                            }}
+                          >
+                            暂不处理
+                          </Button>
+                        ) : null}
+                      </>
+                    )}
+                  </Stack>
                 </Box>
               </Paper>
             ))}
@@ -3844,7 +4107,11 @@ export function XDriveMediaGallery({
           <Typography color="text.secondary">没有带地点信息的照片</Typography>
         </Paper>
       ) : null}
-      {showPeopleIndex && people.length === 0 && suggestedPeople.length === 0 && !loading ? (
+      {showPeopleIndex &&
+      people.length === 0 &&
+      suggestedPeople.length === 0 &&
+      pets.length === 0 &&
+      !loading ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
           <Typography color="text.secondary">还没有可浏览的人物</Typography>
         </Paper>
@@ -4085,6 +4352,67 @@ export function XDriveMediaGallery({
             }}
           >
             保存
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(suggestionTargetDialog)}
+        onClose={() => !personDialogBusy && setSuggestionTargetDialog(null)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+      >
+        <XDriveDialogTitle
+          title="添加到已有人物"
+          subtitle="把这组自动聚类建议加入一个长期人物；原人物名称与 ID 保留。"
+          onClose={() => !personDialogBusy && setSuggestionTargetDialog(null)}
+        />
+        <XDriveDialogContent dividers>
+          <Stack spacing={0.75}>
+            {people
+              .filter((person) => !person.hidden)
+              .map((person) => (
+                <Button
+                  key={person.id}
+                  variant="outlined"
+                  disabled={personDialogBusy || !onAddSuggestedPersonToPerson}
+                  onClick={() => {
+                    if (!suggestionTargetDialog || !onAddSuggestedPersonToPerson) return
+                    setPersonDialogBusy(true)
+                    setPersonDialogError('')
+                    void onAddSuggestedPersonToPerson(
+                      suggestionTargetDialog,
+                      person,
+                    )
+                      .then(() => setSuggestionTargetDialog(null))
+                      .catch((personError) => {
+                        setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
+                      })
+                      .finally(() => setPersonDialogBusy(false))
+                  }}
+                  sx={{ justifyContent: 'space-between' }}
+                >
+                  <span>{person.name || '未命名人物'}</span>
+                  <span>{person.item_count.toLocaleString('zh-CN')} 张</span>
+                </Button>
+              ))}
+            {people.every((person) => person.hidden) ? (
+              <Typography variant="body2" color="text.secondary">
+                当前没有可用的已确认人物。
+              </Typography>
+            ) : null}
+            {personDialogError ? (
+              <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
+            ) : null}
+          </Stack>
+        </XDriveDialogContent>
+        <DialogActions>
+          <Button
+            disabled={personDialogBusy}
+            onClick={() => setSuggestionTargetDialog(null)}
+          >
+            取消
           </Button>
         </DialogActions>
       </Dialog>

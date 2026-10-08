@@ -21,11 +21,13 @@ const (
 )
 
 type mediaSuggestedPersonDTO struct {
-	ID          string     `json:"id"`
-	FaceCount   int64      `json:"face_count"`
-	ItemCount   int64      `json:"item_count"`
-	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ID             string     `json:"id"`
+	FaceCount      int64      `json:"face_count"`
+	ItemCount      int64      `json:"item_count"`
+	CoverNodeID    *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	ReviewState    string     `json:"review_state,omitempty"`
+	TargetPersonID *string    `json:"target_person_id,omitempty"`
 }
 
 func validMediaSuggestedPersonID(value string) bool {
@@ -42,6 +44,15 @@ func validMediaSuggestedPersonID(value string) bool {
 }
 
 func (s *Server) listMediaSuggestedPeople(c *gin.Context) {
+	includeReviewed := false
+	if raw := strings.TrimSpace(c.Query("include_reviewed")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "include_reviewed must be true or false")
+			return
+		}
+		includeReviewed = value
+	}
 	limit := mediaSuggestedPeopleDefaultLimit
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -52,10 +63,11 @@ func (s *Server) listMediaSuggestedPeople(c *gin.Context) {
 		limit = value
 	}
 
-	items, err := queryMediaSuggestedPeople(
+	items, err := queryMediaSuggestedPeopleWithReview(
 		c.Request.Context(),
 		s.DB,
 		userID(c),
+		includeReviewed,
 		limit,
 	)
 	if err != nil {
@@ -72,6 +84,16 @@ func queryMediaSuggestedPeople(
 	ownerID uint64,
 	limit int,
 ) ([]mediaSuggestedPersonDTO, error) {
+	return queryMediaSuggestedPeopleWithReview(ctx, db, ownerID, false, limit)
+}
+
+func queryMediaSuggestedPeopleWithReview(
+	ctx context.Context,
+	db *gorm.DB,
+	ownerID uint64,
+	includeReviewed bool,
+	limit int,
+) ([]mediaSuggestedPersonDTO, error) {
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("suggested people query is not configured")
 	}
@@ -80,14 +102,16 @@ func queryMediaSuggestedPeople(
 	}
 
 	type row struct {
-		ID          string
-		FaceCount   int64
-		ItemCount   int64
-		CoverNodeID *uint64
-		UpdatedAt   *time.Time
+		ID             string
+		FaceCount      int64
+		ItemCount      int64
+		CoverNodeID    *uint64
+		UpdatedAt      *time.Time
+		ReviewState    string
+		TargetPersonID *string
 	}
 	var rows []row
-	if err := db.WithContext(ctx).
+	query := db.WithContext(ctx).
 		Table("xd_photo_person_clusters AS pc").
 		Select(
 			"pc.cluster_key AS id, "+
@@ -100,7 +124,9 @@ func queryMediaSuggestedPeople(
 				"WHERE pcf_cover.cluster_id = pc.id AND pa_cover.owner_id = pc.owner_id "+
 				"ORDER BY pcf_cover.confidence DESC, pf_cover.confidence DESC, pf_cover.id ASC "+
 				"LIMIT 1) AS cover_node_id, "+
-				"MAX(pcf.updated_at) AS updated_at",
+				"MAX(pcf.updated_at) AS updated_at, "+
+				"COALESCE(review.state, '') AS review_state, "+
+				"target_person.person_key AS target_person_id",
 		).
 		Joins(
 			"JOIN xd_photo_person_cluster_states AS pcs ON pcs.owner_id = pc.owner_id "+
@@ -119,8 +145,23 @@ func queryMediaSuggestedPeople(
 		Joins(
 			"JOIN xd_nodes AS n ON n.id = pa.primary_node_id AND n.deleted_at IS NULL",
 		).
-		Where("pc.owner_id = ?", ownerID).
-		Group("pc.id, pc.cluster_key, pc.owner_id").
+		Joins(
+			"LEFT JOIN xd_photo_person_suggestion_reviews AS review "+
+				"ON review.owner_id = pc.owner_id AND review.suggestion_key = pc.cluster_key",
+		).
+		Joins(
+			"LEFT JOIN xd_photo_people AS target_person "+
+				"ON target_person.id = review.target_person_id "+
+				"AND target_person.owner_id = pc.owner_id",
+		).
+		Where("pc.owner_id = ?", ownerID)
+	if !includeReviewed {
+		query = query.Where("review.suggestion_key IS NULL")
+	}
+	if err := query.
+		Group(
+			"pc.id, pc.cluster_key, pc.owner_id, review.state, target_person.person_key",
+		).
 		Order(
 			"item_count DESC, face_count DESC, updated_at DESC NULLS LAST, pc.cluster_key ASC",
 		).
@@ -135,11 +176,13 @@ func queryMediaSuggestedPeople(
 			continue
 		}
 		out = append(out, mediaSuggestedPersonDTO{
-			ID:          row.ID,
-			FaceCount:   row.FaceCount,
-			ItemCount:   row.ItemCount,
-			CoverNodeID: row.CoverNodeID,
-			UpdatedAt:   row.UpdatedAt,
+			ID:             row.ID,
+			FaceCount:      row.FaceCount,
+			ItemCount:      row.ItemCount,
+			CoverNodeID:    row.CoverNodeID,
+			UpdatedAt:      row.UpdatedAt,
+			ReviewState:    row.ReviewState,
+			TargetPersonID: row.TargetPersonID,
 		})
 	}
 	return out, nil

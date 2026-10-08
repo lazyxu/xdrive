@@ -16,6 +16,7 @@ const sharedGalleryFilters = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFil
 const sharedGalleryNavigation = read('ui', 'shared', 'src', 'mui', 'MediaGalleryNavigation.tsx')
 const sharedGalleryMemories = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMemories.tsx')
 const sharedGalleryCleanup = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCleanup.tsx')
+const sharedGalleryPets = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPets.tsx')
 const sharedGalleryPlacesMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMap.tsx')
 const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMapModel.ts')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
@@ -36,6 +37,7 @@ const sharedGallery = [
   sharedGalleryNavigation,
   sharedGalleryMemories,
   sharedGalleryCleanup,
+  sharedGalleryPets,
   sharedGalleryPlacesMap,
   sharedGalleryPlacesMapModel,
   sharedGallerySelectionToolbar,
@@ -128,7 +130,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 })
 
 test('Gallery IA keeps photo browsing primary and moves advanced controls behind shared navigation', () => {
-  for (const label of ['图库', '回忆', '人物', '地点', '相册', '收藏', '媒体类型', '清理建议', '回收站']) {
+  for (const label of ['图库', '回忆', '人物与宠物', '地点', '相册', '收藏', '媒体类型', '清理建议', '回收站']) {
     assert.ok(sharedGalleryNavigation.includes(label), 'Gallery navigation missing: ' + label)
   }
   assert.match(sharedGalleryNavigation, /value: 'memories'/)
@@ -161,6 +163,23 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
     '删除操作仍然先进入回收站',
   ]) {
     assert.ok(sharedGallery.includes(token), `Gallery cleanup contract missing: ${token}`)
+  }
+  for (const token of [
+    'XDriveMediaGalleryPets',
+    'data-xdrive-media-gallery-pets',
+    "kind: 'pet'",
+    "case 'pet':",
+    'source.listPetItemRange',
+    '本地视觉类型集合',
+    '待确认建议',
+    '暂不处理',
+    '添加到已有人物',
+    'showDismissedSuggestions',
+    "review_state === 'dismissed'",
+    "onReviewSuggestedPerson(person, 'pending')",
+    "onReviewSuggestedPerson(person, 'dismissed')",
+  ]) {
+    assert.ok(sharedGallery.includes(token), `Gallery People/Pets contract missing: ${token}`)
   }
   assert.match(sharedGalleryFilters, /export function XDriveMediaGalleryFilterToolbar/)
   assert.match(sharedGalleryFilters, /<Popover/)
@@ -453,10 +472,10 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /attribution_url\?: string/)
   assert.match(sharedGallery, /按本地 GPS 坐标近似聚合，不使用在线地理服务/)
   assert.match(sharedGallery, /地点名称来自本地 GeoNames 数据/)
-  assert.match(sharedGallery, /人物建议/)
-  assert.match(sharedGallery, /自动聚类建议/)
-  assert.match(sharedGallery, /尚未写入手工人物标签/)
-  assert.match(sharedGallery, /已保存的长期人物/)
+  assert.match(sharedGallery, /待确认建议/)
+  assert.match(sharedGallery, /本地人脸聚类快照；确认后成为长期人物/)
+  assert.match(sharedGallery, /暂不处理/)
+  assert.match(sharedGallery, /已确认人物/)
   assert.match(sharedGallery, /保存为人物/)
   assert.match(sharedGallery, /重命名人物/)
   assert.match(sharedGallery, /合并人物/)
@@ -503,6 +522,7 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
     'listMemoryItemRange:',
     'listDuplicateItemRange:',
     'listBurstReviewItemRange:',
+    'listPetItemRange:',
     'listAlbumItemRange:',
   ]) {
     assert.ok(sharedGalleryAdapter.includes(token), `shared Gallery range adapter missing: ${token}`)
@@ -519,7 +539,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /category/)
   assert.match(desktopIPC, /Category/)
 
-  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaPets()', 'mediaPetItemRange(', 'mediaSuggestedPeopleWithReview(', 'reviewMediaSuggestedPerson(', 'addMediaSuggestedPersonToPerson(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotion(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
@@ -535,7 +555,11 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'api.mediaDuplicateItemRange(',
     'api.mediaBurstReviews(',
     'api.mediaBurstReviewItemRange(',
-    'api.mediaSuggestedPeople(',
+    'api.mediaPets(',
+    'api.mediaPetItemRange(',
+    'api.mediaSuggestedPeopleWithReview(',
+    'api.reviewMediaSuggestedPerson(',
+    'api.addMediaSuggestedPersonToPerson(',
     'api.mediaSuggestedPersonItems(',
     'api.mediaSuggestedPersonItemRange(',
     'api.mediaPeople(',
@@ -578,6 +602,11 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'getMediaDuplicateItemRange:',
     'getMediaBurstReviews:',
     'getMediaBurstReviewItemRange:',
+    'getMediaPets:',
+    'getMediaPetItemRange:',
+    'getMediaSuggestedPeopleWithReview:',
+    'reviewMediaSuggestedPerson:',
+    'addMediaSuggestedPersonToPerson:',
     'getMediaSuggestedPeople:',
     'getMediaSuggestedPersonItems:',
     'getMediaSuggestedPersonItemRange:',
@@ -621,6 +650,11 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'mediaDuplicateItemRange(',
     'mediaBurstReviews(',
     'mediaBurstReviewItemRange(',
+    'mediaPets()',
+    'mediaPetItemRange(',
+    'mediaSuggestedPeopleWithReview(',
+    'reviewMediaSuggestedPerson(',
+    'addMediaSuggestedPersonToPerson(',
     'mediaSuggestedPeople(',
     'mediaSuggestedPersonItems(',
     'mediaSuggestedPersonItemRange(',
@@ -669,6 +703,10 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('GET /v1/media/duplicate-items'))
   assert.ok(desktopIPC.includes('GET /v1/media/bursts'))
   assert.ok(desktopIPC.includes('GET /v1/media/burst-items'))
+  assert.ok(desktopIPC.includes('GET /v1/media/pets'))
+  assert.ok(desktopIPC.includes('GET /v1/media/pet-items'))
+  assert.ok(desktopIPC.includes('PATCH /v1/media/people/suggestion-review'))
+  assert.ok(desktopIPC.includes('POST /v1/media/people/add-suggestion'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestions'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/suggestion-items'))
   assert.ok(desktopIPC.includes('GET /v1/media/people/identities'))

@@ -32,7 +32,11 @@ export function createDesktopMediaGalleryDataSource(
     listBurstReviews: (limit = 24) => agent.getMediaBurstReviews(limit),
     listBurstReviewItemRange: (burstID, limit, offset) =>
       agent.getMediaBurstReviewItemRange(burstID, limit, offset),
-    listSuggestedPeople: (limit = 24) => agent.getMediaSuggestedPeople(limit),
+    listPets: () => agent.getMediaPets(),
+    listPetItemRange: (petKind, limit, offset) =>
+      agent.getMediaPetItemRange(petKind, limit, offset),
+    listSuggestedPeople: (includeReviewed = false, limit = 24) =>
+      agent.getMediaSuggestedPeopleWithReview(includeReviewed, limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       agent.getMediaSuggestedPersonItems(personID, limit, offset, query),
     listSuggestedPersonItemRange: (personID, limit, offset, query) =>
@@ -43,6 +47,14 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaPersonItems(personID, limit, offset, query),
     listPersonItemRange: (personID, limit, offset, query) =>
       agent.getMediaPersonItemRange(personID, limit, offset, query),
+    reviewSuggestedPerson: (suggestionID, state) =>
+      agent.reviewMediaSuggestedPerson(suggestionID, state),
+    addSuggestedPersonToPerson: (suggestionID, personID, revision) =>
+      agent.addMediaSuggestedPersonToPerson(
+        suggestionID,
+        personID,
+        revision,
+      ),
     adoptSuggestedPerson: (suggestionID, name) =>
       agent.adoptMediaSuggestedPerson(suggestionID, name),
     updatePerson: (personID, revision, input) =>

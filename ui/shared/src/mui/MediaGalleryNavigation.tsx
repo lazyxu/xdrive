@@ -21,7 +21,7 @@ type GallerySectionOption = {
 const gallerySections: GallerySectionOption[] = [
   { value: 'library', label: '图库' },
   { value: 'memories', label: '回忆' },
-  { value: 'people', label: '人物' },
+  { value: 'people', label: '人物与宠物' },
   { value: 'places', label: '地点' },
   { value: 'albums', label: '相册' },
   { value: 'favorites', label: '收藏' },

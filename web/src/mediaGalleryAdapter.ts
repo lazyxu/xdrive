@@ -31,7 +31,11 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listBurstReviews: (limit = 24) => api.mediaBurstReviews(limit),
     listBurstReviewItemRange: (burstID, limit, offset) =>
       api.mediaBurstReviewItemRange(burstID, limit, offset),
-    listSuggestedPeople: (limit = 24) => api.mediaSuggestedPeople(limit),
+    listPets: () => api.mediaPets(),
+    listPetItemRange: (petKind, limit, offset) =>
+      api.mediaPetItemRange(petKind, limit, offset),
+    listSuggestedPeople: (includeReviewed = false, limit = 24) =>
+      api.mediaSuggestedPeopleWithReview(includeReviewed, limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       api.mediaSuggestedPersonItems(personID, limit, offset, query),
     listSuggestedPersonItemRange: (personID, limit, offset, query) =>
@@ -42,6 +46,14 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
       api.mediaPersonItems(personID, limit, offset, query),
     listPersonItemRange: (personID, limit, offset, query) =>
       api.mediaPersonItemRange(personID, limit, offset, query),
+    reviewSuggestedPerson: (suggestionID, state) =>
+      api.reviewMediaSuggestedPerson(suggestionID, state),
+    addSuggestedPersonToPerson: (suggestionID, personID, revision) =>
+      api.addMediaSuggestedPersonToPerson(
+        suggestionID,
+        personID,
+        revision,
+      ),
     adoptSuggestedPerson: (suggestionID, name) =>
       api.adoptMediaSuggestedPerson(suggestionID, name),
     updatePerson: (personID, revision, input) =>

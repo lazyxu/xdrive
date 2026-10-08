@@ -27,6 +27,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaPetFacet,
+  MediaPersonSuggestionReview,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -792,8 +794,32 @@ export class XDriveApi {
     )
   }
 
-  mediaSuggestedPeople(limit = 24) {
+  mediaPets() {
+    return this.request<MediaPetFacet[]>('/api/v1/media/pets')
+  }
+
+  mediaPetItemRange(
+    petKind: string,
+    limit = 200,
+    offset = 0,
+  ) {
     const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItemRange>(
+      `/api/v1/media/pets/${encodeURIComponent(petKind)}/items?${query.toString()}`,
+    )
+  }
+
+  mediaSuggestedPeople(limit = 24) {
+    return this.mediaSuggestedPeopleWithReview(false, limit)
+  }
+
+  mediaSuggestedPeopleWithReview(includeReviewed = false, limit = 24) {
+    const query = new URLSearchParams({
+      include_reviewed: String(includeReviewed),
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
     })
     return this.request<MediaSuggestedPerson[]>(
@@ -834,6 +860,33 @@ export class XDriveApi {
   }
 
 
+
+  reviewMediaSuggestedPerson(
+    suggestionID: string,
+    state: 'pending' | 'dismissed',
+  ) {
+    return this.request<MediaPersonSuggestionReview>(
+      `/api/v1/media/people/suggestions/${encodeURIComponent(suggestionID)}/review`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ state }),
+      },
+    )
+  }
+
+  addMediaSuggestedPersonToPerson(
+    suggestionID: string,
+    personID: string,
+    revision: number,
+  ) {
+    return this.request<MediaPersonIdentity>(
+      `/api/v1/media/people/identities/${encodeURIComponent(personID)}/suggestions/${encodeURIComponent(suggestionID)}`,
+      {
+        method: 'POST',
+        headers: { 'If-Match': `"${revision}"` },
+      },
+    )
+  }
 
   mediaPeople(includeHidden = false, limit = 100, offset = 0) {
     const query = new URLSearchParams({

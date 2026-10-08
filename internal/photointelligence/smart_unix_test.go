@@ -45,7 +45,7 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 				}
 				_ = json.NewEncoder(w).Encode(SmartAnalysisResult{
 					Labels: []SmartVisualLabel{
-						{Label: "beach", Confidence: 0.8},
+						{Index: 978, Label: "beach", Confidence: 0.8},
 					},
 					OCRText:     "上海",
 					OCRLanguage: "zh-en",

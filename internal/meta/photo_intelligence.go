@@ -158,6 +158,37 @@ type PhotoPersonAsset struct {
 
 func (PhotoPersonAsset) TableName() string { return "xd_photo_person_assets" }
 
+const (
+	PhotoPersonSuggestionReviewStateDismissed = "dismissed"
+	PhotoPersonSuggestionReviewStateAccepted  = "accepted"
+)
+
+type PhotoPersonSuggestionReview struct {
+	OwnerID        uint64  `gorm:"primaryKey;autoIncrement:false"`
+	SuggestionKey  string  `gorm:"primaryKey;size:128"`
+	State          string  `gorm:"size:16;not null;index"`
+	TargetPersonID *uint64 `gorm:"index"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+
+	Owner        User         `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	TargetPerson *PhotoPerson `gorm:"foreignKey:TargetPersonID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+}
+
+func (PhotoPersonSuggestionReview) TableName() string {
+	return "xd_photo_person_suggestion_reviews"
+}
+
+func ValidPhotoPersonSuggestionReviewState(state string) bool {
+	switch state {
+	case PhotoPersonSuggestionReviewStateDismissed,
+		PhotoPersonSuggestionReviewStateAccepted:
+		return true
+	default:
+		return false
+	}
+}
+
 type PhotoPlaceLabel struct {
 	AssetID         uint64  `gorm:"primaryKey;autoIncrement:false"`
 	Resolver        string  `gorm:"size:64;not null;index"`
@@ -183,6 +214,7 @@ type PhotoVisualLabel struct {
 	ID         uint64  `gorm:"primaryKey"`
 	AssetID    uint64  `gorm:"not null;index;uniqueIndex:idx_xd_photo_visual_labels_asset_label,priority:1"`
 	Label      string  `gorm:"size:128;not null;index;uniqueIndex:idx_xd_photo_visual_labels_asset_label,priority:2"`
+	LabelIndex int     `gorm:"not null;default:-1;index"`
 	Confidence float64 `gorm:"not null;default:0;index"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time

@@ -24,6 +24,11 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	baseSQLDB, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseSQLDB.Close()
 	schema := "media_suggested_people_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -43,6 +48,11 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
@@ -52,6 +62,7 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPersonSuggestionReview{},
 		&meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
 	); err != nil {
 		t.Fatal(err)
@@ -226,6 +237,54 @@ func TestSuggestedPeopleReadyProjectionAndItems(t *testing.T) {
 		context.Background(), db, other.ID, clusterKey,
 	); err != gorm.ErrRecordNotFound {
 		t.Fatalf("cross-owner cluster lookup err=%v", err)
+	}
+
+	reviewedAt := now.Add(time.Second)
+	if err := upsertMediaPersonSuggestionReview(
+		db,
+		owner.ID,
+		clusterKey,
+		meta.PhotoPersonSuggestionReviewStateDismissed,
+		nil,
+		reviewedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	suggestions, err = queryMediaSuggestedPeople(
+		context.Background(), db, owner.ID, 24,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestions) != 0 {
+		t.Fatalf("dismissed suggestion leaked into default list: %+v", suggestions)
+	}
+	reviewed, err := queryMediaSuggestedPeopleWithReview(
+		context.Background(), db, owner.ID, true, 24,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviewed) != 1 ||
+		reviewed[0].ID != clusterKey ||
+		reviewed[0].ReviewState != meta.PhotoPersonSuggestionReviewStateDismissed {
+		t.Fatalf("reviewed suggestions=%+v", reviewed)
+	}
+	if err := db.Where(
+		"owner_id = ? AND suggestion_key = ?",
+		owner.ID,
+		clusterKey,
+	).Delete(&meta.PhotoPersonSuggestionReview{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	suggestions, err = queryMediaSuggestedPeople(
+		context.Background(), db, owner.ID, 24,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestions) != 1 {
+		t.Fatalf("restored suggestion missing: %+v", suggestions)
 	}
 
 	server := &Server{DB: db}

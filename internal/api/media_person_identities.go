@@ -466,6 +466,17 @@ func (s *Server) adoptMediaSuggestedPerson(c *gin.Context) {
 		if err := tx.Create(&rows).Error; err != nil {
 			return err
 		}
+		targetID := person.ID
+		if err := upsertMediaPersonSuggestionReview(
+			tx,
+			userID(c),
+			clusterID,
+			meta.PhotoPersonSuggestionReviewStateAccepted,
+			&targetID,
+			now,
+		); err != nil {
+			return err
+		}
 		createdKey = person.PersonKey
 		return nil
 	})
@@ -696,6 +707,18 @@ func (s *Server) mergeMediaPersonIdentities(c *gin.Context) {
 			sourceNumericIDs = append(sourceNumericIDs, source.ID)
 		}
 		if len(sourceNumericIDs) != 0 {
+			if err := tx.Model(&meta.PhotoPersonSuggestionReview{}).
+				Where(
+					"owner_id = ? AND target_person_id IN ?",
+					userID(c),
+					sourceNumericIDs,
+				).
+				Updates(map[string]any{
+					"target_person_id": target.ID,
+					"updated_at":       now,
+				}).Error; err != nil {
+				return err
+			}
 			if err := tx.Where("id IN ?", sourceNumericIDs).
 				Delete(&meta.PhotoPerson{}).Error; err != nil {
 				return err

@@ -549,12 +549,28 @@ export interface MediaBurstReviewList {
   physical_reclaimable_bytes: number
 }
 
+export interface MediaPetFacet {
+  id: 'dog' | 'cat' | string
+  name: string
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export interface MediaPersonSuggestionReview {
+  id: string
+  review_state?: 'dismissed' | 'accepted' | string
+  target_person_id?: string
+}
+
 export interface MediaSuggestedPerson {
   id: string
   face_count: number
   item_count: number
   cover_node_id?: number
   updated_at?: string
+  review_state?: 'dismissed' | 'accepted' | string
+  target_person_id?: string
 }
 
 export interface MediaPersonIdentity {

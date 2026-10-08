@@ -41,9 +41,9 @@ func TestValidateSmartAnalyzerInfo(t *testing.T) {
 func TestValidateSmartAnalysisResultNormalizesLabels(t *testing.T) {
 	got, err := ValidateSmartAnalysisResult(SmartAnalysisResult{
 		Labels: []SmartVisualLabel{
-			{Label: " golden retriever ", Confidence: 0.8},
-			{Label: "Golden Retriever", Confidence: 0.9},
-			{Label: "beach", Confidence: 0.7},
+			{Index: 207, Label: " golden retriever ", Confidence: 0.8},
+			{Index: 207, Label: "Golden Retriever", Confidence: 0.9},
+			{Index: 978, Label: "beach", Confidence: 0.7},
 		},
 		OCRText:     "  上海 2026  ",
 		OCRLanguage: "zh-en",
@@ -52,6 +52,7 @@ func TestValidateSmartAnalysisResultNormalizesLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(got.Labels) != 2 ||
+		got.Labels[0].Index != 207 ||
 		got.Labels[0].Label != "Golden Retriever" ||
 		got.OCRText != "上海 2026" {
 		t.Fatalf("result=%+v", got)
@@ -64,5 +65,16 @@ func TestValidateSmartAnalysisResultRejectsOversizedOCR(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("oversized OCR text was accepted")
+	}
+}
+
+func TestValidateSmartAnalysisResultRejectsInvalidLabelIndex(t *testing.T) {
+	_, err := ValidateSmartAnalysisResult(SmartAnalysisResult{
+		Labels: []SmartVisualLabel{
+			{Index: 1000, Label: "invalid", Confidence: 0.8},
+		},
+	})
+	if err == nil {
+		t.Fatal("invalid visual label index was accepted")
 	}
 }
