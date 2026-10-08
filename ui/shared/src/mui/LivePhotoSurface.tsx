@@ -38,6 +38,7 @@ export type XDriveLivePhotoMotionLoader = (
 
 export type XDriveLivePhotoSurfaceProps = {
   still: ReactNode
+  stillReady?: boolean
   loadMotion?: XDriveLivePhotoMotionLoader
   label?: string
 }
@@ -62,6 +63,7 @@ function livePhotoProgressPercent(loadedBytes: number, totalBytes?: number) {
 
 export function XDriveLivePhotoSurface({
   still,
+  stillReady = true,
   loadMotion,
   label = '实况照片',
 }: XDriveLivePhotoSurfaceProps) {
@@ -164,10 +166,11 @@ export function XDriveLivePhotoSurface({
   }, [failed, loadMotion])
 
   const beginHold = useCallback(() => {
+    if (!stillReady) return
     holdActiveRef.current = true
     if (motionURLRef.current) playLoadedMotion()
     else requestMotion()
-  }, [playLoadedMotion, requestMotion])
+  }, [playLoadedMotion, requestMotion, stillReady])
 
   const endHold = useCallback(() => {
     holdActiveRef.current = false
@@ -251,6 +254,7 @@ export function XDriveLivePhotoSurface({
       aria-label={`${label}。按住播放，松开停止。`}
       aria-pressed={playing}
       aria-busy={loading}
+      aria-disabled={!stillReady || undefined}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerRelease}
       onPointerCancel={handlePointerRelease}
@@ -267,7 +271,7 @@ export function XDriveLivePhotoSurface({
         minHeight: 0,
         overflow: 'hidden',
         bgcolor: 'black',
-        cursor: loadMotion && !failed ? 'pointer' : 'default',
+        cursor: stillReady && loadMotion && !failed ? 'pointer' : 'default',
         userSelect: 'none',
         touchAction: 'pan-y pinch-zoom',
         outline: 'none',
@@ -319,7 +323,7 @@ export function XDriveLivePhotoSurface({
         />
       ) : null}
 
-      <Chip
+      {stillReady ? <Chip
         size="small"
         icon={
           loading ? (
@@ -343,7 +347,7 @@ export function XDriveLivePhotoSurface({
           backdropFilter: 'blur(8px)',
           '& .MuiChip-icon': { color: 'inherit' },
         }}
-      />
+      /> : null}
 
       {loading ? (
         <Box

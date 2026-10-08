@@ -185,6 +185,43 @@ again merely because the caller recreated a target object or inline loader callb
 node/revision/preview-kind change starts a new preview generation and keeps the existing
 stale-completion fencing and blob URL cleanup rules.
 
+Image source readiness and image presentation readiness are separate. The shared
+`FilePreviewImage` renderer starts the existing original and thumbnail loaders independently;
+a slow original ticket or byte stream must not block the first thumbnail. Each image stays
+in a hidden layer until that very DOM image element has loaded and `decode()` has resolved
+(or a successful load with valid intrinsic dimensions on runtimes without `decode()`).
+The decoded thumbnail remains mounted and visible until the original is ready. The handoff
+changes visibility in one React commit, without a timer, fade, detached original preloader,
+second original request, or unmount/remount of the displayed thumbnail. A thumbnail arriving
+after the original cannot downgrade the displayed image.
+
+Source acquisition also observes whether a loader is available. If Web metadata supplies
+the thumbnail loader after the same target has mounted, that previously unavailable role
+starts once without restarting the original. Recreated callback functions do not reload
+either role, and a completed failure does not become an implicit retry.
+
+The renderer retains at most two image sources for the current target. A real node,
+revision, or preview-kind change starts a fresh surface; it never labels another file's old
+image as the new target. With no decoded frame available, loading remains visible until
+the first usable frame. Original failure may keep the decoded thumbnail; failure of both
+sources preserves the consumer's failure content (or an explicit image-preview failure).
+This does not change list/grid thumbnail error behavior or replace failed thumbnails with
+generic icons. Closing/replacing the surface fences late source/decode completions and
+releases its owned blob URLs, including URLs returned after close. The existing string
+loader contract does not propagate AbortSignal to ticket/thumbnail requests; this is not
+a claim that every outstanding transport request is aborted.
+
+Edited image presentation draws from the same decoded DOM image, before paint, through
+`FilePreviewTransformedMedia`. It must not fetch the original again for the canvas, or
+redraw canvas pixels for viewport-only zoom/pan while the decoded source and recipe
+reference are unchanged. A new decoded source or an edit recipe change still redraws
+the canvas; semantic memoization of recreated recipe objects remains separate work.
+
+Validated single-file LIVP stills use the same handoff. Its internal Live Photo wrapper
+stays mounted and receives explicit still readiness: the glyph and hold action become
+available only after a real still is decoded. Gallery-owned wrappers for paired files
+retain their separate media-semantic composition contract.
+
 If the browser/Electron runtime cannot decode the original image, it may fall back to
 the existing thumbnail loader. This is particularly important for formats with uneven
 native runtime support.

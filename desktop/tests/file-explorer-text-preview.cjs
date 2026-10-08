@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const preview = read('ui', 'shared', 'src', 'file-preview.ts')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
+const previewImage = read('ui', 'shared', 'src', 'mui', 'FilePreviewImage.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webExplorer = read('web', 'src', 'WebFileExplorer.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
@@ -69,7 +70,7 @@ test('shared Preview Engine owns classification and renderer surface', () => {
     'export function XDriveFilePreviewSurface',
     'data-xdrive-file-preview-kind',
     'component="pre"',
-    'component="img"',
+    '<XDriveDecodedImagePreview',
     'component="video"',
     'component="audio"',
     'component="iframe"',
@@ -167,7 +168,8 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   assert.ok(desktopIndexHTML.includes("img-src 'self' data: blob: http://127.0.0.1:*"), 'Desktop CSP must allow local Blob thumbnails plus loopback original-image preview without arbitrary remote images')
   assert.equal(desktopIndexHTML.includes("img-src *"), false, 'Desktop CSP must not allow arbitrary image origins')
   assert.equal(desktopIndexHTML.includes("img-src https:"), false, 'Desktop CSP must not allow arbitrary remote HTTPS images')
-  assert.ok(previewSurface.includes('onError={loadImageFallback}'), 'Image renderer must fall back to the thumbnail loader on decode failure')
-  assert.ok(previewSurface.includes('setUsingImageFallback(true)'), 'Image renderer must track the thumbnail fallback state')
+  assert.ok(previewImage.includes('component="img"'), 'shared image renderer must own the decoded image elements')
+  // Decode failure, thumbnail fallback and source ownership are exercised by
+  // shared-image-preview-decode.cjs against the mounted React component.
 
 })

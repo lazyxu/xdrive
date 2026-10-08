@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { Box } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform } from '../file-preview'
 
@@ -21,12 +21,14 @@ function transformScale(transform: XDriveFilePreviewMediaTransform) {
 
 export function XDriveTransformedImagePreview({
   src,
+  decodedImage,
   alt,
   transform,
   viewportTransform = '',
   onError,
 }: {
   src: string
+  decodedImage?: HTMLImageElement
   alt: string
   transform: XDriveFilePreviewMediaTransform
   viewportTransform?: string
@@ -34,11 +36,11 @@ export function XDriveTransformedImagePreview({
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true
-    const image = new Image()
+    const image = decodedImage || new Image()
     image.decoding = 'async'
-    image.onload = () => {
+    const draw = () => {
       if (!active || !canvasRef.current) return
       const sourceWidth = image.naturalWidth
       const sourceHeight = image.naturalHeight
@@ -101,6 +103,11 @@ export function XDriveTransformedImagePreview({
       )
       context.restore()
     }
+    if (decodedImage) {
+      draw()
+      return () => { active = false }
+    }
+    image.onload = draw
     image.onerror = () => {
       if (active) onError?.()
     }
@@ -110,7 +117,7 @@ export function XDriveTransformedImagePreview({
       image.onload = null
       image.onerror = null
     }
-  }, [alt, onError, src, transform])
+  }, [alt, decodedImage, onError, src, transform])
 
   return (
     <Box

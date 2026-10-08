@@ -373,3 +373,75 @@ Benchmark harness correction:
 - timings from that invalid attempt are not used as baseline evidence.
 
 Decision: **Accepted / no production code change.** After the #981 first-open scheduling fix, the synthetic 100k Gallery does not reproduce a multi-second delay before the first real image appears. The next useful investigation, if real installations still report a long blank/placeholder phase, is an integrated Web/Desktop renderer navigation trace from Gallery route activation through first decoded image paint on a real-sized media fixture. That trace should measure actual React commit / image decode / paint timing and treat one-time Chromium video-decoder initialization separately from ordinary Gallery first-media visibility.
+
+## Viewer first-image decode handoff (2026-10-08)
+
+Status: **Accepted / measured presentation contract; wall-clock speedup unmeasured.**
+
+This is a per-Viewer first-frame boundary, separate from the 100k Gallery range/thumbnail
+workloads above. Baseline: `c27731ec05cafe6ac8fc55aeed807154fe4e689a`, including the
+already-merged #1028 equivalent-parent-rerender source-lifecycle fix.
+
+Named workload: **viewer-image-decode-handoff-v1**. The real shared React/MUI
+`FilePreviewSurface` runs in Chromium **153.0.8010.0**, with a 500 × 500 CSS-pixel
+media surface inside a 600 × 600 browser viewport, a real red 80 × 80 PNG thumbnail
+and a blue 400 × 400 PNG original served
+over localhost with `Cache-Control: no-store`. Original-ticket resolution is controlled;
+the actual mounted image's native `decode()` completes before a controlled promise gate
+is released. Cases cover ordinary images, a 90-degree edited canvas, single-file LIVP
+still composition, replacement during decode, closing during decode and late ticket
+completion. This is not a full application/Electron navigation trace or a slow-device
+latency benchmark.
+
+Acceptance criteria, established before the fix: show an available thumbnail while the
+original is pending; never expose the original before its decode gate resolves; preserve
+the visible thumbnail element through handoff; fetch each original at most once; retain
+stale-result/close cleanup and true failure behavior. The deliberate resource cost is
+at most one thumbnail load in addition to the one original load, and at most two image
+source layers for the active target. There is no neighboring-original prefetch.
+
+Sample count: **5 paired baseline/current browser runs**, with **21 checks per run**.
+All baseline runs reproduced the same failures; all current runs passed. A final run of
+the committed portable harness also passed after the stable canvas-error-callback fix.
+The five pairs were repeated against the final source after the late-loader availability
+fix; the browser results below reflect that final run set.
+
+| Metric | BEFORE | AFTER | Delta / decision |
+| --- | --- | --- | --- |
+| Presentation/lifecycle checks passed, each of 5 runs | 10 / 21 | 21 / 21 | +11 checks; accepted |
+| Thumbnail displayed before original ticket resolves | No | Yes | No serialized wait for the original |
+| Thumbnail retained until mounted original decode resolves | No | Yes | Same thumbnail DOM element remains mounted |
+| Ordinary / edited / LIVP original HTTP requests per case | 1 / 1 / 1 | 1 / 1 / 1 | No duplicate original request |
+| Thumbnail HTTP requests per successful preview case | 0 | 1 | Explicit bounded cost for the first-frame underlay |
+| Browser exceptions, all 5 runs | 0 | 0 | No new runtime errors |
+| Canvas draws: initial / viewport change / equivalent rerender, unchanged recipe reference | 1 / 2 / 3 in the rejected first implementation | 1 / 1 / 1 | Regression fixed before delivery; actual recipe change still redraws |
+
+The canvas row records a separately reproduced implementation regression, not a speed
+comparison with the original baseline. The Node behavior suite also covers original
+decode failure with a valid thumbnail, both sources failing, late thumbnail completion
+after the original, equivalent parent callbacks, revision replacement, and blob cleanup.
+A separate first-red/green case covers Web metadata supplying the thumbnail loader after
+the Viewer mounts: the thumbnail must then become visible while the same original remains
+pending, with exactly one original loader call.
+
+Reproduction commands:
+
+```bash
+node --test desktop/tests/shared-image-preview-decode.cjs
+node desktop/scripts/image-preview-decode-browser.cjs --source-root=/path/to/baseline-export --output-dir=/tmp/xdrive-preview-before
+node desktop/scripts/image-preview-decode-browser.cjs --output-dir=/tmp/xdrive-preview-after
+```
+
+The optional browser harness requires Playwright and a Chromium runtime. It accepts
+`XDRIVE_PLAYWRIGHT_MODULE`, `XDRIVE_BROWSER_EXECUTABLE`, `XDRIVE_BROWSER_ARGS` (JSON array),
+and `XDRIVE_BROWSER_FONTCONFIG` overrides; otherwise it uses ordinary Playwright defaults.
+It writes JSON checks/request counts and screenshots to the requested output directory,
+and exits nonzero on failure. Baseline exports only need the `ui/shared` source tree;
+the current checkout supplies installed Desktop dependencies.
+
+Decision: **Accepted.** Retain the two-layer shared renderer and the existing signed
+preview/thumbnail transports. No timing percentage or download-speed improvement is
+claimed. Next action: if real installations still show a slow initial image, measure
+route activation → first decoded thumbnail → decoded original on representative originals
+and real Web/Desktop devices, separating ticket, network, decode and paint time. Viewer
+metadata range reuse and Gallery-specific Live Photo composition are separate follow-ups.
