@@ -41,6 +41,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileExplorer Trash sparse ranges | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201 trash roots: initial response/materialization **1,201 items -> first 200 items + authoritative total**; later viewport ranges are <=200 items and omit repeated count work. Legacy unpaged Trash API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Windows change-journal same-path upsert index fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline, ordinary same-path upsert page: full `nodeID -> path` index builds **1 -> 0**; rename/move/new-path ambiguity and delete retain lazy full-index fallback. |
+| Windows same-path file journal baseline-clone bypass | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline + one ordinary same-path existing-file upsert: full baseline copies **1 -> 0** and full hydrated-map copies **1 -> 0**; only the touched file state/hydration timestamp is snapshotted. Rename/delete/directory/conflict/policy cases retain the full-baseline path. |
 | Windows directory journal fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Brand-new (revision-1) remote directory create and known-directory delete journal events no longer trigger `Client.Walk()`: **full-tree Walk fallback -> 0 full-walk requests**. Directory move/rename, restored/moved-in unknown directories, and an existing baseline directory missing locally retain full reconciliation. |
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
@@ -2473,6 +2474,44 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindowsBaselinePathDeltaMatchesFullDeltaForSmallFileBatch$|^TestWindowsRemoteJournalFilePageUsesPathScopedBaselinePersistence$' -count=1`.
 
 Next action: continue basic FileExplorer sync/delete performance auditing. The remaining larger Windows incremental cost is the full baseline clone at page start; handle that separately only if a safe copy-on-write/delta mutation design can preserve reconciliation semantics.
+
+### Windows same-path file journal baseline-clone bypass contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary Windows CfAPI remote change-journal page after the baseline is loaded;
+- stable structural workload: **100,001 baseline entries** (root + 100,000 files) and one same-path upsert for an already-known file node;
+- the file has no unsynchronized local edit, Always Local is disabled, and cache-limit enforcement is disabled;
+- evidence method: deterministic bounded-snapshot helper test plus production source-shape regression; no wall-clock speedup is quoted.
+
+BEFORE:
+
+- `applyRemoteChangePage` cloned the complete `p.baseline` before it knew whether the page only touched one ordinary file;
+- it also cloned the complete hydrated timestamp map;
+- one same-path file revision update in a 100k baseline therefore copied **100,001 baseline entries** before any path-specific work.
+
+AFTER / current:
+
+- a conservative fast path runs before `cloneBaseline`;
+- it accepts only unique, same-path, already-known file upserts whose node ID, parent ID and filename still match the exact baseline path entry;
+- it snapshots only the touched file state plus that file's hydration timestamp, preflights local-modification conflict state before any mutation, then applies the existing placeholder replacement semantics;
+- memory baseline persistence merges only changed file paths and appends the already-supported path delta without constructing a full current-map copy;
+- the same workload performs **0 full baseline clones** and **0 full hydrated-map clones** on the journal page;
+- when persistence is disabled (`statePath == ""`), the delta path returns without snapshotting global state;
+- if the baseline state file is missing or compaction is due, persistence deliberately snapshots the full current baseline at that exceptional boundary;
+- file rename/move, delete, directory changes, excluded paths, duplicate page entries, local unsynchronized conflicts, Always Local, cache-limit enforcement, reset/full reconciliation, and unsupported node types all retain the existing full-baseline implementation.
+
+Decision: **Accepted.** Same-path existing-file upserts have exact-key baseline semantics and do not need namespace-wide copy-on-write state. Restricting the fast path keeps every subtree/conflict/policy-sensitive case on the established code path.
+
+Regression budget: one eligible same-path file-only journal page must not call `cloneBaseline` or `cloneHydrated` before applying the update. The fast-path snapshot size must remain **O(changes)**, not O(baseline entries).
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsRemoteJournal(SamePathFileUpsertSnapshotIsBounded|FastPathPrecedesBaselineClone|PathUpdatePersistsWithoutFullCurrentMap)$' -count=1`.
+
+Next action: continue ordinary FileExplorer download/sync/delete performance auditing; do not broaden this fast path into rename/delete/directory/conflict handling without separate evidence.
 
 ### FileOperation Delete root-update coalescing contract
 

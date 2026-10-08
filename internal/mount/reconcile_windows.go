@@ -686,7 +686,151 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 	}
 }
 
+type winRemoteFileUpsertSnapshot struct {
+	rel        string
+	base       winState
+	node       client.Node
+	hydratedAt time.Time
+}
+
+func (p *winProvider) snapshotRemoteFileUpserts(
+	changes []client.NodeChange,
+) ([]winRemoteFileUpsertSnapshot, bool) {
+	if len(changes) == 0 || p.policy.hasAlwaysLocal() || p.cacheLimit > 0 {
+		return nil, false
+	}
+
+	seenPaths := make(map[string]struct{}, len(changes))
+	seenNodeIDs := make(map[uint64]struct{}, len(changes))
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	out := make([]winRemoteFileUpsertSnapshot, 0, len(changes))
+	for _, change := range changes {
+		if change.Operation != "upsert" || change.Node == nil || change.Node.Type != "file" {
+			return nil, false
+		}
+		if change.NodeID == 0 || change.Node.ID != change.NodeID {
+			return nil, false
+		}
+		rel := filepath.ToSlash(strings.Trim(change.Path, "/"))
+		if rel == "" || rel == "." || p.policy.excludedPath(rel) {
+			return nil, false
+		}
+		if _, duplicate := seenPaths[rel]; duplicate {
+			return nil, false
+		}
+		if _, duplicate := seenNodeIDs[change.NodeID]; duplicate {
+			return nil, false
+		}
+		base, exists := p.baseline[rel]
+		if !exists ||
+			base.node.Type != "file" ||
+			base.node.ID != change.NodeID ||
+			base.node.Name != change.Node.Name ||
+			!sameOptionalUint64(base.node.ParentID, change.Node.ParentID) ||
+			slashBase(rel) != change.Node.Name {
+			return nil, false
+		}
+		if _, parentExists := p.baseline[slashDir(rel)]; !parentExists {
+			return nil, false
+		}
+		seenPaths[rel] = struct{}{}
+		seenNodeIDs[change.NodeID] = struct{}{}
+		out = append(out, winRemoteFileUpsertSnapshot{
+			rel:        rel,
+			base:       base,
+			node:       *change.Node,
+			hydratedAt: p.hydrated[base.node.ID],
+		})
+	}
+	return out, true
+}
+
+func (p *winProvider) applyRemoteFileUpsertPageFast(
+	changes []client.NodeChange,
+) (bool, error) {
+	snapshots, eligible := p.snapshotRemoteFileUpserts(changes)
+	if !eligible {
+		return false, nil
+	}
+
+	type plan struct {
+		snapshot    winRemoteFileUpsertSnapshot
+		abs         string
+		info        os.FileInfo
+		localExists bool
+	}
+	plans := make([]plan, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		abs := filepath.Join(p.root, filepath.FromSlash(snapshot.rel))
+		info, statErr := os.Lstat(abs)
+		localExists := statErr == nil
+		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return true, statErr
+		}
+		if localExists &&
+			(snapshot.hydratedAt.IsZero() || time.Since(snapshot.hydratedAt) >= winHydrationGrace) &&
+			(info.Size() != snapshot.base.localSize || !info.ModTime().Equal(snapshot.base.localModTime)) {
+			// Conflict-copy handling can touch more than the journal path, so
+			// keep that case on the existing full-baseline path.
+			return false, nil
+		}
+		plans = append(plans, plan{
+			snapshot:    snapshot,
+			abs:         abs,
+			info:        info,
+			localExists: localExists,
+		})
+	}
+
+	updates := make(map[string]winState, len(plans))
+	for _, plan := range plans {
+		snapshot := plan.snapshot
+		if plan.localExists && snapshot.base.node.Revision == snapshot.node.Revision {
+			state := snapshot.base
+			state.node = snapshot.node
+			updates[snapshot.rel] = state
+			continue
+		}
+
+		if plan.localExists {
+			if err := os.Remove(plan.abs); err != nil {
+				return true, err
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(plan.abs), 0o755); err != nil {
+			return true, err
+		}
+		if err := cfCreatePlaceholder(
+			filepath.Dir(plan.abs),
+			filepath.Base(plan.abs),
+			snapshot.node.ID,
+			snapshot.node.Size,
+			snapshot.node.UpdatedAt.UnixNano(),
+			false,
+		); err != nil {
+			return true, err
+		}
+		if st, err := os.Stat(plan.abs); err == nil {
+			updates[snapshot.rel] = winState{
+				node:         snapshot.node,
+				localModTime: st.ModTime(),
+				localSize:    st.Size(),
+			}
+		}
+	}
+
+	p.storeBaselinePathUpdates(updates)
+	p.pruneTransientState()
+	return true, nil
+}
+
 func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []client.NodeChange) (bool, error) {
+	if handled, err := p.applyRemoteFileUpsertPageFast(changes); handled || err != nil {
+		return false, err
+	}
+
 	if len(changes) == 0 {
 		return false, nil
 	}
@@ -1131,6 +1275,34 @@ func (p *winProvider) storeBaselineChangedPaths(
 	paths map[string]struct{},
 ) {
 	p.storeBaselineWithPersistence(baseline, paths)
+}
+
+func (p *winProvider) storeBaselinePathUpdates(updates map[string]winState) {
+	if len(updates) == 0 {
+		return
+	}
+
+	delta := winBaselineDelta{}
+	p.mu.Lock()
+	for rel, state := range updates {
+		if before, exists := p.baseline[rel]; exists && baselineStateEqual(before, state) {
+			continue
+		}
+		p.baseline[rel] = state
+		if delta.Puts == nil {
+			delta.Puts = make(map[string]winBaselineEntry)
+		}
+		delta.Puts[rel] = baselineEntry(state)
+	}
+	p.mu.Unlock()
+	if len(delta.Puts) == 0 {
+		return
+	}
+
+	if err := p.persistComputedBaselineDelta(nil, delta); err != nil {
+		fmt.Fprintln(os.Stderr, "xd: persist Windows sync baseline:", err)
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+	}
 }
 
 func (p *winProvider) storeBaselineWithPersistence(

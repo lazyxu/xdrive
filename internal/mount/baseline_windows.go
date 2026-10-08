@@ -298,14 +298,26 @@ func (p *winProvider) persistBaselinePathDelta(
 	return p.persistComputedBaselineDelta(current, diffBaselinePaths(previous, current, paths))
 }
 
+func (p *winProvider) snapshotBaselineForPersistence() map[string]winState {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneBaseline(p.baseline)
+}
+
 func (p *winProvider) persistComputedBaselineDelta(
 	current map[string]winState,
 	delta winBaselineDelta,
 ) error {
+	if p.statePath == "" {
+		return nil
+	}
 	if len(delta.Puts) == 0 && len(delta.Deletes) == 0 {
 		return nil
 	}
 	if _, err := os.Stat(p.statePath); errors.Is(err, os.ErrNotExist) {
+		if current == nil {
+			current = p.snapshotBaselineForPersistence()
+		}
 		return p.persistBaseline(current)
 	} else if err != nil {
 		return err
@@ -333,6 +345,9 @@ func (p *winProvider) persistComputedBaselineDelta(
 
 	frames, deltaBytes := p.addBaselineStateStats(int64(len(frame)))
 	if frames >= winBaselineCompactFrames || deltaBytes >= winBaselineCompactDeltaBytes {
+		if current == nil {
+			current = p.snapshotBaselineForPersistence()
+		}
 		if err := p.persistBaseline(current); err != nil {
 			return fmt.Errorf("compact Windows sync baseline: %w", err)
 		}
