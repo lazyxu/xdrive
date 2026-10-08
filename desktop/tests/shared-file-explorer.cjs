@@ -138,8 +138,15 @@ test('shared FileExplorer provides item and background context-menu contracts', 
 })
 
 test('shared FileExplorer status bar summarizes selection', () => {
-  assert.ok(explorer.includes('已选择 ${selectedIDs.length} 个'), 'selected item count is missing from the status bar')
-  assert.ok(explorer.includes('selectedSize'), 'selected file size summary is missing')
+  for (const token of [
+    'data-xdrive-file-explorer-status-bar',
+    'selectionStatusText',
+    'selectedHasFiles',
+    'selectedSize',
+    'viewStatusText',
+  ]) {
+    assert.ok(explorer.includes(token), 'status bar summary missing: ' + token)
+  }
 })
 
 test('shared FileExplorer supports clipboard keyboard, command-bar and context-menu contracts', () => {
@@ -364,4 +371,86 @@ test('standard Details rows stay single-line at native file-manager density', ()
     false,
     'standard Details rows must not render a second secondary-label line',
   )
+})
+
+
+test('shared FileExplorer keeps Command Bar layout stable across selection changes', () => {
+  const start = explorer.indexOf('data-xdrive-file-explorer-command-bar')
+  const end = explorer.indexOf('anchorEl={commandBarOverflowAnchor}', start)
+  const commandBar = explorer.slice(start, end)
+  assert.ok(start >= 0 && end > start, 'Command Bar markers are missing')
+  assert.equal(commandBar.includes('selectedItems.length > 0 ? ('), false, 'selection must not replace the whole Command Bar')
+  for (const token of [
+    'disabled={selectedItems.length === 0}',
+    'disabled={!canPaste}',
+    "disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}",
+  ]) {
+    assert.ok(commandBar.includes(token), 'stable Command Bar slot missing: ' + token)
+  }
+})
+
+test('shared FileExplorer moves lower-priority Toolbar actions into responsive overflow', () => {
+  for (const token of [
+    'const [commandBarWidth, setCommandBarWidth] = useState(0)',
+    'const commandBarOverflowLevel = commandBarWidth > 0 && commandBarWidth < 820',
+    'commandBarWidth < 1080',
+    'data-xdrive-file-explorer-command-bar',
+    '<MoreHorizRoundedIcon',
+    'anchorEl={commandBarOverflowAnchor}',
+    'runCommandBarOverflowAction',
+    'commandBarOverflowLevel >= 2 && onCreateFolder',
+    'commandBarOverflowLevel >= 1 && onUploadFolder',
+    'commandBarOverflowLevel >= 1 && navigationPane',
+  ]) {
+    assert.ok(explorer.includes(token), 'responsive Toolbar overflow missing: ' + token)
+  }
+})
+
+test('shared FileExplorer upgrades the native-style Status Bar', () => {
+  for (const token of [
+    'data-xdrive-file-explorer-status-bar',
+    'selectionStatusText',
+    'selectedHasFiles',
+    'viewStatusText',
+    'fileExplorerGridSizeStatusLabel',
+    '{logicalItemCount} 个项目',
+  ]) {
+    assert.ok(explorer.includes(token), 'Status Bar contract missing: ' + token)
+  }
+})
+
+test('shared Inspector uses a flat native pane instead of preview-card chrome', () => {
+  for (const token of [
+    "bgcolor: 'background.default'",
+    "borderRadius: 0",
+    "bgcolor: 'transparent'",
+    "borderTop: 1",
+    "gridTemplateColumns: '80px minmax(0, 1fr)'",
+  ]) {
+    assert.ok(explorer.includes(token), 'native Inspector polish missing: ' + token)
+  }
+})
+
+test('Details headers and cells use native alignment and neutral resize affordances', () => {
+  for (const token of [
+    'detailsRightAlignedColumnKeys',
+    "fontVariantNumeric: 'tabular-nums'",
+    "justifyContent: detailsRightAlignedColumnKeys.has(key) ? 'flex-end' : 'flex-start'",
+    "borderColor: 'text.disabled'",
+  ]) {
+    assert.ok(explorer.includes(token), 'Details visual polish missing: ' + token)
+  }
+})
+
+test('Grid cells stay centered and geometrically aligned across density steps', () => {
+  for (const token of [
+    "justifySelf: 'center'",
+    "boxSizing: 'border-box'",
+    "alignItems: 'center'",
+    'data-xdrive-file-explorer-grid-name',
+    'minHeight: 32',
+    "flex: '0 0 auto'",
+  ]) {
+    assert.ok(explorer.includes(token), 'Grid alignment polish missing: ' + token)
+  }
 })

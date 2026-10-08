@@ -427,6 +427,13 @@ The Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like i
 - active tabs use neutral surface hierarchy plus a one-pixel divider edge rather than a strong primary-color underline;
 - native Desktop drag-out affordances are invisible until the owning row/tile is hovered or keyboard-focused; Grid keeps the affordance as a top-right overlay and Details does not reserve permanent name-column width for it;
 - Grid icon density uses **five** shared steps (`tiny / small / medium / large / huge`), and the View menu plus Ctrl/Cmd-wheel both use the same ordered size model.
+- the Command Bar keeps stable action slots when selection changes; selection enables/disables file actions instead of replacing the toolbar, while selection count/bytes live in the Status Bar;
+- the Command Bar observes its available width and moves lower-priority built-in actions into one shared **更多** overflow menu rather than wrapping or horizontally scrolling;
+- the Status Bar always shows authoritative item count, selection count/selected file bytes when applicable, and the current Details/Grid density label; adapter-provided status text remains visible alongside it;
+- navigation sections use compact vertical spacing rather than repeated Divider rows;
+- the Inspector uses a flat pane surface: sticky compact header, square preview, section borders/spacing, and no nested preview-card treatment;
+- Details headers keep sort state neutral, right-align size/dimensions/duration columns with tabular numeric text, and use a neutral resize affordance rather than primary blue;
+- Grid tiles use one centered cell geometry at every density: full track width up to the density max, centered tile, fixed visual box, and a stable two-line name area.
 
 These are presentation contracts only. Search/filter/group ordering, range identity, navigation generations, and Server/Agent ownership remain unchanged.
 

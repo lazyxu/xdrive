@@ -62,26 +62,26 @@ test('Web and Desktop consume shared FileExplorer menu/action presentation', () 
   assert.ok(desktop.includes('primaryDisabled: explorerActionBusy'), 'Desktop must preserve native and queued-operation busy gating')
 })
 
-test('shared FileExplorer switches to a selection-aware command bar', () => {
+test('shared FileExplorer keeps a stable selection-aware command bar', () => {
+  const start = explorerCore.indexOf('data-xdrive-file-explorer-command-bar')
+  const end = explorerCore.indexOf('anchorEl={commandBarOverflowAnchor}', start)
+  assert.ok(start >= 0 && end > start, 'stable Command Bar markers are missing')
+  const commandBar = explorerCore.slice(start, end)
+
   for (const token of [
-    'selectedItems.length > 0 ? (',
-    '已选择 {selectedItems.length} 项',
     'startIcon={<ContentCutRoundedIcon />}',
     'startIcon={<ContentCopyRoundedIcon />}',
+    'startIcon={<ContentPasteRoundedIcon />}',
     'startIcon={<DownloadRoundedIcon />}',
     'startIcon={<DeleteOutlineRoundedIcon />}',
-    'startIcon={<CloseRoundedIcon />}',
-    'onClick={clearSelection}',
-    '取消选择',
+    'disabled={selectedItems.length === 0}',
+    'disabled={!canPaste}',
+    '新建文件夹',
+    '上传文件',
   ]) {
-    assert.ok(explorerCore.includes(token), `selection command bar missing: ${token}`)
+    assert.ok(commandBar.includes(token), `stable command bar missing: ${token}`)
   }
 
-  const selectionStart = explorerCore.indexOf('selectedItems.length > 0 ? (')
-  const directoryActionsStart = explorerCore.indexOf(') : (', selectionStart)
-  assert.ok(selectionStart >= 0 && directoryActionsStart > selectionStart, 'selection/directory command-bar branches are missing')
-  const selectionBranch = explorerCore.slice(selectionStart, directoryActionsStart)
-  assert.equal(selectionBranch.includes('新建文件夹'), false, 'selection mode must hide directory-creation actions')
-  assert.equal(selectionBranch.includes('上传'), false, 'selection mode must hide upload actions')
-  assert.equal(selectionBranch.includes('粘贴'), false, 'selection mode must hide paste actions')
+  assert.equal(commandBar.includes('selectedItems.length > 0 ? ('), false, 'selection must not replace the whole Command Bar')
+  assert.equal(commandBar.includes('取消选择'), false, 'selection summary/clear affordance belongs outside the stable Command Bar')
 })

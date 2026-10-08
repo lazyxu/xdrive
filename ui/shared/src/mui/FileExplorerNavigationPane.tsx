@@ -11,7 +11,6 @@ import {
   Box,
   CircularProgress,
   Collapse,
-  Divider,
   IconButton,
   ListItemButton,
   Stack,
@@ -569,8 +568,7 @@ export function XDriveFileExplorerNavigationPane({
       }}
     >
       {onNavigateTrash ? (
-        <>
-          <Box component="nav" aria-label="回收站" sx={{ px: 0.75, pb: 0.75 }}>
+          <Box component="nav" aria-label="回收站" sx={{ px: 0.75, py: 0.5 }}>
             <ListItemButton
               selected={trashActive}
               aria-current={trashActive ? 'page' : undefined}
@@ -583,8 +581,6 @@ export function XDriveFileExplorerNavigationPane({
               </Typography>
             </ListItemButton>
           </Box>
-          <Divider sx={{ mb: 0.75 }} />
-        </>
       ) : null}
 
       {quickAccessEnabled ? (
@@ -593,7 +589,7 @@ export function XDriveFileExplorerNavigationPane({
           aria-label="快速访问"
           sx={{
             px: 0.75,
-            pb: 0.75,
+            py: 0.5,
             '& > :not(:first-child)': {
               display: expandedSections.quickAccess ? undefined : 'none',
             },
@@ -689,15 +685,13 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
-      {quickAccessEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
-
       {favoritesEnabled ? (
         <Box
           component="nav"
           aria-label="收藏"
           sx={{
             px: 0.75,
-            pb: 0.75,
+            py: 0.5,
             '& > :not(:first-child)': {
               display: expandedSections.favorites ? undefined : 'none',
             },
@@ -777,15 +771,13 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
-      {favoritesEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
-
       {recentEnabled ? (
         <Box
           component="nav"
           aria-label="最近使用"
           sx={{
             px: 0.75,
-            pb: 0.75,
+            py: 0.5,
             '& > :not(:first-child)': {
               display: expandedSections.recent ? undefined : 'none',
             },
@@ -863,9 +855,7 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
-      {recentEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
-
-      <Box component="nav" aria-label="文件夹" sx={{ px: 0.75, pb: 0.75 }}>
+      <Box component="nav" aria-label="文件夹" sx={{ px: 0.75, py: 0.5 }}>
         <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
           <IconButton
             size="small"
