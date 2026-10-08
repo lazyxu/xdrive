@@ -803,12 +803,28 @@ export type AgentMediaBurstReviewList = {
   physical_reclaimable_bytes: number
 }
 
+export type AgentMediaPetFacet = {
+  id: 'dog' | 'cat' | string
+  name: string
+  item_count: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export type AgentMediaPersonSuggestionReview = {
+  id: string
+  review_state?: 'dismissed' | 'accepted' | string
+  target_person_id?: string
+}
+
 export type AgentMediaSuggestedPerson = {
   id: string
   face_count: number
   item_count: number
   cover_node_id?: number
   updated_at?: string
+  review_state?: 'dismissed' | 'accepted' | string
+  target_person_id?: string
 }
 
 export type AgentMediaPersonIdentity = {
@@ -1396,8 +1412,39 @@ export class AgentIPCClient {
     )
   }
 
+  mediaPets() {
+    return this.request<AgentMediaPetFacet[]>('GET', '/v1/media/pets')
+  }
+
+  mediaPetItemRange(
+    petKind: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      pet_kind: petKind,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/pet-items?${query.toString()}`,
+    )
+  }
+
   mediaSuggestedPeople(limit = 24) {
     const query = new URLSearchParams({ limit: String(limit) })
+    return this.request<AgentMediaSuggestedPerson[]>(
+      'GET',
+      `/v1/media/people/suggestions?${query.toString()}`,
+    )
+  }
+
+  mediaSuggestedPeopleWithReview(includeReviewed = false, limit = 24) {
+    const query = new URLSearchParams({
+      include_reviewed: String(includeReviewed),
+      limit: String(limit),
+    })
     return this.request<AgentMediaSuggestedPerson[]>(
       'GET',
       `/v1/media/people/suggestions?${query.toString()}`,
@@ -1441,6 +1488,29 @@ export class AgentIPCClient {
   }
 
 
+
+  reviewMediaSuggestedPerson(
+    suggestionID: string,
+    state: 'pending' | 'dismissed',
+  ) {
+    return this.request<AgentMediaPersonSuggestionReview>(
+      'PATCH',
+      '/v1/media/people/suggestion-review',
+      { suggestion_id: suggestionID, state },
+    )
+  }
+
+  addMediaSuggestedPersonToPerson(
+    personID: string,
+    revision: number,
+    suggestionID: string,
+  ) {
+    return this.request<AgentMediaPersonIdentity>(
+      'POST',
+      '/v1/media/people/add-suggestion',
+      { person_id: personID, revision, suggestion_id: suggestionID },
+    )
+  }
 
   mediaPeople(includeHidden = false, limit = 100, offset = 0) {
     const query = new URLSearchParams({

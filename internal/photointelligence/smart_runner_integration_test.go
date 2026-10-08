@@ -121,8 +121,8 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 			info: info,
 			result: SmartAnalysisResult{
 				Labels: []SmartVisualLabel{
-					{Label: "golden retriever", Confidence: 0.92},
-					{Label: "seashore", Confidence: 0.70},
+					{Index: 207, Label: "golden retriever", Confidence: 0.92},
+					{Index: 978, Label: "seashore", Confidence: 0.70},
 				},
 				OCRText:     "上海 Marina 2026",
 				OCRLanguage: "zh-en",
@@ -162,6 +162,7 @@ func TestSmartRunnerPersistsSearchEvidence(t *testing.T) {
 	}
 	if len(labels) != 2 ||
 		labels[0].Label != "golden retriever" ||
+		labels[0].LabelIndex != 207 ||
 		labels[0].Confidence != 0.92 {
 		t.Fatalf("labels=%+v", labels)
 	}

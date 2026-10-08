@@ -168,14 +168,21 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/duplicates/:duplicateID/items", s.listMediaDuplicateItems)
 	authed.GET("/media/bursts", s.listMediaBurstReviews)
 	authed.GET("/media/bursts/:burstID/items", s.listMediaBurstReviewItems)
+	authed.GET("/media/pets", s.listMediaPets)
+	authed.GET("/media/pets/:petKind/items", s.listMediaPetItems)
 	authed.GET("/media/people/suggestions", s.listMediaSuggestedPeople)
 	authed.GET("/media/people/suggestions/:clusterID/items", s.listMediaSuggestedPersonItems)
 	authed.POST("/media/people/suggestions/:clusterID/adopt", s.adoptMediaSuggestedPerson)
+	authed.PATCH("/media/people/suggestions/:clusterID/review", s.reviewMediaSuggestedPerson)
 	authed.GET("/media/people/identities", s.listMediaPersonIdentities)
 	authed.GET("/media/people/identities/:personID/items", s.listMediaPersonIdentityItems)
 	authed.PATCH("/media/people/identities/:personID", s.updateMediaPersonIdentity)
 	authed.POST("/media/people/identities/:personID/merge", s.mergeMediaPersonIdentities)
 	authed.POST("/media/people/identities/:personID/split", s.splitMediaPersonIdentity)
+	authed.POST(
+		"/media/people/identities/:personID/suggestions/:clusterID",
+		s.addMediaSuggestedPersonToIdentity,
+	)
 	authed.POST("/media/albums", s.createMediaAlbum)
 	authed.PATCH("/media/albums/:albumID", s.renameMediaAlbum)
 	authed.DELETE("/media/albums/:albumID", s.deleteMediaAlbum)

@@ -56,6 +56,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		"xd_photo_intelligence_reanalyze_intents",
 		"xd_photo_people",
 		"xd_photo_person_assets",
+		"xd_photo_person_suggestion_reviews",
 		"xd_photo_place_labels",
 		"xd_photo_visual_labels",
 		"xd_photo_ocr_texts",
@@ -66,6 +67,9 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		}
 	}
 
+	if !db.Migrator().HasColumn("xd_photo_visual_labels", "label_index") {
+		t.Fatal("photo visual label_index column was not created")
+	}
 	if !db.Migrator().HasColumn("xd_photo_faces", "landmarks_json") {
 		t.Fatal("photo face landmarks_json column was not created")
 	}
@@ -231,6 +235,20 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 		t.Fatal("duplicate durable person asset membership was accepted")
 	}
 
+	review := meta.PhotoPersonSuggestionReview{
+		OwnerID:        user.ID,
+		SuggestionKey:  "auto:v1:" + strings.Repeat("a", 64),
+		State:          meta.PhotoPersonSuggestionReviewStateAccepted,
+		TargetPersonID: &person.ID,
+	}
+	if err := db.Create(&review).Error; err != nil {
+		t.Fatal(err)
+	}
+	duplicateReview := review
+	if err := db.Create(&duplicateReview).Error; err == nil {
+		t.Fatal("duplicate person suggestion review was accepted")
+	}
+
 	place := meta.PhotoPlaceLabel{
 		AssetID: asset.ID, Resolver: "test-offline", ResolverVersion: "v1",
 		Latitude: 1.3521, Longitude: 103.8198,
@@ -246,7 +264,7 @@ func TestMigrateCreatesPhotoIntelligenceFoundation(t *testing.T) {
 	}
 
 	visual := meta.PhotoVisualLabel{
-		AssetID: asset.ID, Label: "beach", Confidence: 0.9,
+		AssetID: asset.ID, Label: "beach", LabelIndex: 978, Confidence: 0.9,
 	}
 	if err := db.Create(&visual).Error; err != nil {
 		t.Fatal(err)

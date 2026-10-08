@@ -115,9 +115,11 @@ The canonical coordinates remain `PhotoMetadata.Latitude/Longitude`; a place lab
 
 Smart Search intelligence is also asset-scoped, derived, and rebuildable.
 
-- `PhotoVisualLabel` stores a bounded label vocabulary and confidence. The initial
-  reference classifier is MobileNetV2 over the pinned ImageNet-1K vocabulary. These
-  labels are search evidence, not media identity and not user-authored tags.
+- `PhotoVisualLabel` stores a bounded label vocabulary, the pinned ImageNet class
+  index, and confidence. The initial reference classifier is MobileNetV2 over the
+  pinned ImageNet-1K vocabulary. These labels are search evidence and type-facet
+  evidence, not media identity and not user-authored tags. The class index is persisted
+  so product facets such as Dogs/Cats do not depend on English label text.
 - `PhotoOCRText` stores bounded recognized scene text plus the recognizer language
   contract. It is never copied into descriptions or tags.
 - Search consumes these rows only while the corresponding `PhotoAnalysisState` is
@@ -299,7 +301,15 @@ Cluster keys are derived only from sorted stable asset/detection evidence member
 
 The complete owner projection is replaced in one database transaction. A clustering transaction failure cannot expose a half-written replacement; the owner state becomes failed. Because upstream face analysis may independently replace face rows and cascade old memberships, automatic cluster rows are product-visible only while `PhotoPersonClusterState.State == ready`. Deleting a face/asset cascades its membership and the face-count/source-update state makes the owner eligible for a new rebuild. Disabled users and users forced to change password are not scheduled.
 
-Gallery consumes the automatic projection through separate Suggested People APIs. Only `ready` clusters are listed or filterable. The API exposes cluster id, face/item counts, cover node, and update time; embeddings and cohesion internals remain server-side. Opening a suggestion is a transient view over the current automatic cluster plus ordinary temporary Gallery filters. The cluster id is never serialized into `MediaGalleryQuery`, a smart album, or `PhotoMetadata.PeopleJSON`.
+Gallery consumes the automatic projection through separate Suggested People APIs. Only `ready` clusters are listed or filterable. The API exposes cluster id, face/item counts, cover node, update time, and the separate user review state; embeddings and cohesion internals remain server-side. Opening a suggestion is a transient view over the current automatic cluster plus ordinary temporary Gallery filters. The cluster id is never serialized into `MediaGalleryQuery`, a smart album, or `PhotoMetadata.PeopleJSON`.
+
+Suggestion review is durable user intent stored outside the rebuildable cluster rows.
+`PhotoPersonSuggestionReview` is owner-scoped and keyed by the current stable cluster
+snapshot key. `dismissed` means “暂不处理” for that exact snapshot; `accepted`
+records explicit adoption into a durable person. Restoring a dismissed suggestion
+removes its review row. A changed cluster membership produces a new key and is therefore
+reviewable again. Review state never changes clustering, face embeddings, or durable
+person membership automatically.
 
 ## Durable person identity policy
 
@@ -447,7 +457,8 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
 
 - Web and Desktop must share their MUI presentation/interaction model through `ui/shared`;
 - platform transports remain adapters;
-- automatic suggestions must be visually distinguishable from user-authored metadata;
+- automatic suggestions must be visually distinguishable from user-authored metadata and expose durable pending/dismissed review semantics separately from rebuildable clusters;
+- pet facets may consume only ready local visual-label evidence and must remain type collections; they must not be presented as individual-pet identity without a separately versioned pet-specific identity model;
 - search/smart-album filters must remain usable with all synchronization providers offline;
 - Gallery search may consume only local ready visual/OCR/place/person/semantic evidence; semantic embeddings must remain versioned derived state and relevance ranking must degrade to lexical search when semantic inference is unavailable;
 - deleting/rebuilding intelligence must not delete or mutate originals or user-authored metadata.
@@ -521,3 +532,18 @@ Current Web/Desktop Gallery surfaces expose Suggested People and durable people 
    - no pgvector/second database is required; a future approximate index backend must preserve this API/product contract.
 
 The supported reference runtime is now the opt-in OpenCV DNN CPU analyzer using pinned YuNet detection and SFace embeddings. GPU/NPU or alternate licensed/BYO analyzers remain optional future backends and must preserve the same versioned analyzer contract; the schema and durable-person model remain runtime-agnostic.
+
+
+11. **People suggestion review + Pets — current**
+   - owner-scoped durable review rows keep pending/dismissed/accepted user intent
+     separate from rebuildable person clusters;
+   - a current suggestion can be adopted as a new durable person or explicitly added to
+     an existing durable person with revision checks;
+   - dismissed snapshots can be restored; changed cluster membership produces a new
+     reviewable key instead of inheriting stale review state;
+   - MobileNetV2 visual-label output persists the pinned ImageNet label index and
+     changes the smart analyzer pipeline version so old rows rebuild deterministically;
+   - ready dog/cat label-index ranges feed local Pets type facets and sparse Gallery
+     collections;
+   - Pets do not create `PhotoPerson`, do not infer same-animal identity, and do not
+     write manual `PeopleJSON`.

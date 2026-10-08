@@ -189,12 +189,28 @@ type MediaBurstReviewList struct {
 	PhysicalReclaimableBytes int64              `json:"physical_reclaimable_bytes"`
 }
 
-type MediaSuggestedPerson struct {
+type MediaPetFacet struct {
 	ID          string     `json:"id"`
-	FaceCount   int64      `json:"face_count"`
+	Name        string     `json:"name"`
 	ItemCount   int64      `json:"item_count"`
 	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type MediaPersonSuggestionReview struct {
+	ID             string  `json:"id"`
+	ReviewState    string  `json:"review_state,omitempty"`
+	TargetPersonID *string `json:"target_person_id,omitempty"`
+}
+
+type MediaSuggestedPerson struct {
+	ID             string     `json:"id"`
+	FaceCount      int64      `json:"face_count"`
+	ItemCount      int64      `json:"item_count"`
+	CoverNodeID    *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	ReviewState    string     `json:"review_state,omitempty"`
+	TargetPersonID *string    `json:"target_person_id,omitempty"`
 }
 
 type MediaPersonIdentity struct {
@@ -501,11 +517,51 @@ func (c *Client) MediaBurstReviewItemsRange(
 	return out, err
 }
 
+func (c *Client) MediaPets(
+	ctx context.Context,
+) ([]MediaPetFacet, error) {
+	var out []MediaPetFacet
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/pets", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaPetItemsRange(
+	ctx context.Context,
+	petKind string,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/pets/" +
+		url.PathEscape(strings.TrimSpace(petKind)) + "/items?" + values.Encode()
+	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 func (c *Client) MediaSuggestedPeople(
 	ctx context.Context,
 	limit int,
 ) ([]MediaSuggestedPerson, error) {
+	return c.MediaSuggestedPeopleWithReview(ctx, false, limit)
+}
+
+func (c *Client) MediaSuggestedPeopleWithReview(
+	ctx context.Context,
+	includeReviewed bool,
+	limit int,
+) ([]MediaSuggestedPerson, error) {
 	values := url.Values{}
+	if includeReviewed {
+		values.Set("include_reviewed", "true")
+	}
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
 	}
@@ -633,6 +689,43 @@ func (c *Client) MediaPersonIdentityItemsRangeQuery(
 		url.PathEscape(strings.TrimSpace(personID)) + "/items?" + values.Encode()
 	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) ReviewMediaSuggestedPerson(
+	ctx context.Context,
+	clusterID, state string,
+) (MediaPersonSuggestionReview, error) {
+	var out MediaPersonSuggestionReview
+	err := c.json(
+		ctx,
+		http.MethodPatch,
+		"/api/v1/media/people/suggestions/"+
+			url.PathEscape(strings.TrimSpace(clusterID))+"/review",
+		map[string]string{"state": state},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) AddMediaSuggestedPersonToIdentity(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	clusterID string,
+) (MediaPersonIdentity, error) {
+	var out MediaPersonIdentity
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/people/identities/"+
+			url.PathEscape(strings.TrimSpace(personID))+
+			"/suggestions/"+
+			url.PathEscape(strings.TrimSpace(clusterID)),
+		revision,
+		nil,
+		&out,
+	)
 	return out, err
 }
 

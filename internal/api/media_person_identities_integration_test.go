@@ -29,6 +29,11 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	baseSQLDB, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseSQLDB.Close()
 	schema := "media_person_identity_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -48,6 +53,11 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{},
 		&meta.Source{}, &meta.SourceItem{},
@@ -60,6 +70,7 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		&meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{},
 		&meta.PhotoPersonClusterState{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPersonSuggestionReview{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +204,52 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	dismissed := request(
+		t, router, http.MethodPatch,
+		"/api/v1/media/people/suggestions/"+url.PathEscape(clusterKey)+"/review",
+		token,
+		strings.NewReader(`{"state":"dismissed"}`),
+		http.StatusOK,
+	)
+	var review mediaPersonSuggestionReviewDTO
+	if err := json.Unmarshal(dismissed.Body.Bytes(), &review); err != nil {
+		t.Fatal(err)
+	}
+	if review.ReviewState != meta.PhotoPersonSuggestionReviewStateDismissed {
+		t.Fatalf("dismissed review=%+v", review)
+	}
+	pendingSuggestions := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/suggestions",
+		token, nil, http.StatusOK,
+	)
+	var suggestionRows []mediaSuggestedPersonDTO
+	if err := json.Unmarshal(pendingSuggestions.Body.Bytes(), &suggestionRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestionRows) != 0 {
+		t.Fatalf("dismissed suggestion leaked: %+v", suggestionRows)
+	}
+	allSuggestions := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/suggestions?include_reviewed=true",
+		token, nil, http.StatusOK,
+	)
+	if err := json.Unmarshal(allSuggestions.Body.Bytes(), &suggestionRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestionRows) != 1 ||
+		suggestionRows[0].ReviewState != meta.PhotoPersonSuggestionReviewStateDismissed {
+		t.Fatalf("include_reviewed suggestions=%+v", suggestionRows)
+	}
+	request(
+		t, router, http.MethodPatch,
+		"/api/v1/media/people/suggestions/"+url.PathEscape(clusterKey)+"/review",
+		token,
+		strings.NewReader(`{"state":"pending"}`),
+		http.StatusOK,
+	)
+
 	adopt := request(
 		t, router, http.MethodPost,
 		"/api/v1/media/people/suggestions/"+url.PathEscape(clusterKey)+"/adopt",
@@ -212,6 +269,41 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		*person.CoverNodeID != nodes[1].ID {
 		t.Fatalf("adopted person=%+v", person)
 	}
+
+	acceptedSuggestions := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/suggestions?include_reviewed=true",
+		token, nil, http.StatusOK,
+	)
+	suggestionRows = nil
+	if err := json.Unmarshal(acceptedSuggestions.Body.Bytes(), &suggestionRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestionRows) != 1 ||
+		suggestionRows[0].ReviewState != meta.PhotoPersonSuggestionReviewStateAccepted ||
+		suggestionRows[0].TargetPersonID == nil ||
+		*suggestionRows[0].TargetPersonID != person.ID {
+		t.Fatalf("accepted suggestion review=%+v person=%+v", suggestionRows, person)
+	}
+	defaultSuggestions := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/suggestions",
+		token, nil, http.StatusOK,
+	)
+	suggestionRows = nil
+	if err := json.Unmarshal(defaultSuggestions.Body.Bytes(), &suggestionRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(suggestionRows) != 0 {
+		t.Fatalf("accepted suggestion leaked into pending list: %+v", suggestionRows)
+	}
+	request(
+		t, router, http.MethodPatch,
+		"/api/v1/media/people/suggestions/"+url.PathEscape(clusterKey)+"/review",
+		token,
+		strings.NewReader(`{"state":"pending"}`),
+		http.StatusConflict,
+	)
 
 	request(
 		t, router, http.MethodPost,
@@ -353,6 +445,24 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatalf("split result=%+v", splitResult)
 	}
 
+	var splitPersonRecord meta.PhotoPerson
+	if err := db.Where(
+		"owner_id = ? AND person_key = ?",
+		owner.ID,
+		splitResult.Created.ID,
+	).First(&splitPersonRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	mergeReviewKey := mediaSuggestedPersonKeyPrefix + strings.Repeat("f", 64)
+	if err := db.Create(&meta.PhotoPersonSuggestionReview{
+		OwnerID:        owner.ID,
+		SuggestionKey:  mergeReviewKey,
+		State:          meta.PhotoPersonSuggestionReviewStateAccepted,
+		TargetPersonID: &splitPersonRecord.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	smartCreate := request(
 		t, router, http.MethodPost,
 		"/api/v1/media/smart-albums",
@@ -391,6 +501,30 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if person.Revision != 4 || person.ItemCount != 2 {
 		t.Fatalf("merged person=%+v", person)
 	}
+	var targetPersonRecord meta.PhotoPerson
+	if err := db.Where(
+		"owner_id = ? AND person_key = ?",
+		owner.ID,
+		person.ID,
+	).First(&targetPersonRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	var mergedReview meta.PhotoPersonSuggestionReview
+	if err := db.Where(
+		"owner_id = ? AND suggestion_key = ?",
+		owner.ID,
+		mergeReviewKey,
+	).First(&mergedReview).Error; err != nil {
+		t.Fatal(err)
+	}
+	if mergedReview.TargetPersonID == nil ||
+		*mergedReview.TargetPersonID != targetPersonRecord.ID {
+		t.Fatalf(
+			"merged review target=%v want=%d",
+			mergedReview.TargetPersonID,
+			targetPersonRecord.ID,
+		)
+	}
 	request(
 		t, router, http.MethodGet,
 		"/api/v1/media/people/identities/"+url.PathEscape(splitResult.Created.ID)+"/items",
@@ -421,6 +555,120 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 		t.Fatalf("merged durable person smart album=%+v", rewritten)
 	}
 
+	thirdNode := meta.Node{
+		ParentID: &root.ID,
+		Name:     "alice-three.jpg",
+		Type:     meta.NodeTypeFile,
+		OwnerID:  owner.ID,
+		Revision: 1,
+	}
+	if err := db.Create(&thirdNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	thirdFile := meta.File{
+		NodeID:     thirdNode.ID,
+		Size:       30,
+		StorageKey: "alice-three",
+		SHA256:     strings.Repeat("d", 64),
+	}
+	if err := db.Create(&thirdFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.MediaMetadata{
+		NodeID: thirdNode.ID, OwnerID: owner.ID, NodeRevision: 1,
+		SHA256: thirdFile.SHA256, MediaKind: meta.MediaKindImage,
+		MIMEType: "image/jpeg", Width: 100, Height: 100,
+		IndexState:              meta.MediaIndexStateReady,
+		RelationEvidenceVersion: mediapkg.RelationEvidenceVersion,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := photoasset.ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var thirdAsset meta.PhotoAsset
+	if err := db.Where(
+		"owner_id = ? AND primary_node_id = ?",
+		owner.ID,
+		thirdNode.ID,
+	).First(&thirdAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondClusterKey := mediaSuggestedPersonKeyPrefix + strings.Repeat("e", 64)
+	secondCluster := meta.PhotoPersonCluster{
+		OwnerID: owner.ID, ClusterKey: secondClusterKey,
+		AnalyzerVersion:  cluster.AnalyzerVersion,
+		Embedding:        []byte{4, 3, 2, 1},
+		EmbeddingFormat:  "f32le",
+		EmbeddingVersion: cluster.EmbeddingVersion,
+	}
+	if err := db.Create(&secondCluster).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondFaces := []meta.PhotoFace{
+		{
+			AssetID: assets[1].ID, DetectionKey: "face:001",
+			AnalyzerVersion: "detector-v1",
+			X:               0.5, Y: 0.1, Width: 0.3, Height: 0.3, Confidence: 0.95,
+			Embedding:       []byte{4, 3, 2, 1},
+			EmbeddingFormat: "f32le", EmbeddingVersion: "embed-v1",
+		},
+		{
+			AssetID: thirdAsset.ID, DetectionKey: "face:000",
+			AnalyzerVersion: "detector-v1",
+			X:               0.1, Y: 0.1, Width: 0.3, Height: 0.3, Confidence: 0.97,
+			Embedding:       []byte{4, 3, 2, 1},
+			EmbeddingFormat: "f32le", EmbeddingVersion: "embed-v1",
+		},
+	}
+	if err := db.Create(&secondFaces).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]meta.PhotoPersonClusterFace{
+		{ClusterID: secondCluster.ID, FaceID: secondFaces[0].ID, Confidence: 0.94},
+		{ClusterID: secondCluster.ID, FaceID: secondFaces[1].ID, Confidence: 0.96},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	attached := requestWithHeaders(
+		t, router, http.MethodPost,
+		"/api/v1/media/people/identities/"+url.PathEscape(person.ID)+
+			"/suggestions/"+url.PathEscape(secondClusterKey),
+		token,
+		nil,
+		http.StatusOK,
+		map[string]string{"If-Match": `"4"`},
+	)
+	if err := json.Unmarshal(attached.Body.Bytes(), &person); err != nil {
+		t.Fatal(err)
+	}
+	if person.Revision != 5 || person.ItemCount != 3 {
+		t.Fatalf("person after adding suggestion=%+v", person)
+	}
+	reviewedSuggestions := request(
+		t, router, http.MethodGet,
+		"/api/v1/media/people/suggestions?include_reviewed=true&limit=100",
+		token, nil, http.StatusOK,
+	)
+	suggestionRows = nil
+	if err := json.Unmarshal(reviewedSuggestions.Body.Bytes(), &suggestionRows); err != nil {
+		t.Fatal(err)
+	}
+	var attachedReview *mediaSuggestedPersonDTO
+	for index := range suggestionRows {
+		if suggestionRows[index].ID == secondClusterKey {
+			attachedReview = &suggestionRows[index]
+			break
+		}
+	}
+	if attachedReview == nil ||
+		attachedReview.ReviewState != meta.PhotoPersonSuggestionReviewStateAccepted ||
+		attachedReview.TargetPersonID == nil ||
+		*attachedReview.TargetPersonID != person.ID {
+		t.Fatalf("attached suggestion review=%+v all=%+v", attachedReview, suggestionRows)
+	}
+
 	if err := db.Where("id = ?", cluster.ID).
 		Delete(&meta.PhotoPersonCluster{}).Error; err != nil {
 		t.Fatal(err)
@@ -438,7 +686,7 @@ func TestDurablePersonIdentityLifecycle(t *testing.T) {
 	if err := json.Unmarshal(items.Body.Bytes(), &mediaItems); err != nil {
 		t.Fatal(err)
 	}
-	if len(mediaItems) != 2 {
+	if len(mediaItems) != 3 {
 		t.Fatalf("durable person depended on deleted cluster: %+v", mediaItems)
 	}
 

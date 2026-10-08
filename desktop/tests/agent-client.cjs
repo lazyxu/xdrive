@@ -30,6 +30,12 @@ function json(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
+async function readJSONBody(req) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+
 test('status uses bearer token and parses status', async (t) => {
   const { client, token } = await fixture(t, (req, res) => {
     assert.equal(req.headers.authorization, `Bearer ${token}`)
@@ -589,6 +595,81 @@ test('media cleanup review uses the scoped Agent API', async (t) => {
   assert.equal(bursts.total_groups, 1)
   const burstPage = await client.mediaBurstReviewItemRange('burst:v1:42', 40, 0)
   assert.equal(burstPage.total_count, 3)
+})
+
+test('media Pets and person suggestion review use the scoped Agent API', async (t) => {
+  let requestIndex = 0
+  const suggestionID = 'auto:v1:' + 'a'.repeat(64)
+  const personID = 'person:v1:11111111-1111-1111-1111-111111111111'
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (requestIndex === 0) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/pets')
+      json(res, 200, [{ id: 'dog', name: '狗', item_count: 2, cover_node_id: 31 }])
+    } else if (requestIndex === 1) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/pet-items')
+      assert.equal(url.searchParams.get('pet_kind'), 'dog')
+      assert.equal(url.searchParams.get('limit'), '40')
+      assert.equal(url.searchParams.get('offset'), '20')
+      json(res, 200, {
+        items: [{ node: { id: 31, name: 'dog.jpg', type: 'file', revision: 1 } }],
+        total_count: 2,
+        offset: 20,
+        limit: 40,
+      })
+    } else if (requestIndex === 2) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/people/suggestions')
+      assert.equal(url.searchParams.get('include_reviewed'), 'true')
+      assert.equal(url.searchParams.get('limit'), '12')
+      json(res, 200, [{
+        id: suggestionID,
+        face_count: 3,
+        item_count: 2,
+        review_state: 'dismissed',
+      }])
+    } else if (requestIndex === 3) {
+      assert.equal(req.method, 'PATCH')
+      assert.equal(url.pathname, '/v1/media/people/suggestion-review')
+      const body = await readJSONBody(req)
+      assert.deepEqual(body, { suggestion_id: suggestionID, state: 'dismissed' })
+      json(res, 200, { id: suggestionID, review_state: 'dismissed' })
+    } else {
+      assert.equal(req.method, 'POST')
+      assert.equal(url.pathname, '/v1/media/people/add-suggestion')
+      const body = await readJSONBody(req)
+      assert.deepEqual(body, {
+        person_id: personID,
+        revision: 3,
+        suggestion_id: suggestionID,
+      })
+      json(res, 200, {
+        id: personID,
+        name: 'Alice',
+        hidden: false,
+        revision: 4,
+        item_count: 4,
+      })
+    }
+    requestIndex += 1
+  })
+
+  const pets = await client.mediaPets()
+  assert.equal(pets[0].id, 'dog')
+  const petPage = await client.mediaPetItemRange('dog', 40, 20)
+  assert.equal(petPage.total_count, 2)
+  const suggestions = await client.mediaSuggestedPeopleWithReview(true, 12)
+  assert.equal(suggestions[0].review_state, 'dismissed')
+  const review = await client.reviewMediaSuggestedPerson(suggestionID, 'dismissed')
+  assert.equal(review.review_state, 'dismissed')
+  const person = await client.addMediaSuggestedPersonToPerson(
+    personID,
+    3,
+    suggestionID,
+  )
+  assert.equal(person.revision, 4)
 })
 
 test('media thumbnail stays binary over Agent IPC', async (t) => {

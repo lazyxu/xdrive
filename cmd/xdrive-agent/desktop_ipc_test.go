@@ -147,6 +147,12 @@ type fakeDesktopIPCController struct {
 	cloudBurstID               string
 	cloudCleanupLimit          int
 	cloudCleanupOffset         int
+	cloudPets                  []client.MediaPetFacet
+	cloudPetKind               string
+	cloudSuggestionReviewed    bool
+	cloudSuggestionReviewID    string
+	cloudSuggestionReviewState string
+	cloudSuggestionTargetID    string
 	cloudSuggestedPeople       []client.MediaSuggestedPerson
 	cloudSuggestedItems        []client.MediaItem
 	cloudSuggestedID           string
@@ -894,6 +900,63 @@ func (f *fakeDesktopIPCController) CloudMediaBurstReviewItemsRange(
 		Offset:     offset,
 		Limit:      limit,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPets(
+	context.Context,
+) ([]client.MediaPetFacet, error) {
+	return append([]client.MediaPetFacet(nil), f.cloudPets...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaPetItemsRange(
+	_ context.Context,
+	petKind string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudPetKind = petKind
+	f.cloudMediaLimit = limit
+	f.cloudMediaOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: int64(len(f.cloudMediaItems)),
+		Offset:     offset,
+		Limit:      limit,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSuggestedPeopleWithReview(
+	_ context.Context,
+	includeReviewed bool,
+	_ int,
+) ([]client.MediaSuggestedPerson, error) {
+	f.cloudSuggestionReviewed = includeReviewed
+	return append([]client.MediaSuggestedPerson(nil), f.cloudSuggestedPeople...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudReviewMediaSuggestedPerson(
+	_ context.Context,
+	suggestionID, state string,
+) (client.MediaPersonSuggestionReview, error) {
+	f.cloudSuggestionReviewID = suggestionID
+	f.cloudSuggestionReviewState = state
+	return client.MediaPersonSuggestionReview{
+		ID: suggestionID, ReviewState: state,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudAddMediaSuggestedPersonToIdentity(
+	_ context.Context,
+	personID string,
+	revision uint64,
+	suggestionID string,
+) (client.MediaPersonIdentity, error) {
+	f.cloudSuggestionReviewID = suggestionID
+	f.cloudSuggestionTargetID = personID
+	f.cloudPersonRevision = revision
+	if len(f.cloudPeople) == 0 {
+		return client.MediaPersonIdentity{}, f.err
+	}
+	return f.cloudPeople[0], f.err
 }
 
 func (f *fakeDesktopIPCController) CloudMediaSuggestedPeople(
@@ -2075,6 +2138,10 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			}},
 			TotalGroups: 1, TotalItems: 2, LogicalDuplicateBytes: 123,
 		},
+		cloudPets: []client.MediaPetFacet{{
+			ID: "dog", Name: "狗", ItemCount: 2,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
 		cloudBurstReviews: client.MediaBurstReviewList{
 			Groups: []client.MediaBurstReview{{
 				ID: "burst:v1:42", ItemCount: 3,
@@ -2317,6 +2384,39 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		)
 	}
 
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/pets",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"id\":\"dog\"") ||
+		!strings.Contains(res.Body.String(), "\"item_count\":2") {
+		t.Fatalf("media pets status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/pet-items?pet_kind=dog&limit=25&offset=5",
+		"",
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media pet items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudPetKind != "dog" ||
+		ctrl.cloudMediaLimit != 25 ||
+		ctrl.cloudMediaOffset != 5 {
+		t.Fatalf(
+			"pet range not forwarded: kind=%q limit=%d offset=%d",
+			ctrl.cloudPetKind,
+			ctrl.cloudMediaLimit,
+			ctrl.cloudMediaOffset,
+		)
+	}
+
 	personID := "auto:v1:" + strings.Repeat("a", 64)
 	res = desktopIPCRequest(
 		t,
@@ -2356,6 +2456,22 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	}
 
 	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/people/suggestions?include_reviewed=true&limit=12",
+		"",
+	)
+	if res.Code != http.StatusOK || !ctrl.cloudSuggestionReviewed {
+		t.Fatalf(
+			"reviewed suggestions status=%d reviewed=%v body=%s",
+			res.Code,
+			ctrl.cloudSuggestionReviewed,
+			res.Body.String(),
+		)
+	}
+
+	res = desktopIPCRequest(
 		t, handler, http.MethodGet,
 		"/v1/media/people/suggestion-items?range=true&person_id="+url.QueryEscape(personID)+
 			"&limit=20&offset=200&q=portrait",
@@ -2379,6 +2495,53 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), durableID) ||
 		!strings.Contains(res.Body.String(), "\"Alice\"") {
 		t.Fatalf("durable people status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPatch,
+		"/v1/media/people/suggestion-review",
+		fmt.Sprintf(
+			`{"suggestion_id":"%s","state":"dismissed"}`,
+			personID,
+		),
+	)
+	if res.Code != http.StatusOK ||
+		ctrl.cloudSuggestionReviewID != personID ||
+		ctrl.cloudSuggestionReviewState != "dismissed" {
+		t.Fatalf(
+			"review suggestion status=%d id=%q state=%q body=%s",
+			res.Code,
+			ctrl.cloudSuggestionReviewID,
+			ctrl.cloudSuggestionReviewState,
+			res.Body.String(),
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/v1/media/people/add-suggestion",
+		fmt.Sprintf(
+			`{"person_id":"%s","revision":3,"suggestion_id":"%s"}`,
+			durableID,
+			personID,
+		),
+	)
+	if res.Code != http.StatusOK ||
+		ctrl.cloudSuggestionTargetID != durableID ||
+		ctrl.cloudSuggestionReviewID != personID ||
+		ctrl.cloudPersonRevision != 3 {
+		t.Fatalf(
+			"add suggestion status=%d target=%q suggestion=%q revision=%d body=%s",
+			res.Code,
+			ctrl.cloudSuggestionTargetID,
+			ctrl.cloudSuggestionReviewID,
+			ctrl.cloudPersonRevision,
+			res.Body.String(),
+		)
 	}
 
 	res = desktopIPCRequest(
@@ -2579,7 +2742,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/duplicate-items?duplicate_id=",
 		"/v1/media/bursts?limit=0",
 		"/v1/media/burst-items?burst_id=",
+		"/v1/media/pet-items?pet_kind=hamster",
 		"/v1/media/people/suggestions?limit=0",
+		"/v1/media/people/suggestions?include_reviewed=maybe",
 		"/v1/media/people/suggestion-items?person_id=invalid",
 		"/v1/media/people/identity-items?person_id=invalid",
 		"/v1/media/people/identities?limit=0",

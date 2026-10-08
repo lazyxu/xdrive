@@ -1962,6 +1962,40 @@ func (c *agentController) CloudMediaBurstReviewItemsRange(
 	return cli.MediaBurstReviewItemsRange(ctx, burstID, limit, offset)
 }
 
+func (c *agentController) CloudMediaPets(
+	ctx context.Context,
+) ([]client.MediaPetFacet, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaPets(ctx)
+}
+
+func (c *agentController) CloudMediaPetItemsRange(
+	ctx context.Context,
+	petKind string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaPetItemsRange(ctx, petKind, limit, offset)
+}
+
+func (c *agentController) CloudMediaSuggestedPeopleWithReview(
+	ctx context.Context,
+	includeReviewed bool,
+	limit int,
+) ([]client.MediaSuggestedPerson, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaSuggestedPeopleWithReview(ctx, includeReviewed, limit)
+}
+
 func (c *agentController) CloudMediaSuggestedPeople(
 	ctx context.Context,
 	limit int,
@@ -2047,6 +2081,35 @@ func (c *agentController) CloudMediaPersonItemsRange(
 		return client.MediaItemRange{}, err
 	}
 	return cli.MediaPersonIdentityItemsRangeQuery(ctx, personID, query, limit, offset)
+}
+
+func (c *agentController) CloudReviewMediaSuggestedPerson(
+	ctx context.Context,
+	suggestionID, state string,
+) (client.MediaPersonSuggestionReview, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonSuggestionReview{}, err
+	}
+	return cli.ReviewMediaSuggestedPerson(ctx, suggestionID, state)
+}
+
+func (c *agentController) CloudAddMediaSuggestedPersonToIdentity(
+	ctx context.Context,
+	personID string,
+	revision uint64,
+	suggestionID string,
+) (client.MediaPersonIdentity, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPersonIdentity{}, err
+	}
+	return cli.AddMediaSuggestedPersonToIdentity(
+		ctx,
+		personID,
+		revision,
+		suggestionID,
+	)
 }
 
 func (c *agentController) CloudAdoptMediaSuggestedPerson(

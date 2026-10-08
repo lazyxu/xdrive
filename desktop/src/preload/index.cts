@@ -62,8 +62,17 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-burst-reviews', limit),
   getMediaBurstReviewItemRange: (burstID: string, limit = 200, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-burst-item-range', burstID, limit, offset),
+  getMediaPets: () => ipcRenderer.invoke('agent:get-media-pets'),
+  getMediaPetItemRange: (petKind: string, limit = 200, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-pet-item-range', petKind, limit, offset),
   getMediaSuggestedPeople: (limit = 24) =>
     ipcRenderer.invoke('agent:get-media-suggested-people', limit),
+  getMediaSuggestedPeopleWithReview: (includeReviewed = false, limit = 24) =>
+    ipcRenderer.invoke(
+      'agent:get-media-suggested-people-reviewed',
+      includeReviewed,
+      limit,
+    ),
   getMediaSuggestedPersonItems: (
     personID: string,
     limit = 100,
@@ -150,6 +159,24 @@ const agent = Object.freeze({
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-person-item-range', personID, limit, offset, query),
+  reviewMediaSuggestedPerson: (
+    suggestionID: string,
+    state: 'pending' | 'dismissed',
+  ) => ipcRenderer.invoke(
+    'agent:review-media-suggested-person',
+    suggestionID,
+    state,
+  ),
+  addMediaSuggestedPersonToPerson: (
+    suggestionID: string,
+    personID: string,
+    revision: number,
+  ) => ipcRenderer.invoke(
+    'agent:add-media-suggested-person-to-person',
+    suggestionID,
+    personID,
+    revision,
+  ),
   adoptMediaSuggestedPerson: (suggestionID: string, name = '') =>
     ipcRenderer.invoke('agent:adopt-media-suggested-person', suggestionID, name),
   updateMediaPerson: (

@@ -21,6 +21,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaPetFacet,
+  MediaPersonSuggestionReview,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -446,7 +448,17 @@ declare global {
           limit?: number,
           offset?: number,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
+        getMediaPets: () => Promise<DesktopResult<MediaPetFacet[]>>
+        getMediaPetItemRange: (
+          petKind: string,
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaSuggestedPeople: (limit?: number) => Promise<DesktopResult<MediaSuggestedPerson[]>>
+        getMediaSuggestedPeopleWithReview: (
+          includeReviewed?: boolean,
+          limit?: number,
+        ) => Promise<DesktopResult<MediaSuggestedPerson[]>>
         getMediaSuggestedPersonItems: (
           personID: string,
           limit?: number,
@@ -476,6 +488,15 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
+        reviewMediaSuggestedPerson: (
+          suggestionID: string,
+          state: 'pending' | 'dismissed',
+        ) => Promise<DesktopResult<MediaPersonSuggestionReview>>
+        addMediaSuggestedPersonToPerson: (
+          suggestionID: string,
+          personID: string,
+          revision: number,
+        ) => Promise<DesktopResult<MediaPersonIdentity>>
         adoptMediaSuggestedPerson: (
           suggestionID: string,
           name?: string,

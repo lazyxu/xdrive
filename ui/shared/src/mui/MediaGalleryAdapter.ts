@@ -6,6 +6,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaPetFacet,
+  MediaPersonSuggestionReview,
   Node,
   MediaPersonIdentity,
   MediaPersonSplit,
@@ -84,7 +86,14 @@ export interface XDriveMediaGalleryPort {
     limit: number,
     offset: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  listPets?: () => Promise<XDriveMediaGalleryTransportResult<MediaPetFacet[]>>
+  listPetItemRange?: (
+    petKind: string,
+    limit: number,
+    offset: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listSuggestedPeople?: (
+    includeReviewed?: boolean,
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaSuggestedPerson[]>>
   listSuggestedPersonItems?: (
@@ -116,6 +125,15 @@ export interface XDriveMediaGalleryPort {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  reviewSuggestedPerson?: (
+    suggestionID: string,
+    state: 'pending' | 'dismissed',
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonSuggestionReview>>
+  addSuggestedPersonToPerson?: (
+    suggestionID: string,
+    personID: string,
+    revision: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaPersonIdentity>>
   adoptSuggestedPerson?: (
     suggestionID: string,
     name: string,
@@ -307,8 +325,18 @@ export function createXDriveMediaGalleryDataSource(
           port.listBurstReviewItemRange!(burstID, limit, offset),
         )
       : undefined,
+    listPets: port.listPets
+      ? () => resolveXDriveTransport(port.listPets!())
+      : undefined,
+    listPetItemRange: port.listPetItemRange
+      ? (petKind, limit, offset) => resolveXDriveTransport(
+          port.listPetItemRange!(petKind, limit, offset),
+        )
+      : undefined,
     listSuggestedPeople: port.listSuggestedPeople
-      ? (limit) => resolveXDriveTransport(port.listSuggestedPeople!(limit))
+      ? (includeReviewed, limit) => resolveXDriveTransport(
+          port.listSuggestedPeople!(includeReviewed, limit),
+        )
       : undefined,
     listSuggestedPersonItems: port.listSuggestedPersonItems
       ? (personID, limit, offset, query) => resolveXDriveTransport(
@@ -333,6 +361,20 @@ export function createXDriveMediaGalleryDataSource(
     listPersonItemRange: port.listPersonItemRange
       ? (personID, limit, offset, query) => resolveXDriveTransport(
           port.listPersonItemRange!(personID, limit, offset, query),
+        )
+      : undefined,
+    reviewSuggestedPerson: port.reviewSuggestedPerson
+      ? (suggestionID, state) => resolveXDriveTransport(
+          port.reviewSuggestedPerson!(suggestionID, state),
+        )
+      : undefined,
+    addSuggestedPersonToPerson: port.addSuggestedPersonToPerson
+      ? (suggestionID, personID, revision) => resolveXDriveTransport(
+          port.addSuggestedPersonToPerson!(
+            suggestionID,
+            personID,
+            revision,
+          ),
         )
       : undefined,
     adoptSuggestedPerson: port.adoptSuggestedPerson

@@ -110,6 +110,8 @@ import {
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
   type AgentMediaBurstReviewList,
+  type AgentMediaPetFacet,
+  type AgentMediaPersonSuggestionReview,
   type AgentMediaSuggestedPerson,
   type AgentMediaPersonIdentity,
   type AgentMediaPersonSplit,
@@ -2030,6 +2032,65 @@ function registerIPCHandlers() {
     }, false),
   )
 
+  ipcMain.handle(
+    'agent:get-media-pets',
+    () => runAgentAction<AgentMediaPetFacet[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaPets()
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-pet-item-range',
+    (
+      _event,
+      petKind: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (petKind !== 'dog' && petKind !== 'cat') {
+        throw new AgentIPCError('invalid_input', 0, 'Pet kind must be dog or cat.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaPetItemRange(
+        petKind,
+        window.limit,
+        window.offset,
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-suggested-people-reviewed',
+    (
+      _event,
+      includeReviewed: unknown = false,
+      limit: unknown = 24,
+    ) => runAgentAction<AgentMediaSuggestedPerson[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (typeof includeReviewed !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'includeReviewed must be boolean.')
+      }
+      const requestedLimit = limit === undefined ? 24 : limit
+      if (
+        typeof requestedLimit !== 'number' ||
+        !Number.isSafeInteger(requestedLimit) ||
+        requestedLimit < 1 ||
+        requestedLimit > 100
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Suggested people limit must be between 1 and 100.')
+      }
+      return requireAgentClient().mediaSuggestedPeopleWithReview(
+        includeReviewed,
+        requestedLimit,
+      )
+    }, false),
+  )
+
   ipcMain.handle('agent:get-media-suggested-people', (_event, limit: unknown = 24) => runAgentAction<AgentMediaSuggestedPerson[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
@@ -2197,6 +2258,60 @@ function registerIPCHandlers() {
         window.limit,
         window.offset,
         normalizeMediaGalleryQuery(query),
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:review-media-suggested-person',
+    (
+      _event,
+      suggestionID: unknown,
+      state: unknown,
+    ) => runAgentAction<AgentMediaPersonSuggestionReview>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof suggestionID !== 'string' ||
+        !/^auto:v1:[0-9a-f]{64}$/.test(suggestionID.trim())
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Suggested person id is invalid.')
+      }
+      if (state !== 'pending' && state !== 'dismissed') {
+        throw new AgentIPCError('invalid_input', 0, 'Review state must be pending or dismissed.')
+      }
+      return requireAgentClient().reviewMediaSuggestedPerson(
+        suggestionID.trim(),
+        state,
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:add-media-suggested-person-to-person',
+    (
+      _event,
+      suggestionID: unknown,
+      personID: unknown,
+      revision: unknown,
+    ) => runAgentAction<AgentMediaPersonIdentity>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof suggestionID !== 'string' ||
+        !/^auto:v1:[0-9a-f]{64}$/.test(suggestionID.trim()) ||
+        typeof personID !== 'string' ||
+        !/^person:v1:[0-9a-f-]{36}$/.test(personID.trim()) ||
+        typeof revision !== 'number' ||
+        !Number.isSafeInteger(revision) ||
+        revision < 1
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Person suggestion input is invalid.')
+      }
+      return requireAgentClient().addMediaSuggestedPersonToPerson(
+        personID.trim(),
+        revision,
+        suggestionID.trim(),
       )
     }, false),
   )
