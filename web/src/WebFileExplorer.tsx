@@ -282,11 +282,21 @@ export default function WebFileExplorer({
     onError,
   })
 
-  const routedDirectoryRef = useRef<number | null>(null)
+  const routedDirectoryRef = useRef<{
+    directoryID: number
+    lifecycleKey: string
+  } | null>(null)
   useEffect(() => {
     if (!initialDirectoryID || current?.id === initialDirectoryID) return
-    if (routedDirectoryRef.current === initialDirectoryID) return
-    routedDirectoryRef.current = initialDirectoryID
+    const lifecycleKey = navigationSessionStorageKey ?? ''
+    if (
+      routedDirectoryRef.current?.directoryID === initialDirectoryID &&
+      routedDirectoryRef.current.lifecycleKey === lifecycleKey
+    ) return
+    routedDirectoryRef.current = {
+      directoryID: initialDirectoryID,
+      lifecycleKey,
+    }
     const navigationIntentID = beginNavigationIntent()
     let active = true
     void (async () => {
@@ -315,6 +325,7 @@ export default function WebFileExplorer({
     initialDirectoryID,
     isNavigationIntentCurrent,
     navigateTo,
+    navigationSessionStorageKey,
     onError,
   ])
 

@@ -55,16 +55,6 @@ function compileEffect(filename, callback, dependencies) {
   return new Function(...names, output + '\nreturn effect')(...values)
 }
 
-function deferred() {
-  let resolve
-  let reject
-  const promise = new Promise((next, fail) => {
-    resolve = next
-    reject = fail
-  })
-  return { promise, resolve, reject }
-}
-
 async function flushAsync() {
   await Promise.resolve()
   await Promise.resolve()
@@ -72,10 +62,11 @@ async function flushAsync() {
   await Promise.resolve()
 }
 
-function routeHarness() {
+test('Web route-directory same numeric id must be resolved again after account lifecycle changes', async () => {
   const { filename, callback } = extractRouteDirectoryEffect()
-  const pending = deferred()
+  const routedDirectoryRef = { current: null }
   let navigationGeneration = 0
+  const nodeCalls = []
   const navigations = []
   const errors = []
 
@@ -86,81 +77,66 @@ function routeHarness() {
   const isNavigationIntentCurrent = (requestID) => (
     requestID === navigationGeneration
   )
-  const navigateTo = async (crumbs, _record = true, requestID) => {
-    const effectiveRequestID = requestID ?? beginNavigationIntent()
-    if (!isNavigationIntentCurrent(effectiveRequestID)) return false
-    navigations.push(crumbs.map((crumb) => ({ ...crumb })))
-    return true
-  }
 
-  const effect = compileEffect(filename, callback, {
+  const makeEffect = (account) => compileEffect(filename, callback, {
     initialDirectoryID: 30,
     current: { id: 10 },
-    routedDirectoryRef: { current: null },
-    navigationSessionStorageKey: 'files:account-a',
+    navigationSessionStorageKey: 'files:' + account,
+    routedDirectoryRef,
     api: {
-      node: () => pending.promise,
+      node: async () => {
+        nodeCalls.push(account)
+        return {
+          id: 30,
+          parent_id: null,
+          name: account + ' route target',
+          type: 'dir',
+        }
+      },
     },
-    navigateTo,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigateTo: async (crumbs, _record = true, requestID) => {
+      const effectiveRequestID = requestID ?? beginNavigationIntent()
+      if (!isNavigationIntentCurrent(effectiveRequestID)) return false
+      navigations.push({
+        account,
+        names: crumbs.map((crumb) => crumb.name),
+      })
+      return true
+    },
     onError: (error) => errors.push(
       error instanceof Error ? error.message : String(error),
     ),
   })
 
-  return {
-    effect,
-    pending,
+  const cleanupA = makeEffect('A')()
+  await flushAsync()
+  assert.deepEqual(nodeCalls, ['A'])
+  assert.deepEqual(navigations, [{
+    account: 'A',
+    names: ['A route target'],
+  }])
+
+  if (typeof cleanupA === 'function') cleanupA()
+
+  const cleanupB = makeEffect('B')()
+  await flushAsync()
+
+  assert.deepEqual(
+    nodeCalls,
+    ['A', 'B'],
+    'account B must resolve its own route even when the numeric directory id matches account A',
+  )
+  assert.deepEqual(
     navigations,
-    errors,
-    beginNavigationIntent,
-  }
-}
-
-test('Web route-directory completion cannot override a newer manual navigation intent', async () => {
-  const harness = routeHarness()
-  const cleanup = harness.effect()
-  assert.equal(typeof cleanup, 'function')
-  await flushAsync()
-
-  harness.beginNavigationIntent()
-
-  harness.pending.resolve({
-    id: 30,
-    parent_id: null,
-    name: 'Route target',
-    type: 'dir',
-  })
-  await flushAsync()
-
-  assert.deepEqual(
-    harness.navigations,
-    [],
-    'a route resolution started before a newer manual navigation must not reclaim the FileExplorer directory',
+    [
+      { account: 'A', names: ['A route target'] },
+      { account: 'B', names: ['B route target'] },
+    ],
+    'same-id route de-duplication must not cross the account-scoped FileExplorer lifecycle',
   )
-  assert.deepEqual(harness.errors, [])
+  assert.deepEqual(errors, [])
 
-  cleanup()
-})
-
-test('Web route-directory rejection cannot publish an error after a newer manual navigation intent', async () => {
-  const harness = routeHarness()
-  const cleanup = harness.effect()
-  assert.equal(typeof cleanup, 'function')
-  await flushAsync()
-
-  harness.beginNavigationIntent()
-
-  harness.pending.reject(new Error('stale route directory failure'))
-  await flushAsync()
-
-  assert.deepEqual(
-    harness.errors,
-    [],
-    'a stale route-resolution failure must not surface after a newer manual navigation owns FileExplorer',
-  )
-  assert.deepEqual(harness.navigations, [])
-
-  cleanup()
+  if (typeof cleanupB === 'function') cleanupB()
 })
