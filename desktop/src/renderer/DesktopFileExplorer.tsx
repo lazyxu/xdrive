@@ -97,6 +97,7 @@ export type DesktopFileExplorerAction =
 export type DesktopFileExplorerActionIntent = {
   id: number
   action: DesktopFileExplorerAction
+  lifecycleKey: string
 }
 
 function desktopFileStatusLabel(state: AgentFileAvailability, syncing = false) {
@@ -1186,13 +1187,15 @@ export default function DesktopFileExplorer({
   }
 
   useEffect(() => {
-    if (
-      !actionIntent ||
-      actionIntent.id === actionIntentRef.current ||
-      trashActive ||
-      !current ||
-      explorerActionBusy
-    ) return
+    if (!actionIntent || actionIntent.id === actionIntentRef.current) return
+
+    if (actionIntent.lifecycleKey !== (navigationSessionStorageKey ?? '')) {
+      actionIntentRef.current = actionIntent.id
+      onActionIntentConsumed?.(actionIntent.id)
+      return
+    }
+
+    if (trashActive || !current || explorerActionBusy) return
 
     if (actionIntent.action === 'upload-folder' && !uploadConflictSupported) {
       actionIntentRef.current = actionIntent.id
@@ -1214,6 +1217,7 @@ export default function DesktopFileExplorer({
     actionIntent,
     current,
     explorerActionBusy,
+    navigationSessionStorageKey,
     onActionIntentConsumed,
     onError,
     trashActive,
