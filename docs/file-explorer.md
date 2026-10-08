@@ -165,7 +165,14 @@ Only columns backed by the existing Server range ordering contract are sortable 
 
 Desktop Windows derives 状态 and 可用性 from the existing batched CfAPI availability snapshot. It must not issue per-row IPC or a second batch solely for columns. Web has no device-local availability truth and therefore renders those optional columns as `—` rather than inventing Server-global state.
 
-Media-specific optional columns such as dimensions and duration may be added later when the shared media metadata projection has an explicit bounded contract. They are not default columns.
+Media-specific columns are now available but remain hidden by default:
+
+- **尺寸** — existing indexed media width × height, for files whose current revision already has ready media metadata;
+- **时长** — existing indexed duration using the same `m:ss / h:mm:ss` formatter as Gallery.
+
+These two columns use an explicit bounded projection rather than widening ordinary directory/search payloads. Shared FileExplorer requests media details only while Details view is active and either media column is visible. It batches at most **200** `id + revision` refs per Server request and keeps a bounded **512-entry** client cache keyed by `id:revision`. The Server authorizes active file nodes against the signed-in owner and returns metadata only when `xd_media_metadata.node_revision` matches the requested current Node revision and the metadata row is ready.
+
+The media-details projection is read-only. It does **not** trigger media indexing and it is never joined into the normal children/search range SQL. Files without already-indexed current metadata render `—`. **尺寸 / 时长** are display-only and do not broaden the Server sort contract.
 
 ## File favorites and Quick Access
 

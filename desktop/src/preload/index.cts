@@ -357,6 +357,8 @@ const agent = Object.freeze({
   ) => ipcRenderer.invoke('agent:cloud-file-properties-stats', items, requestID),
   cloudCancelFilePropertiesStats: (requestID: string) =>
     ipcRenderer.invoke('agent:cloud-file-properties-stats-cancel', requestID),
+  cloudFileMediaDetails: (items: Array<{ id: number; revision: number }>) =>
+    ipcRenderer.invoke('agent:cloud-file-media-details', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudBackgroundTaskActiveSummary: () =>
     ipcRenderer.invoke('agent:cloud-background-task-summary'),

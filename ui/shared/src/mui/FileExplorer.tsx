@@ -67,6 +67,15 @@ import {
 import type { XDriveFileExplorerKeyboardNavigationKey } from '../file-explorer-controller'
 import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 import {
+  XDRIVE_FILE_EXPLORER_MEDIA_DETAILS_BATCH_LIMIT,
+  xDriveFileExplorerMediaDetailsKey,
+  xDriveFileExplorerMediaDetailsRefs,
+} from '../file-explorer-media-details'
+import type {
+  XDriveFileExplorerMediaDetails,
+  XDriveFileExplorerMediaDetailsRef,
+} from '../file-explorer-media-details'
+import {
   xDriveFileExplorerKeyboardCommand,
   xDriveFileExplorerKeyboardTabIndex,
   xDriveFileExplorerPrimaryModifierActive,
@@ -85,6 +94,7 @@ import type {
   XDriveFileExplorerGrouping,
 } from '../file-explorer-grouping'
 import { XDriveStatePanel } from './StatePanel'
+import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
@@ -121,6 +131,8 @@ export type XDriveFileExplorerDetailsColumnKey =
   | 'created'
   | 'status'
   | 'availability'
+  | 'dimensions'
+  | 'duration'
 
 export type XDriveFileExplorerDetailsLayout = {
   visible: XDriveFileExplorerDetailsColumnKey[]
@@ -147,6 +159,8 @@ const detailsColumnKeys: XDriveFileExplorerDetailsColumnKey[] = [
   'created',
   'status',
   'availability',
+  'dimensions',
+  'duration',
 ]
 const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, {
   label: string
@@ -162,6 +176,8 @@ const detailsColumnMeta: Record<XDriveFileExplorerDetailsColumnKey, {
   created: { label: '创建时间', defaultWidth: 190, minWidth: 130, maxWidth: 420 },
   status: { label: '状态', defaultWidth: 120, minWidth: 90, maxWidth: 260 },
   availability: { label: '可用性', defaultWidth: 150, minWidth: 100, maxWidth: 320 },
+  dimensions: { label: '尺寸', defaultWidth: 140, minWidth: 100, maxWidth: 260 },
+  duration: { label: '时长', defaultWidth: 110, minWidth: 80, maxWidth: 220 },
 }
 
 export function xDriveDefaultFileExplorerDetailsLayout(): XDriveFileExplorerDetailsLayout {
@@ -645,6 +661,7 @@ const detailsOverscan = 10
 const gridVirtualizationThreshold = 400
 const gridOverscanRows = 3
 const muiSpacingPixel = 8
+const fileExplorerMediaDetailsCacheLimit = 512
 
 type XDriveFileExplorerMarqueeRect = {
   left: number
@@ -749,6 +766,7 @@ export function XDriveFileExplorer({
   loadPreviewURL,
   loadLivePhotoMotion,
   loadPropertiesStats,
+  loadMediaDetails,
   getItemStatus,
   getItemAvailability,
   externallySorted = false,
@@ -837,6 +855,10 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
   ) => Promise<string | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
+  loadMediaDetails?: (
+    items: readonly XDriveFileExplorerMediaDetailsRef[],
+    signal: AbortSignal,
+  ) => Promise<readonly XDriveFileExplorerMediaDetails[]>
   getItemStatus?: (
     item: XDriveFileExplorerItem,
   ) => string | undefined
@@ -869,6 +891,9 @@ export function XDriveFileExplorer({
   const [detailsColumnDropTarget, setDetailsColumnDropTarget] = useState<XDriveFileExplorerDetailsColumnKey | null>(null)
   const [detailsLayout, setDetailsLayout] = useState<XDriveFileExplorerDetailsLayout>(() => loadFileExplorerDetailsLayout(detailsPreferencesKey))
   const [viewPreferences, setViewPreferences] = useState<XDriveFileExplorerViewPreferences>(() => loadFileExplorerViewPreferences(viewPreferencesKey))
+  const mediaDetailsCacheRef = useRef(new Map<string, XDriveFileExplorerMediaDetails | null>())
+  const mediaDetailsRequestRef = useRef(0)
+  const [, setMediaDetailsRevision] = useState(0)
   const detailsResizeRef = useRef<{ key: XDriveFileExplorerDetailsColumnKey; startX: number; startWidth: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     mouseX: number
@@ -2364,6 +2389,28 @@ export function XDriveFileExplorer({
     if (key === 'type') return defaultTypeLabel(item)
     if (key === 'status') return item.statusLabel ?? getItemStatus?.(item) ?? '—'
     if (key === 'availability') return availabilityForItem(item)?.label ?? '—'
+    if (key === 'dimensions') {
+      if (item.kind !== 'file') return '—'
+      const id = Number(item.id)
+      const revision = Number(item.revision)
+      if (!Number.isSafeInteger(id) || !Number.isSafeInteger(revision)) return '—'
+      const details = mediaDetailsCacheRef.current.get(
+        xDriveFileExplorerMediaDetailsKey({ id, revision }),
+      )
+      return details?.width && details?.height
+        ? `${details.width} × ${details.height}`
+        : '—'
+    }
+    if (key === 'duration') {
+      if (item.kind !== 'file') return '—'
+      const id = Number(item.id)
+      const revision = Number(item.revision)
+      if (!Number.isSafeInteger(id) || !Number.isSafeInteger(revision)) return '—'
+      const details = mediaDetailsCacheRef.current.get(
+        xDriveFileExplorerMediaDetailsKey({ id, revision }),
+      )
+      return xDriveMediaFormatDuration(details?.duration_ms) || '—'
+    }
     return item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0)
   }
 
@@ -3355,6 +3402,99 @@ export function XDriveFileExplorer({
     : virtualizeDetails
       ? visibleItems.slice(detailsWindow.start, detailsWindow.end)
       : visibleItems
+
+  const mediaDetailsColumnsVisible = (
+    viewMode === 'details' &&
+    Boolean(loadMediaDetails) &&
+    (
+      visibleDetailsColumns.includes('dimensions') ||
+      visibleDetailsColumns.includes('duration')
+    )
+  )
+  const mediaDetailsRefsJSON = (() => {
+    if (!mediaDetailsColumnsVisible) return '[]'
+    const candidates: XDriveFileExplorerItem[] = []
+    const seen = new Set<string>()
+    const add = (item: XDriveFileExplorerItem | undefined) => {
+      if (!item || item.kind !== 'file') return
+      const key = explorerIDKey(item.id)
+      if (seen.has(key)) return
+      seen.add(key)
+      candidates.push(item)
+    }
+    if (groupedDetailsLayout) {
+      for (const segment of groupedDetailsSegments) {
+        for (let index = segment.startIndex; index < segment.endIndex; index += 1) {
+          add(logicalItemAt(index))
+        }
+      }
+    } else {
+      for (const item of detailItems) add(item)
+    }
+    return JSON.stringify(xDriveFileExplorerMediaDetailsRefs(candidates))
+  })()
+
+  useEffect(() => {
+    const requestID = ++mediaDetailsRequestRef.current
+    if (!mediaDetailsColumnsVisible || !loadMediaDetails) return
+
+    let refs: XDriveFileExplorerMediaDetailsRef[]
+    try {
+      refs = JSON.parse(mediaDetailsRefsJSON) as XDriveFileExplorerMediaDetailsRef[]
+    } catch {
+      return
+    }
+    const pending = refs.filter((ref) => (
+      !mediaDetailsCacheRef.current.has(xDriveFileExplorerMediaDetailsKey(ref))
+    ))
+    if (pending.length === 0) return
+
+    const controller = new AbortController()
+    void (async () => {
+      const loaded: XDriveFileExplorerMediaDetails[] = []
+      for (
+        let offset = 0;
+        offset < pending.length;
+        offset += XDRIVE_FILE_EXPLORER_MEDIA_DETAILS_BATCH_LIMIT
+      ) {
+        if (controller.signal.aborted) return
+        const batch = pending.slice(
+          offset,
+          offset + XDRIVE_FILE_EXPLORER_MEDIA_DETAILS_BATCH_LIMIT,
+        )
+        loaded.push(...await loadMediaDetails(batch, controller.signal))
+      }
+      if (
+        controller.signal.aborted ||
+        requestID !== mediaDetailsRequestRef.current
+      ) return
+
+      const returned = new Map(
+        loaded.map((details) => [
+          xDriveFileExplorerMediaDetailsKey(details),
+          details,
+        ]),
+      )
+      for (const ref of pending) {
+        const key = xDriveFileExplorerMediaDetailsKey(ref)
+        const value = returned.get(key) ?? null
+        mediaDetailsCacheRef.current.delete(key)
+        mediaDetailsCacheRef.current.set(key, value)
+      }
+      while (mediaDetailsCacheRef.current.size > fileExplorerMediaDetailsCacheLimit) {
+        const oldest = mediaDetailsCacheRef.current.keys().next().value
+        if (oldest === undefined) break
+        mediaDetailsCacheRef.current.delete(oldest)
+      }
+      setMediaDetailsRevision((value) => value + 1)
+    })().catch(() => undefined)
+
+    return () => controller.abort()
+  }, [
+    loadMediaDetails,
+    mediaDetailsColumnsVisible,
+    mediaDetailsRefsJSON,
+  ])
 
   const virtualizeGrid = (
     viewMode === 'grid' &&

@@ -56,6 +56,8 @@ import type {
   XDriveBackgroundTaskPage,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
+  XDriveFileExplorerMediaDetails,
+  XDriveFileExplorerMediaDetailsRef,
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerGrouping,
   XDriveFileTextPreview,
@@ -1624,6 +1626,21 @@ export class XDriveApi {
       body: JSON.stringify({ items }),
       signal,
     })
+  }
+
+  async fileMediaDetails(
+    items: readonly XDriveFileExplorerMediaDetailsRef[],
+    signal?: AbortSignal,
+  ) {
+    const result = await this.request<{ items: XDriveFileExplorerMediaDetails[] }>(
+      '/api/v1/nodes/media-details',
+      {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+        signal,
+      },
+    )
+    return result.items
   }
 
   createFileOperation(

@@ -45,6 +45,7 @@ import type {
   XDriveFileExplorerGrouping,
   XDriveFileExplorerSearchSourceOption,
   XDriveByteProgressHandler,
+  XDriveFileExplorerMediaDetailsRef,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
@@ -372,6 +373,11 @@ export default function WebFileExplorer({
     signal,
   ), [api])
 
+  const loadMediaDetails = useCallback((
+    refs: readonly XDriveFileExplorerMediaDetailsRef[],
+    signal: AbortSignal,
+  ) => api.fileMediaDetails(refs, signal), [api])
+
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf',
@@ -551,6 +557,7 @@ export default function WebFileExplorer({
         loadPreviewURL={loadPreviewURL}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={loadPropertiesStats}
+        loadMediaDetails={loadMediaDetails}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
         searchEnabled={!trashActive}

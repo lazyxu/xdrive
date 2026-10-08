@@ -86,6 +86,7 @@ var desktopIPCCapabilities = []string{
 	"file-favorites",
 	"file-recent",
 	"file-properties-stats",
+	"file-media-details",
 	"upload-conflict-preflight",
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
@@ -515,6 +516,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/batch/move", h.cloudBatchMove)
 	mux.HandleFunc("POST /v1/cloud/batch/delete", h.cloudBatchDelete)
 	mux.HandleFunc("POST /v1/cloud/properties/stats", h.cloudFilePropertiesStats)
+	mux.HandleFunc("POST /v1/cloud/media-details", h.cloudFileMediaDetails)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
@@ -1399,6 +1401,30 @@ func (h *desktopIPCHandler) cloudFilePropertiesStats(w http.ResponseWriter, r *h
 		return
 	}
 	result, err := h.ctrl.CloudFilePropertiesStats(r.Context(), input.Items)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+type desktopIPCFileMediaDetailsController interface {
+	CloudFileMediaDetails(context.Context, []client.BatchNodeRef) ([]client.FileMediaDetails, error)
+}
+
+func (h *desktopIPCHandler) cloudFileMediaDetails(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Items []client.BatchNodeRef `json:"items"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	controller, ok := h.ctrl.(desktopIPCFileMediaDetailsController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "unsupported", "file media details are not supported")
+		return
+	}
+	result, err := controller.CloudFileMediaDetails(r.Context(), input.Items)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

@@ -404,6 +404,17 @@ func (c *agentController) CloudFilePropertiesStats(
 	return cli.FilePropertiesStats(ctx, items)
 }
 
+func (c *agentController) CloudFileMediaDetails(
+	ctx context.Context,
+	items []client.BatchNodeRef,
+) ([]client.FileMediaDetails, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileMediaDetails(ctx, items)
+}
+
 func (c *agentController) CloudCreateFileOperation(
 	ctx context.Context,
 	operationType string,
