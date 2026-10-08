@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -69,5 +70,29 @@ func TestPreviewStreamJWTRejectsInvalidClaims(t *testing.T) {
 	}
 	if _, _, err := manager.IssuePreviewStream(1, 1, 2, 3, "pdf", 3*time.Hour); err == nil {
 		t.Fatal("oversized preview stream ttl was accepted")
+	}
+}
+
+func TestPreviewResourceStreamJWT(t *testing.T) {
+	manager := New("test-secret-that-is-long-enough", time.Hour)
+	fingerprint := "livp:" + strings.Repeat("a", 64) + ":128:2048"
+	token, _, err := manager.IssuePreviewResourceStream(
+		42, 7, 99, 3, "live_motion", fingerprint, time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.ParsePreviewStream(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.PreviewKind != "live_motion" ||
+		claims.ResourceFingerprint != fingerprint {
+		t.Fatalf("claims=%+v", claims)
+	}
+	if _, _, err := manager.IssuePreviewResourceStream(
+		42, 7, 99, 3, "live_motion", "", time.Minute,
+	); err == nil {
+		t.Fatal("empty resource fingerprint was accepted")
 	}
 }

@@ -20,7 +20,6 @@ import (
 )
 
 const cloudSearchLimit = 200
-const maxAgentMediaMotionBytes int64 = 64 << 20
 const maxAgentArchiveEntries = 200000
 
 type agentCloudCrumb struct {
@@ -82,11 +81,6 @@ type agentCreatedShare struct {
 }
 
 type agentMediaThumbnail struct {
-	ContentType string
-	Data        []byte
-}
-
-type agentMediaMotion struct {
 	ContentType string
 	Data        []byte
 }
@@ -2399,30 +2393,15 @@ func (c *agentController) CloudPutMediaVideoPoster(
 	return cli.PutMediaVideoPoster(ctx, nodeID, revision, data)
 }
 
-func (c *agentController) CloudMediaLivePhotoMotion(ctx context.Context, nodeID uint64) (agentMediaMotion, error) {
+func (c *agentController) CloudMediaLivePhotoMotionTicket(
+	ctx context.Context,
+	nodeID uint64,
+) (client.FilePreviewTicket, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
-		return agentMediaMotion{}, err
+		return client.FilePreviewTicket{}, err
 	}
-	body, contentType, contentLength, err := cli.MediaLivePhotoMotion(ctx, nodeID)
-	if err != nil {
-		return agentMediaMotion{}, err
-	}
-	defer body.Close()
-	if contentLength > maxAgentMediaMotionBytes {
-		return agentMediaMotion{}, fmt.Errorf("Live Photo motion exceeds Desktop playback limit")
-	}
-	data, err := io.ReadAll(io.LimitReader(body, maxAgentMediaMotionBytes+1))
-	if err != nil {
-		return agentMediaMotion{}, err
-	}
-	if int64(len(data)) > maxAgentMediaMotionBytes {
-		return agentMediaMotion{}, fmt.Errorf("Live Photo motion exceeds Desktop playback limit")
-	}
-	return agentMediaMotion{
-		ContentType: contentType,
-		Data:        data,
-	}, nil
+	return cli.MediaLivePhotoMotionTicket(ctx, nodeID)
 }
 
 func (c *agentController) CloudSourceItems(ctx context.Context, sourceID uint64, state string, limit, offset int) ([]client.SourceItem, error) {

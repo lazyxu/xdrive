@@ -276,7 +276,6 @@ declare global {
   type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
   type AgentMediaThumbnail = { content_type: string; data: ArrayBuffer }
-  type AgentMediaMotion = { content_type: string; data: ArrayBuffer }
 
   type AgentCloudBatchNodeRef = { id: number; revision: number }
   type AgentCloudBatchResult = {
@@ -552,7 +551,10 @@ declare global {
         getMediaLivePhotoMotion: (
           nodeID: number,
           onProgress?: XDriveByteProgressHandler,
-        ) => Promise<DesktopResult<AgentMediaMotion>>
+        ) => Promise<DesktopResult<string>>
+        releaseMediaLivePhotoMotion: (
+          url: string,
+        ) => Promise<DesktopResult<{ released: boolean }>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

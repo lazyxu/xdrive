@@ -12,6 +12,10 @@ import {
   Typography,
 } from '@mui/material'
 import type { MediaAlbum, MediaItem } from '../models'
+import type {
+  XDriveByteProgressHandler,
+  XDriveLivePhotoMotionSource,
+} from '../file-preview'
 import { formatBytes } from '../format'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
@@ -30,7 +34,10 @@ import {
 import { XDriveStatusAlert } from './StatusAlert'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
-type MediaMotionLoader = (nodeID: number) => Promise<string | null>
+type MediaMotionLoader = (
+  nodeID: number,
+  onProgress?: XDriveByteProgressHandler,
+) => Promise<XDriveLivePhotoMotionSource | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',
@@ -179,9 +186,11 @@ export function XDriveMediaDetailsContent({
     return loadThumbnail(item.node.id)
   }, [item?.metadata.has_thumbnail, item?.node.id, loadThumbnail])
 
-  const loadSelectedLivePhotoMotion = useCallback(async () => {
+  const loadSelectedLivePhotoMotion = useCallback(async (
+    onProgress?: XDriveByteProgressHandler,
+  ) => {
     if (!item || !loadLivePhotoMotion) return null
-    return loadLivePhotoMotion(item.node.id)
+    return loadLivePhotoMotion(item.node.id, onProgress)
   }, [item?.node.id, loadLivePhotoMotion])
 
   useEffect(() => {

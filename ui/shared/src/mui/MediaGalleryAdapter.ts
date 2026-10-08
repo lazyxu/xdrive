@@ -15,7 +15,10 @@ import type {
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
 } from '../models'
-import type { XDriveByteProgressHandler } from '../file-preview'
+import type {
+  XDriveByteProgressHandler,
+  XDriveLivePhotoMotionSource,
+} from '../file-preview'
 import { resolveXDriveTransport } from '../transport-result'
 import type {
   XDriveTransportError,
@@ -34,6 +37,13 @@ export type XDriveMediaGalleryBinaryResource =
   | {
       content_type?: string
       data: ArrayBuffer
+    }
+
+export type XDriveMediaGalleryLivePhotoResource =
+  | XDriveMediaGalleryBinaryResource
+  | {
+      url: string
+      dispose?: () => void
     }
 
 export interface XDriveMediaGalleryPort {
@@ -172,7 +182,7 @@ export interface XDriveMediaGalleryPort {
   loadLivePhotoMotion?: (
     nodeID: number,
     onProgress?: XDriveByteProgressHandler,
-  ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
+  ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryLivePhotoResource>>
   loadPreviewURL?: (
     nodeID: number,
     kind: 'image' | 'video',
@@ -268,6 +278,18 @@ function mediaResourceURL(
     ))
   }
   return URL.createObjectURL(resource)
+}
+
+function mediaLivePhotoSource(
+  resource: XDriveMediaGalleryLivePhotoResource,
+  fallbackContentType: string,
+): XDriveLivePhotoMotionSource {
+  if (
+    typeof resource !== 'string' &&
+    !(resource instanceof Blob) &&
+    'url' in resource
+  ) return resource
+  return mediaResourceURL(resource, fallbackContentType)
 }
 
 export function createXDriveMediaGalleryDataSource(
@@ -408,7 +430,7 @@ export function createXDriveMediaGalleryDataSource(
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion
-      ? async (nodeID, onProgress) => mediaResourceURL(
+      ? async (nodeID, onProgress) => mediaLivePhotoSource(
           await resolveXDriveTransport(port.loadLivePhotoMotion!(nodeID, onProgress)),
           'video/quicktime',
         )

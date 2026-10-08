@@ -13,6 +13,7 @@ const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx
 const galleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const livePhoto = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
+const previewModel = read('ui', 'shared', 'src', 'file-preview.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
@@ -177,6 +178,24 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   assert.ok(
     livePhoto.includes('loadMotion(onProgress)') && livePhoto.includes('按住加载并播放'),
     'shared Live Photo surface must fetch motion only after the first hold',
+  )
+  assert.ok(
+    previewModel.includes('XDriveLivePhotoMotionSource') &&
+      livePhoto.includes('disposeLivePhotoMotion') &&
+      livePhoto.includes('preload="metadata"'),
+    'shared Live Photo surface must own stream URL disposal and bounded preloading',
+  )
+  assert.ok(
+    desktop.includes('releaseMediaLivePhotoMotion(result.data)'),
+    'Desktop LIVP loader must release protected stream URLs',
+  )
+  const desktopMotionStart = desktop.indexOf('const loadLivePhotoMotion = useCallback')
+  const desktopMotionEnd = desktop.indexOf('const openPreviewNode', desktopMotionStart)
+  assert.ok(desktopMotionStart >= 0 && desktopMotionEnd > desktopMotionStart)
+  assert.equal(
+    desktop.slice(desktopMotionStart, desktopMotionEnd).includes('new Blob('),
+    false,
+    'Desktop LIVP motion must not be materialized as a renderer ArrayBuffer Blob',
   )
   assert.ok(
     docs.includes('validated `.livp`') && docs.includes('FileExplorer'),

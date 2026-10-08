@@ -12,6 +12,7 @@ import type {
   XDriveFilePreviewKind,
   XDriveFilePreviewTarget,
   XDriveFileTextPreview,
+  XDriveLivePhotoMotionSource,
 } from '../file-preview'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 
@@ -26,7 +27,7 @@ export type XDriveFilePreviewImageLoader<T extends XDriveFilePreviewTarget = XDr
 export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
   onProgress?: XDriveByteProgressHandler,
-) => Promise<string | null | undefined>
+) => Promise<XDriveLivePhotoMotionSource | null | undefined>
 
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1802,6 +1803,206 @@ func (s *Server) currentMediaDerivedResource(
 	return row, nil
 }
 
+const mediaLivePhotoMotionPreviewKind = "live_motion"
+
+type mediaLivePhotoMotionDescriptor struct {
+	Embedded    bool
+	Resource    meta.MediaDerivedResource
+	MotionNode  meta.Node
+	Name        string
+	MIMEType    string
+	ModifiedAt  time.Time
+	Fingerprint string
+	ETag        string
+}
+
+func mediaLivePhotoMotionEmbeddedFingerprint(
+	node meta.Node,
+	resource meta.MediaDerivedResource,
+) string {
+	return fmt.Sprintf(
+		"livp:%d:%d:%s:%d:%d",
+		node.ID,
+		node.Revision,
+		strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+		resource.ByteOffset,
+		resource.ByteSize,
+	)
+}
+
+func mediaLivePhotoMotionNodeFingerprint(node meta.Node) string {
+	if node.File == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"node:%d:%d:%s",
+		node.ID,
+		node.Revision,
+		strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+	)
+}
+
+func (s *Server) resolveMediaLivePhotoMotion(
+	ctx context.Context,
+	node meta.Node,
+) (mediaLivePhotoMotionDescriptor, error) {
+	metadata, err := s.ensureMediaMetadata(ctx, node)
+	if err != nil {
+		return mediaLivePhotoMotionDescriptor{}, err
+	}
+
+	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
+		resource, err := s.currentMediaDerivedResource(
+			ctx,
+			node,
+			meta.MediaDerivedResourceRoleMotion,
+		)
+		if err != nil {
+			return mediaLivePhotoMotionDescriptor{}, err
+		}
+		contentType := strings.TrimSpace(resource.MIMEType)
+		if contentType == "" {
+			contentType = "video/quicktime"
+		}
+		return mediaLivePhotoMotionDescriptor{
+			Embedded:    true,
+			Resource:    resource,
+			Name:        resource.Name,
+			MIMEType:    contentType,
+			ModifiedAt:  metadata.UpdatedAt,
+			Fingerprint: mediaLivePhotoMotionEmbeddedFingerprint(node, resource),
+			ETag: fmt.Sprintf(
+				"\"live-photo-motion-%s-%d-%d\"",
+				strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+				resource.ByteOffset,
+				resource.ByteSize,
+			),
+		}, nil
+	}
+
+	motionNode, motionMetadata, err := s.standaloneLivePhotoMotion(
+		ctx,
+		node.ID,
+		node.OwnerID,
+	)
+	if err != nil {
+		return mediaLivePhotoMotionDescriptor{}, err
+	}
+	contentType := strings.TrimSpace(motionMetadata.MIMEType)
+	if contentType == "" {
+		contentType = "video/quicktime"
+	}
+	return mediaLivePhotoMotionDescriptor{
+		MotionNode:  motionNode,
+		Name:        motionNode.Name,
+		MIMEType:    contentType,
+		ModifiedAt:  motionMetadata.UpdatedAt,
+		Fingerprint: mediaLivePhotoMotionNodeFingerprint(motionNode),
+		ETag: fmt.Sprintf(
+			"\"live-photo-motion-%s\"",
+			strings.ToLower(strings.TrimSpace(motionNode.File.SHA256)),
+		),
+	}, nil
+}
+
+func (s *Server) mediaLivePhotoMotionTicket(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, err := s.ownedNode(userID(c), id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	descriptor, err := s.resolveMediaLivePhotoMotion(c.Request.Context(), node)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "live photo motion not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "resolve live photo motion failed")
+		}
+		return
+	}
+	user, ok := currentUser(c)
+	if !ok {
+		fail(c, http.StatusUnauthorized, "user not found")
+		return
+	}
+	ticket, expiresAt, err := s.Auth.IssuePreviewResourceStream(
+		user.ID,
+		user.SessionVersion,
+		node.ID,
+		node.Revision,
+		mediaLivePhotoMotionPreviewKind,
+		descriptor.Fingerprint,
+		filePreviewTicketTTL,
+	)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "create live photo motion ticket failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, filePreviewTicketDTO{
+		URL: fmt.Sprintf(
+			"/api/v1/media-live-photo-motion/%d?ticket=%s",
+			node.ID,
+			url.QueryEscape(ticket),
+		),
+		ExpiresAt: expiresAt.UTC(),
+		Kind:      "video",
+		MIMEType:  descriptor.MIMEType,
+	})
+}
+
+func (s *Server) mediaLivePhotoMotionTicketStream(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	claims, err := s.Auth.ParsePreviewStream(strings.TrimSpace(c.Query("ticket")))
+	if err != nil ||
+		claims.NodeID != id ||
+		claims.PreviewKind != mediaLivePhotoMotionPreviewKind ||
+		strings.TrimSpace(claims.ResourceFingerprint) == "" {
+		fail(c, http.StatusUnauthorized, "invalid live photo motion ticket")
+		return
+	}
+
+	var user meta.User
+	if err := s.DB.WithContext(c.Request.Context()).First(&user, claims.UserID).Error; err != nil {
+		fail(c, http.StatusUnauthorized, "invalid live photo motion ticket")
+		return
+	}
+	if user.DisabledAt != nil ||
+		user.MustChangePassword ||
+		claims.SessionVersion != user.SessionVersion {
+		fail(c, http.StatusUnauthorized, "live photo motion ticket is no longer valid")
+		return
+	}
+
+	node, err := s.ownedNode(claims.UserID, id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if node.Revision != claims.NodeRevision {
+		fail(c, http.StatusGone, "live photo motion ticket is stale")
+		return
+	}
+	descriptor, err := s.resolveMediaLivePhotoMotion(c.Request.Context(), node)
+	if err != nil || descriptor.Fingerprint != claims.ResourceFingerprint {
+		fail(c, http.StatusGone, "live photo motion ticket is stale")
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "no-referrer")
+	s.serveMediaLivePhotoMotion(c, node, descriptor)
+}
+
 func (s *Server) mediaLivePhotoMotion(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
@@ -1813,51 +2014,7 @@ func (s *Server) mediaLivePhotoMotion(c *gin.Context) {
 		fail(c, http.StatusNotFound, "file not found")
 		return
 	}
-	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, "media indexing failed")
-		return
-	}
-
-	if metadata.ContainerKind == mediapkg.ContainerKindLIVP {
-		resource, err := s.currentMediaDerivedResource(
-			c.Request.Context(),
-			node,
-			meta.MediaDerivedResourceRoleMotion,
-		)
-		if err != nil {
-			fail(c, http.StatusNotFound, "live photo motion not found")
-			return
-		}
-		file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
-		if err != nil {
-			fail(c, http.StatusNotFound, "stored content not found")
-			return
-		}
-		defer file.Close()
-		c.Header("ETag", fmt.Sprintf(
-			"\"live-photo-motion-%s-%d-%d\"",
-			strings.ToLower(strings.TrimSpace(node.File.SHA256)),
-			resource.ByteOffset,
-			resource.ByteSize,
-		))
-		c.Header("Cache-Control", "private, max-age=3600")
-		c.Header("Content-Type", resource.MIMEType)
-		http.ServeContent(
-			c.Writer,
-			c.Request,
-			resource.Name,
-			metadata.UpdatedAt,
-			io.NewSectionReader(file, resource.ByteOffset, resource.ByteSize),
-		)
-		return
-	}
-
-	motionNode, motionMetadata, err := s.standaloneLivePhotoMotion(
-		c.Request.Context(),
-		node.ID,
-		node.OwnerID,
-	)
+	descriptor, err := s.resolveMediaLivePhotoMotion(c.Request.Context(), node)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			fail(c, http.StatusNotFound, "live photo motion not found")
@@ -1866,27 +2023,55 @@ func (s *Server) mediaLivePhotoMotion(c *gin.Context) {
 		}
 		return
 	}
-	file, err := s.Store.Open(c.Request.Context(), motionNode.File.StorageKey)
+	s.serveMediaLivePhotoMotion(c, node, descriptor)
+}
+
+func (s *Server) serveMediaLivePhotoMotion(
+	c *gin.Context,
+	stillNode meta.Node,
+	descriptor mediaLivePhotoMotionDescriptor,
+) {
+	var storageKey string
+	if descriptor.Embedded {
+		storageKey = stillNode.File.StorageKey
+	} else if descriptor.MotionNode.File != nil {
+		storageKey = descriptor.MotionNode.File.StorageKey
+	}
+	if strings.TrimSpace(storageKey) == "" {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	file, err := s.Store.Open(c.Request.Context(), storageKey)
 	if err != nil {
 		fail(c, http.StatusNotFound, "stored content not found")
 		return
 	}
 	defer file.Close()
-	contentType := strings.TrimSpace(motionMetadata.MIMEType)
-	if contentType == "" {
-		contentType = "video/quicktime"
+
+	if c.Writer.Header().Get("Cache-Control") == "" {
+		c.Header("Cache-Control", "private, max-age=3600")
 	}
-	c.Header("ETag", fmt.Sprintf(
-		"\"live-photo-motion-%s\"",
-		strings.ToLower(strings.TrimSpace(motionNode.File.SHA256)),
-	))
-	c.Header("Cache-Control", "private, max-age=3600")
-	c.Header("Content-Type", contentType)
+	c.Header("Content-Type", descriptor.MIMEType)
+	c.Header("ETag", descriptor.ETag)
+	if descriptor.Embedded {
+		http.ServeContent(
+			c.Writer,
+			c.Request,
+			descriptor.Name,
+			descriptor.ModifiedAt,
+			io.NewSectionReader(
+				file,
+				descriptor.Resource.ByteOffset,
+				descriptor.Resource.ByteSize,
+			),
+		)
+		return
+	}
 	http.ServeContent(
 		c.Writer,
 		c.Request,
-		motionNode.Name,
-		motionMetadata.UpdatedAt,
+		descriptor.Name,
+		descriptor.ModifiedAt,
 		file,
 	)
 }

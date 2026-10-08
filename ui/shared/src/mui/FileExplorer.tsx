@@ -60,7 +60,11 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import { formatBytes } from '../format'
-import type { XDriveFileTextPreview } from '../file-preview'
+import type {
+  XDriveByteProgressHandler,
+  XDriveFileTextPreview,
+  XDriveLivePhotoMotionSource,
+} from '../file-preview'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
@@ -930,7 +934,8 @@ export function XDriveFileExplorer({
   ) => Promise<string | null | undefined>
   loadLivePhotoMotion?: (
     item: XDriveFileExplorerItem,
-  ) => Promise<string | null | undefined>
+    onProgress?: XDriveByteProgressHandler,
+  ) => Promise<XDriveLivePhotoMotionSource | null | undefined>
   loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   loadMediaDetails?: (
     items: readonly XDriveFileExplorerMediaDetailsRef[],

@@ -74,18 +74,55 @@ func (m Manager) Parse(tokenString string) (userID, sessionVersion uint64, err e
 }
 
 type PreviewStreamClaims struct {
-	UserID         uint64 `json:"uid"`
-	NodeID         uint64 `json:"nid"`
-	NodeRevision   uint64 `json:"rev"`
-	SessionVersion uint64 `json:"ver,omitempty"`
-	PreviewKind    string `json:"kind"`
-	TokenType      string `json:"typ"`
+	UserID              uint64 `json:"uid"`
+	NodeID              uint64 `json:"nid"`
+	NodeRevision        uint64 `json:"rev"`
+	SessionVersion      uint64 `json:"ver,omitempty"`
+	PreviewKind         string `json:"kind"`
+	ResourceFingerprint string `json:"resource,omitempty"`
+	TokenType           string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
 func (m Manager) IssuePreviewStream(
 	userID, sessionVersion, nodeID, nodeRevision uint64,
 	previewKind string,
+	ttl time.Duration,
+) (string, time.Time, error) {
+	return m.issuePreviewStream(
+		userID,
+		sessionVersion,
+		nodeID,
+		nodeRevision,
+		previewKind,
+		"",
+		ttl,
+	)
+}
+
+func (m Manager) IssuePreviewResourceStream(
+	userID, sessionVersion, nodeID, nodeRevision uint64,
+	previewKind, resourceFingerprint string,
+	ttl time.Duration,
+) (string, time.Time, error) {
+	resourceFingerprint = strings.TrimSpace(resourceFingerprint)
+	if resourceFingerprint == "" || len(resourceFingerprint) > 256 {
+		return "", time.Time{}, errors.New("invalid preview stream resource")
+	}
+	return m.issuePreviewStream(
+		userID,
+		sessionVersion,
+		nodeID,
+		nodeRevision,
+		previewKind,
+		resourceFingerprint,
+		ttl,
+	)
+}
+
+func (m Manager) issuePreviewStream(
+	userID, sessionVersion, nodeID, nodeRevision uint64,
+	previewKind, resourceFingerprint string,
 	ttl time.Duration,
 ) (string, time.Time, error) {
 	previewKind = strings.TrimSpace(previewKind)
@@ -97,12 +134,13 @@ func (m Manager) IssuePreviewStream(
 	now := time.Now()
 	expiresAt := now.Add(ttl)
 	claims := PreviewStreamClaims{
-		UserID:         userID,
-		NodeID:         nodeID,
-		NodeRevision:   nodeRevision,
-		SessionVersion: sessionVersion,
-		PreviewKind:    previewKind,
-		TokenType:      "preview_stream",
+		UserID:              userID,
+		NodeID:              nodeID,
+		NodeRevision:        nodeRevision,
+		SessionVersion:      sessionVersion,
+		PreviewKind:         previewKind,
+		ResourceFingerprint: resourceFingerprint,
+		TokenType:           "preview_stream",
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),

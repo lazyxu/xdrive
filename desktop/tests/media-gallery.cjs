@@ -57,6 +57,7 @@ const desktopAdapter = read('desktop', 'src', 'renderer', 'mediaGalleryAdapter.t
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
+const desktopPreviewProxy = read('desktop', 'src', 'main', 'file_preview_proxy.cts')
 const desktopIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 const desktopIndexHTML = read('desktop', 'src', 'renderer', 'index.html')
 
@@ -404,7 +405,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'video.currentTime = 0',
     'controls={false}',
     'playsInline',
-    'preload="auto"',
+    'preload="metadata"',
     'loadStartedRef.current',
     'loadMotion(onProgress)',
     "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",
@@ -418,7 +419,9 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
   assert.match(webAPI, /responseBlobWithProgress/)
   assert.match(preload, /agent:media-live-photo-motion-progress/)
   assert.match(desktopMain, /agent:media-live-photo-motion-progress/)
-  assert.match(agentClient, /lastProgressAt/)
+  assert.match(desktopPreviewProxy, /coveredRanges/)
+  assert.match(desktopPreviewProxy, /createURLFromTicket/)
+  assert.match(desktopPreviewProxy, /releaseURL\(value: string\)/)
   assert.match(webAdapter, /mediaLivePhotoMotion\(nodeID, onProgress\)/)
   assert.match(desktopAdapter, /getMediaLivePhotoMotion\(nodeID, onProgress\)/)
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
@@ -633,6 +636,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaDescription:',
     'getMediaThumbnail:',
     'getMediaLivePhotoMotion:',
+    'releaseMediaLivePhotoMotion:',
     'cloudFilePreviewURL:',
   ]) {
     assert.ok(preload.includes(token), `Desktop preload missing ${token}`)
@@ -680,16 +684,20 @@ test('Web and Desktop expose the same Gallery data operations', () => {
     'setMediaPeople(nodeID:',
     'setMediaDescription(nodeID:',
     'mediaThumbnail(nodeID:',
-    'mediaLivePhotoMotion(',
+    'mediaLivePhotoMotionTicket(',
     'cloudFilePreviewTicket(nodeID:',
   ]) {
     assert.ok(agentClient.includes(token), `Desktop Agent client missing ${token}`)
   }
 
-  assert.match(
-    agentClient,
-    /mediaLivePhotoMotion\([\s\S]*onProgress\?: AgentBinaryProgressHandler/,
-    'Desktop Live Photo motion must expose byte-progress callbacks',
+  assert.ok(
+    agentClient.includes('mediaLivePhotoMotionTicket(nodeID: number)'),
+    'Desktop Agent client must request a Live Photo motion stream ticket',
+  )
+  assert.equal(
+    agentClient.includes('mediaLivePhotoMotion(\n    nodeID: number,'),
+    false,
+    'Desktop Agent client must not buffer Live Photo motion bytes',
   )
 
   assert.ok(desktopIPC.includes('"media-gallery"'))
@@ -730,13 +738,20 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.ok(desktopIPC.includes('"file-preview-stream"'))
   assert.ok(desktopIPC.includes('GET /v1/cloud/file-preview-ticket'))
   assert.ok(desktopIPC.includes('GET /v1/media/thumbnail'))
-  assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion'))
+  assert.ok(desktopIPC.includes('GET /v1/media/live-photo-motion-ticket'))
   assert.match(desktopAdapter, /cloudFilePreviewURL/)
   assert.match(agentClient, /data: ArrayBuffer/)
   assert.match(
     agentClient,
-    /mediaLivePhotoMotion\([\s\S]*nodeID: number,[\s\S]*onProgress\?: AgentBinaryProgressHandler[\s\S]*\): Promise<AgentMediaMotion>/,
+    /mediaLivePhotoMotionTicket\(nodeID: number\)[\s\S]*AgentFilePreviewTicket/,
   )
+  assert.ok(desktopMain.includes('filePreviewProxy.createURLFromTicket('))
+  assert.ok(desktopMain.includes("'agent:release-media-live-photo-motion'"))
+  assert.ok(preload.includes('mediaLivePhotoProgressByURL'))
+  assert.ok(preload.includes('releaseMediaLivePhotoMotion:'))
+  assert.ok(desktopAdapter.includes('releaseMediaLivePhotoMotion(result.data)'))
+  assert.ok(desktopPreviewProxy.includes('mergeByteRanges'))
+  assert.ok(desktopPreviewProxy.includes('ticket.controllers'))
   assert.match(agentClient, /requestBinary\(/)
   assert.match(desktopAdapter, /getMediaItems\('', limit, offset, query\)/)
   assert.match(desktopAdapter, /getMediaSuggestedPeople/)
@@ -1042,4 +1057,18 @@ test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler
     false,
     'video poster scheduling remains a separate bounded pipeline',
   )
+})
+
+
+test('Desktop Live Photo motion streams through the protected Range proxy instead of renderer buffers', () => {
+  assert.ok(desktopMain.includes('mediaLivePhotoMotionTicket(nodeID)'))
+  assert.ok(desktopMain.includes('filePreviewProxy.createURLFromTicket('))
+  assert.ok(desktopPreviewProxy.includes("headers: req.headers.range ? { Range: req.headers.range } : undefined"))
+  assert.ok(desktopPreviewProxy.includes('responseByteRange(upstream)'))
+  assert.ok(desktopPreviewProxy.includes('mergeByteRanges'))
+  assert.ok(preload.includes('cleanupMediaLivePhotoProgress'))
+  assert.ok(preload.includes('releaseMediaLivePhotoMotion:'))
+  assert.ok(desktopAdapter.includes('dispose: () =>'))
+  assert.equal(agentClient.includes('Promise<AgentMediaMotion>'), false)
+  assert.equal(desktopMain.includes('runAgentAction<AgentMediaMotion>'), false)
 })

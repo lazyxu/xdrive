@@ -166,7 +166,7 @@ type fakeDesktopIPCController struct {
 	cloudPersonSplitName       string
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
-	cloudMediaMotion           agentMediaMotion
+	cloudMediaMotionTicket     client.FilePreviewTicket
 	cloudMediaKind             string
 	cloudMediaQuery            client.MediaQuery
 	cloudMediaLimit            int
@@ -1269,9 +1269,9 @@ func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID
 	return f.cloudMediaThumbnail, f.err
 }
 
-func (f *fakeDesktopIPCController) CloudMediaLivePhotoMotion(_ context.Context, nodeID uint64) (agentMediaMotion, error) {
+func (f *fakeDesktopIPCController) CloudMediaLivePhotoMotionTicket(_ context.Context, nodeID uint64) (client.FilePreviewTicket, error) {
 	f.cloudMediaMotionID = nodeID
-	return f.cloudMediaMotion, f.err
+	return f.cloudMediaMotionTicket, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudSources(context.Context) ([]client.Source, error) {
@@ -2189,9 +2189,11 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ContentType: "image/jpeg",
 			Data:        []byte("fake-jpeg"),
 		},
-		cloudMediaMotion: agentMediaMotion{
-			ContentType: "video/quicktime",
-			Data:        []byte("fake-motion"),
+		cloudMediaMotionTicket: client.FilePreviewTicket{
+			URL:       "https://drive.example/api/v1/media-live-photo-motion/31?ticket=signed",
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			Kind:      "video",
+			MIMEType:  "video/quicktime",
 		},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
@@ -2715,14 +2717,14 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
 	}
 
-	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-motion?node_id=31", "")
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-motion-ticket?node_id=31", "")
 	if res.Code != http.StatusOK ||
-		res.Header().Get("Content-Type") != "video/quicktime" ||
-		res.Body.String() != "fake-motion" {
-		t.Fatalf("media motion status=%d content_type=%q body=%q", res.Code, res.Header().Get("Content-Type"), res.Body.String())
+		!strings.Contains(res.Body.String(), "\"kind\":\"video\"") ||
+		!strings.Contains(res.Body.String(), "media-live-photo-motion/31") {
+		t.Fatalf("media motion ticket status=%d body=%q", res.Code, res.Body.String())
 	}
 	if ctrl.cloudMediaMotionID != 31 {
-		t.Fatalf("media motion id=%d want=31", ctrl.cloudMediaMotionID)
+		t.Fatalf("media motion ticket id=%d want=31", ctrl.cloudMediaMotionID)
 	}
 
 	for _, path := range []string{
@@ -2752,7 +2754,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?range=maybe",
 		"/v1/media/albums/items?album_id=invalid",
 		"/v1/media/thumbnail?node_id=0",
-		"/v1/media/live-photo-motion?node_id=0",
+		"/v1/media/live-photo-motion-ticket?node_id=0",
 	} {
 		res = desktopIPCRequest(t, handler, http.MethodGet, path, "")
 		if res.Code != http.StatusBadRequest {

@@ -123,7 +123,6 @@ import {
   type AgentMediaPeople,
   type AgentMediaDescription,
   type AgentMediaThumbnail,
-  type AgentMediaMotion,
   type AgentSource,
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
@@ -2747,9 +2746,10 @@ function registerIPCHandlers() {
     event,
     nodeID: unknown,
     progressRequestID: unknown,
-  ) => runAgentAction<AgentMediaMotion>(async () => {
+  ) => runAgentAction<string>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
+    requireAgentCapability(hello, 'file-preview-stream')
     if (
       typeof nodeID !== 'number' ||
       !Number.isSafeInteger(nodeID) ||
@@ -2757,13 +2757,18 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
     }
+    if (!filePreviewProxy) {
+      throw new AgentIPCError('file_preview_unavailable', 0, 'File preview proxy is not initialized.')
+    }
     const requestID = typeof progressRequestID === 'string' && progressRequestID.length <= 128
       ? progressRequestID
       : ''
-    return requireAgentClient().mediaLivePhotoMotion(
-      nodeID,
+    const ticket = await requireAgentClient().mediaLivePhotoMotionTicket(nodeID)
+    return filePreviewProxy.createURLFromTicket(
+      ticket,
       requestID
         ? (loadedBytes, totalBytes) => {
+            if (event.sender.isDestroyed()) return
             event.sender.send('agent:media-live-photo-motion-progress', {
               request_id: requestID,
               loaded_bytes: loadedBytes,
@@ -2773,6 +2778,13 @@ function registerIPCHandlers() {
         : undefined,
     )
   }, false))
+
+  ipcMain.handle('agent:release-media-live-photo-motion', (_event, value: unknown) => {
+    if (typeof value !== 'string' || value.length > 4096) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Live Photo motion URL is invalid.' } }
+    }
+    return { ok: true, data: { released: filePreviewProxy?.releaseURL(value) ?? false } }
+  })
 
   ipcMain.handle('agent:get-source-items', (_event, sourceID: unknown, state: unknown = 'error', limit: unknown = 1000, offset: unknown = 0) => runAgentAction<AgentSourceItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
