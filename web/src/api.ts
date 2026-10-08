@@ -86,6 +86,7 @@ import type {
 import { webTransferStore } from './transfers'
 import {
   xDriveAbortWebDownloadSink,
+  xDriveCreateWebDownloadProgressReporter,
   xDriveOpenWebDownloadSink,
   xDriveWriteWebDownloadToSink,
 } from './downloadSink'
@@ -2308,6 +2309,7 @@ export class XDriveApi {
       path: filename,
       kind: 'download',
     }) : ''
+    let transferProgress: ReturnType<typeof xDriveCreateWebDownloadProgressReporter> | null = null
 
     try {
       await this.ensureFresh()
@@ -2329,6 +2331,11 @@ export class XDriveApi {
       const contentLength = Number(response.headers.get('Content-Length') || '0')
       const total = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0
       let completed = 0
+      if (trackTransfer) {
+        transferProgress = xDriveCreateWebDownloadProgressReporter((done) => {
+          webTransferStore.progress(transferID, done, total)
+        })
+      }
 
       if (downloadSink.kind === 'file-system') {
         completed = await xDriveWriteWebDownloadToSink(
@@ -2336,7 +2343,7 @@ export class XDriveApi {
           downloadSink,
           () => response.blob(),
           (done) => {
-            if (trackTransfer) webTransferStore.progress(transferID, done, total)
+            transferProgress?.progress(done)
           },
         )
       } else {
@@ -2351,13 +2358,13 @@ export class XDriveApi {
             if (!value) continue
             completed += value.byteLength
             chunks.push(value as BlobPart)
-            if (trackTransfer) webTransferStore.progress(transferID, completed, total)
+            transferProgress?.progress(completed)
           }
           blob = new Blob(chunks, { type: contentType })
         } else {
           blob = await response.blob()
           completed = blob.size
-          if (trackTransfer) webTransferStore.progress(transferID, completed, total || completed)
+          transferProgress?.progress(completed)
         }
 
         const url = URL.createObjectURL(blob)
@@ -2376,7 +2383,10 @@ export class XDriveApi {
       if (trackTransfer) webTransferStore.complete(transferID, completed, total || completed)
     } catch (error) {
       await xDriveAbortWebDownloadSink(downloadSink, error)
-      if (trackTransfer) webTransferStore.fail(transferID, error)
+      if (trackTransfer) {
+        transferProgress?.flush()
+        webTransferStore.fail(transferID, error)
+      }
       throw error
     }
   }
