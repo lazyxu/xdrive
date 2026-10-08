@@ -243,6 +243,33 @@ test('Gallery workspace separates collection failures from empty results and kee
   )
 })
 
+test('Gallery photo wall keeps ordinary media quiet while preserving semantic badges and touch controls', () => {
+  for (const token of [
+    'data-xdrive-media-tile',
+    'data-xdrive-media-tile-badges',
+    'borderRadius: 0',
+    'border: 0',
+    'const mediaBadgeLabel = mediaAssetChipLabel(item)',
+    'return null',
+    'className="media-favorite"',
+    'opacity: compactTouch || item.favorite ? 1 : 0',
+    'left: selectionMode || selectedForAction ? (compactTouch ? 52 : 42) : 8',
+    'opacity: 0',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), 'Gallery photo-wall contract missing: ' + token)
+  }
+  assert.ok(
+    (sharedGalleryMain.match(/gap: `\$\{XDRIVE_MEDIA_GALLERY_GRID_GAP\}px`/g) || []).length >= 3,
+    'dense, sparse and timeline grids must share one compact gap',
+  )
+  assert.match(sharedGalleryPreview, /<Skeleton[\s\S]*animation=\{false\}[\s\S]*borderRadius: 0/)
+  assert.equal(
+    sharedGalleryPreview.includes('CircularProgress'),
+    false,
+    'dense Gallery thumbnail loading should not render one spinner per tile',
+  )
+})
+
 test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => {
   for (const token of [
     '<XDriveMediaGalleryViewer',
@@ -1334,7 +1361,7 @@ test('Gallery virtual grid uses the existing workspace scroll host without mater
 
   for (const token of [
     'XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH = 150',
-    'XDRIVE_MEDIA_GALLERY_GRID_GAP = 8',
+    'XDRIVE_MEDIA_GALLERY_GRID_GAP = 4',
     'XDRIVE_MEDIA_GALLERY_OVERSCAN_ROWS = 2',
     'export function xDriveMediaGalleryGridMetrics',
     'export function xDriveMediaGalleryGridWindow',

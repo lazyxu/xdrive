@@ -34,6 +34,7 @@ test('Gallery compact touch exposes a dedicated Info action and 44px touch targe
     'height: 44',
     'width: compactTouch ? 44 : undefined',
     'height: compactTouch ? 44 : undefined',
+    'left: selectionMode || selectedForAction ? (compactTouch ? 52 : 42) : 8',
   ]) {
     assert.ok(gallery.includes(token), 'Gallery touch affordance missing: ' + token)
   }
