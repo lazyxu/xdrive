@@ -15,7 +15,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&camera=SONY%20ILCE-7M4&camera=Apple%20iPhone%2015%20Pro&format=VIDEO%2FQUICKTIME&format=image%2Fjpeg&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
 		nil,
 	)
 	ctx.Request = req
@@ -30,7 +30,9 @@ func TestMediaQueryFromRequest(t *testing.T) {
 		query.HasLocation == nil || !*query.HasLocation ||
 		query.Favorite == nil || !*query.Favorite ||
 		query.Tag != "Travel" ||
-		query.Person != "Alice" {
+		query.Person != "Alice" ||
+		strings.Join(query.Cameras, ",") != "apple iphone 15 pro,sony ilce-7m4" ||
+		strings.Join(query.Formats, ",") != "image/jpeg,video/quicktime" {
 		t.Fatalf("query=%+v", query)
 	}
 	if query.CapturedFrom == nil ||
@@ -148,5 +150,45 @@ func TestMediaQueryFromRequestRejectsInvalidPerson(t *testing.T) {
 	}
 	if recorder.Code != 400 {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestNormalizeMediaFacetValuesRejectsOversizedSelection(t *testing.T) {
+	values := make([]string, mediaFacetMaxValues+1)
+	for index := range values {
+		values[index] = "camera-" + strings.Repeat("x", index+1)
+	}
+	if _, err := normalizeMediaFacetValues("camera", values); err == nil {
+		t.Fatal("oversized camera facet selection was accepted")
+	}
+}
+
+func TestMediaSmartAlbumQueryPersistsCameraAndFormatFilters(t *testing.T) {
+	normalized, err := normalizeMediaSmartAlbumQuery(mediaSmartAlbumQuery{
+		Cameras: []string{"SONY ILCE-7M4", "apple iphone 15 pro", "Apple iPhone 15 Pro"},
+		Formats: []string{"VIDEO/QUICKTIME", "image/jpeg"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(normalized.Cameras, ","); got != "apple iphone 15 pro,sony ilce-7m4" {
+		t.Fatalf("cameras=%q", got)
+	}
+	if got := strings.Join(normalized.Formats, ","); got != "image/jpeg,video/quicktime" {
+		t.Fatalf("formats=%q", got)
+	}
+	encoded, err := encodeMediaSmartAlbumQuery(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeMediaSmartAlbumQuery(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(decoded.options().Cameras, ","); got != "apple iphone 15 pro,sony ilce-7m4" {
+		t.Fatalf("decoded cameras=%q", got)
+	}
+	if got := strings.Join(decoded.options().Formats, ","); got != "image/jpeg,video/quicktime" {
+		t.Fatalf("decoded formats=%q", got)
 	}
 }

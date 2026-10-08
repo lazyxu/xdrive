@@ -26,6 +26,8 @@ type mediaSmartAlbumQuery struct {
 	Favorite       *bool      `json:"favorite,omitempty"`
 	Tag            string     `json:"tag,omitempty"`
 	Person         string     `json:"person,omitempty"`
+	Cameras        []string   `json:"cameras,omitempty"`
+	Formats        []string   `json:"formats,omitempty"`
 	PersonIdentity string     `json:"person_identity,omitempty"`
 	Place          string     `json:"place,omitempty"`
 }
@@ -50,6 +52,15 @@ func normalizeMediaSmartAlbumQuery(
 	value.Category = strings.TrimSpace(value.Category)
 	if value.Category != "" && !validMediaCategory(value.Category) {
 		return mediaSmartAlbumQuery{}, fmt.Errorf("category is invalid")
+	}
+	var err error
+	value.Cameras, err = normalizeMediaFacetValues("camera", value.Cameras)
+	if err != nil {
+		return mediaSmartAlbumQuery{}, err
+	}
+	value.Formats, err = normalizeMediaFacetValues("format", value.Formats)
+	if err != nil {
+		return mediaSmartAlbumQuery{}, err
 	}
 	value.Place = strings.TrimSpace(value.Place)
 	if value.Place != "" {
@@ -104,6 +115,8 @@ func (value mediaSmartAlbumQuery) empty() bool {
 		value.Favorite == nil &&
 		value.Tag == "" &&
 		value.Person == "" &&
+		len(value.Cameras) == 0 &&
+		len(value.Formats) == 0 &&
 		value.PersonIdentity == "" &&
 		value.Place == ""
 }
@@ -126,6 +139,8 @@ func (value mediaSmartAlbumQuery) options() mediaQueryOptions {
 		Favorite:       value.Favorite,
 		Tag:            value.Tag,
 		Person:         value.Person,
+		Cameras:        append([]string(nil), value.Cameras...),
+		Formats:        append([]string(nil), value.Formats...),
 		PersonIdentity: value.PersonIdentity,
 		Place:          place,
 	}

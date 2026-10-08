@@ -356,6 +356,99 @@ func TestQueryMediaItemsFilters(t *testing.T) {
 		nodes[1].ID,
 	)
 	assertIDs(
+		"camera multi-select",
+		mediaQueryOptions{Cameras: []string{"apple iphone 15 pro", "sony ilce-7m4"}},
+		"",
+		nodes[0].ID,
+		nodes[1].ID,
+		nodes[2].ID,
+	)
+	assertIDs(
+		"camera exact facet key",
+		mediaQueryOptions{Cameras: []string{"sony ilce-7m4"}},
+		"",
+		nodes[1].ID,
+	)
+	assertIDs(
+		"format filter",
+		mediaQueryOptions{Formats: []string{"image/jpeg"}},
+		"",
+		nodes[0].ID,
+		nodes[1].ID,
+	)
+	assertIDs(
+		"camera and format compose",
+		mediaQueryOptions{Cameras: []string{"apple iphone 15 pro"}, Formats: []string{"video/quicktime"}},
+		"",
+		nodes[2].ID,
+	)
+
+	facets, err := server.queryMediaGalleryFacets(context.Background(), owner.ID, mediaQueryOptions{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraCounts := make(map[string]int64, len(facets.Cameras))
+	for _, facet := range facets.Cameras {
+		cameraCounts[facet.Value] = facet.ItemCount
+	}
+	if cameraCounts["apple iphone 15 pro"] != 2 || cameraCounts["sony ilce-7m4"] != 1 {
+		t.Fatalf("camera facets=%+v", facets.Cameras)
+	}
+	formatCounts := make(map[string]int64, len(facets.Formats))
+	for _, facet := range facets.Formats {
+		formatCounts[facet.Value] = facet.ItemCount
+	}
+	if formatCounts["image/jpeg"] != 2 || formatCounts["video/quicktime"] != 1 {
+		t.Fatalf("format facets=%+v", facets.Formats)
+	}
+
+	filteredFacets, err := server.queryMediaGalleryFacets(
+		context.Background(),
+		owner.ID,
+		mediaQueryOptions{Formats: []string{"image/jpeg"}},
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filteredCameras := make(map[string]int64, len(filteredFacets.Cameras))
+	for _, facet := range filteredFacets.Cameras {
+		filteredCameras[facet.Value] = facet.ItemCount
+	}
+	if filteredCameras["apple iphone 15 pro"] != 1 || filteredCameras["sony ilce-7m4"] != 1 {
+		t.Fatalf("format-scoped camera facets=%+v", filteredFacets.Cameras)
+	}
+	selfExcludedFormats := make(map[string]int64, len(filteredFacets.Formats))
+	for _, facet := range filteredFacets.Formats {
+		selfExcludedFormats[facet.Value] = facet.ItemCount
+	}
+	if selfExcludedFormats["image/jpeg"] != 2 || selfExcludedFormats["video/quicktime"] != 1 {
+		t.Fatalf("self-excluded format facets=%+v", filteredFacets.Formats)
+	}
+
+	albumFacets, err := server.queryMediaGalleryFacets(
+		context.Background(),
+		owner.ID,
+		mediaQueryOptions{},
+		collection.ExternalKey,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	albumCameraCounts := make(map[string]int64, len(albumFacets.Cameras))
+	for _, facet := range albumFacets.Cameras {
+		albumCameraCounts[facet.Value] = facet.ItemCount
+	}
+	if albumCameraCounts["apple iphone 15 pro"] != 1 || albumCameraCounts["sony ilce-7m4"] != 1 {
+		t.Fatalf("album camera facets=%+v", albumFacets.Cameras)
+	}
+	if len(albumFacets.Formats) != 1 ||
+		albumFacets.Formats[0].Value != "image/jpeg" ||
+		albumFacets.Formats[0].ItemCount != 2 {
+		t.Fatalf("album format facets=%+v", albumFacets.Formats)
+	}
+
+	assertIDs(
 		"combined",
 		mediaQueryOptions{
 			Search:      "iphone",
