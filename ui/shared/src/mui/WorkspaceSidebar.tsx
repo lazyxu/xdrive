@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import type { QuotaUsage } from '../models'
 import { Box } from '@mui/material'
 import {
@@ -68,7 +68,7 @@ function SidebarDestinationItem({
   destination: XDriveSidebarDestinationModel
   selected?: string
   appearance: XDriveSidebarAppearance
-  onSelect: (key: string) => void
+  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
 }) {
   return (
     <XDriveSidebarNavItem
@@ -78,7 +78,7 @@ function SidebarDestinationItem({
       secondary={destination.secondary}
       badge={destination.badge}
       appearance={appearance}
-      onClick={() => onSelect(destination.key)}
+      onClick={(event) => onSelect(destination.key, event)}
     />
   )
 }
@@ -98,7 +98,7 @@ function SidebarSectionBlock({
   responsive: boolean
   pinnedBottom?: boolean
   fallbackAriaLabel: string
-  onSelect: (key: string) => void
+  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
 }) {
   return (
     <XDriveSidebarSection
@@ -145,7 +145,7 @@ export function XDriveWorkspaceSidebar({
   className?: string
   ariaLabel: string
   navAriaLabel: string
-  onSelect: (key: string) => void
+  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
 }) {
   const beforeCoreSections = sections.filter((section) => sectionPlacement(section) === 'before-core')
   const afterCoreSections = sections.filter((section) => sectionPlacement(section) === 'after-core')
@@ -189,7 +189,7 @@ export function XDriveWorkspaceSidebar({
           transferBadge={transferBadge}
           appearance={appearance}
           showLocalStorage={showLocalStorage}
-          onSelect={(key) => onSelect(key)}
+          onSelect={(key, event) => onSelect(key, event)}
         />
         {afterCoreInlineItems.map((destination) => (
           <SidebarDestinationItem

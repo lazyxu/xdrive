@@ -337,7 +337,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             {textPreview.text || '（空文件）'}
           </Box>
           {textPreview.truncated ? (
-            <Typography variant="caption" color="text.secondary">仅显示前 64 KiB</Typography>
+            <Typography variant="caption" color="text.secondary">仅显示前 1 MiB</Typography>
           ) : null}
         </Stack>
       )

@@ -652,6 +652,10 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
   }
 
+  mediaItem(nodeID: number) {
+    return this.request<MediaItem>(`/api/v1/media/items/${nodeID}`)
+  }
+
   mediaItems(
     kind = '',
     limit = 100,
@@ -1397,6 +1401,10 @@ export class XDriveApi {
 
   root() {
     return this.request<Node>('/api/v1/nodes/root')
+  }
+
+  node(id: number) {
+    return this.request<Node>(`/api/v1/nodes/${id}`)
   }
 
   list(parentID: number) {

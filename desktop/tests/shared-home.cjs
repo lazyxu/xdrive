@@ -44,7 +44,8 @@ test('shared Home owns content-first sections and shared thumbnails', () => {
 })
 
 test('Web exposes Home as a first-class workspace and keeps platform adapters local', () => {
-  assert.ok(webApp.includes("useState<AppView>('overview')"))
+  assert.ok(webApp.includes('useXDriveWebAppRuntime()'))
+  assert.ok(webApp.includes("?? 'overview'"))
   assert.ok(webApp.includes("key: 'overview'"))
   assert.ok(webApp.includes("label: '主页'"))
   assert.ok(webApp.includes("appView === 'overview'"))

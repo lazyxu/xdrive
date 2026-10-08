@@ -67,7 +67,6 @@ test('Desktop FileExplorer account lifecycle change closes stale local dialogs',
   const actionBusyRef = { current: { key: 'create-folder', generation: 7 } }
   const actionBusyWrites = []
   const createOpenWrites = []
-  const previewWrites = []
 
   const effect = compileEffect(filename, callback, {
     actionGenerationRef,
@@ -77,7 +76,6 @@ test('Desktop FileExplorer account lifecycle change closes stale local dialogs',
     folderUploadPickerParentIDRef: { current: 103 },
     setActionBusy: (value) => actionBusyWrites.push(value),
     setCreateOpen: (value) => createOpenWrites.push(value),
-    setOpenPreviewItem: (value) => previewWrites.push(value),
     setTagDialogItems: () => {},
     setSaveSearchOpen: () => {},
     setRenameSavedSearch: () => {},
@@ -96,11 +94,5 @@ test('Desktop FileExplorer account lifecycle change closes stale local dialogs',
     [false],
     'a create-folder dialog opened in account A must close before account B becomes current',
   )
-  assert.deepEqual(
-    previewWrites,
-    [null],
-    'a preview opened for account-A content must close before account B becomes current',
-  )
-
   if (typeof cleanup === 'function') cleanup()
 })

@@ -552,3 +552,18 @@ FileExplorer Quick Look is a shared Web/Desktop browsing surface over the Previe
 - Live Photo owns Space/Enter while its press-and-hold surface is focused so motion playback
   cannot accidentally close Quick Look.
 - Markup, PDF signing, and image/audio/video editing are intentionally not Quick Look features.
+
+
+## Web App Runtime / 打开语义
+
+Web 与 Desktop 的普通“打开”语义不同，但 FileExplorer 本体仍保持共享：
+
+- **Desktop 文件**：普通打开直接交给系统默认程序；“打开方式…”调用 OS chooser；Space 保留 xDrive Quick Look。
+- **Desktop 文件夹**：继续在 xDrive FileExplorer 内导航。
+- **Web 文件**：由统一 Web Open Resolver 根据共享 Preview classifier 启动 `media-viewer / text-viewer / pdf-viewer / audio-player`；未知格式不自动下载。
+- **Web 文件夹**：启动/定位 `files` App。
+- **Web Space**：启动路由级 `preview` App；Web FileExplorer 不再拥有独立的普通打开 Preview Dialog。
+- FileExplorer 的内部 Tabs、目录 Back/Forward、Search 与 selection state 仍由现有 workspace controller 维护；浏览器 history 只负责 App 级跳转。
+- 文件的 Ctrl/Cmd+Click 继续是多选，不能被浏览器新标签语义抢占。Web 文件右键另有“在新浏览器标签页打开”；文件夹还保留 FileExplorer 自己的“在新文件标签页中打开”。
+
+完整 Registry、typed launch contract、Hash Route、return-state 和 browse-context 规则见 `docs/web-app-runtime.md`。

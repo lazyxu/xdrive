@@ -15,16 +15,16 @@ const otherPlatform = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent',
 const sharedActions = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx'), 'utf8')
 const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
 
-test('Desktop Explorer previews by default while keeping managed system-shell actions explicit', () => {
+test('Desktop Explorer opens files with the OS default app while folders stay in xDrive', () => {
   assert.ok(app.includes('const relativePathForNode = (node: AgentCloudNode) => {'), 'Desktop Explorer relative-path resolver is missing')
   assert.ok(app.includes('await window.xdriveDesktop.agent.openPath(relativePath, reveal)'), 'Desktop Explorer is not wired to managed-path shell actions')
   assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'double-clicking should dispatch through the shared workspace controller')
-  assert.ok(app.includes('openWorkspaceItem(item, openPreviewNode)'), 'double-clicking a file should open the shared preview through the Desktop adapter')
-  assert.ok(app.includes("onSystemOpen: node.type === 'file'"), 'Desktop context menu must keep explicit system-shell Open')
-  assert.ok(app.includes('void openLocalNode(node)'), 'Desktop explicit system-shell Open must stay local')
+  assert.ok(app.includes("onOpen: node.type === 'file'"), 'Desktop menu Open must branch on file versus folder')
+  assert.ok(app.includes('void openLocalNode(node)'), 'Desktop file Open must use the system default application')
+  assert.equal(app.includes('openWorkspaceItem(item, openPreviewNode)'), false, 'Desktop ordinary Open must not route files through xDrive preview')
+  assert.equal(app.includes("onSystemOpen: node.type === 'file'"), false, 'Desktop must not duplicate ordinary Open with a separate system-open action')
   assert.ok(app.includes("downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'"), 'Desktop must preserve Save As wording for files while folders download to a directory')
   assert.ok(app.includes('onReveal: () => { void openLocalNode(node, true) }'), 'Desktop reveal adapter is missing')
-  assert.ok(sharedActions.includes("systemOpenLabel = '使用系统打开'"), 'shared system-open label is missing')
   assert.ok(sharedActions.includes("revealLabel = '在文件资源管理器中显示'"), 'shared reveal-in-file-manager label is missing')
 })
 

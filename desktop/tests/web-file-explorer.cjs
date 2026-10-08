@@ -54,7 +54,7 @@ test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(api.includes("return this.request<SearchPage>(\`/api/v1/search?\${params.toString()}\`)"), 'Web API search is not wired to the server search endpoint')
   assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web Explorer must execute Search ranges through the shared workspace controller adapter')
   for (const token of [
-    'setOpenPreviewItem({',
+    'browseContextForItem(item)',
     'await api.download(plan.file)',
     'await api.downloadArchive(plan.ids, plan.filename)',
     'onShare(node)',
@@ -70,7 +70,7 @@ test('Web FileExplorer uses real file operations and server search', () => {
   assert.ok(explorer.includes('backgroundMenuItems={trashActive ? [] : backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
   assert.ok(explorer.includes('uploadPickerParentIDRef.current = current.id'), 'Web file picker must capture its opening parent')
   assert.ok(explorer.includes('onUpload={trashActive ? undefined : openUploadPicker}'), 'Web FileExplorer must open uploads through the parent-owning picker helper')
-  const openStart = explorer.indexOf('const openWebNode = (node: Node) =>')
+  const openStart = explorer.indexOf('const openWebNode = (node: Node, item?: XDriveFileExplorerItem) =>')
   const downloadStart = explorer.indexOf('const downloadSelected = async')
   assert.ok(openStart >= 0 && downloadStart > openStart, 'Web Open/Download adapters are missing')
   assert.equal(explorer.slice(openStart, downloadStart).includes('api.download('), false, 'Web Open must not implicitly download')
@@ -80,8 +80,8 @@ test('Web FileExplorer Search preserves paths and breadcrumbs across sparse rang
   assert.ok(projection.includes('secondaryLabel: resultPath'), 'shared Explorer projection should show search-result paths')
   assert.ok(projection.includes('virtualSearchItems?: ReadonlyMap<number, TSearch>'), 'projection must accept sparse Search result metadata')
   assert.ok(workspaceController.includes('xDriveFileExplorerDispatchOpenItem({'), 'opening a Search result should use shared workspace dispatch')
-  assert.ok(explorer.includes('const openWebNode = (node: Node) => {'), 'opening a Search-result file should keep Web preview execution local')
-  assert.ok(explorer.includes('setOpenPreviewItem({'), 'opening a Search-result file should target the shared preview dialog')
+  assert.ok(explorer.includes('const openWebNode = (node: Node, item?: XDriveFileExplorerItem) => {'), 'opening a Search-result file should keep Web launch execution local')
+  assert.ok(explorer.includes('onOpenFile(') && explorer.includes('browseContextForItem(item)'), 'opening a Search-result file should preserve Search context for the Web App Resolver')
   assert.ok(explorer.includes('searchCrumbsForResult: (result) => result.crumbs'), 'Web shared workspace should preserve Search breadcrumbs')
   assert.ok(explorer.includes('useXDriveFileExplorerWorkspace<Node, WebSearchResult>'), 'Web Search lifecycle must come from the shared workspace controller')
   assert.ok(explorer.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web must inject REST Search range execution')

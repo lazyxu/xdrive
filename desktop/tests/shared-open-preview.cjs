@@ -15,6 +15,7 @@ const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const livePhoto = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const previewModel = read('ui', 'shared', 'src', 'file-preview.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
+const webViewers = read('web', 'src', 'WebFileViewerApps.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const actions = read('ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
@@ -31,38 +32,38 @@ test('FileExplorer and Gallery share one open-preview dialog shell', () => {
   assert.ok(preview.includes('xDriveClassifyFilePreview'), 'ordinary open preview must inherit the canonical preview classifier')
 })
 
-test('Web open semantics preview files while explicit Download remains separate', () => {
-  const openStart = web.indexOf('const openWebNode = (node: Node) =>')
+test('Web ordinary Open dispatches Web programs while explicit Download remains separate', () => {
+  const openStart = web.indexOf('const openWebNode = (node: Node, item?: XDriveFileExplorerItem) =>')
   const downloadStart = web.indexOf('const downloadSelected = async')
-  assert.ok(openStart >= 0 && downloadStart > openStart, 'Web open/download functions are missing')
+  assert.ok(openStart >= 0 && downloadStart > openStart, 'Web Open/Download adapters are missing')
   const openBlock = web.slice(openStart, downloadStart)
-  assert.ok(openBlock.includes('setOpenPreviewItem({'), 'Web open must target the shared preview dialog')
-  assert.equal(openBlock.includes('api.download('), false, 'Web open must not implicitly download')
+  assert.ok(openBlock.includes('onOpenFile(') && openBlock.includes('browseContextForItem(item)'), 'Web Open must dispatch to the Web App Resolver')
+  assert.equal(openBlock.includes('api.download('), false, 'Web Open must not implicitly download')
   assert.ok(web.includes('await api.download(plan.file)'), 'explicit single-file Download must remain available')
   assert.ok(web.includes('await api.downloadArchive(plan.ids, plan.filename)'), 'explicit archive Download must remain available')
-  assert.ok(web.includes('<XDriveOpenPreviewDialog'), 'Web must render the shared open-preview dialog')
-  assert.ok(web.includes('<XDriveFilePreviewSurface'), 'Web must render ordinary files through FilePreviewSurface')
-  assert.ok(web.includes('onOpen: () => { void openItem(item, openWebNode) }'), 'context Open must use preview semantics')
+  assert.equal(web.includes('XDriveOpenPreviewDialog'), false, 'Web FileExplorer must not keep an ordinary local preview dialog')
+  assert.ok(webViewers.includes('export function xDriveWebOpenRouteForNode'), 'Web viewer resolver is missing')
+  assert.ok(webViewers.includes("app: 'media-viewer'"), 'media files must resolve to media-viewer')
+  assert.ok(webViewers.includes("app: 'text-viewer'"), 'text files must resolve to text-viewer')
+  assert.ok(webViewers.includes("app: 'pdf-viewer'"), 'PDF files must resolve to pdf-viewer')
+  assert.ok(webViewers.includes("app: 'audio-player'"), 'audio files must resolve to audio-player')
 })
 
-test('Desktop FileExplorer Open previews while system shell open remains explicit', () => {
+test('Desktop FileExplorer ordinary Open uses the OS while Quick Look stays shared', () => {
   for (const token of [
-    'XDriveFilePreviewSurface',
-    'XDriveOpenPreviewDialog',
-    'const [openPreviewItem, setOpenPreviewItem]',
-    'const openPreviewNode = (node: AgentCloudNode) =>',
-    'onOpen: () => { void openWorkspaceItem(item, openPreviewNode) }',
-    'onSystemOpen: node.type === \'file\'',
+    "onOpen: node.type === 'file'",
     'void openLocalNode(node)',
     'onReveal: () => { void openLocalNode(node, true) }',
-    'onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}',
-    '<XDriveOpenPreviewDialog',
-    '<XDriveFilePreviewSurface',
+    'loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}',
+    'loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}',
+    'loadLivePhotoMotion={loadLivePhotoMotion}',
   ]) {
-    assert.ok(desktop.includes(token), 'Desktop shared open-preview contract missing: ' + token)
+    assert.ok(desktop.includes(token), 'Desktop open/Quick Look contract missing: ' + token)
   }
-  assert.ok(actions.includes("id: 'system-open'"), 'shared file menu must keep an explicit Desktop system-open action')
-  assert.ok(actions.includes("label: systemOpenLabel"), 'system-open label must remain adapter-configurable')
+  assert.equal(desktop.includes('openPreviewNode'), false, 'Desktop ordinary Open must not create an xDrive preview dialog')
+  assert.equal(desktop.includes('XDriveOpenPreviewDialog'), false, 'Desktop ordinary Open dialog must be removed from the adapter')
+  assert.equal(desktop.includes("onSystemOpen: node.type === 'file'"), false, 'Desktop must not duplicate ordinary Open with an explicit system-open item')
+  assert.ok(actions.includes("id: 'system-open'"), 'shared menu primitive may retain optional system-open support for other adapters')
 })
 
 test('Gallery single click keeps media details while selection gestures stay distinct', () => {
@@ -220,7 +221,7 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'Desktop LIVP loader must release protected stream URLs only through the owning lifecycle',
   )
   const desktopMotionStart = desktop.indexOf('const loadLivePhotoMotion = useCallback')
-  const desktopMotionEnd = desktop.indexOf('const openPreviewNode', desktopMotionStart)
+  const desktopMotionEnd = desktop.indexOf('const copyItemPaths', desktopMotionStart)
   assert.ok(desktopMotionStart >= 0 && desktopMotionEnd > desktopMotionStart)
   assert.equal(
     desktop.slice(desktopMotionStart, desktopMotionEnd).includes('new Blob('),
@@ -243,11 +244,11 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   )
 })
 
-test('Preview Engine design documents Open versus Download semantics', () => {
-  assert.ok(docs.includes('### Open Preview dialog'), 'Preview Engine design must document the shared open dialog')
-  assert.ok(docs.includes('Web/Desktop FileExplorer must'), 'Preview Engine design must document Web/Desktop open behavior')
-  assert.ok(docs.includes('not treat double-click/Enter/open as an implicit download'), 'Preview Engine design must separate Open from Download')
-  assert.ok(docs.includes('explicit system-shell Open action'), 'Preview Engine design must preserve explicit Desktop system open')
+test('Preview Engine design documents platform Open versus Preview semantics', () => {
+  assert.ok(docs.includes('### Open Preview dialog'), 'Preview Engine design must document the shared preview shell')
+  assert.ok(docs.includes('Web App Resolver'), 'Preview Engine design must document Web program dispatch')
+  assert.ok(docs.includes('OS default application'), 'Preview Engine design must document Desktop native Open')
+  assert.ok(docs.includes('Explicit Download remains a separate file-management action'), 'Preview Engine design must separate Open from Download')
   assert.ok(
     docs.includes('Double-clicking a Gallery media') && docs.includes('tile opens the media preview'),
     'Preview Engine design must document Gallery double-click',

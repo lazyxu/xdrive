@@ -1,5 +1,5 @@
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -125,14 +125,17 @@ function decisionDescription(decision: StorageDecision) {
 export default function StorageStatsPanel({
   api,
   scope,
+  focusSection,
   onOpenTaskCenter,
   onRunStorageMaintenance,
 }: {
   api: XDriveApi
   scope: 'self' | 'global'
+  focusSection?: string
   onOpenTaskCenter?: () => void
   onRunStorageMaintenance?: (kind: StorageMaintenanceKind) => Promise<void>
 }) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null)
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
@@ -202,6 +205,16 @@ export default function StorageStatsPanel({
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [api, scope, reloadKey])
+
+  useEffect(() => {
+    if (!focusSection || !stats) return
+    const frame = window.requestAnimationFrame(() => {
+      surfaceRef.current
+        ?.querySelector(`[data-xdrive-storage-section="${focusSection}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusSection, stats])
 
   useEffect(() => {
     let active = true
@@ -398,6 +411,7 @@ export default function StorageStatsPanel({
 
   return (
     <>
+      <Box ref={surfaceRef}>
       <XDriveWorkspaceSurface
         presentation="page"
         title={scope === 'global' ? '全局存储' : '存储'}
@@ -441,7 +455,7 @@ export default function StorageStatsPanel({
               )}
 
               {scope === 'global' && (onOpenTaskCenter || onRunStorageMaintenance) && (
-                <Stack spacing={1.5}>
+                <Stack spacing={1.5} data-xdrive-storage-section="maintenance">
                   <XDriveSectionHeader
                     level="h3"
                     title="维护与修复"
@@ -486,7 +500,7 @@ export default function StorageStatsPanel({
                 stats.disk_used_bytes !== undefined &&
                 stats.disk_available_bytes !== undefined &&
                 stats.xdrive_physical_bytes !== undefined && (
-                  <Stack spacing={1.5}>
+                  <Stack spacing={1.5} data-xdrive-storage-section="capacity">
                     <XDriveSectionHeader level="h3" title="磁盘容量" />
                     <XDriveMetricGrid>
                       <XDriveMetricCard title="磁盘总容量" value={formatBytes(stats.disk_total_bytes)} />
@@ -509,6 +523,7 @@ export default function StorageStatsPanel({
               )}
 
               {scope === 'global' && stats.inventory && (
+                <Box data-xdrive-storage-section="inventory">
                 <XDriveStorageInventorySection
                   inventory={stats.inventory}
                   cleanupCache={(kind) => api.adminCleanupStorageCache(kind)}
@@ -522,10 +537,11 @@ export default function StorageStatsPanel({
                     } : current)
                   }}
                 />
+                </Box>
               )}
 
               {scope === 'global' && stagingStats && (
-                <Stack spacing={1.5}>
+                <Stack spacing={1.5} data-xdrive-storage-section="staging">
                   <XDriveSectionHeader level="h3" title="上传临时空间" />
                   {stagingNotice && <XDriveStatusAlert tone="good">{stagingNotice}</XDriveStatusAlert>}
                   {!stagingStats.supported && (
@@ -679,7 +695,7 @@ export default function StorageStatsPanel({
               )}
 
               {scope === 'global' && history && (
-                <Stack spacing={1.5}>
+                <Stack spacing={1.5} data-xdrive-storage-section="history">
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
@@ -829,7 +845,7 @@ export default function StorageStatsPanel({
               )}
 
               {scope === 'global' && (
-                <Stack spacing={1.5}>
+                <Stack spacing={1.5} data-xdrive-storage-section="cas">
                   <XDriveSectionHeader
                     level="h3"
                     title="CAS 全局物理对象"
@@ -1039,6 +1055,7 @@ export default function StorageStatsPanel({
             </Stack>
           )}
       </XDriveWorkspaceSurface>
+      </Box>
 
       <XDriveConfirmDialog
         open={cleanupConfirmOpen}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
@@ -86,11 +86,13 @@ export interface XDriveSourceTargetBrowser {
 
 export interface XDriveSourceManagerProps {
   adapter: XDriveSourceManagerAdapter
+  initialSourceID?: number
   defaultTargetNodeID?: number
   defaultTargetLabel: string
   defaultTargetPath: string
   targetBrowser?: XDriveSourceTargetBrowser
   cookieHelpVariant?: 'accordion' | 'dialog'
+  onSelectedSourceChange?: (sourceID?: number) => void
   onError: (error: unknown) => void
 }
 
@@ -172,14 +174,17 @@ function emptySourceSettingsValues(): XDriveSourceSettingsValues {
 
 export function XDriveSourceManager({
   adapter,
+  initialSourceID,
   defaultTargetNodeID,
   defaultTargetLabel,
   defaultTargetPath,
   targetBrowser,
   cookieHelpVariant = 'accordion',
+  onSelectedSourceChange,
   onError,
 }: XDriveSourceManagerProps) {
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
+  const initialSourceOpenedRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
   const [failedItems, setFailedItems] = useState<ExternalSourceItem[]>([])
@@ -1008,6 +1013,7 @@ export function XDriveSourceManager({
 
   const openDetails = async (row: ExternalSourceRow) => {
     setSelected(row)
+    onSelectedSourceChange?.(row.source.id)
     setFailedItems([])
     setFailedItemsOpen(false)
     setFailedItemsLimitReached(false)
@@ -1031,8 +1037,17 @@ export function XDriveSourceManager({
     }
   }
 
+  useEffect(() => {
+    if (!initialSourceID || initialSourceOpenedRef.current === initialSourceID) return
+    const row = rows.find((candidate) => candidate.source.id === initialSourceID)
+    if (!row) return
+    initialSourceOpenedRef.current = initialSourceID
+    void openDetails(row)
+  }, [initialSourceID, rows])
+
   const closeDetails = () => {
     setSelected(null)
+    onSelectedSourceChange?.()
     setFailedItems([])
     setFailedItemsOpen(false)
     setFailedItemsLimitReached(false)
