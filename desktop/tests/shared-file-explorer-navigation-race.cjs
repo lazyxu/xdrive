@@ -2685,3 +2685,45 @@ test('pending FileExplorer delete completion cannot cross session identity lifec
   assert.equal(feedback.length, 1)
   assert.deepEqual(errors, [])
 })
+
+
+test('FileExplorer clipboard cannot cross account lifecycle', () => {
+  const runtime = createHookRuntime()
+  const useClipboard = loadClipboardHook(runtime.react)
+
+  let lifecycleKey = 'server-a:user-a'
+  let nodeByID = new Map([
+    [2, { id: 2, revision: 1, parent_id: 1, type: 'file', name: 'A.txt' }],
+  ])
+
+  const render = () => runtime.render(() => useClipboard({
+    lifecycleKey,
+    nodeByID,
+  }))
+
+  let clipboard = render()
+  clipboard.copyItems([{ id: 2 }])
+  clipboard = render()
+
+  const accountAPlan = clipboard.planPaste(9)
+  assert.ok(accountAPlan)
+  assert.deepEqual(accountAPlan.items.map((item) => item.id), [2])
+
+  lifecycleKey = 'server-b:user-b'
+  nodeByID = new Map([
+    [2, { id: 2, revision: 9, parent_id: 20, type: 'file', name: 'B-same-id.txt' }],
+  ])
+  render()
+  clipboard = render()
+
+  assert.equal(
+    clipboard.planPaste(99),
+    null,
+    'account B must not inherit clipboard nodes captured under account A even when numeric node ids overlap',
+  )
+  assert.equal(
+    clipboard.canPaste(false),
+    false,
+    'Paste must be disabled until account B copies or cuts its own items',
+  )
+})
