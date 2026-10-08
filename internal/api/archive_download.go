@@ -225,12 +225,11 @@ func (s *Server) buildArchiveDownloadManifest(
 	}
 
 	byID := make(map[uint64]meta.Node, len(loaded))
-	selected := make(map[uint64]struct{}, len(loaded))
 	for _, node := range loaded {
 		byID[node.ID] = node
-		selected[node.ID] = struct{}{}
 	}
 	ordered := make([]meta.Node, 0, len(ids))
+	orderedIDs := make([]uint64, 0, len(ids))
 	for _, id := range ids {
 		node, ok := byID[id]
 		if !ok {
@@ -243,16 +242,16 @@ func (s *Server) buildArchiveDownloadManifest(
 			return archiveDownloadManifest{}, err
 		}
 		ordered = append(ordered, node)
+		orderedIDs = append(orderedIDs, node.ID)
 	}
 
-	parentCache := make(map[uint64]meta.Node)
+	nestedByID, err := archiveSelectedAncestorCoverage(ctx, s.DB, uid, orderedIDs)
+	if err != nil {
+		return archiveDownloadManifest{}, err
+	}
 	roots := make([]meta.Node, 0, len(ordered))
 	for _, node := range ordered {
-		nested, err := s.archiveNodeHasSelectedAncestor(ctx, uid, node, selected, parentCache)
-		if err != nil {
-			return archiveDownloadManifest{}, err
-		}
-		if !nested {
+		if !nestedByID[node.ID] {
 			roots = append(roots, node)
 		}
 	}
@@ -279,36 +278,85 @@ func (s *Server) buildArchiveDownloadManifest(
 	return manifest, nil
 }
 
-func (s *Server) archiveNodeHasSelectedAncestor(
+type archiveSelectedAncestorRow struct {
+	OriginID            uint64 `gorm:"column:origin_id"`
+	HasSelectedAncestor bool   `gorm:"column:has_selected_ancestor"`
+	Cycle               bool   `gorm:"column:cycle"`
+	MissingParent       bool   `gorm:"column:missing_parent"`
+}
+
+func archiveSelectedAncestorCoverage(
 	ctx context.Context,
+	db *gorm.DB,
 	uid uint64,
-	node meta.Node,
-	selected map[uint64]struct{},
-	cache map[uint64]meta.Node,
-) (bool, error) {
-	parentID := node.ParentID
-	seen := map[uint64]struct{}{node.ID: {}}
-	for parentID != nil {
-		if _, cycle := seen[*parentID]; cycle {
-			return false, errArchiveInvalidStoredEntry
-		}
-		seen[*parentID] = struct{}{}
-		if _, ok := selected[*parentID]; ok {
-			return true, nil
-		}
-		parent, ok := cache[*parentID]
-		if !ok {
-			if err := s.DB.WithContext(ctx).
-				Select("id", "parent_id", "name", "type", "owner_id").
-				Where("id = ? AND owner_id = ? AND deleted_at IS NULL", *parentID, uid).
-				First(&parent).Error; err != nil {
-				return false, err
-			}
-			cache[parent.ID] = parent
-		}
-		parentID = parent.ParentID
+	ids []uint64,
+) (map[uint64]bool, error) {
+	if len(ids) == 0 {
+		return map[uint64]bool{}, nil
 	}
-	return false, nil
+	var rows []archiveSelectedAncestorRow
+	err := db.WithContext(ctx).Raw(`WITH RECURSIVE selected AS (
+SELECT id, parent_id
+FROM xd_nodes
+WHERE owner_id = ? AND deleted_at IS NULL AND id IN ?
+),
+chain AS (
+SELECT s.id AS origin_id,
+       s.id AS node_id,
+       s.parent_id,
+       ARRAY[s.id]::bigint[] AS path_ids,
+       false AS cycle
+FROM selected AS s
+UNION ALL
+SELECT chain.origin_id,
+       parent.id AS node_id,
+       parent.parent_id,
+       chain.path_ids || parent.id,
+       parent.id = ANY(chain.path_ids) AS cycle
+FROM chain
+JOIN xd_nodes AS parent
+  ON parent.id = chain.parent_id
+ AND parent.owner_id = ?
+ AND parent.deleted_at IS NULL
+WHERE chain.parent_id IS NOT NULL AND NOT chain.cycle
+)
+SELECT chain.origin_id,
+       BOOL_OR(
+         chain.node_id <> chain.origin_id AND selected_ancestor.id IS NOT NULL
+       ) AS has_selected_ancestor,
+       BOOL_OR(chain.cycle) AS cycle,
+       BOOL_OR(
+         chain.parent_id IS NOT NULL AND active_parent.id IS NULL
+       ) AS missing_parent
+FROM chain
+LEFT JOIN selected AS selected_ancestor
+  ON selected_ancestor.id = chain.node_id
+LEFT JOIN xd_nodes AS active_parent
+  ON active_parent.id = chain.parent_id
+ AND active_parent.owner_id = ?
+ AND active_parent.deleted_at IS NULL
+GROUP BY chain.origin_id
+ORDER BY chain.origin_id`, uid, ids, uid, uid).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != len(ids) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	out := make(map[uint64]bool, len(rows))
+	for _, row := range rows {
+		if row.Cycle {
+			return nil, errArchiveInvalidStoredEntry
+		}
+		if row.MissingParent {
+			return nil, gorm.ErrRecordNotFound
+		}
+		out[row.OriginID] = row.HasSelectedAncestor
+	}
+	if len(out) != len(ids) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return out, nil
 }
 
 type archiveDownloadSubtreeRow struct {

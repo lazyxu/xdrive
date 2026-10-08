@@ -41,6 +41,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
 | Archive download progress coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | Fast 8 MiB transfer at 64 KiB/read: progress-state callbacks **128 -> 1** inside one <100ms interval; production rate is capped to about **10 Hz per active file** plus terminal flush. ZIP/object reads are unchanged. |
+| Archive selected-root ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected files under independent 8-level branches: ancestor filtering **961 parent SELECTs -> 1 owner-scoped recursive CTE**. Nested-root suppression, missing-parent failure and cycle rejection remain unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
@@ -580,7 +581,43 @@ Decision: **Accepted.** This removes read-count-scaled global progress-lock traf
 
 Regression budget: archive byte progress must not call the global progress updater once per fast payload read. Periodic updates remain <= about 10 Hz per active file, and pending bytes must flush on EOF/read error or the explicit post-`io.Copy` terminal flush before the terminal file state is recorded.
 
-Next action: continue the basic sync/delete/download audit and only change another deterministic SQL, request, allocation, filesystem, lock, or object-store multiplier.
+Next action: selected-root ancestor filtering is handled by the constant-query contract below; then continue the basic delete/sync audit.
+
+### Archive selected-root ancestor coverage contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- **120 selected files**;
+- every file lives under its own **8-directory-deep** branch beneath one shared owner root;
+- no selected file is nested under another selected item in the baseline workload;
+- evidence is deterministic SQL cardinality from the real selected-root coverage helper;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- `archiveNodeHasSelectedAncestor` walks each selected item's parent chain in Go;
+- a request-local parent cache avoids reloading the shared root, but the 8 branch directories are unique per selected item;
+- first selected file performs **9 parent SELECTs** (8 branch directories + root);
+- the remaining 119 files perform **8 unique parent SELECTs** each;
+- total ancestor-filter SQL on the fixture is **9 + 119×8 = 961 SELECT statements**.
+
+AFTER / current:
+
+- one owner-scoped recursive CTE seeds all selected IDs and walks their active parent chains together;
+- one grouped result reports whether each origin encounters another selected ancestor;
+- the same statement detects cycles and a missing/deleted/foreign parent chain;
+- the 120-item fixture performs **1 SQL statement**;
+- nested selections still suppress the descendant archive root;
+- cycles still return `errArchiveInvalidStoredEntry`;
+- missing/inactive parent chains still return `gorm.ErrRecordNotFound`.
+
+Decision: **Accepted.** This removes selected-items × depth database round trips from multi-root archive preparation without changing root de-duplication or consistency validation.
+
+Regression budget: archive selected-root ancestor filtering must remain **1 SQL statement per prepare request**, independent of selected-root count/depth up to the existing 1,000-root limit. Do not weaken cycle or missing-parent validation.
+
+Next action: continue the basic delete/sync performance audit and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ## Measured baselines and accepted/rejected changes
 
