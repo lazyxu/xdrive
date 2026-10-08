@@ -50,6 +50,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation enqueue root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected file roots: owner/revision/root validation with file metadata **240 SELECTs -> 2 SELECTs** (one ordered locked node batch + one File preload); validation still reports the first failing requested item. |
 | FileOperation execution root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected roots: Copy/Delete locked root validation with File metadata **240 SELECTs -> 2 SELECTs**; Move root validation **120 SELECTs -> 1 SELECT** with no File preload. Recursive mutation/conflict/progress semantics are unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
+| FileOperation progress write coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 top-level Move/Delete roots: operation current-item + completion progress writes **240 UPDATEs -> 121 UPDATEs**. Every root still performs one `status=running` cancel checkpoint; the previous root's item/byte delta is folded into the next checkpoint and the final delta is flushed. Copy file-byte deltas use the same coalescer. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
@@ -1714,4 +1715,46 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindows(PathPrefixSet|DeleteBaselinePrefixes|LocalDeletePruningSourceShape)$' -count=1`.
 
 Next action: continue ordinary sync/delete/download performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### FileOperation progress-write coalescing contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- durable FileOperation Copy/Move/Delete execution used by FileExplorer;
+- stable structural workload: **120 top-level Move/Delete roots**;
+- evidence method: PostgreSQL statement counter against the progress helper plus source-shape regression for Copy/Move/Delete executor wiring; no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- each root wrote `current_item` with one `status=running` UPDATE;
+- successful root completion then issued a second UPDATE for `processed_items/processed_bytes`;
+- 120 roots therefore produced **240 FileOperation UPDATEs** before terminal completion;
+- Copy additionally wrote `processed_bytes` once per copied file from its traversal hook.
+
+AFTER / current:
+
+- completed item/byte deltas remain pending only until the next item begins;
+- the next `current_item` UPDATE atomically folds in the previous completed delta;
+- the last pending delta is explicitly flushed before undo-plan/terminal completion;
+- 120 roots therefore produce **121 FileOperation UPDATEs** for item/progress bookkeeping;
+- Copy's per-file byte deltas are folded into subsequent node/root checkpoints instead of requiring one extra UPDATE per file.
+
+Cancellation contract:
+
+- **every item/node still executes the existing `status=running` UPDATE checkpoint**;
+- a DB-visible `cancel_requested` state still makes that checkpoint affect zero rows and resolves to `errFileOperationCancelled`;
+- the in-process cancellation context remains unchanged;
+- coalescing does not reduce cross-Server cancellation checkpoint frequency.
+
+Decision: **Accepted.** This removes redundant progress-only writes without weakening FileOperation cancellation, item ordering, mutation transactions, conflict handling, or final progress accuracy.
+
+Regression budget: a 120-item begin+complete workload must remain at **<=121 FileOperation UPDATEs**, and the final stored processed item/byte totals must be exact.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestFileOperationProgress(CoalescesCompletedDeltas|PreservesDatabaseCancellationCheckpoint|ExecutorsUseCoalescer)$' -count=1`.
+
+Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 

@@ -447,7 +447,8 @@ func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
 	if err := db.Create(&successOperation).Error; err != nil {
 		t.Fatal(err)
 	}
-	baseHooks := srv.fileOperationCopyHooks(ctx, successOperation.ID)
+	successProgress := newFileOperationProgressCoalescer(srv, ctx, successOperation.ID)
+	baseHooks := srv.fileOperationCopyHooks(successProgress)
 	var visited []string
 	hooks := &copyNodeTxHooks{
 		BeforeNode: func(node meta.Node, relativePath string) error {
@@ -462,7 +463,8 @@ func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
 		); err != nil {
 			return err
 		}
-		return srv.recordFileOperationProgressDelta(ctx, successOperation.ID, 1, 0)
+		successProgress.add(1, 0)
+		return successProgress.flush()
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +510,8 @@ func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
 	if err := db.Create(&cancelOperation).Error; err != nil {
 		t.Fatal(err)
 	}
-	cancelBaseHooks := srv.fileOperationCopyHooks(ctx, cancelOperation.ID)
+	cancelProgress := newFileOperationProgressCoalescer(srv, ctx, cancelOperation.ID)
+	cancelBaseHooks := srv.fileOperationCopyHooks(cancelProgress)
 	cancelHooks := &copyNodeTxHooks{
 		BeforeNode: func(node meta.Node, relativePath string) error {
 			if relativePath == "recursive-source/nested/b.txt" {
@@ -517,7 +520,7 @@ func TestRecursiveCopyOperationHooksProgressAndCancel(t *testing.T) {
 					return err
 				}
 				if inFlight.ProcessedItems != 0 ||
-					inFlight.ProcessedBytes != 3 ||
+					inFlight.ProcessedBytes != 0 ||
 					inFlight.CurrentItem != "recursive-source/nested/a.txt" {
 					return fmt.Errorf("unexpected in-flight recursive progress: %+v", inFlight)
 				}

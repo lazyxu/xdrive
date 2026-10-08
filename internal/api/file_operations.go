@@ -951,13 +951,29 @@ func (s *Server) claimNextFileOperation(ctx context.Context) (meta.FileOperation
 	return operation, err == nil, err
 }
 
-func (s *Server) beginFileOperationItem(ctx context.Context, operationID, name string) error {
+func (s *Server) beginFileOperationItemWithProgress(
+	ctx context.Context,
+	operationID string,
+	name string,
+	itemDelta int64,
+	byteDelta int64,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	updates := map[string]any{
+		"current_item": name,
+		"updated_at":   time.Now(),
+	}
+	if itemDelta != 0 {
+		updates["processed_items"] = gorm.Expr("processed_items + ?", itemDelta)
+	}
+	if byteDelta != 0 {
+		updates["processed_bytes"] = gorm.Expr("processed_bytes + ?", byteDelta)
+	}
 	result := s.DB.WithContext(ctx).Model(&meta.FileOperation{}).
 		Where("id = ? AND status = ?", operationID, meta.FileOperationStatusRunning).
-		Updates(map[string]any{"current_item": name, "updated_at": time.Now()})
+		Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -972,6 +988,10 @@ func (s *Server) beginFileOperationItem(ctx context.Context, operationID, name s
 		return errFileOperationCancelled
 	}
 	return errors.New("file operation is no longer running")
+}
+
+func (s *Server) beginFileOperationItem(ctx context.Context, operationID, name string) error {
+	return s.beginFileOperationItemWithProgress(ctx, operationID, name, 0, 0)
 }
 
 func (s *Server) recordFileOperationProgressDelta(
@@ -1009,16 +1029,74 @@ func (s *Server) recordSkippedFileOperationItem(ctx context.Context, operationID
 	return s.recordFileOperationProgress(ctx, operationID, bytes)
 }
 
-func (s *Server) fileOperationCopyHooks(ctx context.Context, operationID string) *copyNodeTxHooks {
+type fileOperationProgressCoalescer struct {
+	server       *Server
+	ctx          context.Context
+	operationID  string
+	pendingItems int64
+	pendingBytes int64
+}
+
+func newFileOperationProgressCoalescer(
+	server *Server,
+	ctx context.Context,
+	operationID string,
+) *fileOperationProgressCoalescer {
+	return &fileOperationProgressCoalescer{
+		server:      server,
+		ctx:         ctx,
+		operationID: operationID,
+	}
+}
+
+func (progress *fileOperationProgressCoalescer) begin(name string) error {
+	if err := progress.server.beginFileOperationItemWithProgress(
+		progress.ctx,
+		progress.operationID,
+		name,
+		progress.pendingItems,
+		progress.pendingBytes,
+	); err != nil {
+		return err
+	}
+	progress.pendingItems = 0
+	progress.pendingBytes = 0
+	return nil
+}
+
+func (progress *fileOperationProgressCoalescer) add(itemDelta, byteDelta int64) {
+	progress.pendingItems += itemDelta
+	progress.pendingBytes += byteDelta
+}
+
+func (progress *fileOperationProgressCoalescer) flush() error {
+	if progress.pendingItems == 0 && progress.pendingBytes == 0 {
+		return nil
+	}
+	if err := progress.server.recordFileOperationProgressDelta(
+		progress.ctx,
+		progress.operationID,
+		progress.pendingItems,
+		progress.pendingBytes,
+	); err != nil {
+		return err
+	}
+	progress.pendingItems = 0
+	progress.pendingBytes = 0
+	return nil
+}
+
+func (s *Server) fileOperationCopyHooks(progress *fileOperationProgressCoalescer) *copyNodeTxHooks {
 	return &copyNodeTxHooks{
 		BeforeNode: func(_ meta.Node, relativePath string) error {
-			return s.beginFileOperationItem(ctx, operationID, relativePath)
+			return progress.begin(relativePath)
 		},
 		AfterFile: func(source meta.Node, _ string) error {
 			if source.File == nil {
 				return errors.New("copied source file metadata is unavailable")
 			}
-			return s.recordFileOperationProgressDelta(ctx, operationID, 0, source.File.Size)
+			progress.add(0, source.File.Size)
+			return nil
 		},
 	}
 }
@@ -1081,7 +1159,8 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
 		replaceOrMerge := false
-		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
+		operationProgress := newFileOperationProgressCoalescer(s, ctx, operation.ID)
+		hooks := s.fileOperationCopyHooks(operationProgress)
 		var copiedNodes []fileOperationUndoNodeRef
 		hooks.AfterNode = func(_ meta.Node, copied meta.Node, _ string) error {
 			copiedNodes = append(copiedNodes, fileOperationUndoNodeRef{ID: copied.ID, Revision: copied.Revision})
@@ -1089,7 +1168,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		}
 		for index, ref := range refs {
 			source := roots[index]
-			if err := s.beginFileOperationItem(ctx, operation.ID, source.Name); err != nil {
+			if err := operationProgress.begin(source.Name); err != nil {
 				return err
 			}
 			if source.Type == meta.NodeTypeDir {
@@ -1107,9 +1186,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 					if err != nil {
 						return err
 					}
-					if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
-						return err
-					}
+					operationProgress.add(1, size)
 					continue
 				}
 				name, err := copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
@@ -1126,9 +1203,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 					Name:  copiedRoot.Name,
 					Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
 				})
-				if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
-					return err
-				}
+				operationProgress.add(1, 0)
 				continue
 			}
 			if policy == meta.FileOperationConflictPolicyReplace {
@@ -1148,9 +1223,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 						Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
 					})
 				}
-				if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
-					return err
-				}
+				operationProgress.add(1, 0)
 				continue
 			}
 			name := source.Name
@@ -1165,9 +1238,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 					if err != nil {
 						return err
 					}
-					if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
-						return err
-					}
+					operationProgress.add(1, size)
 					continue
 				case meta.FileOperationConflictPolicyKeepBoth:
 					name, err = copyDestinationNameTx(tx, uid, parentID, source.Name, source.Type, nil)
@@ -1188,9 +1259,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 				Name:  copiedRoot.Name,
 				Nodes: append([]fileOperationUndoNodeRef(nil), copiedNodes...),
 			})
-			if err := s.recordFileOperationProgressDelta(ctx, operation.ID, 1, 0); err != nil {
-				return err
-			}
+			operationProgress.add(1, 0)
+		}
+		if err := operationProgress.flush(); err != nil {
+			return err
 		}
 		if !replaceOrMerge {
 			if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
@@ -1228,6 +1300,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
 		replaceOrMerge := false
+		operationProgress := newFileOperationProgressCoalescer(s, ctx, operation.ID)
 		var rootBytes map[uint64]fileOperationMoveRootBytes
 		moveNodeBytes := func(node meta.Node) (int64, error) {
 			if rootBytes == nil {
@@ -1241,7 +1314,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		}
 		for index, ref := range refs {
 			node := roots[index]
-			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
+			if err := operationProgress.begin(node.Name); err != nil {
 				return err
 			}
 			if node.ID == parentID {
@@ -1288,9 +1361,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 							Name:     originalName,
 						})
 					}
-					if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
-						return err
-					}
+					operationProgress.add(1, size)
 					continue
 				}
 				targetName := node.Name
@@ -1305,9 +1376,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 						if err != nil {
 							return err
 						}
-						if err := s.recordSkippedFileOperationItem(ctx, operation.ID, size); err != nil {
-							return err
-						}
+						operationProgress.add(1, size)
 						continue
 					case meta.FileOperationConflictPolicyKeepBoth:
 						targetName, err = copyDestinationNameTx(tx, uid, parentID, node.Name, node.Type, nil)
@@ -1353,9 +1422,10 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			if err != nil {
 				return err
 			}
-			if err := s.recordFileOperationProgress(ctx, operation.ID, size); err != nil {
-				return err
-			}
+			operationProgress.add(1, size)
+		}
+		if err := operationProgress.flush(); err != nil {
+			return err
 		}
 		if !replaceOrMerge {
 			if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
@@ -1374,9 +1444,10 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			return err
 		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindDelete}
+		operationProgress := newFileOperationProgressCoalescer(s, ctx, operation.ID)
 		for index, ref := range refs {
 			node := roots[index]
-			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
+			if err := operationProgress.begin(node.Name); err != nil {
 				return err
 			}
 			if node.Type == meta.NodeTypeFile && node.File == nil {
@@ -1418,9 +1489,10 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 				Revision: ref.Revision + 1,
 				Name:     node.Name,
 			})
-			if err := s.recordFileOperationProgress(ctx, operation.ID, subtree.Bytes); err != nil {
-				return err
-			}
+			operationProgress.add(1, subtree.Bytes)
+		}
+		if err := operationProgress.flush(); err != nil {
+			return err
 		}
 		if err := storeFileOperationUndoPlanTx(tx, operation.ID, plan); err != nil {
 			return err
