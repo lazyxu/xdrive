@@ -34,8 +34,12 @@ test('FileExplorer thumbnail loading is one shared provider/cache/scheduler', ()
 test('Details, Grid, properties, Quick Access and Recent use the shared thumbnail visual', () => {
   assert.ok(explorer.includes('lifecycleKey={interactionScopeKey}'))
   assert.ok(
-    overview.includes("lifecycleKey={\`${status?.server ?? ''}\\n${status?.username ?? ''}\`}"),
-    'Desktop Overview thumbnails must reset with Server+username lifecycle',
+    overview.includes("const overviewLifecycleKey = \`${status?.server ?? ''}\\n${status?.username ?? ''}\`"),
+    'Desktop Overview must derive one Server+username lifecycle key',
+  )
+  assert.ok(
+    overview.includes('lifecycleKey={overviewLifecycleKey}'),
+    'Desktop Overview thumbnails must reuse the account lifecycle key',
   )
   assert.ok(explorer.includes('{thumbnailForItem(item, false)}'), 'Details/list thumbnail is missing')
   assert.ok(explorer.includes('{thumbnailForItem(item)}'), 'Grid thumbnail is missing')

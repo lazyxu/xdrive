@@ -95,6 +95,13 @@ export function DesktopOverviewPage({
     () => new Map(),
   )
   const [localDiskSpace, setLocalDiskSpace] = useState<AgentLocalDiskSpace | null>(null)
+  const overviewLifecycleKey = `${status?.server ?? ''}\n${status?.username ?? ''}`
+
+  useEffect(() => {
+    setRecentItems([])
+    setFavoriteItems([])
+    setAvailabilityByID(new Map())
+  }, [overviewLifecycleKey])
 
   useEffect(() => {
     let active = true
@@ -120,7 +127,7 @@ export function DesktopOverviewPage({
       active = false
       window.clearInterval(timer)
     }
-  }, [activityRevision, favoritesSupported, recentSupported])
+  }, [activityRevision, favoritesSupported, overviewLifecycleKey, recentSupported])
 
   useEffect(() => {
     let active = true
@@ -174,7 +181,7 @@ export function DesktopOverviewPage({
       setAvailabilityByID(next)
     })
     return () => { active = false }
-  }, [fileAvailabilitySupported, overviewItems])
+  }, [fileAvailabilitySupported, overviewItems, overviewLifecycleKey])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
@@ -269,7 +276,7 @@ export function DesktopOverviewPage({
 
   return (
     <XDriveFileExplorerThumbnailProvider
-      lifecycleKey={`${status?.server ?? ''}\n${status?.username ?? ''}`}
+      lifecycleKey={overviewLifecycleKey}
       loadThumbnail={loadThumbnail}
     >
     <XDriveWorkspaceSurface
