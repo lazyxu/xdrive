@@ -205,13 +205,8 @@ func (s *Server) retainOwnedContentBlobTx(
 	if blob.State != meta.ContentBlobStateReady || blob.RefCount <= 0 || blob.Size != size {
 		return "", false, nil
 	}
-	f, err := s.Store.Open(ctx, blob.StorageKey)
-	if err != nil {
-		return "", false, nil
-	}
-	info, statErr := f.Stat()
-	_ = f.Close()
-	if statErr != nil || info.Size() != size {
+	storedSize, statErr := storageObjectSize(ctx, s.Store, blob.StorageKey)
+	if statErr != nil || storedSize != size {
 		return "", false, nil
 	}
 	if err := tx.Model(&meta.ContentBlob{}).Where("sha256 = ?", hash).
