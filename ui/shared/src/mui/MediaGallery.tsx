@@ -2990,6 +2990,7 @@ export function XDriveMediaGallery({
   const [minTileWidth, setMinTileWidth] = useState(150)
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
+  const selectionBusyRef = useRef(false)
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
   const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
     () => new Map(),
@@ -3247,15 +3248,17 @@ export function XDriveMediaGallery({
     action: (selectedItems: MediaItem[]) => Promise<void>,
     clearAfter = true,
   ) => {
-    if (selectedMedia.length === 0 || selectionBusy) return
+    if (selectedMedia.length === 0 || selectionBusyRef.current) return
+    selectionBusyRef.current = true
     setSelectionBusy(true)
     try {
       await action(selectedMedia)
       if (clearAfter) clearMediaSelection()
     } finally {
+      selectionBusyRef.current = false
       setSelectionBusy(false)
     }
-  }, [clearMediaSelection, selectedMedia, selectionBusy])
+  }, [clearMediaSelection, selectedMedia])
 
   useEffect(() => {
     clearMediaSelection()
