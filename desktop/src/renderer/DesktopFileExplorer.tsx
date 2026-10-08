@@ -253,6 +253,11 @@ export default function DesktopFileExplorer({
     createFolderParentIDRef.current = null
     setCreateOpen(false)
     setOpenPreviewItem(null)
+    setTagDialogItems([])
+    setSaveSearchOpen(false)
+    setRenameSavedSearch(null)
+    setActiveSavedSearchID(null)
+    setActiveTagID(null)
     return () => {
       actionGenerationRef.current += 1
       actionBusyRef.current = null
