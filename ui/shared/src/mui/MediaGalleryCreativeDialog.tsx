@@ -103,6 +103,7 @@ export function XDriveMediaGalleryCreativeDialog({
 }) {
   const imageRef = useRef<HTMLImageElement | null>(null)
   const completedRef = useRef('')
+  const creativeActionGenerationRef = useRef(0)
   const [mode, setMode] = useState<CreativeMode>('cutout')
   const [cutoutForeground, setCutoutForeground] = useState(true)
   const [points, setPoints] = useState<MediaCreativePoint[]>([])
@@ -152,6 +153,8 @@ export function XDriveMediaGalleryCreativeDialog({
   }
 
   useEffect(() => {
+    creativeActionGenerationRef.current += 1
+    setBusy(false)
     if (!open || !item || !supported || !loadPreviewURL) {
       setSourceURL('')
       return
@@ -297,6 +300,8 @@ export function XDriveMediaGalleryCreativeDialog({
 
   const runGeneration = async () => {
     if (!item || !onCreate || !canGenerate) return
+    const actionGeneration = creativeActionGenerationRef.current
+    const isCurrent = () => actionGeneration === creativeActionGenerationRef.current
     setBusy(true)
     setError('')
     setResultURL('')
@@ -314,28 +319,34 @@ export function XDriveMediaGalleryCreativeDialog({
             output_name: outputName.trim() || undefined,
             strokes,
           }
-      setGeneration(await onCreate(item, input))
+      const next = await onCreate(item, input)
+      if (isCurrent()) setGeneration(next)
     } catch (generationError) {
+      if (!isCurrent()) return
       setError(generationError instanceof Error
         ? generationError.message
         : '创建创作任务失败')
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
 
   const cancelGeneration = async () => {
     if (!generation || !onCancel || !generating) return
+    const actionGeneration = creativeActionGenerationRef.current
+    const isCurrent = () => actionGeneration === creativeActionGenerationRef.current
     setBusy(true)
     setError('')
     try {
-      setGeneration(await onCancel(generation.id))
+      const next = await onCancel(generation.id)
+      if (isCurrent()) setGeneration(next)
     } catch (cancelError) {
+      if (!isCurrent()) return
       setError(cancelError instanceof Error
         ? cancelError.message
         : '取消创作任务失败')
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
 
