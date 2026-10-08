@@ -8,7 +8,7 @@ import {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveSourceFailureItem } from './SourceFailureItem'
 import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
@@ -31,14 +31,16 @@ export function XDriveSourceFailedItemsDialog({
   limitReached: boolean
   onClose: () => void
 }) {
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
       open={open && items.length > 0}
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle title="失败文件" onClose={onClose} />
       <XDriveDialogContent dividers>

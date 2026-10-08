@@ -10,7 +10,7 @@ import {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 import {
   XDriveSourceNameField,
   XDriveSourcePresetField,
@@ -136,6 +136,7 @@ export function XDriveSourceCreateDialog({
     : defaultTargetLabel
   const selectedTargetPath = targetBrowsingEnabled ? (selectedTarget?.path ?? '') : defaultTargetPath
 
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   return (
     <Dialog
       open={open}
@@ -144,8 +145,9 @@ export function XDriveSourceCreateDialog({
       }}
       maxWidth="sm"
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
         title="添加同步文件夹"

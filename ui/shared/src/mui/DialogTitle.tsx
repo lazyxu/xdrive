@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import { Box, DialogTitle, IconButton, Typography } from '@mui/material'
+import { Box, DialogTitle, IconButton, Typography, useMediaQuery } from '@mui/material'
 
 export const xDriveDialogPaperProps = {
   sx: {
@@ -11,6 +11,32 @@ export const xDriveDialogPaperProps = {
     boxShadow: 6,
   },
 } as const
+
+export function useXDriveCompactTouchDialog() {
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const dialogPaper = compactTouch
+    ? {
+        sx: {
+          ...xDriveDialogPaperProps.sx,
+          width: '100vw',
+          height: '100dvh',
+          minHeight: '100vh',
+          maxHeight: 'none',
+          m: 0,
+          borderRadius: 0,
+          boxSizing: 'border-box',
+          pt: 'env(safe-area-inset-top)',
+          pb: 'env(safe-area-inset-bottom)',
+          '& .MuiDialogTitle-root .MuiIconButton-root': {
+            width: 44,
+            height: 44,
+          },
+        },
+      }
+    : xDriveDialogPaperProps
+
+  return { compactTouch, dialogPaper }
+}
 
 export function XDriveDialogTitle({
   title,
