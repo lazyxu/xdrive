@@ -694,9 +694,6 @@ export default function App({
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active) setAgent(value)
     })
-    void window.xdriveDesktop.agent.getTransfers().then((value) => {
-      if (active) acceptTransferSnapshot(value)
-    })
     const unsubscribe = window.xdriveDesktop.agent.onState((value) => {
       if (active) setAgent(value)
     })
@@ -742,6 +739,22 @@ export default function App({
       unsubscribeNavigate()
     }
   }, [])
+
+  useEffect(() => {
+    transfersRevisionRef.current = 0
+    setTransfers({ revision: 0, transfers: [] })
+
+    if (!status?.server || !status?.username) return () => undefined
+
+    let active = true
+    void window.xdriveDesktop.agent.getTransfers().then((value) => {
+      if (active) acceptTransferSnapshot(value)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
     if (configured || !status) return
