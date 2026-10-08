@@ -21,6 +21,8 @@ import {
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
   xDriveFileExplorerAvailabilityFromSnapshot,
+  xDriveFileExplorerPersistedSearchFilters,
+  xDriveFileExplorerSearchFiltersActive,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -29,6 +31,7 @@ import {
   XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
+  XDriveFileTagDialog,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashDeleteDialog,
   useXDriveFileExplorerTrash,
@@ -36,6 +39,8 @@ import {
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerOrganization,
+  xDriveProjectFileExplorerNode,
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
@@ -167,6 +172,8 @@ export default function DesktopFileExplorer({
   fileAvailabilitySupported = false,
   openWithSupported = false,
   quickAccessSupported = false,
+  fileTagsSupported = false,
+  savedSearchesSupported = false,
   favoritesSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
@@ -220,6 +227,8 @@ export default function DesktopFileExplorer({
   fileAvailabilitySupported?: boolean
   openWithSupported?: boolean
   quickAccessSupported?: boolean
+  fileTagsSupported?: boolean
+  savedSearchesSupported?: boolean
   favoritesSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
@@ -338,6 +347,8 @@ export default function DesktopFileExplorer({
     changeSearchFilters,
     clearSearch,
     submitSearch,
+    applySearch,
+    searchState,
     nodeByID,
     searchByID,
     explorerItems,
@@ -467,8 +478,109 @@ export default function DesktopFileExplorer({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    reorderItems: async (nodeIDs) => {
+      const result = await window.xdriveDesktop.agent.cloudReorderFileQuickAccess(nodeIDs)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
+
+  const organizationAdapter = useMemo(() => ({
+    listTags: async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileTags()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    createTag: async (name: string, color: string) => {
+      const result = await window.xdriveDesktop.agent.cloudCreateFileTag(name, color)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    updateTag: async (id: number, input: { name?: string; color?: string }) => {
+      const result = await window.xdriveDesktop.agent.cloudUpdateFileTag(id, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    deleteTag: async (id: number) => {
+      const result = await window.xdriveDesktop.agent.cloudDeleteFileTag(id)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    queryNodeTags: async (nodeIDs: number[]) => {
+      const result = await window.xdriveDesktop.agent.cloudQueryFileNodeTags(nodeIDs)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    addTagNodes: async (tagID: number, nodeIDs: number[]) => {
+      const result = await window.xdriveDesktop.agent.cloudSetFileTagNodes(tagID, nodeIDs, true)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    removeTagNodes: async (tagID: number, nodeIDs: number[]) => {
+      const result = await window.xdriveDesktop.agent.cloudSetFileTagNodes(tagID, nodeIDs, false)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    listSavedSearches: async () => {
+      const result = await window.xdriveDesktop.agent.cloudFileSavedSearches()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    createSavedSearch: async (input: AgentFileSavedSearchInput) => {
+      const result = await window.xdriveDesktop.agent.cloudCreateFileSavedSearch(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    updateSavedSearch: async (id: number, input: AgentFileSavedSearchInput) => {
+      const result = await window.xdriveDesktop.agent.cloudUpdateFileSavedSearch(id, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    deleteSavedSearch: async (id: number) => {
+      const result = await window.xdriveDesktop.agent.cloudDeleteFileSavedSearch(id)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    reorderSavedSearches: async (ids: number[]) => {
+      const result = await window.xdriveDesktop.agent.cloudReorderFileSavedSearches(ids)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  }), [])
+  const organization = useXDriveFileExplorerOrganization({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    adapter: organizationAdapter,
+    enabled: fileTagsSupported && savedSearchesSupported,
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  })
+  const [tagDialogItems, setTagDialogItems] = useState<XDriveFileExplorerItem[]>([])
+  const [saveSearchOpen, setSaveSearchOpen] = useState(false)
+  const [renameSavedSearch, setRenameSavedSearch] = useState<AgentFileSavedSearch | null>(null)
+  const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
+  const [activeTagID, setActiveTagID] = useState<number | null>(null)
+  const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  const canSaveSmartFolder = Boolean(
+    searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
+  )
+
+  const loadColumnPage = useCallback(async (
+    parentID: string | number,
+    cursor: string,
+    _signal: AbortSignal,
+  ) => {
+    const result = await window.xdriveDesktop.agent.cloudChildrenPage(Number(parentID), {
+      cursor: cursor || undefined,
+      limit: 200,
+      sort: 'name',
+      order: 'asc',
+    })
+    if (!result.ok) throw new Error(result.error.message)
+    return {
+      items: result.data.items.map((node) => xDriveProjectFileExplorerNode(node, '')),
+      nextCursor: result.data.next_cursor,
+    }
+  }, [])
 
   const favorites = useXDriveFileExplorerFavorites<AgentCloudNode>({
     lifecycleKey: navigationSessionStorageKey ?? '',
@@ -1596,6 +1708,13 @@ export default function DesktopFileExplorer({
         onNativeDragOutItem={!trashActive && nativeDragOutSupported
           ? startNativeDragOut
           : undefined}
+        loadColumnPage={trashActive || searchStatusText ? undefined : loadColumnPage}
+        onColumnNavigate={trashActive || searchStatusText ? undefined : (nextCrumbs) => {
+          onCloseTrash()
+          void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))
+        }}
+        onColumnOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
+        onManageTags={!trashActive && fileTagsSupported ? (selected) => setTagDialogItems(selected) : undefined}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}
@@ -1671,8 +1790,15 @@ export default function DesktopFileExplorer({
           <XDriveFileExplorerSearchFilters
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
+            tagOptions={fileTagsSupported ? organization.tagOptions : []}
             availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}
-            onChange={changeSearchFilters}
+            canSaveSearch={savedSearchesSupported && canSaveSmartFolder}
+            onSaveSearch={savedSearchesSupported ? () => setSaveSearchOpen(true) : undefined}
+            onChange={(next) => {
+              setActiveSavedSearchID(null)
+              setActiveTagID(next.tagID ?? null)
+              changeSearchFilters(next)
+            }}
           />
         )}
         navigationPane={(
@@ -1718,6 +1844,43 @@ export default function DesktopFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            onReorderQuickAccess={quickAccessSupported ? (nodeIDs) => { void quickAccess.reorder(nodeIDs) } : undefined}
+            savedSearchesEnabled={savedSearchesSupported}
+            savedSearches={organization.savedSearches}
+            activeSavedSearchID={activeSavedSearchID}
+            onActivateSavedSearch={(savedSearch) => {
+              onCloseTrash()
+              setActiveSavedSearchID(savedSearch.id)
+              setActiveTagID(savedSearch.filters.tagID ?? null)
+              void applySearch(savedSearch.query, savedSearch.filters)
+            }}
+            onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch as AgentFileSavedSearch)}
+            onReplaceSavedSearch={(savedSearch) => {
+              if (!canSaveSmartFolder) return
+              void organization.updateSavedSearch(savedSearch.id, {
+                name: savedSearch.name,
+                query: searchState.query,
+                filters: persistedSearchFilters,
+              }).then(() => {
+                setActiveSavedSearchID(savedSearch.id)
+                onFeedback('good', '智能文件夹已更新。')
+              })
+            }}
+            canReplaceSavedSearch={canSaveSmartFolder}
+            onDeleteSavedSearch={(id) => {
+              if (activeSavedSearchID === id) setActiveSavedSearchID(null)
+              void organization.deleteSavedSearch(id)
+            }}
+            onReorderSavedSearches={(ids) => { void organization.reorderSavedSearches(ids) }}
+            tagsEnabled={fileTagsSupported}
+            tags={organization.tags}
+            activeTagID={activeTagID}
+            onActivateTag={(tag) => {
+              onCloseTrash()
+              setActiveSavedSearchID(null)
+              setActiveTagID(tag.id)
+              void applySearch('', { tagID: tag.id })
+            }}
             favoritesEnabled={favoritesSupported}
             favoriteItems={favorites.items}
             favoritesLoading={favorites.loading}
@@ -1788,6 +1951,64 @@ export default function DesktopFileExplorer({
         )}
       />
 
+      <XDriveFileTagDialog
+        open={tagDialogItems.length > 0}
+        nodeIDs={tagDialogItems.map((item) => Number(item.id)).filter((id) => Number.isSafeInteger(id) && id > 0)}
+        tags={organization.tags}
+        busy={Boolean(organization.busyKey)}
+        queryNodeTags={organization.queryNodeTags}
+        onSetTag={async (tagID, nodeIDs, assigned) => {
+          await organization.setTagNodes(tagID, nodeIDs, assigned)
+          if (searchFilters.tagID === tagID) {
+            await applySearch(searchState.query, searchFilters)
+          }
+        }}
+        onCreateTag={organization.createTag}
+        onUpdateTag={organization.updateTag}
+        onDeleteTag={async (tagID) => {
+          await organization.deleteTag(tagID)
+          if (searchFilters.tagID === tagID) {
+            setActiveTagID(null)
+            clearSearch()
+          }
+        }}
+        onClose={() => setTagDialogItems([])}
+      />
+      <XDriveFileNameDialog
+        open={saveSearchOpen}
+        mode="saved-search"
+        onClose={() => setSaveSearchOpen(false)}
+        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
+        onSubmit={async (name) => {
+          const created = await organization.createSavedSearch({
+            name,
+            query: searchState.query,
+            filters: persistedSearchFilters,
+          })
+          setActiveSavedSearchID(created.id)
+          if (searchFilters.availability) {
+            onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
+          } else {
+            onFeedback('good', '智能文件夹已保存。')
+          }
+        }}
+      />
+      <XDriveFileNameDialog
+        open={Boolean(renameSavedSearch)}
+        mode="saved-search"
+        initialValue={renameSavedSearch?.name ?? ''}
+        onClose={() => setRenameSavedSearch(null)}
+        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
+        onSubmit={async (name) => {
+          if (!renameSavedSearch) return
+          await organization.updateSavedSearch(renameSavedSearch.id, {
+            name,
+            query: renameSavedSearch.query,
+            filters: renameSavedSearch.filters,
+          })
+          onFeedback('good', '智能文件夹已重命名。')
+        }}
+      />
       <XDriveFileExplorerTrashDeleteDialog
         target={trash.deleteTarget}
         loading={trash.workingKey.startsWith('delete:')}

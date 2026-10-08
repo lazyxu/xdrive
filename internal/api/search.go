@@ -68,6 +68,7 @@ type searchFilters struct {
 	MinSize      *int64
 	MaxSize      *int64
 	SourceID     uint64
+	TagID        uint64
 }
 
 func (filters searchFilters) active() bool {
@@ -76,7 +77,8 @@ func (filters searchFilters) active() bool {
 		filters.ModifiedTo != nil ||
 		filters.MinSize != nil ||
 		filters.MaxSize != nil ||
-		filters.SourceID != 0
+		filters.SourceID != 0 ||
+		filters.TagID != 0
 }
 
 func (filters searchFilters) signature() string {
@@ -103,6 +105,7 @@ func (filters searchFilters) signature() string {
 		minSize,
 		maxSize,
 		strconv.FormatUint(filters.SourceID, 10),
+		strconv.FormatUint(filters.TagID, 10),
 	}, "|")
 }
 
@@ -173,6 +176,14 @@ func parseSearchFilters(c *gin.Context) (searchFilters, bool) {
 			return searchFilters{}, false
 		}
 		filters.SourceID = sourceID
+	}
+	if raw := strings.TrimSpace(c.Query("tag_id")); raw != "" {
+		tagID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || tagID == 0 {
+			fail(c, http.StatusBadRequest, "tag_id must be a positive integer")
+			return searchFilters{}, false
+		}
+		filters.TagID = tagID
 	}
 	return filters, true
 }
@@ -580,6 +591,21 @@ func searchNodeStructuredFilterSQL(ownerID uint64, filters searchFilters) (strin
   )
 `
 		args = append(args, ownerID, filters.SourceID)
+	}
+	if filters.TagID != 0 {
+		sqlText += `
+  AND EXISTS (
+    SELECT 1
+    FROM xd_file_node_tags node_tag
+    JOIN xd_file_tags tag
+      ON tag.id = node_tag.tag_id
+     AND tag.owner_id = ?
+    WHERE node_tag.owner_id = ?
+      AND node_tag.node_id = search_rows.id
+      AND node_tag.tag_id = ?
+  )
+`
+		args = append(args, ownerID, ownerID, filters.TagID)
 	}
 	return sqlText, args
 }

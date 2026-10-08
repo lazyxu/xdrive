@@ -7,12 +7,20 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import {
   Box,
+  Checkbox,
   CircularProgress,
   Collapse,
+  Divider,
   IconButton,
   ListItemButton,
+  Menu,
+  MenuItem,
   Stack,
   Tooltip,
   Typography,
@@ -39,6 +47,7 @@ import {
 } from './FileExplorer'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
+import type { XDriveFileSavedSearch, XDriveFileTag } from '../file-explorer-organization'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -63,16 +72,50 @@ type XDriveFileExplorerNavigationTreeNode = {
   crumbs: XDriveFileExplorerNavigationTreeCrumb[]
 }
 
-type XDriveFileExplorerNavigationSection = 'quickAccess' | 'favorites' | 'recent' | 'tree'
+type XDriveFileExplorerNavigationSection = 'quickAccess' | 'savedSearches' | 'tags' | 'favorites' | 'recent' | 'tree'
 type XDriveFileExplorerNavigationSectionState = Record<XDriveFileExplorerNavigationSection, boolean>
 
 const defaultNavigationSectionState: XDriveFileExplorerNavigationSectionState = {
   quickAccess: true,
+  savedSearches: true,
+  tags: true,
   favorites: true,
   recent: true,
   tree: true,
 }
 const defaultNavigationSectionPreferencesKey = 'xdrive.files.navigation_sections'
+
+type XDriveFileExplorerSidebarPreferences = {
+  visible: XDriveFileExplorerNavigationSectionState
+  quickAccessSort: 'manual' | 'name'
+}
+
+const defaultSidebarPreferences: XDriveFileExplorerSidebarPreferences = {
+  visible: { ...defaultNavigationSectionState },
+  quickAccessSort: 'manual',
+}
+
+function loadSidebarPreferences(storageKey: string): XDriveFileExplorerSidebarPreferences {
+  if (typeof window === 'undefined') return { ...defaultSidebarPreferences, visible: { ...defaultSidebarPreferences.visible } }
+  try {
+    const raw = window.localStorage.getItem(`${storageKey}.customize`)
+    if (!raw) return { ...defaultSidebarPreferences, visible: { ...defaultSidebarPreferences.visible } }
+    const value = JSON.parse(raw) as Partial<XDriveFileExplorerSidebarPreferences>
+    return {
+      visible: {
+        quickAccess: value.visible?.quickAccess !== false,
+        savedSearches: value.visible?.savedSearches !== false,
+        tags: value.visible?.tags !== false,
+        favorites: value.visible?.favorites !== false,
+        recent: value.visible?.recent !== false,
+        tree: value.visible?.tree !== false,
+      },
+      quickAccessSort: value.quickAccessSort === 'name' ? 'name' : 'manual',
+    }
+  } catch {
+    return { ...defaultSidebarPreferences, visible: { ...defaultSidebarPreferences.visible } }
+  }
+}
 
 function loadNavigationSectionState(storageKey: string) {
   if (typeof window === 'undefined') return { ...defaultNavigationSectionState }
@@ -82,6 +125,8 @@ function loadNavigationSectionState(storageKey: string) {
     const value = JSON.parse(raw) as Partial<XDriveFileExplorerNavigationSectionState>
     return {
       quickAccess: typeof value.quickAccess === 'boolean' ? value.quickAccess : true,
+      savedSearches: typeof value.savedSearches === 'boolean' ? value.savedSearches : true,
+      tags: typeof value.tags === 'boolean' ? value.tags : true,
       favorites: typeof value.favorites === 'boolean' ? value.favorites : true,
       recent: typeof value.recent === 'boolean' ? value.recent : true,
       tree: typeof value.tree === 'boolean' ? value.tree : true,
@@ -109,6 +154,20 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess,
   onToggleCurrentQuickAccess,
   onUnpinQuickAccess,
+  onReorderQuickAccess,
+  savedSearchesEnabled = false,
+  savedSearches = [],
+  activeSavedSearchID = null,
+  onActivateSavedSearch,
+  onRenameSavedSearch,
+  onReplaceSavedSearch,
+  canReplaceSavedSearch = false,
+  onDeleteSavedSearch,
+  onReorderSavedSearches,
+  tagsEnabled = false,
+  tags = [],
+  activeTagID = null,
+  onActivateTag,
   favoritesEnabled = false,
   favoriteItems = [],
   favoritesLoading = false,
@@ -155,6 +214,20 @@ export function XDriveFileExplorerNavigationPane({
   onNavigateQuickAccess?: (nodeID: number) => void | Promise<void>
   onToggleCurrentQuickAccess?: () => void | Promise<void>
   onUnpinQuickAccess?: (nodeID: number) => void | Promise<void>
+  onReorderQuickAccess?: (nodeIDs: number[]) => void | Promise<void>
+  savedSearchesEnabled?: boolean
+  savedSearches?: readonly XDriveFileSavedSearch[]
+  activeSavedSearchID?: number | null
+  onActivateSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
+  onRenameSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
+  onReplaceSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
+  canReplaceSavedSearch?: boolean
+  onDeleteSavedSearch?: (id: number) => void | Promise<void>
+  onReorderSavedSearches?: (ids: number[]) => void | Promise<void>
+  tagsEnabled?: boolean
+  tags?: readonly XDriveFileTag[]
+  activeTagID?: number | null
+  onActivateTag?: (tag: XDriveFileTag) => void | Promise<void>
   favoritesEnabled?: boolean
   favoriteItems?: readonly XDriveFileExplorerFavoriteNavigationEntry[]
   favoritesLoading?: boolean
@@ -189,18 +262,31 @@ export function XDriveFileExplorerNavigationPane({
     loadDirectoryPageGenerationRef.current += 1
   }
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
+  const [customizeAnchor, setCustomizeAnchor] = useState<HTMLElement | null>(null)
+  const [savedSearchMenu, setSavedSearchMenu] = useState<{ anchor: HTMLElement; search: XDriveFileSavedSearch } | null>(null)
+  const [sidebarPreferences, setSidebarPreferences] = useState<XDriveFileExplorerSidebarPreferences>(
+    () => loadSidebarPreferences(sectionPreferencesKey),
+  )
+  const [draggedQuickAccessID, setDraggedQuickAccessID] = useState<number | null>(null)
+  const [draggedSavedSearchID, setDraggedSavedSearchID] = useState<number | null>(null)
   const [expandedSections, setExpandedSections] = useState<XDriveFileExplorerNavigationSectionState>(
     () => loadNavigationSectionState(sectionPreferencesKey),
   )
 
   useEffect(() => {
     setExpandedSections(loadNavigationSectionState(sectionPreferencesKey))
+    setSidebarPreferences(loadSidebarPreferences(sectionPreferencesKey))
   }, [sectionPreferencesKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))
   }, [expandedSections, sectionPreferencesKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(`${sectionPreferencesKey}.customize`, JSON.stringify(sidebarPreferences))
+  }, [sectionPreferencesKey, sidebarPreferences])
 
   const toggleSection = (section: XDriveFileExplorerNavigationSection) => {
     setExpandedSections((current) => ({
@@ -551,6 +637,28 @@ export function XDriveFileExplorerNavigationPane({
     )
   }
 
+  const displayedQuickAccessItems = useMemo(() => (
+    sidebarPreferences.quickAccessSort === 'name'
+      ? [...quickAccessItems].sort((left, right) => left.name.localeCompare(right.name))
+      : quickAccessItems
+  ), [quickAccessItems, sidebarPreferences.quickAccessSort])
+
+  const setSectionVisible = (section: XDriveFileExplorerNavigationSection, visible: boolean) => {
+    setSidebarPreferences((current) => ({
+      ...current,
+      visible: { ...current.visible, [section]: visible },
+    }))
+  }
+
+  const reorderIDs = (ids: readonly number[], sourceID: number, targetID: number) => {
+    if (sourceID === targetID) return [...ids]
+    const next = ids.filter((id) => id !== sourceID)
+    const targetIndex = next.indexOf(targetID)
+    if (targetIndex < 0) return [...ids]
+    next.splice(targetIndex, 0, sourceID)
+    return next
+  }
+
   const canPinCurrent = !trashActive && quickAccessEnabled && currentCrumbs.length > 1 && Boolean(onToggleCurrentQuickAccess)
 
   return (
@@ -567,6 +675,58 @@ export function XDriveFileExplorerNavigationPane({
         bgcolor: 'background.paper',
       }}
     >
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1, minHeight: 28 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight={700}>侧边栏</Typography>
+        <Tooltip title="排序和自定义侧边栏">
+          <IconButton
+            size="small"
+            aria-label="排序和自定义侧边栏"
+            onClick={(event) => setCustomizeAnchor(event.currentTarget)}
+            sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+          >
+            <TuneRoundedIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+      <Menu
+        anchorEl={customizeAnchor}
+        open={Boolean(customizeAnchor)}
+        onClose={() => setCustomizeAnchor(null)}
+      >
+        <MenuItem disabled sx={{ fontSize: 12 }}>显示栏目</MenuItem>
+        {([
+          ['quickAccess', '快速访问', quickAccessEnabled],
+          ['savedSearches', '智能文件夹', savedSearchesEnabled],
+          ['tags', '标签', tagsEnabled],
+          ['favorites', '收藏', favoritesEnabled],
+          ['recent', '最近使用', recentEnabled],
+          ['tree', '文件夹', true],
+        ] as const).map(([section, label, available]) => (
+          <MenuItem
+            key={section}
+            disabled={!available}
+            onClick={() => setSectionVisible(section, !sidebarPreferences.visible[section])}
+          >
+            <Checkbox size="small" checked={available && sidebarPreferences.visible[section]} disabled={!available} />
+            {label}
+          </MenuItem>
+        ))}
+        <Divider />
+        <MenuItem disabled sx={{ fontSize: 12 }}>快速访问排序</MenuItem>
+        <MenuItem
+          selected={sidebarPreferences.quickAccessSort === 'manual'}
+          onClick={() => setSidebarPreferences((current) => ({ ...current, quickAccessSort: 'manual' }))}
+        >
+          手动排序（可拖动）
+        </MenuItem>
+        <MenuItem
+          selected={sidebarPreferences.quickAccessSort === 'name'}
+          onClick={() => setSidebarPreferences((current) => ({ ...current, quickAccessSort: 'name' }))}
+        >
+          按名称排序
+        </MenuItem>
+      </Menu>
+
       {onNavigateTrash ? (
           <Box component="nav" aria-label="回收站" sx={{ px: 0.75, py: 0.5 }}>
             <ListItemButton
@@ -583,7 +743,7 @@ export function XDriveFileExplorerNavigationPane({
           </Box>
       ) : null}
 
-      {quickAccessEnabled ? (
+      {quickAccessEnabled && sidebarPreferences.visible.quickAccess ? (
         <Box
           component="nav"
           aria-label="快速访问"
@@ -645,7 +805,7 @@ export function XDriveFileExplorerNavigationPane({
             </Typography>
           ) : (
             <Stack spacing={0.25}>
-              {quickAccessItems.map((item) => (
+              {displayedQuickAccessItems.map((item) => (
                 <Box
                   key={item.id}
                   sx={{
@@ -657,6 +817,28 @@ export function XDriveFileExplorerNavigationPane({
                   <ListItemButton
                     selected={!trashActive && currentID === item.id}
                     title={item.path || item.name}
+                    draggable={Boolean(onReorderQuickAccess) && sidebarPreferences.quickAccessSort === 'manual'}
+                    aria-grabbed={draggedQuickAccessID === item.id}
+                    onDragStart={(event) => {
+                      if (!onReorderQuickAccess || sidebarPreferences.quickAccessSort !== 'manual') return
+                      setDraggedQuickAccessID(item.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('application/x-xdrive-sidebar-quick-access', String(item.id))
+                    }}
+                    onDragEnd={() => setDraggedQuickAccessID(null)}
+                    onDragOver={(event) => {
+                      if (draggedQuickAccessID === null) return
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(event) => {
+                      if (draggedQuickAccessID === null || !onReorderQuickAccess || sidebarPreferences.quickAccessSort !== 'manual') return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const ids = reorderIDs(displayedQuickAccessItems.map((entry) => entry.id), draggedQuickAccessID, item.id)
+                      setDraggedQuickAccessID(null)
+                      void onReorderQuickAccess(ids)
+                    }}
                     onClick={() => { void onNavigateQuickAccess?.(item.id) }}
                     sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
@@ -685,7 +867,188 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
-      {favoritesEnabled ? (
+      {savedSearchesEnabled && sidebarPreferences.visible.savedSearches ? (
+        <Box
+          component="nav"
+          aria-label="智能文件夹"
+          sx={{
+            px: 0.75,
+            py: 0.5,
+            '& > :not(:first-child)': {
+              display: expandedSections.savedSearches ? undefined : 'none',
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+            <IconButton
+              size="small"
+              aria-label={expandedSections.savedSearches ? '折叠智能文件夹' : '展开智能文件夹'}
+              aria-expanded={expandedSections.savedSearches}
+              onClick={() => toggleSection('savedSearches')}
+              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+            >
+              {expandedSections.savedSearches
+                ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+            </IconButton>
+            <SearchRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            <Typography variant="caption" fontWeight={700} color="text.secondary">智能文件夹</Typography>
+          </Stack>
+          {savedSearches.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+              暂无保存的搜索
+            </Typography>
+          ) : (
+            <Stack spacing={0.25}>
+              {savedSearches.map((search) => (
+                <Box
+                  key={search.id}
+                  sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 28px', alignItems: 'center' }}
+                >
+                  <ListItemButton
+                    selected={activeSavedSearchID === search.id}
+                    draggable={Boolean(onReorderSavedSearches)}
+                    aria-grabbed={draggedSavedSearchID === search.id}
+                    onDragStart={(event) => {
+                      if (!onReorderSavedSearches) return
+                      setDraggedSavedSearchID(search.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('application/x-xdrive-sidebar-saved-search', String(search.id))
+                    }}
+                    onDragEnd={() => setDraggedSavedSearchID(null)}
+                    onDragOver={(event) => {
+                      if (draggedSavedSearchID === null) return
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(event) => {
+                      if (draggedSavedSearchID === null || !onReorderSavedSearches) return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const ids = reorderIDs(savedSearches.map((entry) => entry.id), draggedSavedSearchID, search.id)
+                      setDraggedSavedSearchID(null)
+                      void onReorderSavedSearches(ids)
+                    }}
+                    onClick={() => { void onActivateSavedSearch?.(search) }}
+                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                  >
+                    <SearchRoundedIcon sx={{ fontSize: 18, color: activeSavedSearchID === search.id ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
+                    <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>{search.name}</Typography>
+                  </ListItemButton>
+                  {onRenameSavedSearch || onReplaceSavedSearch || onDeleteSavedSearch ? (
+                    <Tooltip title="智能文件夹选项">
+                      <span>
+                        <IconButton
+                          size="small"
+                          aria-label={`智能文件夹 ${search.name} 选项`}
+                          onClick={(event) => setSavedSearchMenu({ anchor: event.currentTarget, search })}
+                          sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                        >
+                          <MoreHorizRoundedIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  ) : null}
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+
+      <Menu
+        anchorEl={savedSearchMenu?.anchor ?? null}
+        open={Boolean(savedSearchMenu)}
+        onClose={() => setSavedSearchMenu(null)}
+      >
+        {onRenameSavedSearch ? (
+          <MenuItem onClick={() => {
+            const search = savedSearchMenu?.search
+            setSavedSearchMenu(null)
+            if (search) void onRenameSavedSearch(search)
+          }}>
+            重命名
+          </MenuItem>
+        ) : null}
+        {onReplaceSavedSearch ? (
+          <MenuItem
+            disabled={!canReplaceSavedSearch}
+            onClick={() => {
+              const search = savedSearchMenu?.search
+              setSavedSearchMenu(null)
+              if (search) void onReplaceSavedSearch(search)
+            }}
+          >
+            更新为当前搜索
+          </MenuItem>
+        ) : null}
+        {onDeleteSavedSearch ? (
+          <MenuItem
+            sx={{ color: 'error.main' }}
+            onClick={() => {
+              const search = savedSearchMenu?.search
+              setSavedSearchMenu(null)
+              if (search) void onDeleteSavedSearch(search.id)
+            }}
+          >
+            删除
+          </MenuItem>
+        ) : null}
+      </Menu>
+
+      {tagsEnabled && sidebarPreferences.visible.tags ? (
+        <Box
+          component="nav"
+          aria-label="标签"
+          sx={{
+            px: 0.75,
+            py: 0.5,
+            '& > :not(:first-child)': {
+              display: expandedSections.tags ? undefined : 'none',
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+            <IconButton
+              size="small"
+              aria-label={expandedSections.tags ? '折叠标签' : '展开标签'}
+              aria-expanded={expandedSections.tags}
+              onClick={() => toggleSection('tags')}
+              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+            >
+              {expandedSections.tags
+                ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+            </IconButton>
+            <LocalOfferRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            <Typography variant="caption" fontWeight={700} color="text.secondary">标签</Typography>
+          </Stack>
+          {tags.length === 0 ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+              暂无标签
+            </Typography>
+          ) : (
+            <Stack spacing={0.25}>
+              {tags.map((tag) => (
+                <ListItemButton
+                  key={tag.id}
+                  selected={activeTagID === tag.id}
+                  onClick={() => { void onActivateTag?.(tag) }}
+                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                >
+                  <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: tag.color || 'text.disabled', flexShrink: 0 }} />
+                  <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1 }}>{tag.name}</Typography>
+                  {tag.item_count > 0 ? (
+                    <Typography variant="caption" color="text.secondary">{tag.item_count}</Typography>
+                  ) : null}
+                </ListItemButton>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+
+      {favoritesEnabled && sidebarPreferences.visible.favorites ? (
         <Box
           component="nav"
           aria-label="收藏"
@@ -771,7 +1134,7 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
-      {recentEnabled ? (
+      {recentEnabled && sidebarPreferences.visible.recent ? (
         <Box
           component="nav"
           aria-label="最近使用"
@@ -855,6 +1218,7 @@ export function XDriveFileExplorerNavigationPane({
         </Box>
       ) : null}
 
+      {sidebarPreferences.visible.tree ? (
       <Box component="nav" aria-label="文件夹" sx={{ px: 0.75, py: 0.5 }}>
         <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
           <IconButton
@@ -880,6 +1244,7 @@ export function XDriveFileExplorerNavigationPane({
           {rootNode ? renderNode(rootNode, 0) : null}
         </Box>
       </Box>
+      ) : null}
     </Box>
   )
 }

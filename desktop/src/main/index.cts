@@ -90,6 +90,10 @@ import {
   type AgentCloudTrashRange,
   type AgentCloudNodeChangePage,
   type AgentCloudQuickAccessItem,
+  type AgentFileTag,
+  type AgentFileNodeTags,
+  type AgentFileSavedSearch,
+  type AgentFileSavedSearchInput,
   type AgentCloudFavoriteItem,
   type AgentCloudRecentItem,
   type AgentCloudQuota,
@@ -3226,6 +3230,93 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudUnpinFileQuickAccess(nodeID)
   }, false))
+
+  ipcMain.handle('agent:cloud-quick-access-reorder', (_event, nodeIDs: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-quick-access')
+    if (!Array.isArray(nodeIDs) || nodeIDs.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)) {
+      throw new AgentIPCError('invalid_input', 0, 'Quick access node ids are invalid.')
+    }
+    return requireAgentClient().cloudReorderFileQuickAccess(nodeIDs as number[])
+  }, false))
+  ipcMain.handle('agent:cloud-tags', () => runAgentAction<AgentFileTag[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    return requireAgentClient().cloudFileTags()
+  }, false))
+  ipcMain.handle('agent:cloud-tag-create', (_event, name: unknown, color: unknown) => runAgentAction<AgentFileTag>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    if (typeof name !== 'string' || typeof color !== 'string') throw new AgentIPCError('invalid_input', 0, 'Tag input is invalid.')
+    return requireAgentClient().cloudCreateFileTag(name, color)
+  }, false))
+  ipcMain.handle('agent:cloud-tag-update', (_event, id: unknown, input: unknown) => runAgentAction<AgentFileTag>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 || !input || typeof input !== 'object') {
+      throw new AgentIPCError('invalid_input', 0, 'Tag update is invalid.')
+    }
+    return requireAgentClient().cloudUpdateFileTag(id, input as { name?: string; color?: string })
+  }, false))
+  ipcMain.handle('agent:cloud-tag-delete', (_event, id: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new AgentIPCError('invalid_input', 0, 'Tag id is invalid.')
+    return requireAgentClient().cloudDeleteFileTag(id)
+  }, false))
+  ipcMain.handle('agent:cloud-tags-query', (_event, nodeIDs: unknown) => runAgentAction<AgentFileNodeTags[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    if (!Array.isArray(nodeIDs) || nodeIDs.length === 0 || nodeIDs.length > 500 ||
+        nodeIDs.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)) {
+      throw new AgentIPCError('invalid_input', 0, 'Tag node ids are invalid.')
+    }
+    return requireAgentClient().cloudQueryFileNodeTags(nodeIDs as number[])
+  }, false))
+  ipcMain.handle('agent:cloud-tag-nodes', (_event, tagID: unknown, nodeIDs: unknown, assigned: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-tags')
+    if (typeof tagID !== 'number' || !Number.isSafeInteger(tagID) || tagID <= 0 ||
+        !Array.isArray(nodeIDs) || nodeIDs.length === 0 || nodeIDs.length > 500 ||
+        nodeIDs.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) ||
+        typeof assigned !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Tag assignment is invalid.')
+    }
+    return requireAgentClient().cloudSetFileTagNodes(tagID, nodeIDs as number[], assigned)
+  }, false))
+  ipcMain.handle('agent:cloud-saved-searches', () => runAgentAction<AgentFileSavedSearch[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-saved-searches')
+    return requireAgentClient().cloudFileSavedSearches()
+  }, false))
+  ipcMain.handle('agent:cloud-saved-search-create', (_event, input: unknown) => runAgentAction<AgentFileSavedSearch>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-saved-searches')
+    if (!input || typeof input !== 'object') throw new AgentIPCError('invalid_input', 0, 'Saved search input is invalid.')
+    return requireAgentClient().cloudCreateFileSavedSearch(input as AgentFileSavedSearchInput)
+  }, false))
+  ipcMain.handle('agent:cloud-saved-search-update', (_event, id: unknown, input: unknown) => runAgentAction<AgentFileSavedSearch>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-saved-searches')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 || !input || typeof input !== 'object') throw new AgentIPCError('invalid_input', 0, 'Saved search input is invalid.')
+    return requireAgentClient().cloudUpdateFileSavedSearch(id, input as AgentFileSavedSearchInput)
+  }, false))
+  ipcMain.handle('agent:cloud-saved-search-delete', (_event, id: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-saved-searches')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new AgentIPCError('invalid_input', 0, 'Saved search id is invalid.')
+    return requireAgentClient().cloudDeleteFileSavedSearch(id)
+  }, false))
+  ipcMain.handle('agent:cloud-saved-search-reorder', (_event, ids: unknown) => runAgentAction<{ ok: boolean }>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'file-saved-searches')
+    if (!Array.isArray(ids) || ids.length > 64 ||
+        ids.some((id) => typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)) {
+      throw new AgentIPCError('invalid_input', 0, 'Saved search order is invalid.')
+    }
+    return requireAgentClient().cloudReorderFileSavedSearches(ids as number[])
+  }, false))
+
   ipcMain.handle('agent:cloud-favorites', () => runAgentAction<AgentCloudFavoriteItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-favorites')
@@ -3926,6 +4017,12 @@ function registerIPCHandlers() {
       }
       out.sourceID = raw.sourceID
     }
+    if (raw.tagID !== undefined) {
+      if (typeof raw.tagID !== 'number' || !Number.isSafeInteger(raw.tagID) || raw.tagID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Search tag filter is invalid.')
+      }
+      out.tagID = raw.tagID
+    }
     if (raw.availability !== undefined) {
       const availability = new Set(['local', 'always-local', 'online-only', 'cloud', 'mixed', 'syncing'])
       if (typeof raw.availability !== 'string' || !availability.has(raw.availability)) {
@@ -3942,6 +4039,7 @@ function registerIPCHandlers() {
     filters.minSize !== undefined ||
     filters.maxSize !== undefined ||
     filters.sourceID !== undefined ||
+    filters.tagID !== undefined ||
     filters.availability !== undefined
   )
 

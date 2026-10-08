@@ -484,3 +484,51 @@ Trash is a special FileExplorer directory, not a dialog:
 - its item context menu exposes only Trash-specific actions (Restore and Permanent Delete) plus the standard Properties entry;
 - Web/Desktop keep their transport adapters local but share the Trash controller and presentation.
 - The thumbnail endpoint may read an authenticated owner's deleted file node specifically for Trash thumbnails; other media/gallery/preview APIs remain active-node-only.
+
+
+## Finder-inspired organization and browsing contract
+
+FileExplorer keeps one cross-platform Web/Desktop implementation. The following Finder-inspired capabilities are shared product features rather than macOS-only presentation forks.
+
+### File Tags
+
+- Tags are owner-scoped Server entities and can be attached many-to-many to both files and folders without moving or copying nodes.
+- A tag has a stable id, user-visible name and optional color. Name is semantic; color is only a visual aid.
+- The shared Tag dialog supports create, rename/color edit, delete, single-item assignment and multi-selection assignment.
+- Tag assignment must be queryable in bounded batches and must not widen ordinary directory-range payloads.
+- Structured Search accepts `tag_id` and applies it Server-side. Sidebar tag activation is the same Search contract, not a client-side filter over loaded rows.
+- Tag deletion removes its node associations. Owner isolation applies to tag definitions, assignments and Search.
+
+### Smart Folder / saved Search
+
+- A Smart Folder is a persisted owner-scoped Search definition: display name + query + Server-backed structured filters.
+- Saved filters persist portable Server predicates such as kind, modified time, size, synchronization folder and tag. Device-local availability is intentionally not persisted.
+- Smart Folders appear as a first-class Sidebar section and support activate, rename, replace with the current Search, delete and drag reorder.
+- Activating a Smart Folder calls the existing shared Search controller (`applySearch`) and keeps range loading, sort/group identity and stale-request fencing unchanged.
+- Smart Folders never copy nodes and never materialize a directory tree.
+
+### Column View
+
+- `columns` is the third shared FileExplorer view mode beside `details` and `grid`; it is persisted in the same tab/session view-mode contract.
+- Every visible column is one paged directory request. Columns must never fetch an entire large directory only to render Finder-style hierarchy.
+- Web propagates `AbortSignal` to the paged REST request. Desktop may not be able to cancel an already-issued Agent request, so the shared view still fences every completion with per-column generation state and discards stale responses.
+- When breadcrumbs shrink or switch, inactive column requests are aborted and inactive column state is pruned.
+- Additional pages use the shared automatic load sentinel rather than a manual Load More row.
+- Column items reuse the normal selection/open/context-menu contracts. Column View must not run Details/Grid marquee or virtual-grid geometry against its surface.
+
+### Sidebar sorting and customization
+
+- Sidebar section visibility is a local presentation preference and is persisted separately from collapse state.
+- Quick Access supports two modes: manually ordered and name-sorted. Manual ordering is persisted Server-side with each pinned folder's position so Web/Desktop and devices agree.
+- Smart Folder order is also persisted Server-side.
+- Users may hide/show Quick Access, Smart Folders, Tags, Favorites, Recent and the folder tree. System Trash remains a fixed special entry and is not reordered into arbitrary sections.
+- Section customization must not reintroduce repeated divider chrome between navigation sections.
+
+### Lightweight Quick Actions
+
+- Inspector Quick Actions are intentionally small and contextual.
+- They reuse existing safe FileExplorer actions plus Tags and show at most four actions.
+- Destructive operations and structural commands such as Delete, Rename, Cut/Copy/Move, Properties and Version History are not promoted into the Quick Actions row.
+- Do not copy Finder's Markup, Create PDF, media trimming or other editor workflows into FileExplorer unless a separate product requirement explicitly adds them.
+
+These five capabilities are the complete scope of this Finder-alignment phase. They must not be used as justification to introduce Gallery View, Alias semantics, free-form toolbar customization, device syncing or other Finder-specific features.

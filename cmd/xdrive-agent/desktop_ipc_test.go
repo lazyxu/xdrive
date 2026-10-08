@@ -385,6 +385,64 @@ func (f *fakeDesktopIPCController) CloudUnpinFileQuickAccess(context.Context, ui
 	return f.err
 }
 
+
+func (f *fakeDesktopIPCController) CloudReorderFileQuickAccess(context.Context, []uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileTags(context.Context) ([]client.FileTag, error) {
+	return []client.FileTag{{ID: 21, Name: "Work", Color: "#3366CC", ItemCount: 2}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateFileTag(_ context.Context, name, color string) (client.FileTag, error) {
+	return client.FileTag{ID: 21, Name: name, Color: color}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateFileTag(_ context.Context, tagID uint64, input map[string]string) (client.FileTag, error) {
+	return client.FileTag{ID: tagID, Name: input["name"], Color: input["color"]}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteFileTag(context.Context, uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudQueryFileNodeTags(_ context.Context, nodeIDs []uint64) ([]client.FileNodeTags, error) {
+	out := make([]client.FileNodeTags, 0, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		out = append(out, client.FileNodeTags{
+			NodeID: nodeID,
+			Tags:   []client.FileTag{{ID: 21, Name: "Work", Color: "#3366CC"}},
+		})
+	}
+	return out, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSetFileTagNodes(context.Context, uint64, []uint64, bool) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileSavedSearches(context.Context) ([]client.FileSavedSearch, error) {
+	return []client.FileSavedSearch{{
+		ID: 31, Name: "Work PDF", Filters: client.FileSavedSearchFilters{Kind: "pdf", TagID: 21},
+	}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateFileSavedSearch(_ context.Context, input client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	return client.FileSavedSearch{ID: 31, Name: input.Name, Query: input.Query, Filters: input.Filters}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateFileSavedSearch(_ context.Context, id uint64, input client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	return client.FileSavedSearch{ID: id, Name: input.Name, Query: input.Query, Filters: input.Filters}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteFileSavedSearch(context.Context, uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudReorderFileSavedSearches(context.Context, []uint64) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileFavorites(context.Context) ([]client.FileFavoriteItem, error) {
 	return []client.FileFavoriteItem{{
 		Node:        client.Node{ID: 14, Name: "Favorite.txt", Type: "file", Revision: 1},

@@ -324,6 +324,39 @@ export function useXDriveFileExplorerSearch<
     workspaceKey,
   ])
 
+  const applySearch = useCallback(async (
+    rawQuery: string,
+    filters: XDriveFileExplorerSearchFilters,
+  ) => {
+    const query = rawQuery.trim()
+    if (!query && !xDriveFileExplorerSearchFiltersActive(filters)) {
+      clearSearch()
+      return
+    }
+    if (query && query.length < 2) {
+      onError(new Error('搜索至少需要 2 个字符'))
+      return
+    }
+    onSearchIntentRef.current?.()
+    updateEntry(workspaceKey, (current) => ({
+      ...current,
+      value: query,
+      query,
+      filters: { ...filters },
+      sortSignature: '',
+      loading: false,
+    }))
+    await executeSearch(workspaceKey, query, filters, grouping, sort)
+  }, [
+    clearSearch,
+    executeSearch,
+    grouping,
+    onError,
+    sort,
+    updateEntry,
+    workspaceKey,
+  ])
+
   const submitSearch = useCallback(async (rawQuery: string) => {
     const trimmed = rawQuery.trim()
     if (!trimmed) {
@@ -444,5 +477,6 @@ export function useXDriveFileExplorerSearch<
     changeSearchFilters,
     clearSearch,
     submitSearch,
+    applySearch,
   }
 }

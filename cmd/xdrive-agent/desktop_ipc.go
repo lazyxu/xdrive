@@ -84,6 +84,8 @@ var desktopIPCCapabilities = []string{
 	"file-operation-undo",
 	"file-operation-redo",
 	"file-quick-access",
+	"file-tags",
+	"file-saved-searches",
 	"file-favorites",
 	"file-recent",
 	"file-properties-stats",
@@ -197,6 +199,18 @@ type desktopIPCController interface {
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
 	CloudUnpinFileQuickAccess(context.Context, uint64) error
+	CloudReorderFileQuickAccess(context.Context, []uint64) error
+	CloudFileTags(context.Context) ([]client.FileTag, error)
+	CloudCreateFileTag(context.Context, string, string) (client.FileTag, error)
+	CloudUpdateFileTag(context.Context, uint64, map[string]string) (client.FileTag, error)
+	CloudDeleteFileTag(context.Context, uint64) error
+	CloudQueryFileNodeTags(context.Context, []uint64) ([]client.FileNodeTags, error)
+	CloudSetFileTagNodes(context.Context, uint64, []uint64, bool) error
+	CloudFileSavedSearches(context.Context) ([]client.FileSavedSearch, error)
+	CloudCreateFileSavedSearch(context.Context, client.FileSavedSearchInput) (client.FileSavedSearch, error)
+	CloudUpdateFileSavedSearch(context.Context, uint64, client.FileSavedSearchInput) (client.FileSavedSearch, error)
+	CloudDeleteFileSavedSearch(context.Context, uint64) error
+	CloudReorderFileSavedSearches(context.Context, []uint64) error
 	CloudFileFavorites(context.Context) ([]client.FileFavoriteItem, error)
 	CloudFavoriteFile(context.Context, uint64) (client.FileFavoriteItem, error)
 	CloudUnfavoriteFile(context.Context, uint64) error
@@ -518,6 +532,19 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/unpin", h.cloudUnpinFileQuickAccess)
+	mux.HandleFunc("PUT /v1/cloud/quick-access/order", h.cloudReorderFileQuickAccess)
+	mux.HandleFunc("GET /v1/cloud/tags", h.cloudFileTags)
+	mux.HandleFunc("POST /v1/cloud/tags", h.cloudCreateFileTag)
+	mux.HandleFunc("PATCH /v1/cloud/tags", h.cloudUpdateFileTag)
+	mux.HandleFunc("DELETE /v1/cloud/tags", h.cloudDeleteFileTag)
+	mux.HandleFunc("POST /v1/cloud/tags/query", h.cloudQueryFileNodeTags)
+	mux.HandleFunc("PUT /v1/cloud/tags/nodes", h.cloudAddFileTagNodes)
+	mux.HandleFunc("DELETE /v1/cloud/tags/nodes", h.cloudRemoveFileTagNodes)
+	mux.HandleFunc("GET /v1/cloud/saved-searches", h.cloudFileSavedSearches)
+	mux.HandleFunc("POST /v1/cloud/saved-searches", h.cloudCreateFileSavedSearch)
+	mux.HandleFunc("PATCH /v1/cloud/saved-searches", h.cloudUpdateFileSavedSearch)
+	mux.HandleFunc("DELETE /v1/cloud/saved-searches", h.cloudDeleteFileSavedSearch)
+	mux.HandleFunc("PUT /v1/cloud/saved-searches/order", h.cloudReorderFileSavedSearches)
 	mux.HandleFunc("GET /v1/cloud/favorites", h.cloudFileFavorites)
 	mux.HandleFunc("POST /v1/cloud/favorites/favorite", h.cloudFavoriteFile)
 	mux.HandleFunc("POST /v1/cloud/favorites/unfavorite", h.cloudUnfavoriteFile)
@@ -1183,6 +1210,125 @@ func (h *desktopIPCHandler) cloudUnpinFileQuickAccess(w http.ResponseWriter, r *
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+
+func (h *desktopIPCHandler) cloudReorderFileQuickAccess(w http.ResponseWriter, r *http.Request) {
+	var input struct { NodeIDs []uint64 `json:"node_ids"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if err := h.ctrl.CloudReorderFileQuickAccess(r.Context(), input.NodeIDs); err != nil {
+		writeDesktopIPCControllerError(w, err); return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudFileTags(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudFileTags(r.Context())
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudCreateFileTag(w http.ResponseWriter, r *http.Request) {
+	var input struct { Name string `json:"name"`; Color string `json:"color"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	item, err := h.ctrl.CloudCreateFileTag(r.Context(), input.Name, input.Color)
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudUpdateFileTag(w http.ResponseWriter, r *http.Request) {
+	var input struct { ID uint64 `json:"id"`; Name *string `json:"name"`; Color *string `json:"color"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if input.ID == 0 || (input.Name == nil && input.Color == nil) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_tag", "id and at least one update are required")
+		return
+	}
+	updates := map[string]string{}
+	if input.Name != nil { updates["name"] = *input.Name }
+	if input.Color != nil { updates["color"] = *input.Color }
+	item, err := h.ctrl.CloudUpdateFileTag(r.Context(), input.ID, updates)
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudDeleteFileTag(w http.ResponseWriter, r *http.Request) {
+	var input struct { ID uint64 `json:"id"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_tag", "id is required")
+		return
+	}
+	if err := h.ctrl.CloudDeleteFileTag(r.Context(), input.ID); err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudQueryFileNodeTags(w http.ResponseWriter, r *http.Request) {
+	var input struct { NodeIDs []uint64 `json:"node_ids"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if len(input.NodeIDs) == 0 || len(input.NodeIDs) > 500 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_tag_nodes", "node_ids must contain 1 to 500 ids")
+		return
+	}
+	items, err := h.ctrl.CloudQueryFileNodeTags(r.Context(), input.NodeIDs)
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudMutateFileTagNodes(w http.ResponseWriter, r *http.Request, assigned bool) {
+	var input struct { TagID uint64 `json:"tag_id"`; NodeIDs []uint64 `json:"node_ids"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if input.TagID == 0 || len(input.NodeIDs) == 0 || len(input.NodeIDs) > 500 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_file_tag_nodes", "tag_id and 1 to 500 node_ids are required")
+		return
+	}
+	if err := h.ctrl.CloudSetFileTagNodes(r.Context(), input.TagID, input.NodeIDs, assigned); err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+func (h *desktopIPCHandler) cloudAddFileTagNodes(w http.ResponseWriter, r *http.Request) { h.cloudMutateFileTagNodes(w, r, true) }
+func (h *desktopIPCHandler) cloudRemoveFileTagNodes(w http.ResponseWriter, r *http.Request) { h.cloudMutateFileTagNodes(w, r, false) }
+
+func (h *desktopIPCHandler) cloudFileSavedSearches(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudFileSavedSearches(r.Context())
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) cloudCreateFileSavedSearch(w http.ResponseWriter, r *http.Request) {
+	var input client.FileSavedSearchInput
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	item, err := h.ctrl.CloudCreateFileSavedSearch(r.Context(), input)
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudUpdateFileSavedSearch(w http.ResponseWriter, r *http.Request) {
+	var input struct { ID uint64 `json:"id"`; Value client.FileSavedSearchInput `json:"value"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_saved_search", "id is required")
+		return
+	}
+	item, err := h.ctrl.CloudUpdateFileSavedSearch(r.Context(), input.ID, input.Value)
+	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+func (h *desktopIPCHandler) cloudDeleteFileSavedSearch(w http.ResponseWriter, r *http.Request) {
+	var input struct { ID uint64 `json:"id"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if input.ID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_saved_search", "id is required")
+		return
+	}
+	if err := h.ctrl.CloudDeleteFileSavedSearch(r.Context(), input.ID); err != nil { writeDesktopIPCControllerError(w, err); return }
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *desktopIPCHandler) cloudReorderFileSavedSearches(w http.ResponseWriter, r *http.Request) {
+	var input struct { IDs []uint64 `json:"ids"` }
+	if !decodeDesktopIPCJSON(w, r, &input) { return }
+	if err := h.ctrl.CloudReorderFileSavedSearches(r.Context(), input.IDs); err != nil { writeDesktopIPCControllerError(w, err); return }
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -2016,6 +2162,14 @@ func desktopIPCSearchFilters(w http.ResponseWriter, r *http.Request) (agentCloud
 			return agentCloudSearchFilters{}, false
 		}
 		filters.Server.SourceID = sourceID
+	}
+	if raw := strings.TrimSpace(values.Get("tag_id")); raw != "" {
+		tagID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || tagID == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_search_filter", "tag_id must be a positive integer")
+			return agentCloudSearchFilters{}, false
+		}
+		filters.Server.TagID = tagID
 	}
 	if raw := strings.TrimSpace(values.Get("availability")); raw != "" {
 		availability, err := normalizeAgentAvailabilityFilter(raw)

@@ -24,6 +24,7 @@ import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
@@ -107,6 +108,8 @@ import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
+import { XDriveFileExplorerColumnView } from './FileExplorerColumnView'
+import type { XDriveFileExplorerColumnPage } from './FileExplorerColumnView'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
 import { useXDriveFileExplorerPropertiesController } from './FileExplorerPropertiesController'
 import type { XDriveFileExplorerPropertiesLoader } from './FileExplorerPropertiesController'
@@ -131,7 +134,7 @@ import {
 export type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 
 export type XDriveFileExplorerID = string | number
-export type XDriveFileExplorerViewMode = 'details' | 'grid'
+export type XDriveFileExplorerViewMode = 'details' | 'grid' | 'columns'
 export type XDriveFileExplorerPresentation = 'card' | 'workspace'
 export type XDriveFileExplorerSortKey = 'name' | 'updated' | 'type' | 'size'
 export type XDriveFileExplorerSortDirection = 'asc' | 'desc'
@@ -804,6 +807,10 @@ export function XDriveFileExplorer({
   onOpenItemInNewTab,
   onPreviewItem,
   onNativeDragOutItem,
+  loadColumnPage,
+  onColumnNavigate,
+  onColumnOpenItem,
+  onManageTags,
   selectedIDs: controlledSelectedIDs,
   defaultSelectedIDs = [],
   onSelectionChange,
@@ -888,6 +895,14 @@ export function XDriveFileExplorer({
   onOpenItemInNewTab?: (item: XDriveFileExplorerItem) => void
   onPreviewItem?: (item: XDriveFileExplorerItem) => void
   onNativeDragOutItem?: (item: XDriveFileExplorerItem) => void
+  loadColumnPage?: (
+    parentID: XDriveFileExplorerID,
+    cursor: string,
+    signal: AbortSignal,
+  ) => Promise<XDriveFileExplorerColumnPage>
+  onColumnNavigate?: (crumbs: XDriveFileExplorerCrumb[]) => void | Promise<void>
+  onColumnOpenItem?: (item: XDriveFileExplorerItem) => void
+  onManageTags?: (items: XDriveFileExplorerItem[]) => void
   selectedIDs?: readonly XDriveFileExplorerID[]
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
@@ -1592,6 +1607,7 @@ export function XDriveFileExplorer({
   }
 
   const startMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (viewMode === 'columns') return
     if (event.pointerType !== 'mouse' || event.button !== 0 || renamingID !== null || draggedItems.length > 0) return
     const target = event.target as HTMLElement
     if (target.closest(
@@ -2146,14 +2162,21 @@ export function XDriveFileExplorer({
         onSelect: () => onDeleteItems(selection),
       })
     }
+    const organizationItems: XDriveFileExplorerMenuItem[] = onManageTags ? [{
+      id: 'tags',
+      label: '标签…',
+      icon: <LocalOfferRoundedIcon fontSize="small" />,
+      dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
+      onSelect: () => onManageTags(selection),
+    }] : []
     const inspectorItems: XDriveFileExplorerMenuItem[] = [{
       id: 'properties',
       label: '属性',
       icon: <InfoOutlinedIcon fontSize="small" />,
-      dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
+      dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length + organizationItems.length > 0,
       onSelect: () => setPropertiesItems(selection),
     }]
-    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...inspectorItems]
+    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems]
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX,
@@ -3174,6 +3197,18 @@ export function XDriveFileExplorer({
   const inspectorFileCount = selectedItems.filter((item) => item.kind === 'file').length
   const inspectorFolderCount = selectedItems.length - inspectorFileCount
   const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
+  const inspectorQuickActions = inspectorItem ? [
+    ...(onManageTags ? [{
+      id: 'tags',
+      label: '标签',
+      icon: <LocalOfferRoundedIcon fontSize="small" />,
+      onSelect: () => onManageTags([inspectorItem]),
+    } satisfies XDriveFileExplorerMenuItem] : []),
+    ...(getItemMenuItems?.(inspectorItem) ?? []).filter((item) => (
+      !item.danger &&
+      !['rename', 'delete', 'properties', 'cut', 'copy', 'move', 'version-history'].includes(item.id)
+    )),
+  ].slice(0, 4) : []
   const inspectorPropertySections = ([
     ['general', '常规'],
     ['content', '内容'],
@@ -3332,7 +3367,9 @@ export function XDriveFileExplorer({
     : ''
   const viewStatusText = viewMode === 'details'
     ? `详细信息 · ${viewPreferences.detailsDensity === 'compact' ? '紧凑' : '标准'}`
-    : `图标 · ${fileExplorerGridSizeStatusLabel[viewPreferences.gridSize]}`
+    : viewMode === 'columns'
+      ? '分栏'
+      : `图标 · ${fileExplorerGridSizeStatusLabel[viewPreferences.gridSize]}`
 
   const nativeDragOutHandle = (
     item: XDriveFileExplorerItem,
@@ -3894,7 +3931,7 @@ export function XDriveFileExplorer({
 
   useEffect(() => {
     const onRangeChange = virtualCollection?.onRangeChange
-    if (!onRangeChange || logicalItemCount <= 0) return
+    if (viewMode === 'columns' || !onRangeChange || logicalItemCount <= 0) return
     const groupedSegments = viewMode === 'details'
       ? groupedDetailsLayout ? groupedDetailsSegments : null
       : groupedGridLayout ? groupedGridSegments : null
@@ -3936,6 +3973,7 @@ export function XDriveFileExplorer({
       pendingScrollTopRef.current = host.scrollTop
       const updateVirtualWindow = () => {
         scrollFrameRef.current = null
+        if (viewMode === 'columns') return
         const raw = pendingScrollTopRef.current
         const grouped = viewMode === 'details'
           ? Boolean(groupedDetailsLayout)
@@ -4345,6 +4383,18 @@ export function XDriveFileExplorer({
           >
             紧凑详细信息
           </MenuItem>
+          {loadColumnPage && onColumnNavigate ? (
+            <MenuItem
+              selected={viewMode === 'columns'}
+              onClick={() => {
+                setViewMode('columns')
+                setViewPreferencesAnchor(null)
+              }}
+            >
+              <ViewColumnRoundedIcon fontSize="small" sx={{ mr: 1 }} />
+              分栏
+            </MenuItem>
+          ) : null}
           <Divider />
           <MenuItem
             selected={viewMode === 'grid' && viewPreferences.gridSize === 'tiny'}
@@ -4626,7 +4676,23 @@ export function XDriveFileExplorer({
         }}
         onDrop={dropExternalFilesOnBackground}
       >
-        {loading && logicalItemCount === 0 ? (
+        {viewMode === 'columns' && loadColumnPage && onColumnNavigate ? (
+          <XDriveFileExplorerColumnView
+            crumbs={crumbs}
+            selectedIDs={selectedIDs}
+            loadPage={loadColumnPage}
+            onNavigate={onColumnNavigate}
+            onSelect={(item) => {
+              setActiveItemID(item.id)
+              setActiveLogicalIndex(null)
+              commitSelection([item.id], [item])
+              anchorSelectionAt(item)
+              onItemClick?.(item)
+            }}
+            onOpenFile={(item) => (onColumnOpenItem ?? onOpenItem)?.(item)}
+            onItemContextMenu={openItemContextMenu}
+          />
+        ) : loading && logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
         ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
@@ -5074,6 +5140,23 @@ export function XDriveFileExplorer({
                 >
                   {inspectorItem.name}
                 </Typography>
+                {inspectorQuickActions.length > 0 ? (
+                  <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.75} sx={{ px: 1.5, pb: 1.25 }}>
+                    {inspectorQuickActions.map((action) => (
+                      <Button
+                        key={action.id}
+                        size="small"
+                        variant="outlined"
+                        startIcon={action.icon}
+                        disabled={action.disabled}
+                        onClick={action.onSelect}
+                        sx={{ minWidth: 0 }}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </Stack>
+                ) : null}
                 {inspectorPropertySections.map((section) => (
                   <Box
                     key={section.key}

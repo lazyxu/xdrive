@@ -15,7 +15,7 @@ test('shared FileExplorer exports one reusable Web/Desktop shell', () => {
   assert.ok(index.includes("export * from './FileExplorer'"), 'shared MUI index does not export FileExplorer')
   assert.ok(index.includes("export * from './FilePropertiesDialog'"), 'shared MUI index does not export FilePropertiesDialog')
   assert.ok(explorer.includes('export function XDriveFileExplorer({'), 'shared explorer component is missing')
-  assert.ok(explorer.includes("export type XDriveFileExplorerViewMode = 'details' | 'grid'"), 'view-mode contract is missing')
+  assert.ok(explorer.includes("export type XDriveFileExplorerViewMode = 'details' | 'grid' | 'columns'"), 'view-mode contract is missing')
   assert.ok(explorer.includes('export type XDriveFileExplorerItem = {'), 'generic explorer item model is missing')
   assert.equal(explorer.includes('XDriveApi'), false, 'shared explorer must not depend on Web API implementation')
   assert.equal(explorer.includes('xdriveDesktop'), false, 'shared explorer must not depend on Desktop IPC implementation')
@@ -31,11 +31,12 @@ test('shared FileExplorer provides Explorer-style navigation chrome', () => {
   assert.ok(explorer.includes('onSearch?.(searchValue.trim())'), 'Explorer search box needs a submit contract')
 })
 
-test('shared FileExplorer provides command bar, details/grid views, and status bar', () => {
+test('shared FileExplorer provides command bar, details/grid/column views, and status bar', () => {
   for (const label of ['新建文件夹', '上传', '排序', '详细信息', '图标', '名称', '修改时间', '类型', '大小']) {
     assert.ok(explorer.includes(label), `missing explorer shell feature: ${label}`)
   }
   assert.ok(explorer.includes("viewMode === 'details'"), 'details view is missing')
+  assert.ok(explorer.includes("viewMode === 'columns'"), 'column view is missing')
   assert.ok(explorer.includes('role="list"'), 'grid/icon view is missing')
   assert.ok(explorer.includes('gridTemplateColumns: `repeat(auto-fill, minmax(${gridMetrics.minColumnWidth}px, 1fr))`'), 'grid view should adapt to available width through shared Grid metrics')
   assert.ok(explorer.includes('{items.length} 个项目'), 'Explorer status bar needs item count')
