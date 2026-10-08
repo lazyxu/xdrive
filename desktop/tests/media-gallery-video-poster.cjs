@@ -93,3 +93,18 @@ test('video poster leaves ordinary landscape video unrotated and bounded', () =>
     manualRotation: 0,
   })
 })
+
+test('Gallery video poster viewport cleanup cancels queued work', () => {
+  const preview = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx'),
+    'utf8',
+  )
+  assert.ok(preview.includes('const scheduled = scheduleMediaPoster(() => captureVideoPoster('))
+  assert.ok(preview.includes('void scheduled.promise'))
+  assert.ok(preview.includes('scheduled.cancel()'))
+  assert.ok(preview.includes('if (!entry.started) {'))
+  assert.ok(preview.includes('mediaPosterQueue.splice(index, 1)'))
+  assert.ok(preview.includes('if (entry.cancelled) {'))
+  assert.ok(preview.includes('if (value) revokeIfBlob(value)'))
+})
+

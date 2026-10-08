@@ -81,23 +81,73 @@ export function XDriveMediaAsyncThumbnail({
 }
 
 const mediaPosterConcurrency = 3
-let mediaPosterActive = 0
-const mediaPosterQueue: Array<() => void> = []
 
-function scheduleMediaPoster<T>(task: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const run = () => {
-      mediaPosterActive += 1
-      void task()
-        .then(resolve, reject)
-        .finally(() => {
-          mediaPosterActive = Math.max(0, mediaPosterActive - 1)
-          mediaPosterQueue.shift()?.()
-        })
+type MediaPosterQueueEntry = {
+  task: () => Promise<string | null>
+  resolve: (value: string | null) => void
+  reject: (error: unknown) => void
+  started: boolean
+  cancelled: boolean
+}
+
+type ScheduledMediaPoster = {
+  promise: Promise<string | null>
+  cancel: () => void
+}
+
+let mediaPosterActive = 0
+const mediaPosterQueue: MediaPosterQueueEntry[] = []
+
+function pumpMediaPosterQueue() {
+  while (mediaPosterActive < mediaPosterConcurrency && mediaPosterQueue.length > 0) {
+    const entry = mediaPosterQueue.shift()!
+    if (entry.cancelled) continue
+    entry.started = true
+    mediaPosterActive += 1
+    void entry.task()
+      .then((value) => {
+        if (entry.cancelled) {
+          if (value) revokeIfBlob(value)
+          return
+        }
+        entry.resolve(value)
+      }, (error) => {
+        if (!entry.cancelled) entry.reject(error)
+      })
+      .finally(() => {
+        mediaPosterActive = Math.max(0, mediaPosterActive - 1)
+        pumpMediaPosterQueue()
+      })
+  }
+}
+
+function scheduleMediaPoster(
+  task: () => Promise<string | null>,
+): ScheduledMediaPoster {
+  let entry!: MediaPosterQueueEntry
+  const promise = new Promise<string | null>((resolve, reject) => {
+    entry = {
+      task,
+      resolve,
+      reject,
+      started: false,
+      cancelled: false,
     }
-    if (mediaPosterActive < mediaPosterConcurrency) run()
-    else mediaPosterQueue.push(run)
+    mediaPosterQueue.push(entry)
+    pumpMediaPosterQueue()
   })
+  return {
+    promise,
+    cancel: () => {
+      if (entry.cancelled) return
+      entry.cancelled = true
+      if (!entry.started) {
+        const index = mediaPosterQueue.indexOf(entry)
+        if (index >= 0) mediaPosterQueue.splice(index, 1)
+      }
+      entry.resolve(null)
+    },
+  }
 }
 
 async function captureVideoPoster(
@@ -169,13 +219,14 @@ export function XDriveMediaAsyncVideoPoster({
     setSrc('')
     if (!visible) return () => { active = false }
 
-    void scheduleMediaPoster(() => captureVideoPoster(
+    const scheduled = scheduleMediaPoster(() => captureVideoPoster(
       nodeID,
       loadPreviewURL,
       rotationDegrees,
       sourceWidth,
       sourceHeight,
     ))
+    void scheduled.promise
       .then((value) => {
         if (!value) return
         resolved = value
@@ -186,6 +237,7 @@ export function XDriveMediaAsyncVideoPoster({
 
     return () => {
       active = false
+      scheduled.cancel()
       if (resolved) revokeIfBlob(resolved)
     }
   }, [
