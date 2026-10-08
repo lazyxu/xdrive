@@ -53,7 +53,7 @@ Exercise 390×844, 899×700, 900×700 and a wide desktop viewport, including nar
 
 ### Phase 1 delivery record — 2026-10-08
 
-**Status: Implemented; Draft PR, blocked on browser QA.** The implementation and automated checks are ready for review. Do not mark the change merge-ready until the real-renderer acceptance above has passed.
+**Status: Implemented and merged to `master`; real-renderer/device QA remains pending.** Automated CI is complete for the merged implementation, but the browser/device acceptance below has not been executed in this environment.
 
 | Check | Result |
 | --- | --- |
@@ -72,7 +72,7 @@ Before leaving Draft, run the real app with a bounded API fixture or a test serv
 
 ### Phase 2 implementation record — 2026-10-08
 
-**Status: Implemented on the dependent mobile FileExplorer branch; browser/device QA pending.**
+**Status: Implemented and merged to `master`; browser/device QA pending.**
 
 - Shared FileExplorer now detects the compact touch presentation only when the viewport is below the shared 900 CSS px boundary **and** the primary pointer is coarse. Item activation still inspects the actual pointer event, so mouse clicks keep desktop selection/double-click semantics even when the compact layout is active. Desktop mouse interaction keeps single-click selection, double-click open, Ctrl/Cmd/Shift selection, resize splitters and drag behavior.
 - Compact touch uses single-tap Open outside selection mode. “选择” or a 450 ms long press enters explicit multi-select; subsequent taps toggle items until “完成”. Scroll motion cancels long-press selection and suppresses the corresponding click so a swipe cannot open an item on release.
@@ -82,3 +82,50 @@ Before leaving Draft, run the real app with a bounded API fixture or a test serv
 - Native touch drag/reorder remains out of scope for this phase. Internal/external desktop drag/drop behavior is unchanged; touch move/copy continues through explicit file actions.
 
 Before this phase is merge-ready, validate tap/long-press/scroll discrimination, selection actions, action-sheet focus and dismissal, navigation Drawer, 360/390/430 px portrait, landscape, and a mouse on a touch-capable Windows device. Native iOS/Android keyboard and safe-area checks remain device acceptance rather than desktop-browser emulation.
+
+
+## 2026-10-08 merged delivery status
+
+The adaptive Mobile Web implementation is now merged to `master`. Code completion does **not** replace native-device acceptance; the remaining QA list below is still required before claiming mobile browser certification.
+
+| Delivery | Merged implementation |
+| --- | --- |
+| Shared mobile Shell + compact navigation | #993 |
+| FileExplorer compact-touch interaction | #993 |
+| Viewer / Quick Look touch gestures and compact chrome | #1005 |
+| Gallery tile touch-open / Info affordance | #1013 |
+| Ordinary file and version native browser download tickets | #1008 |
+| Durable archive native browser handoff | #1010 |
+| Public Share native browser download tickets | #1012 |
+| Settings compact full-screen presentation | #1014 |
+| Global Task Center narrow-screen cards | #1016 |
+| Shared storage inventory narrow-screen cards | #1018 |
+| Storage history narrow-screen cards | #1020 |
+| Storage diagnostics narrow-screen cards | #1021 |
+| Local storage policy narrow layout | #1022 |
+| Admin Users responsive card/table projection | #1023 |
+| Admin Audit virtualized mobile cards | #1024 |
+| PWA install identity / start URL / scope | #1025 |
+
+### Native download contract
+
+- Browsers with File System Access continue to use direct-to-disk streaming.
+- Browsers without that API hand ordinary files/versions to the browser through short-lived authenticated download tickets.
+- Folder/multi-select ZIP downloads use the durable archive-prepare run as the authority, then hand a short-lived archive URL to the browser while Server progress remains authoritative.
+- Public Share validates the share token/password by POST, atomically consumes one `download_count` slot when issuing the short-lived ticket, and allows that ticket to service GET/HEAD/Range retries without incrementing the count again. The ticket remains fenced by share revocation/expiry, owner availability and exact file revision.
+- Browser-owned native downloads do not expose byte progress to the page. UI must say that the transfer was handed to the browser rather than fabricating a page-owned 100% completion.
+
+### Remaining acceptance
+
+Still run the real application on iOS Safari and Android Chrome, both normal-tab and installed/standalone where applicable:
+
+- 360/390/430 CSS px portrait plus landscape and the 899/900 px breakpoint;
+- safe areas, virtual keyboard, Settings and Public Share;
+- FileExplorer tap/open/select/long-press/action-sheet/navigation drawer;
+- Gallery tap-to-open and return-scroll preservation;
+- Viewer pinch, double-tap, pan, 1× swipe, video controls and Live Photo hold/release;
+- native file/archive/Public Share download, Range/resume and background/foreground return;
+- large-list Gallery, Admin Audit and Task Center scroll behavior;
+- touch-capable Windows device with an attached mouse to confirm actual-pointer semantics.
+
+Offline file pinning, Service Worker caching, incoming Web Share Target and touch drag/reorder remain subsequent enhancements rather than requirements of the merged adaptive-layout milestone.
