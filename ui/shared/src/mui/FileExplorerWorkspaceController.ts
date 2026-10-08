@@ -146,6 +146,7 @@ export function useXDriveFileExplorerWorkspace<
     ? directoryVirtualCollection?.loadedItems
     : undefined
   const interactionCacheKey = [
+    navigationSessionStorageKey ?? '',
     navigation.activeTabID,
     crumbs.at(-1)?.id ?? 0,
     search.searchResults === null ? '' : search.searchState.query,
