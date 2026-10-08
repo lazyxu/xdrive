@@ -896,6 +896,7 @@ export function XDriveFileExplorer({
   const [viewPreferences, setViewPreferences] = useState<XDriveFileExplorerViewPreferences>(() => loadFileExplorerViewPreferences(viewPreferencesKey))
   const mediaDetailsCacheRef = useRef(new Map<string, XDriveFileExplorerMediaDetails | null>())
   const mediaDetailsRequestRef = useRef(0)
+  const propertiesMediaDetailsRequestRef = useRef(0)
   const [, setMediaDetailsRevision] = useState(0)
   const detailsResizeRef = useRef<{ key: XDriveFileExplorerDetailsColumnKey; startX: number; startWidth: number } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
@@ -2927,11 +2928,28 @@ export function XDriveFileExplorer({
     if (event.key === 'Escape') clearSelection()
   }
 
+  const mediaDetailsForItem = (item: XDriveFileExplorerItem) => {
+    if (item.kind !== 'file') return undefined
+    const id = Number(item.id)
+    const revision = Number(item.revision)
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      !Number.isSafeInteger(revision) ||
+      revision <= 0
+    ) return undefined
+    return mediaDetailsCacheRef.current.get(
+      xDriveFileExplorerMediaDetailsKey({ id, revision }),
+    ) ?? undefined
+  }
+
   const propertiesForItem = (
     item: XDriveFileExplorerItem,
     sourceValue?: string,
   ) => {
     const availability = availabilityForItem(item)
+    const mediaDetails = mediaDetailsForItem(item)
+    const duration = xDriveMediaFormatDuration(mediaDetails?.duration_ms)
     return [
       { label: '类型', value: defaultTypeLabel(item), section: 'general' },
       { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—', section: 'general' },
@@ -2941,6 +2959,16 @@ export function XDriveFileExplorer({
         ? [{ label: '可用性', value: availability.label, section: 'general' as const }]
         : []),
       { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0), section: 'content' },
+      ...(mediaDetails?.width && mediaDetails?.height
+        ? [{
+            label: '尺寸',
+            value: `${mediaDetails.width} × ${mediaDetails.height}`,
+            section: 'content' as const,
+          }]
+        : []),
+      ...(duration
+        ? [{ label: '时长', value: duration, section: 'content' as const }]
+        : []),
       ...(item.properties ?? []),
       ...(item.kind === 'file'
         ? [{ label: 'SHA-256', value: item.sha256 || '—', section: 'technical' as const }]
@@ -2972,6 +3000,57 @@ export function XDriveFileExplorer({
     .filter((section) => section.properties.length > 0)
 
   const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
+
+  useEffect(() => {
+    const requestID = ++propertiesMediaDetailsRequestRef.current
+    if (
+      !loadMediaDetails ||
+      !propertiesDialogItem ||
+      propertiesDialogItem.kind !== 'file'
+    ) return
+
+    const id = Number(propertiesDialogItem.id)
+    const revision = Number(propertiesDialogItem.revision)
+    if (
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      !Number.isSafeInteger(revision) ||
+      revision <= 0
+    ) return
+
+    const ref = { id, revision }
+    const key = xDriveFileExplorerMediaDetailsKey(ref)
+    if (mediaDetailsCacheRef.current.has(key)) return
+
+    const controller = new AbortController()
+    void loadMediaDetails([ref], controller.signal)
+      .then((loaded) => {
+        if (
+          controller.signal.aborted ||
+          requestID !== propertiesMediaDetailsRequestRef.current
+        ) return
+        const details = loaded.find((candidate) => (
+          candidate.id === id && candidate.revision === revision
+        )) ?? null
+        mediaDetailsCacheRef.current.delete(key)
+        mediaDetailsCacheRef.current.set(key, details)
+        while (mediaDetailsCacheRef.current.size > fileExplorerMediaDetailsCacheLimit) {
+          const oldest = mediaDetailsCacheRef.current.keys().next().value
+          if (oldest === undefined) break
+          mediaDetailsCacheRef.current.delete(oldest)
+        }
+        setMediaDetailsRevision((value) => value + 1)
+      })
+      .catch(() => undefined)
+
+    return () => controller.abort()
+  }, [
+    loadMediaDetails,
+    propertiesDialogItem?.id,
+    propertiesDialogItem?.kind,
+    propertiesDialogItem?.revision,
+  ])
+
   const propertiesDialogAvailability = propertiesDialogItem
     ? availabilityForItem(propertiesDialogItem)
     : undefined

@@ -160,3 +160,35 @@ test('source binding reuses the existing cancellable Properties transport', () =
     'source metadata must not create a second Desktop IPC request path',
   )
 })
+
+
+test('single-file Properties reuses the bounded media-details projection for dimensions and duration', () => {
+  for (const token of [
+    'const propertiesMediaDetailsRequestRef = useRef(0)',
+    'mediaDetailsForItem',
+    'loadMediaDetails([ref], controller.signal)',
+    'requestID !== propertiesMediaDetailsRequestRef.current',
+    'return () => controller.abort()',
+    "label: '尺寸'",
+    "label: '时长'",
+    'xDriveMediaFormatDuration(mediaDetails?.duration_ms)',
+    'fileExplorerMediaDetailsCacheLimit',
+  ]) {
+    assert.ok(explorer.includes(token), 'Properties media detail contract missing: ' + token)
+  }
+
+  assert.ok(
+    explorer.includes('mediaDetailsCacheRef.current.has(key)'),
+    'Properties media detail fetch must reuse the shared Details cache',
+  )
+  assert.equal(
+    webExplorer.includes('/properties/media-details'),
+    false,
+    'Properties must not create a Web-only media metadata transport',
+  )
+  assert.equal(
+    agentIPC.includes('/v1/cloud/properties/media-details'),
+    false,
+    'Properties must not create a Desktop-only media metadata transport',
+  )
+})

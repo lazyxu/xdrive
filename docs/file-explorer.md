@@ -265,10 +265,12 @@ The shared left folder tree is a first-class drop target, not navigation-only ch
 FileExplorer Properties uses the shared dialog and one request-scoped metadata/statistics contract. The dialog is divided into three explicit sections:
 
 - **常规** — type, created/modified timestamps, location, and device-local availability when authoritative;
-- **内容** — file size or recursive folder/multi-selection size and item counts; media dimensions/duration may be added here only when the shared media metadata projection exposes them;
+- **内容** — file size or recursive folder/multi-selection size and item counts; a single media file also shows indexed dimensions and duration when current-revision media metadata is already available through the shared media-details projection;
 - **技术详情** — SHA-256 for files, revision, stable node ID, and source binding.
 
-The right-side Inspector uses the same section semantics for metadata already present in the loaded node projection, but it must not trigger an additional Server request merely to populate source binding.
+The right-side Inspector uses the same section semantics for metadata already present in the loaded node projection and may render media dimensions/duration only when the shared media-details cache already contains them. It must not trigger an additional Server request merely to populate source binding or media content details.
+
+Opening Properties for one file may request the existing bounded media-details projection for that immutable `id + revision` snapshot. This reuses the same 512-entry shared cache as the optional Details columns and the same Web/Desktop transport adapters; it does not add a Properties-specific endpoint or widen directory/search payloads. Closing or replacing the Properties selection aborts the request, and a late result from an older Properties request must not update the dialog.
 
 SHA-256 is projected from the existing Node field and does not require an additional lookup. Source binding is intentionally request-scoped: when Properties is opened for one node, the existing `/nodes/properties/stats` request also resolves owner-scoped `SourceItem(NodeID) -> Source` bindings. Multiple SourceItem rows for the same Source are de-duplicated. Sources owned by another user must never be returned.
 
