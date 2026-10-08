@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -127,6 +128,52 @@ func TestFilePreviewTicketRangeAndSafety(t *testing.T) {
 	}
 	if got := rangeResponse.Header().Get("ETag"); got != "\"file-preview-"+strings.Repeat("b", 64)+"\"" {
 		t.Fatalf("etag=%q", got)
+	}
+
+	audioBytes := []byte("ID3-test-audio-preview")
+	const audioStorageKey = "preview/music.mp3"
+	if _, err := store.Put(t.Context(), audioStorageKey, bytes.NewReader(audioBytes)); err != nil {
+		t.Fatal(err)
+	}
+	audioNode := meta.Node{
+		Name: "music.mp3", Type: meta.NodeTypeFile,
+		OwnerID: user.ID, Revision: 1,
+	}
+	if err := db.Create(&audioNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	audioHashValue := sha256.Sum256(audioBytes)
+	audioHash := fmt.Sprintf("%x", audioHashValue[:])
+	if err := db.Create(&meta.File{
+		NodeID: audioNode.ID, Size: int64(len(audioBytes)), StorageKey: audioStorageKey,
+		SHA256: audioHash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	audioTicketResponse := request(
+		t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/files/%d/preview-ticket", audioNode.ID),
+		token, nil, http.StatusOK,
+	)
+	var audioTicket filePreviewTicketDTO
+	if err := json.Unmarshal(audioTicketResponse.Body.Bytes(), &audioTicket); err != nil {
+		t.Fatal(err)
+	}
+	if audioTicket.Kind != "audio" ||
+		audioTicket.MIMEType != "audio/mpeg" {
+		t.Fatalf("audio ticket=%+v", audioTicket)
+	}
+	audioResponse := request(
+		t, router, http.MethodGet, audioTicket.URL, "", nil, http.StatusOK,
+	)
+	if got := audioResponse.Header().Get("Content-Type"); got != "audio/mpeg" {
+		t.Fatalf("audio content-type=%q", got)
+	}
+	if got := audioResponse.Header().Get("ETag"); got != "\"file-preview-"+audioHash+"\"" {
+		t.Fatalf("audio etag=%q", got)
+	}
+	if !bytes.Equal(audioResponse.Body.Bytes(), audioBytes) {
+		t.Fatalf("audio bytes=%q want=%q", audioResponse.Body.Bytes(), audioBytes)
 	}
 
 	unsafe := meta.Node{

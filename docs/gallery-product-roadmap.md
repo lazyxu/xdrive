@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie Templates + Collage** |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie Templates + Music + Collage** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -565,7 +565,10 @@ slideshow movies:
   Cutout and Smart Erase and previews through the shared video Preview Engine.
 
 Older creative sidecars that advertise only Cutout + Erase remain valid for those two
-tools. Movie capability is checked only when a movie generation actually runs.
+tools. Classic automatic movies require only the `movie` capability. Non-classic
+templates additionally require `movie_templates`, and background music requires
+`movie_music`; unsupported sidecars fail the generation instead of silently falling
+back to a different result.
 
 ### Current: Collage templates
 
@@ -586,9 +589,32 @@ Multi-selection creative output also supports deterministic local photo collages
 Older sidecars remain valid for Cutout, Erase and Movie. Collage capability is required
 only when a collage generation runs.
 
+### Current: explicit Automatic Movie music
+
+Automatic Movie can optionally mix one canonical xDrive audio file into the generated
+movie:
+
+- the shared Movie dialog opens a shared FileExplorer-based picker that shows folders
+  plus AAC/FLAC/M4A/MP3/OGG/WAV/WMA files; Web uses the existing node REST transport and
+  Desktop uses the existing Agent cloud-file transport;
+- the request contains only the selected xDrive `music_node_id`; local filesystem paths
+  are never sent to Server or Photo Intelligence;
+- the durable recipe stores the music node id, node revision and SHA-256 and revalidates
+  them both before generation and inside the final output transaction;
+- Photo Intelligence receives a short-lived same-origin signed `/file-preview` URL
+  bound to that node revision and verifies the allowed path, audio MIME, size cap,
+  `file-preview-<sha256>` ETag **and the SHA-256 of the received audio bytes** before
+  accepting the track;
+- FFmpeg loops the selected track to the movie duration, mixes it at a fixed background
+  level and encodes AAC audio into the existing H.264 MP4 output;
+- removing/changing the source audio after queueing fails safely instead of silently
+  substituting a new revision.
+
+The music picker and movie dialog remain shared Web/Desktop MUI. The main xDrive Server
+continues to be CGO-free and never decodes or mixes the audio itself.
+
 ### Still remaining inside Phase 13
 
-- optional explicit music selection for movies;
 - richer object-selection refinement or additional local creative models.
 
 Those follow-ups must reuse the same durable generation / Task Center / canonical

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import io
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 import threading
 import unittest
+import wave
 
 import cv2 as cv
 import numpy as np
@@ -17,6 +20,8 @@ import analyzer
 class PreviewHandler(BaseHTTPRequestHandler):
     image_bytes = b""
     fingerprint = ""
+    music_bytes = b""
+    music_fingerprint = ""
     redirect = False
 
     def do_GET(self) -> None:
@@ -27,19 +32,24 @@ class PreviewHandler(BaseHTTPRequestHandler):
             return
         analysis = self.path.startswith("/api/v1/media-analysis-preview/42?ticket=")
         creative = self.path.startswith("/api/v1/media-creative-preview/42?ticket=")
-        if not analysis and not creative:
+        music = self.path.startswith("/api/v1/file-preview/99?ticket=")
+        if not analysis and not creative and not music:
             self.send_error(404)
             return
         self.send_response(200)
+        if music:
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(self.music_bytes)))
+            self.send_header(
+                "ETag",
+                '"file-preview-' + self.music_fingerprint + '"',
+            )
+            self.end_headers()
+            self.wfile.write(self.music_bytes)
+            return
         self.send_header("Content-Type", "image/jpeg")
-        self.send_header(
-            "Content-Length",
-            str(len(self.image_bytes)),
-        )
-        self.send_header(
-            "ETag",
-            '"' + self.fingerprint + '"',
-        )
+        self.send_header("Content-Length", str(len(self.image_bytes)))
+        self.send_header("ETag", '"' + self.fingerprint + '"')
         if creative:
             self.send_header("X-XDrive-Creative-Preview-Version", "1")
             self.send_header("X-XDrive-Creative-Preview-Edge", "2048")
@@ -65,6 +75,15 @@ class AnalyzerTests(unittest.TestCase):
         if not ok:
             raise RuntimeError("failed to encode test JPEG")
         PreviewHandler.image_bytes = encoded.tobytes()
+        music_buffer = io.BytesIO()
+        with wave.open(music_buffer, "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(8000)
+            stream.writeframes(b"\x00\x00" * 8000)
+        cls.music_bytes = music_buffer.getvalue()
+        PreviewHandler.music_bytes = cls.music_bytes
+        PreviewHandler.music_fingerprint = hashlib.sha256(cls.music_bytes).hexdigest()
         cls.preview_server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
             PreviewHandler,
@@ -122,7 +141,14 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(creative["protocol_version"], 1)
         self.assertEqual(
             creative["capabilities"],
-            ["cutout", "erase", "movie", "collage"],
+            [
+                "cutout",
+                "erase",
+                "movie",
+                "movie_templates",
+                "movie_music",
+                "collage",
+            ],
         )
         self.assertIn("ffmpeg", creative["pipeline_version"])
         self.assertEqual(len(creative["segment_model"]["sha256"]), 64)
@@ -393,6 +419,48 @@ class AnalyzerTests(unittest.TestCase):
                 thread.join(timeout=5)
 
 
+    def test_creative_music_fetch_requires_exact_contract(self) -> None:
+        PreviewHandler.redirect = False
+        PreviewHandler.music_fingerprint = hashlib.sha256(self.music_bytes).hexdigest()
+        task = {
+            "music_url": (
+                self.preview_origin
+                + "/api/v1/file-preview/99?ticket=music"
+            ),
+            "music_fingerprint": PreviewHandler.music_fingerprint,
+        }
+        self.assertEqual(
+            analyzer.fetch_creative_music(task, self.preview_origin),
+            self.music_bytes,
+        )
+
+        wrong_path = dict(task)
+        wrong_path["music_url"] = (
+            self.preview_origin
+            + "/api/v1/media-creative-preview/42?ticket=music"
+        )
+        with self.assertRaises(analyzer.RequestError):
+            analyzer.fetch_creative_music(wrong_path, self.preview_origin)
+
+        wrong_fingerprint = dict(task)
+        wrong_fingerprint["music_fingerprint"] = "c" * 64
+        with self.assertRaises(analyzer.RequestError):
+            analyzer.fetch_creative_music(
+                wrong_fingerprint,
+                self.preview_origin,
+            )
+
+        PreviewHandler.music_fingerprint = "c" * 64
+        forged_header = dict(task)
+        forged_header["music_fingerprint"] = "c" * 64
+        with self.assertRaises(analyzer.RequestError):
+            analyzer.fetch_creative_music(
+                forged_header,
+                self.preview_origin,
+            )
+        PreviewHandler.music_fingerprint = hashlib.sha256(self.music_bytes).hexdigest()
+
+
     def test_creative_runtime_cutout_and_erase(self) -> None:
         image = np.zeros((256, 256, 3), dtype=np.uint8)
         cv.rectangle(image, (70, 45), (185, 220), (255, 255, 255), -1)
@@ -458,6 +526,35 @@ class AnalyzerTests(unittest.TestCase):
                     "transition_ms": 0,
                 },
             )
+        movie, mime, width, height = self.creative_runtime.generate_movie(
+            movie_images,
+            {
+                "kind": "movie",
+                "movie_template": "classic",
+                "music_url": "http://example.invalid/api/v1/file-preview/99?ticket=x",
+                "music_fingerprint": PreviewHandler.music_fingerprint,
+                "frame_duration_ms": 1000,
+                "transition_ms": 0,
+            },
+            self.music_bytes,
+        )
+        self.assertEqual(mime, "video/mp4")
+        self.assertEqual((width, height), (1920, 1080))
+        self.assertIn(b"ftyp", movie[:64])
+        self.assertIn(b"mp4a", movie)
+        with self.assertRaises(ValueError):
+            self.creative_runtime.generate_movie(
+                movie_images,
+                {
+                    "kind": "movie",
+                    "movie_template": "classic",
+                    "music_url": "http://example.invalid/api/v1/file-preview/99?ticket=x",
+                    "music_fingerprint": "c" * 64,
+                    "frame_duration_ms": 1000,
+                    "transition_ms": 0,
+                },
+                self.music_bytes,
+            )
 
         collage_images = [
             image,
@@ -513,7 +610,14 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(
                     info["capabilities"],
-                    ["cutout", "erase", "movie", "collage"],
+                    [
+                "cutout",
+                "erase",
+                "movie",
+                "movie_templates",
+                "movie_music",
+                "collage",
+            ],
                 )
                 connection.close()
 
@@ -581,6 +685,11 @@ class AnalyzerTests(unittest.TestCase):
                         },
                     ],
                     "movie_template": "fill",
+                    "music_url": (
+                        self.preview_origin
+                        + "/api/v1/file-preview/99?ticket=music"
+                    ),
+                    "music_fingerprint": PreviewHandler.music_fingerprint,
                     "frame_duration_ms": 1000,
                     "transition_ms": 0,
                 }
@@ -601,10 +710,9 @@ class AnalyzerTests(unittest.TestCase):
                 movie_result = json.loads(response.read())
                 self.assertEqual(response.status, 200)
                 self.assertEqual(movie_result["mime_type"], "video/mp4")
-                self.assertIn(
-                    b"ftyp",
-                    base64.b64decode(movie_result["data"])[:64],
-                )
+                movie_bytes = base64.b64decode(movie_result["data"])
+                self.assertIn(b"ftyp", movie_bytes[:64])
+                self.assertIn(b"mp4a", movie_bytes)
                 connection.close()
 
                 collage_task = {

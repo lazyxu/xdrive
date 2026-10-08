@@ -6,6 +6,8 @@ import type { XDriveApi } from './api'
 
 export function createWebMediaGalleryDataSource(api: XDriveApi) {
   return createXDriveMediaGalleryDataSource({
+    loadMusicRoot: () => api.root(),
+    listMusicChildren: (parentID) => api.list(parentID),
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => api.mediaItemRange('', limit, offset, query),
     listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),

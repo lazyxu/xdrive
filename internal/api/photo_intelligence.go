@@ -43,6 +43,39 @@ func (s *Server) photoFacePreviewURL(
 	), nil
 }
 
+func (s *Server) photoCreativeAudioURL(
+	ctx context.Context,
+	ownerID, sessionVersion, nodeID, nodeRevision uint64,
+) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	baseURL := strings.TrimRight(
+		strings.TrimSpace(s.PhotoFacePreviewBaseURL),
+		"/",
+	)
+	if baseURL == "" {
+		return "", fmt.Errorf("photo creative audio base URL is not configured")
+	}
+	ticket, _, err := s.Auth.IssuePreviewStream(
+		ownerID,
+		sessionVersion,
+		nodeID,
+		nodeRevision,
+		"audio",
+		photoFacePreviewTicketTTL,
+	)
+	if err != nil {
+		return "", fmt.Errorf("issue photo creative audio ticket: %w", err)
+	}
+	return fmt.Sprintf(
+		"%s/api/v1/file-preview/%d?ticket=%s",
+		baseURL,
+		nodeID,
+		url.QueryEscape(ticket),
+	), nil
+}
+
 func (s *Server) photoCreativePreviewURL(
 	ctx context.Context,
 	ownerID, sessionVersion, nodeID, nodeRevision uint64,

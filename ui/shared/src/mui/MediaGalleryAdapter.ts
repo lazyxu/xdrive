@@ -51,6 +51,10 @@ export type XDriveMediaGalleryLivePhotoResource =
     }
 
 export interface XDriveMediaGalleryPort {
+  loadMusicRoot?: () => Promise<XDriveMediaGalleryTransportResult<Node>>
+  listMusicChildren?: (
+    parentID: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<Node[]>>
   listItems: (
     limit: number,
     offset: number,
@@ -318,6 +322,12 @@ export function createXDriveMediaGalleryDataSource(
   port: XDriveMediaGalleryPort,
 ): MediaGalleryDataSource {
   return {
+    loadMusicRoot: port.loadMusicRoot
+      ? () => resolveXDriveTransport(port.loadMusicRoot!())
+      : undefined,
+    listMusicChildren: port.listMusicChildren
+      ? (parentID) => resolveXDriveTransport(port.listMusicChildren!(parentID))
+      : undefined,
     listItems: (limit, offset, query) => resolveXDriveTransport(
       port.listItems(limit, offset, query),
     ),

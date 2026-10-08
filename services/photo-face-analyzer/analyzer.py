@@ -28,6 +28,7 @@ import onnxruntime as ort
 from tokenizers import Tokenizer
 
 from creative import (
+    CREATIVE_MOVIE_MAX_MUSIC_BYTES,
     CREATIVE_PIPELINE_VERSION,
     CREATIVE_PROTOCOL_VERSION,
     CreativeRuntime,
@@ -119,8 +120,19 @@ TOP_K = 5000
 MAX_FACES = 256
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_PREVIEW_BYTES = 32 * 1024 * 1024
+MAX_CREATIVE_MUSIC_BYTES = CREATIVE_MOVIE_MAX_MUSIC_BYTES
 PREVIEW_PATH_RE = re.compile(r"^/api/v1/media-analysis-preview/[1-9][0-9]*$")
 CREATIVE_PREVIEW_PATH_RE = re.compile(r"^/api/v1/media-creative-preview/[1-9][0-9]*$")
+CREATIVE_MUSIC_PATH_RE = re.compile(r"^/api/v1/file-preview/[1-9][0-9]*$")
+CREATIVE_MUSIC_MIME_TYPES = {
+    "audio/aac",
+    "audio/flac",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    "audio/x-ms-wma",
+}
 
 PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-yunet2023mar"
@@ -451,6 +463,108 @@ def fetch_creative_preview(
     if width <= 0 or height <= 0 or max(width, height) > task["preview_edge"]:
         raise RequestError(502, "creative preview dimensions are invalid")
     return image
+
+
+def validate_creative_music_task(
+    task: dict[str, Any],
+    allowed_origin: str,
+) -> dict[str, str]:
+    required = {"music_url", "music_fingerprint"}
+    if set(task) != required:
+        raise RequestError(400, "invalid creative music task fields")
+    music_url = task.get("music_url")
+    fingerprint = task.get("music_fingerprint")
+    if not isinstance(music_url, str) or not music_url:
+        raise RequestError(400, "invalid creative music URL")
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(ch not in "0123456789abcdef" for ch in fingerprint.lower())
+    ):
+        raise RequestError(400, "invalid creative music fingerprint")
+    fingerprint = fingerprint.lower()
+    parsed = urlsplit(music_url)
+    if (
+        parsed.scheme.lower() not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise RequestError(400, "invalid creative music URL")
+    try:
+        music_origin = (
+            parsed.scheme.lower(),
+            parsed.hostname.lower(),
+            parsed.port or default_port(parsed.scheme.lower()),
+        )
+    except ValueError as exc:
+        raise RequestError(400, "invalid creative music URL") from exc
+    if music_origin != origin_key(allowed_origin):
+        raise RequestError(400, "creative music URL origin is not allowed")
+    if not CREATIVE_MUSIC_PATH_RE.fullmatch(parsed.path):
+        raise RequestError(400, "creative music URL path is not allowed")
+    try:
+        query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError as exc:
+        raise RequestError(400, "creative music URL query is invalid") from exc
+    if set(query) != {"ticket"} or len(query["ticket"]) != 1 or not query["ticket"][0]:
+        raise RequestError(400, "creative music URL ticket is invalid")
+    return {"music_url": music_url, "music_fingerprint": fingerprint}
+
+
+def fetch_creative_music(
+    task: dict[str, Any],
+    allowed_origin: str,
+) -> bytes:
+    task = validate_creative_music_task(task, allowed_origin)
+    parsed = urlsplit(task["music_url"])
+    port = parsed.port or default_port(parsed.scheme.lower())
+    connection_class = (
+        http.client.HTTPSConnection
+        if parsed.scheme.lower() == "https"
+        else http.client.HTTPConnection
+    )
+    connection = connection_class(parsed.hostname, port=port, timeout=30)
+    try:
+        path = parsed.path + ("?" + parsed.query if parsed.query else "")
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Accept": "audio/*",
+                "User-Agent": "xdrive-photo-creative/1",
+                "Connection": "close",
+            },
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            raise RequestError(502, "creative music fetch failed")
+        content_length = response.getheader("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_CREATIVE_MUSIC_BYTES:
+                    raise RequestError(502, "creative music is too large")
+            except ValueError as exc:
+                raise RequestError(502, "creative music length is invalid") from exc
+        content_type = (response.getheader("Content-Type") or "").split(";", 1)[0]
+        if content_type.strip().lower() not in CREATIVE_MUSIC_MIME_TYPES:
+            raise RequestError(502, "creative music MIME type is invalid")
+        expected_etag = '"file-preview-' + task["music_fingerprint"] + '"'
+        if response.getheader("ETag") != expected_etag:
+            raise RequestError(502, "creative music fingerprint mismatch")
+        data = response.read(MAX_CREATIVE_MUSIC_BYTES + 1)
+        if len(data) == 0 or len(data) > MAX_CREATIVE_MUSIC_BYTES:
+            raise RequestError(502, "creative music size is invalid")
+        if hashlib.sha256(data).hexdigest() != task["music_fingerprint"]:
+            raise RequestError(502, "creative music content fingerprint mismatch")
+        return data
+    except RequestError:
+        raise
+    except Exception as exc:
+        raise RequestError(502, "creative music fetch failed") from exc
+    finally:
+        connection.close()
 
 
 class FaceRuntime:
@@ -1221,10 +1335,20 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                                     )
                                 )
                             if task.get("kind") == "movie":
+                                music_data = None
+                                if "music_url" in task or "music_fingerprint" in task:
+                                    music_data = fetch_creative_music(
+                                        {
+                                            "music_url": task.get("music_url"),
+                                            "music_fingerprint": task.get("music_fingerprint"),
+                                        },
+                                        self.server.state.preview_origin,
+                                    )
                                 data, mime_type, width, height = (
                                     self.server.state.creative_runtime.generate_movie(
                                         images,
                                         task,
+                                        music_data,
                                     )
                                 )
                             else:

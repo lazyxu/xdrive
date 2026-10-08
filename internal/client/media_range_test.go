@@ -423,6 +423,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 				input.SourceNodeIDs[0] != 31 ||
 				input.SourceNodeIDs[1] != 32 ||
 				input.MovieTemplate != "fill" ||
+				input.MusicNodeID != 99 ||
 				input.FrameDurationMS != 2000 ||
 				input.TransitionMS == nil ||
 				*input.TransitionMS != 350 {
@@ -467,6 +468,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 			Kind:            "movie",
 			SourceNodeIDs:   []uint64{31, 32},
 			MovieTemplate:   "fill",
+			MusicNodeID:     99,
 			FrameDurationMS: 2000,
 			TransitionMS:    &transition,
 		},

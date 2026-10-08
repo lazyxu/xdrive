@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -102,6 +103,27 @@ func TestValidateMediaCreativeSourcesTxFencesEveryMultiImageSource(t *testing.T)
 
 	first := add("first.jpg", strings.Repeat("a", 64))
 	second := add("second.jpg", strings.Repeat("b", 64))
+	music := add("track.mp3", strings.Repeat("d", 64))
+	server := &Server{DB: db}
+	resolvedMusic, err := server.resolveMediaCreativeMusicSource(
+		context.Background(),
+		user.ID,
+		music.ID,
+	)
+	if err != nil ||
+		resolvedMusic == nil ||
+		resolvedMusic.NodeID != music.ID ||
+		resolvedMusic.NodeRevision != music.Revision ||
+		resolvedMusic.SHA256 != music.File.SHA256 {
+		t.Fatalf("resolved movie music=%+v err=%v", resolvedMusic, err)
+	}
+	if _, err := server.resolveMediaCreativeMusicSource(
+		context.Background(),
+		user.ID,
+		second.ID,
+	); err == nil {
+		t.Fatal("image file was accepted as movie music")
+	}
 	generation := meta.PhotoCreativeGeneration{
 		ID:                 "movie-test",
 		Kind:               meta.PhotoCreativeKindMovie,
@@ -129,6 +151,11 @@ func TestValidateMediaCreativeSourcesTxFencesEveryMultiImageSource(t *testing.T)
 				SHA256:       second.File.SHA256,
 			},
 		},
+		MusicSource: &mediaCreativeMusicSource{
+			NodeID:       music.ID,
+			NodeRevision: music.Revision,
+			SHA256:       music.File.SHA256,
+		},
 		FrameDurationMS: 2000,
 		TransitionMS:    350,
 	}
@@ -137,6 +164,39 @@ func TestValidateMediaCreativeSourcesTxFencesEveryMultiImageSource(t *testing.T)
 		return validateMediaCreativeSourcesTx(tx, generation, recipe)
 	}); err != nil {
 		t.Fatalf("current movie sources were rejected: %v", err)
+	}
+
+	if err := db.Model(&meta.Node{}).
+		Where("id = ?", music.ID).
+		Update("revision", music.Revision+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
+	})
+	if !errors.Is(err, errMediaCreativeSourceChanged) {
+		t.Fatalf("changed movie music error=%v", err)
+	}
+	if err := db.Model(&meta.Node{}).
+		Where("id = ?", music.ID).
+		Update("revision", music.Revision).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.File{}).
+		Where("node_id = ?", music.ID).
+		Update("sha256", strings.Repeat("e", 64)).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
+	})
+	if !errors.Is(err, errMediaCreativeSourceChanged) {
+		t.Fatalf("changed movie music fingerprint error=%v", err)
+	}
+	if err := db.Model(&meta.File{}).
+		Where("node_id = ?", music.ID).
+		Update("sha256", music.File.SHA256).Error; err != nil {
+		t.Fatal(err)
 	}
 
 	if err := db.Model(&meta.Node{}).

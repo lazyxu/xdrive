@@ -55,6 +55,7 @@ import type {
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
   MediaTimelineGroupSets,
+  Node,
   UpdateMediaPersonIdentityInput,
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
@@ -130,6 +131,8 @@ export type MediaPreviewURLLoader = (
 ) => Promise<string | null>
 
 export interface MediaGalleryDataSource {
+  loadMusicRoot?: () => Promise<Node>
+  listMusicChildren?: (parentID: number) => Promise<Node[]>
   listItems: (
     limit: number,
     offset: number,
@@ -1647,6 +1650,8 @@ export function XDriveMediaGalleryPage({
           />
         )}
         loadThumbnail={source.loadThumbnail}
+        loadMusicRoot={source.loadMusicRoot}
+        listMusicChildren={source.listMusicChildren}
         loadLivePhotoMotion={source.loadLivePhotoMotion}
         loadPreviewURL={source.loadPreviewURL}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
@@ -1865,6 +1870,8 @@ export interface XDriveMediaGalleryProps {
   searchActive?: boolean
   filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
+  loadMusicRoot?: () => Promise<Node>
+  listMusicChildren?: (parentID: number) => Promise<Node[]>
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
@@ -2928,6 +2935,8 @@ export function XDriveMediaGallery({
   searchActive = false,
   filters,
   loadThumbnail,
+  loadMusicRoot,
+  listMusicChildren,
   loadLivePhotoMotion,
   loadPreviewURL,
   onSetFavorite,
@@ -4364,6 +4373,8 @@ export function XDriveMediaGallery({
         items={movieDialogItems ?? []}
         loadThumbnail={loadThumbnail}
         loadPreviewURL={loadPreviewURL}
+        loadMusicRoot={loadMusicRoot}
+        listMusicChildren={listMusicChildren}
         onCreate={onCreateCreativeGeneration}
         onGet={onGetCreativeGeneration}
         onCancel={onCancelCreativeGeneration}

@@ -7,6 +7,8 @@ export function createDesktopMediaGalleryDataSource(
   agent: Window['xdriveDesktop']['agent'],
 ) {
   return createXDriveMediaGalleryDataSource({
+    loadMusicRoot: () => agent.cloudRoot(),
+    listMusicChildren: (parentID) => agent.cloudChildren(parentID),
     listItems: (limit, offset, query) => agent.getMediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => agent.getMediaItemRange('', limit, offset, query),
     listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),
