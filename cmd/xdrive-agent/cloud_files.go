@@ -1300,13 +1300,13 @@ func (c *agentController) CloudDownloadFolder(
 		firstProgress := true
 		progress := func(done, total int64) {
 			byteProgress.update(&currentDone, &currentTotal, done, total)
+			groupState := groupProgress()
 			if firstProgress {
 				firstProgress = false
-				child.Baseline(done, total)
+				child.BaselineAndUpdateGroup(group, done, total, groupState)
 			} else {
-				child.Progress(done, total)
+				child.ProgressAndUpdateGroup(group, done, total, groupState)
 			}
-			group.UpdateGroup(groupProgress())
 		}
 
 		target := filepath.Join(rootPath, filepath.FromSlash(file.RelativePath))

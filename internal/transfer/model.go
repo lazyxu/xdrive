@@ -341,6 +341,28 @@ func (h *Handle) Baseline(done, total int64) {
 	h.manager.baseline(h.id, done, total)
 }
 
+func (h *Handle) BaselineAndUpdateGroup(group *Handle, done, total int64, progress GroupProgress) {
+	if h == nil || h.manager == nil {
+		return
+	}
+	groupID := ""
+	if group != nil && group.manager == h.manager {
+		groupID = group.id
+	}
+	h.manager.updateChildAndGroup(h.id, groupID, done, total, true, progress)
+}
+
+func (h *Handle) ProgressAndUpdateGroup(group *Handle, done, total int64, progress GroupProgress) {
+	if h == nil || h.manager == nil {
+		return
+	}
+	groupID := ""
+	if group != nil && group.manager == h.manager {
+		groupID = group.id
+	}
+	h.manager.updateChildAndGroup(h.id, groupID, done, total, false, progress)
+}
+
 func (h *Handle) Add(delta int64) {
 	if h == nil || h.manager == nil || delta <= 0 {
 		return
@@ -572,9 +594,16 @@ func (m *Manager) updateGroup(id string, progress GroupProgress) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.updateGroupLocked(id, progress, now) {
+		return
+	}
+	m.touchLocked()
+}
+
+func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.Time) bool {
 	e := m.entries[id]
 	if e == nil || e.task.Scope != ScopeGroup {
-		return
+		return false
 	}
 	if progress.Phase != "" {
 		e.task.Phase = progress.Phase
@@ -616,16 +645,23 @@ func (m *Manager) updateGroup(id string, progress GroupProgress) {
 	e.task.UpdatedAt = now
 	e.lastBytes = done
 	e.lastAt = now
-	m.touchLocked()
+	return true
 }
 
 func (m *Manager) baseline(id string, done, total int64) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.baselineLocked(id, done, total, now) {
+		return
+	}
+	m.touchLocked()
+}
+
+func (m *Manager) baselineLocked(id string, done, total int64, now time.Time) bool {
 	e := m.entries[id]
 	if e == nil || (e.task.State != StateRunning && e.task.State != StateRetrying) {
-		return
+		return false
 	}
 	if done < 0 {
 		done = 0
@@ -646,16 +682,23 @@ func (m *Manager) baseline(id string, done, total int64) {
 	e.lastAt = now
 	e.rateBaseBytes = done
 	e.rateStartedAt = now
-	m.touchLocked()
+	return true
 }
 
 func (m *Manager) progress(id string, done, total int64) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.progressLocked(id, done, total, now) {
+		return
+	}
+	m.touchLocked()
+}
+
+func (m *Manager) progressLocked(id string, done, total int64, now time.Time) bool {
 	e := m.entries[id]
 	if e == nil || (e.task.State != StateRunning && e.task.State != StateRetrying) {
-		return
+		return false
 	}
 	if done < 0 {
 		done = 0
@@ -665,7 +708,7 @@ func (m *Manager) progress(id string, done, total int64) {
 		nextTotal = total
 	}
 	if done == e.task.BytesDone && nextTotal == e.task.BytesTotal {
-		return
+		return false
 	}
 	e.task.BytesTotal = nextTotal
 	if e.task.BytesTotal > 0 && done > e.task.BytesTotal {
@@ -691,7 +734,32 @@ func (m *Manager) progress(id string, done, total int64) {
 	e.task.UpdatedAt = now
 	e.lastBytes = done
 	e.lastAt = now
-	m.touchLocked()
+	return true
+}
+
+func (m *Manager) updateChildAndGroup(
+	childID string,
+	groupID string,
+	done, total int64,
+	baseline bool,
+	progress GroupProgress,
+) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	changed := false
+	if baseline {
+		changed = m.baselineLocked(childID, done, total, now)
+	} else {
+		changed = m.progressLocked(childID, done, total, now)
+	}
+	if groupID != "" && m.updateGroupLocked(groupID, progress, now) {
+		changed = true
+	}
+	if changed {
+		m.touchLocked()
+	}
 }
 
 func (m *Manager) finishSkipped(id string) {

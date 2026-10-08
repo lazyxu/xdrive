@@ -27,8 +27,8 @@ test('Desktop folder download uses one group with one child per leaf file', () =
     'transfer.PhaseQueued',
     'RelativePath:',
     'child.SetPhase(transfer.PhaseTransferring)',
-    'child.Baseline(done, total)',
-    'child.Progress(done, total)',
+    'child.BaselineAndUpdateGroup(group, done, total, groupState)',
+    'child.ProgressAndUpdateGroup(group, done, total, groupState)',
     'group.UpdateGroup(groupProgress())',
     'transfer.StatePartial',
     'transfer.StateFailed',
@@ -37,6 +37,25 @@ test('Desktop folder download uses one group with one child per leaf file', () =
     assert.ok(agentCloud.includes(token), 'folder download hierarchy missing: ' + token)
   }
 })
+
+test('Desktop folder download coalesces child and group progress publication', () => {
+  const folderStart = agentCloud.indexOf('func (c *agentController) CloudDownloadFolder(')
+  const archiveStart = agentCloud.indexOf('func (c *agentController) CloudDownloadArchive(', folderStart)
+  const folderSource = agentCloud.slice(folderStart, archiveStart)
+  const progressStart = folderSource.indexOf('progress := func(done, total int64)')
+  const targetStart = folderSource.indexOf('target := filepath.Join', progressStart)
+  assert.ok(progressStart >= 0 && targetStart > progressStart)
+  const progressSource = folderSource.slice(progressStart, targetStart)
+
+  assert.ok(progressSource.includes('child.BaselineAndUpdateGroup(group, done, total, groupState)'))
+  assert.ok(progressSource.includes('child.ProgressAndUpdateGroup(group, done, total, groupState)'))
+  assert.equal(
+    progressSource.includes('group.UpdateGroup(groupProgress())'),
+    false,
+    'one download progress callback must not publish child and group revisions separately',
+  )
+})
+
 
 test('Desktop folder download uses exact root lookup and paged tree scans', () => {
   for (const token of [
