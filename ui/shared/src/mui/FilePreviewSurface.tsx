@@ -404,6 +404,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           fallback={fallback}
           imageFit={imageFit}
           minHeight={minHeight}
+          mediaTransform={mediaTransform}
         >
           {(still, ready) => (
             <XDriveLivePhotoSurface

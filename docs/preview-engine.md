@@ -534,3 +534,17 @@ Web 的 `preview`、`media-viewer`、`pdf-viewer`、`audio-player` 都是 Previe
 交互式图片预览在 coarse pointer 设备上使用原生触屏手势：双指 pinch 在 1×–6× 范围缩放，双击在 1× / 2× 间切换，放大后单指 pan；仅在约 1× 时，水平位移至少 56 CSS px 且明显大于垂直位移才触发可选的上一项/下一项 swipe。触屏时不显示桌面缩放按钮，鼠标滚轮、双击和拖动 pan 契约保持不变。
 
 视频、音频、PDF 和 Live Photo 不进入这套图片 swipe 状态机。特别是 Live Photo 仍由按住/松开控制 motion，避免与横向浏览手势争抢。
+
+
+### Viewer navigation scope
+
+Viewer navigation is capability-scoped rather than a property of every file viewer.
+
+- **Quick Look / Preview** may move across the current file browsing context because its purpose is rapid sequential inspection.
+- **Media Viewer** may move across the current image/video/Live Photo browsing context and may expose swipe, previous/next controls, position, filmstrip, or slideshow semantics.
+- **Text Viewer, PDF Viewer, and Audio Player** are standalone file programs. They do not inherit directory/gallery browse context and do not show previous/next navigation merely because the file was opened from a list.
+- A viewer must not fetch neighboring ranges unless it actually exposes navigation.
+
+### Shared media viewer content
+
+Web and Desktop/Gallery media viewing share `XDriveMediaViewerContent`. That layer owns the semantic composition of an opened `MediaItem`: confirmed Live Photo pairing, thumbnail/original preview loaders, saved edit recipes, media fallback, and image swipe hooks. Platform shells may provide different chrome and adapters, but they must not fork media interpretation.

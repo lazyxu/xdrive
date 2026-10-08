@@ -10,6 +10,7 @@ const openPreview = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.ts
 const quickLook = read('ui', 'shared', 'src', 'mui', 'FileQuickLookDialog.tsx')
 const gallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
+const mediaViewerContent = read('ui', 'shared', 'src', 'mui', 'MediaViewerContent.tsx')
 const galleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const livePhoto = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
@@ -27,8 +28,9 @@ test('FileExplorer and Gallery share one open-preview dialog shell', () => {
   assert.ok(quickLook.includes('<XDriveOpenPreviewDialog'), 'Quick Look must reuse OpenPreviewDialog')
   assert.ok(gallery.includes('<XDriveMediaGalleryViewer'), 'Gallery must delegate media open to the shared Gallery Viewer')
   assert.ok(galleryViewer.includes('<XDriveOpenPreviewDialog'), 'Gallery Viewer must reuse OpenPreviewDialog')
+  assert.ok(galleryViewer.includes('<XDriveMediaViewerContent'), 'Gallery Viewer must delegate semantic media rendering to the shared content layer')
   assert.ok(quickLook.includes('<XDriveFilePreviewSurface'), 'Quick Look must keep the shared Preview Engine renderer')
-  assert.ok(galleryViewer.includes('<XDriveFilePreviewSurface'), 'Gallery Viewer must keep the shared Preview Engine renderer')
+  assert.ok(mediaViewerContent.includes('<XDriveFilePreviewSurface'), 'shared media content must keep the shared Preview Engine renderer')
   assert.ok(preview.includes('xDriveClassifyFilePreview'), 'ordinary open preview must inherit the canonical preview classifier')
 })
 
@@ -95,11 +97,14 @@ test('Gallery Live Photo keeps semantic motion inside the shared open-preview sh
     'loadMotion={loadOpenLivePhotoMotion}',
     'still={(',
     '<XDriveFilePreviewSurface',
+    "previewKind === 'live_photo'",
+    'loadLivePhotoMotion={loadSurfaceLivePhotoMotion}',
   ]) {
-    assert.ok(galleryViewer.includes(token), 'Gallery Live Photo open preview missing: ' + token)
+    assert.ok(mediaViewerContent.includes(token), 'shared media Live Photo preview missing: ' + token)
   }
+  assert.ok(galleryViewer.includes('<XDriveMediaViewerContent'), 'Gallery Viewer must use shared semantic media content')
   assert.ok(livePhoto.includes('video.play()'), 'Live Photo semantic motion surface must remain intact')
-  assert.ok(galleryViewer.includes('onProgress?: Parameters<MediaMotionLoader>[1]'), 'Gallery Viewer must preserve lazy Live Photo byte progress')
+  assert.ok(mediaViewerContent.includes('onProgress?: Parameters<MediaMotionLoader>[1]'), 'shared media content must preserve lazy Live Photo byte progress')
   assert.equal(openPreview.includes('loadMotion'), false, 'OpenPreviewDialog must stay media-semantic neutral')
 })
 
