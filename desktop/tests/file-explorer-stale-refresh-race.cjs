@@ -218,6 +218,9 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
     type DesktopUploadTarget = { parentID: number; file: unknown; relativePath?: string }
     module.exports = (
       explorerActionBusy: boolean,
+      actionBusyRef: { current: unknown },
+      fileOperationBusy: boolean,
+      uploadBusy: boolean,
       runUploadTargets: (...args: unknown[]) => Promise<any>,
       current: { id: number } | undefined,
       crumbs: Array<{ id: number; name: string }>,
@@ -245,6 +248,9 @@ test('Desktop conflict-aware upload completion cannot refresh an old directory a
   let visibleDirectoryID = 10
   const refreshes = []
   const uploadTargets = makeUploadTargets(
+    false,
+    { current: null },
+    false,
     false,
     runUploadTargets,
     { id: 10 },

@@ -189,7 +189,39 @@ export default function DesktopFileExplorer({
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
+  const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
+  const actionGenerationRef = useRef(1)
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+
+  useEffect(() => {
+    actionGenerationRef.current += 1
+    actionBusyRef.current = null
+    setActionBusy('')
+  }, [navigationSessionStorageKey])
+
+  const beginActionBusy = useCallback((key: string) => {
+    if (actionBusyRef.current) return null
+    const token = { key, generation: actionGenerationRef.current }
+    actionBusyRef.current = token
+    setActionBusy(key)
+    return token
+  }, [])
+
+  const isActionBusyCurrent = useCallback((
+    token: { key: string; generation: number },
+  ) => (
+    token.generation === actionGenerationRef.current &&
+    actionBusyRef.current === token
+  ), [])
+
+  const finishActionBusy = useCallback((
+    token: { key: string; generation: number },
+  ) => {
+    if (!isActionBusyCurrent(token)) return
+    actionBusyRef.current = null
+    setActionBusy('')
+  }, [isActionBusyCurrent])
+
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
     lifecycleKey: navigationSessionStorageKey ?? '',
@@ -834,12 +866,14 @@ export default function DesktopFileExplorer({
       onError('无法确定本地同步路径。')
       return
     }
-    setActionBusy(`availability-${node.id}`)
+    const busyToken = beginActionBusy(`availability-${node.id}`)
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.setFileAvailability(
         relativePath,
         action,
       )
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
         return
@@ -861,9 +895,17 @@ export default function DesktopFileExplorer({
           : '已释放本地空间。',
       )
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
-  }, [crumbs, onError, onFeedback, searchByID])
+  }, [
+    beginActionBusy,
+    crumbs,
+    finishActionBusy,
+    isActionBusyCurrent,
+    onError,
+    onFeedback,
+    searchByID,
+  ])
 
   const openLocalNode = async (node: AgentCloudNode, reveal = false) => {
     const relativePath = relativePathForNode(node)
@@ -871,14 +913,16 @@ export default function DesktopFileExplorer({
       onError('无法确定本地同步路径。')
       return
     }
-    setActionBusy(`${reveal ? 'reveal' : 'open'}-${node.id}`)
+    const busyToken = beginActionBusy(`${reveal ? 'reveal' : 'open'}-${node.id}`)
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.openPath(relativePath, reveal)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
       }
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
@@ -888,28 +932,32 @@ export default function DesktopFileExplorer({
       onError('无法确定本地同步路径。')
       return
     }
-    setActionBusy(`open-with-${node.id}`)
+    const busyToken = beginActionBusy(`open-with-${node.id}`)
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.openWith(relativePath)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
       }
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
   const downloadNode = async (node: AgentCloudNode) => {
-    setActionBusy(`download-${node.id}`)
+    const busyToken = beginActionBusy(`download-${node.id}`)
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.cloudDownload(node.id, node.name)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
         return
       }
       if (result.data.saved) onFeedback('good', `${node.name} 已保存。`)
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
@@ -921,7 +969,7 @@ export default function DesktopFileExplorer({
     refreshEvenWithoutUploads = false,
     refreshCurrentDirectory = true,
   ) => {
-    if (explorerActionBusy) return false
+    if (actionBusyRef.current || fileOperationBusy || uploadBusy) return false
     const expectedCurrentID = current?.id
     try {
       const targets = await resolveTargets()
@@ -1013,15 +1061,17 @@ export default function DesktopFileExplorer({
   }
 
   const uploadFiles = async () => {
-    if (!current || explorerActionBusy) return
+    if (!current || actionBusyRef.current || fileOperationBusy || uploadBusy) return
     const expectedCurrentID = current.id
     if (uploadConflictSupported) {
       uploadInputRef.current?.click()
       return
     }
-    setActionBusy('upload')
+    const busyToken = beginActionBusy('upload')
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.cloudUploadFiles(expectedCurrentID)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
         return
@@ -1042,41 +1092,51 @@ export default function DesktopFileExplorer({
         onFeedback('good', `已上传 ${result.data.uploaded.length} 个文件。`)
       }
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
   const createFolder = async (name: string) => {
-    if (!current || explorerActionBusy) return
+    if (!current || actionBusyRef.current || fileOperationBusy || uploadBusy) return
     const expectedCurrentID = current.id
-    setActionBusy('create-folder')
+    const busyToken = beginActionBusy('create-folder')
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.cloudCreateDirectory(expectedCurrentID, name)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
+      if (!isActionBusyCurrent(busyToken)) return
       onFeedback('good', '文件夹已创建。')
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
-    if (explorerActionBusy) throw new Error('当前有文件操作正在进行，请稍后重试。')
+    if (actionBusyRef.current || fileOperationBusy || uploadBusy) {
+      throw new Error('当前有文件操作正在进行，请稍后重试。')
+    }
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
     const expectedCurrentID = current.id
-    setActionBusy('rename-' + node.id)
+    const busyToken = beginActionBusy('rename-' + node.id)
+    if (!busyToken) throw new Error('当前有文件操作正在进行，请稍后重试。')
     try {
       const result = await window.xdriveDesktop.agent.cloudRename(node.id, node.revision, name)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) throw new Error(result.error.message)
       clearSearch()
       await refreshCurrentDirectoryIfCurrent(expectedCurrentID)
+      if (!isActionBusyCurrent(busyToken)) return
       onFeedback('good', '已重命名。')
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error))
+      if (isActionBusyCurrent(busyToken)) {
+        onError(error instanceof Error ? error.message : String(error))
+      }
       throw error
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
@@ -1167,7 +1227,12 @@ export default function DesktopFileExplorer({
 
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {
     const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-    if (nodes.length === 0 || explorerActionBusy) return
+    if (
+      nodes.length === 0 ||
+      actionBusyRef.current ||
+      fileOperationBusy ||
+      uploadBusy
+    ) return
 
     if (
       folderTreeDownloadSupported &&
@@ -1179,12 +1244,14 @@ export default function DesktopFileExplorer({
         onError('无法确定文件夹父目录。')
         return
       }
-      setActionBusy('download-folder')
+      const busyToken = beginActionBusy('download-folder')
+      if (!busyToken) return
       try {
         const result = await window.xdriveDesktop.agent.cloudDownloadFolder(
           folder.id,
           folder.parent_id,
         )
+        if (!isActionBusyCurrent(busyToken)) return
         if (!result.ok) {
           onError(result.error.message)
           return
@@ -1196,7 +1263,7 @@ export default function DesktopFileExplorer({
           onFeedback('good', `${result.data.root || folder.name} 下载完成，共 ${result.data.downloaded} 个文件。`)
         }
       } finally {
-        setActionBusy('')
+        finishActionBusy(busyToken)
       }
       return
     }
@@ -1208,9 +1275,11 @@ export default function DesktopFileExplorer({
         await downloadNode(archivePlan.file)
         return
       }
-      setActionBusy('download-archive')
+      const busyToken = beginActionBusy('download-archive')
+      if (!busyToken) return
       try {
         const result = await window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)
+        if (!isActionBusyCurrent(busyToken)) return
         if (!result.ok) {
           onError(result.error.message)
           return
@@ -1219,16 +1288,18 @@ export default function DesktopFileExplorer({
         const feedback = xDriveFileExplorerDesktopArchiveDownloadFeedback(result.data.downloaded.length)
         onFeedback(feedback.tone, feedback.message)
       } finally {
-        setActionBusy('')
+        finishActionBusy(busyToken)
       }
       return
     }
 
     const plan = xDriveFileExplorerDownloadPlan(nodes)
     if (plan.files.length === 0) return
-    setActionBusy('download-many')
+    const busyToken = beginActionBusy('download-many')
+    if (!busyToken) return
     try {
       const result = await window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)
+      if (!isActionBusyCurrent(busyToken)) return
       if (!result.ok) {
         onError(result.error.message)
         return
@@ -1241,7 +1312,7 @@ export default function DesktopFileExplorer({
       })
       onFeedback(feedback.tone, feedback.message)
     } finally {
-      setActionBusy('')
+      finishActionBusy(busyToken)
     }
   }
 
@@ -1266,9 +1337,11 @@ export default function DesktopFileExplorer({
       if (uploadConflictSupported) {
         return uploadConflictAwareFiles(parentID, files, 'drop-upload', false)
       }
-      setActionBusy('drop-upload')
+      const busyToken = beginActionBusy('drop-upload')
+      if (!busyToken) return false
       try {
         const result = await window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)
+        if (!isActionBusyCurrent(busyToken)) return false
         if (!result.ok) {
           onError(result.error.message)
           return false
@@ -1281,7 +1354,7 @@ export default function DesktopFileExplorer({
         await onQuotaChanged()
         return true
       } finally {
-        setActionBusy('')
+        finishActionBusy(busyToken)
       }
     },
     uploadFolderEntriesToParent: async (parentID, payload) => {

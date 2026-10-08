@@ -304,7 +304,7 @@ test('Desktop folder and mixed-selection downloads use Agent archive capability 
     'archiveDownloadSupported = false',
     'xDriveFileExplorerArchiveDownloadPlan(nodes)',
     'window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)',
-    "setActionBusy('download-archive')",
+    "beginActionBusy('download-archive')",
     "actionBusy === 'download-archive'",
     "downloadLabel: node.type === 'file' ? '另存为…' : '下载到…'",
     'xDriveFileExplorerDownloadPlan(nodes)',
