@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestValidateMediaCreativeMovieSourcesTxFencesEveryFrame(t *testing.T) {
+func TestValidateMediaCreativeSourcesTxFencesEveryMultiImageSource(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("XD_TEST_DATABASE_URL is not set")
@@ -134,7 +134,7 @@ func TestValidateMediaCreativeMovieSourcesTxFencesEveryFrame(t *testing.T) {
 	}
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		return validateMediaCreativeMovieSourcesTx(tx, generation, recipe)
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
 	}); err != nil {
 		t.Fatalf("current movie sources were rejected: %v", err)
 	}
@@ -145,9 +145,50 @@ func TestValidateMediaCreativeMovieSourcesTxFencesEveryFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		return validateMediaCreativeMovieSourcesTx(tx, generation, recipe)
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
 	})
 	if !errors.Is(err, errMediaCreativeSourceChanged) {
 		t.Fatalf("changed second movie frame error=%v", err)
+	}
+
+	if err := db.Model(&meta.Node{}).
+		Where("id = ?", second.ID).
+		Update("revision", second.Revision).Error; err != nil {
+		t.Fatal(err)
+	}
+	generation.Kind = meta.PhotoCreativeKindCollage
+	recipe = mediaCreativeRecipe{
+		CollageSources: []mediaCreativeMovieSource{
+			{
+				AssetID:      101,
+				NodeID:       first.ID,
+				NodeRevision: first.Revision,
+				SHA256:       first.File.SHA256,
+			},
+			{
+				AssetID:      102,
+				NodeID:       second.ID,
+				NodeRevision: second.Revision,
+				SHA256:       second.File.SHA256,
+			},
+		},
+		CollageTemplate: "grid",
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
+	}); err != nil {
+		t.Fatalf("current collage sources were rejected: %v", err)
+	}
+
+	if err := db.Model(&meta.File{}).
+		Where("node_id = ?", second.ID).
+		Update("sha256", strings.Repeat("c", 64)).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		return validateMediaCreativeSourcesTx(tx, generation, recipe)
+	})
+	if !errors.Is(err, errMediaCreativeSourceChanged) {
+		t.Fatalf("changed second collage image error=%v", err)
 	}
 }

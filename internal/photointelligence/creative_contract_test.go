@@ -18,6 +18,7 @@ func testCreativeInfo() CreativeAnalyzerInfo {
 			CreativeCapabilityCutout,
 			CreativeCapabilityErase,
 			CreativeCapabilityMovie,
+			CreativeCapabilityCollage,
 		},
 		Runtime: &FaceAnalyzerRuntimeInfo{Framework: "opencv_dnn", Device: "cpu"},
 	}
@@ -37,6 +38,9 @@ func TestValidateCreativeAnalyzerInfo(t *testing.T) {
 	}
 	if CreativeAnalyzerSupports(info, CreativeCapabilityMovie) {
 		t.Fatal("legacy analyzer unexpectedly reports movie support")
+	}
+	if CreativeAnalyzerSupports(info, CreativeCapabilityCollage) {
+		t.Fatal("legacy analyzer unexpectedly reports collage support")
 	}
 	info.Capabilities = []string{CreativeCapabilityCutout}
 	if err := ValidateCreativeAnalyzerInfo(info); err == nil {
@@ -100,6 +104,27 @@ func TestValidateCreativeTask(t *testing.T) {
 	movie.TransitionMS = 2000
 	if err := ValidateCreativeTask(movie); err == nil {
 		t.Fatal("movie transition equal to frame duration was accepted")
+	}
+
+	collage := base
+	collage.Kind = CreativeCapabilityCollage
+	collage.CollageTemplate = CreativeCollageTemplateGrid
+	collage.CollageImages = []CreativeMovieFrame{
+		{
+			PreviewURL:     "http://server:8080/api/v1/media-creative-preview/42?ticket=a",
+			PreviewVersion: 1, PreviewEdge: 2048, InputFingerprint: "collage-a",
+		},
+		{
+			PreviewURL:     "http://server:8080/api/v1/media-creative-preview/43?ticket=b",
+			PreviewVersion: 1, PreviewEdge: 2048, InputFingerprint: "collage-b",
+		},
+	}
+	if err := ValidateCreativeTask(collage); err != nil {
+		t.Fatal(err)
+	}
+	collage.CollageTemplate = "freeform"
+	if err := ValidateCreativeTask(collage); err == nil {
+		t.Fatal("unsupported collage template was accepted")
 	}
 }
 

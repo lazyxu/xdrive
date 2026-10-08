@@ -3,9 +3,10 @@ package meta
 import "time"
 
 const (
-	PhotoCreativeKindErase  = "erase"
-	PhotoCreativeKindCutout = "cutout"
-	PhotoCreativeKindMovie  = "movie"
+	PhotoCreativeKindErase   = "erase"
+	PhotoCreativeKindCutout  = "cutout"
+	PhotoCreativeKindMovie   = "movie"
+	PhotoCreativeKindCollage = "collage"
 
 	PhotoCreativeStateQueued    = "queued"
 	PhotoCreativeStateRunning   = "running"
@@ -43,7 +44,10 @@ func (PhotoCreativeGeneration) TableName() string {
 
 func ValidPhotoCreativeKind(kind string) bool {
 	switch kind {
-	case PhotoCreativeKindErase, PhotoCreativeKindCutout, PhotoCreativeKindMovie:
+	case PhotoCreativeKindErase,
+		PhotoCreativeKindCutout,
+		PhotoCreativeKindMovie,
+		PhotoCreativeKindCollage:
 		return true
 	default:
 		return false

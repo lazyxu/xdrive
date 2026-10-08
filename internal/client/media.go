@@ -110,6 +110,7 @@ type MediaCreativeInput struct {
 	Points          []MediaCreativePoint  `json:"points,omitempty"`
 	Strokes         []MediaCreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64              `json:"source_node_ids,omitempty"`
+	CollageTemplate string                `json:"collage_template,omitempty"`
 	FrameDurationMS int                   `json:"frame_duration_ms,omitempty"`
 	TransitionMS    *int                  `json:"transition_ms,omitempty"`
 }

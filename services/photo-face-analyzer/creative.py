@@ -35,9 +35,16 @@ CREATIVE_MOVIE_MIN_FRAMES = 2
 CREATIVE_MOVIE_MAX_FRAMES = 30
 CREATIVE_MOVIE_MAX_BYTES = 128 * 1024 * 1024
 CREATIVE_MOVIE_TIMEOUT_SECONDS = 14 * 60
+CREATIVE_COLLAGE_MIME = "image/jpeg"
+CREATIVE_COLLAGE_SIZE = 2048
+CREATIVE_COLLAGE_GAP = 12
+CREATIVE_COLLAGE_MIN_IMAGES = 2
+CREATIVE_COLLAGE_MAX_IMAGES = 9
+CREATIVE_COLLAGE_MAX_BYTES = 32 * 1024 * 1024
+CREATIVE_COLLAGE_TEMPLATES = {"grid", "featured", "columns", "rows"}
 CREATIVE_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-efficientsam-ti-2025april-int8"
-    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v2"
+    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v2-collage-v1"
 )
 
 
@@ -107,7 +114,7 @@ class CreativeRuntime:
                 "license": CREATIVE_MODEL_LICENSE,
                 "license_url": CREATIVE_MODEL_LICENSE_URL,
             },
-            "capabilities": ["cutout", "erase", "movie"],
+            "capabilities": ["cutout", "erase", "movie", "collage"],
             "runtime": {
                 "framework": "opencv_dnn+ffmpeg",
                 "version": cv.__version__,
@@ -362,6 +369,161 @@ class CreativeRuntime:
         return self._encode_png(result)
 
     @staticmethod
+    def _cover_crop(image: np.ndarray, width: int, height: int) -> np.ndarray:
+        if (
+            image.ndim != 3
+            or image.shape[2] != 3
+            or width <= 0
+            or height <= 0
+        ):
+            raise RuntimeError("creative collage image dimensions are invalid")
+        source_height, source_width = image.shape[:2]
+        if source_width <= 0 or source_height <= 0:
+            raise RuntimeError("creative collage source dimensions are invalid")
+        scale = max(width / source_width, height / source_height)
+        resized_width = max(width, int(round(source_width * scale)))
+        resized_height = max(height, int(round(source_height * scale)))
+        resized = cv.resize(
+            image,
+            (resized_width, resized_height),
+            interpolation=cv.INTER_AREA if scale < 1 else cv.INTER_CUBIC,
+        )
+        x = max(0, (resized_width - width) // 2)
+        y = max(0, (resized_height - height) // 2)
+        return resized[y:y + height, x:x + width]
+
+    @staticmethod
+    def _collage_cells(
+        template: str,
+        count: int,
+    ) -> list[tuple[int, int, int, int]]:
+        size = CREATIVE_COLLAGE_SIZE
+        if template == "columns":
+            return [
+                (
+                    int(round(index * size / count)),
+                    0,
+                    int(round((index + 1) * size / count)),
+                    size,
+                )
+                for index in range(count)
+            ]
+        if template == "rows":
+            return [
+                (
+                    0,
+                    int(round(index * size / count)),
+                    size,
+                    int(round((index + 1) * size / count)),
+                )
+                for index in range(count)
+            ]
+        if template == "featured":
+            featured_width = int(round(size * 0.62))
+            if count == 2:
+                return [
+                    (0, 0, featured_width, size),
+                    (featured_width, 0, size, size),
+                ]
+            remaining = count - 1
+            columns = 1 if remaining <= 3 else 2
+            rows = int(np.ceil(remaining / columns))
+            cells = [(0, 0, featured_width, size)]
+            side_width = size - featured_width
+            for index in range(remaining):
+                row = index // columns
+                column = index % columns
+                x0 = featured_width + int(round(column * side_width / columns))
+                x1 = featured_width + int(round((column + 1) * side_width / columns))
+                y0 = int(round(row * size / rows))
+                y1 = int(round((row + 1) * size / rows))
+                cells.append((x0, y0, x1, y1))
+            return cells
+
+        columns = int(np.ceil(np.sqrt(count)))
+        rows = int(np.ceil(count / columns))
+        cells = []
+        for index in range(count):
+            row = index // columns
+            column = index % columns
+            cells.append((
+                int(round(column * size / columns)),
+                int(round(row * size / rows)),
+                int(round((column + 1) * size / columns)),
+                int(round((row + 1) * size / rows)),
+            ))
+        return cells
+
+    @staticmethod
+    def _validate_collage_task(
+        task: dict[str, Any],
+        image_count: int,
+    ) -> str:
+        if (
+            image_count < CREATIVE_COLLAGE_MIN_IMAGES
+            or image_count > CREATIVE_COLLAGE_MAX_IMAGES
+        ):
+            raise ValueError(
+                "collage requires between "
+                f"{CREATIVE_COLLAGE_MIN_IMAGES} and "
+                f"{CREATIVE_COLLAGE_MAX_IMAGES} images"
+            )
+        if task.get("points") not in (None, []) or task.get("strokes") not in (None, []):
+            raise ValueError("collage does not accept cutout or erase prompts")
+        if task.get("cutout_mode") not in (None, ""):
+            raise ValueError("collage does not accept cutout mode")
+        if task.get("movie_frames") not in (None, []):
+            raise ValueError("collage does not accept movie frames")
+        if task.get("frame_duration_ms") not in (None, 0) or task.get("transition_ms") not in (None, 0):
+            raise ValueError("collage does not accept movie timing")
+        template = task.get("collage_template")
+        if template not in CREATIVE_COLLAGE_TEMPLATES:
+            raise ValueError("creative collage template is invalid")
+        return template
+
+    def collage(
+        self,
+        images: list[np.ndarray],
+        task: dict[str, Any],
+    ) -> tuple[bytes, int, int]:
+        template = self._validate_collage_task(task, len(images))
+        canvas = np.full(
+            (CREATIVE_COLLAGE_SIZE, CREATIVE_COLLAGE_SIZE, 3),
+            255,
+            dtype=np.uint8,
+        )
+        cells = self._collage_cells(template, len(images))
+        inset = max(1, CREATIVE_COLLAGE_GAP // 2)
+        for image, (raw_x0, raw_y0, raw_x1, raw_y1) in zip(images, cells):
+            x0 = min(raw_x1 - 1, raw_x0 + inset)
+            y0 = min(raw_y1 - 1, raw_y0 + inset)
+            x1 = max(x0 + 1, raw_x1 - inset)
+            y1 = max(y0 + 1, raw_y1 - inset)
+            tile = self._cover_crop(image, x1 - x0, y1 - y0)
+            canvas[y0:y1, x0:x1] = tile
+        ok, encoded = cv.imencode(
+            ".jpg",
+            canvas,
+            [cv.IMWRITE_JPEG_QUALITY, 92],
+        )
+        if not ok:
+            raise RuntimeError("creative collage JPEG encoding failed")
+        data = encoded.tobytes()
+        if len(data) == 0 or len(data) > CREATIVE_COLLAGE_MAX_BYTES:
+            raise RuntimeError("creative collage result size is invalid")
+        return data, CREATIVE_COLLAGE_SIZE, CREATIVE_COLLAGE_SIZE
+
+    def generate_collage(
+        self,
+        images: list[np.ndarray],
+        task: dict[str, Any],
+    ) -> tuple[bytes, str, int, int]:
+        if task.get("kind") != "collage":
+            raise ValueError("creative collage task kind is invalid")
+        data, width, height = self.collage(images, task)
+        return data, CREATIVE_COLLAGE_MIME, width, height
+
+    @staticmethod
     def _validate_movie_task(
         task: dict[str, Any],
         image_count: int,
@@ -524,6 +686,8 @@ class CreativeRuntime:
             data, width, height = self.erase(image, task.get("strokes"))
         elif kind == "movie":
             raise ValueError("movie must use the multi-frame generator")
+        elif kind == "collage":
+            raise ValueError("collage must use the multi-image generator")
         else:
-            raise ValueError("creative kind must be erase, cutout, or movie")
+            raise ValueError("creative kind must be erase, cutout, movie, or collage")
         return data, CREATIVE_OUTPUT_MIME, width, height

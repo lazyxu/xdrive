@@ -2966,6 +2966,28 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	res = desktopIPCRequest(
 		t,
 		handler,
+		http.MethodPost,
+		"/v1/media/creative?node_id=31",
+		`{"kind":"collage","source_node_ids":[31,32,33],"collage_template":"featured"}`,
+	)
+	if res.Code != http.StatusAccepted ||
+		!strings.Contains(res.Body.String(), "\"id\":\"creative-1\"") {
+		t.Fatalf("media creative collage create status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaCreativeNodeID != 31 ||
+		ctrl.cloudMediaCreativeInput.Kind != "collage" ||
+		len(ctrl.cloudMediaCreativeInput.SourceNodeIDs) != 3 ||
+		ctrl.cloudMediaCreativeInput.CollageTemplate != "featured" {
+		t.Fatalf(
+			"media creative collage input node=%d input=%+v",
+			ctrl.cloudMediaCreativeNodeID,
+			ctrl.cloudMediaCreativeInput,
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
 		http.MethodGet,
 		"/v1/media/creative?generation_id=creative-1",
 		"",

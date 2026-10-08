@@ -495,3 +495,47 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 		t.Fatalf("cancelled generation=%+v", generation)
 	}
 }
+
+func TestMediaCreativeCollageGenerationQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != "/api/v1/media/items/41/creative" {
+			t.Fatalf("collage create method=%s path=%q", r.Method, r.URL.Path)
+		}
+		var input MediaCreativeInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Kind != "collage" ||
+			len(input.SourceNodeIDs) != 3 ||
+			input.SourceNodeIDs[0] != 41 ||
+			input.SourceNodeIDs[1] != 42 ||
+			input.SourceNodeIDs[2] != 43 ||
+			input.CollageTemplate != "featured" {
+			t.Fatalf("creative collage create input=%+v", input)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
+			ID: "creative-collage-1", Kind: "collage", State: "queued",
+			SourceAssetID: 1, SourceNodeID: 41, SourceNodeRevision: 1,
+		})
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	generation, err := cli.CreateMediaCreativeGeneration(
+		context.Background(),
+		41,
+		MediaCreativeInput{
+			Kind:            "collage",
+			SourceNodeIDs:   []uint64{41, 42, 43},
+			CollageTemplate: "featured",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generation.ID != "creative-collage-1" || generation.Kind != "collage" {
+		t.Fatalf("created collage generation=%+v", generation)
+	}
+}

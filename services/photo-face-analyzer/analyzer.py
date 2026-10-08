@@ -1196,27 +1196,44 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     if not common.issubset(task):
                         raise RequestError(400, "creative request is missing preview fields")
                     try:
-                        if task.get("kind") == "movie":
-                            raw_frames = task.get("movie_frames")
-                            if not isinstance(raw_frames, list):
-                                raise ValueError("creative movie frames must be an array")
+                        if task.get("kind") in {"movie", "collage"}:
+                            collection_key = (
+                                "movie_frames"
+                                if task.get("kind") == "movie"
+                                else "collage_images"
+                            )
+                            raw_images = task.get(collection_key)
+                            if not isinstance(raw_images, list):
+                                raise ValueError(
+                                    f"creative {task.get('kind')} images must be an array"
+                                )
                             images = []
-                            for raw_frame in raw_frames:
-                                if not isinstance(raw_frame, dict) or not common.issubset(raw_frame):
-                                    raise ValueError("creative movie frame is missing preview fields")
-                                preview_task = {key: raw_frame[key] for key in common}
+                            for raw_image in raw_images:
+                                if not isinstance(raw_image, dict) or not common.issubset(raw_image):
+                                    raise ValueError(
+                                        f"creative {task.get('kind')} image is missing preview fields"
+                                    )
+                                preview_task = {key: raw_image[key] for key in common}
                                 images.append(
                                     fetch_creative_preview(
                                         preview_task,
                                         self.server.state.preview_origin,
                                     )
                                 )
-                            data, mime_type, width, height = (
-                                self.server.state.creative_runtime.generate_movie(
-                                    images,
-                                    task,
+                            if task.get("kind") == "movie":
+                                data, mime_type, width, height = (
+                                    self.server.state.creative_runtime.generate_movie(
+                                        images,
+                                        task,
+                                    )
                                 )
-                            )
+                            else:
+                                data, mime_type, width, height = (
+                                    self.server.state.creative_runtime.generate_collage(
+                                        images,
+                                        task,
+                                    )
+                                )
                         else:
                             preview_task = {key: task[key] for key in common}
                             image = fetch_creative_preview(
@@ -1441,6 +1458,15 @@ def self_test(
             },
         )
     )
+    collage_jpeg, collage_mime, collage_width, collage_height = (
+        creative_runtime.generate_collage(
+            [creative_image, cv.flip(creative_image, 1)],
+            {
+                "kind": "collage",
+                "collage_template": "grid",
+            },
+        )
+    )
     if (
         not cutout_png.startswith(b"\x89PNG\r\n\x1a\n")
         or cutout_width != 256
@@ -1452,6 +1478,10 @@ def self_test(
         or b"ftyp" not in movie_mp4[:64]
         or movie_width != 1920
         or movie_height != 1080
+        or collage_mime != "image/jpeg"
+        or not collage_jpeg.startswith(b"\xff\xd8\xff")
+        or collage_width != 2048
+        or collage_height != 2048
     ):
         raise RuntimeError("creative self-test returned invalid output")
     print(
@@ -1470,6 +1500,7 @@ def self_test(
                 "creative_cutout_bytes": len(cutout_png),
                 "creative_erase_bytes": len(erase_png),
                 "creative_movie_bytes": len(movie_mp4),
+                "creative_collage_bytes": len(collage_jpeg),
             },
             separators=(",", ":"),
         )
