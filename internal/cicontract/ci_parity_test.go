@@ -157,6 +157,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	goVersionCheck := readFile(t, filepath.Join(root, "scripts", "ci", "check-go-min-version.sh"))
 	artifactVersion := readFile(t, filepath.Join(root, "scripts", "ci", "client-artifact-version.sh"))
 	goCachePrep := readFile(t, filepath.Join(root, "scripts", "ci", "prepare-go-mod-cache.sh"))
+	apiRaceTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-go-api-race.sh"))
 	clientCoreBuild := readFile(t, filepath.Join(root, "scripts", "build-client-core.sh"))
 	requireRaw(t, "client core build metadata contract", clientCoreBuild,
 		`source "$ROOT/scripts/ci/build-metadata.sh"`,
@@ -219,7 +220,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm run runtime:win",
 		"go mod tidy \"-go=1.25\"",
 		"git diff --exit-code -- go.mod go.sum",
-		"go test -race ./internal/api",
+		"bash scripts/ci/test-go-api-race.sh",
 		"go test -p 1 -race \"${packages[@]}\"",
 		"go vet ./...",
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
@@ -270,6 +271,14 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 			t.Errorf("GitLab CI contract is missing parity command %q", command)
 		}
 	}
+
+	requireRaw(t, "API race test contract", apiRaceTest,
+		"go test -race -timeout=30m -count=1 -json ./internal/api",
+		"collecting runner and PostgreSQL diagnostics",
+		"/proc/diskstats",
+		"pg_stat_activity",
+		"pg_stat_database",
+	)
 
 	for _, token := range []string{"postgres:17-alpine", "1.25", "22"} {
 		if !strings.Contains(githubRaw, token) {
@@ -584,7 +593,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	requireRaw(t, "GitLab Linux split wrappers", gitlabLinuxBash,
 		"XDRIVE_GO_TEST_SCOPE",
-		"go test -race ./internal/api",
+		"bash scripts/ci/test-go-api-race.sh",
 		"go test -p 1 -race \"${packages[@]}\"",
 		"go vet ./...",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
@@ -1449,6 +1458,8 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	runtimeSection := dockerfile[:finalIndex]
 	requireRaw(t, "Photo Face runtime image", runtimeSection,
 		"FROM python:3.12-slim-bookworm AS runtime",
+		"ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown",
+		"io.github.lazyxu.xdrive.photo-face.runtime-contract=\"$XDRIVE_RUNTIME_CONTRACT_HASH\"",
 		"COPY requirements.txt",
 		"COPY fetch_models.py",
 	)
@@ -1467,8 +1478,10 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	}
 
 	cacheKeyScript := readFile(t, filepath.Join(root, "scripts", "ci", "photo-face-runtime-cache-key.sh"))
+	cacheRegressionTest := readFile(t, filepath.Join(root, "scripts", "ci", "test-photo-face-runtime-cache.sh"))
 	githubCI := readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
 	gitlabCI := readFile(t, filepath.Join(root, ".gitlab-ci.yml"))
+	gitlabServerValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
 	requireRaw(t, "Photo Face runtime cache identity", cacheKeyScript,
 		`sed '/^FROM runtime AS final$/,$d' "$dockerfile"`,
 		`cat "$analyzer_dir/requirements.txt"`,
@@ -1476,12 +1489,19 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	)
 
 	requireRaw(t, "Photo Face mounted-source test script", testScript,
-		`runtime_image="xdrive/photo-face:test-runtime"`,
 		`runtime_contract_hash="$(bash scripts/ci/photo-face-runtime-cache-key.sh)"`,
+		`runtime_image="xdrive/photo-face:test-runtime-$runtime_contract_hash"`,
+		`runtime_contract_label="io.github.lazyxu.xdrive.photo-face.runtime-contract"`,
 		`runtime_archive="$runtime_cache_dir/$runtime_contract_hash.tar.gz"`,
+		`docker image rm -f "$runtime_image"`,
+		`runtime_image_valid()`,
+		`docker image inspect --format "{{ index .Config.Labels \"$runtime_contract_label\" }}"`,
+		`import cv2; import numpy; import onnxruntime; import tokenizers`,
+		`cached runtime image does not match its archive key; rebuilding only $runtime_archive`,
 		`gzip -dc "$runtime_archive" | docker load`,
 		`--target runtime`,
 		`--build-arg BUILDKIT_INLINE_CACHE=1`,
+		`--build-arg "XDRIVE_RUNTIME_CONTRACT_HASH=$runtime_contract_hash"`,
 		`runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"`,
 		`--mount "$runtime_mount"`,
 		`python -m unittest discover -s tests -v`,
@@ -1501,14 +1521,24 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 		}
 	}
 
+	requireRaw(t, "Photo Face runtime cache regression harness", cacheRegressionTest,
+		"cold cache must build runtime exactly once",
+		"hot cache must restore without rebuilding runtime",
+		"poisoned current-hash archive must be evicted and rebuilt",
+		"dependency hash change must build a distinct runtime image",
+	)
 	requireRaw(t, "GitHub Photo Face runtime cache", githubCI,
 		`bash scripts/ci/photo-face-runtime-cache-key.sh`,
+		`bash scripts/ci/test-photo-face-runtime-cache.sh`,
 		`path: .cache/photo-face-runtime`,
 		`photo-face-runtime-v2-${{ runner.os }}-${{ steps.photo-face-runtime-cache.outputs.hash }}`,
 	)
 	requireRaw(t, "GitLab Photo Face runtime cache", gitlabCI,
 		`key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"`,
 		`- .cache/photo-face-runtime/`,
+	)
+	requireRaw(t, "GitLab Photo Face runtime cache regression harness", gitlabServerValidation,
+		"bash scripts/ci/test-photo-face-runtime-cache.sh",
 	)
 }
 

@@ -1,7 +1,10 @@
 FROM python:3.12-slim-bookworm AS runtime
 
+ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown
+
 LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
-      org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies"
+      org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies" \
+      io.github.lazyxu.xdrive.photo-face.runtime-contract="$XDRIVE_RUNTIME_CONTRACT_HASH"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

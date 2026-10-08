@@ -83,6 +83,9 @@ bash -n scripts/ci/gitlab-server-image.sh
 bash -n scripts/ci/gitlab-caddy-image.sh
 bash -n scripts/ci/test-photo-face-image.sh
 bash -n scripts/ci/photo-face-runtime-cache-key.sh
+bash -n scripts/ci/test-photo-face-runtime-cache.sh
+bash scripts/ci/test-photo-face-runtime-cache.sh
+bash -n scripts/ci/test-go-api-race.sh
 bash -n scripts/ci/gitlab-server-backup.sh
 bash -n scripts/ci/gitlab-go-windows.sh
 bash -n scripts/ci/gitlab-package-windows-client.sh

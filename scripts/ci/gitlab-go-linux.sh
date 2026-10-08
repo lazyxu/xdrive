@@ -22,7 +22,7 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql   -h postgres -p 5432 -U "$POSTGRES_USER" -
 scope="${XDRIVE_GO_TEST_SCOPE:-rest}"
 case "$scope" in
   api)
-    go test -race ./internal/api
+    bash scripts/ci/test-go-api-race.sh
     ;;
   rest)
     go mod tidy "-go=1.25"

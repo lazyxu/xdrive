@@ -259,7 +259,7 @@ jobs:
           go-version: "1.25.x"
           cache: true
       - name: Race test internal/api
-        run: go test -race ./internal/api
+        run: bash scripts/ci/test-go-api-race.sh
 
   file-explorer-search-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-search-100k-baseline'
@@ -583,6 +583,9 @@ jobs:
           bash -n scripts/ci/gitlab-caddy-image.sh
           bash -n scripts/ci/test-photo-face-image.sh
           bash -n scripts/ci/photo-face-runtime-cache-key.sh
+          bash -n scripts/ci/test-photo-face-runtime-cache.sh
+          bash scripts/ci/test-photo-face-runtime-cache.sh
+          bash -n scripts/ci/test-go-api-race.sh
           bash -n scripts/ci/gitlab-server-backup.sh
           bash -n scripts/ci/gitlab-go-windows.sh
           bash -n scripts/ci/gitlab-package-windows-client.sh
