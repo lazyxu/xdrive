@@ -105,3 +105,52 @@ func (s *Server) refreshUploadReservation(tx *gorm.DB, session meta.UploadSessio
 		Where("id = ? AND status = ?", session.ID, meta.UploadStatusActive).
 		Update("reserved_bytes", uploadReservationBytes(session.TotalSize, parts)).Error
 }
+
+func (s *Server) adjustUploadReservationForPart(
+	tx *gorm.DB,
+	session meta.UploadSession,
+	oldSize, newSize int64,
+) error {
+	if session.TotalSize < 0 || oldSize < 0 || newSize < 0 {
+		return s.refreshUploadReservation(tx, session)
+	}
+	if session.TotalSize == 0 {
+		if session.ReservedBytes == 0 {
+			return nil
+		}
+		return tx.Model(&meta.UploadSession{}).
+			Where("id = ? AND status = ?", session.ID, meta.UploadStatusActive).
+			Update("reserved_bytes", int64(0)).Error
+	}
+
+	maxReserved := uploadReservationBytes(session.TotalSize, nil)
+	if session.ReservedBytes < session.TotalSize || session.ReservedBytes > maxReserved {
+		return s.refreshUploadReservation(tx, session)
+	}
+
+	next := session.ReservedBytes
+	switch {
+	case newSize > oldSize:
+		delta := newSize - oldSize
+		remainingReservation := next - session.TotalSize
+		if delta > remainingReservation {
+			return s.refreshUploadReservation(tx, session)
+		}
+		next -= delta
+	case oldSize > newSize:
+		delta := oldSize - newSize
+		if delta > maxReserved-next {
+			return s.refreshUploadReservation(tx, session)
+		}
+		next += delta
+	default:
+		return nil
+	}
+
+	if next == session.ReservedBytes {
+		return nil
+	}
+	return tx.Model(&meta.UploadSession{}).
+		Where("id = ? AND status = ?", session.ID, meta.UploadStatusActive).
+		Update("reserved_bytes", next).Error
+}
