@@ -31,6 +31,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
 | FileExplorer Trash sparse ranges | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201 trash roots: initial response/materialization **1,201 items -> first 200 items + authoritative total**; later viewport ranges are <=200 items and omit repeated count work. Legacy unpaged Trash API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
+| Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
@@ -291,6 +292,40 @@ Decision: **Accepted.** This removes change-count x baseline-size CPU amplificat
 Regression budget: `applyRemoteChangePage` must build at most **1 baseline node index per journal page** and must not call the linear `findBaselinePathByNodeID` for each change. Incremental file delete/rename must not call `deletePrefix` / `moveBaselinePrefix`.
 
 Next action: continue delete-path performance at content-reference release / physical blob cleanup, and only change it if deterministic SQL or object-store amplification is found.
+
+### Windows local moved-placeholder baseline index contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows local-change reconciliation / full-reconcile local-addition phase with a **100,000-entry baseline**;
+- **500 moved-placeholder node IDs** that already exist in that baseline;
+- deterministic helper test verifies lazy index reuse and indexed prefix-move maintenance;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every moved placeholder resolves its Cloud node ID through `findBaselinePathByNodeID`;
+- that helper performs a full Go map traversal until the ID is found;
+- the 500-item workload performs **500 separate linear baseline lookups** in the moved-placeholder path;
+- ordinary non-placeholder local changes do not use this lookup.
+
+AFTER / current:
+
+- each local reconciliation loop starts with no node index;
+- the index is built **only after the first actual placeholder is detected**;
+- the 500-item workload becomes **1 baseline index-build pass + 500 O(1) map lookups**;
+- successful prefix moves update every moved node's indexed path;
+- if a node was added after the lazy index was built, one legacy scan resolves it and caches that result;
+- local reconciliation loops with no moved placeholder build **0** baseline node indexes;
+- rename/move requests, revision checks, placeholder identity, parent creation and baseline persistence semantics are unchanged.
+
+Decision: **Accepted.** This removes moved-item-count × baseline-size CPU amplification from bulk local placeholder moves without taxing ordinary local-change batches.
+
+Regression budget: one local reconciliation loop may build at most **1** baseline node index, and only after placeholder identity is confirmed. Existing indexed entries must not fall back to full-map scans; post-index additions may use at most one fallback scan per newly observed node before caching.
+
+Next action: continue basic delete/download/sync performance and only change another deterministic SQL, request, allocation, filesystem, or object-store multiplier.
 
 ### Permanent-delete CAS reference release contract
 
