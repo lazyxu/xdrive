@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const preview = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const openPreview = read('ui', 'shared', 'src', 'mui', 'FileOpenPreviewDialog.tsx')
 const galleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
+const mediaViewerContent = read('ui', 'shared', 'src', 'mui', 'MediaViewerContent.tsx')
 const quickLook = read('ui', 'shared', 'src', 'mui', 'FileQuickLookDialog.tsx')
 const webViewers = read('web', 'src', 'WebFileViewerApps.tsx')
 const runtimeDocs = read('docs', 'web-app-runtime.md')
@@ -110,12 +111,12 @@ test('Viewer mobile design keeps touch gestures separate from video and Live Pho
     preview.includes("if (previewKind === 'video')"),
     'video must keep its native controls outside image gesture handling',
   )
-  assert.ok(
-    galleryViewer.includes('livePhoto && loadLivePhotoMotion') &&
-      !galleryViewer.slice(
-        galleryViewer.indexOf('livePhoto && loadLivePhotoMotion'),
-        galleryViewer.indexOf(') : (', galleryViewer.indexOf('livePhoto && loadLivePhotoMotion')),
-      ).includes('onSwipePrevious'),
+  const semanticLiveStart = mediaViewerContent.indexOf('if (livePhoto && loadLivePhotoMotion)')
+  const ordinaryMediaStart = mediaViewerContent.indexOf('\n  return (', semanticLiveStart)
+  assert.ok(semanticLiveStart >= 0 && ordinaryMediaStart > semanticLiveStart)
+  assert.equal(
+    mediaViewerContent.slice(semanticLiveStart, ordinaryMediaStart).includes('onSwipePrevious'),
+    false,
     'Live Photo hold/release path must not be replaced by image swipe gestures',
   )
   assert.ok(runtimeDocs.includes('移动 Viewer'), 'Web App Runtime must document mobile Viewer behavior')

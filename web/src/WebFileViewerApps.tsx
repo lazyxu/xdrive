@@ -24,6 +24,7 @@ import {
   XDriveFilePreviewSurface,
   XDriveFileTagDialog,
   XDriveMediaDetailsInspector,
+  XDriveMediaViewerContent,
   XDriveShareDialog,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -763,6 +764,8 @@ function WebMediaViewerApp({
     onNavigate,
   })
   const [mediaItem, setMediaItem] = useState<MediaItem | null>(null)
+  const [mediaItemLoading, setMediaItemLoading] = useState(true)
+  const [mediaItemError, setMediaItemError] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -770,9 +773,21 @@ function WebMediaViewerApp({
 
   useEffect(() => {
     let active = true
+    setMediaItem(null)
+    setMediaItemLoading(true)
+    setMediaItemError('')
     void api.mediaItem(route.params.node)
-      .then((item) => { if (active) setMediaItem(item) })
-      .catch(() => { if (active) setMediaItem(null) })
+      .then((item) => {
+        if (active) setMediaItem(item)
+      })
+      .catch((reason) => {
+        if (!active) return
+        setMediaItem(null)
+        setMediaItemError(reason instanceof Error ? reason.message : String(reason))
+      })
+      .finally(() => {
+        if (active) setMediaItemLoading(false)
+      })
     return () => { active = false }
   }, [api, route.params.node])
 
@@ -793,14 +808,11 @@ function WebMediaViewerApp({
   if (!['image', 'video', 'live_photo'].includes(previewKind)) {
     return <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
   }
-
-  const target: XDriveFilePreviewTarget = {
-    id: viewer.node.id,
-    name: viewer.node.name,
-    kind: 'file',
-    mimeType: mediaItem?.metadata.mime_type,
-    size: viewer.node.size,
-    revision: viewer.node.revision,
+  if (mediaItemError) {
+    return <XDriveStatusAlert tone="bad">{mediaItemError}</XDriveStatusAlert>
+  }
+  if (mediaItemLoading || !mediaItem || mediaItem.node.id !== viewer.node.id) {
+    return <XDriveStatePanel variant="plain" loading message="正在加载媒体信息…" />
   }
 
   const actions = (
@@ -852,18 +864,11 @@ function WebMediaViewerApp({
         actions={actions}
         onClose={() => onClose(viewer.node)}
       >
-        <XDriveFilePreviewSurface
-          target={target}
-          loadImagePreview={mediaItem?.metadata.has_thumbnail
-            ? () => gallerySource.loadThumbnail(viewer.node!.id)
-            : undefined}
-          loadPreviewURL={async (_target, kind) => {
-            if (!gallerySource.loadPreviewURL || (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')) return null
-            return gallerySource.loadPreviewURL(viewer.node!.id, kind)
-          }}
-          loadLivePhotoMotion={gallerySource.loadLivePhotoMotion
-            ? (_target, onProgress) => gallerySource.loadLivePhotoMotion!(viewer.node!.id, onProgress)
-            : undefined}
+        <XDriveMediaViewerContent
+          item={mediaItem}
+          loadThumbnail={gallerySource.loadThumbnail}
+          loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
+          loadPreviewURL={gallerySource.loadPreviewURL}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}
@@ -1141,7 +1146,7 @@ export function xDriveWebOpenRouteForNode(node: Node, contextID?: string): XDriv
   }
   if (kind === 'text') return { app: 'text-viewer', params: { node: node.id } }
   if (kind === 'pdf') return { app: 'pdf-viewer', params: { node: node.id } }
-  if (kind === 'audio') return { app: 'audio-player', params: { node: node.id, context: contextID } }
+  if (kind === 'audio') return { app: 'audio-player', params: { node: node.id } }
   return null
 }
 

@@ -23,6 +23,7 @@ const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGal
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
+const sharedMediaViewerContent = read('ui', 'shared', 'src', 'mui', 'MediaViewerContent.tsx')
 const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
 const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCreativeDialog.tsx')
 const sharedGalleryCollageDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCollageDialog.tsx')
@@ -53,6 +54,7 @@ const sharedGallery = [
   sharedGallerySelectionToolbar,
   sharedGalleryFilmstrip,
   sharedGalleryViewer,
+  sharedMediaViewerContent,
   sharedGalleryEditDialog,
   sharedGalleryCreativeDialog,
   sharedGalleryCollageDialog,
@@ -138,7 +140,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
   assert.equal(sharedGallery.includes('loadVideo'), false, 'Gallery must not retain a video-specific ordinary-media source contract')
 
   assert.ok(sharedGallery.includes('XDriveLivePhotoGlyph'), 'Gallery must use the shared Live Photo glyph instead of a generic play icon')
-  assert.ok(sharedGalleryViewer.includes("kind !== 'live_photo'"), 'Gallery Viewer must admit the LIVP still preview kind')
+  assert.ok(sharedMediaViewerContent.includes("kind !== 'live_photo'"), 'shared media content must admit the LIVP still preview kind')
   assert.ok(webAdapter.includes('api.mediaLivePhotoStillURL(nodeID)'), 'Web Gallery must use the signed LIVP still source')
   assert.ok(desktopAdapter.includes('agent.getMediaLivePhotoStill(nodeID)'), 'Desktop Gallery must use the protected LIVP still source')
 
@@ -526,10 +528,13 @@ test('Gallery basic non-destructive editing is one shared Preview Engine contrac
     'XDriveMediaGalleryEditDialog',
     'onSaveEditRecipe',
     'onResetEditRecipe',
-    'xDriveMediaEditPreviewTransform(item.edit_recipe)',
   ]) {
-    assert.ok(sharedGalleryViewer.includes(token), `Viewer edit contract missing: ${token}`)
+    assert.ok(sharedGalleryViewer.includes(token), `Viewer edit action contract missing: ${token}`)
   }
+  assert.ok(
+    sharedMediaViewerContent.includes('xDriveMediaEditPreviewTransform(item.edit_recipe)'),
+    'shared media content must apply the saved edit recipe',
+  )
 
   for (const token of [
     '原文件不会被改写',

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -17,16 +17,9 @@ import type {
   MediaItem,
 } from '../models'
 import {
-  xDriveMediaEditPreviewTransform,
   xDriveMediaItemSupportsBasicEditing,
 } from '../media-edit'
 import { XDriveConfirmDialog } from './ConfirmDialog'
-import { XDriveFilePreviewSurface } from './FilePreviewSurface'
-import type {
-  XDriveFilePreviewImageLoader,
-  XDriveFilePreviewURLLoader,
-} from './FilePreviewSurface'
-import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
 import {
   XDriveMediaGalleryCreativeDialog,
@@ -35,7 +28,7 @@ import {
 import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
-import { xDriveMediaFallback } from './MediaGalleryPreviewMedia'
+import { XDriveMediaViewerContent } from './MediaViewerContent'
 import type {
   MediaMotionLoader,
   MediaPreviewURLLoader,
@@ -113,48 +106,6 @@ export function XDriveMediaGalleryViewer({
   const [creativeOpen, setCreativeOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [busyAction, setBusyAction] = useState<ViewerAction>('')
-
-  const target = useMemo(() => (
-    item
-      ? {
-          id: item.node.id,
-          name: item.node.name,
-          kind: 'file' as const,
-          mimeType: item.metadata.mime_type,
-          size: item.node.size,
-          revision: item.node.revision,
-        }
-      : null
-  ), [
-    item?.node.id,
-    item?.node.name,
-    item?.node.revision,
-    item?.node.size,
-    item?.metadata.mime_type,
-  ])
-
-  const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
-    if (
-      !item ||
-      !loadPreviewURL ||
-      (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')
-    ) return null
-    return loadPreviewURL(item.node.id, kind)
-  }, [item?.node.id, loadPreviewURL])
-
-  const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
-    if (!item?.metadata.has_thumbnail) return null
-    return loadThumbnail(item.node.id)
-  }, [item?.metadata.has_thumbnail, item?.node.id, loadThumbnail])
-
-  const loadOpenLivePhotoMotion = useCallback((
-    onProgress?: Parameters<MediaMotionLoader>[1],
-  ) => {
-    if (!item || !loadLivePhotoMotion) return Promise.resolve(null)
-    return loadLivePhotoMotion(item.node.id, onProgress)
-  }, [item?.node.id, loadLivePhotoMotion])
-
-  const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
 
   const run = useCallback(async (
     action: ViewerAction,
@@ -299,36 +250,17 @@ export function XDriveMediaGalleryViewer({
         onClose={close}
       >
         {item ? (
-          livePhoto && loadLivePhotoMotion ? (
-            <XDriveLivePhotoSurface
-              key={item.node.id}
-              label={item.node.name}
-              loadMotion={loadOpenLivePhotoMotion}
-              still={(
-                <XDriveFilePreviewSurface
-                  target={target}
-                  loadPreviewURL={loadOpenPreview}
-                  loadImagePreview={loadOpenThumbnail}
-                  fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                  minHeight={320}
-                  maxHeight={fullScreen ? 4096 : 760}
-                />
-              )}
-            />
-          ) : (
-            <XDriveFilePreviewSurface
-              target={target}
-              loadPreviewURL={loadOpenPreview}
-              loadImagePreview={loadOpenThumbnail}
-              fallback={xDriveMediaFallback(item.metadata.media_kind)}
-              minHeight={320}
-              maxHeight={fullScreen ? 4096 : 760}
-              interactiveImage
-              onSwipePrevious={canPrevious ? onPrevious : undefined}
-              onSwipeNext={canNext ? onNext : undefined}
-              mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
-            />
-          )
+          <XDriveMediaViewerContent
+            item={item}
+            loadThumbnail={loadThumbnail}
+            loadLivePhotoMotion={loadLivePhotoMotion}
+            loadPreviewURL={loadPreviewURL}
+            interactiveImage
+            onSwipePrevious={canPrevious ? onPrevious : undefined}
+            onSwipeNext={canNext ? onNext : undefined}
+            minHeight={320}
+            maxHeight={fullScreen ? 4096 : 760}
+          />
         ) : null}
       </XDriveOpenPreviewDialog>
 
