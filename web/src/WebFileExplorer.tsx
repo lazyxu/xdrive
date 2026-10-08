@@ -627,14 +627,20 @@ export default function WebFileExplorer({
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
       onDelete: () => onRemove(node),
     })
+    const browserTabItem = {
+      id: 'open-browser-tab',
+      label: '在新浏览器标签页打开',
+      icon: <OpenInNewRoundedIcon fontSize="small" />,
+      onSelect: () => onOpenNodeInBrowserTab(node),
+    }
+    const insertionIndex = standardItems.findIndex((entry) => (
+      entry.id !== 'open' && entry.id !== 'open-new-tab'
+    ))
+    const index = insertionIndex >= 0 ? insertionIndex : standardItems.length
     return [
-      ...standardItems,
-      {
-        id: 'open-browser-tab',
-        label: '在新浏览器标签页打开',
-        icon: <OpenInNewRoundedIcon fontSize="small" />,
-        onSelect: () => onOpenNodeInBrowserTab(node),
-      },
+      ...standardItems.slice(0, index),
+      browserTabItem,
+      ...standardItems.slice(index),
     ]
   }
 

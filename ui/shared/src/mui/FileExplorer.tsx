@@ -3267,7 +3267,7 @@ export function XDriveFileExplorer({
     const actions: XDriveFileExplorerMenuItem[] = []
     const seen = new Set<string>()
     for (const action of getItemMenuItems?.(quickLookItem) ?? []) {
-      if (action.danger || !['system-open', 'download', 'share'].includes(action.id) || seen.has(action.id)) continue
+      if (action.danger || !['open', 'system-open', 'download', 'share'].includes(action.id) || seen.has(action.id)) continue
       seen.add(action.id)
       actions.push(action)
     }

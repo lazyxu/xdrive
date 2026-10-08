@@ -85,6 +85,7 @@ import PublicShareView from './PublicShare'
 import StorageStatsPanel from './StorageStatsPanel'
 import WebFileExplorer from './WebFileExplorer'
 import WebOverviewPage from './WebOverviewPage'
+import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
 import { xDriveWebAppForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
@@ -458,6 +459,7 @@ function FileManager({
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
+  const [unsupportedOpenNode, setUnsupportedOpenNode] = useState<Node | null>(null)
   const [passwordValues, setPasswordValues] = useState({ current: '', next: '', confirm: '' })
   const [passwordError, setPasswordError] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -936,7 +938,7 @@ function FileManager({
     const contextID = xDriveCreateWebAppBrowseSession(context)
     const next = xDriveWebOpenRouteForNode(node, contextID)
     if (!next) {
-      setFeedback({ tone: 'warning', message: '此文件暂时没有可用的 Web 打开程序。可使用下载、分享或属性查看。' })
+      setUnsupportedOpenNode(node)
       return
     }
     launchWebApp(next, { viewerReturn: true })
@@ -1303,6 +1305,14 @@ function FileManager({
         loadingLabel="正在处理…"
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => void executeConfirm()}
+      />
+
+      <WebUnsupportedFileDialog
+        node={unsupportedOpenNode}
+        api={api}
+        shareDialogAdapter={shareDialogAdapter}
+        onClose={() => setUnsupportedOpenNode(null)}
+        onError={handleError}
       />
 
       <XDriveShareDialog

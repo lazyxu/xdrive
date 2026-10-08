@@ -435,7 +435,7 @@ export function XDriveMediaGalleryPage({
   const [currentMemory, setCurrentMemory] = useState<MediaMemory | null>(null)
   const [currentCleanupReview, setCurrentCleanupReview] =
     useState<MediaCleanupReviewTarget | null>(null)
-  const routeSectionInitializedRef = useRef(false)
+  const routeSectionAppliedRef = useRef<MediaGallerySection | null>(null)
   const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
@@ -1574,15 +1574,11 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, onError, source])
 
   useEffect(() => {
-    if (initialSection === undefined) {
-      if (routeSectionInitializedRef.current) return
-      routeSectionInitializedRef.current = true
-      void loadFirstPage(null, {})
-      return
-    }
-    routeSectionInitializedRef.current = true
-    if (initialSection === 'library') void loadFirstPage(null, {})
-    else selectSection(initialSection)
+    const nextSection = initialSection ?? 'library'
+    if (routeSectionAppliedRef.current === nextSection) return
+    routeSectionAppliedRef.current = nextSection
+    if (nextSection === 'library') void loadFirstPage(null, {})
+    else selectSection(nextSection)
   }, [initialSection, loadFirstPage, selectSection])
 
   useEffect(() => () => {
