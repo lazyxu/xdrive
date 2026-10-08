@@ -257,7 +257,15 @@ The interaction contract is:
 - the still image remains visible when motion loading or decoding fails;
 - presentation follows the native Live Photo model: the still is the primary surface,
   a subtle Live Photo glyph marks the capability, press-and-hold anywhere on the still
-  plays motion, and releasing returns immediately to the still. Do not present a generic
+  plays motion, and releasing returns immediately to the still.
+  The glyph is the canonical SF Symbols `livephoto` geometry rendered by the shared
+  `XDriveLivePhotoGlyph`; FileExplorer thumbnails use the same geometry at the compact
+  10px glyph / 14px badge scale instead of drawing a separate approximation.
+- FileExplorer thumbnail blob URLs are leased while rendered. LRU eviction may retire a
+  cached URL, but must not revoke it until the final mounted consumer releases the lease;
+  otherwise a successfully generated thumbnail can turn into a browser broken-image.
+  Genuine decode/transport failures keep the existing failure semantics and are not hidden
+  behind a new `img onError` fallback. Do not present a generic
   play button or a persistent instructional pill over an idle Live Photo.
 
 Do not migrate inferred/grouped Live Photo semantics into FileExplorer.

@@ -150,6 +150,7 @@ test('FileExplorer thumbnail cache is isolated by account interaction lifecycle'
   const accountA = render('account-a')
   const cacheA = accountA.props.value.cache
   cacheA.values.set('number:1:7:2026-10-08', 'blob:account-a')
+  cacheA.leases.set('blob:account-a', 1)
 
   const accountB = render('account-b')
   const cacheB = accountB.props.value.cache
@@ -163,6 +164,11 @@ test('FileExplorer thumbnail cache is isolated by account interaction lifecycle'
     cacheA.disposed,
     true,
     'the previous account thumbnail cache must be disposed so late account-A completions cannot write into account B',
+  )
+  assert.equal(
+    cacheA.retired.has('blob:account-a'),
+    true,
+    'disposing an account cache must retire rather than immediately revoke an actively leased thumbnail',
   )
   assert.equal(
     cacheB.values.size,

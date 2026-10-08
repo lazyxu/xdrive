@@ -23,6 +23,10 @@ test('FileExplorer thumbnail loading is one shared provider/cache/scheduler', ()
     'scheduleFileThumbnail',
     'observeFileThumbnailVisibility',
     'URL.revokeObjectURL',
+    'fileThumbnailCacheAcquire',
+    'retireFileThumbnailSource',
+    'cache.leases',
+    'cache.retired',
     'xDriveFileExplorerMarkThumbnailScrollActivity',
   ]) assert.ok(thumbnail.includes(token), 'shared thumbnail primitive missing: ' + token)
 
@@ -59,6 +63,8 @@ test('Recent preserves thumbnail identity and supported image/video media is eli
   assert.ok(explorer.includes("return fileKind === 'image' || fileKind === 'video'"))
   assert.ok(thumbnail.includes('title="实况照片"'), 'LIVP thumbnails must expose a static Live Photo badge')
   assert.ok(thumbnail.includes('XDriveLivePhotoGlyph'), 'LIVP thumbnails must use the shared Live Photo glyph instead of a play button')
+  assert.ok(thumbnail.includes('width: 14') && thumbnail.includes('height: 14'), 'compact LIVP badge must scale down with small thumbnails')
+  assert.ok(thumbnail.includes('<XDriveLivePhotoGlyph size={10} />'), 'compact LIVP thumbnail glyph must use the 10px shared SF geometry')
   assert.ok(
     thumbnail.includes('livePhoto && !failed && Boolean(item.thumbnail || src)'),
     'LIVP badge must not claim Live Photo readiness over a failed/generic placeholder',
@@ -92,6 +98,24 @@ test('FileExplorer file thumbnails use square frames without rounded clipping', 
     properties.includes("data-xdrive-file-properties-preview") &&
       properties.includes("borderRadius: 0,"),
     'Properties thumbnail/preview frame must remain square',
+  )
+})
+
+test('visible thumbnail blob URLs are leased across LRU eviction', () => {
+  assert.ok(
+    thumbnail.includes('(cache.leases.get(value) ?? 0) > 0') &&
+      thumbnail.includes('cache.retired.add(value)'),
+    'LRU eviction must retire but not revoke a blob URL that is still rendered',
+  )
+  assert.ok(
+    thumbnail.includes('if (cache.disposed || cache.retired.has(value))') &&
+      thumbnail.includes('revokeFileThumbnailSource(value)'),
+    'the final thumbnail lease release must revoke retired blob URLs',
+  )
+  assert.equal(
+    thumbnail.includes('onError='),
+    false,
+    'decode/URL failures must keep existing failure semantics; this fix must not add an image onError fallback',
   )
 })
 

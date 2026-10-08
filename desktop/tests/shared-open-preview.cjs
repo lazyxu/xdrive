@@ -235,6 +235,12 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     livePhoto.includes('XDriveLivePhotoGlyph') && !livePhoto.includes('PlayCircleOutline'),
     'shared Live Photo surface must use a Live Photo glyph rather than a generic play button',
   )
+  assert.ok(
+    livePhoto.includes('data-xdrive-live-photo-glyph="sf-livephoto"') &&
+      livePhoto.includes('viewBox="4.5 14.5 62 62"') &&
+      livePhoto.includes('XDRIVE_SF_LIVEPHOTO_PATH'),
+    'shared Live Photo glyph must use the canonical SF livephoto vector geometry',
+  )
 })
 
 test('Preview Engine design documents Open versus Download semantics', () => {
