@@ -31,7 +31,7 @@ presentation and product intelligence.
 | 7 | Map Places | **Current** |
 | 8 | Smart Search: object/scene + OCR, then semantic search | **Current — lexical + semantic relevance** |
 | 9 | Memories / Recent Days / Trips / On This Day | **Current** |
-| 10 | Duplicates + Burst Best Shot + storage cleanup | Planned |
+| 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | Planned |
 | 12 | Basic non-destructive photo/video editing | Planned |
 | 13 | Optional AI erase / cutout / automatic movies / advanced creation | Planned |
@@ -351,3 +351,53 @@ then the same shared components used by every other Gallery collection.
 
 Trips use only xDrive-local GPS and optional local place labels. They do not consume
 provider trip/albums/person semantics, online location services, or AI inference.
+
+
+## Phase 10 — duplicate review, Burst Best Shot, and safe cleanup
+
+Phase 10 is a local review workflow, not a destructive background cleaner. It adds no
+second relationship database and no automatic permanent-delete path.
+
+### Exact duplicates
+
+- Duplicate groups are a rebuildable Server-side projection over active, ready logical
+  Gallery assets whose primary original `File.sha256` values are exactly equal.
+- No fuzzy filename/time similarity is used for exact duplicates.
+- The recommended copy to keep preserves user intent first: Favorite, manual-album
+  membership, description/tags/people metadata, then the earlier imported Node.
+- xDrive CAS already stores identical SHA256 content once. Therefore exact duplicate
+  cards report **logical duplicate bytes** separately from **physical reclaimable
+  bytes**; while one copy is kept, physical reclaimable bytes are intentionally 0.
+
+### Burst Best Shot
+
+- Burst review reuses existing connector-neutral `MediaGroupKindBurst` generated only
+  from deterministic local Apple BurstUUID evidence. It does not split or rewrite the
+  logical Burst `PhotoAsset`.
+- Review details expose the original Burst member Nodes in their stored ordinal order.
+- The initial Best Shot recommendation is deliberately explainable, not AI quality
+  scoring: prefer the frame with the largest valid pixel area, then the frame closest
+  to the center of the Burst, then stable ordinal/Node ID tie-breakers.
+- The recommendation is read-only. A future blur/closed-eyes/expression scorer may
+  replace the scoring policy without changing the group or Gallery transport contract.
+
+### Cleanup/storage semantics
+
+- The Cleanup Review root lives in `ui/shared` and is shared by Web/Desktop.
+- Opening a duplicate or Burst group creates a sparse read-only review collection;
+  Viewer, Inspector, thumbnail scheduling and Selection Toolbar are reused.
+- Recommended items receive a visible **建议保留** marker. xDrive never auto-selects or
+  auto-deletes the other frames.
+- User cleanup continues through the existing durable Gallery/FileOperation delete
+  action, which moves items to trash first. No new cleanup mutation endpoint bypasses
+  trash or CAS reference accounting.
+- Burst `potential_cleanup_bytes` is the logical size of non-recommended frames.
+  `physical_reclaimable_bytes` is conservative and counts a blob only when all of its
+  current CAS references would be removed by the reviewed non-recommended members;
+  the bytes are only actually reclaimable after permanent trash deletion/GC.
+
+Transport remains thin and symmetric:
+
+- Server: duplicate-group list/items and Burst-review list/items read endpoints;
+- Go client / Desktop Agent IPC / Electron / Web only serialize IDs, limits and ranges;
+- `ui/shared` owns Cleanup Review cards, state, recommended markers and review flow.

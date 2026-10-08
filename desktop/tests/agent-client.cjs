@@ -522,6 +522,75 @@ test('media memories use the scoped Agent API', async (t) => {
   assert.equal(page.items[0].node.id, 31)
 })
 
+test('media cleanup review uses the scoped Agent API', async (t) => {
+  let requestIndex = 0
+  const duplicateID = 'duplicate:v1:' + 'a'.repeat(64)
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (requestIndex === 0) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/duplicates')
+      assert.equal(url.searchParams.get('limit'), '24')
+      json(res, 200, {
+        groups: [{
+          id: duplicateID,
+          item_count: 2,
+          logical_duplicate_bytes: 100,
+          physical_reclaimable_bytes: 0,
+          recommended_keep_node_id: 31,
+        }],
+        total_groups: 1,
+        total_items: 2,
+        logical_duplicate_bytes: 100,
+        physical_reclaimable_bytes: 0,
+      })
+    } else if (requestIndex === 1) {
+      assert.equal(url.pathname, '/v1/media/duplicate-items')
+      assert.equal(url.searchParams.get('duplicate_id'), duplicateID)
+      json(res, 200, {
+        items: [{ node: { id: 31, name: 'copy.jpg', type: 'file', revision: 1 } }],
+        total_count: 2,
+        offset: 0,
+        limit: 40,
+      })
+    } else if (requestIndex === 2) {
+      assert.equal(url.pathname, '/v1/media/bursts')
+      json(res, 200, {
+        groups: [{
+          id: 'burst:v1:42',
+          item_count: 3,
+          recommended_node_id: 31,
+          potential_cleanup_bytes: 200,
+          physical_reclaimable_bytes: 100,
+        }],
+        total_groups: 1,
+        total_items: 3,
+        potential_cleanup_bytes: 200,
+        physical_reclaimable_bytes: 100,
+      })
+    } else {
+      assert.equal(url.pathname, '/v1/media/burst-items')
+      assert.equal(url.searchParams.get('burst_id'), 'burst:v1:42')
+      json(res, 200, {
+        items: [{ node: { id: 31, name: 'burst.jpg', type: 'file', revision: 1 } }],
+        total_count: 3,
+        offset: 0,
+        limit: 40,
+      })
+    }
+    requestIndex += 1
+  })
+
+  const duplicates = await client.mediaDuplicateGroups(24)
+  assert.equal(duplicates.total_groups, 1)
+  const duplicatePage = await client.mediaDuplicateItemRange(duplicateID, 40, 0)
+  assert.equal(duplicatePage.total_count, 2)
+  const bursts = await client.mediaBurstReviews(24)
+  assert.equal(bursts.total_groups, 1)
+  const burstPage = await client.mediaBurstReviewItemRange('burst:v1:42', 40, 0)
+  assert.equal(burstPage.total_count, 3)
+})
+
 test('media thumbnail stays binary over Agent IPC', async (t) => {
   const { client, token } = await fixture(t, (req, res) => {
     assert.equal(req.headers.authorization, `Bearer ${token}`)

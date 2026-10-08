@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -223,5 +224,100 @@ func TestMediaMemoriesQueries(t *testing.T) {
 	}
 	if page.TotalCount != 4 || len(page.Items) != 1 || page.Items[0].Node.ID != 31 {
 		t.Fatalf("memory page=%+v", page)
+	}
+}
+
+func TestMediaCleanupQueries(t *testing.T) {
+	requestIndex := 0
+	duplicateID := "duplicate:v1:" + strings.Repeat("a", 64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestIndex {
+		case 0:
+			if r.URL.Path != "/api/v1/media/duplicates" {
+				t.Fatalf("duplicates path=%q", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("limit"); got != "24" {
+				t.Fatalf("duplicates limit=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(MediaDuplicateGroupList{
+				Groups: []MediaDuplicateGroup{{
+					ID: duplicateID, ItemCount: 2,
+					LogicalDuplicateBytes: 100,
+					RecommendedKeepNodeID: 31,
+				}},
+				TotalGroups: 1, TotalItems: 2, LogicalDuplicateBytes: 100,
+			})
+		case 1:
+			if r.URL.Path != "/api/v1/media/duplicates/"+duplicateID+"/items" {
+				t.Fatalf("duplicate items path=%q", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("range"); got != "true" {
+				t.Fatalf("duplicate range=%q", got)
+			}
+			_ = json.NewEncoder(w).Encode(MediaItemRange{
+				Items:      []MediaItem{{Node: Node{ID: 31, Name: "copy.jpg", Type: "file"}}},
+				TotalCount: 2, Offset: 0, Limit: 40,
+			})
+		case 2:
+			if r.URL.Path != "/api/v1/media/bursts" {
+				t.Fatalf("bursts path=%q", r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(MediaBurstReviewList{
+				Groups: []MediaBurstReview{{
+					ID: "burst:v1:42", ItemCount: 3,
+					RecommendedNodeID:        31,
+					PotentialCleanupBytes:    200,
+					PhysicalReclaimableBytes: 100,
+				}},
+				TotalGroups: 1, TotalItems: 3,
+				PotentialCleanupBytes: 200, PhysicalReclaimableBytes: 100,
+			})
+		case 3:
+			if r.URL.Path != "/api/v1/media/bursts/burst:v1:42/items" {
+				t.Fatalf("burst items path=%q", r.URL.Path)
+			}
+			_ = json.NewEncoder(w).Encode(MediaItemRange{
+				Items:      []MediaItem{{Node: Node{ID: 31, Name: "burst.jpg", Type: "file"}}},
+				TotalCount: 3, Offset: 0, Limit: 40,
+			})
+		default:
+			t.Fatalf("unexpected request %d", requestIndex)
+		}
+		requestIndex++
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	duplicates, err := cli.MediaDuplicateGroups(context.Background(), 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicates.TotalGroups != 1 || duplicates.Groups[0].ID != duplicateID {
+		t.Fatalf("duplicates=%+v", duplicates)
+	}
+	duplicatePage, err := cli.MediaDuplicateItemsRange(
+		context.Background(), duplicateID, 40, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicatePage.TotalCount != 2 || duplicatePage.Items[0].Node.ID != 31 {
+		t.Fatalf("duplicate page=%+v", duplicatePage)
+	}
+	bursts, err := cli.MediaBurstReviews(context.Background(), 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bursts.TotalGroups != 1 || bursts.Groups[0].ID != "burst:v1:42" {
+		t.Fatalf("bursts=%+v", bursts)
+	}
+	burstPage, err := cli.MediaBurstReviewItemsRange(
+		context.Background(), "burst:v1:42", 40, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if burstPage.TotalCount != 3 || burstPage.Items[0].Node.ID != 31 {
+		t.Fatalf("burst page=%+v", burstPage)
 	}
 }

@@ -25,6 +25,8 @@ import type {
   MediaItem,
   MediaItemRange,
   MediaMemory,
+  MediaDuplicateGroupList,
+  MediaBurstReviewList,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -739,6 +741,54 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/memories/${encodeURIComponent(memoryID)}/items?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateGroups(limit = 24) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<MediaDuplicateGroupList>(
+      `/api/v1/media/duplicates?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateItemRange(
+    duplicateID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItemRange>(
+      `/api/v1/media/duplicates/${encodeURIComponent(duplicateID)}/items?${query.toString()}`,
+    )
+  }
+
+  mediaBurstReviews(limit = 24) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+    })
+    return this.request<MediaBurstReviewList>(
+      `/api/v1/media/bursts?${query.toString()}`,
+    )
+  }
+
+  mediaBurstReviewItemRange(
+    burstID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      range: 'true',
+      limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaItemRange>(
+      `/api/v1/media/bursts/${encodeURIComponent(burstID)}/items?${query.toString()}`,
     )
   }
 

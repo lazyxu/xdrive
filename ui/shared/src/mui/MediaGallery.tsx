@@ -36,6 +36,10 @@ import type {
   MediaItem,
   MediaItemRange,
   MediaMemory,
+  MediaDuplicateGroup,
+  MediaDuplicateGroupList,
+  MediaBurstReview,
+  MediaBurstReviewList,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -59,6 +63,7 @@ import {
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
+import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
@@ -127,6 +132,18 @@ export interface MediaGalleryDataSource {
   listMemories?: (anchorDate?: string, limit?: number) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
     memoryID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<MediaItemRange>
+  listDuplicateGroups?: (limit?: number) => Promise<MediaDuplicateGroupList>
+  listDuplicateItemRange?: (
+    duplicateID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<MediaItemRange>
+  listBurstReviews?: (limit?: number) => Promise<MediaBurstReviewList>
+  listBurstReviewItemRange?: (
+    burstID: string,
     limit: number,
     offset: number,
   ) => Promise<MediaItemRange>
@@ -217,8 +234,20 @@ export interface MediaGalleryDataSource {
   removeFromAlbum?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
 }
 
+export type MediaCleanupReviewTarget =
+  | { kind: 'duplicate'; group: MediaDuplicateGroup }
+  | { kind: 'burst'; group: MediaBurstReview }
+
 type MediaGalleryCollectionTarget = {
-  kind: 'all' | 'album' | 'suggested-person' | 'person' | 'memory' | 'trash'
+  kind:
+    | 'all'
+    | 'album'
+    | 'suggested-person'
+    | 'person'
+    | 'memory'
+    | 'duplicate-review'
+    | 'burst-review'
+    | 'trash'
   id?: string
   query: MediaGalleryQuery
   requestID: number
@@ -280,6 +309,26 @@ function emptyMediaTimelineGroupSets(): MediaTimelineGroupSets {
   return { year: [], month: [], day: [] }
 }
 
+function emptyMediaDuplicateGroupList(): MediaDuplicateGroupList {
+  return {
+    groups: [],
+    total_groups: 0,
+    total_items: 0,
+    logical_duplicate_bytes: 0,
+    physical_reclaimable_bytes: 0,
+  }
+}
+
+function emptyMediaBurstReviewList(): MediaBurstReviewList {
+  return {
+    groups: [],
+    total_groups: 0,
+    total_items: 0,
+    potential_cleanup_bytes: 0,
+    physical_reclaimable_bytes: 0,
+  }
+}
+
 function mediaTimelineGroupSetsFromRange(range: MediaItemRange): MediaTimelineGroupSets {
   return {
     year: range.timeline_group_sets?.year ?? [],
@@ -311,6 +360,10 @@ export function XDriveMediaGalleryPage({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [memories, setMemories] = useState<MediaMemory[]>([])
+  const [duplicateGroups, setDuplicateGroups] =
+    useState<MediaDuplicateGroupList | null>(null)
+  const [burstReviews, setBurstReviews] =
+    useState<MediaBurstReviewList | null>(null)
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
   const [items, setItems] = useState<MediaItem[]>([])
@@ -322,6 +375,8 @@ export function XDriveMediaGalleryPage({
     useState<MediaSuggestedPerson | null>(null)
   const [currentPerson, setCurrentPerson] = useState<MediaPersonIdentity | null>(null)
   const [currentMemory, setCurrentMemory] = useState<MediaMemory | null>(null)
+  const [currentCleanupReview, setCurrentCleanupReview] =
+    useState<MediaCleanupReviewTarget | null>(null)
   const [section, setSection] = useState<MediaGallerySection>('library')
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
@@ -367,6 +422,16 @@ export function XDriveMediaGalleryPage({
           throw new Error('当前客户端不支持回忆范围加载')
         }
         return source.listMemoryItemRange(target.id, limit, offset)
+      case 'duplicate-review':
+        if (!target.id || !source.listDuplicateItemRange) {
+          throw new Error('当前客户端不支持重复项审查范围加载')
+        }
+        return source.listDuplicateItemRange(target.id, limit, offset)
+      case 'burst-review':
+        if (!target.id || !source.listBurstReviewItemRange) {
+          throw new Error('当前客户端不支持连拍审查范围加载')
+        }
+        return source.listBurstReviewItemRange(target.id, limit, offset)
       case 'suggested-person':
         if (!target.id || !source.listSuggestedPersonItemRange) {
           throw new Error('当前客户端不支持人物建议范围加载')
@@ -459,13 +524,23 @@ export function XDriveMediaGalleryPage({
     person: MediaPersonIdentity | null = null,
     targetKind: 'default' | 'trash' = 'default',
     memory: MediaMemory | null = null,
+    cleanupReview: MediaCleanupReviewTarget | null = null,
   ) => {
     const request = ++requestID.current
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
       ? { kind: 'trash', query: {}, requestID: request }
-      : memory
-        ? { kind: 'memory', id: memory.id, query: {}, requestID: request }
-        : mediaGalleryTarget(
+      : cleanupReview
+        ? {
+            kind: cleanupReview.kind === 'duplicate'
+              ? 'duplicate-review'
+              : 'burst-review',
+            id: cleanupReview.group.id,
+            query: {},
+            requestID: request,
+          }
+        : memory
+          ? { kind: 'memory', id: memory.id, query: {}, requestID: request }
+          : mediaGalleryTarget(
           request,
           album,
           nextQuery,
@@ -498,6 +573,7 @@ export function XDriveMediaGalleryPage({
         setCurrentSuggestedPerson(null)
         setCurrentPerson(null)
         setCurrentMemory(null)
+        setCurrentCleanupReview(null)
         setAlbums(nextAlbums)
         setPlaces(nextPlaces)
         setSuggestedPeople(nextSuggestedPeople)
@@ -524,6 +600,11 @@ export function XDriveMediaGalleryPage({
       )
       setCurrentPerson(target.kind === 'person' ? person : null)
       setCurrentMemory(target.kind === 'memory' ? memory : null)
+      setCurrentCleanupReview(
+        target.kind === 'duplicate-review' || target.kind === 'burst-review'
+          ? cleanupReview
+          : null,
+      )
       setItems([...range.items])
       setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
       virtualCollection.primePage({
@@ -584,8 +665,49 @@ export function XDriveMediaGalleryPage({
     }
   }, [reportError, source, virtualCollection.reset])
 
+  const loadCleanup = useCallback(async () => {
+    if (!source.listDuplicateGroups && !source.listBurstReviews) {
+      setDuplicateGroups(emptyMediaDuplicateGroupList())
+      setBurstReviews(emptyMediaBurstReviewList())
+      setError('当前客户端不支持图库清理建议')
+      return
+    }
+    const request = ++requestID.current
+    collectionTargetRef.current = null
+    setCollectionTarget(null)
+    setCurrentAlbum(null)
+    setCurrentSuggestedPerson(null)
+    setCurrentPerson(null)
+    setCurrentMemory(null)
+    setCurrentCleanupReview(null)
+    setItems([])
+    setTimelineGroupSets(emptyMediaTimelineGroupSets())
+    virtualCollection.reset(`media-gallery:cleanup:index:${request}`)
+    setLoading(true)
+    setError('')
+    try {
+      const [nextDuplicates, nextBursts] = await Promise.all([
+        source.listDuplicateGroups
+          ? source.listDuplicateGroups(48)
+          : Promise.resolve(emptyMediaDuplicateGroupList()),
+        source.listBurstReviews
+          ? source.listBurstReviews(48)
+          : Promise.resolve(emptyMediaBurstReviewList()),
+      ])
+      if (request !== requestID.current) return
+      setDuplicateGroups(nextDuplicates)
+      setBurstReviews(nextBursts)
+    } catch (loadError) {
+      if (request !== requestID.current) return
+      reportError(loadError)
+    } finally {
+      if (request === requestID.current) setLoading(false)
+    }
+  }, [reportError, source, virtualCollection.reset])
+
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     if (nextSection !== 'memories') setCurrentMemory(null)
+    if (nextSection !== 'cleanup') setCurrentCleanupReview(null)
     if (nextSection === 'memories') {
       placesExpandedRef.current = false
       setSection(nextSection)
@@ -593,6 +715,15 @@ export function XDriveMediaGalleryPage({
       setDraftFilters(emptyMediaGalleryFilterDraft)
       setQuery({})
       void loadMemories()
+      return
+    }
+    if (nextSection === 'cleanup') {
+      placesExpandedRef.current = false
+      setSection(nextSection)
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      void loadCleanup()
       return
     }
     placesExpandedRef.current = nextSection === 'places'
@@ -607,7 +738,7 @@ export function XDriveMediaGalleryPage({
       return
     }
     void loadFirstPage(null, nextQuery)
-  }, [loadFirstPage, loadMemories])
+  }, [loadCleanup, loadFirstPage, loadMemories])
 
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
@@ -753,6 +884,26 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, {}, null, null, 'default', memory)
   }, [loadFirstPage])
 
+  const openDuplicateGroup = useCallback((group: MediaDuplicateGroup) => {
+    const review: MediaCleanupReviewTarget = { kind: 'duplicate', group }
+    setCurrentCleanupReview(review)
+    setSection('cleanup')
+    setActiveMediaType('')
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setQuery({})
+    void loadFirstPage(null, {}, null, null, 'default', null, review)
+  }, [loadFirstPage])
+
+  const openBurstReview = useCallback((group: MediaBurstReview) => {
+    const review: MediaCleanupReviewTarget = { kind: 'burst', group }
+    setCurrentCleanupReview(review)
+    setSection('cleanup')
+    setActiveMediaType('')
+    setDraftFilters(emptyMediaGalleryFilterDraft)
+    setQuery({})
+    void loadFirstPage(null, {}, null, null, 'default', null, review)
+  }, [loadFirstPage])
+
   const openAlbum = useCallback((album: MediaAlbum) => {
     setSection('albums')
     setActiveMediaType('')
@@ -812,6 +963,10 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const leaveCollection = useCallback(() => {
+    if (currentCleanupReview) {
+      void loadCleanup()
+      return
+    }
     if (currentMemory) {
       void loadMemories()
       return
@@ -824,7 +979,15 @@ export function XDriveMediaGalleryPage({
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(null, nextQuery)
-  }, [activeMediaType, currentMemory, loadFirstPage, loadMemories, section])
+  }, [
+    activeMediaType,
+    currentCleanupReview,
+    currentMemory,
+    loadCleanup,
+    loadFirstPage,
+    loadMemories,
+    section,
+  ])
 
   const adoptSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,
@@ -1111,7 +1274,17 @@ export function XDriveMediaGalleryPage({
       onError?.(tagError)
       throw tagError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [
+    currentAlbum,
+    currentCleanupReview,
+    currentPerson,
+    currentSuggestedPerson,
+    loadCleanup,
+    loadFirstPage,
+    onError,
+    query,
+    source,
+  ])
 
   const addItemsToAlbum = useCallback(async (
     album: MediaAlbum,
@@ -1138,6 +1311,10 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       await source.deleteItems(selectedItems)
+      if (currentCleanupReview) {
+        await loadCleanup()
+        return
+      }
       await loadFirstPage(
         currentAlbum,
         currentAlbum?.kind === 'smart' ? {} : query,
@@ -1206,6 +1383,8 @@ export function XDriveMediaGalleryPage({
         albums={albums}
         places={places}
         memories={memories}
+        duplicateGroups={duplicateGroups}
+        burstReviews={burstReviews}
         suggestedPeople={suggestedPeople}
         people={people}
         activePlaceID={query.place}
@@ -1213,6 +1392,7 @@ export function XDriveMediaGalleryPage({
         currentSuggestedPerson={currentSuggestedPerson}
         currentPerson={currentPerson}
         currentMemory={currentMemory}
+        currentCleanupReview={currentCleanupReview}
         loading={loading}
         timelineGroupSets={timelineGroupSets}
         error={error}
@@ -1288,6 +1468,8 @@ export function XDriveMediaGalleryPage({
         onOpenAlbum={openAlbum}
         onOpenPlace={openPlace}
         onOpenMemory={openMemory}
+        onOpenDuplicateGroup={openDuplicateGroup}
+        onOpenBurstReview={openBurstReview}
         onOpenSuggestedPerson={openSuggestedPerson}
         onOpenPerson={openPerson}
         onAdoptSuggestedPerson={
@@ -1316,6 +1498,10 @@ export function XDriveMediaGalleryPage({
             void loadMemories()
             return
           }
+          if (section === 'cleanup' && !currentCleanupReview) {
+            void loadCleanup()
+            return
+          }
           void loadFirstPage(
             currentAlbum,
             query,
@@ -1323,6 +1509,7 @@ export function XDriveMediaGalleryPage({
             currentPerson,
             section === 'trash' ? 'trash' : 'default',
             currentMemory,
+            currentCleanupReview,
           )
         }}
       />
@@ -1416,6 +1603,8 @@ export interface XDriveMediaGalleryProps {
   albums?: MediaAlbum[]
   places?: MediaPlaceFacet[]
   memories?: MediaMemory[]
+  duplicateGroups?: MediaDuplicateGroupList | null
+  burstReviews?: MediaBurstReviewList | null
   suggestedPeople?: MediaSuggestedPerson[]
   people?: MediaPersonIdentity[]
   activePlaceID?: string
@@ -1423,6 +1612,7 @@ export interface XDriveMediaGalleryProps {
   currentSuggestedPerson?: MediaSuggestedPerson | null
   currentPerson?: MediaPersonIdentity | null
   currentMemory?: MediaMemory | null
+  currentCleanupReview?: MediaCleanupReviewTarget | null
   loading?: boolean
   timelineGroupSets?: MediaTimelineGroupSets
   error?: string
@@ -1455,6 +1645,8 @@ export interface XDriveMediaGalleryProps {
   onOpenAlbum?: (album: MediaAlbum) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenMemory?: (memory: MediaMemory) => void
+  onOpenDuplicateGroup?: (group: MediaDuplicateGroup) => void
+  onOpenBurstReview?: (group: MediaBurstReview) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
   onOpenPerson?: (person: MediaPersonIdentity) => void
   onAdoptSuggestedPerson?: (
@@ -1606,6 +1798,7 @@ type MediaTileProps = {
   logicalIndex: number
   selectionMode: boolean
   selectedForAction: boolean
+  recommendedForCleanup?: boolean
   onSelect: (
     item: MediaItem,
     index: number,
@@ -1627,6 +1820,7 @@ function MediaTile({
   logicalIndex,
   selectionMode,
   selectedForAction,
+  recommendedForCleanup = false,
   onSelect,
   loadThumbnail,
   thumbnailScheduler,
@@ -1740,6 +1934,22 @@ function MediaTile({
           revokeOnDispose={!thumbnailScheduler}
         />
       )}
+      {recommendedForCleanup ? (
+        <Chip
+          size="small"
+          label="建议保留"
+          data-xdrive-media-cleanup-recommended
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 4,
+            bgcolor: 'background.paper',
+            boxShadow: 1,
+            fontWeight: 700,
+          }}
+        />
+      ) : null}
       {(selectionMode || selectedForAction) ? (
         <Checkbox
           size="small"
@@ -1865,6 +2075,7 @@ function MediaTileGrid({
   onOpen,
   onPreview,
   onToggleFavorite,
+  recommendedNodeID,
   indexOffset = 0,
 }: {
   items: MediaItem[]
@@ -1880,6 +2091,7 @@ function MediaTileGrid({
   onOpen: (item: MediaItem) => void
   onPreview: (item: MediaItem) => void
   onToggleFavorite: (item: MediaItem) => void
+  recommendedNodeID?: number
 }) {
   return (
     <Box
@@ -1896,6 +2108,7 @@ function MediaTileGrid({
           logicalIndex={indexOffset + index}
           selectionMode={selectionMode}
           selectedForAction={selectedNodeIDs.has(item.node.id)}
+          recommendedForCleanup={item.node.id === recommendedNodeID}
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
           loadPreviewURL={loadPreviewURL}
@@ -1934,6 +2147,7 @@ function MediaVirtualTileGrid({
   onOpen,
   onPreview,
   onToggleFavorite,
+  recommendedNodeID,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
@@ -1948,6 +2162,7 @@ function MediaVirtualTileGrid({
   onOpen: (item: MediaItem) => void
   onPreview: (item: MediaItem, index: number) => void
   onToggleFavorite: (item: MediaItem) => void
+  recommendedNodeID?: number
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
@@ -2075,6 +2290,7 @@ function MediaVirtualTileGrid({
           logicalIndex={index}
           selectionMode={selectionMode}
           selectedForAction={selectedNodeIDs.has(item.node.id)}
+          recommendedForCleanup={item.node.id === recommendedNodeID}
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
           thumbnailScheduler={thumbnailScheduler}
@@ -2406,6 +2622,8 @@ export function XDriveMediaGallery({
   albums = [],
   places = [],
   memories = [],
+  duplicateGroups = null,
+  burstReviews = null,
   suggestedPeople = [],
   people = [],
   activePlaceID,
@@ -2413,6 +2631,7 @@ export function XDriveMediaGallery({
   currentSuggestedPerson = null,
   currentPerson = null,
   currentMemory = null,
+  currentCleanupReview = null,
   loading = false,
   timelineGroupSets = emptyMediaTimelineGroupSets(),
   error = '',
@@ -2445,6 +2664,8 @@ export function XDriveMediaGallery({
   onOpenAlbum,
   onOpenPlace,
   onOpenMemory,
+  onOpenDuplicateGroup,
+  onOpenBurstReview,
   onOpenSuggestedPerson,
   onOpenPerson,
   onAdoptSuggestedPerson,
@@ -2519,7 +2740,8 @@ export function XDriveMediaGallery({
     ))
   }, [onSetFavorite])
 
-  const effectiveTimeScale: MediaGalleryTimeScale = searchActive ? 'all' : timeScale
+  const effectiveTimeScale: MediaGalleryTimeScale =
+    searchActive || currentCleanupReview ? 'all' : timeScale
   const activeTimelineGroups = effectiveTimeScale === 'year'
     ? timelineGroupSets.year
     : effectiveTimeScale === 'month'
@@ -2692,6 +2914,7 @@ export function XDriveMediaGallery({
     collectionKey,
     clearMediaSelection,
     currentAlbum?.id,
+    currentCleanupReview?.group.id,
     currentMemory?.id,
     currentPerson?.id,
     currentSuggestedPerson?.id,
@@ -2717,8 +2940,10 @@ export function XDriveMediaGallery({
     !currentSuggestedPerson &&
     !currentPerson &&
     !currentMemory &&
+    !currentCleanupReview &&
     !activePlaceID
   const showMemoriesIndex = isRootSection && section === 'memories'
+  const showCleanupIndex = isRootSection && section === 'cleanup'
   const showAlbumIndex = isRootSection && section === 'albums'
   const showPlacesIndex = isRootSection && section === 'places'
   const showPeopleIndex = isRootSection && section === 'people'
@@ -2731,7 +2956,16 @@ export function XDriveMediaGallery({
     isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
-  const galleryTitle = currentMemory?.title || currentAlbum?.name ||
+  const cleanupRecommendedNodeID = currentCleanupReview
+    ? currentCleanupReview.kind === 'duplicate'
+      ? currentCleanupReview.group.recommended_keep_node_id
+      : currentCleanupReview.group.recommended_node_id
+    : undefined
+  const galleryTitle = currentCleanupReview
+    ? currentCleanupReview.kind === 'duplicate'
+      ? '完全重复项'
+      : '连拍精选'
+    : currentMemory?.title || currentAlbum?.name ||
     (currentPerson
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
@@ -2740,6 +2974,8 @@ export function XDriveMediaGallery({
           ? activePlace.name
           : section === 'memories'
             ? '回忆'
+            : section === 'cleanup'
+              ? '清理建议'
             : section === 'albums'
             ? '相册'
             : section === 'people'
@@ -2753,7 +2989,11 @@ export function XDriveMediaGallery({
                     : section === 'media-types'
                     ? mediaTypeLabel || '媒体类型'
                     : '图库')
-  const gallerySubtitle = currentMemory
+  const gallerySubtitle = currentCleanupReview
+    ? currentCleanupReview.kind === 'duplicate'
+      ? `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 个完全相同副本 · ${currentCleanupReview.group.recommendation_reason}`
+      : `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 张连拍 · ${currentCleanupReview.group.recommendation_reason}`
+    : currentMemory
     ? currentMemory.subtitle || `${currentMemory.item_count.toLocaleString('zh-CN')} 个项目`
     : currentAlbum
     ? `${currentAlbum.item_count.toLocaleString('zh-CN')} 个项目`
@@ -2765,6 +3005,8 @@ export function XDriveMediaGallery({
           ? `${activePlace.item_count.toLocaleString('zh-CN')} 个项目 · 本地 GPS`
           : section === 'memories'
             ? '近期、往年今日与行程回忆'
+            : section === 'cleanup'
+              ? '完全重复项与连拍精选；清理操作仍然先进入回收站'
             : section === 'albums'
             ? '手动相册、智能相册和导入相册'
             : section === 'people'
@@ -2781,6 +3023,7 @@ export function XDriveMediaGallery({
                       : '按媒体资产类型快速进入照片集合'
                     : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'
   const canBack = Boolean(
+    currentCleanupReview ||
     currentMemory ||
     currentAlbum ||
     currentSuggestedPerson ||
@@ -2907,7 +3150,7 @@ export function XDriveMediaGallery({
             {selectionMode ? '完成' : '选择'}
           </Button>
         ) : null}
-        {showPhotoCollection && !isTrashSection && !searchActive ? (
+        {showPhotoCollection && !isTrashSection && !searchActive && !currentCleanupReview ? (
           <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
             {([
               ['year', '年'],
@@ -2947,7 +3190,9 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
       ) : null}
 
-      {showPhotoCollection && !isTrashSection && !currentMemory ? filters : null}
+      {showPhotoCollection && !isTrashSection && !currentMemory && !currentCleanupReview
+        ? filters
+        : null}
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
@@ -3024,6 +3269,17 @@ export function XDriveMediaGallery({
           loading={loading}
           loadThumbnail={loadThumbnail}
           onOpenMemory={onOpenMemory}
+        />
+      ) : null}
+
+      {showCleanupIndex ? (
+        <XDriveMediaGalleryCleanup
+          duplicates={duplicateGroups}
+          bursts={burstReviews}
+          loading={loading}
+          loadThumbnail={loadThumbnail}
+          onOpenDuplicate={onOpenDuplicateGroup}
+          onOpenBurst={onOpenBurstReview}
         />
       ) : null}
 
@@ -3552,6 +3808,7 @@ export function XDriveMediaGallery({
             onOpen={openMediaItem}
             onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}
+            recommendedNodeID={cleanupRecommendedNodeID}
           />
         ) : (
           <MediaTileGrid
@@ -3571,6 +3828,7 @@ export function XDriveMediaGallery({
             onOpen={openMediaItem}
             onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}
+            recommendedNodeID={cleanupRecommendedNodeID}
           />
         )}
         </Box>

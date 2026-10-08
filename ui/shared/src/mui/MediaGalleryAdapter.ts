@@ -4,6 +4,8 @@ import type {
   MediaItem,
   MediaItemRange,
   MediaMemory,
+  MediaDuplicateGroupList,
+  MediaBurstReviewList,
   Node,
   MediaPersonIdentity,
   MediaPersonSplit,
@@ -63,6 +65,22 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaMemory[]>>
   listMemoryItemRange?: (
     memoryID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  listDuplicateGroups?: (
+    limit?: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateGroupList>>
+  listDuplicateItemRange?: (
+    duplicateID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  listBurstReviews?: (
+    limit?: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaBurstReviewList>>
+  listBurstReviewItemRange?: (
+    burstID: string,
     limit: number,
     offset: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
@@ -271,6 +289,22 @@ export function createXDriveMediaGalleryDataSource(
     listMemoryItemRange: port.listMemoryItemRange
       ? (memoryID, limit, offset) => resolveXDriveTransport(
           port.listMemoryItemRange!(memoryID, limit, offset),
+        )
+      : undefined,
+    listDuplicateGroups: port.listDuplicateGroups
+      ? (limit) => resolveXDriveTransport(port.listDuplicateGroups!(limit))
+      : undefined,
+    listDuplicateItemRange: port.listDuplicateItemRange
+      ? (duplicateID, limit, offset) => resolveXDriveTransport(
+          port.listDuplicateItemRange!(duplicateID, limit, offset),
+        )
+      : undefined,
+    listBurstReviews: port.listBurstReviews
+      ? (limit) => resolveXDriveTransport(port.listBurstReviews!(limit))
+      : undefined,
+    listBurstReviewItemRange: port.listBurstReviewItemRange
+      ? (burstID, limit, offset) => resolveXDriveTransport(
+          port.listBurstReviewItemRange!(burstID, limit, offset),
         )
       : undefined,
     listSuggestedPeople: port.listSuggestedPeople

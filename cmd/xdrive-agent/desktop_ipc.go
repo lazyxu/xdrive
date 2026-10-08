@@ -256,6 +256,10 @@ type desktopIPCController interface {
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
 	CloudMediaMemories(context.Context, string, int) ([]client.MediaMemory, error)
 	CloudMediaMemoryItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
+	CloudMediaDuplicateGroups(context.Context, int) (client.MediaDuplicateGroupList, error)
+	CloudMediaDuplicateItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
+	CloudMediaBurstReviews(context.Context, int) (client.MediaBurstReviewList, error)
+	CloudMediaBurstReviewItemsRange(context.Context, string, int, int) (client.MediaItemRange, error)
 	CloudMediaSuggestedPeople(context.Context, int) ([]client.MediaSuggestedPerson, error)
 	CloudMediaSuggestedPersonItems(context.Context, string, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaSuggestedPersonItemsRange(context.Context, string, client.MediaQuery, int, int) (client.MediaItemRange, error)
@@ -562,6 +566,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
 	mux.HandleFunc("GET /v1/media/memory-items", h.mediaMemoryItems)
+	mux.HandleFunc("GET /v1/media/duplicates", h.mediaDuplicateGroups)
+	mux.HandleFunc("GET /v1/media/duplicate-items", h.mediaDuplicateItems)
+	mux.HandleFunc("GET /v1/media/bursts", h.mediaBurstReviews)
+	mux.HandleFunc("GET /v1/media/burst-items", h.mediaBurstReviewItems)
 	mux.HandleFunc("GET /v1/media/people/suggestions", h.mediaSuggestedPeople)
 	mux.HandleFunc("GET /v1/media/people/suggestion-items", h.mediaSuggestedPersonItems)
 	mux.HandleFunc("GET /v1/media/people/identities", h.mediaPersonIdentities)
@@ -2461,6 +2469,106 @@ func (h *desktopIPCHandler) mediaMemoryItems(w http.ResponseWriter, r *http.Requ
 	page, err := h.ctrl.CloudMediaMemoryItemsRange(
 		r.Context(),
 		memoryID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
+func desktopIPCMediaCleanupLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
+	limit := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(
+				w,
+				http.StatusBadRequest,
+				"invalid_media_cleanup_limit",
+				"limit must be between 1 and 100",
+			)
+			return 0, false
+		}
+		limit = value
+	}
+	return limit, true
+}
+
+func (h *desktopIPCHandler) mediaDuplicateGroups(w http.ResponseWriter, r *http.Request) {
+	limit, ok := desktopIPCMediaCleanupLimit(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.ctrl.CloudMediaDuplicateGroups(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaDuplicateItems(w http.ResponseWriter, r *http.Request) {
+	duplicateID := strings.TrimSpace(r.URL.Query().Get("duplicate_id"))
+	if duplicateID == "" || len(duplicateID) > 96 {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_duplicate",
+			"valid duplicate_id is required",
+		)
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	page, err := h.ctrl.CloudMediaDuplicateItemsRange(
+		r.Context(),
+		duplicateID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
+func (h *desktopIPCHandler) mediaBurstReviews(w http.ResponseWriter, r *http.Request) {
+	limit, ok := desktopIPCMediaCleanupLimit(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.ctrl.CloudMediaBurstReviews(r.Context(), limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) mediaBurstReviewItems(w http.ResponseWriter, r *http.Request) {
+	burstID := strings.TrimSpace(r.URL.Query().Get("burst_id"))
+	if burstID == "" || len(burstID) > 64 {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_burst",
+			"valid burst_id is required",
+		)
+		return
+	}
+	limit, offset, ok := desktopIPCMediaWindow(w, r)
+	if !ok {
+		return
+	}
+	page, err := h.ctrl.CloudMediaBurstReviewItemsRange(
+		r.Context(),
+		burstID,
 		limit,
 		offset,
 	)

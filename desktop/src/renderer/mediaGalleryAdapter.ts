@@ -26,6 +26,12 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaMemories(anchorDate, limit),
     listMemoryItemRange: (memoryID, limit, offset) =>
       agent.getMediaMemoryItemRange(memoryID, limit, offset),
+    listDuplicateGroups: (limit = 24) => agent.getMediaDuplicateGroups(limit),
+    listDuplicateItemRange: (duplicateID, limit, offset) =>
+      agent.getMediaDuplicateItemRange(duplicateID, limit, offset),
+    listBurstReviews: (limit = 24) => agent.getMediaBurstReviews(limit),
+    listBurstReviewItemRange: (burstID, limit, offset) =>
+      agent.getMediaBurstReviewItemRange(burstID, limit, offset),
     listSuggestedPeople: (limit = 24) => agent.getMediaSuggestedPeople(limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       agent.getMediaSuggestedPersonItems(personID, limit, offset, query),

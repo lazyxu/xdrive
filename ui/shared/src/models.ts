@@ -509,6 +509,46 @@ export interface MediaMemory {
   updated_at?: string
 }
 
+export interface MediaDuplicateGroup {
+  id: string
+  item_count: number
+  file_size_bytes: number
+  logical_duplicate_bytes: number
+  physical_reclaimable_bytes: number
+  recommended_keep_node_id: number
+  recommendation_reason: string
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export interface MediaDuplicateGroupList {
+  groups: MediaDuplicateGroup[]
+  total_groups: number
+  total_items: number
+  logical_duplicate_bytes: number
+  physical_reclaimable_bytes: number
+}
+
+export interface MediaBurstReview {
+  id: string
+  item_count: number
+  recommended_node_id: number
+  recommendation_reason: string
+  cover_node_id?: number
+  total_bytes: number
+  potential_cleanup_bytes: number
+  physical_reclaimable_bytes: number
+  updated_at?: string
+}
+
+export interface MediaBurstReviewList {
+  groups: MediaBurstReview[]
+  total_groups: number
+  total_items: number
+  potential_cleanup_bytes: number
+  physical_reclaimable_bytes: number
+}
+
 export interface MediaSuggestedPerson {
   id: string
   face_count: number

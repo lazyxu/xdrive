@@ -8,6 +8,7 @@ export type MediaGallerySection =
   | 'albums'
   | 'favorites'
   | 'media-types'
+  | 'cleanup'
   | 'trash'
 
 type GallerySectionOption = {
@@ -25,6 +26,7 @@ const gallerySections: GallerySectionOption[] = [
   { value: 'albums', label: '相册' },
   { value: 'favorites', label: '收藏' },
   { value: 'media-types', label: '媒体类型' },
+  { value: 'cleanup', label: '清理建议' },
   { value: 'trash', label: '回收站' },
 ]
 
