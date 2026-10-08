@@ -240,6 +240,7 @@ export default function DesktopFileExplorer({
   onFeedback: (tone: 'good' | 'warning', message: string) => void
 }) {
   const [createOpen, setCreateOpen] = useState(false)
+  const createFolderParentIDRef = useRef<number | null>(null)
   const [actionBusy, setActionBusy] = useState('')
   const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
   const actionGenerationRef = useRef(1)
@@ -249,6 +250,7 @@ export default function DesktopFileExplorer({
     actionGenerationRef.current += 1
     actionBusyRef.current = null
     setActionBusy('')
+    createFolderParentIDRef.current = null
     setCreateOpen(false)
     setOpenPreviewItem(null)
     return () => {
@@ -1307,8 +1309,9 @@ export default function DesktopFileExplorer({
   }
 
   const createFolder = async (name: string) => {
-    if (!current || actionBusyRef.current || fileOperationBusy || uploadBusy) return
-    const expectedCurrentID = current.id
+    if (actionBusyRef.current || fileOperationBusy || uploadBusy) return
+    const expectedCurrentID = createFolderParentIDRef.current
+    if (expectedCurrentID === null) return
     const busyToken = beginActionBusy('create-folder')
     if (!busyToken) return
     try {
@@ -1348,6 +1351,7 @@ export default function DesktopFileExplorer({
     } else if (actionIntent.action === 'upload-folder') {
       folderUploadInputRef.current?.click()
     } else {
+      createFolderParentIDRef.current = current.id
       setCreateOpen(true)
     }
   }, [
@@ -1636,7 +1640,11 @@ export default function DesktopFileExplorer({
   })
 
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
-    onCreateFolder: () => setCreateOpen(true),
+    onCreateFolder: () => {
+      if (!current) return
+      createFolderParentIDRef.current = current.id
+      setCreateOpen(true)
+    },
     onUpload: () => { void uploadFiles() },
     onUploadFolder: uploadConflictSupported
       ? () => folderUploadInputRef.current?.click()
@@ -1706,7 +1714,11 @@ export default function DesktopFileExplorer({
         onUp={() => { void goUp() }}
         onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
         onCrumbClick={trashActive ? undefined : (_crumb, index) => { void navigateToCrumb(index) }}
-        onCreateFolder={trashActive ? undefined : () => setCreateOpen(true)}
+        onCreateFolder={trashActive ? undefined : () => {
+          if (!current) return
+          createFolderParentIDRef.current = current.id
+          setCreateOpen(true)
+        }}
         onUpload={trashActive ? undefined : () => { void uploadFiles() }}
         onUploadFolder={!trashActive && uploadConflictSupported
           ? () => folderUploadInputRef.current?.click()
@@ -2052,7 +2064,10 @@ export default function DesktopFileExplorer({
       <XDriveFileNameDialog
         open={createOpen}
         mode="create-folder"
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          createFolderParentIDRef.current = null
+          setCreateOpen(false)
+        }}
         onSubmit={createFolder}
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
       />

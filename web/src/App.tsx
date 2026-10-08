@@ -431,6 +431,7 @@ function FileManager({
 }) {
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
+  const folderParentIDRef = useRef<number | null>(null)
   const [appView, setAppView] = useState<AppView>('files')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
@@ -868,8 +869,8 @@ function FileManager({
   }
 
   const createFolder = async (name: string) => {
-    if (!current) return
-    const expectedCurrentID = current.id
+    const expectedCurrentID = folderParentIDRef.current
+    if (expectedCurrentID === null) return
     await api.createDirectory(expectedCurrentID, name)
     await refreshCurrentDirectory(expectedCurrentID)
   }
@@ -992,7 +993,11 @@ function FileManager({
                 onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}
                 onUploadDroppedFolderEntries={uploadDroppedFolderEntries}
-                onCreateFolder={() => setFolderOpen(true)}
+                onCreateFolder={() => {
+                  if (!current) return
+                  folderParentIDRef.current = current.id
+                  setFolderOpen(true)
+                }}
                 onOpenTrash={openTrash}
                 trashActive={trashOpen}
                 trashAdapter={trashDialogAdapter}
@@ -1075,7 +1080,10 @@ function FileManager({
       <XDriveFileNameDialog
         open={folderOpen}
         mode="create-folder"
-        onClose={() => setFolderOpen(false)}
+        onClose={() => {
+          folderParentIDRef.current = null
+          setFolderOpen(false)
+        }}
         onSubmit={createFolder}
         onError={handleError}
       />
