@@ -995,6 +995,7 @@ function FileManager({
               fileOperations.map((operation) => operation.updated_at).join(','),
               taskCenter.backgroundTasks.map((task) => task.updated_at).join(','),
             ].join('|')}
+            uploadParentID={current?.id}
             onUploadFiles={uploadFiles}
             onUploadFolderFiles={uploadFolderFiles}
             onCreateFolder={() => {

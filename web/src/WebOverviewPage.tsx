@@ -39,6 +39,7 @@ export default function WebOverviewPage({
   fileOperations,
   backgroundTasks,
   activityRevision,
+  uploadParentID,
   onUploadFiles,
   onUploadFolderFiles,
   onCreateFolder,
@@ -55,8 +56,9 @@ export default function WebOverviewPage({
   fileOperations: readonly XDriveFileOperation[]
   backgroundTasks: readonly XDriveBackgroundTask[]
   activityRevision: string
-  onUploadFiles: (files: FileList | null) => Promise<void>
-  onUploadFolderFiles: (files: FileList | null) => Promise<void>
+  uploadParentID?: number
+  onUploadFiles: (parentID: number, files: FileList | null) => Promise<void>
+  onUploadFolderFiles: (parentID: number, files: FileList | null) => Promise<void>
   onCreateFolder: () => void
   onOpenFiles: () => void
   onOpenDirectory: (id: number, crumbs: XDriveFileRecentItem<Node>['crumbs']) => void
@@ -67,9 +69,13 @@ export default function WebOverviewPage({
   const [favoriteItems, setFavoriteItems] = useState<XDriveFileFavoriteItem<Node>[]>([])
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadPickerParentIDRef = useRef<number | null>(null)
+  const folderUploadPickerParentIDRef = useRef<number | null>(null)
   const lifecycleKey = `web:${username}`
 
   useEffect(() => {
+    uploadPickerParentIDRef.current = null
+    folderUploadPickerParentIDRef.current = null
     setRecentItems([])
     setFavoriteItems([])
   }, [lifecycleKey])
@@ -205,7 +211,9 @@ export default function WebOverviewPage({
         type="file"
         multiple
         onChange={(event) => {
-          void onUploadFiles(event.target.files)
+          const parentID = uploadPickerParentIDRef.current
+          uploadPickerParentIDRef.current = null
+          if (parentID !== null) void onUploadFiles(parentID, event.target.files)
           event.target.value = ''
         }}
       />
@@ -221,7 +229,9 @@ export default function WebOverviewPage({
         type="file"
         multiple
         onChange={(event) => {
-          void onUploadFolderFiles(event.target.files)
+          const parentID = folderUploadPickerParentIDRef.current
+          folderUploadPickerParentIDRef.current = null
+          if (parentID !== null) void onUploadFolderFiles(parentID, event.target.files)
           event.target.value = ''
         }}
       />
@@ -241,8 +251,22 @@ export default function WebOverviewPage({
         recentItems={recentHomeItems}
         favoriteItems={favoriteHomeItems}
         loadThumbnail={loadThumbnail}
-        onUploadFiles={() => uploadInputRef.current?.click()}
-        onUploadFolder={() => folderUploadInputRef.current?.click()}
+        onUploadFiles={() => {
+          if (uploadParentID === undefined) {
+            onOpenFiles()
+            return
+          }
+          uploadPickerParentIDRef.current = uploadParentID
+          uploadInputRef.current?.click()
+        }}
+        onUploadFolder={() => {
+          if (uploadParentID === undefined) {
+            onOpenFiles()
+            return
+          }
+          folderUploadPickerParentIDRef.current = uploadParentID
+          folderUploadInputRef.current?.click()
+        }}
         onCreateFolder={onCreateFolder}
         onOpenFiles={onOpenFiles}
         onOpenGallery={onOpenGallery}

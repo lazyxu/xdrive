@@ -76,6 +76,8 @@ test('Desktop FileExplorer account lifecycle closes stale organization dialogs a
     actionBusyRef: { current: null },
     setActionBusy: () => {},
     createFolderParentIDRef: { current: null },
+    uploadPickerParentIDRef: { current: null },
+    folderUploadPickerParentIDRef: { current: null },
     setCreateOpen: () => {},
     setOpenPreviewItem: () => {},
     setTagDialogItems: (value) => writes.tagDialogItems.push(value),
