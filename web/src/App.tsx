@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import {
@@ -78,6 +79,7 @@ import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import StorageStatsPanel from './StorageStatsPanel'
 import WebFileExplorer from './WebFileExplorer'
+import WebOverviewPage from './WebOverviewPage'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
@@ -103,7 +105,7 @@ type ConfirmAction = {
 }
 
 type AppView = XDriveRemoteWorkspaceViewKey<
-  'admin-users' | 'admin-audit' | 'admin-storage'
+  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage'
 >
 
 function initialSession(): AuthSession {
@@ -432,7 +434,7 @@ function FileManager({
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
-  const [appView, setAppView] = useState<AppView>('files')
+  const [appView, setAppView] = useState<AppView>('overview')
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
@@ -636,7 +638,7 @@ function FileManager({
     operationActions: fileOperationActions,
     backgroundTaskPort,
     backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
-    backgroundTasksVisible: appView === 'transfers',
+    backgroundTasksVisible: appView === 'transfers' || appView === 'overview',
     globalTasksEnabled: profile?.role === 'admin',
     onBackgroundTaskError: handleError,
   })
@@ -879,13 +881,24 @@ function FileManager({
 
   const openHistory = (node: Node) => setHistoryNode(node)
 
-  const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'
-    ? [
+  const webSidebarSections: XDriveSidebarSectionModel[] = [
+    {
+      key: 'overview',
+      placement: 'before-core',
+      items: [
         {
+          key: 'overview',
+          label: '主页',
+          icon: <DashboardRoundedIcon fontSize="small" />,
+        },
+      ],
+    },
+    ...(profile?.role === 'admin'
+      ? [{
           key: 'admin',
           label: '管理',
           ariaLabel: '管理员功能',
-          placement: 'after-core',
+          placement: 'after-core' as const,
           items: [
             {
               key: 'admin-users',
@@ -903,9 +916,9 @@ function FileManager({
               icon: <StorageRoundedIcon fontSize="small" />,
             },
           ],
-        },
-      ]
-    : []
+        }]
+      : []),
+  ]
 
   return (
     <Box
@@ -968,7 +981,39 @@ function FileManager({
           responsive
           presentation={xDriveWorkspacePresentation(appView)}
         >
-        {appView === 'files' ? (
+        {appView === 'overview' ? (
+          <WebOverviewPage
+            api={api}
+            username={username}
+            quota={quota}
+            activeTaskCount={taskCenter.badgeCount}
+            transfers={transfers}
+            fileOperations={fileOperations}
+            backgroundTasks={taskCenter.backgroundTasks}
+            activityRevision={[
+              transfers.map((task) => task.updated_at).join(','),
+              fileOperations.map((operation) => operation.updated_at).join(','),
+              taskCenter.backgroundTasks.map((task) => task.updated_at).join(','),
+            ].join('|')}
+            onUploadFiles={uploadFiles}
+            onUploadFolderFiles={uploadFolderFiles}
+            onCreateFolder={() => {
+              if (!current) {
+                setAppView('files')
+                return
+              }
+              folderParentIDRef.current = current.id
+              setFolderOpen(true)
+            }}
+            onOpenFiles={() => setAppView('files')}
+            onOpenDirectory={(id, nextCrumbs) => {
+              setAppView('files')
+              void loadDirectory(id, nextCrumbs)
+            }}
+            onOpenGallery={() => setAppView('gallery')}
+            onOpenTransfers={() => setAppView('transfers')}
+          />
+        ) : appView === 'files' ? (
           <Box
            
             sx={{

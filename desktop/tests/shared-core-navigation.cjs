@@ -121,8 +121,11 @@ test('Desktop extension destinations all flow through section models', () => {
   assert.ok(desktop.includes('sections={desktopSidebarSections}'), 'Desktop must pass its extension sections to shared sidebar')
 })
 
-test('Web admin destinations use the same section model contract', () => {
-  assert.ok(web.includes("const webSidebarSections: XDriveSidebarSectionModel[] = profile?.role === 'admin'"))
+test('Web Home and admin destinations use the same section model contract', () => {
+  assert.ok(web.includes("const webSidebarSections: XDriveSidebarSectionModel[] = ["))
+  assert.ok(web.includes("key: 'overview',\n      placement: 'before-core'"))
+  assert.ok(web.includes("label: '主页'"))
+  assert.ok(web.includes("...(profile?.role === 'admin'"), 'admin section must remain role-gated')
   assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
   for (const label of ['用户管理', '审计日志', '全局存储']) {
     assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)

@@ -16,6 +16,7 @@ const sharedSearch = read('ui', 'shared', 'src', 'file-explorer-search.ts')
 const sharedSearchFilters = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearchFilters.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const desktopOverview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
+const sharedHome = read('ui', 'shared', 'src', 'mui', 'HomePage.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
@@ -209,17 +210,21 @@ test('mixed folder availability is OS-derived without renderer recursion', () =>
   assert.ok(desktopExplorer.includes('getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}'), 'navigation must receive shared availability')
 })
 
-test('Desktop overview reuses FileExplorer item visuals and availability semantics', () => {
+test('Desktop overview reuses shared Home FileExplorer visuals and platform availability semantics', () => {
   for (const token of [
     'XDriveFileExplorerThumbnailProvider',
     'XDriveFileExplorerThumbnail',
     'XDriveFileExplorerItemIcon',
     'XDriveFileExplorerAvailabilityBadge',
+  ]) {
+    assert.ok(sharedHome.includes(token), 'shared Home visual contract missing: ' + token)
+  }
+  for (const token of [
     'xDriveFileExplorerAvailabilityFromSnapshot',
     'getFileAvailabilityBatch(paths)',
-    'overviewItemVisual(item)',
+    'availability: availability(projected)',
   ]) {
-    assert.ok(desktopOverview.includes(token), 'Desktop overview visual contract missing: ' + token)
+    assert.ok(desktopOverview.includes(token), 'Desktop overview availability adapter missing: ' + token)
   }
   assert.equal(
     desktopOverview.includes('StarRoundedIcon'),
