@@ -217,6 +217,7 @@ export default function DesktopFileExplorer({
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const recent = useXDriveFileExplorerRecent<AgentCloudNode>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: recentSupported,
     loadItems: async () => {
       const result = await window.xdriveDesktop.agent.cloudFileRecent(16)
@@ -355,6 +356,7 @@ export default function DesktopFileExplorer({
   )
 
   const quickAccess = useXDriveFileExplorerQuickAccess<AgentCloudNode>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: quickAccessSupported,
     loadItems: async () => {
       const result = await window.xdriveDesktop.agent.cloudFileQuickAccess()
@@ -375,6 +377,7 @@ export default function DesktopFileExplorer({
   })
 
   const favorites = useXDriveFileExplorerFavorites<AgentCloudNode>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: favoritesSupported,
     loadItems: async () => {
       const result = await window.xdriveDesktop.agent.cloudFileFavorites()

@@ -42,12 +42,14 @@ function projectFavoriteItem<TNode extends FavoriteNodeShape>(
 }
 
 export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>({
+  lifecycleKey = '',
   enabled = true,
   loadItems,
   favoriteItem,
   unfavoriteItem,
   onError,
 }: {
+  lifecycleKey?: string
   enabled?: boolean
   loadItems: () => Promise<XDriveFileFavoriteItem<TNode>[]>
   favoriteItem: (nodeID: number) => Promise<XDriveFileFavoriteItem<TNode>>
@@ -65,10 +67,16 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const pendingMutationCountRef = useRef(0)
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const lifecycleGenerationRef = useRef(1)
 
-  if (enabledRef.current !== enabled) {
+  if (
+    enabledRef.current !== enabled ||
+    lifecycleKeyRef.current !== lifecycleKey
+  ) {
     enabledRef.current = enabled
+    lifecycleKeyRef.current = lifecycleKey
+    loadRequestRef.current += 1
     lifecycleGenerationRef.current += 1
     mutationTailRef.current = Promise.resolve()
     pendingMutationCountRef.current = 0
@@ -104,9 +112,14 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
     }
-  }, [enabled, loadFresh])
+  }, [enabled, lifecycleKey, loadFresh])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    setItems([])
+    setLoading(false)
+    setBusyID(null)
+    void refresh()
+  }, [lifecycleKey, refresh])
 
   useEffect(() => () => {
     loadRequestRef.current += 1
