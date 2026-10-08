@@ -18,7 +18,14 @@ export type XDriveFileExplorerThumbnailLoader = (
 
 type FileThumbnailCache = {
   values: Map<string, string>
+  leases: Map<string, number>
+  retired: Set<string>
   disposed: boolean
+}
+
+type FileThumbnailLease = {
+  value: string
+  release: () => void
 }
 
 type FileThumbnailQueueEntry = {
@@ -71,6 +78,16 @@ function fileThumbnailCacheKey(item: XDriveFileExplorerItem) {
   ].join(':')
 }
 
+function retireFileThumbnailSource(cache: FileThumbnailCache, value: string | null | undefined) {
+  if (!value) return
+  if ((cache.leases.get(value) ?? 0) > 0) {
+    cache.retired.add(value)
+    return
+  }
+  cache.retired.delete(value)
+  revokeFileThumbnailSource(value)
+}
+
 function fileThumbnailCacheGet(cache: FileThumbnailCache, key: string) {
   const value = cache.values.get(key)
   if (!value) return null
@@ -79,13 +96,37 @@ function fileThumbnailCacheGet(cache: FileThumbnailCache, key: string) {
   return value
 }
 
+function fileThumbnailCacheAcquire(cache: FileThumbnailCache, key: string): FileThumbnailLease | null {
+  const value = fileThumbnailCacheGet(cache, key)
+  if (!value) return null
+  cache.leases.set(value, (cache.leases.get(value) ?? 0) + 1)
+  let released = false
+  return {
+    value,
+    release: () => {
+      if (released) return
+      released = true
+      const count = Math.max(0, (cache.leases.get(value) ?? 1) - 1)
+      if (count > 0) {
+        cache.leases.set(value, count)
+        return
+      }
+      cache.leases.delete(value)
+      if (cache.disposed || cache.retired.has(value)) {
+        cache.retired.delete(value)
+        revokeFileThumbnailSource(value)
+      }
+    },
+  }
+}
+
 function fileThumbnailCacheSet(cache: FileThumbnailCache, key: string, value: string) {
   if (cache.disposed) {
     revokeFileThumbnailSource(value)
     return false
   }
   const current = cache.values.get(key)
-  if (current && current !== value) revokeFileThumbnailSource(current)
+  if (current && current !== value) retireFileThumbnailSource(cache, current)
   cache.values.delete(key)
   cache.values.set(key, value)
   while (cache.values.size > fileThumbnailCacheLimit) {
@@ -93,14 +134,14 @@ function fileThumbnailCacheSet(cache: FileThumbnailCache, key: string, value: st
     if (typeof oldestKey !== 'string') break
     const oldest = cache.values.get(oldestKey)
     cache.values.delete(oldestKey)
-    revokeFileThumbnailSource(oldest)
+    retireFileThumbnailSource(cache, oldest)
   }
   return true
 }
 
 function disposeFileThumbnailCache(cache: FileThumbnailCache) {
   cache.disposed = true
-  for (const value of cache.values.values()) revokeFileThumbnailSource(value)
+  for (const value of cache.values.values()) retireFileThumbnailSource(cache, value)
   cache.values.clear()
 }
 
@@ -253,7 +294,12 @@ export function XDriveFileExplorerThumbnailProvider({
   children: ReactNode
 }) {
   const cache = useMemo<FileThumbnailCache>(
-    () => ({ values: new Map(), disposed: false }),
+    () => ({
+      values: new Map(),
+      leases: new Map(),
+      retired: new Set(),
+      disposed: false,
+    }),
     [lifecycleKey, loadThumbnail],
   )
 
@@ -291,12 +337,22 @@ export function XDriveFileExplorerThumbnail({
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  const leaseRef = useRef<FileThumbnailLease | null>(null)
   const loadThumbnail = context?.loadThumbnail
   const cache = context?.cache
 
   useEffect(() => {
     setFailed(false)
-    setSrc(cache ? fileThumbnailCacheGet(cache, cacheKey) : null)
+    const lease = cache ? fileThumbnailCacheAcquire(cache, cacheKey) : null
+    const previous = leaseRef.current
+    leaseRef.current = lease
+    previous?.release()
+    setSrc(lease?.value ?? null)
+    return () => {
+      if (leaseRef.current !== lease) return
+      leaseRef.current = null
+      lease?.release()
+    }
   }, [cache, cacheKey])
 
   useEffect(() => {
@@ -313,9 +369,12 @@ export function XDriveFileExplorerThumbnail({
       !cache || !loadThumbnail || !eligible || !visible ||
       failed || src || item.thumbnail
     ) return
-    const cached = fileThumbnailCacheGet(cache, cacheKey)
+    const cached = fileThumbnailCacheAcquire(cache, cacheKey)
     if (cached) {
-      setSrc(cached)
+      const previous = leaseRef.current
+      leaseRef.current = cached
+      previous?.release()
+      setSrc(cached.value)
       return
     }
     let active = true
@@ -328,7 +387,13 @@ export function XDriveFileExplorerThumbnail({
           return
         }
         if (!fileThumbnailCacheSet(cache, cacheKey, value)) return
-        if (active) setSrc(value)
+        if (active) {
+          const lease = fileThumbnailCacheAcquire(cache, cacheKey)
+          const previous = leaseRef.current
+          leaseRef.current = lease
+          previous?.release()
+          setSrc(lease?.value ?? null)
+        }
       })
       .catch(() => {
         if (active) setFailed(true)
@@ -384,10 +449,10 @@ export function XDriveFileExplorerThumbnail({
           aria-label="实况照片"
           sx={{
             position: 'absolute',
-            left: 3,
-            top: 3,
-            width: 18,
-            height: 18,
+            left: 2,
+            top: 2,
+            width: 14,
+            height: 14,
             borderRadius: '50%',
             display: 'grid',
             placeItems: 'center',
@@ -396,7 +461,7 @@ export function XDriveFileExplorerThumbnail({
             pointerEvents: 'none',
           }}
         >
-          <XDriveLivePhotoGlyph size={14} />
+          <XDriveLivePhotoGlyph size={10} />
         </Box>
       ) : null}
     </Box>

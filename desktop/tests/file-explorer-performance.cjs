@@ -81,7 +81,7 @@ test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(thumbnail.includes('const fileThumbnailCacheLimit = 96'), 'thumbnail cache must stay bounded')
   assert.ok(thumbnail.includes('const scheduled = scheduleFileThumbnail(() => loadThumbnail(requestedItem))'), 'thumbnail loads must pass through the cancellable scheduler')
   assert.ok(thumbnail.includes('scheduled.cancel()'), 'unmounted queued thumbnails must be cancellable')
-  assert.ok(thumbnail.includes('fileThumbnailCacheGet(cache, cacheKey)'), 'thumbnail remounts should reuse cached sources')
+  assert.ok(thumbnail.includes('fileThumbnailCacheAcquire(cache, cacheKey)'), 'thumbnail remounts should reuse cached sources through an active URL lease')
   assert.ok(thumbnail.includes('fileThumbnailCacheSet(cache, cacheKey, value)'), 'loaded thumbnails should enter the bounded cache')
   assert.ok(thumbnail.includes('disposeFileThumbnailCache(cache)'), 'Explorer teardown must release cached blob URLs')
   assert.ok(thumbnail.includes("value?.startsWith('blob:')") && thumbnail.includes('URL.revokeObjectURL(value)'), 'cached Web blob thumbnails must be released on eviction/disposal')
