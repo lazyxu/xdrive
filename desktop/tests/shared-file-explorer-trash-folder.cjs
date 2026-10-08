@@ -31,7 +31,7 @@ test('Web and Desktop render Trash through the normal FileExplorer surface', () 
     assert.ok(source.includes('trashActive ? trash.crumbs : explorerCrumbs'))
     assert.ok(source.includes('trashActive ? trash.getItemMenuItems : getItemMenuItems'))
     assert.ok(source.includes('searchEnabled={!trashActive}'))
-    assert.ok(source.includes('onNavigateTrash={onOpenTrash}'))
+    assert.ok(source.includes('onNavigateTrash={() => {\n              beginNavigationIntent()\n              onOpenTrash()\n            }}'))
     assert.equal(source.includes('XDriveFileExplorerTrashCommandButton'), false)
   }
   assert.equal(webApp.includes('<XDriveTrashDialog'), false)
