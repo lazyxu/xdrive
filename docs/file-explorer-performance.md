@@ -25,6 +25,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Indexed folder-upload conflict lookup | **Merged** | Unmeasured wall-clock | Existing sibling lookup is indexed instead of scanning the full parent directory. |
 | Desktop folder-download paged scan | **Accepted / structural contract** | Structural / unmeasured wall-clock | Recursive tree scan: legacy **1 unbounded 1,201-node response -> 3 cursor pages, <=500 nodes/response**. #788 also bounded root lookup before the exact lookup follow-up below. No wall-clock speedup claimed. |
 | Desktop folder-download exact root lookup | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-sibling target: paged root lookup **3 requests / 1,201 returned nodes -> 1 exact request / 1 returned node**; recursive scan remains paged. |
+| Desktop folder-download progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For F manifest files, each group-progress publication no longer scans F child byte slots. Aggregate bytes are maintained by current-file deltas: **O(F) -> O(1) per progress publication**, and the two F-length `int64` progress arrays are removed. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
@@ -1074,7 +1075,39 @@ Decision: **accept** exact root lookup and keep 500-node pagination only for rec
 
 Regression budget: selected-root resolution must not call `List` or `ListPage`; the exact route remains authenticated, owner-scoped, and active-node-only.
 
-Next action: if very large folder downloads still show Agent memory pressure, benchmark manifest retention and child-transfer creation separately before considering a streaming manifest design.
+Next action: group-progress CPU amplification is handled by the incremental contract below. If very large folder downloads still show Agent memory pressure after that, benchmark manifest retention and child-transfer creation separately before considering a streaming manifest design.
+
+### Desktop folder-download incremental group-progress contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Desktop Agent folder download with a fully scanned manifest of **10,000 files**;
+- synthetic progress shape: **4 progress publications per file** while transfers remain sequential, matching the existing one-file-at-a-time download contract;
+- evidence method: deterministic source-level aggregation cardinality plus `TestAgentCloudFolderDownloadByteProgressIsIncremental`;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- group byte progress is derived by scanning `childDone[]` and `childTotals[]` on every publication;
+- each publication performs **10,000 done-slot reads + 10,000 total-slot reads** for the 10,000-file workload;
+- 40,000 progress publications therefore imply **400,000,000 done-slot + 400,000,000 total-slot inspections** in the aggregation layer;
+- the Agent also retains two additional `int64` arrays sized to the full file manifest.
+
+AFTER / current:
+
+- the Agent initializes aggregate `bytesTotal` once from the manifest and updates aggregate done/total by the current file's delta;
+- each progress publication performs **O(1)** byte-accounting work independent of manifest file count;
+- content-length corrections adjust the aggregate total by delta, matching the previous per-child-array semantics;
+- successful completion fills any final current-file byte delta; failed files retain their already-transferred byte contribution;
+- the two manifest-sized byte-progress arrays are removed; child transfer handles and the manifest itself remain unchanged.
+
+Decision: **Accepted.** This removes file-count-scaled CPU from Transfer Center group progress without changing download order, HTTP streaming, fsync/rename behavior, per-file child tasks, cancellation, partial-success accounting, or failure handling.
+
+Regression budget: folder-download group byte aggregation must remain **O(1) per progress publication** and must not reintroduce a scan over all manifest files or manifest-sized done/total byte arrays.
+
+Next action: continue basic sync/delete/download auditing and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### File download metadata SQL contract
 

@@ -75,6 +75,38 @@ type agentCloudFolderDownloadManifest struct {
 	TotalBytes  int64
 }
 
+type agentCloudFolderDownloadByteProgress struct {
+	done  int64
+	total int64
+}
+
+func newAgentCloudFolderDownloadByteProgress(total int64) agentCloudFolderDownloadByteProgress {
+	return agentCloudFolderDownloadByteProgress{total: max(int64(0), total)}
+}
+
+func (progress *agentCloudFolderDownloadByteProgress) update(
+	currentDone *int64,
+	currentTotal *int64,
+	done int64,
+	total int64,
+) {
+	nextDone := max(int64(0), done)
+	if total > 0 && total != *currentTotal {
+		progress.total += total - *currentTotal
+		*currentTotal = total
+	}
+	progress.done += nextDone - *currentDone
+	*currentDone = nextDone
+}
+
+func (progress *agentCloudFolderDownloadByteProgress) complete(
+	currentDone *int64,
+	currentTotal *int64,
+) {
+	progress.done += *currentTotal - *currentDone
+	*currentDone = *currentTotal
+}
+
 type agentCreatedShare struct {
 	Share client.CreatedFileShare `json:"share"`
 	URL   string                  `json:"url"`
@@ -1113,10 +1145,8 @@ func (c *agentController) CloudDownloadFolder(
 	}
 
 	childHandles := make([]*transfer.Handle, len(manifest.Files))
-	childDone := make([]int64, len(manifest.Files))
-	childTotals := make([]int64, len(manifest.Files))
 	for index, file := range manifest.Files {
-		childTotals[index] = max(int64(0), file.Node.Size)
+		total := max(int64(0), file.Node.Size)
 		childHandles[index] = c.transfers.StartChild(group, transfer.Spec{
 			FileName:     file.Node.Name,
 			Path:         filepath.Join(rootPath, filepath.FromSlash(file.RelativePath)),
@@ -1124,7 +1154,7 @@ func (c *agentController) CloudDownloadFolder(
 			Kind:         transfer.KindDownload,
 			Direction:    "download",
 			Phase:        transfer.PhaseQueued,
-			TotalBytes:   childTotals[index],
+			TotalBytes:   total,
 		})
 		if childHandles[index] == nil {
 			err := fmt.Errorf("cannot create folder download child transfer")
@@ -1133,22 +1163,17 @@ func (c *agentController) CloudDownloadFolder(
 		}
 	}
 
+	byteProgress := newAgentCloudFolderDownloadByteProgress(manifest.TotalBytes)
 	completed := int64(0)
 	failed := int64(0)
 	running := int64(0)
 	processed := int64(0)
 	groupProgress := func() transfer.GroupProgress {
-		var bytesDone int64
-		var bytesTotal int64
-		for index := range childDone {
-			bytesDone += max(int64(0), childDone[index])
-			bytesTotal += max(int64(0), childTotals[index])
-		}
 		return transfer.GroupProgress{
 			Phase:          transfer.PhaseTransferring,
 			ScanComplete:   true,
-			BytesDone:      bytesDone,
-			BytesTotal:     bytesTotal,
+			BytesDone:      byteProgress.done,
+			BytesTotal:     byteProgress.total,
 			TotalItems:     int64(len(manifest.Files)),
 			CompletedItems: completed,
 			FailedItems:    failed,
@@ -1171,12 +1196,11 @@ func (c *agentController) CloudDownloadFolder(
 		child.SetPhase(transfer.PhaseTransferring)
 		group.UpdateGroup(groupProgress())
 
+		currentDone := int64(0)
+		currentTotal := max(int64(0), file.Node.Size)
 		firstProgress := true
 		progress := func(done, total int64) {
-			if total > 0 && total != childTotals[index] {
-				childTotals[index] = total
-			}
-			childDone[index] = max(int64(0), done)
+			byteProgress.update(&currentDone, &currentTotal, done, total)
 			if firstProgress {
 				firstProgress = false
 				child.Baseline(done, total)
@@ -1210,7 +1234,7 @@ func (c *agentController) CloudDownloadFolder(
 			continue
 		}
 
-		childDone[index] = childTotals[index]
+		byteProgress.complete(&currentDone, &currentTotal)
 		completed++
 		result.Downloaded++
 		child.Complete()
