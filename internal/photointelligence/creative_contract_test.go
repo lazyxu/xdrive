@@ -105,6 +105,15 @@ func TestValidateCreativeTask(t *testing.T) {
 	if err := ValidateCreativeTask(movie); err == nil {
 		t.Fatal("movie transition equal to frame duration was accepted")
 	}
+	movie.TransitionMS = 350
+	movie.MovieTemplate = CreativeMovieTemplateFill
+	if err := ValidateCreativeTask(movie); err != nil {
+		t.Fatalf("fill movie template was rejected: %v", err)
+	}
+	movie.MovieTemplate = "freeform"
+	if err := ValidateCreativeTask(movie); err == nil {
+		t.Fatal("unsupported movie template was accepted")
+	}
 
 	collage := base
 	collage.Kind = CreativeCapabilityCollage

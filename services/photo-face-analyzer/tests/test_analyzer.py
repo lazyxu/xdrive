@@ -423,8 +423,9 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual((width, height), (256, 256))
         self.assertTrue(erase.startswith(b"\x89PNG\r\n\x1a\n"))
 
+        movie_images = [image, cv.flip(image, 1)]
         movie, mime, width, height = self.creative_runtime.generate_movie(
-            [image, cv.flip(image, 1)],
+            movie_images,
             {
                 "kind": "movie",
                 "frame_duration_ms": 1000,
@@ -434,6 +435,29 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(mime, "video/mp4")
         self.assertEqual((width, height), (1920, 1080))
         self.assertIn(b"ftyp", movie[:64])
+        for template in ("fill", "ken_burns"):
+            movie, mime, width, height = self.creative_runtime.generate_movie(
+                movie_images,
+                {
+                    "kind": "movie",
+                    "movie_template": template,
+                    "frame_duration_ms": 1000,
+                    "transition_ms": 0,
+                },
+            )
+            self.assertEqual(mime, "video/mp4")
+            self.assertEqual((width, height), (1920, 1080))
+            self.assertIn(b"ftyp", movie[:64])
+        with self.assertRaises(ValueError):
+            self.creative_runtime.generate_movie(
+                movie_images,
+                {
+                    "kind": "movie",
+                    "movie_template": "freeform",
+                    "frame_duration_ms": 1000,
+                    "transition_ms": 0,
+                },
+            )
 
         collage_images = [
             image,
@@ -556,6 +580,7 @@ class AnalyzerTests(unittest.TestCase):
                             "input_fingerprint": fingerprint,
                         },
                     ],
+                    "movie_template": "fill",
                     "frame_duration_ms": 1000,
                     "transition_ms": 0,
                 }

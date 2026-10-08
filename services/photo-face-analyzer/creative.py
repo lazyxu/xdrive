@@ -35,6 +35,7 @@ CREATIVE_MOVIE_MIN_FRAMES = 2
 CREATIVE_MOVIE_MAX_FRAMES = 30
 CREATIVE_MOVIE_MAX_BYTES = 128 * 1024 * 1024
 CREATIVE_MOVIE_TIMEOUT_SECONDS = 14 * 60
+CREATIVE_MOVIE_TEMPLATES = {"classic", "fill", "ken_burns"}
 CREATIVE_COLLAGE_MIME = "image/jpeg"
 CREATIVE_COLLAGE_SIZE = 2048
 CREATIVE_COLLAGE_GAP = 12
@@ -44,7 +45,7 @@ CREATIVE_COLLAGE_MAX_BYTES = 32 * 1024 * 1024
 CREATIVE_COLLAGE_TEMPLATES = {"grid", "featured", "columns", "rows"}
 CREATIVE_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-efficientsam-ti-2025april-int8"
-    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v2-collage-v1"
+    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v3-collage-v1"
 )
 
 
@@ -474,6 +475,8 @@ class CreativeRuntime:
             raise ValueError("collage does not accept cutout mode")
         if task.get("movie_frames") not in (None, []):
             raise ValueError("collage does not accept movie frames")
+        if task.get("movie_template") not in (None, ""):
+            raise ValueError("collage does not accept movie template")
         if task.get("frame_duration_ms") not in (None, 0) or task.get("transition_ms") not in (None, 0):
             raise ValueError("collage does not accept movie timing")
         template = task.get("collage_template")
@@ -527,7 +530,7 @@ class CreativeRuntime:
     def _validate_movie_task(
         task: dict[str, Any],
         image_count: int,
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, str]:
         if image_count < CREATIVE_MOVIE_MIN_FRAMES or image_count > CREATIVE_MOVIE_MAX_FRAMES:
             raise ValueError(
                 "movie requires between "
@@ -539,6 +542,9 @@ class CreativeRuntime:
             raise ValueError("movie does not accept cutout mode")
         duration_ms = task.get("frame_duration_ms")
         transition_ms = task.get("transition_ms")
+        template = task.get("movie_template") or "classic"
+        if not isinstance(template, str) or template not in CREATIVE_MOVIE_TEMPLATES:
+            raise ValueError("creative movie template is invalid")
         if (
             isinstance(duration_ms, bool)
             or not isinstance(duration_ms, int)
@@ -554,7 +560,7 @@ class CreativeRuntime:
             or transition_ms >= duration_ms
         ):
             raise ValueError("creative movie transition is invalid")
-        return duration_ms / 1000.0, transition_ms / 1000.0
+        return duration_ms / 1000.0, transition_ms / 1000.0, template
 
     @staticmethod
     def _write_movie_frame(path: Path, image: np.ndarray) -> None:
@@ -573,7 +579,7 @@ class CreativeRuntime:
         images: list[np.ndarray],
         task: dict[str, Any],
     ) -> tuple[bytes, int, int]:
-        duration, transition = self._validate_movie_task(task, len(images))
+        duration, transition, template = self._validate_movie_task(task, len(images))
         with tempfile.TemporaryDirectory(prefix="xdrive-movie-") as tmp:
             root = Path(tmp)
             frame_paths: list[Path] = []
@@ -592,13 +598,39 @@ class CreativeRuntime:
 
             filters: list[str] = []
             for index in range(len(frame_paths)):
+                if template == "classic":
+                    presentation = (
+                        f"scale={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
+                        "force_original_aspect_ratio=decrease,"
+                        f"pad={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
+                        "(ow-iw)/2:(oh-ih)/2:black,"
+                        f"fps={CREATIVE_MOVIE_FPS}"
+                    )
+                elif template == "fill":
+                    presentation = (
+                        f"scale={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
+                        "force_original_aspect_ratio=increase,"
+                        f"crop={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT},"
+                        f"fps={CREATIVE_MOVIE_FPS}"
+                    )
+                else:
+                    presentation = (
+                        f"fps={CREATIVE_MOVIE_FPS},"
+                        f"scale={CREATIVE_MOVIE_WIDTH * 2}:{CREATIVE_MOVIE_HEIGHT * 2}:"
+                        "force_original_aspect_ratio=increase,"
+                        f"crop={CREATIVE_MOVIE_WIDTH * 2}:{CREATIVE_MOVIE_HEIGHT * 2},"
+                        "zoompan="
+                        "z='min(max(zoom,pzoom)+0.001,1.08)':"
+                        "x='iw/2-(iw/zoom/2)':"
+                        "y='ih/2-(ih/zoom/2)':"
+                        "d=1:"
+                        f"s={CREATIVE_MOVIE_WIDTH}x{CREATIVE_MOVIE_HEIGHT}:"
+                        f"fps={CREATIVE_MOVIE_FPS}"
+                    )
                 filters.append(
                     f"[{index}:v]"
-                    f"scale={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
-                    "force_original_aspect_ratio=decrease,"
-                    f"pad={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
-                    "(ow-iw)/2:(oh-ih)/2:black,"
-                    f"fps={CREATIVE_MOVIE_FPS},format=yuv420p,setpts=PTS-STARTPTS"
+                    f"{presentation},"
+                    "format=yuv420p,setpts=PTS-STARTPTS"
                     f"[f{index}]"
                 )
 

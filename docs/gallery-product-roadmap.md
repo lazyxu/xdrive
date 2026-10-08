@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie + Collage** |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie Templates + Collage** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -552,6 +552,8 @@ slideshow movies:
 - select **2–30 ordinary ready image assets** in the shared Gallery Selection Toolbar;
 - the shared Movie dialog preserves and can reorder the selected frame order;
 - per-frame duration is 1–5 seconds and optional fade transition is 0–1 second;
+- the shared dialog explicitly selects one of three local templates: **Classic Fit**,
+  **Full Bleed**, or **Ken Burns**; old recipes without a template remain Classic Fit;
 - the complete ordered source asset/node/revision/SHA list is persisted in the durable
   recipe and revalidated both before generation and inside the output commit transaction;
 - any changed/deleted source fails the generation rather than mixing source revisions;
@@ -586,7 +588,7 @@ only when a collage generation runs.
 
 ### Still remaining inside Phase 13
 
-- optional explicit music/template selection for movies;
+- optional explicit music selection for movies;
 - richer object-selection refinement or additional local creative models.
 
 Those follow-ups must reuse the same durable generation / Task Center / canonical

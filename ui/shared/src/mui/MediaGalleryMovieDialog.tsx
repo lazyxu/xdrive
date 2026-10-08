@@ -27,6 +27,13 @@ import {
 } from './MediaGalleryPreviewMedia'
 
 const terminalMovieStates = new Set(['completed', 'failed', 'cancelled'])
+const movieTemplates = [
+  { value: 'classic', label: '经典适配', hint: '完整显示照片，空白区域使用黑色背景' },
+  { value: 'fill', label: '满屏裁切', hint: '居中裁切为 16:9，画面铺满屏幕' },
+  { value: 'ken_burns', label: 'Ken Burns', hint: '满屏画面配合缓慢推进' },
+] as const
+
+type MovieTemplate = typeof movieTemplates[number]['value']
 
 function movieStatusLabel(generation: MediaCreativeGeneration | null) {
   switch (generation?.state) {
@@ -76,6 +83,7 @@ export function XDriveMediaGalleryMovieDialog({
   const completedRef = useRef('')
   const movieActionGenerationRef = useRef(0)
   const [orderedItems, setOrderedItems] = useState<MediaItem[]>([])
+  const [movieTemplate, setMovieTemplate] = useState<MovieTemplate>('classic')
   const [frameDurationMS, setFrameDurationMS] = useState(2000)
   const [transitionMS, setTransitionMS] = useState(350)
   const [outputName, setOutputName] = useState('')
@@ -89,6 +97,7 @@ export function XDriveMediaGalleryMovieDialog({
     setBusy(false)
     if (!open) return
     setOrderedItems(items.slice(0, 30))
+    setMovieTemplate('classic')
     setFrameDurationMS(2000)
     setTransitionMS(350)
     setOutputName('')
@@ -192,6 +201,7 @@ export function XDriveMediaGalleryMovieDialog({
         kind: 'movie',
         output_name: outputName.trim() || undefined,
         source_node_ids: orderedItems.map((item) => item.node.id),
+        movie_template: movieTemplate,
         frame_duration_ms: frameDurationMS,
         transition_ms: transitionMS,
       }
@@ -274,6 +284,21 @@ export function XDriveMediaGalleryMovieDialog({
             <TextField
               select
               size="small"
+              label="电影模板"
+              value={movieTemplate}
+              disabled={generating || busy}
+              onChange={(event) => setMovieTemplate(event.target.value as MovieTemplate)}
+              sx={{ minWidth: 170 }}
+            >
+              {movieTemplates.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
               label="每张时长"
               value={frameDurationMS}
               disabled={generating || busy}
@@ -313,7 +338,8 @@ export function XDriveMediaGalleryMovieDialog({
           </Stack>
 
           <Typography variant="caption" color="text.secondary">
-            预计时长约 {durationSeconds.toFixed(1)} 秒 · 无自动配乐 · 本地 FFmpeg 编码
+            {movieTemplates.find((option) => option.value === movieTemplate)?.hint}
+            {' · '}预计时长约 {durationSeconds.toFixed(1)} 秒 · 无自动配乐 · 本地 FFmpeg 编码
           </Typography>
 
           <Stack spacing={1}>

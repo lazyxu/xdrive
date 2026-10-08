@@ -422,6 +422,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 				len(input.SourceNodeIDs) != 2 ||
 				input.SourceNodeIDs[0] != 31 ||
 				input.SourceNodeIDs[1] != 32 ||
+				input.MovieTemplate != "fill" ||
 				input.FrameDurationMS != 2000 ||
 				input.TransitionMS == nil ||
 				*input.TransitionMS != 350 {
@@ -465,6 +466,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 		MediaCreativeInput{
 			Kind:            "movie",
 			SourceNodeIDs:   []uint64{31, 32},
+			MovieTemplate:   "fill",
 			FrameDurationMS: 2000,
 			TransitionMS:    &transition,
 		},
