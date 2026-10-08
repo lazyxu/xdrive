@@ -158,6 +158,16 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 		t.Fatalf("unexpected finished maintenance run: %+v", run)
 	}
 
+	samplerLease, err := sourceaccount.Acquire(
+		ctx,
+		db,
+		maintenanceLeaderStorageSampler,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer samplerLease.Close()
+
 	samplerID := server.beginSystemMaintenanceRun(
 		ctx,
 		meta.SystemMaintenanceKindStorageSampler,
@@ -166,6 +176,36 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 	if samplerID == 0 {
 		t.Fatal("Storage sampler maintenance run was not created")
 	}
+	server.updateSystemMaintenanceRunProgress(
+		ctx,
+		samplerID,
+		backgroundTaskProgressDTO{
+			Phase:        meta.SystemMaintenancePhaseStorageSampleInventory,
+			Current:      17,
+			Unit:         "item",
+			BytesCurrent: 4096,
+			CurrentItem:  "图片缩略图",
+		},
+	)
+	runningSamplerTasks, err := server.backgroundSystemMaintenanceTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runningSampler := backgroundTaskByID(
+		runningSamplerTasks,
+		"system-maintenance:"+meta.SystemMaintenanceKindStorageSampler,
+	)
+	if runningSampler == nil ||
+		runningSampler.State != "running" ||
+		runningSampler.Progress.Phase != meta.SystemMaintenancePhaseStorageSampleInventory ||
+		runningSampler.Progress.Current != 17 ||
+		runningSampler.Progress.Total != 0 ||
+		runningSampler.Progress.Unit != "item" ||
+		runningSampler.Progress.BytesCurrent != 4096 ||
+		runningSampler.Progress.CurrentItem != "图片缩略图" {
+		t.Fatalf("unexpected running Storage sampler progress: %+v", runningSampler)
+	}
+
 	samplerResult := newSystemMaintenancePassResult(1)
 	samplerResult.CompletedSteps = 1
 	server.finishSystemMaintenanceRun(
@@ -195,8 +235,10 @@ func TestSystemMaintenanceRunLifecycleAndInterruptedRecovery(t *testing.T) {
 		"system-maintenance:"+meta.SystemMaintenanceKindStorageSampler,
 	)
 	if sampler == nil || sampler.State != "completed" ||
-		sampler.Progress.Current != 1 ||
-		sampler.Progress.Total != 1 {
+		sampler.Progress.Current != 17 ||
+		sampler.Progress.Total != 0 ||
+		sampler.Progress.Unit != "item" ||
+		sampler.Progress.BytesCurrent != 4096 {
 		t.Fatalf("unexpected Storage sampler projection: %+v", sampler)
 	}
 	sourceVerify := backgroundTaskByID(

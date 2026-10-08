@@ -537,6 +537,18 @@ func storageUnreferencedGCStatus(
 func (s *Server) loadUnreferencedContentBlobSnapshot(
 	ctx context.Context,
 ) (storagePendingGCSnapshotDTO, int64, int64, error) {
+	return s.loadUnreferencedContentBlobSnapshotWithProgress(ctx, nil)
+}
+
+func (s *Server) loadUnreferencedContentBlobSnapshotWithProgress(
+	ctx context.Context,
+	report storageSampleProgressReporter,
+) (storagePendingGCSnapshotDTO, int64, int64, error) {
+	emit := func(value storageSampleProgress) {
+		if report != nil {
+			report(value)
+		}
+	}
 	var snapshot storagePendingGCSnapshotDTO
 	var blobs []meta.ContentBlob
 	if err := s.DB.WithContext(ctx).
@@ -565,8 +577,16 @@ GROUP BY p.source_storage_key`
 		}
 	}
 
-	var physicalCount, physicalBytes int64
-	for _, blob := range blobs {
+	total := int64(len(blobs))
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleGC,
+		Total:       total,
+		Unit:        "item",
+		CurrentItem: "待 GC Blob",
+		Force:       true,
+	})
+	var physicalCount, physicalBytes, scannedBytes int64
+	for index, blob := range blobs {
 		if err := ctx.Err(); err != nil {
 			return snapshot, 0, 0, err
 		}
@@ -597,24 +617,44 @@ GROUP BY p.source_storage_key`
 			physicalBytes += physicalSize
 		}
 
-		switch storageUnreferencedGCStatus(
+		status := storageUnreferencedGCStatus(
 			physicalExists,
 			blob.State,
 			reusedCounts[blob.StorageKey],
-		) {
+		)
+		currentItem := "待 GC Blob"
+		switch status {
 		case "awaiting_gc":
 			snapshot.AwaitingGCBlobCount++
 			snapshot.AwaitingGCBlobBytes += physicalSize
+			currentItem = "等待 Janitor"
 		case "blocked_by_upload":
 			snapshot.BlockedByUploadBlobCount++
 			snapshot.BlockedByUploadBlobBytes += physicalSize
+			currentItem = "恢复上传占用"
 		case "physical_missing":
 			snapshot.PhysicalMissingBlobCount++
 			snapshot.PhysicalMissingMetadataBytes += blob.Size
+			currentItem = "物理对象缺失"
 		case "metadata_inconsistent":
 			snapshot.MetadataInconsistentBlobCount++
 			snapshot.MetadataInconsistentBlobBytes += physicalSize
+			currentItem = "元数据状态异常"
 		}
+		if physicalExists {
+			scannedBytes += physicalSize
+		} else {
+			scannedBytes += blob.Size
+		}
+		emit(storageSampleProgress{
+			Phase:       meta.SystemMaintenancePhaseStorageSampleGC,
+			Current:     int64(index + 1),
+			Total:       total,
+			Unit:        "item",
+			Bytes:       scannedBytes,
+			CurrentItem: currentItem,
+			Force:       index+1 == len(blobs),
+		})
 	}
 	return snapshot, physicalCount, physicalBytes, nil
 }

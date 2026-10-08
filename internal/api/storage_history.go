@@ -27,6 +27,19 @@ const (
 	storageCacheGrowthFloor        = int64(10 << 30)
 )
 
+type storageSampleProgress struct {
+	Phase       string
+	Current     int64
+	Total       int64
+	Unit        string
+	Bytes       int64
+	Errors      int64
+	CurrentItem string
+	Force       bool
+}
+
+type storageSampleProgressReporter func(storageSampleProgress)
+
 type storageHistoryPointDTO struct {
 	SlotAt                            time.Time              `json:"slot_at"`
 	CapturedAt                        time.Time              `json:"captured_at"`
@@ -164,6 +177,20 @@ func (s *Server) captureStorageSampleIfDue(ctx context.Context, now time.Time) e
 }
 
 func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force bool) error {
+	return s.captureStorageSampleWithProgress(ctx, now, force, nil)
+}
+
+func (s *Server) captureStorageSampleWithProgress(
+	ctx context.Context,
+	now time.Time,
+	force bool,
+	report storageSampleProgressReporter,
+) error {
+	emit := func(value storageSampleProgress) {
+		if report != nil {
+			report(value)
+		}
+	}
 	now = now.UTC()
 	if err := s.DB.WithContext(ctx).
 		Where("slot_at < ?", now.Add(-storageSampleRetention)).
@@ -180,15 +207,38 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 			return err
 		}
 		if existing > 0 {
+			emit(storageSampleProgress{
+				Phase:       meta.SystemMaintenancePhaseStorageSamplePersist,
+				Unit:        "item",
+				CurrentItem: "今日存储快照已存在",
+				Force:       true,
+			})
 			return nil
 		}
 	}
 
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleStats,
+		Unit:        "item",
+		CurrentItem: "CAS 元数据",
+		Force:       true,
+	})
 	stats, err := s.loadGlobalStorageStats(ctx)
 	if err != nil {
 		return err
 	}
-	pendingGC, unreferencedCount, unreferencedBytes, err := s.loadUnreferencedContentBlobSnapshot(ctx)
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleStats,
+		Current:     stats.CASBlobCount,
+		Unit:        "item",
+		Bytes:       stats.CASPhysicalBytes,
+		CurrentItem: "CAS 元数据",
+		Force:       true,
+	})
+	pendingGC, unreferencedCount, unreferencedBytes, err := s.loadUnreferencedContentBlobSnapshotWithProgress(
+		ctx,
+		report,
+	)
 	if err != nil {
 		return err
 	}
@@ -196,6 +246,12 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 	stats.UnreferencedBlobBytes = unreferencedBytes
 	stats.PendingGC = &pendingGC
 
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleHealth,
+		Unit:        "item",
+		CurrentItem: "CAS 元数据一致性",
+		Force:       true,
+	})
 	health, err := maintenance.CASHealth(
 		s.DB.WithContext(ctx),
 		maintenance.CASDeletingStaleAfter,
@@ -204,12 +260,19 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 		return err
 	}
 	stats.CASHealth = &health
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleHealth,
+		Current:     health.ReadyBlobs + health.DeletingBlobs,
+		Unit:        "item",
+		CurrentItem: "CAS 元数据一致性",
+		Force:       true,
+	})
 
-	staging, err := s.loadUploadStagingInventoryFresh(ctx)
+	staging, err := s.loadUploadStagingInventoryFreshWithProgress(ctx, report)
 	if err != nil {
 		return err
 	}
-	inventory, err := s.scanStorageInventory(ctx)
+	inventory, err := s.scanStorageInventoryWithProgress(ctx, report)
 	if err != nil {
 		return err
 	}
@@ -220,6 +283,12 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 	stats.PhysicalSnapshotAt = &now
 	stats.GeneratedAt = now
 
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSamplePersist,
+		Unit:        "item",
+		CurrentItem: "写入每日快照",
+		Force:       true,
+	})
 	rawBuckets, err := json.Marshal(stats.Buckets)
 	if err != nil {
 		return err
@@ -247,7 +316,7 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 		BucketsJSON:               string(rawBuckets),
 		SnapshotJSON:              string(rawSnapshot),
 	}
-	return s.DB.WithContext(ctx).Clauses(clause.OnConflict{
+	err = s.DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "slot_at"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"captured_at",
@@ -267,6 +336,19 @@ func (s *Server) captureStorageSample(ctx context.Context, now time.Time, force 
 			"snapshot_json",
 		}),
 	}).Create(&sample).Error
+	if err != nil {
+		return err
+	}
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSamplePersist,
+		Current:     1,
+		Total:       1,
+		Unit:        "item",
+		Bytes:       inventory.StorageRootBytes,
+		CurrentItem: "每日快照已持久化",
+		Force:       true,
+	})
+	return nil
 }
 
 func (s *Server) loadLatestStorageSnapshot(ctx context.Context) (storageStatsDTO, bool, error) {

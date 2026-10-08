@@ -202,6 +202,12 @@ const (
 	SystemMaintenancePhaseCleanupHistoryRetention = "cleanup_history_retention"
 	SystemMaintenancePhaseMaintenanceRunRetention = "maintenance_run_retention"
 	SystemMaintenancePhaseStorageSample           = "storage_sample"
+	SystemMaintenancePhaseStorageSampleStats      = "storage_sample_stats"
+	SystemMaintenancePhaseStorageSampleGC         = "storage_sample_gc"
+	SystemMaintenancePhaseStorageSampleHealth     = "storage_sample_health"
+	SystemMaintenancePhaseStorageSampleStaging    = "storage_sample_staging"
+	SystemMaintenancePhaseStorageSampleInventory  = "storage_sample_inventory"
+	SystemMaintenancePhaseStorageSamplePersist    = "storage_sample_persist"
 	SystemMaintenancePhaseSourceVerify            = "source_verify"
 	SystemMaintenancePhaseSourceRepair            = "source_repair"
 	SystemMaintenancePhaseMediaVerify             = "media_verify"
@@ -221,6 +227,12 @@ type SystemMaintenanceRun struct {
 	InitiatorID       uint64     `gorm:"not null;default:0"`
 	CompletedSteps    int        `gorm:"not null;default:0"`
 	TotalSteps        int        `gorm:"not null;default:0"`
+	ProgressCurrent   int64      `gorm:"not null;default:0"`
+	ProgressTotal     int64      `gorm:"not null;default:0"`
+	ProgressUnit      string     `gorm:"size:32"`
+	ProgressBytes     int64      `gorm:"not null;default:0"`
+	ProgressErrors    int64      `gorm:"not null;default:0"`
+	ProgressMessage   string     `gorm:"type:text"`
 	Summary           string     `gorm:"type:text"`
 	Error             string     `gorm:"type:text"`
 	CancelRequestedAt *time.Time `gorm:"index"`

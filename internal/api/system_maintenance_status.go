@@ -169,6 +169,45 @@ func (s *Server) updateSystemMaintenanceRunPhase(
 	}
 }
 
+func (s *Server) updateSystemMaintenanceRunProgress(
+	ctx context.Context,
+	runID uint64,
+	progress backgroundTaskProgressDTO,
+) {
+	if runID == 0 || s == nil || s.DB == nil {
+		return
+	}
+	updates := map[string]any{
+		"progress_current": progress.Current,
+		"progress_total":   progress.Total,
+		"progress_unit":    progress.Unit,
+		"progress_bytes":   progress.BytesCurrent,
+		"progress_errors":  progress.Errors,
+		"progress_message": progress.CurrentItem,
+		"updated_at":       time.Now().UTC(),
+	}
+	if strings.TrimSpace(progress.Phase) != "" {
+		updates["phase"] = progress.Phase
+	}
+	if err := s.DB.WithContext(ctx).
+		Model(&meta.SystemMaintenanceRun{}).
+		Where(
+			"id = ? AND status IN ?",
+			runID,
+			[]string{
+				meta.SystemMaintenanceStatusRunning,
+				meta.SystemMaintenanceStatusCancelRequested,
+			},
+		).
+		Updates(updates).Error; err != nil {
+		s.logSystemMaintenanceStatusError(
+			"progress",
+			fmt.Sprintf("%d", runID),
+			err,
+		)
+	}
+}
+
 func (s *Server) finishSystemMaintenanceRun(
 	ctx context.Context,
 	runID uint64,
@@ -292,23 +331,43 @@ func (s *Server) backgroundSystemMaintenanceTasks(
 			value := run.StartedAt
 			startedAt = &value
 		}
+		progress := backgroundTaskProgressDTO{
+			Phase:       run.Phase,
+			Current:     int64(run.CompletedSteps),
+			Total:       int64(run.TotalSteps),
+			Unit:        "step",
+			CurrentItem: run.Summary,
+		}
+		if run.Kind == meta.SystemMaintenanceKindStorageSampler &&
+			(run.ProgressUnit != "" ||
+				run.ProgressCurrent > 0 ||
+				run.ProgressTotal > 0 ||
+				run.ProgressBytes > 0 ||
+				run.ProgressErrors > 0 ||
+				run.ProgressMessage != "") {
+			progress.Current = run.ProgressCurrent
+			progress.Total = run.ProgressTotal
+			progress.Unit = run.ProgressUnit
+			progress.BytesCurrent = run.ProgressBytes
+			progress.Errors = run.ProgressErrors
+			progress.CurrentItem = run.ProgressMessage
+			if run.Status != meta.SystemMaintenanceStatusRunning &&
+				run.Status != meta.SystemMaintenanceStatusCancelRequested &&
+				strings.TrimSpace(run.Summary) != "" {
+				progress.CurrentItem = run.Summary
+			}
+		}
 		out = append(out, backgroundTaskDTO{
-			ID:        systemMaintenanceTaskCenterID(run.Kind),
-			Kind:      "system.maintenance." + run.Kind,
-			Domain:    "system_maintenance",
-			Scope:     string(background.ScopeSystem),
-			State:     state,
-			Trigger:   trigger,
-			Initiator: initiator,
-			Priority:  &priority,
-			Resource:  string(background.ResourceMaintenanceIO),
-			Progress: backgroundTaskProgressDTO{
-				Phase:       run.Phase,
-				Current:     int64(run.CompletedSteps),
-				Total:       int64(run.TotalSteps),
-				Unit:        "step",
-				CurrentItem: run.Summary,
-			},
+			ID:             systemMaintenanceTaskCenterID(run.Kind),
+			Kind:           "system.maintenance." + run.Kind,
+			Domain:         "system_maintenance",
+			Scope:          string(background.ScopeSystem),
+			State:          state,
+			Trigger:        trigger,
+			Initiator:      initiator,
+			Priority:       &priority,
+			Resource:       string(background.ResourceMaintenanceIO),
+			Progress:       progress,
 			ControlActions: systemMaintenanceControlActions(run.Kind, run.Status),
 			StartedAt:      startedAt,
 			UpdatedAt:      run.UpdatedAt,
