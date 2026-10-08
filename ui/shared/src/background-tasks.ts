@@ -20,6 +20,8 @@ export type XDriveBackgroundTaskProgress = {
   total?: number
   unit?: string
   percent?: number
+  bytes_current?: number
+  errors?: number
   current_item?: string
 }
 
@@ -215,6 +217,12 @@ export function xDriveBackgroundTaskPhaseLabel(phase?: string) {
     case 'cleanup_history_retention': return '清理历史保留'
     case 'maintenance_run_retention': return '维护历史保留'
     case 'storage_sample': return '正在生成存储快照'
+    case 'storage_sample_persist': return '写入每日快照'
+    case 'storage_sample_inventory': return '扫描物理存储'
+    case 'storage_sample_staging': return '扫描上传暂存区'
+    case 'storage_sample_health': return '检查 CAS 健康'
+    case 'storage_sample_gc': return '扫描待 GC Blob'
+    case 'storage_sample_stats': return '统计 CAS 元数据'
     case 'queued': return '等待执行'
     case 'source_verify': return '正在校验同步文件夹'
     case 'source_repair': return '正在修复同步文件夹'
@@ -251,6 +259,22 @@ export function xDriveBackgroundTaskProgressLabel(task: XDriveBackgroundTask) {
   const unit = task.progress?.unit ?? ''
   const phase = xDriveBackgroundTaskPhaseLabel(task.progress?.phase)
   if (task.domain === 'system_maintenance') {
+    if (task.kind === 'system.maintenance.storage_sampler') {
+      const parts = [phase || xDriveBackgroundTaskStateLabel(task.state)]
+      if (task.progress?.current_item) parts.push(task.progress.current_item)
+      if (total > 0) {
+        parts.push(`${current.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 项`)
+      } else if (current > 0) {
+        parts.push(`${current.toLocaleString('zh-CN')} 项`)
+      }
+      if ((task.progress?.bytes_current ?? 0) > 0) {
+        parts.push(formatBytes(task.progress.bytes_current ?? 0))
+      }
+      if ((task.progress?.errors ?? 0) > 0) {
+        parts.push(`${task.progress.errors?.toLocaleString('zh-CN')} 个错误`)
+      }
+      return parts.join(' · ')
+    }
     if (total > 0) {
       return `${phase || xDriveBackgroundTaskStateLabel(task.state)} · ${current.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 个阶段`
     }

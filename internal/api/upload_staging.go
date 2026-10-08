@@ -118,7 +118,22 @@ func (s *Server) loadUploadStagingInventoryFresh(ctx context.Context) (uploadSta
 	return s.loadUploadStagingInventorySnapshot(ctx, true)
 }
 
+func (s *Server) loadUploadStagingInventoryFreshWithProgress(
+	ctx context.Context,
+	report storageSampleProgressReporter,
+) (uploadStagingInventory, error) {
+	return s.loadUploadStagingInventorySnapshotWithProgress(ctx, true, report)
+}
+
 func (s *Server) loadUploadStagingInventorySnapshot(ctx context.Context, force bool) (uploadStagingInventory, error) {
+	return s.loadUploadStagingInventorySnapshotWithProgress(ctx, force, nil)
+}
+
+func (s *Server) loadUploadStagingInventorySnapshotWithProgress(
+	ctx context.Context,
+	force bool,
+	report storageSampleProgressReporter,
+) (uploadStagingInventory, error) {
 	s.stagingCacheMu.Lock()
 	defer s.stagingCacheMu.Unlock()
 	if !force && !s.stagingCacheAt.IsZero() && time.Since(s.stagingCacheAt) < stagingSnapshotTTL {
@@ -131,7 +146,7 @@ func (s *Server) loadUploadStagingInventorySnapshot(ctx context.Context, force b
 		s.obs.noteStagingSnapshotCache(false)
 	}
 	started := time.Now()
-	inventory, err := s.scanUploadStagingInventory(ctx)
+	inventory, err := s.scanUploadStagingInventoryWithProgress(ctx, report)
 	if s.obs != nil {
 		s.obs.observeInternalOperation("staging_inventory_scan", time.Since(started))
 	}
@@ -144,6 +159,18 @@ func (s *Server) loadUploadStagingInventorySnapshot(ctx context.Context, force b
 }
 
 func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingInventory, error) {
+	return s.scanUploadStagingInventoryWithProgress(ctx, nil)
+}
+
+func (s *Server) scanUploadStagingInventoryWithProgress(
+	ctx context.Context,
+	report storageSampleProgressReporter,
+) (uploadStagingInventory, error) {
+	emit := func(value storageSampleProgress) {
+		if report != nil {
+			report(value)
+		}
+	}
 	now := time.Now()
 	stats := uploadStagingStatsDTO{
 		OrphanGraceSeconds: int64(stagingOrphanGrace.Seconds()),
@@ -190,9 +217,22 @@ func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingI
 	stats.Supported = true
 	seenKnown := make(map[string]struct{}, len(known))
 	cutoff := now.Add(-stagingOrphanGrace)
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleStaging,
+		Unit:        "item",
+		CurrentItem: "上传暂存区",
+		Force:       true,
+	})
 	if err := s.walkStagingFiles(ctx, func(file storage.StagingFile) error {
 		stats.StagingFiles++
 		stats.StagingBytes += file.Size
+		emit(storageSampleProgress{
+			Phase:       meta.SystemMaintenancePhaseStorageSampleStaging,
+			Current:     stats.StagingFiles,
+			Unit:        "item",
+			Bytes:       stats.StagingBytes,
+			CurrentItem: "上传暂存区",
+		})
 		if part, exists := known[file.Key]; exists {
 			seenKnown[file.Key] = struct{}{}
 			if !part.ExpiresAt.After(now) {
@@ -221,6 +261,14 @@ func (s *Server) scanUploadStagingInventory(ctx context.Context) (uploadStagingI
 	}
 	stats.ReclaimableFiles = stats.OrphanFiles + stats.ExpiredStagingFiles
 	stats.ReclaimableBytes = stats.OrphanBytes + stats.ExpiredStagingBytes
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleStaging,
+		Current:     stats.StagingFiles,
+		Unit:        "item",
+		Bytes:       stats.StagingBytes,
+		CurrentItem: "上传暂存区",
+		Force:       true,
+	})
 	return uploadStagingInventory{Stats: stats, Known: known, OrphanCutoff: cutoff}, nil
 }
 

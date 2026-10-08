@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/media"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 )
 
@@ -149,7 +150,45 @@ func storageInventoryCategory(key string) string {
 	return "legacy"
 }
 
+func storageInventoryProgressLabel(category string) string {
+	switch category {
+	case "cas":
+		return "CAS 主数据"
+	case "legacy":
+		return "Legacy 文件数据"
+	case "upload_staging":
+		return "上传暂存区"
+	case "media_thumbnail":
+		return "图片缩略图"
+	case "video_poster":
+		return "视频 Poster"
+	case "analysis_preview":
+		return "分析预览"
+	case "media_other":
+		return "其他媒体派生文件"
+	case "write_temp":
+		return "写入临时文件"
+	case "readiness_temp":
+		return "存储探针临时文件"
+	default:
+		return "未分类文件"
+	}
+}
+
 func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO, error) {
+	return s.scanStorageInventoryWithProgress(ctx, nil)
+}
+
+func (s *Server) scanStorageInventoryWithProgress(
+	ctx context.Context,
+	report storageSampleProgressReporter,
+) (storageInventoryDTO, error) {
+	emit := func(value storageSampleProgress) {
+		if report != nil {
+			report(value)
+		}
+	}
+
 	filesRoot := storageHostPath(s.FilesDataHostPath, "")
 	homeRoot := storageHostPath(s.XDriveHomeHostPath, "")
 	postgresRoot := storageHostPath(s.PostgresDataHostPath, storageHostJoin(homeRoot, "data", "postgres"))
@@ -170,8 +209,24 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 		return storageInventoryDTO{}, errors.New("storage backend does not support managed file inventory")
 	}
 	now := time.Now()
+	var scannedFiles, scannedBytes int64
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleInventory,
+		Unit:        "item",
+		CurrentItem: "物理存储",
+		Force:       true,
+	})
 	if err := walker.WalkManagedFiles(ctx, func(file storage.ManagedFile) error {
 		category := storageInventoryCategory(file.Key)
+		scannedFiles++
+		scannedBytes += file.Size
+		emit(storageSampleProgress{
+			Phase:       meta.SystemMaintenancePhaseStorageSampleInventory,
+			Current:     scannedFiles,
+			Unit:        "item",
+			Bytes:       scannedBytes,
+			CurrentItem: storageInventoryProgressLabel(category),
+		})
 		counter := counters[category]
 		if counter == nil {
 			counter = counters["unclassified"]
@@ -197,6 +252,14 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 	if err != nil {
 		return storageInventoryDTO{}, err
 	}
+	emit(storageSampleProgress{
+		Phase:       meta.SystemMaintenancePhaseStorageSampleInventory,
+		Current:     scannedFiles,
+		Unit:        "item",
+		Bytes:       scannedBytes,
+		CurrentItem: "物理存储",
+		Force:       true,
+	})
 	counters["upload_staging"].reclaimableFiles = staging.Stats.ReclaimableFiles
 	counters["upload_staging"].reclaimableBytes = staging.Stats.ReclaimableBytes
 

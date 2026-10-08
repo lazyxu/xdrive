@@ -280,8 +280,57 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if !foundBlocked {
 		t.Fatal("blocked GC detail missing")
 	}
-	if err := server.captureStorageSample(context.Background(), sampleNow, true); err != nil {
+	var storageProgress []storageSampleProgress
+	if err := server.captureStorageSampleWithProgress(
+		context.Background(),
+		sampleNow,
+		true,
+		func(value storageSampleProgress) {
+			storageProgress = append(storageProgress, value)
+		},
+	); err != nil {
 		t.Fatal(err)
+	}
+	phaseSeen := make(map[string]bool)
+	var gcDeterminate, inventoryObserved, persisted bool
+	for _, progress := range storageProgress {
+		phaseSeen[progress.Phase] = true
+		if progress.Phase == meta.SystemMaintenancePhaseStorageSampleGC &&
+			progress.Total == 2 &&
+			progress.Current == 2 {
+			gcDeterminate = true
+		}
+		if progress.Phase == meta.SystemMaintenancePhaseStorageSampleInventory &&
+			progress.Current > 0 &&
+			progress.Bytes > 0 {
+			inventoryObserved = true
+		}
+		if progress.Phase == meta.SystemMaintenancePhaseStorageSamplePersist &&
+			progress.Current == 1 &&
+			progress.Total == 1 {
+			persisted = true
+		}
+	}
+	for _, phase := range []string{
+		meta.SystemMaintenancePhaseStorageSampleStats,
+		meta.SystemMaintenancePhaseStorageSampleGC,
+		meta.SystemMaintenancePhaseStorageSampleHealth,
+		meta.SystemMaintenancePhaseStorageSampleStaging,
+		meta.SystemMaintenancePhaseStorageSampleInventory,
+		meta.SystemMaintenancePhaseStorageSamplePersist,
+	} {
+		if !phaseSeen[phase] {
+			t.Fatalf("storage sampler progress missing phase %q: %+v", phase, storageProgress)
+		}
+	}
+	if !gcDeterminate {
+		t.Fatalf("GC progress did not expose real current/total: %+v", storageProgress)
+	}
+	if !inventoryObserved {
+		t.Fatalf("inventory progress did not expose scanned item/byte counts: %+v", storageProgress)
+	}
+	if !persisted {
+		t.Fatalf("storage sampler progress did not report persisted terminal sample: %+v", storageProgress)
 	}
 	global := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
 	if global.Scope != "global" || global.CASBlobCount != 2 || global.PhysicalSnapshotAt == nil {

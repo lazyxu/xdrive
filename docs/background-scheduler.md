@@ -158,6 +158,13 @@ consumer is migrated so the scheduler remains reusable outside the API process.
    including CAS distribution, unreferenced physical blobs, upload staging summary, and the full storage inventory;
    page requests read that persisted snapshot instead of walking the storage backend. Admin global Task Center exposes
    the sampler as “每日存储快照”, including Run/Cancel controls; manual Run refreshes the current day's snapshot.
+   The durable maintenance row also persists sampler progress independently from the final 1/1 maintenance result:
+   phase, scanned-item count, optional known total, inspected bytes, error count, and current category/message. CAS
+   metadata, zero-reference GC inspection, health, upload staging, physical inventory, and snapshot persistence use
+   distinct phases. The zero-reference phase may use a determinate count because its Blob row set is already known;
+   streaming staging/inventory walks must not pre-scan solely to manufacture a percentage, so Task Center renders
+   them indeterminate while still showing real scanned items/bytes and elapsed time. Progress persistence is throttled
+   to avoid turning per-file scanning into per-file database writes.
    Ordinary users never query or receive system-maintenance rows. Janitor keeps its existing cleanup/GC behavior and
    applies 90-day batched retention to finished maintenance-run history while preserving the latest row per kind.
 

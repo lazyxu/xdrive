@@ -19,12 +19,14 @@ const (
 )
 
 type backgroundTaskProgressDTO struct {
-	Phase       string   `json:"phase,omitempty"`
-	Current     int64    `json:"current,omitempty"`
-	Total       int64    `json:"total,omitempty"`
-	Unit        string   `json:"unit,omitempty"`
-	Percent     *float64 `json:"percent,omitempty"`
-	CurrentItem string   `json:"current_item,omitempty"`
+	Phase        string   `json:"phase,omitempty"`
+	Current      int64    `json:"current,omitempty"`
+	Total        int64    `json:"total,omitempty"`
+	Unit         string   `json:"unit,omitempty"`
+	Percent      *float64 `json:"percent,omitempty"`
+	BytesCurrent int64    `json:"bytes_current,omitempty"`
+	Errors       int64    `json:"errors,omitempty"`
+	CurrentItem  string   `json:"current_item,omitempty"`
 }
 
 type backgroundTaskDTO struct {

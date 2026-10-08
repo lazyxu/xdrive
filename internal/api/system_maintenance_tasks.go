@@ -18,6 +18,7 @@ import (
 const (
 	systemMaintenanceReconcileInterval        = 30 * time.Second
 	systemMaintenanceDefaultHeartbeatInterval = 5 * time.Second
+	storageSamplerProgressPersistInterval     = 500 * time.Millisecond
 	maintenanceLeaderSourceIntegrity          = "system-maintenance:source-integrity"
 	maintenanceLeaderMediaIntegrity           = "system-maintenance:media-integrity"
 )
@@ -266,10 +267,16 @@ func (s *Server) reconcileSystemMaintenanceTasks(ctx context.Context) {
 				Model(&meta.SystemMaintenanceRun{}).
 				Where("id = ? AND status = ?", run.ID, meta.SystemMaintenanceStatusRunning).
 				Updates(map[string]any{
-					"status":     meta.SystemMaintenanceStatusQueued,
-					"phase":      meta.SystemMaintenancePhaseQueued,
-					"error":      "",
-					"updated_at": now,
+					"status":           meta.SystemMaintenanceStatusQueued,
+					"phase":            meta.SystemMaintenancePhaseQueued,
+					"error":            "",
+					"progress_current": int64(0),
+					"progress_total":   int64(0),
+					"progress_unit":    "",
+					"progress_bytes":   int64(0),
+					"progress_errors":  int64(0),
+					"progress_message": "",
+					"updated_at":       now,
 				}).Error; err != nil {
 				s.ensureObservability()
 				s.obs.logger.Warn(
@@ -469,6 +476,42 @@ func (s *Server) systemMaintenanceCancellationRequested(
 		row.Status == meta.SystemMaintenanceStatusCancelled, nil
 }
 
+func (s *Server) storageSamplerProgressReporter(
+	ctx context.Context,
+	runID uint64,
+) storageSampleProgressReporter {
+	var lastPersist time.Time
+	lastPhase := ""
+	return func(value storageSampleProgress) {
+		now := time.Now()
+		if !value.Force &&
+			value.Phase == lastPhase &&
+			!lastPersist.IsZero() &&
+			now.Sub(lastPersist) < storageSamplerProgressPersistInterval {
+			return
+		}
+		progress := backgroundTaskProgressDTO{
+			Phase:        value.Phase,
+			Current:      value.Current,
+			Total:        value.Total,
+			Unit:         value.Unit,
+			BytesCurrent: value.Bytes,
+			Errors:       value.Errors,
+			CurrentItem:  value.CurrentItem,
+		}
+		s.updateSystemMaintenanceRunProgress(ctx, runID, progress)
+		background.ReportProgress(ctx, background.TaskProgress{
+			Phase:   value.Phase,
+			Current: value.Current,
+			Total:   value.Total,
+			Unit:    value.Unit,
+			Message: value.CurrentItem,
+		})
+		lastPersist = now
+		lastPhase = value.Phase
+	}
+}
+
 func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) error {
 	var run meta.SystemMaintenanceRun
 	if err := s.DB.WithContext(ctx).First(&run, runID).Error; err != nil {
@@ -501,13 +544,19 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 			},
 		).
 		Updates(map[string]any{
-			"status":      meta.SystemMaintenanceStatusRunning,
-			"phase":       phase,
-			"started_at":  now,
-			"finished_at": nil,
-			"error":       "",
-			"summary":     "",
-			"updated_at":  now,
+			"status":           meta.SystemMaintenanceStatusRunning,
+			"phase":            phase,
+			"started_at":       now,
+			"finished_at":      nil,
+			"error":            "",
+			"summary":          "",
+			"progress_current": int64(0),
+			"progress_total":   int64(0),
+			"progress_unit":    "",
+			"progress_bytes":   int64(0),
+			"progress_errors":  int64(0),
+			"progress_message": "",
+			"updated_at":       now,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -524,11 +573,24 @@ func (s *Server) runSystemMaintenanceTask(ctx context.Context, runID uint64) err
 		return nil
 	}
 
-	background.ReportProgress(ctx, background.TaskProgress{
-		Phase: phase,
-		Total: 1,
-		Unit:  "step",
-	})
+	if run.Kind == meta.SystemMaintenanceKindStorageSampler {
+		s.updateSystemMaintenanceRunProgress(ctx, run.ID, backgroundTaskProgressDTO{
+			Phase:       phase,
+			Unit:        "item",
+			CurrentItem: "准备每日存储快照",
+		})
+		background.ReportProgress(ctx, background.TaskProgress{
+			Phase:   phase,
+			Unit:    "item",
+			Message: "准备每日存储快照",
+		})
+	} else {
+		background.ReportProgress(ctx, background.TaskProgress{
+			Phase: phase,
+			Total: 1,
+			Unit:  "step",
+		})
+	}
 	summary, state, err := s.executeSystemMaintenanceTask(ctx, run)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
@@ -566,7 +628,28 @@ func (s *Server) executeSystemMaintenanceTask(
 	switch run.Kind {
 	case meta.SystemMaintenanceKindStorageSampler:
 		force := systemMaintenanceTrigger(run) == background.TriggerAdminAction
-		if err := s.captureStorageSample(ctx, time.Now().UTC(), force); err != nil {
+		emit := s.storageSamplerProgressReporter(ctx, run.ID)
+		latest := storageSampleProgress{
+			Phase:       meta.SystemMaintenancePhaseStorageSample,
+			Unit:        "item",
+			CurrentItem: "准备每日存储快照",
+		}
+		report := func(value storageSampleProgress) {
+			latest = value
+			emit(value)
+		}
+		if err := s.captureStorageSampleWithProgress(
+			ctx,
+			time.Now().UTC(),
+			force,
+			report,
+		); err != nil {
+			latest.Errors++
+			latest.Force = true
+			if strings.TrimSpace(latest.CurrentItem) == "" {
+				latest.CurrentItem = "存储快照失败"
+			}
+			emit(latest)
 			return "", "", err
 		}
 		var sample meta.StorageSample
@@ -817,14 +900,15 @@ func (s *Server) finishSystemMaintenanceState(
 		Model(&meta.SystemMaintenanceRun{}).
 		Where("id = ? AND status = ?", runID, meta.SystemMaintenanceStatusRunning).
 		Updates(map[string]any{
-			"status":          status,
-			"phase":           meta.SystemMaintenancePhaseFinished,
-			"completed_steps": completedSteps,
-			"total_steps":     totalSteps,
-			"summary":         summary,
-			"error":           errorText,
-			"finished_at":     now,
-			"updated_at":      now,
+			"status":           status,
+			"phase":            meta.SystemMaintenancePhaseFinished,
+			"completed_steps":  completedSteps,
+			"total_steps":      totalSteps,
+			"progress_message": summary,
+			"summary":          summary,
+			"error":            errorText,
+			"finished_at":      now,
+			"updated_at":       now,
 		})
 	if result.Error != nil {
 		s.logSystemMaintenanceStatusError("finish", fmt.Sprintf("%d", runID), result.Error)
@@ -852,11 +936,12 @@ func (s *Server) finishSystemMaintenanceCancelled(runID uint64) {
 			},
 		).
 		Updates(map[string]any{
-			"status":      meta.SystemMaintenanceStatusCancelled,
-			"phase":       meta.SystemMaintenancePhaseFinished,
-			"summary":     "已取消",
-			"finished_at": now,
-			"updated_at":  now,
+			"status":           meta.SystemMaintenanceStatusCancelled,
+			"phase":            meta.SystemMaintenancePhaseFinished,
+			"progress_message": "已取消",
+			"summary":          "已取消",
+			"finished_at":      now,
+			"updated_at":       now,
 		}).Error; err != nil {
 		s.logSystemMaintenanceStatusError("cancel", fmt.Sprintf("%d", runID), err)
 	}
