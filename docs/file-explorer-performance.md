@@ -51,6 +51,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
+| FileOperation Move replace/merge File preload elimination | **Accepted / structural contract** | Structural / unmeasured wall-clock | Merge root + 120 matching child directories, one source file per child: unused `xd_files` preload SELECTs **242 -> 0** (121 conflict-target preloads + 121 source-child preloads). Node traversal/mutation order is unchanged. |
 | FileOperation Copy source-subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One copied root with 120 child directories and one file each: source-tree reads **242 SELECTs -> 1 recursive CTE with file metadata join**. Destination creates, content-reference retain, hooks/progress and undo remain per node. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
@@ -1081,6 +1082,43 @@ Decision: **Accepted.** Move is metadata-only at the root level, so removing roo
 Regression budget: one Move operation may execute at most **one** grouped root-byte recursive CTE regardless of selected-root count, and root loading must not restore per-root File preloads.
 
 Next action: continue the FileExplorer upload preflight batching audit; preserve ordered conflict/partial-success semantics while reducing request and DB-query count.
+
+
+### FileOperation Move replace/merge File-preload contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one Move replace/merge root directory;
+- **120 matching source/target child directories** below that root;
+- every source child directory contains **1 file** with valid `xd_files` metadata;
+- evidence method: PostgreSQL SQL capture around the real `moveNodeReplaceOrMergeTx` traversal plus final merged-tree assertions;
+- wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- every successful destination-name conflict lookup used `Preload("File")`, although replace/merge only consumes target node identity/type/revision; for the merge root plus 120 matching child directories this produces **121 `xd_files` SELECTs**;
+- every source-directory child enumeration in Move also used `Preload("File")`, although Move changes node metadata and does not consume child file metadata; the same root + 120 child directories produces another **121 `xd_files` SELECTs**;
+- total unused File preload statements for the stable workload: **242**.
+
+AFTER / current:
+
+- destination conflict lookup is node-only;
+- Move replace/merge source-child enumeration is node-only;
+- the stable workload performs **0 `xd_files` SELECTs** during the Move merge traversal;
+- conflict lookup, source child-list queries, target managed-source protection, per-node revision checks, move updates, merge cleanup and operation ordering are unchanged;
+- Copy's recursive source-child preload remains intact because Copy hooks/content-reference creation consume source `File` metadata.
+
+Decision: **Accepted.** This removes directory-count-scaled File metadata reads from Move replace/merge without changing the mutation side of the operation.
+
+Regression budget: Move replace/merge must perform **0 `xd_files` SELECTs** for traversal metadata. Do not remove Copy source File loading unless a separate Copy contract proves that metadata is unnecessary.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestFileOperationMoveMergeAvoidsFilePreloads$' -count=1`.
+
+Next action: continue ordinary download / sync / delete audits and only change another deterministic SQL, request, allocation, filesystem, lock, or object-store multiplier.
 
 ### FileOperation Copy source-subtree loading
 

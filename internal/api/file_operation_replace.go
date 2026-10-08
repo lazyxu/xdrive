@@ -13,7 +13,7 @@ import (
 
 func fileOperationNameConflictNodeTx(tx *gorm.DB, uid, parentID uint64, name string, except uint64) (meta.Node, bool, error) {
 	var node meta.Node
-	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("File").
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL AND lower(name) = lower(?)", uid, parentID, name)
 	if except != 0 {
 		query = query.Where("id <> ?", except)
@@ -185,7 +185,7 @@ func (s *Server) moveNodeReplaceOrMergeTx(ctx context.Context, tx *gorm.DB, uid 
 			return meta.Node{}, false, &batchMutationFailure{Index: index, ID: target.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed source target cannot be replaced or merged"}
 		}
 		var children []meta.Node
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("File").
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", uid, source.ID).
 			Order("type ASC, name ASC").Find(&children).Error; err != nil {
 			return meta.Node{}, false, err
