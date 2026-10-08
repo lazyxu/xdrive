@@ -674,16 +674,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 	}
 	// Remote deletions (for example from Web UI).
-	for rel := range baseline {
-		if rel == "" {
-			continue
-		}
-		if _, ok := remote[rel]; ok {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
-		deletePrefix(baseline, rel)
-	}
+	pruneRemoteDeletedBaseline(p.root, baseline, remote)
 	if err := p.applyAlwaysLocal(baseline); err != nil {
 		return err
 	}
@@ -816,6 +807,61 @@ func deletePrefix(m map[string]winState, prefix string) {
 		if k == prefix || strings.HasPrefix(k, prefix+"/") {
 			delete(m, k)
 		}
+	}
+}
+
+func pruneRemoteDeletedBaseline(
+	root string,
+	baseline map[string]winState,
+	remote map[string]client.Node,
+) {
+	pruneRemoteDeletedBaselineWithRemove(
+		baseline,
+		remote,
+		func(rel string) {
+			_ = os.RemoveAll(filepath.Join(root, filepath.FromSlash(rel)))
+		},
+	)
+}
+
+func pruneRemoteDeletedBaselineWithRemove(
+	baseline map[string]winState,
+	remote map[string]client.Node,
+	remove func(string),
+) {
+	missing := make(map[string]struct{})
+	for rel := range baseline {
+		if rel == "" {
+			continue
+		}
+		if _, ok := remote[rel]; ok {
+			continue
+		}
+		missing[rel] = struct{}{}
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	removalRoots := make([]string, 0, len(missing))
+	for rel := range missing {
+		covered := false
+		for parent := slashDir(rel); parent != ""; parent = slashDir(parent) {
+			if _, ok := missing[parent]; ok {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			removalRoots = append(removalRoots, rel)
+		}
+	}
+	sort.Strings(removalRoots)
+	for _, rel := range removalRoots {
+		remove(rel)
+	}
+	for rel := range missing {
+		delete(baseline, rel)
 	}
 }
 func sortedPaths(m map[string]client.Node, parentsFirst bool) []string {

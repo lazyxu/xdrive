@@ -942,16 +942,7 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 		}
 	}
 
-	for rel := range baseline {
-		if rel == "" {
-			continue
-		}
-		if _, ok := remote[rel]; ok {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(rel)))
-		deletePrefix(baseline, rel)
-	}
+	pruneRemoteDeletedBaseline(p.root, baseline, remote)
 	if err := p.applyAlwaysLocal(baseline); err != nil {
 		return err
 	}
