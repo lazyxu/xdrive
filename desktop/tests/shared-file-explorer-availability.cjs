@@ -39,6 +39,8 @@ test('shared FileExplorer owns canonical item icons and availability badges', ()
     "| 'error'",
     "label: '混合 · 部分内容已在本地'",
     'xDriveFileExplorerAvailabilityFromSnapshot',
+    'progress?: number',
+    "xDriveFileExplorerAvailability('syncing', state.progress)",
   ]) {
     assert.ok(sharedAvailability.includes(token), 'shared availability semantics missing: ' + token)
   }
@@ -223,5 +225,30 @@ test('Desktop overview reuses FileExplorer item visuals and availability semanti
     desktopOverview.includes('StarRoundedIcon'),
     false,
     'favorite rows must show the file visual, not replace it with a star primary icon',
+  )
+})
+
+
+test('Desktop FileExplorer projects path-bound hydration transfer progress without extra polling', () => {
+  for (const token of [
+    'desktopActiveHydrationProgress',
+    "transfer.kind !== 'hydration'",
+    "transfer.state !== 'running'",
+    '(done / total) * 100',
+    'hydrationProgressByPath.has(',
+    'progress: hydrationProgress ?? undefined',
+    'hadHydrationTransferRef.current',
+    'hasUntrackedSyncing',
+  ]) {
+    assert.ok(desktopExplorer.includes(token), 'hydration progress projection missing: ' + token)
+  }
+  assert.ok(
+    desktopApp.includes('transfers: transfers.transfers'),
+    'Desktop App must feed the existing Agent transfer event snapshot into FileExplorer',
+  )
+  assert.equal(
+    desktopExplorer.includes('getTransfers()'),
+    false,
+    'FileExplorer must reuse App transfer events rather than add its own transfer polling',
   )
 })

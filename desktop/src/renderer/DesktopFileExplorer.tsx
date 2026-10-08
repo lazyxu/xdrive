@@ -89,10 +89,36 @@ type DesktopFileAvailabilityEntry = {
   error?: string
 }
 
-function desktopFileStatusLabel(state: AgentFileAvailability) {
-  if (state.Syncing || state.Mode === 'syncing') return '正在同步'
+function desktopFileStatusLabel(state: AgentFileAvailability, syncing = false) {
+  if (syncing || state.Syncing || state.Mode === 'syncing') return '正在同步'
   if (state.InSync) return '已同步'
   return '待同步'
+}
+
+function desktopFileAvailabilityPathKey(value?: string) {
+  let normalized = (value ?? '').trim().replace(/\\/g, '/')
+  if (normalized.toLowerCase().startsWith('//?/unc/')) {
+    normalized = '//' + normalized.slice(8)
+  } else if (normalized.startsWith('//?/')) {
+    normalized = normalized.slice(4)
+  }
+  return normalized.replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+function desktopActiveHydrationProgress(transfers: readonly AgentTransfer[]) {
+  const byPath = new Map<string, number | null>()
+  for (const transfer of transfers) {
+    if (transfer.kind !== 'hydration' || transfer.state !== 'running') continue
+    const key = desktopFileAvailabilityPathKey(transfer.path)
+    if (!key || byPath.has(key)) continue
+    const total = Math.max(0, transfer.bytes_total)
+    const done = Math.max(0, transfer.bytes_done)
+    byPath.set(
+      key,
+      total > 0 ? Math.max(0, Math.min(100, (done / total) * 100)) : null,
+    )
+  }
+  return byPath
 }
 
 export default function DesktopFileExplorer({
@@ -133,6 +159,7 @@ export default function DesktopFileExplorer({
   favoritesSupported = false,
   recentSupported = false,
   transferLifecycleSupported = false,
+  transfers = [],
   keyboardProfile = 'web',
   onError,
   onFeedback,
@@ -183,6 +210,7 @@ export default function DesktopFileExplorer({
   favoritesSupported?: boolean
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
+  transfers?: readonly AgentTransfer[]
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
@@ -825,37 +853,61 @@ export default function DesktopFileExplorer({
     fileAvailabilitySupported,
   ])
 
+  const hydrationProgressByPath = useMemo(
+    () => desktopActiveHydrationProgress(transfers),
+    [transfers],
+  )
+  const hadHydrationTransferRef = useRef(false)
+
   useEffect(() => {
-    if (
-      !fileAvailabilitySupported ||
-      ![...availabilityByID.values()].some((entry) => entry.state?.Syncing)
-    ) return
+    const active = hydrationProgressByPath.size > 0
+    if (!active && hadHydrationTransferRef.current) {
+      setAvailabilityRefreshToken((value) => value + 1)
+    }
+    hadHydrationTransferRef.current = active
+  }, [hydrationProgressByPath])
+
+  useEffect(() => {
+    if (!fileAvailabilitySupported) return
+    const hasUntrackedSyncing = [...availabilityByID.values()].some((entry) => {
+      if (!entry.state?.Syncing) return false
+      return !hydrationProgressByPath.has(desktopFileAvailabilityPathKey(entry.state.Path))
+    })
+    if (!hasUntrackedSyncing) return
     const timer = window.setTimeout(
       () => setAvailabilityRefreshToken((value) => value + 1),
       1500,
     )
     return () => window.clearTimeout(timer)
-  }, [availabilityByID, fileAvailabilitySupported])
+  }, [availabilityByID, fileAvailabilitySupported, hydrationProgressByPath])
 
   const getItemStatus = useCallback((item: XDriveFileExplorerItem) => {
     const entry = availabilityByID.get(Number(item.id))
     if (entry?.error) return '状态异常'
-    return entry?.state ? desktopFileStatusLabel(entry.state) : undefined
-  }, [availabilityByID])
+    if (!entry?.state) return undefined
+    const hydrationActive = hydrationProgressByPath.has(
+      desktopFileAvailabilityPathKey(entry.state.Path),
+    )
+    return desktopFileStatusLabel(entry.state, hydrationActive)
+  }, [availabilityByID, hydrationProgressByPath])
 
   const getItemAvailability = useCallback((item: XDriveFileExplorerItem) => {
     const entry = availabilityByID.get(Number(item.id))
     if (entry?.error) return xDriveFileExplorerAvailabilityError()
     if (!entry?.state) return undefined
+    const hydrationProgress = hydrationProgressByPath.get(
+      desktopFileAvailabilityPathKey(entry.state.Path),
+    )
     return xDriveFileExplorerAvailabilityFromSnapshot({
       mode: entry.state.Mode,
       pinned: entry.state.Pinned,
       onlineOnly: entry.state.OnlineOnly,
       availableOffline: entry.state.AvailableOffline,
       mixed: entry.state.Mixed,
-      syncing: entry.state.Syncing,
+      syncing: entry.state.Syncing || hydrationProgress !== undefined,
+      progress: hydrationProgress ?? undefined,
     })
-  }, [availabilityByID])
+  }, [availabilityByID, hydrationProgressByPath])
 
   const setNodeAvailability = useCallback(async (
     node: AgentCloudNode,

@@ -1933,6 +1933,7 @@ export default function App({
               favoritesSupported: fileFavoritesSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
+              transfers: transfers.transfers,
               keyboardProfile: fileExplorerKeyboardProfile,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),
