@@ -14,6 +14,7 @@ export function XDriveWorkspaceSurface({
   title,
   subtitle,
   pageActions,
+  showPageHeader = true,
   maxWidth = 'lg',
   dialogActions,
   children,
@@ -24,6 +25,7 @@ export function XDriveWorkspaceSurface({
   title: string
   subtitle?: ReactNode
   pageActions?: ReactNode
+  showPageHeader?: boolean
   maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | false
   dialogActions?: ReactNode
   children: ReactNode
@@ -33,8 +35,10 @@ export function XDriveWorkspaceSurface({
   if (presentation === 'page') {
     return (
       <Box component="section" className="workspace-page-surface" sx={{ width: '100%', minWidth: 0 }}>
-        <XDrivePageHeader title={title} subtitle={subtitle} actions={pageActions} />
-        <Box sx={{ mt: 2 }}>{children}</Box>
+        {showPageHeader ? (
+          <XDrivePageHeader title={title} subtitle={subtitle} actions={pageActions} />
+        ) : null}
+        <Box sx={{ mt: showPageHeader ? 2 : 0 }}>{children}</Box>
       </Box>
     )
   }

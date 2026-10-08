@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const sharedGalleryMain = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
+const sharedWorkspaceSurface = read('ui', 'shared', 'src', 'mui', 'WorkspaceSurface.tsx')
 const sharedGalleryDetails = read('ui', 'shared', 'src', 'mui', 'MediaGalleryDetails.tsx')
 const sharedGalleryInspector = read('ui', 'shared', 'src', 'mui', 'MediaGalleryInspector.tsx')
 const sharedGalleryPreview = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx')
@@ -142,7 +143,7 @@ test('Gallery is one shared MUI surface for Web and Desktop', () => {
 
   assert.equal((webApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
   assert.equal((desktopApp.match(/<XDriveMediaGalleryPage/g) || []).length, 1)
-  assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace chrome')
+  assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>'), 'shared Gallery page must own workspace chrome without duplicating its title')
   assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopGalleryPage.tsx')), false, 'Desktop must not keep a pass-through Gallery wrapper')
   assert.equal(webApp.includes('<Paper variant="outlined"'), false, 'Web Gallery must not add a platform-only Paper shell around shared content')
   assert.equal(webApp.includes('function MediaGallery'), false)
@@ -216,6 +217,30 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   assert.match(sharedGalleryMain, /mediaGalleryMediaTypes/)
   assert.match(sharedGalleryMain, /你收藏的照片和视频/)
   assert.match(sharedGalleryMain, /按媒体资产类型快速进入照片集合/)
+})
+
+test('Gallery workspace separates collection failures from empty results and keeps controls compact', () => {
+  assert.match(sharedWorkspaceSurface, /showPageHeader = true/)
+  assert.match(sharedWorkspaceSurface, /mt: showPageHeader \? 2 : 0/)
+  assert.match(sharedGalleryMain, /showPageHeader=\{false\}/)
+  assert.match(sharedGalleryMain, /collectionError=\{collectionError\}/)
+  assert.match(sharedGalleryMain, /setCollectionError\(message\)/)
+  assert.match(sharedGalleryMain, /blockingCollectionError/)
+  assert.match(sharedGalleryMain, /data-xdrive-gallery-load-error/)
+  assert.match(sharedGalleryMain, /图库加载失败/)
+  assert.match(sharedGalleryMain, />\s*重试\s*</)
+  assert.match(sharedGalleryMain, /data-xdrive-gallery-empty/)
+  assert.match(sharedGalleryMain, /没有符合当前条件的照片或视频/)
+  assert.match(sharedGalleryMain, /onClearFilters/)
+  assert.match(sharedGalleryMain, />\s*清除筛选\s*</)
+  assert.match(sharedGalleryMain, /data-xdrive-gallery-header/)
+  assert.match(sharedGalleryMain, /data-xdrive-gallery-toolbar/)
+  assert.match(sharedGalleryMain, /logicalItemCount\.toLocaleString\('zh-CN'\)/)
+  assert.doesNotMatch(
+    sharedGalleryMain,
+    /<Typography variant="subtitle1" fontWeight=\{700\} sx=\{\{ mb: 1\.25 \}\}>\s*所有照片和视频/,
+    'root Gallery must not spend a standalone row repeating the collection title',
+  )
 })
 
 test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => {
@@ -1355,7 +1380,7 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
     'searchActive={Boolean(query.search?.trim())}',
     'searchActive || currentCleanupReview',
     "? 'all' : timeScale",
-    '!searchActive && !currentCleanupReview ? (',
+    'showCollectionTimeScale',
   ]) {
     assert.ok(sharedGalleryMain.includes(token), `Gallery relevance-mode contract missing: ${token}`)
   }

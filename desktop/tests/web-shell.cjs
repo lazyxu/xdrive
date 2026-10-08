@@ -60,7 +60,7 @@ test('Web first-class workspaces use page chrome except the full-bleed Files wor
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
   assert.equal(webApp.includes("height: { xs: 560, md: '100%' }"), false, 'Files must use the available workspace height on narrow screens')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
-  assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace page chrome')
+  assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>'), 'shared Gallery page must own workspace page chrome without duplicating its title')
   assert.ok(webApp.includes('<XDriveSourceManager'), 'Sync Folders should mount the shared manager directly')
   assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Local Storage should render through the shared page')
   assert.ok(sharedLocalStorage.includes('title="浏览器存储"'), 'shared Local Storage should expose browser storage on Web')

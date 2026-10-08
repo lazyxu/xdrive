@@ -449,6 +449,7 @@ export function XDriveMediaGalleryPage({
   const [query, setQuery] = useState<MediaGalleryQuery>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [collectionError, setCollectionError] = useState('')
   const [smartDialogOpen, setSmartDialogOpen] = useState(false)
   const [smartAlbumName, setSmartAlbumName] = useState('')
   const [smartDialogBusy, setSmartDialogBusy] = useState(false)
@@ -625,6 +626,7 @@ export function XDriveMediaGalleryPage({
     virtualCollection.reset(mediaGalleryCollectionKey(target))
     setLoading(true)
     setError('')
+    setCollectionError('')
     try {
       const rangePromise = loadTargetRange(target, 0, pageSize)
       if (target.kind === 'all') {
@@ -721,7 +723,9 @@ export function XDriveMediaGalleryPage({
         request !== requestID.current ||
         collectionTargetRef.current?.requestID !== request
       ) return
-      reportError(loadError)
+      const message = xDriveMediaGalleryErrorMessage(loadError)
+      setCollectionError(message)
+      onError?.(loadError)
     } finally {
       if (request === requestID.current) setLoading(false)
     }
@@ -729,6 +733,7 @@ export function XDriveMediaGalleryPage({
     listAllPeople,
     loadTargetRange,
     pageSize,
+    onError,
     reportError,
     source,
     virtualCollection.primePage,
@@ -1607,7 +1612,7 @@ export function XDriveMediaGalleryPage({
   }, [])
 
   return (
-    <XDriveWorkspaceSurface presentation="page" title="图库">
+    <XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>
       <XDriveMediaGallery
         items={items}
         virtualCollection={galleryVirtualCollection}
@@ -1630,9 +1635,12 @@ export function XDriveMediaGalleryPage({
         loading={loading}
         timelineGroupSets={timelineGroupSets}
         error={error}
+        collectionError={collectionError}
         section={section}
         activeMediaType={activeMediaType}
         searchActive={Boolean(query.search?.trim())}
+        filtersActive={hasMediaGalleryFilters(draftFilters)}
+        onClearFilters={clearFilters}
         filters={(
           <XDriveMediaGalleryFilterToolbar
             draft={draftFilters}
@@ -1883,9 +1891,12 @@ export interface XDriveMediaGalleryProps {
   loading?: boolean
   timelineGroupSets?: MediaTimelineGroupSets
   error?: string
+  collectionError?: string
   section?: MediaGallerySection
   activeMediaType?: string
   searchActive?: boolean
+  filtersActive?: boolean
+  onClearFilters?: () => void
   filters?: ReactNode
   loadThumbnail: MediaThumbnailLoader
   loadMusicRoot?: () => Promise<Node>
@@ -2999,9 +3010,12 @@ export function XDriveMediaGallery({
   loading = false,
   timelineGroupSets = emptyMediaTimelineGroupSets(),
   error = '',
+  collectionError = '',
   section = 'library',
   activeMediaType = '',
   searchActive = false,
+  filtersActive = false,
+  onClearFilters,
   filters,
   loadThumbnail,
   loadMusicRoot,
@@ -3413,6 +3427,37 @@ export function XDriveMediaGallery({
     isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
+  const showCollectionFilters =
+    showPhotoCollection &&
+    !isTrashSection &&
+    !currentMemory &&
+    !currentPet &&
+    !currentCleanupReview
+  const showCollectionTimeScale =
+    showPhotoCollection &&
+    !isTrashSection &&
+    !searchActive &&
+    !currentCleanupReview
+  const blockingCollectionError = Boolean(
+    showPhotoCollection &&
+    collectionError &&
+    logicalItemCount === 0 &&
+    !loading,
+  )
+  const emptyCollectionTitle = isTrashSection
+    ? '回收站为空'
+    : isRootSection && section === 'favorites'
+      ? '还没有收藏的照片或视频'
+      : isRootSection && section === 'media-types' && mediaTypeLabel
+        ? `还没有${mediaTypeLabel}`
+        : filtersActive
+          ? '没有符合当前条件的照片或视频'
+          : '还没有照片和视频'
+  const emptyCollectionDescription = isTrashSection
+    ? '删除的照片和视频会显示在这里。'
+    : filtersActive
+      ? '可以调整搜索或筛选条件后再试。'
+      : '上传文件或添加同步文件夹后，媒体会自动出现在图库中。'
   const cleanupRecommendedNodeID = currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
       ? currentCleanupReview.group.recommended_keep_node_id
@@ -3490,7 +3535,11 @@ export function XDriveMediaGallery({
                     ? mediaTypeLabel
                       ? `正在浏览${mediaTypeLabel}`
                       : '按媒体资产类型快速进入照片集合'
-                    : '所有 xDrive 图片和视频，包括普通上传和同步文件夹文件'
+                    : collectionError && logicalItemCount === 0
+                      ? '图库数据暂时不可用'
+                      : loading && logicalItemCount === 0
+                        ? '正在加载照片和视频'
+                        : `${logicalItemCount.toLocaleString('zh-CN')} 个项目 · 所有 xDrive 图片和视频，包括普通上传和同步文件夹文件`
   const canBack = Boolean(
     currentCleanupReview ||
     currentPet ||
@@ -3513,156 +3562,213 @@ export function XDriveMediaGallery({
         transition: 'padding-right 160ms ease',
       }}
     >
-      <Stack direction="row" spacing={1} alignItems="center">
-        {canBack && onBack ? (
-          <Tooltip title="返回上一级">
-            <IconButton onClick={onBack} size="small" aria-label="返回上一级">
-              <ArrowBackIcon />
-            </IconButton>
-          </Tooltip>
-        ) : null}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="h5" fontWeight={700} noWrap>
-            {galleryTitle}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {gallerySubtitle}
-          </Typography>
-        </Box>
-        {showAlbumIndex && onCreateAlbum ? (
-          <Button size="small" variant="outlined" onClick={() => openAlbumDialog('create')}>
-            新建相册
-          </Button>
-        ) : null}
-        {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onRenameAlbum ? (
-          <Button size="small" variant="text" onClick={() => openAlbumDialog('rename', currentAlbum)}>
-            重命名
-          </Button>
-        ) : null}
-        {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onDeleteAlbum ? (
-          <Button size="small" color="error" variant="text" onClick={() => setDeleteAlbumOpen(true)}>
-            删除相册
-          </Button>
-        ) : null}
-        {currentSuggestedPerson && onAdoptSuggestedPerson ? (
-          <Button
-            size="small"
-            variant="contained"
-            onClick={() => {
-              setPersonName('')
-              setPersonDialogError('')
-              setPersonNameDialog({ mode: 'adopt', suggestion: currentSuggestedPerson })
-            }}
-          >
-            保存为人物
-          </Button>
-        ) : null}
-        {currentPerson && onRenamePerson ? (
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => {
-              setPersonName(currentPerson.name)
-              setPersonDialogError('')
-              setPersonNameDialog({ mode: 'rename', person: currentPerson })
-            }}
-          >
-            重命名
-          </Button>
-        ) : null}
-        {currentPerson && onTogglePersonHidden ? (
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => {
-              void onTogglePersonHidden(currentPerson).catch(() => undefined)
-            }}
-          >
-            {currentPerson.hidden ? '取消隐藏' : '隐藏'}
-          </Button>
-        ) : null}
-        {currentPerson && onMergePeople && people.some((person) => person.id !== currentPerson.id) ? (
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => {
-              setMergePersonIDs([])
-              setPersonDialogError('')
-              setMergeDialogOpen(true)
-            }}
-          >
-            合并
-          </Button>
-        ) : null}
-        {currentPerson && onSplitPerson && currentPerson.item_count > 1 ? (
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => {
-              setSplitNodeIDs([])
-              setSplitName('')
-              setPersonDialogError('')
-              setSplitDialogOpen(true)
-            }}
-          >
-            拆分
-          </Button>
-        ) : null}
-        {showPhotoCollection ? (
-          <Button
-            size="small"
-            variant={selectionMode ? 'contained' : 'text'}
-            onClick={() => {
-              if (selectionMode) clearMediaSelection()
-              else setSelectionMode(true)
-            }}
-          >
-            {selectionMode ? '完成' : '选择'}
-          </Button>
-        ) : null}
-        {showPhotoCollection && !isTrashSection && !searchActive && !currentCleanupReview ? (
-          <Stack direction="row" spacing={0.5} aria-label="图库时间尺度">
-            {([
-              ['year', '年'],
-              ['month', '月'],
-              ['day', '日'],
-              ['all', '所有照片'],
-            ] as const).map(([value, label]) => (
-              <Button
-                key={value}
-                size="small"
-                variant={effectiveTimeScale === value ? 'contained' : 'text'}
-                aria-pressed={effectiveTimeScale === value}
-                data-xdrive-gallery-time-scale={value}
-                onClick={() => setTimeScale(value)}
-              >
-                {label}
-              </Button>
-            ))}
-          </Stack>
-        ) : null}
-        {onRefresh ? (
-          <Tooltip title="刷新">
-            <span>
-              <IconButton
-                onClick={onRefresh}
-                disabled={loading}
-                aria-label="刷新图库"
-              >
-                <RefreshIcon />
+      <Stack
+        direction={{ xs: 'column', lg: 'row' }}
+        spacing={1.25}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
+        data-xdrive-gallery-header
+      >
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: '1 1 320px', minWidth: 0 }}>
+          {canBack && onBack ? (
+            <Tooltip title="返回上一级">
+              <IconButton onClick={onBack} size="small" aria-label="返回上一级">
+                <ArrowBackIcon />
               </IconButton>
-            </span>
-          </Tooltip>
-        ) : null}
+            </Tooltip>
+          ) : null}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h5" fontWeight={700} noWrap>
+              {galleryTitle}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {gallerySubtitle}
+            </Typography>
+          </Box>
+        </Stack>
+
+        <Stack
+          direction="row"
+          spacing={0.75}
+          useFlexGap
+          flexWrap="wrap"
+          alignItems="center"
+          justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
+          sx={{ flex: '1 1 auto', minWidth: 0 }}
+        >
+          {showCollectionFilters && filters ? (
+            <Box sx={{ flex: '1 1 360px', minWidth: { xs: 0, sm: 300 }, maxWidth: 560 }}>
+              {filters}
+            </Box>
+          ) : null}
+          {showAlbumIndex && onCreateAlbum ? (
+            <Button size="small" variant="outlined" onClick={() => openAlbumDialog('create')}>
+              新建相册
+            </Button>
+          ) : null}
+          {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onRenameAlbum ? (
+            <Button size="small" variant="text" onClick={() => openAlbumDialog('rename', currentAlbum)}>
+              重命名
+            </Button>
+          ) : null}
+          {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onDeleteAlbum ? (
+            <Button size="small" color="error" variant="text" onClick={() => setDeleteAlbumOpen(true)}>
+              删除相册
+            </Button>
+          ) : null}
+          {currentSuggestedPerson && onAdoptSuggestedPerson ? (
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => {
+                setPersonName('')
+                setPersonDialogError('')
+                setPersonNameDialog({ mode: 'adopt', suggestion: currentSuggestedPerson })
+              }}
+            >
+              保存为人物
+            </Button>
+          ) : null}
+          {currentPerson && onRenamePerson ? (
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                setPersonName(currentPerson.name)
+                setPersonDialogError('')
+                setPersonNameDialog({ mode: 'rename', person: currentPerson })
+              }}
+            >
+              重命名
+            </Button>
+          ) : null}
+          {currentPerson && onTogglePersonHidden ? (
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                void onTogglePersonHidden(currentPerson).catch(() => undefined)
+              }}
+            >
+              {currentPerson.hidden ? '取消隐藏' : '隐藏'}
+            </Button>
+          ) : null}
+          {currentPerson && onMergePeople && people.some((person) => person.id !== currentPerson.id) ? (
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                setMergePersonIDs([])
+                setPersonDialogError('')
+                setMergeDialogOpen(true)
+              }}
+            >
+              合并
+            </Button>
+          ) : null}
+          {currentPerson && onSplitPerson && currentPerson.item_count > 1 ? (
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                setSplitNodeIDs([])
+                setSplitName('')
+                setPersonDialogError('')
+                setSplitDialogOpen(true)
+              }}
+            >
+              拆分
+            </Button>
+          ) : null}
+          {onRefresh ? (
+            <Tooltip title="刷新">
+              <span>
+                <IconButton
+                  onClick={onRefresh}
+                  disabled={loading}
+                  aria-label="刷新图库"
+                  size="small"
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : null}
+        </Stack>
       </Stack>
 
-      {onSectionChange ? (
-        <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
-      ) : null}
-
-      {showPhotoCollection && !isTrashSection && !currentMemory && !currentPet && !currentCleanupReview
-        ? filters
-        : null}
+      <Stack
+        direction={{ xs: 'column', lg: 'row' }}
+        spacing={1}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
+        justifyContent="space-between"
+        data-xdrive-gallery-toolbar
+      >
+        <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+          {onSectionChange ? (
+            <XDriveMediaGalleryNavigation value={section} onChange={onSectionChange} />
+          ) : null}
+        </Box>
+        {showPhotoCollection ? (
+          <Stack
+            direction="row"
+            spacing={0.75}
+            useFlexGap
+            flexWrap="wrap"
+            alignItems="center"
+            justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
+            sx={{ flexShrink: 0 }}
+          >
+            <Button
+              size="small"
+              variant={selectionMode ? 'contained' : 'text'}
+              onClick={() => {
+                if (selectionMode) clearMediaSelection()
+                else setSelectionMode(true)
+              }}
+            >
+              {selectionMode ? '完成' : '选择'}
+            </Button>
+            {showCollectionTimeScale ? (
+              <Stack direction="row" spacing={0.25} aria-label="图库时间尺度">
+                {([
+                  ['year', '年'],
+                  ['month', '月'],
+                  ['day', '日'],
+                  ['all', '所有照片'],
+                ] as const).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    size="small"
+                    variant={effectiveTimeScale === value ? 'contained' : 'text'}
+                    aria-pressed={effectiveTimeScale === value}
+                    data-xdrive-gallery-time-scale={value}
+                    onClick={() => setTimeScale(value)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </Stack>
+            ) : null}
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                缩略图大小
+              </Typography>
+              <Slider
+                size="small"
+                aria-label="缩略图密度"
+                min={96}
+                max={240}
+                step={24}
+                value={minTileWidth}
+                onChange={(_event, value) => {
+                  if (typeof value === 'number') setMinTileWidth(value)
+                }}
+                sx={{ width: 120 }}
+              />
+            </Stack>
+          </Stack>
+        ) : null}
+      </Stack>
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
@@ -3719,32 +3825,6 @@ export function XDriveMediaGallery({
             : undefined}
           onClear={clearMediaSelection}
         />
-      ) : null}
-
-      {showPhotoCollection ? (
-        <Stack
-          direction="row"
-          spacing={1.5}
-          alignItems="center"
-          justifyContent="flex-end"
-          sx={{ minWidth: 0 }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-            缩略图大小
-          </Typography>
-          <Slider
-            size="small"
-            aria-label="缩略图密度"
-            min={96}
-            max={240}
-            step={24}
-            value={minTileWidth}
-            onChange={(_event, value) => {
-              if (typeof value === 'number') setMinTileWidth(value)
-            }}
-            sx={{ width: 132 }}
-          />
-        </Stack>
       ) : null}
 
       {error ? (
@@ -4284,25 +4364,54 @@ export function XDriveMediaGallery({
 
       {showPhotoCollection ? (
         <Box>
-        {isRootSection && section === 'library' ? (
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
-            所有照片和视频
-          </Typography>
-        ) : null}
-        {loading && logicalItemCount === 0 ? (
+        {blockingCollectionError ? (
+          <Paper
+            variant="outlined"
+            data-xdrive-gallery-load-error
+            sx={{ minHeight: 200, display: 'grid', placeItems: 'center', p: 3 }}
+          >
+            <Stack alignItems="center" spacing={1.25} sx={{ maxWidth: 520, textAlign: 'center' }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                图库加载失败
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                {collectionError}
+              </Typography>
+              {onRefresh ? (
+                <Button size="small" variant="outlined" onClick={onRefresh} disabled={loading}>
+                  重试
+                </Button>
+              ) : null}
+            </Stack>
+          </Paper>
+        ) : loading && logicalItemCount === 0 ? (
           <Box sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
-            <CircularProgress />
+            <Stack alignItems="center" spacing={1}>
+              <CircularProgress size={28} />
+              <Typography variant="body2" color="text.secondary">
+                正在加载图库…
+              </Typography>
+            </Stack>
           </Box>
         ) : logicalItemCount === 0 ? (
           <Paper
             variant="outlined"
+            data-xdrive-gallery-empty
             sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
           >
-            <Stack alignItems="center" spacing={1}>
+            <Stack alignItems="center" spacing={1} sx={{ maxWidth: 460, textAlign: 'center' }}>
               <ImageIcon color="disabled" sx={{ fontSize: 44 }} />
-              <Typography color="text.secondary">
-                {isTrashSection ? '回收站为空' : '没有可显示的图片或视频'}
+              <Typography fontWeight={650}>
+                {emptyCollectionTitle}
               </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {emptyCollectionDescription}
+              </Typography>
+              {filtersActive && section === 'library' && onClearFilters ? (
+                <Button size="small" variant="text" onClick={onClearFilters}>
+                  清除筛选
+                </Button>
+              ) : null}
             </Stack>
           </Paper>
         ) : !isTrashSection && timeScale !== 'all' ? (
