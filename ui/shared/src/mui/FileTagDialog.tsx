@@ -8,9 +8,6 @@ import {
   Checkbox,
   CircularProgress,
   Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   List,
   ListItem,
@@ -22,6 +19,10 @@ import {
   Typography,
 } from '@mui/material'
 import type { XDriveFileNodeTags, XDriveFileTag } from '../file-explorer-organization'
+import { XDriveActionButton } from './ActionButton'
+import { XDriveDialogActions } from './DialogActions'
+import { XDriveDialogContent } from './DialogContent'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 
 const defaultTagColor = '#6B7280'
 
@@ -55,6 +56,7 @@ export function XDriveFileTagDialog({
   const [editingTagID, setEditingTagID] = useState<number | null>(null)
   const [error, setError] = useState('')
   const dialogGenerationRef = useRef(0)
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   const signature = nodeIDs.join(',')
 
   useEffect(() => {
@@ -147,9 +149,17 @@ export function XDriveFileTagDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>标签</DialogTitle>
-      <DialogContent dividers>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="xs"
+      fullWidth
+      fullScreen={compactTouch}
+      scroll="paper"
+      slotProps={{ paper: dialogPaper }}
+    >
+      <XDriveDialogTitle title="标签" onClose={onClose} closeDisabled={busy} />
+      <XDriveDialogContent dividers>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           {nodeIDs.length === 1 ? '为此项目添加或移除标签。' : `为已选择的 ${nodeIDs.length} 个项目批量设置标签。`}
         </Typography>
@@ -172,6 +182,7 @@ export function XDriveFileTagDialog({
                           <IconButton
                             size="small"
                             disabled={busy}
+                            sx={{ width: { xs: 44, sm: 32 }, height: { xs: 44, sm: 32 } }}
                             onClick={() => {
                               setEditingTagID(tag.id)
                               setName(tag.name)
@@ -188,6 +199,7 @@ export function XDriveFileTagDialog({
                           <IconButton
                             size="small"
                             disabled={busy}
+                            sx={{ width: { xs: 44, sm: 32 }, height: { xs: 44, sm: 32 } }}
                             onClick={() => { void onDeleteTag(tag.id) }}
                             aria-label={`删除标签 ${tag.name}`}
                           >
@@ -211,7 +223,12 @@ export function XDriveFileTagDialog({
             ) : null}
           </List>
         )}
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          sx={{ mt: 2 }}
+        >
           <TextField
             size="small"
             label={editingTagID === null ? '新标签' : '标签名称'}
@@ -230,7 +247,7 @@ export function XDriveFileTagDialog({
             size="small"
             value={color}
             onChange={(event) => setColor(event.target.value)}
-            sx={{ width: 62, '& input': { p: 0.5, height: 28 } }}
+            sx={{ width: { xs: '100%', sm: 62 }, '& input': { p: 0.5, height: 28 } }}
             inputProps={{ 'aria-label': '标签颜色' }}
           />
           <Button
@@ -258,10 +275,10 @@ export function XDriveFileTagDialog({
           </Button>
         ) : null}
         {error ? <Typography color="error" variant="caption" sx={{ display: 'block', mt: 1 }}>{error}</Typography> : null}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={busy}>完成</Button>
-      </DialogActions>
+      </XDriveDialogContent>
+      <XDriveDialogActions>
+        <XDriveActionButton intent="primary" onClick={onClose} disabled={busy}>完成</XDriveActionButton>
+      </XDriveDialogActions>
     </Dialog>
   )
 }

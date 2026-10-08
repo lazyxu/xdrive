@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  Box,
   Dialog,
   Stack,
   Table,
@@ -7,6 +8,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Typography,
 } from '@mui/material'
 import type { FileVersion, Node } from '../models'
 import { formatBytes } from '../format'
@@ -14,7 +16,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
-import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveTableSurface } from './TableSurface'
 
@@ -134,6 +136,7 @@ export function XDriveVersionHistoryDialog({
 
   const busy = Boolean(workingKey)
   const open = Boolean(node)
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
 
   return (
     <>
@@ -142,9 +145,10 @@ export function XDriveVersionHistoryDialog({
         onClose={() => { if (!busy) onClose() }}
         maxWidth="md"
         fullWidth
+        fullScreen={compactTouch}
         scroll="paper"
         aria-label="版本历史"
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: dialogPaper }}
       >
         <XDriveDialogTitle
           title={currentNode ? `版本历史 — ${currentNode.name}` : '版本历史'}
@@ -157,6 +161,57 @@ export function XDriveVersionHistoryDialog({
             <XDriveStatePanel variant="plain" loading message="正在加载历史版本…" />
           ) : versions.length === 0 ? (
             <XDriveStatePanel variant="plain" message="暂无历史版本" />
+          ) : compactTouch ? (
+            <Stack
+              spacing={1}
+              data-xdrive-version-history-mobile-list
+              aria-label="版本历史"
+            >
+              {versions.map((version) => (
+                <Box
+                  key={version.id}
+                  sx={{
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    p: 1.25,
+                  }}
+                >
+                  <Stack spacing={1}>
+                    <Stack direction="row" alignItems="baseline" justifyContent="space-between" spacing={1}>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        {`r${version.revision}`}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(version.created_at).toLocaleString()}
+                      </Typography>
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary">
+                      {formatBytes(version.size)}
+                    </Typography>
+                    <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+                      {adapter.downloadVersion ? (
+                        <XDriveActionButton
+                          loading={workingKey === `download:${version.id}`}
+                          loadingLabel="正在下载…"
+                          disabled={busy && workingKey !== `download:${version.id}`}
+                          onClick={() => void download(version)}
+                        >
+                          下载
+                        </XDriveActionButton>
+                      ) : null}
+                      <XDriveActionButton
+                        intent="primary"
+                        disabled={busy}
+                        onClick={() => setRestoreTarget(version)}
+                      >
+                        恢复
+                      </XDriveActionButton>
+                    </Stack>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
           ) : (
             <XDriveTableSurface>
               <Table size="small" aria-label="版本历史">

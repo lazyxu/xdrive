@@ -122,3 +122,25 @@ test('Web share adapter keeps only public URL specialization local', () => {
   assert.ok(webAdapters.includes('window.location.origin'))
   assert.ok(webAdapters.includes('created.token'))
 })
+
+
+test('long file dialogs use compact-touch full-screen presentation', () => {
+  const properties = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
+  const tags = read('ui', 'shared', 'src', 'mui', 'FileTagDialog.tsx')
+  const conflict = read('ui', 'shared', 'src', 'mui', 'UploadConflictDialog.tsx')
+
+  for (const [name, source] of [
+    ['properties', properties],
+    ['versions', versions],
+    ['tags', tags],
+  ]) {
+    assert.ok(source.includes('useXDriveCompactTouchDialog()'), name + ' dialog must use shared compact-touch Dialog hook')
+    assert.ok(source.includes('fullScreen={compactTouch}'), name + ' dialog must become full-screen on compact touch')
+    assert.ok(source.includes('slotProps={{ paper: dialogPaper }}'), name + ' dialog must use shared responsive paper')
+  }
+
+  assert.ok(versions.includes('data-xdrive-version-history-mobile-list'))
+  assert.ok(versions.includes('<XDriveTableSurface>'), 'desktop Version History table must remain')
+  assert.ok(tags.includes("direction={{ xs: 'column', sm: 'row' }}"), 'mobile tag editor controls should stack')
+  assert.equal(conflict.includes('fullScreen={compactTouch}'), false, 'short Upload Conflict confirmation should remain a normal modal')
+})
