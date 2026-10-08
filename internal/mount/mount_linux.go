@@ -388,7 +388,7 @@ func (h *linuxHandle) sync(ctx context.Context) error {
 			task.Progress(done, total)
 		}
 	}
-	updated, err := h.cli.OverwriteFileResumable(ctx, h.node.ID, h.node.Revision, h.path, progress)
+	updated, err := h.cli.OverwriteFileResumable(uploadTransferContext(ctx, task), h.node.ID, h.node.Revision, h.path, progress)
 	if err == nil && task != nil {
 		task.Complete()
 	}
@@ -414,7 +414,7 @@ func (h *linuxHandle) sync(ctx context.Context) error {
 				conflictTask.Progress(done, total)
 			}
 		}
-		conflict, uploadErr := h.cli.UploadFileResumable(ctx, *h.node.ParentID, h.path, conflictFileName, conflictProgress)
+		conflict, uploadErr := h.cli.UploadFileResumable(uploadTransferContext(ctx, conflictTask), *h.node.ParentID, h.path, conflictFileName, conflictProgress)
 		if conflictTask != nil {
 			if uploadErr != nil {
 				conflictTask.Fail(uploadErr)

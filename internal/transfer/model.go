@@ -98,6 +98,8 @@ type Task struct {
 	ItemsQueued           int64      `json:"items_queued"`
 	InstantBytesPerSecond float64    `json:"instant_bytes_per_second"`
 	AverageBytesPerSecond float64    `json:"average_bytes_per_second"`
+	SpeedSource           string     `json:"speed_source,omitempty"`
+	SpeedUpdatedAt        *time.Time `json:"speed_updated_at,omitempty"`
 	ElapsedMilliseconds   int64      `json:"elapsed_ms"`
 	Error                 string     `json:"error,omitempty"`
 	RetryCount            int        `json:"retry_count"`
@@ -108,12 +110,13 @@ type Task struct {
 }
 
 type entry struct {
-	task          Task
-	retry         RetryFunc
-	lastBytes     int64
-	lastAt        time.Time
-	rateBaseBytes int64
-	rateStartedAt time.Time
+	task              Task
+	retry             RetryFunc
+	lastBytes         int64
+	lastAt            time.Time
+	rateBaseBytes     int64
+	rateStartedAt     time.Time
+	networkGeneration uint64
 }
 
 type Manager struct {
@@ -334,6 +337,52 @@ func (h *Handle) Progress(done, total int64) {
 	h.manager.progress(h.id, done, total)
 }
 
+// NetworkProgressObserver starts a fresh client network counter and binds it to
+// the current attempt. Retrying or registering another observer invalidates the
+// old callback, including delayed reads or closes from an HTTP request body.
+func (h *Handle) NetworkProgressObserver() func(int64) {
+	if h == nil || h.manager == nil {
+		return nil
+	}
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[h.id]
+	if e == nil || (e.task.State != StateRunning && e.task.State != StateRetrying) {
+		return nil
+	}
+	e.networkGeneration++
+	generation := e.networkGeneration
+	e.beginNetworkProgress(time.Now())
+	m.touchLocked()
+	return func(sent int64) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		current := m.entries[h.id]
+		if current == nil || current.networkGeneration != generation {
+			return
+		}
+		if m.networkProgressLocked(h.id, sent, time.Now()) {
+			m.touchLocked()
+		}
+	}
+}
+
+// NetworkProgress records a synchronous cumulative client payload counter.
+// Start with zero; include retries but not resumed bytes. Logical Progress and
+// Baseline remain separate. Use NetworkProgressObserver for asynchronous work.
+func (h *Handle) NetworkProgress(sent int64) {
+	if h == nil || h.manager == nil {
+		return
+	}
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.networkProgressLocked(h.id, sent, time.Now()) {
+		m.touchLocked()
+	}
+}
+
 func (h *Handle) Baseline(done, total int64) {
 	if h == nil || h.manager == nil {
 		return
@@ -425,8 +474,15 @@ func (m *Manager) Clear() {
 	m.touchLocked()
 }
 
-func (m *Manager) ClearHistory() {
+func (m *Manager) ClearHistory(scopes ...string) {
 	if m == nil {
+		return
+	}
+	scope := "all"
+	if len(scopes) > 0 && scopes[0] != "" {
+		scope = scopes[0]
+	}
+	if scope != "all" && scope != "network" && scope != "local" {
 		return
 	}
 	m.mu.Lock()
@@ -450,6 +506,10 @@ func (m *Manager) ClearHistory() {
 	for _, id := range m.order {
 		e := m.entries[id]
 		if e == nil || e.task.ID != transferRootID(e.task) {
+			continue
+		}
+		network := (e.task.Direction == "upload" || e.task.Direction == "download") && e.task.Kind != KindDehydration
+		if (scope == "network" && !network) || (scope == "local" && network) {
 			continue
 		}
 		if terminalState(e.task.State) && !activeRoots[e.task.ID] {
@@ -550,12 +610,14 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	e.task.AverageBytesPerSecond = 0
 	e.task.ElapsedMilliseconds = 0
 	e.task.CompletedAt = nil
+	e.task.SpeedUpdatedAt = nil
 	e.task.StartedAt = now
 	e.task.UpdatedAt = now
 	e.lastBytes = 0
 	e.lastAt = now
 	e.rateBaseBytes = 0
 	e.rateStartedAt = now
+	e.networkGeneration++
 	m.touchLocked()
 	m.mu.Unlock()
 
@@ -624,27 +686,15 @@ func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.
 	if total > 0 && done > total {
 		done = total
 	}
-	deltaBytes := done - e.lastBytes
-	deltaTime := now.Sub(e.lastAt).Seconds()
-	if deltaBytes >= 0 && deltaTime > 0 {
-		e.task.InstantBytesPerSecond = float64(deltaBytes) / deltaTime
+	if e.task.SpeedSource == "" {
+		e.updateRate(done, now)
 	}
 	e.task.BytesDone = done
 	e.task.BytesTotal = total
 	e.task.Percent = percentage(done, total)
 	elapsed := now.Sub(e.task.StartedAt)
 	e.task.ElapsedMilliseconds = elapsed.Milliseconds()
-	rateElapsed := now.Sub(e.rateStartedAt)
-	if rateElapsed > 0 {
-		rateBytes := done - e.rateBaseBytes
-		if rateBytes < 0 {
-			rateBytes = 0
-		}
-		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
-	}
 	e.task.UpdatedAt = now
-	e.lastBytes = done
-	e.lastAt = now
 	return true
 }
 
@@ -656,6 +706,55 @@ func (m *Manager) baseline(id string, done, total int64) {
 		return
 	}
 	m.touchLocked()
+}
+
+func (m *Manager) networkProgressLocked(id string, sent int64, now time.Time) bool {
+	e := m.entries[id]
+	if e == nil || sent < 0 || (e.task.State != StateRunning && e.task.State != StateRetrying) {
+		return false
+	}
+	initialized := e.task.SpeedSource != "client"
+	if initialized {
+		e.beginNetworkProgress(now)
+	}
+	if sent <= e.lastBytes {
+		return initialized
+	}
+	e.updateRate(sent, now)
+	e.task.SpeedUpdatedAt = &now
+	e.task.UpdatedAt = now
+	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
+	return true
+}
+
+func (e *entry) beginNetworkProgress(now time.Time) {
+	e.task.SpeedSource = "client"
+	e.task.SpeedUpdatedAt = nil
+	e.task.InstantBytesPerSecond = 0
+	e.task.AverageBytesPerSecond = 0
+	e.lastBytes = 0
+	e.lastAt = now
+	e.rateBaseBytes = 0
+	e.rateStartedAt = now
+}
+
+func (e *entry) updateRate(done int64, now time.Time) {
+	deltaBytes := done - e.lastBytes
+	deltaTime := now.Sub(e.lastAt).Seconds()
+	if deltaBytes >= 0 && deltaTime > 0 {
+		e.task.InstantBytesPerSecond = float64(deltaBytes) / deltaTime
+	}
+	e.updateAverageRate(done, now)
+	e.lastBytes = done
+	e.lastAt = now
+}
+
+func (e *entry) updateAverageRate(done int64, now time.Time) {
+	rateElapsed := now.Sub(e.rateStartedAt)
+	if rateElapsed > 0 {
+		rateBytes := max64(done-e.rateBaseBytes, 0)
+		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
+	}
 }
 
 func (m *Manager) baselineLocked(id string, done, total int64, now time.Time) bool {
@@ -674,14 +773,16 @@ func (m *Manager) baselineLocked(id string, done, total int64, now time.Time) bo
 	}
 	e.task.BytesDone = done
 	e.task.Percent = percentage(done, e.task.BytesTotal)
-	e.task.InstantBytesPerSecond = 0
-	e.task.AverageBytesPerSecond = 0
+	if e.task.SpeedSource == "" {
+		e.task.InstantBytesPerSecond = 0
+		e.task.AverageBytesPerSecond = 0
+		e.lastBytes = done
+		e.lastAt = now
+		e.rateBaseBytes = done
+		e.rateStartedAt = now
+	}
 	e.task.UpdatedAt = now
 	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
-	e.lastBytes = done
-	e.lastAt = now
-	e.rateBaseBytes = done
-	e.rateStartedAt = now
 	return true
 }
 
@@ -714,26 +815,14 @@ func (m *Manager) progressLocked(id string, done, total int64, now time.Time) bo
 	if e.task.BytesTotal > 0 && done > e.task.BytesTotal {
 		done = e.task.BytesTotal
 	}
-	deltaBytes := done - e.lastBytes
-	deltaTime := now.Sub(e.lastAt).Seconds()
-	if deltaBytes >= 0 && deltaTime > 0 {
-		e.task.InstantBytesPerSecond = float64(deltaBytes) / deltaTime
+	if e.task.SpeedSource == "" {
+		e.updateRate(done, now)
 	}
 	e.task.BytesDone = done
 	e.task.Percent = percentage(done, e.task.BytesTotal)
 	elapsed := now.Sub(e.task.StartedAt)
 	e.task.ElapsedMilliseconds = elapsed.Milliseconds()
-	rateElapsed := now.Sub(e.rateStartedAt)
-	if rateElapsed > 0 {
-		rateBytes := done - e.rateBaseBytes
-		if rateBytes < 0 {
-			rateBytes = 0
-		}
-		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
-	}
 	e.task.UpdatedAt = now
-	e.lastBytes = done
-	e.lastAt = now
 	return true
 }
 
@@ -782,7 +871,11 @@ func (m *Manager) finishSkipped(id string) {
 		e.task.ItemsQueued = 0
 	}
 	e.task.InstantBytesPerSecond = 0
-	e.task.AverageBytesPerSecond = 0
+	if e.task.SpeedSource != "" {
+		e.updateAverageRate(e.lastBytes, now)
+	} else {
+		e.task.AverageBytesPerSecond = 0
+	}
 	e.task.UpdatedAt = now
 	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
 	e.task.CompletedAt = &now
@@ -826,14 +919,11 @@ func (m *Manager) finishState(id, state string, err error) error {
 			e.task.ItemsFailed = 1
 		}
 	}
-	rateElapsed := now.Sub(e.rateStartedAt)
-	if rateElapsed > 0 {
-		rateBytes := e.task.BytesDone - e.rateBaseBytes
-		if rateBytes < 0 {
-			rateBytes = 0
-		}
-		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
+	rateBytes := e.task.BytesDone
+	if e.task.SpeedSource != "" {
+		rateBytes = e.lastBytes
 	}
+	e.updateAverageRate(rateBytes, now)
 	e.task.InstantBytesPerSecond = 0
 	e.task.UpdatedAt = now
 	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
@@ -877,14 +967,11 @@ func (m *Manager) finish(id string, err error) {
 	}
 	e.task.UpdatedAt = now
 	e.task.ElapsedMilliseconds = now.Sub(e.task.StartedAt).Milliseconds()
-	rateElapsed := now.Sub(e.rateStartedAt)
-	if rateElapsed > 0 {
-		rateBytes := e.task.BytesDone - e.rateBaseBytes
-		if rateBytes < 0 {
-			rateBytes = 0
-		}
-		e.task.AverageBytesPerSecond = float64(rateBytes) / rateElapsed.Seconds()
+	rateBytes := e.task.BytesDone
+	if e.task.SpeedSource != "" {
+		rateBytes = e.lastBytes
 	}
+	e.updateAverageRate(rateBytes, now)
 	e.task.InstantBytesPerSecond = 0
 	e.task.CompletedAt = &now
 	m.trimLocked()

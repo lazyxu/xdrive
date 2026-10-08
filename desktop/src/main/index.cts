@@ -4724,8 +4724,15 @@ function registerIPCHandlers() {
       return requireAgentClient().transferLifecycle(input as AgentTransferLifecycleInput)
     }, false),
   )
-  ipcMain.handle('agent:clear-transfer-history', () => runAgentAction<AgentTransfers>(async () => {
-    const next = await requireAgentClient().clearTransferHistory()
+  ipcMain.handle('agent:clear-transfer-history', (_event, scope: unknown = 'all') => runAgentAction<AgentTransfers>(async () => {
+    if (scope !== 'all' && scope !== 'network' && scope !== 'local') {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid transfer history scope.')
+    }
+    if (scope !== 'all') {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'transfer-history-scope')
+    }
+    const next = await requireAgentClient().clearTransferHistory(scope)
     publishAgentTransfers(next)
     return next
   }, false))

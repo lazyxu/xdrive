@@ -25,10 +25,10 @@ test('shared Task Center controller owns summary, history and page-action presen
     'useXDriveTaskCenterController',
     'xDriveActiveTransferCount(transfers)',
     'xDriveActiveFileOperationCount(operations)',
-    'xDriveTransferHasHistory(transfers)',
+    'xDriveTransferHasHistory(localTransfers)',
     'xDriveFileOperationHasHistory(operations)',
     'const activeBackgroundCount =',
-    'const badgeCount = activeTransferCount + activeBackgroundCount',
+    'const badgeCount = activeLocalTaskCount + activeBackgroundCount',
     'disabled: !hasHistory || externalBusy || operationActions.busy',
     'loading: operationActions.clearHistoryLoading',
     'operationCancellingID: operationActions.cancellingID',
@@ -121,7 +121,7 @@ test('Desktop delegates shared Task Center composition while retaining native tr
 
 test('shared Task Center renders sync folders, background processing and admin global view', () => {
   for (const token of ['backgroundTaskPort?: XDriveBackgroundTaskPort','backgroundTasksVisible','globalTasksEnabled','loadMinePage','loadGlobalPage','xDriveBackgroundTaskPollIntervalMs']) assert.ok(controller.includes(token), 'shared background controller missing: ' + token)
-  for (const token of ['同步文件夹','后台处理','我的任务','全局任务','<XDriveBackgroundTaskList','<XDriveBackgroundTaskTable']) assert.ok(page.includes(token), 'Task Center background UI missing: ' + token)
+  for (const token of ['同步文件夹','后台处理','本机任务','全局任务','<XDriveBackgroundTaskList','<XDriveBackgroundTaskTable']) assert.ok(page.includes(token), 'Task Center background UI missing: ' + token)
   for (const token of ['媒体索引','缩略图生成','分析预览','人脸识别','图库智能搜索索引','图库语义搜索索引','地点识别','人物聚类','owner_username','control_actions']) assert.ok(backgroundModel.includes(token), 'background task model missing: ' + token)
   for (const token of ['用户','任务类型','优先级','资源类','触发方式','控制能力']) assert.ok(backgroundCenter.includes(token), 'global task table missing: ' + token)
 })
@@ -271,7 +271,7 @@ test('Task Center badge includes owner background activity through shared summar
     'xDriveBackgroundTaskSummaryPollIntervalMs',
     'summaryFileOperationCount',
     'Math.max(summaryFileOperationCount, activeOperationCount)',
-    'const badgeCount = activeTransferCount + activeBackgroundCount',
+    'const badgeCount = activeLocalTaskCount + activeBackgroundCount',
   ]) assert.ok(controller.includes(token), 'shared active badge contract missing: ' + token)
 
   assert.ok(webApi.includes('backgroundTaskActiveSummary()'), 'Web summary endpoint adapter missing')
@@ -354,7 +354,7 @@ test('Storage maintenance can focus the exact global Task Center row once', () =
   for (const token of [
     'result.result_task_id || result.task_id',
     'taskCenterFocusSequenceRef.current += 1',
-    "taskCenter.pageProps.onBackgroundScopeChange?.('global')",
+    "setAppView('global-tasks')",
     'backgroundFocusTaskID={taskCenterFocus?.taskID}',
     'backgroundFocusRequestID={taskCenterFocus?.requestID}',
   ]) assert.ok(web.includes(token), 'Web maintenance focus handoff missing: ' + token)

@@ -1259,7 +1259,7 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must expose Gallery through the shared workspace sidebar')
   assert.ok(desktopApp.includes('selected={view}'), 'Desktop must use its unified workspace key directly')
   assert.match(sharedWorkspaceNavigation, /key: 'gallery',\s*label: '图库'/, 'shared core navigation model must expose Gallery with its label')
-  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sharedSidebar.includes('selected={selected === destination.key}'), 'shared core navigation must select Gallery by its destination key')
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render the Gallery label from its destination')
 })
@@ -1274,7 +1274,7 @@ test('Web exposes Home, files, Gallery, Sync Folders, Local Storage, and Cloud S
   }
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must expose first-class workspaces through the shared workspace sidebar')
   assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
-  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render each label from its core destination')
   for (const label of ['文件', '图库', '同步文件夹', '本地存储', '云端存储']) {
     assert.ok(sharedWorkspaceNavigation.includes(`label: '${label}'`), `shared core navigation model missing label: ${label}`)

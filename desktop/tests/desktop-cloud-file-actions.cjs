@@ -35,7 +35,7 @@ test('Desktop exposes real cloud file mutation primitives through Agent IPC', ()
   assert.ok(cloudFiles.includes('cli.Copy(ctx, id, parentID, nil)'), 'cloud copy does not use the server-side copy primitive')
   assert.ok(cloudFiles.includes('cli.Move(ctx, id, revision, parentID)'), 'cloud move does not use revision-safe move')
   assert.ok(cloudFiles.includes('cli.Delete(ctx, id, revision)'), 'cloud delete does not use the real client')
-  assert.ok(cloudFiles.includes('cli.UploadFileResumable(ctx, parentID, localPath, name, progress)'), 'cloud upload does not use resumable progress-aware client upload')
+  assert.match(cloudFiles, /cli\.UploadFileResumable\([^\n]*, parentID, localPath, name, progress\)/, 'cloud upload does not use resumable progress-aware client upload')
   assert.ok(cloudFiles.includes('cli.DownloadToProgress(ctx, id, tmp, progress)'), 'cloud download does not use authenticated progress-aware client download')
 })
 
@@ -237,10 +237,10 @@ test('legacy synchronous batch mutation bridges remain available for compatibili
 
 
 test('Desktop Task Center clears only terminal transfer history through every bridge layer', () => {
-  assert.ok(agentIPC.includes('ClearTransferHistory() (uint64, []transfer.Task)'), 'Agent IPC controller clear-history contract is missing')
+  assert.ok(agentIPC.includes('ClearTransferHistory(...string) (uint64, []transfer.Task)'), 'Agent IPC controller clear-history contract is missing')
   assert.ok(agentIPC.includes('DELETE /v1/transfers'), 'Agent IPC transfer-history route is missing')
-  assert.ok(agentClient.includes('clearTransferHistory()'), 'Electron AgentClient transfer-history method is missing')
+  assert.ok(agentClient.includes("clearTransferHistory(scope: 'all' | 'network' | 'local' = 'all')"), 'Electron AgentClient transfer-history method is missing')
   assert.ok(main.includes("ipcMain.handle('agent:clear-transfer-history'"), 'Electron main transfer-history bridge is missing')
   assert.ok(preload.includes('clearTransferHistory:'), 'preload transfer-history bridge is missing')
-  assert.ok(types.includes('clearTransferHistory: () => Promise<DesktopResult<AgentTransfers>>'), 'renderer transfer-history type is missing')
+  assert.ok(types.includes("clearTransferHistory: (scope?: 'all' | 'network' | 'local') => Promise<DesktopResult<AgentTransfers>>"), 'renderer transfer-history type is missing')
 })

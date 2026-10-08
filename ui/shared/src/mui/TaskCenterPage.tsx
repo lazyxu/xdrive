@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { Box, CircularProgress, Divider, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Box, CircularProgress, Divider, Stack, Typography } from '@mui/material'
 import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskControlAction,
@@ -112,7 +112,6 @@ export function XDriveTaskCenterPage({
   backgroundTasksAvailable = false,
   globalTasksEnabled = false,
   backgroundScope = 'mine',
-  onBackgroundScopeChange,
   backgroundControlKey = '',
   onBackgroundTaskControl,
   backgroundHasMore = false,
@@ -120,7 +119,7 @@ export function XDriveTaskCenterPage({
   onLoadMoreBackground,
   backgroundFocusTaskID = '',
   backgroundFocusRequestID = 0,
-  subtitle = '统一查看文件操作、上传下载、同步文件夹和后台处理状态。',
+  subtitle = '查看文件操作、同步文件夹和后台处理状态。',
   pageActions,
   clearHistory,
   transferRetryingID = '',
@@ -169,7 +168,7 @@ export function XDriveTaskCenterPage({
     (task) => task.domain === 'sync_run' || task.kind === 'source.sync',
   )
   const derivedTasks = backgroundTasks.filter(
-    (task) => task.domain === 'scheduler' && task.kind !== 'source.sync',
+    (task) => task.domain !== 'file_operation' && task.domain !== 'sync_run' && task.kind !== 'source.sync',
   )
   const actions = scope === 'mine'
     ? pageActions ?? (clearHistory ? (
@@ -187,27 +186,13 @@ export function XDriveTaskCenterPage({
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title="任务中心"
-      subtitle={subtitle}
+      title={scope === 'global' ? '全局任务' : '任务'}
+      subtitle={scope === 'global' ? '查看所有用户及系统的后台任务，按权限执行控制操作。' : subtitle}
       pageActions={actions}
     >
       <Stack ref={contentRef} spacing={3}>
-        {globalTasksEnabled ? (
-          <Tabs
-            value={scope}
-            onChange={(_event, value: 'mine' | 'global') => onBackgroundScopeChange?.(value)}
-            aria-label="任务视图"
-          >
-            <Tab value="mine" label="我的任务" />
-            <Tab value="global" label="全局任务" />
-          </Tabs>
-        ) : null}
-
         {scope === 'global' ? (
           <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-              全局任务
-            </Typography>
             <XDriveBackgroundTaskTable
               tasks={globalBackgroundTasks}
               loading={globalBackgroundTasksLoading}
@@ -243,18 +228,22 @@ export function XDriveTaskCenterPage({
                 onResolveConflict={onResolveOperationConflict}
               />
             </Box>
-            <Divider />
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                上传与下载
-              </Typography>
-              <XDriveTransferCenter
-                transfers={transfers}
-                retryingID={transferRetryingID}
-                retryDisabled={transferRetryDisabled}
-                onRetry={onRetryTransfer}
-              />
-            </Box>
+            {transfers.length > 0 ? (
+              <>
+                <Divider />
+                <Box>
+                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
+                    本机任务
+                  </Typography>
+                  <XDriveTransferCenter
+                    transfers={transfers}
+                    retryingID={transferRetryingID}
+                    retryDisabled={transferRetryDisabled}
+                    onRetry={onRetryTransfer}
+                  />
+                </Box>
+              </>
+            ) : null}
             {backgroundTasksAvailable ? (
               <>
                 <Divider />

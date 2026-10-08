@@ -18,7 +18,7 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedRoute.includes("export type XDriveCoreWorkspaceKey = typeof XDRIVE_CORE_WORKSPACE_KEYS[number]"), 'shared route model must derive the core workspace key union')
   assert.ok(sharedNav.includes('export function XDriveCoreWorkspaceNavItems'))
   assert.ok(sharedModel.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
-  assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
+  assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
   assert.ok(
     sharedModel.includes("key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize=\"small\" />"),
     'Files should use a cloud icon rather than a local-folder glyph',
@@ -32,7 +32,7 @@ test('shared core navigation owns common destinations and capability-gates local
     "label: '文件'",
     "label: '图库'",
     "label: '同步文件夹'",
-    "label: '传输'",
+    "label: '任务'",
     "label: '本地存储'",
     "label: '云端存储'",
   ]

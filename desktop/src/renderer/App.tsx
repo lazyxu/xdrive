@@ -58,6 +58,7 @@ import {
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDriveTaskCenterPage,
+  XDriveTransferPopover,
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -195,6 +196,7 @@ export default function App({
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
+  const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -503,7 +505,7 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
     },
     clearTransferHistory: async () => {
-      const result = await window.xdriveDesktop.agent.clearTransferHistory()
+      const result = await window.xdriveDesktop.agent.clearTransferHistory('local')
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -597,8 +599,9 @@ export default function App({
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
     backgroundTaskPort,
     backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
-    backgroundTasksVisible: view === 'transfers' || view === 'overview',
+    backgroundTasksVisible: view === 'transfers' || view === 'global-tasks' || view === 'overview',
     globalTasksEnabled: status?.role === 'admin',
+    backgroundScope: view === 'global-tasks' ? 'global' : 'mine',
     onBackgroundTaskError: (taskError) => setError(
       taskError instanceof Error ? taskError.message : String(taskError),
     ),
@@ -753,6 +756,10 @@ export default function App({
         setView('files')
         return
       }
+      if (target === 'transfers') {
+        setTransferPopoverOpen(true)
+        return
+      }
       setView(target)
     })
     return () => {
@@ -768,6 +775,7 @@ export default function App({
   useEffect(() => {
     transfersRevisionRef.current = 0
     setTransfers({ revision: 0, transfers: [] })
+    setTransferPopoverOpen(false)
 
     if (!status?.server || !status?.username) return () => undefined
 
@@ -780,6 +788,10 @@ export default function App({
       active = false
     }
   }, [acceptTransferSnapshot, status?.server, status?.username])
+
+  useEffect(() => {
+    if (view === 'global-tasks' && status?.role !== 'admin') setView('transfers')
+  }, [view, status?.role])
 
   useEffect(() => {
     if (configured || !status) return
@@ -1182,6 +1194,11 @@ export default function App({
 
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
+    if (data) acceptTransferSnapshot(data)
+  }
+
+  const clearNetworkTransferHistory = async () => {
+    const data = await run('clear-transfer-history', () => window.xdriveDesktop.agent.clearTransferHistory('network'), '已清空传输历史。')
     if (data) acceptTransferSnapshot(data)
   }
 
@@ -1783,6 +1800,18 @@ export default function App({
           <SettingsRoundedIcon fontSize="small" />
         </IconButton>
       </Tooltip>
+      <XDriveTransferPopover
+        transfers={transfers.transfers}
+        sessionKey={`${status?.server ?? ''}:${status?.username ?? ''}`}
+        open={transferPopoverOpen}
+        onOpenChange={setTransferPopoverOpen}
+        clearHistoryLoading={busy === 'clear-transfer-history'}
+        clearHistoryDisabled={Boolean(busy) || !agent.hello?.capabilities.includes('transfer-history-scope')}
+        onClearHistory={() => { void clearNetworkTransferHistory() }}
+        retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
+        retryDisabled={Boolean(busy)}
+        onRetry={(id) => { void retryTransfer(id) }}
+      />
       <XDriveAccountAvatarButton
         username={status?.username}
         compact
@@ -1866,6 +1895,7 @@ export default function App({
         className="sidebar"
         selected={view}
         transferBadge={taskCenter.badge}
+        showGlobalTasks={status?.role === 'admin'}
         showLocalStorage
         sections={desktopSidebarSections}
         storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}
@@ -1955,7 +1985,7 @@ export default function App({
             onOpenFiles={() => setView('files')}
             onRequestFileAction={requestCloudFileAction}
             onOpenGallery={() => setView('gallery')}
-            onOpenTransfers={() => setView('transfers')}
+            onOpenTransfers={() => setTransferPopoverOpen(true)}
             onOpenConflicts={() => setView('conflicts')}
             onError={setError}
           />
@@ -2080,10 +2110,13 @@ export default function App({
           />
         )}
 
-        {view === 'transfers' && (
+        {(view === 'transfers' || view === 'global-tasks') && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
-            subtitle="统一查看文件操作、上传下载、同步文件夹和后台处理状态。"
+            clearHistory={{
+              ...taskCenter.pageProps.clearHistory!,
+              disabled: taskCenter.pageProps.clearHistory?.disabled || !agent.hello?.capabilities.includes('transfer-history-scope'),
+            }}
             transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
             transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
             onRetryTransfer={(id) => { void retryTransfer(id) }}

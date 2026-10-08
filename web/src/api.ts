@@ -95,6 +95,7 @@ import {
   xDriveWriteWebDownloadToSink,
 } from './downloadSink'
 import type { XDriveWebActiveDownloadSink } from './downloadSink'
+import { xDriveTransferAbortError, xDriveUploadBytes, xDriveWaitForTransferPoll } from './transferTransport'
 
 export type {
   XDriveUploadConflictPolicy,
@@ -193,6 +194,16 @@ export interface UploadSessionState {
 type AuthenticatedDownloadTicket = {
   url: string
   expires_at: string
+  transfer_id?: string
+}
+
+type NativeDownloadProgress = {
+  transfer_id: string
+  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  bytes_sent: number
+  bytes_total: number
+  updated_at: string
+  error?: string
 }
 
 type ArchiveDownloadPrepareFile = {
@@ -304,10 +315,19 @@ function appendFileExplorerSearchFilters(
   if (filters.tagID) params.set('tag_id', String(Math.max(1, Math.trunc(filters.tagID))))
 }
 
+const transferSession = {
+  key: '',
+  api: null as XDriveApi | null,
+  controller: new AbortController(),
+}
+
 export class XDriveApi {
   private session: AuthSession
   private readonly onSession?: (session: AuthSession) => void
   private refreshPromise: Promise<void> | null = null
+  private transferSessionKey?: string
+  private transferSessionController?: AbortController
+  private transferSessionEpoch = 0
 
   constructor(session?: Partial<AuthSession>, onSession?: (session: AuthSession) => void) {
     this.session = {
@@ -318,6 +338,46 @@ export class XDriveApi {
     this.onSession = onSession
   }
 
+  setTransferSessionKey(key: string) {
+    if (transferSession.key !== key) {
+      transferSession.controller.abort()
+      transferSession.controller = new AbortController()
+      transferSession.key = key
+      webTransferStore.setSessionKey(key)
+    }
+    if (this.transferSessionController && this.transferSessionController !== transferSession.controller) {
+      this.transferSessionEpoch += 1
+    }
+    this.transferSessionKey = key
+    this.transferSessionController = transferSession.controller
+    transferSession.api = this
+  }
+
+  disposeTransfers() {
+    if (transferSession.api && transferSession.api !== this) return
+    transferSession.controller.abort()
+    transferSession.controller = new AbortController()
+    transferSession.api = null
+    transferSession.key = ''
+    webTransferStore.setSessionKey('')
+  }
+
+  private transferContext() {
+    if (this.transferSessionKey !== undefined && (
+      this.transferSessionKey !== transferSession.key ||
+      this.transferSessionController !== transferSession.controller
+    )) {
+      throw xDriveTransferAbortError()
+    }
+    const signal = transferSession.controller.signal
+    const check = () => { if (signal.aborted) throw xDriveTransferAbortError() }
+    return {
+      signal,
+      check,
+      api: () => { check(); return transferSession.api ?? this },
+    }
+  }
+
   transfers() {
     return webTransferStore.snapshot()
   }
@@ -326,8 +386,8 @@ export class XDriveApi {
     return webTransferStore.subscribe(listener)
   }
 
-  clearTransferHistory() {
-    webTransferStore.clearHistory()
+  clearTransferHistory(scope: 'all' | 'network' | 'local' = 'all') {
+    webTransferStore.clearHistory(scope)
   }
 
   startTransferGroup(input: {
@@ -337,8 +397,9 @@ export class XDriveApi {
     itemsTotal: number
     kind?: 'upload' | 'download'
     direction?: 'upload' | 'download'
+    speedSource?: 'client' | 'server'
   }) {
-    return webTransferStore.startGroup(input)
+    return webTransferStore.startGroup({ ...input, speedSource: input.speedSource ?? 'client' })
   }
 
   startTransferChild(groupID: string, input: {
@@ -401,16 +462,19 @@ export class XDriveApi {
     this.onSession?.(session)
   }
 
-  private async refresh(force = false) {
+  private async refresh(force = false, signal?: AbortSignal | null) {
     if (!this.session.refreshToken) throw new ApiError(401, 'Session expired')
     if (!force && this.session.accessExpiresAt > Date.now() + 120_000) return
     if (this.refreshPromise) return this.refreshPromise
 
+    const sessionController = this.transferSessionController
+    const sessionEpoch = this.transferSessionEpoch
     this.refreshPromise = (async () => {
       const response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: this.session.refreshToken }),
+        signal,
       })
       if (!response.ok) {
         let message = 'Session expired'
@@ -423,6 +487,14 @@ export class XDriveApi {
         throw new ApiError(response.status, message)
       }
       const result = (await response.json()) as AuthResult
+      // A child effect can start this refresh before App registers its session.
+      // Check the later registration too; a re-bound API must not revive work
+      // from the lifecycle it disposed, even when the account name is unchanged.
+      if (
+        signal?.aborted || sessionController?.signal.aborted ||
+        this.transferSessionController?.signal.aborted ||
+        this.transferSessionEpoch !== sessionEpoch
+      ) throw xDriveTransferAbortError()
       this.setSession(sessionFromAuth(result))
     })()
 
@@ -433,14 +505,16 @@ export class XDriveApi {
     }
   }
 
-  private async ensureFresh() {
+  private async ensureFresh(signal?: AbortSignal | null) {
+    if (signal?.aborted) throw xDriveTransferAbortError()
     if (this.session.refreshToken && this.session.accessExpiresAt > 0 && this.session.accessExpiresAt <= Date.now() + 120_000) {
-      await this.refresh()
+      await this.refresh(false, signal)
     }
   }
 
   private async request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
-    await this.ensureFresh()
+    await this.ensureFresh(init.signal)
+    if (init.signal?.aborted) throw xDriveTransferAbortError()
     const headers = new Headers(init.headers)
     if (this.session.accessToken) headers.set('Authorization', `Bearer ${this.session.accessToken}`)
     if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -448,7 +522,8 @@ export class XDriveApi {
     }
     let response = await fetch(`${API_BASE}${path}`, { ...init, headers })
     if (response.status === 401 && retry && this.session.refreshToken) {
-      await this.refresh(true)
+      await this.refresh(true, init.signal)
+      if (init.signal?.aborted) throw xDriveTransferAbortError()
       const retryHeaders = new Headers(init.headers)
       if (this.session.accessToken) retryHeaders.set('Authorization', `Bearer ${this.session.accessToken}`)
       if (init.body && !(init.body instanceof FormData) && !retryHeaders.has('Content-Type')) {
@@ -1703,14 +1778,18 @@ export class XDriveApi {
     onProgress?: (percent: number) => void,
     transferID = '',
   ): Promise<XDriveUploadResult> {
+    const tracking = this.transferContext()
     const managedExternally = Boolean(transferID)
     const activeTransferID = transferID || webTransferStore.create({
       fileName: file.name,
       path: file.name,
       kind: 'upload',
       bytesTotal: file.size,
+      speedSource: 'client',
     })
+    webTransferStore.trackNetwork(activeTransferID, 'client')
     const reportProgress = (completed: number) => {
+      tracking.check()
       if (!managedExternally) webTransferStore.progress(activeTransferID, completed, file.size)
       onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
     }
@@ -1720,6 +1799,7 @@ export class XDriveApi {
       const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
       const chunkHashes: string[] = []
       for (let index = 0; index < chunkCount; index += 1) {
+        tracking.check()
         const start = index * chunkSize
         const end = Math.min(file.size, start + chunkSize)
         chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
@@ -1731,7 +1811,7 @@ export class XDriveApi {
       const resumeKey = await sha256Buffer(
         new TextEncoder().encode(resumeIdentity).buffer,
       )
-      const session = await this.request<UploadSessionState>('/api/v1/uploads', {
+      const session = await tracking.api().request<UploadSessionState>('/api/v1/uploads', {
         method: 'POST',
         body: JSON.stringify({
           parent_id: parentID,
@@ -1742,7 +1822,9 @@ export class XDriveApi {
           resume_key: resumeKey,
           conflict_policy: conflictPolicy,
         }),
+        signal: tracking.signal,
       })
+      tracking.check()
       if (session.status === 'skipped' && session.result) {
         if (!managedExternally) webTransferStore.completeSkipped(activeTransferID, file.size)
         return { node: session.result, skipped: true, transferred_bytes: 0 }
@@ -1756,8 +1838,10 @@ export class XDriveApi {
       const received = new Map(session.received_chunks.map((part) => [part.index, part]))
       let completed = 0
       let transferredBytes = 0
+      let networkBytes = 0
 
       for (let index = 0; index < session.chunk_count; index += 1) {
+        tracking.check()
         const start = index * session.chunk_size
         const end = Math.min(file.size, start + session.chunk_size)
         const expectedSize = end - start
@@ -1772,16 +1856,28 @@ export class XDriveApi {
         const data = await file.slice(start, end).arrayBuffer()
         const actualHash = await sha256Buffer(data)
         if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
-        await this.putUploadChunk(session.id, index, hash, data)
+        let reported = 0
+        await this.putUploadChunk(session.id, index, hash, data, tracking, (loaded, delta) => {
+          tracking.check()
+          networkBytes += delta
+          reported = Math.max(reported, loaded)
+          webTransferStore.batchUpdates(() => {
+            webTransferStore.networkProgress(activeTransferID, networkBytes)
+            reportProgress(completed + reported)
+          })
+        })
+        tracking.check()
         completed += data.byteLength
         transferredBytes += data.byteLength
         reportProgress(completed)
       }
 
-      const finalized = await this.request<UploadSessionState>(`/api/v1/uploads/${session.id}/finalize`, {
+      const finalized = await tracking.api().request<UploadSessionState>(`/api/v1/uploads/${session.id}/finalize`, {
         method: 'POST',
         body: JSON.stringify({}),
+        signal: tracking.signal,
       })
+      tracking.check()
       if (!finalized.result) throw new ApiError(500, 'Finalize upload returned no file')
       reportProgress(file.size)
       if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
@@ -1791,26 +1887,40 @@ export class XDriveApi {
         transferred_bytes: transferredBytes,
       }
     } catch (error) {
-      if (!managedExternally) webTransferStore.fail(activeTransferID, error)
+      if (!managedExternally && !tracking.signal.aborted) webTransferStore.fail(activeTransferID, error)
       throw error
     }
   }
 
-  private async putUploadChunk(sessionID: string, index: number, hash: string, data: ArrayBuffer) {
-    await this.ensureFresh()
-    const send = () => fetch(`${API_BASE}/api/v1/uploads/${sessionID}/chunks/${index}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${this.session.accessToken}`,
-        'Content-Type': 'application/octet-stream',
-        'X-Chunk-SHA256': hash,
-      },
-      body: data,
-    })
+  private async putUploadChunk(
+    sessionID: string, index: number, hash: string, data: ArrayBuffer,
+    tracking: ReturnType<XDriveApi['transferContext']>,
+    onProgress: (loaded: number, delta: number) => void,
+  ) {
+    await tracking.api().ensureFresh(tracking.signal)
+    const send = () => {
+      const api = tracking.api()
+      let sent = 0
+      return xDriveUploadBytes(`${API_BASE}/api/v1/uploads/${sessionID}/chunks/${index}`, {
+        headers: {
+          'Authorization': `Bearer ${api.session.accessToken}`,
+          'Content-Type': 'application/octet-stream',
+          'X-Chunk-SHA256': hash,
+        },
+        body: data,
+        signal: tracking.signal,
+        onProgress: (loaded) => {
+          if (tracking.signal.aborted || loaded <= sent) return
+          const delta = loaded - sent
+          sent = loaded
+          onProgress(loaded, delta)
+        },
+      })
+    }
 
     let response = await send()
-    if (response.status === 401 && this.session.refreshToken) {
-      await this.refresh(true)
+    if (response.status === 401 && tracking.api().session.refreshToken) {
+      await tracking.api().refresh(true, tracking.signal)
       response = await send()
     }
     if (!response.ok) {
@@ -2150,66 +2260,162 @@ export class XDriveApi {
     return `${API_BASE}${path}`
   }
 
+  private async startNativeDownload(ticketPath: string, filename: string, bytesTotal = 0) {
+    const tracking = this.transferContext()
+    const transferID = webTransferStore.create({
+      fileName: filename,
+      kind: 'download',
+      bytesTotal,
+      speedSource: 'server',
+    })
+    try {
+      const ticket = await tracking.api().request<AuthenticatedDownloadTicket>(ticketPath, {
+        method: 'POST', signal: tracking.signal,
+      })
+      tracking.check()
+      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)
+      if (ticket.transfer_id) {
+        void this.monitorNativeDownload(transferID, ticket.transfer_id, tracking)
+      } else {
+        webTransferStore.handedOff(transferID)
+      }
+      return true
+    } catch (error) {
+      if (!tracking.signal.aborted) webTransferStore.fail(transferID, error)
+      throw error
+    }
+  }
+
+  private async monitorNativeDownload(
+    transferID: string, serverTransferID: string,
+    tracking: ReturnType<XDriveApi['transferContext']>,
+  ) {
+    const launchDeadline = Date.now() + 60_000
+    let observedActive = false
+    try {
+      while (true) {
+        const progress = await this.nativeDownloadProgress(serverTransferID, tracking)
+        if (!progress) {
+          webTransferStore.handedOff(transferID)
+          return
+        }
+        webTransferStore.batchUpdates(() => {
+          const total = Math.max(0, progress.bytes_total)
+          const done = total > 0 ? Math.min(progress.bytes_sent, total) : progress.bytes_sent
+          webTransferStore.progress(transferID, done, total)
+          webTransferStore.networkProgress(transferID, progress.bytes_sent, progress.updated_at)
+        })
+        if (progress.state === 'running') observedActive = true
+        if (progress.state === 'completed') {
+          webTransferStore.complete(transferID, progress.bytes_sent, progress.bytes_total || progress.bytes_sent)
+          return
+        }
+        if (progress.state === 'failed' || progress.state === 'cancelled') {
+          webTransferStore.finishLifecycle(transferID, { state: progress.state, error: progress.error })
+          return
+        }
+        if (!observedActive && Date.now() > launchDeadline) throw new Error('浏览器未开始下载。')
+        await xDriveWaitForTransferPoll(tracking.signal)
+      }
+    } catch (error) {
+      if (tracking.signal.aborted) return
+      webTransferStore.fail(transferID, error)
+    }
+  }
+
+  private async nativeDownloadProgress(
+    serverTransferID: string,
+    tracking: ReturnType<XDriveApi['transferContext']>,
+  ): Promise<NativeDownloadProgress | null> {
+    try {
+      const progress = await tracking.api().request<NativeDownloadProgress>(
+        `/api/v1/download/progress/${encodeURIComponent(serverTransferID)}`,
+        { signal: tracking.signal },
+      )
+      tracking.check()
+      if (
+        !progress || progress.transfer_id !== serverTransferID ||
+        !['queued', 'running', 'completed', 'failed', 'cancelled'].includes(progress.state) ||
+        !Number.isFinite(progress.bytes_sent) || progress.bytes_sent < 0 ||
+        !Number.isFinite(progress.bytes_total) || progress.bytes_total < 0 ||
+        typeof progress.updated_at !== 'string' || !Number.isFinite(Date.parse(progress.updated_at))
+      ) return null
+      return progress
+    } catch {
+      tracking.check()
+      // The browser owns the payload connection. An unavailable observation
+      // cannot establish whether that separate download failed or completed.
+      return null
+    }
+  }
+
   async downloadVersion(node: Node, version: FileVersion) {
+    const tracking = this.transferContext()
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
-    if (downloadSink.kind === 'blob') {
-      const ticket = await this.request<AuthenticatedDownloadTicket>(
-        `/api/v1/files/${node.id}/versions/${version.id}/download-ticket`,
-        { method: 'POST' },
+    try {
+      tracking.check()
+      if (downloadSink.kind === 'blob') {
+        return await this.startNativeDownload(
+          `/api/v1/files/${node.id}/versions/${version.id}/download-ticket`,
+          node.name,
+          version.size,
+        )
+      }
+      await this.downloadAuthenticated(
+        `/api/v1/files/${node.id}/versions/${version.id}/content`,
+        node.name,
+        {},
+        true,
+        downloadSink,
       )
-      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
       return true
+    } catch (error) {
+      await xDriveAbortWebDownloadSink(downloadSink, error)
+      throw error
     }
-    await this.downloadAuthenticated(
-      `/api/v1/files/${node.id}/versions/${version.id}/content`,
-      node.name,
-      {},
-      true,
-      downloadSink,
-    )
-    return true
   }
 
   async download(node: Node) {
+    const tracking = this.transferContext()
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
-    if (downloadSink.kind === 'blob') {
-      const ticket = await this.request<AuthenticatedDownloadTicket>(
-        `/api/v1/files/${node.id}/download-ticket`,
-        { method: 'POST' },
+    try {
+      tracking.check()
+      if (downloadSink.kind === 'blob') {
+        return await this.startNativeDownload(
+          `/api/v1/files/${node.id}/download-ticket`,
+          node.name,
+          node.size,
+        )
+      }
+      await this.downloadAuthenticated(
+        `/api/v1/files/${node.id}/content`,
+        node.name,
+        {},
+        true,
+        downloadSink,
       )
-      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
       return true
+    } catch (error) {
+      await xDriveAbortWebDownloadSink(downloadSink, error)
+      throw error
     }
-    await this.downloadAuthenticated(
-      `/api/v1/files/${node.id}/content`,
-      node.name,
-      {},
-      true,
-      downloadSink,
-    )
-    return true
   }
 
   async downloadArchive(ids: number[], filename: string) {
+    const tracking = this.transferContext()
     const downloadSink = await xDriveOpenWebDownloadSink(filename)
     if (downloadSink.kind === 'cancelled') return false
 
-    const groupID = this.startTransferGroup({
-      fileName: filename,
-      path: filename,
-      bytesTotal: 0,
-      itemsTotal: 0,
-      kind: 'download',
-      direction: 'download',
-    })
+    let groupID = ''
     const childIDs = new Map<string, string>()
     const childStates = new Map<string, ArchiveDownloadProgressFile['state']>()
     let stopPolling = false
     let polling: Promise<void> | null = null
 
     const applyProgress = (progress: ArchiveDownloadProgress) => {
+      tracking.check()
       this.batchTransferUpdates(() => {
         for (const file of progress.files) {
           const childID = childIDs.get(file.path)
@@ -2244,21 +2450,34 @@ export class XDriveApi {
     }
 
     try {
-      let prepared = await this.request<ArchiveDownloadPrepare>('/api/v1/download/archive/prepare', {
+      tracking.check()
+      groupID = this.startTransferGroup({
+        fileName: filename,
+        path: filename,
+        bytesTotal: 0,
+        itemsTotal: 0,
+        kind: 'download',
+        direction: 'download',
+        speedSource: downloadSink.kind === 'blob' ? 'server' : 'client',
+      })
+      let prepared = await tracking.api().request<ArchiveDownloadPrepare>('/api/v1/download/archive/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
+        signal: tracking.signal,
       })
       while (
         prepared.state === 'queued' ||
         prepared.state === 'running' ||
         prepared.state === 'cancel_requested'
       ) {
-        await new Promise((resolve) => window.setTimeout(resolve, 200))
-        prepared = await this.request<ArchiveDownloadPrepare>(
+        await xDriveWaitForTransferPoll(tracking.signal, 200)
+        prepared = await tracking.api().request<ArchiveDownloadPrepare>(
           `/api/v1/download/archive/prepare/${encodeURIComponent(prepared.transfer_id)}`,
+          { signal: tracking.signal },
         )
       }
+      tracking.check()
       if (prepared.state !== 'completed') {
         throw new ApiError(409, prepared.error || `Archive prepare ${prepared.state}`)
       }
@@ -2295,40 +2514,76 @@ export class XDriveApi {
       })
 
       if (downloadSink.kind === 'blob') {
-        const ticket = await this.request<AuthenticatedDownloadTicket>(
+        const ticket = await tracking.api().request<AuthenticatedDownloadTicket>(
           `/api/v1/download/archive/prepare/${encodeURIComponent(prepared.transfer_id)}/download-ticket`,
-          { method: 'POST' },
+          { method: 'POST', signal: tracking.signal },
         )
+        tracking.check()
         xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), preparedFilename)
 
+        const handOff = () => {
+          this.batchTransferUpdates(() => {
+            for (const childID of childIDs.values()) webTransferStore.handedOff(childID)
+            webTransferStore.handedOff(groupID)
+          })
+        }
+        if (!ticket.transfer_id) {
+          handOff()
+          return true
+        }
         const launchDeadline = Date.now() + 60_000
         let observedActive = false
         while (true) {
-          const progress = await this.request<ArchiveDownloadProgress>(
-            `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
-          )
-          applyProgress(progress)
-          if (progress.state === 'running') observedActive = true
-          if (progress.state === 'completed') break
-          if (progress.state === 'failed' || progress.state === 'cancelled') {
-            throw new ApiError(409, progress.error || `Archive download ${progress.state}`)
+          const network = await this.nativeDownloadProgress(ticket.transfer_id, tracking)
+          if (!network) {
+            handOff()
+            return true
+          }
+          webTransferStore.networkProgress(groupID, network.bytes_sent, network.updated_at)
+          if (network.state === 'failed') {
+            throw new ApiError(409, network.error || 'Archive download failed')
+          }
+          if (network.state === 'cancelled') {
+            this.batchTransferUpdates(() => {
+              for (const childID of childIDs.values()) this.finishTransfer(childID, { state: 'cancelled' })
+              this.finishTransfer(groupID, { state: 'cancelled', error: network.error })
+            })
+            return false
+          }
+          if (network.state === 'completed') break
+          if (network.state === 'running') observedActive = true
+          try {
+            applyProgress(await tracking.api().request<ArchiveDownloadProgress>(
+              `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+              { signal: tracking.signal },
+            ))
+          } catch {
+            tracking.check()
+            // Per-entry logical progress is process-local. A different instance
+            // may have no record, while shared response telemetry remains valid.
           }
           if (!observedActive && Date.now() > launchDeadline) {
             throw new Error('浏览器未开始归档下载。')
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 200))
+          await xDriveWaitForTransferPoll(tracking.signal)
         }
       } else {
         polling = (async () => {
           while (!stopPolling) {
             try {
-              applyProgress(await this.request<ArchiveDownloadProgress>(
+              applyProgress(await tracking.api().request<ArchiveDownloadProgress>(
                 `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+                { signal: tracking.signal },
               ))
             } catch {
+              if (tracking.signal.aborted) return
               // Side-channel progress must never abort the archive transport.
             }
-            await new Promise((resolve) => window.setTimeout(resolve, 200))
+            try {
+              await xDriveWaitForTransferPoll(tracking.signal, 200)
+            } catch {
+              return
+            }
           }
         })()
 
@@ -2337,7 +2592,7 @@ export class XDriveApi {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids, transfer_id: prepared.transfer_id }),
-          }, false, downloadSink)
+          }, false, downloadSink, groupID)
         } finally {
           stopPolling = true
           await polling
@@ -2345,14 +2600,16 @@ export class XDriveApi {
         }
 
         try {
-          applyProgress(await this.request<ArchiveDownloadProgress>(
+          applyProgress(await tracking.api().request<ArchiveDownloadProgress>(
             `/api/v1/download/archive/progress/${encodeURIComponent(prepared.transfer_id)}`,
+            { signal: tracking.signal },
           ))
         } catch {
           // A successful archive response proves every entry was fully streamed.
         }
       }
 
+      tracking.check()
       this.batchTransferUpdates(() => {
         for (const file of preparedFiles) {
           const childID = childIDs.get(file.path)
@@ -2376,7 +2633,9 @@ export class XDriveApi {
       return true
     } catch (error) {
       stopPolling = true
+      await xDriveAbortWebDownloadSink(downloadSink, error)
       if (polling) await polling
+      if (tracking.signal.aborted || !groupID) throw error
       this.batchTransferUpdates(() => {
         for (const [path, childID] of childIDs) {
           const state = childStates.get(path)
@@ -2398,37 +2657,47 @@ export class XDriveApi {
     init: { method?: string; headers?: Record<string, string>; body?: string } = {},
     trackTransfer = true,
     downloadSink: XDriveWebActiveDownloadSink = { kind: 'blob' },
+    networkTransferID = '',
   ) {
+    const tracking = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
       path: filename,
       kind: 'download',
+      speedSource: 'client',
     }) : ''
+    const wireID = transferID || networkTransferID
     let transferProgress: ReturnType<typeof xDriveCreateWebDownloadProgressReporter> | null = null
 
     try {
-      await this.ensureFresh()
+      await tracking.api().ensureFresh(tracking.signal)
       const send = () => fetch(`${API_BASE}${path}`, {
         method: init.method,
         headers: {
           ...init.headers,
-          ...(this.session.accessToken ? { Authorization: `Bearer ${this.session.accessToken}` } : {}),
+          ...(tracking.api().session.accessToken ? { Authorization: `Bearer ${tracking.api().session.accessToken}` } : {}),
         },
         body: init.body,
+        signal: tracking.signal,
       })
       let response = await send()
-      if (response.status === 401 && this.session.refreshToken) {
-        await this.refresh(true)
+      if (response.status === 401 && tracking.api().session.refreshToken) {
+        await tracking.api().refresh(true, tracking.signal)
         response = await send()
       }
+      tracking.check()
       if (!response.ok) throw new ApiError(response.status, response.statusText || 'Download failed')
 
       const contentLength = Number(response.headers.get('Content-Length') || '0')
       const total = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0
       let completed = 0
-      if (trackTransfer) {
+      if (wireID) {
         transferProgress = xDriveCreateWebDownloadProgressReporter((done) => {
-          webTransferStore.progress(transferID, done, total)
+          tracking.check()
+          webTransferStore.batchUpdates(() => {
+            webTransferStore.networkProgress(wireID, done)
+            if (trackTransfer) webTransferStore.progress(transferID, done, total)
+          })
         })
       }
 
@@ -2462,6 +2731,7 @@ export class XDriveApi {
           transferProgress?.progress(completed)
         }
 
+        tracking.check()
         const url = URL.createObjectURL(blob)
         try {
           const a = document.createElement('a')
@@ -2475,10 +2745,12 @@ export class XDriveApi {
         }
       }
 
+      tracking.check()
+      transferProgress?.flush()
       if (trackTransfer) webTransferStore.complete(transferID, completed, total || completed)
     } catch (error) {
       await xDriveAbortWebDownloadSink(downloadSink, error)
-      if (trackTransfer) {
+      if (trackTransfer && !tracking.signal.aborted) {
         transferProgress?.flush()
         webTransferStore.fail(transferID, error)
       }

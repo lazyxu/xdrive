@@ -796,7 +796,7 @@ declare global {
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>
         retryTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
         transferLifecycle: (input: AgentTransferLifecycleInput) => Promise<DesktopResult<{ id?: string; ids?: string[]; ok?: boolean }>>
-        clearTransferHistory: () => Promise<DesktopResult<AgentTransfers>>
+        clearTransferHistory: (scope?: 'all' | 'network' | 'local') => Promise<DesktopResult<AgentTransfers>>
         openFolder: () => Promise<DesktopResult<{ ok: boolean }>>
         onState: (callback: (state: AgentConnectionState) => void) => () => void
         onTransfers: (callback: (state: AgentTransfers) => void) => () => void

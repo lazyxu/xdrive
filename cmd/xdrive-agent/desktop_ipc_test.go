@@ -1649,11 +1649,11 @@ func (f *fakeDesktopIPCController) FinishTransfer(id, state, message string, ski
 	return handle.Finish(state, err)
 }
 
-func (f *fakeDesktopIPCController) ClearTransferHistory() (uint64, []transfer.Task) {
+func (f *fakeDesktopIPCController) ClearTransferHistory(scopes ...string) (uint64, []transfer.Task) {
 	if f.transfers == nil {
 		return 1, nil
 	}
-	f.transfers.ClearHistory()
+	f.transfers.ClearHistory(scopes...)
 	return f.transfers.Snapshot()
 }
 

@@ -63,5 +63,5 @@ test('legacy aggregate Blob buffering is no longer used by ordinary file/version
   const ordinary = api.slice(versionStart, archiveStart)
   assert.equal(ordinary.includes('response.blob()'), false)
   assert.equal(ordinary.includes('const chunks: BlobPart[] = []'), false)
-  assert.ok(ordinary.includes('xDriveStartBrowserDownload('))
+  assert.ok(ordinary.includes('this.startNativeDownload('))
 })

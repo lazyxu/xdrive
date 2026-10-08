@@ -468,7 +468,7 @@ func (p *winProvider) syncNewDirectoryTree(ctx context.Context, rel string, base
 			return nil
 		}
 		task, progress := p.uploadTransfer(childRel, info.Size())
-		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, path, slashBase(childRel), progress)
+		node, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, task), parent.node.ID, path, slashBase(childRel), progress)
 		finishTransfer(task, err)
 		if err != nil {
 			return err
@@ -518,7 +518,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		}
 		parent := baseline[slashDir(rel)]
 		task, progress := p.uploadTransfer(rel, entry.size)
-		node, err := p.cli.UploadFileResumable(ctx, parent.node.ID, absPath, slashBase(rel), progress)
+		node, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, task), parent.node.ID, absPath, slashBase(rel), progress)
 		finishTransfer(task, err)
 		if err != nil {
 			return err
@@ -540,7 +540,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 	}
 
 	task, progress := p.uploadTransfer(rel, entry.size)
-	node, err := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, progress)
+	node, err := p.cli.OverwriteFileResumable(uploadTransferContext(ctx, task), base.node.ID, base.node.Revision, absPath, progress)
 	if err == nil {
 		finishTransfer(task, nil)
 		if syncErr := cfMarkPathInSync(absPath); syncErr != nil {
@@ -560,7 +560,7 @@ func (p *winProvider) syncLocalFile(ctx context.Context, rel string, info os.Fil
 		return err
 	}
 	conflictTask, conflictProgress := p.uploadTransfer(conflictRel, entry.size)
-	conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
+	conflictNode, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, conflictTask), *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
 	finishTransfer(conflictTask, err)
 	if err != nil {
 		return err

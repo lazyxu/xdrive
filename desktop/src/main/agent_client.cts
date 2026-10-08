@@ -150,6 +150,8 @@ export type AgentTransfer = {
   items_queued?: number
   instant_bytes_per_second: number
   average_bytes_per_second: number
+  speed_source?: 'client' | 'server'
+  speed_updated_at?: string
   elapsed_ms: number
   error?: string
   retry_count: number
@@ -2653,8 +2655,8 @@ export class AgentIPCClient {
     return this.request<{ id?: string; ids?: string[]; ok?: boolean }>('POST', '/v1/transfers/lifecycle', input)
   }
 
-  clearTransferHistory() {
-    return this.request<AgentTransfers>('DELETE', '/v1/transfers')
+  clearTransferHistory(scope: 'all' | 'network' | 'local' = 'all') {
+    return this.request<AgentTransfers>('DELETE', scope === 'all' ? '/v1/transfers' : `/v1/transfers?scope=${scope}`)
   }
 
   diagnostics() {

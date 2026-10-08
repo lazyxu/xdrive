@@ -493,7 +493,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 			baseline[rel] = stateFromLocal(n, entry)
 		} else {
 			task, progress := p.uploadTransfer(rel, entry.size)
-			n, err := p.cli.UploadFileResumable(ctx, parent.node.ID, absPath, slashBase(rel), progress)
+			n, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, task), parent.node.ID, absPath, slashBase(rel), progress)
 			finishTransfer(task, err)
 			if err != nil {
 				return err
@@ -520,7 +520,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 		absPath := filepath.Join(p.root, filepath.FromSlash(rel))
 		task, progress := p.uploadTransfer(rel, entry.size)
-		n, upErr := p.cli.OverwriteFileResumable(ctx, base.node.ID, base.node.Revision, absPath, progress)
+		n, upErr := p.cli.OverwriteFileResumable(uploadTransferContext(ctx, task), base.node.ID, base.node.Revision, absPath, progress)
 		if upErr == nil {
 			finishTransfer(task, nil)
 		}
@@ -536,7 +536,7 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				return err
 			}
 			conflictTask, conflictProgress := p.uploadTransfer(conflictRel, entry.size)
-			conflictNode, err := p.cli.UploadFileResumable(ctx, *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
+			conflictNode, err := p.cli.UploadFileResumable(uploadTransferContext(ctx, conflictTask), *base.node.ParentID, conflictAbs, slashBase(conflictRel), conflictProgress)
 			finishTransfer(conflictTask, err)
 			if err != nil {
 				return err

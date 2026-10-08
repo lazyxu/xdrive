@@ -158,6 +158,13 @@ func finishAgentCloudTransfer(handle *transfer.Handle, err error) {
 	handle.Complete()
 }
 
+func agentUploadTransferContext(ctx context.Context, handle *transfer.Handle) context.Context {
+	if handle == nil {
+		return ctx
+	}
+	return client.WithUploadNetworkProgress(ctx, handle.NetworkProgressObserver())
+}
+
 func (c *agentController) cloudClient() (*client.Client, userconfig.Config, error) {
 	cfg, err := userconfig.Load()
 	if err != nil {
@@ -763,7 +770,7 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 	}
 
 	result, err := cli.UploadFileResumableWithConflictPolicyResult(
-		ctx, parentID, localPath, name, policy, progress,
+		agentUploadTransferContext(ctx, handle), parentID, localPath, name, policy, progress,
 	)
 	if err != nil {
 		if !managedExternally {
@@ -814,7 +821,7 @@ func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, loca
 		localPath,
 		info.Size(),
 	)
-	node, err := cli.UploadFileResumable(ctx, parentID, localPath, name, progress)
+	node, err := cli.UploadFileResumable(agentUploadTransferContext(ctx, handle), parentID, localPath, name, progress)
 	finishAgentCloudTransfer(handle, err)
 	if err == nil {
 		c.requestCloudSync(cfg)

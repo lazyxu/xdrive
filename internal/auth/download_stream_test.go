@@ -45,3 +45,25 @@ func TestDownloadStreamTicketRoundTripAndAudienceIsolation(t *testing.T) {
 		t.Fatal("oversized download ticket ttl was accepted")
 	}
 }
+
+func TestDownloadStreamTicketsHaveUniqueTransferIDs(t *testing.T) {
+	manager := New("download-stream-id-secret", time.Hour)
+	ids := map[string]bool{}
+	for range 2 {
+		token, _, err := manager.IssueDownloadStream(7, 3, "file", "42", 9, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims, err := manager.ParseDownloadStream(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claims.ID == "" {
+			t.Fatal("download ticket is missing its transfer ID")
+		}
+		if ids[claims.ID] {
+			t.Fatal("separate native download tickets reused a transfer ID")
+		}
+		ids[claims.ID] = true
+	}
+}

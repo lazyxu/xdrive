@@ -100,8 +100,8 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
 
 test('Web and Desktop both render the shared file-operation center through Task Center', () => {
   assert.equal((taskCenter.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'shared Task Center must render one FileOperationCenter')
-  assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain upload/download history')
-  assert.ok(taskCenter.includes('title="任务中心"'), 'shared workspace should own the Task Center title')
+  assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain local non-network task history')
+  assert.ok(taskCenter.includes("title={scope === 'global' ? '全局任务' : '任务'}"), 'shared workspace should own the Task Center title')
   assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render one shared Task Center')
   assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render one shared Task Center')
   assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Web must not duplicate FileOperationCenter composition')
@@ -190,8 +190,8 @@ test('shared FileOperation action controller owns cancel retry and clear-history
   assert.ok(web.includes('lifecycleKey: username'), 'Web FileOperation actions must be scoped to the authenticated username lifecycle')
   assert.ok(desktop.includes('useXDriveFileOperationActions<AgentCloudFileOperation, AgentTransfers>({'), 'Desktop must consume the shared operation action controller')
   assert.ok(desktop.includes("lifecycleKey: \`\${status?.server ?? ''}\\n\${status?.username ?? ''}\`"), 'Desktop FileOperation actions must be scoped to Server+username identity')
-  assert.ok(web.includes('clearTransferHistory: async () => { api.clearTransferHistory() }'), 'Web must keep local transfer-history clearing in its adapter')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep Agent transfer-history clearing in its adapter')
+  assert.ok(web.includes("clearTransferHistory: async () => { api.clearTransferHistory('local') }"), 'Web must keep local transfer-history clearing in its adapter')
+  assert.ok(desktop.includes("window.xdriveDesktop.agent.clearTransferHistory('local')"), 'Desktop must keep Agent transfer-history clearing in its adapter')
   assert.ok(desktop.includes('onTransferHistoryCleared: (value) => {') && desktop.includes('acceptTransferSnapshot(value)'), 'Desktop must apply the Agent transfer-history result through the revision-safe snapshot acceptor')
 })
 

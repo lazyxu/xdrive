@@ -10,6 +10,7 @@ import (
 
 type currentFileDownloadMetadata struct {
 	Name       string    `gorm:"column:name"`
+	Size       int64     `gorm:"column:size"`
 	Revision   uint64    `gorm:"column:revision"`
 	StorageKey string    `gorm:"column:storage_key"`
 	SHA256     string    `gorm:"column:sha256"`
@@ -18,6 +19,7 @@ type currentFileDownloadMetadata struct {
 
 type fileVersionDownloadMetadata struct {
 	Name         string    `gorm:"column:name"`
+	Size         int64     `gorm:"column:size"`
 	VersionFound bool      `gorm:"column:version_found"`
 	StorageKey   string    `gorm:"column:storage_key"`
 	SHA256       string    `gorm:"column:sha256"`
@@ -33,6 +35,7 @@ func loadCurrentFileDownloadMetadata(
 	var out currentFileDownloadMetadata
 	result := db.WithContext(ctx).Raw(`
 SELECT n.name,
+       f.size,
        n.revision,
        f.storage_key,
        f.sha256,
@@ -64,6 +67,7 @@ func loadFileVersionDownloadMetadata(
 	var out fileVersionDownloadMetadata
 	result := db.WithContext(ctx).Raw(`
 SELECT n.name,
+       COALESCE(v.size, 0) AS size,
        (v.id IS NOT NULL) AS version_found,
        COALESCE(v.storage_key, '') AS storage_key,
        COALESCE(v.sha256, '') AS sha256,
