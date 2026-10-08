@@ -47,6 +47,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation enqueue root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected file roots: owner/revision/root validation with file metadata **240 SELECTs -> 2 SELECTs** (one ordered locked node batch + one File preload); validation still reports the first failing requested item. |
+| FileOperation execution root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected roots: Copy/Delete locked root validation with File metadata **240 SELECTs -> 2 SELECTs**; Move root validation **120 SELECTs -> 1 SELECT** with no File preload. Recursive mutation/conflict/progress semantics are unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
@@ -236,7 +237,45 @@ Decision: **Accepted.** This removes an enqueue-time N×2 SQL multiplier without
 
 Regression budget: selected-root enqueue validation remains **2 SELECTs** for a non-empty file batch regardless of batch size up to the existing 200-item cap; first-failure request-order semantics must remain covered.
 
-Next action: continue execution-stage Delete/Move/Copy audit separately; do not combine execution ordering changes with this enqueue optimization.
+Next action: execution-stage selected-root loading is covered by the dedicated contract below; continue recursive mutation/progress audits separately.
+
+### FileOperation execution root-validation batch-load contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- 120 selected sibling file roots in one durable FileOperation;
+- deterministic SQL counting uses the existing FileOperation GORM trace counter;
+- Copy/Delete require File metadata; Move intentionally does not preload File metadata;
+- the existing ordered locked batch loader is reused by the production execution paths.
+
+BEFORE:
+
+- Copy/Delete execute `batchLoadNodeTx(..., preload=true)` once per selected root;
+- each root load issues one locked `xd_nodes` SELECT plus one `xd_files` preload SELECT;
+- **120 Copy/Delete roots -> 240 SELECTs** before recursive mutation work;
+- Move executes `batchLoadNodeTx(..., preload=false)` once per root;
+- **120 Move roots -> 120 SELECTs** before recursive mutation work.
+
+AFTER / current:
+
+- Copy/Delete lock and validate all selected roots with one ordered `xd_nodes ... IN (...)` SELECT plus one batched File preload;
+- **120 Copy/Delete roots -> 2 SELECTs**;
+- Move locks and validates the same 120 roots with one ordered `xd_nodes ... IN (...)` SELECT and no File preload;
+- **120 Move roots -> 1 SELECT**;
+- nodes are reconstructed in request order, so first failing request index/id/revision validation semantics remain unchanged;
+- Copy/Move/Delete recursive subtree work, target/conflict checks, managed-source protection, undo plans, mutation SQL and progress updates are unchanged.
+
+Decision: **Accepted.** Execution already holds selected-root `FOR UPDATE` locks for the transaction lifetime; batching those existing root loads removes an N-scaled SQL round-trip multiplier without changing the recursive mutation algorithms.
+
+Regression budget: Copy/Delete selected-root execution validation remains **2 SELECTs** and Move remains **1 SELECT** for any non-empty batch up to the existing 200-item limit. Production execution functions must not return to per-root `batchLoadNodeTx` calls.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestFileOperation(BatchRootLoadUsesConstantSQL|ExecutionUsesBatchRootLoads)$' -count=1`.
+
+Next action: continue ordinary delete/sync/download execution audits and only change another deterministic SQL, request, allocation, filesystem, lock, or object-store multiplier.
 
 ### Upload finalize existing-CAS write-elision contract
 

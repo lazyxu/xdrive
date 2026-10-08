@@ -1071,6 +1071,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if nested {
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "copy selection cannot contain both a directory and its descendant"}
 		}
+		roots, err := batchLoadNodesTx(tx, uid, refs, true)
+		if err != nil {
+			return err
+		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
 		replaceOrMerge := false
 		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
@@ -1080,10 +1084,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 			return nil
 		}
 		for index, ref := range refs {
-			source, err := batchLoadNodeTx(tx, uid, ref, index, true)
-			if err != nil {
-				return err
-			}
+			source := roots[index]
 			if err := s.beginFileOperationItem(ctx, operation.ID, source.Name); err != nil {
 				return err
 			}
@@ -1217,6 +1218,10 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		if nested {
 			return &batchMutationFailure{Status: http.StatusBadRequest, Code: "nested_batch_selection", Message: "move selection cannot contain both a directory and its descendant"}
 		}
+		roots, err := batchLoadNodesTx(tx, uid, refs, false)
+		if err != nil {
+			return err
+		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
 		replaceOrMerge := false
 		var rootBytes map[uint64]fileOperationMoveRootBytes
@@ -1231,10 +1236,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 			return fileOperationMoveNodeBytes(rootBytes, node)
 		}
 		for index, ref := range refs {
-			node, err := batchLoadNodeTx(tx, uid, ref, index, false)
-			if err != nil {
-				return err
-			}
+			node := roots[index]
 			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
 				return err
 			}
@@ -1367,12 +1369,13 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.FileOperation, refs []batchNodeRef) error {
 	uid := operation.OwnerID
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		roots, err := batchLoadNodesTx(tx, uid, refs, true)
+		if err != nil {
+			return err
+		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindDelete}
 		for index, ref := range refs {
-			node, err := batchLoadNodeTx(tx, uid, ref, index, true)
-			if err != nil {
-				return err
-			}
+			node := roots[index]
 			if err := s.beginFileOperationItem(ctx, operation.ID, node.Name); err != nil {
 				return err
 			}
