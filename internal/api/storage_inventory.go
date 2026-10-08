@@ -133,7 +133,8 @@ func storageInventoryCategory(key string) string {
 		switch {
 		case strings.HasSuffix(key, "-"+strconv.Itoa(media.DefaultThumbnailEdge)+".jpg"):
 			return "media_thumbnail"
-		case strings.HasSuffix(key, "-"+strconv.Itoa(media.AnalysisPreviewEdge)+".jpg"):
+		case strings.HasSuffix(key, "-"+strconv.Itoa(media.AnalysisPreviewEdge)+".jpg"),
+			strings.HasSuffix(key, "-"+strconv.Itoa(media.CreativePreviewEdge)+".jpg"):
 			return "analysis_preview"
 		default:
 			return "media_other"
@@ -250,7 +251,7 @@ func (s *Server) scanStorageInventory(ctx context.Context) (storageInventoryDTO,
 		item("upload_staging", "上传临时文件", "temporary", storageHostJoin(filesRoot, storage.UploadStagingDir), "active", true, storageCleanupStaging),
 		item("media_thumbnail", "图片缩略图 · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-512.jpg"), "regenerable", true, storageCleanupThumbnail),
 		item("video_poster", "视频 Poster · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/posters/*-512.jpg"), "regenerable", true, storageCleanupVideoPoster),
-		item("analysis_preview", "Photo Intelligence 分析预览 · 1280px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-1280.jpg"), "regenerable", true, storageCleanupAnalysis),
+		item("analysis_preview", "Photo Intelligence 分析/创作预览 · 1280/2048px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-{1280,2048}.jpg"), "regenerable", true, storageCleanupAnalysis),
 		item("media_other", "其他媒体派生文件", "cache", storageHostJoin(filesRoot, ".xdrive-media"), "unknown", false, ""),
 		item("write_temp", "写入临时文件", "temporary", storageHostPattern(filesRoot, "**/.xdrive-upload-*"), "reclaimable_by_age", true, storageCleanupTemp),
 		item("readiness_temp", "存储探针临时文件", "temporary", storageHostPattern(filesRoot, ".xdrive-ready-*"), "reclaimable_by_age", true, storageCleanupTemp),

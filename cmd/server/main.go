@@ -121,6 +121,7 @@ func main() {
 	var photoFaceAnalyzer photointelligence.FaceAnalyzer
 	var photoSmartAnalyzer photointelligence.SmartAnalyzer
 	var photoSemanticAnalyzer photointelligence.SemanticAnalyzer
+	var photoCreativeAnalyzer photointelligence.CreativeAnalyzer
 	if cfg.PhotoFaceAnalyzerSocket != "" {
 		analyzer, err := photointelligence.NewUnixFaceAnalyzer(
 			cfg.PhotoFaceAnalyzerSocket,
@@ -146,9 +147,18 @@ func main() {
 		if err != nil {
 			log.Fatalf("configure photo semantic-search analyzer: %v", err)
 		}
+		creativeAnalyzer, err := photointelligence.NewUnixCreativeAnalyzer(
+			cfg.PhotoFaceAnalyzerSocket,
+			cfg.PhotoFaceAnalyzerToken,
+			5*time.Minute,
+		)
+		if err != nil {
+			log.Fatalf("configure photo creative analyzer: %v", err)
+		}
 		photoFaceAnalyzer = analyzer
 		photoSmartAnalyzer = smartAnalyzer
 		photoSemanticAnalyzer = semanticAnalyzer
+		photoCreativeAnalyzer = creativeAnalyzer
 		slog.Info(
 			"photo_face_analyzer_configured",
 			"socket", cfg.PhotoFaceAnalyzerSocket,
@@ -159,6 +169,10 @@ func main() {
 		)
 		slog.Info(
 			"photo_semantic_search_analyzer_configured",
+			"socket", cfg.PhotoFaceAnalyzerSocket,
+		)
+		slog.Info(
+			"photo_creative_analyzer_configured",
 			"socket", cfg.PhotoFaceAnalyzerSocket,
 		)
 	}
@@ -192,6 +206,7 @@ func main() {
 		PhotoFaceAnalyzer:           photoFaceAnalyzer,
 		PhotoSmartAnalyzer:          photoSmartAnalyzer,
 		PhotoSemanticAnalyzer:       photoSemanticAnalyzer,
+		PhotoCreativeAnalyzer:       photoCreativeAnalyzer,
 		PhotoFacePreviewBaseURL:     cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:              strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
 		FilesDataHostPath:           strings.TrimSpace(os.Getenv("XD_FILES_DATA_HOST_PATH")),
@@ -211,6 +226,7 @@ func main() {
 	srv.StartSystemMaintenanceTasks(serverCtx)
 	srv.StartArchivePrepareTasks(serverCtx)
 	srv.StartPhotoIntelligence(serverCtx)
+	srv.StartMediaCreativeGenerations(serverCtx)
 	srv.StartMediaIndexer(serverCtx)
 	srv.StartFileOperationWorker(serverCtx)
 	slog.Info("server_listening", "address", cfg.ListenAddr)
@@ -220,7 +236,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.ArchivePrepareRun{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoEditRecipe{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}, &meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.ArchivePrepareRun{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoEditRecipe{}, &meta.PhotoCreativeGeneration{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{}, &meta.FileOperation{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}, &meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`ALTER TABLE xd_source_item_metadata

@@ -91,7 +91,7 @@ The canonical categories are:
 | `upload_staging` | resumable upload parts/staging | `.xdrive-uploads/` | only existing expiry/orphan-safe candidates |
 | `media_thumbnail` | 512px Gallery/FileExplorer image thumbnail cache | `.xdrive-media/thumbnails/*-512.jpg` | yes |
 | `video_poster` | 512px FileExplorer video poster cache | `.xdrive-media/posters/*-512.jpg` | yes |
-| `analysis_preview` | 1280px Photo Intelligence analysis preview cache | `.xdrive-media/thumbnails/*-1280.jpg` | yes |
+| `analysis_preview` | 1280px Photo Intelligence analysis preview + 2048px creative working preview cache | `.xdrive-media/thumbnails/*-1280.jpg`, `*-2048.jpg` | yes |
 | `media_other` | other current/future media-derived files | `.xdrive-media/` | no automatic deletion until classified |
 | `write_temp` | atomic storage-write temporary files | `**/.xdrive-upload-*` | only after safety age |
 | `readiness_temp` | storage readiness-probe temporary files | `.xdrive-ready-*` | only after safety age |
@@ -195,7 +195,7 @@ Do not invent disk usage for a feature that does not currently persist Server-si
 Today:
 
 - **512px image thumbnails** are persisted Server-side.
-- **1280px Photo Intelligence analysis previews** are persisted Server-side.
+- **1280px Photo Intelligence analysis previews** and **2048px Gallery creative working previews** are persisted Server-side. Both are deterministic, revision/SHA/version-fenced, regenerable derivatives and share the `analysis_preview` cleanup class.
 - **512px video posters** are persisted Server-side under a revision/SHA/version-fenced key. FileExplorer first checks that cache; on miss Web/Desktop decodes the first displayable frame through the existing authenticated preview stream and backfills a bounded JPEG. The Server validates the current revision and JPEG contract before accepting it.
 - ordinary Image/PDF/Video/Audio Preview Engine playback still streams canonical original bytes and does not persist a separate ordinary-preview cache;
 - video transcoding/proxy storage is not currently enabled;
@@ -216,7 +216,7 @@ The only cleanup kinds are:
 
 ### Media caches
 
-512px image thumbnails, 512px video posters, and 1280px analysis previews are deterministic, regenerable derivatives of canonical media content.
+512px image thumbnails, 512px video posters, 1280px analysis previews, and 2048px Gallery creative working previews are deterministic, regenerable derivatives of canonical media content.
 
 Deleting them is safe:
 

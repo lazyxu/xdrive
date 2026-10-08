@@ -76,6 +76,12 @@ FILES = (
         "sha256": "cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322",
         "size": 34363039,
     },
+    {
+        "name": "image_segmentation_efficientsam_ti_2025april_int8.onnx",
+        "url": ZOO_MEDIA + "/models/image_segmentation_efficientsam/image_segmentation_efficientsam_ti_2025april_int8.onnx",
+        "sha256": "5ecc8d59a2802c32246e68553e1cf8ce74cf74ba707b84f206eb9181ff774b4e",
+        "size": None,
+    },
 )
 
 LICENSES = (
@@ -98,6 +104,10 @@ LICENSES = (
     {
         "name": "CRNN_LICENSE.txt",
         "url": ZOO_RAW + "/models/text_recognition_crnn/LICENSE",
+    },
+    {
+        "name": "EFFICIENTSAM_LICENSE.txt",
+        "url": ZOO_RAW + "/models/image_segmentation_efficientsam/LICENSE",
     },
 )
 

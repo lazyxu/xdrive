@@ -31,6 +31,7 @@ type Server struct {
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
+	PhotoCreativeAnalyzer          photointelligence.CreativeAnalyzer
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string
@@ -91,6 +92,7 @@ func (s *Server) Router() *gin.Engine {
 	v1.GET("/file-preview/:id", s.filePreviewTicketStream)
 	v1.HEAD("/file-preview/:id", s.filePreviewTicketStream)
 	v1.GET("/media-analysis-preview/:id", s.mediaAnalysisPreviewTicketStream)
+	v1.GET("/media-creative-preview/:id", s.mediaCreativePreviewTicketStream)
 	v1.GET("/media-live-photo-still/:id", s.mediaLivePhotoStillTicketStream)
 	v1.HEAD("/media-live-photo-still/:id", s.mediaLivePhotoStillTicketStream)
 	v1.GET("/media-live-photo-motion/:id", s.mediaLivePhotoMotionTicketStream)
@@ -175,6 +177,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/edit", s.getMediaEditRecipe)
 	authed.PUT("/media/items/:id/edit", s.putMediaEditRecipe)
 	authed.DELETE("/media/items/:id/edit", s.deleteMediaEditRecipe)
+	authed.POST("/media/items/:id/creative", s.createMediaCreativeGeneration)
+	authed.GET("/media/creative/:generationID", s.getMediaCreativeGeneration)
+	authed.POST("/media/creative/:generationID/cancel", s.cancelMediaCreativeGeneration)
 	authed.GET("/media/items/:id/thumbnail", s.mediaThumbnail)
 	authed.PUT("/media/items/:id/video-poster", s.putMediaVideoPoster)
 	authed.GET("/media/items/:id/analysis-preview", s.mediaAnalysisPreview)

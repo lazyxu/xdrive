@@ -15,8 +15,10 @@ const (
 	MaxThumbnailPixels     = 100_000_000
 	DefaultThumbnailEdge   = 512
 	AnalysisPreviewEdge    = 1280
+	CreativePreviewEdge    = 2048
 	ThumbnailVersion       = 3
 	AnalysisPreviewVersion = 3
+	CreativePreviewVersion = 1
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
 )
 
@@ -52,6 +54,38 @@ func AnalysisPreviewFingerprint(
 	)
 }
 
+func CreativePreviewETag(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	sha := strings.ToLower(strings.TrimSpace(sha256))
+	if sha != "" {
+		return fmt.Sprintf(
+			"\"media-creative-%s-v%d-%d\"",
+			sha,
+			CreativePreviewVersion,
+			CreativePreviewEdge,
+		)
+	}
+	return fmt.Sprintf(
+		"\"media-creative-node-%d-%d-v%d-%d\"",
+		nodeID,
+		nodeRevision,
+		CreativePreviewVersion,
+		CreativePreviewEdge,
+	)
+}
+
+func CreativePreviewFingerprint(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	return strings.Trim(
+		CreativePreviewETag(nodeID, nodeRevision, sha256),
+		"\"",
+	)
+}
+
 func ThumbnailStorageKey(
 	nodeID, nodeRevision uint64,
 	sha256 string,
@@ -76,6 +110,19 @@ func AnalysisPreviewStorageKey(
 		sha256,
 		AnalysisPreviewVersion,
 		AnalysisPreviewEdge,
+	)
+}
+
+func CreativePreviewStorageKey(
+	nodeID, nodeRevision uint64,
+	sha256 string,
+) string {
+	return thumbnailStorageKey(
+		nodeID,
+		nodeRevision,
+		sha256,
+		CreativePreviewVersion,
+		CreativePreviewEdge,
 	)
 }
 

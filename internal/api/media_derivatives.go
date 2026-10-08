@@ -21,6 +21,7 @@ type mediaDerivativeKind string
 const (
 	mediaDerivativeThumbnail mediaDerivativeKind = "thumbnail"
 	mediaDerivativeAnalysis  mediaDerivativeKind = "analysis_preview"
+	mediaDerivativeCreative  mediaDerivativeKind = "creative_preview"
 
 	mediaThumbnailDerivativeVersion = mediapkg.ThumbnailVersion
 	mediaDerivativeRunTimeout       = 2 * time.Minute
@@ -75,8 +76,11 @@ func (s *Server) ensureMediaDerivative(
 		edge,
 	)
 	taskKind := "media.thumbnail"
-	if req.Kind == mediaDerivativeAnalysis {
+	switch req.Kind {
+	case mediaDerivativeAnalysis:
 		taskKind = "media.analysis_preview"
+	case mediaDerivativeCreative:
+		taskKind = "media.creative_preview"
 	}
 	handle, err := s.BackgroundScheduler.Submit(background.Task{
 		Key:               taskKey,
@@ -149,6 +153,15 @@ func mediaDerivativeIdentity(
 		return mediaAnalysisPreviewStorageKey(node, metadata),
 			mediapkg.AnalysisPreviewEdge,
 			mediapkg.AnalysisPreviewVersion,
+			nil
+	case mediaDerivativeCreative:
+		return mediapkg.CreativePreviewStorageKey(
+				node.ID,
+				node.Revision,
+				metadata.SHA256,
+			),
+			mediapkg.CreativePreviewEdge,
+			mediapkg.CreativePreviewVersion,
 			nil
 	default:
 		return "", 0, 0, errMediaDerivativeUnsupported
