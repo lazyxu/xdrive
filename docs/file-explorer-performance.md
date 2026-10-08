@@ -53,6 +53,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
 | FileOperation progress write coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 top-level Move/Delete roots: operation current-item + completion progress writes **240 UPDATEs -> 121 UPDATEs**. Every root still performs one `status=running` cancel checkpoint; the previous root's item/byte delta is folded into the next checkpoint and the final delta is flushed. Copy file-byte deltas use the same coalescer. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
+| Legacy delete reference batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 legacy non-CAS keys: post-commit File/FileVersion reference checks **120 SQL statements -> 1 UNION query**; referenced keys remain protected and physical Store.Delete remains one call per unreferenced key. |
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
 | FileOperation target-descendant batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected source directories with one shared target outside the selection: repeated target-ancestor validation **120 recursive CTEs -> 1 recursive CTE**; request-order failure reporting remains in the existing Copy/Move loops. |
@@ -535,13 +536,45 @@ AFTER / current:
 - one batch `UPDATE ... FROM VALUES` applies the resulting refcount/state transitions;
 - **120 unique blobs = 3 SQL statements** in the reference-release phase;
 - zero-ref rows still enter `deleting` and are physically removed only by the existing finalize path;
-- legacy non-CAS key cleanup is unchanged.
+- legacy non-CAS key cleanup uses the separate batched reference-check contract below; physical object deletion remains per key.
 
 Decision: **Accepted.** This removes unique-content-count-scaled DB round trips from permanent delete without changing the two-phase CAS deletion protocol or physical object deletion.
 
 Regression budget: reference release must use at most **3 × ceil(unique CAS blobs / 200) SQL statements**, with exactly three statements for each non-empty batch; advisory locks must remain deterministically ordered and batches must stay parameter-bounded.
 
 Next action: physical object deletion itself remains per-object by storage backend contract; continue download/basic-path performance audit after the reused-source guard is indexed.
+
+### Legacy storage-key delete reference-check contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- permanent delete has already committed removal of the selected subtree's File/FileVersion rows;
+- the release phase returns **120 unique sorted legacy non-CAS storage keys**;
+- 40 keys remain referenced by current File rows, 40 by FileVersion rows, and 40 are unreferenced;
+- deterministic GORM SQL tracing counts only the post-commit legacy reference lookup; physical object deletes are tracked separately.
+
+BEFORE:
+
+- `deleteLegacyStorageKeys` executes one SQL statement per key;
+- each statement contains two scalar `COUNT(*)` subqueries, one against `xd_files` and one against `xd_file_versions`;
+- **120 legacy keys -> 120 SQL statements** before physical deletion.
+
+AFTER / current:
+
+- candidate keys are processed in parameter-bounded batches of at most **500**;
+- one `UNION` query per batch loads the subset still referenced by either File or FileVersion;
+- **120 legacy keys -> 1 SQL statement**;
+- referenced keys are kept exactly as before;
+- unreferenced keys are still passed to `Store.Delete` individually and in input order;
+- CAS content-reference batching and the permanent-delete transaction are unchanged.
+
+Decision: **Accepted.** Reference existence is a set operation over the already unique candidate key list, so per-key SQL round trips add no safety.
+
+Regression budget: legacy reference checks remain **ceil(candidate keys / 500) SQL statements**, with **1 statement** for the 120-key fixture; query failure must fail closed by deleting no keys; physical `Store.Delete` cardinality remains one call per unreferenced legacy object.
+
+Next action: continue sync/download/delete audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### CAS physical-delete reused-source guard contract
 

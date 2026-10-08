@@ -453,13 +453,47 @@ func (s *Server) finalizeContentBlobDeletes(ctx context.Context, candidates []co
 	return firstErr
 }
 
+const legacyStorageReferenceBatchSize = 500
+
+type legacyStorageReferenceRow struct {
+	StorageKey string `gorm:"column:storage_key"`
+}
+
+func loadReferencedLegacyStorageKeys(
+	ctx context.Context,
+	db *gorm.DB,
+	keys []string,
+) (map[string]struct{}, error) {
+	referenced := make(map[string]struct{})
+	for start := 0; start < len(keys); start += legacyStorageReferenceBatchSize {
+		end := min(start+legacyStorageReferenceBatchSize, len(keys))
+		batch := keys[start:end]
+		var rows []legacyStorageReferenceRow
+		if err := db.WithContext(ctx).Raw(`
+SELECT storage_key
+FROM xd_files
+WHERE storage_key IN ?
+UNION
+SELECT storage_key
+FROM xd_file_versions
+WHERE storage_key IN ?
+`, batch, batch).Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			referenced[row.StorageKey] = struct{}{}
+		}
+	}
+	return referenced, nil
+}
+
 func (s *Server) deleteLegacyStorageKeys(ctx context.Context, keys []string) {
+	referenced, err := loadReferencedLegacyStorageKeys(ctx, s.DB, keys)
+	if err != nil {
+		return
+	}
 	for _, key := range keys {
-		var references int64
-		row := s.DB.Raw(`SELECT
-  (SELECT COUNT(*) FROM xd_files WHERE storage_key = ?) +
-  (SELECT COUNT(*) FROM xd_file_versions WHERE storage_key = ?)`, key, key).Row()
-		if err := row.Scan(&references); err != nil || references != 0 {
+		if _, exists := referenced[key]; exists {
 			continue
 		}
 		_ = s.Store.Delete(ctx, key)
