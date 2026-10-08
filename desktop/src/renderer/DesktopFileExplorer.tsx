@@ -1642,6 +1642,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     AgentCloudCrumb,
     XDriveFileExplorerSort
   >({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,

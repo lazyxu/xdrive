@@ -52,6 +52,96 @@ function compileExpression(filename, name, expression, dependencies) {
   return new Function(...names, output + '\nreturn ' + name)(...values)
 }
 
+
+function sameDeps(left, right) {
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((value, index) => Object.is(value, right[index]))
+}
+
+function createHookRuntime() {
+  const slots = []
+  let cursor = 0
+  let pendingEffects = []
+
+  const react = {
+    useRef(initialValue) {
+      const index = cursor++
+      if (!slots[index]) slots[index] = { kind: 'ref', value: { current: initialValue } }
+      return slots[index].value
+    },
+    useCallback(callback, deps) {
+      const index = cursor++
+      const current = slots[index]
+      if (!current || !sameDeps(current.deps, deps)) {
+        slots[index] = {
+          kind: 'callback',
+          deps: deps ? [...deps] : undefined,
+          value: callback,
+        }
+      }
+      return slots[index].value
+    },
+    useEffect(effect, deps) {
+      const index = cursor++
+      const current = slots[index]
+      if (!current || !sameDeps(current.deps, deps)) {
+        pendingEffects.push({ index, effect, deps: deps ? [...deps] : undefined })
+      }
+    },
+  }
+
+  return {
+    react,
+    render(factory) {
+      cursor = 0
+      pendingEffects = []
+      const result = factory()
+      for (const pending of pendingEffects) {
+        const previous = slots[pending.index]
+        if (typeof previous?.cleanup === 'function') previous.cleanup()
+        const cleanup = pending.effect()
+        slots[pending.index] = {
+          kind: 'effect',
+          deps: pending.deps,
+          cleanup: typeof cleanup === 'function' ? cleanup : undefined,
+        }
+      }
+      return result
+    },
+  }
+}
+
+function loadExternalDropHook(react) {
+  const filename = path.join(
+    repo,
+    'ui',
+    'shared',
+    'src',
+    'mui',
+    'FileExplorerExternalDrop.ts',
+  )
+  const source = fs.readFileSync(filename, 'utf8')
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: filename,
+  }).outputText
+  const mod = { exports: {} }
+  const localRequire = (request) => {
+    if (request === 'react') return react
+    if (request === '../file-explorer-controller') {
+      return {
+        xDriveFileExplorerExternalDropParentID: (currentID) => currentID,
+      }
+    }
+    return require(request)
+  }
+  new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
+  return mod.exports.useXDriveFileExplorerExternalDropController
+}
+
 function deferred() {
   let resolve
   const promise = new Promise((next) => { resolve = next })
@@ -132,4 +222,91 @@ test('all asynchronous external folder-drop entry points fence stale lifecycle g
       name + ' must reject a scan result from a replaced interaction lifecycle',
     )
   }
+})
+
+
+test('stale ExternalDropController callback cannot begin folder upload after account lifecycle changes', async () => {
+  const runtime = createHookRuntime()
+  const useExternalDrop = loadExternalDropHook(runtime.react)
+
+  let lifecycleKey = 'server-a:user-a'
+  let accountAUploads = 0
+  let accountBUploads = 0
+  const refreshes = []
+
+  const render = (uploadFolderEntriesToParent) => runtime.render(() => useExternalDrop({
+    lifecycleKey,
+    currentID: 7,
+    currentCrumbs: [{ id: 7, name: 'same' }],
+    sort: { key: 'name', direction: 'asc' },
+    currentGrouping: { key: 'none' },
+    nodeByID: new Map(),
+    uploadFilesToParent: async () => true,
+    uploadFolderEntriesToParent,
+    refreshCurrentDirectoryIfIdle: async (id) => {
+      refreshes.push(id)
+    },
+  }))
+
+  const accountA = render(async () => {
+    accountAUploads += 1
+    return true
+  })
+
+  lifecycleKey = 'server-b:user-b'
+  const accountB = render(async () => {
+    accountBUploads += 1
+    return true
+  })
+
+  const payload = { files: [], directories: ['folder'] }
+  await accountA.dropFolderEntries(payload)
+  await accountB.dropFolderEntries(payload)
+
+  assert.equal(
+    accountAUploads,
+    0,
+    'a callback captured from account A must not start a folder upload after account B becomes current',
+  )
+  assert.equal(accountBUploads, 1)
+  assert.deepEqual(refreshes, [7])
+})
+
+test('ExternalDropController completion from old account cannot refresh the new lifecycle', async () => {
+  const runtime = createHookRuntime()
+  const useExternalDrop = loadExternalDropHook(runtime.react)
+
+  let lifecycleKey = 'server-a:user-a'
+  const pendingA = deferred()
+  const refreshes = []
+
+  const render = (uploadFolderEntriesToParent) => runtime.render(() => useExternalDrop({
+    lifecycleKey,
+    currentID: 7,
+    currentCrumbs: [{ id: 7, name: 'same' }],
+    sort: { key: 'name', direction: 'asc' },
+    currentGrouping: { key: 'none' },
+    nodeByID: new Map(),
+    uploadFilesToParent: async () => true,
+    uploadFolderEntriesToParent,
+    refreshCurrentDirectoryIfIdle: async (id) => {
+      refreshes.push(id)
+    },
+  }))
+
+  const accountA = render(() => pendingA.promise)
+  const uploadA = accountA.dropFolderEntries({ files: [], directories: ['folder'] })
+  await flushAsync()
+
+  lifecycleKey = 'server-b:user-b'
+  render(async () => true)
+
+  pendingA.resolve(true)
+  await uploadA
+
+  assert.deepEqual(
+    refreshes,
+    [],
+    'an account-A upload completion must not refresh account B even when the numeric current directory id is unchanged',
+  )
 })

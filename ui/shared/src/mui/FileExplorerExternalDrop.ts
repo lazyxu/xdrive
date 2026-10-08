@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Node } from '../models'
 import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
 import { xDriveFileExplorerExternalDropParentID } from '../file-explorer-controller'
@@ -17,6 +17,7 @@ export type XDriveFileExplorerExternalDropControllerOptions<
   TCrumb extends { id: string | number; name: string },
   TSort,
 > = {
+  lifecycleKey: string
   currentID?: number
   currentCrumbs: readonly TCrumb[]
   sort: TSort
@@ -39,6 +40,7 @@ export function useXDriveFileExplorerExternalDropController<
   TCrumb extends { id: string | number; name: string },
   TSort,
 >({
+  lifecycleKey,
   currentID,
   nodeByID,
   disabled = false,
@@ -47,15 +49,38 @@ export function useXDriveFileExplorerExternalDropController<
   uploadFolderEntriesToParent,
   refreshCurrentDirectoryIfIdle,
 }: XDriveFileExplorerExternalDropControllerOptions<TNode, TCrumb, TSort>) {
+  const lifecycleKeyRef = useRef<string | null>(lifecycleKey)
+  lifecycleKeyRef.current = lifecycleKey
+
+  useEffect(() => {
+    lifecycleKeyRef.current = lifecycleKey
+    return () => {
+      if (lifecycleKeyRef.current === lifecycleKey) {
+        lifecycleKeyRef.current = null
+      }
+    }
+  }, [lifecycleKey])
+
+  const isCurrentLifecycle = useCallback(
+    () => lifecycleKeyRef.current === lifecycleKey,
+    [lifecycleKey],
+  )
 
   const dropFilesToParent = useCallback(async (files: File[], parentID: number) => {
-    if (disabled || files.length === 0) return
+    if (!isCurrentLifecycle() || disabled || files.length === 0) return
     const expectedCurrentID = currentID
     const shouldRefresh = await uploadFilesToParent(parentID, files)
+    if (!isCurrentLifecycle()) return
     if (shouldRefresh !== false) {
       await refreshCurrentDirectoryIfIdle(expectedCurrentID)
     }
-  }, [currentID, disabled, refreshCurrentDirectoryIfIdle, uploadFilesToParent])
+  }, [
+    currentID,
+    disabled,
+    isCurrentLifecycle,
+    refreshCurrentDirectoryIfIdle,
+    uploadFilesToParent,
+  ])
 
   const dropFiles = useCallback(async (
     files: File[],
@@ -71,12 +96,14 @@ export function useXDriveFileExplorerExternalDropController<
     parentID: number,
   ) => {
     if (
+      !isCurrentLifecycle() ||
       disabled ||
       !folderDropEnabled ||
       (payload.files.length === 0 && payload.directories.length === 0)
     ) return
     const expectedCurrentID = currentID
     const shouldRefresh = await uploadFolderEntriesToParent(parentID, payload)
+    if (!isCurrentLifecycle()) return
     if (shouldRefresh !== false) {
       await refreshCurrentDirectoryIfIdle(expectedCurrentID)
     }
@@ -84,6 +111,7 @@ export function useXDriveFileExplorerExternalDropController<
     currentID,
     disabled,
     folderDropEnabled,
+    isCurrentLifecycle,
     refreshCurrentDirectoryIfIdle,
     uploadFolderEntriesToParent,
   ])
