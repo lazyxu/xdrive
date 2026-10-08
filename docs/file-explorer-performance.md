@@ -37,6 +37,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
 | Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
 | Windows local-delete baseline pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat local deletions: successful-delete baseline pruning **1,200 baseline-wide prefix scans / up to 721,800 key inspections -> 1 final baseline scan**; processed/deleted subtree coverage uses ancestor-set lookup instead of a growing linear prefix slice. Server DELETE cardinality/order are unchanged. |
+| Windows local-change existence probe reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent local-change paths: filesystem existence probes in `reconcileLocalChanges` **2,400 `Lstat` calls -> 1,200** by recording missing deletion candidates during the first pass; Server DELETE cardinality/order and 404/409 handling are unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -1928,6 +1929,42 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindows(PathPrefixSet|DeleteBaselinePrefixes|LocalDeletePruningSourceShape)$' -count=1`.
 
 Next action: continue ordinary sync/delete/download performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Windows local-change existence-probe reuse contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI local-change reconciliation;
+- stable structural workload: **1,200 independent changed paths** with no subtree suppression;
+- evidence method: deterministic source-shape regression plus existing Windows reconcile behavior tests;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- the main changed-path pass calls `os.Lstat` once per independent path to classify existing vs missing work;
+- a second deletion-discovery pass iterates the complete `pathSet` and calls `os.Lstat` again for every path;
+- 1,200 independent paths therefore require **2,400 filesystem existence probes** before Server DELETE work.
+
+AFTER / current:
+
+- the first pass records a path as a deletion candidate immediately when its single `Lstat` returns `os.ErrNotExist` and that path still exists in the baseline;
+- the second whole-`pathSet` filesystem pass is removed;
+- the same 1,200-path workload therefore requires **1,200 filesystem existence probes**;
+- deletion candidates are still depth-sorted and filtered by the existing prefix set;
+- the delete loop still re-checks the current baseline entry before issuing the Server DELETE;
+- Server DELETE request order/cardinality, revision use, 404/409 behavior, successful-prefix pruning, always-local handling, cache enforcement and baseline persistence are unchanged.
+
+Decision: **Accepted.** The second filesystem pass repeated information already obtained by the first pass and added one local metadata syscall per changed path without contributing new mutation semantics.
+
+Regression budget: `reconcileLocalChanges` must perform at most one direct `os.Lstat` existence probe per processed changed path; deletion discovery must not reintroduce a second full `pathSet` filesystem scan.
+
+Regression command:
+
+- `go test ./internal/mount -run '^TestWindowsLocalChangeExistenceProbeSourceShape$' -count=1`.
+
+Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### FileOperation progress-write coalescing contract
 

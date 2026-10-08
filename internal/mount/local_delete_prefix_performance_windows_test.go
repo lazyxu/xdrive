@@ -89,3 +89,29 @@ func TestWindowsLocalDeletePruningSourceShape(t *testing.T) {
 		t.Fatal("local-change reconcile must prune successful deletes on both normal and fatal exits")
 	}
 }
+
+func TestWindowsLocalChangeExistenceProbeSourceShape(t *testing.T) {
+	reconcileSource, err := os.ReadFile("reconcile_windows.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(reconcileSource)
+	start := strings.Index(text, "func (p *winProvider) reconcileLocalChanges")
+	end := strings.Index(text, "func (p *winProvider) applyLocalRename")
+	if start < 0 || end <= start {
+		t.Fatal("cannot isolate reconcileLocalChanges source")
+	}
+	fn := text[start:end]
+
+	if got := strings.Count(fn, "os.Lstat("); got != 1 {
+		t.Fatalf("reconcileLocalChanges Lstat calls=%d want source shape=1", got)
+	}
+	if !strings.Contains(fn, "deletions := make([]string, 0)") ||
+		!strings.Contains(fn, "if errors.Is(err, os.ErrNotExist)") ||
+		!strings.Contains(fn, "deletions = append(deletions, rel)") {
+		t.Fatal("local-change reconcile must collect missing deletion candidates during the first existence probe")
+	}
+	if strings.Contains(fn, "for rel := range pathSet") {
+		t.Fatal("local-change reconcile must not rescan the whole changed-path set for deletions")
+	}
+}
