@@ -705,7 +705,13 @@ export default function DesktopFileExplorer({
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
+    const lifecycleGeneration = actionGenerationRef.current
+    const isCurrentLifecycle = () => (
+      lifecycleGeneration === actionGenerationRef.current
+    )
+
     const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
+    if (!isCurrentLifecycle()) return null
     if (result.ok) {
       const contentType = result.data.content_type || 'image/jpeg'
       const blob = new Blob([result.data.data], { type: contentType })
@@ -714,22 +720,26 @@ export default function DesktopFileExplorer({
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
 
     const preview = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
-    if (!preview.ok) return null
+    if (!isCurrentLifecycle() || !preview.ok) return null
     const poster = await xDriveCaptureVideoPosterBlob(preview.data)
-    if (!poster) return null
+    if (!poster || !isCurrentLifecycle()) return null
     const revision = Number(item.revision)
     if (Number.isSafeInteger(revision) && revision > 0) {
       try {
+        const posterBytes = await poster.arrayBuffer()
+        if (!isCurrentLifecycle()) return null
         await window.xdriveDesktop.agent.putMediaVideoPoster(
           Number(item.id),
           revision,
-          await poster.arrayBuffer(),
+          posterBytes,
         )
+        if (!isCurrentLifecycle()) return null
       } catch {
         // Keep the locally decoded poster even when the shared Server cache
         // loses a revision race or is temporarily unavailable.
       }
     }
+    if (!isCurrentLifecycle()) return null
     return URL.createObjectURL(poster)
   }, [previewStreamSupported])
 
