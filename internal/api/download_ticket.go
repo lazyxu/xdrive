@@ -236,3 +236,84 @@ func (s *Server) serveAuthenticatedTicketDownload(
 	}
 	http.ServeContent(c.Writer, c.Request, name, updatedAt, file)
 }
+
+func (s *Server) archiveDownloadTicket(c *gin.Context) {
+	runID := strings.TrimSpace(c.Param("id"))
+	if runID == "" {
+		fail(c, http.StatusBadRequest, "invalid archive prepare id")
+		return
+	}
+	var run meta.ArchivePrepareRun
+	if err := s.DB.WithContext(c.Request.Context()).
+		Where("id = ? AND owner_id = ?", runID, userID(c)).
+		First(&run).Error; err != nil {
+		fail(c, http.StatusNotFound, "archive prepare not found")
+		return
+	}
+	now := time.Now().UTC()
+	if run.Status != meta.ArchivePrepareStatusCompleted {
+		fail(c, http.StatusConflict, "archive prepare is not completed")
+		return
+	}
+	remaining := run.ExpiresAt.Sub(now)
+	if remaining <= 0 {
+		fail(c, http.StatusGone, "archive prepare expired")
+		return
+	}
+	user, ok := currentUser(c)
+	if !ok {
+		fail(c, http.StatusUnauthorized, "user not found")
+		return
+	}
+	ttl := min(authenticatedDownloadTicketTTL, remaining)
+	token, expiresAt, err := s.Auth.IssueDownloadStream(
+		user.ID,
+		user.SessionVersion,
+		"archive",
+		run.ID,
+		0,
+		ttl,
+	)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "create archive download ticket failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
+		URL:       fmt.Sprintf("/api/v1/archive-download/%s?ticket=%s", url.PathEscape(run.ID), url.QueryEscape(token)),
+		ExpiresAt: expiresAt.UTC(),
+	})
+}
+
+func (s *Server) archiveDownloadTicketStream(c *gin.Context) {
+	runID := strings.TrimSpace(c.Param("id"))
+	if runID == "" {
+		fail(c, http.StatusBadRequest, "invalid archive prepare id")
+		return
+	}
+	claims, ok := s.validateAuthenticatedDownloadTicket(c, "archive", runID)
+	if !ok {
+		return
+	}
+	var run meta.ArchivePrepareRun
+	if err := s.DB.WithContext(c.Request.Context()).
+		Where("id = ? AND owner_id = ?", runID, claims.UserID).
+		First(&run).Error; err != nil {
+		fail(c, http.StatusNotFound, "archive prepare not found")
+		return
+	}
+	if run.Status != meta.ArchivePrepareStatusCompleted {
+		fail(c, http.StatusConflict, "archive prepare is not completed")
+		return
+	}
+	if time.Now().UTC().After(run.ExpiresAt) {
+		fail(c, http.StatusGone, "archive prepare expired")
+		return
+	}
+	ids, err := archivePrepareIDs(run)
+	if err != nil {
+		fail(c, http.StatusConflict, "archive prepare is invalid")
+		return
+	}
+	s.serveArchiveDownload(c, claims.UserID, ids, run.ID)
+}
