@@ -45,6 +45,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Archive selected-root ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected files under independent 8-level branches: ancestor filtering **961 parent SELECTs -> 1 owner-scoped recursive CTE**. Nested-root suppression, missing-parent failure and cycle rejection remain unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
+| FileOperation enqueue root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected file roots: owner/revision/root validation with file metadata **240 SELECTs -> 2 SELECTs** (one ordered locked node batch + one File preload); validation still reports the first failing requested item. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
@@ -90,6 +91,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Archive prepare stored-object validation uses `storage.ObjectStatProvider` when available. Production `storage.Local` validates existence and size with metadata-only `os.Stat` instead of opening/closing each payload before download; backends without metadata stat retain the existing `Open -> Stat -> Close` fallback.
 - FileOperation Copy/Move/Delete ancestor coverage is resolved by one owner-scoped recursive CTE per batch instead of walking every selected item's parent chain with one SQL query per level; missing selected nodes still fail before enqueue.
 - FileOperation enqueue validates every selected root as before, then computes aggregate bytes for the already non-overlapping top-level selection with one owner-scoped recursive CTE instead of one recursive size query per selected directory.
+- FileOperation enqueue locks selected roots in one deterministic ID-ordered query and batch-preloads their file metadata, then replays missing/root/revision validation in original request order. This replaces one node query plus one File preload per selected file without changing the first reported failing item.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
 - Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
 - CAS physical deletion checks temporary reused upload ranges with `SELECT EXISTS` against the partial index `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`. The guard remains inside the existing per-blob transaction before `Store.Delete`, so active resumable overwrite ranges still keep the old content alive.
@@ -164,6 +166,38 @@ Decision: **Accepted.** The change removes chunk-count-scaled large payload allo
 Regression budget: payload-buffer instances must remain **O(1) per upload pass**, each bounded to one negotiated chunk (Server maximum **16 MiB**); no full-file buffering.
 
 Next action: Server upload-finalize staging/object-store I/O is audited by the dedicated reused-source contract below; keep the client buffer contract unchanged.
+
+
+### FileOperation enqueue root-validation batch-load contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- 120 selected sibling file roots, each with valid file metadata;
+- deterministic SQL counting using the existing FileOperation GORM trace counter;
+- comparison runs the legacy single-root loader for the same refs and the new batch loader;
+- transaction begin/commit statements are outside the counted window.
+
+BEFORE:
+
+- each selected file root uses one locked `xd_nodes` SELECT plus one `xd_files` preload SELECT;
+- **120 roots -> 240 SELECTs** before aggregate byte calculation.
+
+AFTER / current:
+
+- all selected roots are locked by one owner-scoped, ID-ordered `xd_nodes` SELECT;
+- file metadata is loaded by one batched `xd_files ... IN (...)` preload SELECT;
+- **120 roots -> 2 SELECTs**;
+- returned nodes are reconstructed in request order;
+- `node_not_found`, `root_mutation`, and `revision_conflict` validation still reports the first failing requested item and current revision where applicable;
+- FileOperation execution itself remains unchanged and still performs its existing per-item mutation checks.
+
+Decision: **Accepted.** This removes an enqueue-time N×2 SQL multiplier without broadening the execution-stage lock/mutation change.
+
+Regression budget: selected-root enqueue validation remains **2 SELECTs** for a non-empty file batch regardless of batch size up to the existing 200-item cap; first-failure request-order semantics must remain covered.
+
+Next action: continue execution-stage Delete/Move/Copy audit separately; do not combine execution ordering changes with this enqueue optimization.
 
 ### Upload finalize existing-CAS write-elision contract
 
