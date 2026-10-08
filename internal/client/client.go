@@ -99,7 +99,48 @@ type FileQuickAccessItem struct {
 	Node     Node               `json:"node"`
 	Path     string             `json:"path"`
 	Crumbs   []SearchBreadcrumb `json:"crumbs"`
+	Position int                `json:"position"`
 	PinnedAt time.Time          `json:"pinned_at"`
+}
+
+type FileTag struct {
+	ID        uint64    `json:"id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color,omitempty"`
+	ItemCount int64     `json:"item_count"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type FileNodeTags struct {
+	NodeID uint64    `json:"node_id"`
+	Tags   []FileTag `json:"tags"`
+}
+
+type FileSavedSearchFilters struct {
+	Kind         string `json:"kind,omitempty"`
+	ModifiedFrom string `json:"modifiedFrom,omitempty"`
+	ModifiedTo   string `json:"modifiedTo,omitempty"`
+	MinSize      *int64 `json:"minSize,omitempty"`
+	MaxSize      *int64 `json:"maxSize,omitempty"`
+	SourceID     uint64 `json:"sourceID,omitempty"`
+	TagID        uint64 `json:"tagID,omitempty"`
+}
+
+type FileSavedSearch struct {
+	ID        uint64                 `json:"id"`
+	Name      string                 `json:"name"`
+	Query     string                 `json:"query"`
+	Filters   FileSavedSearchFilters `json:"filters"`
+	Position  int                    `json:"position"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
+}
+
+type FileSavedSearchInput struct {
+	Name    string                 `json:"name"`
+	Query   string                 `json:"query"`
+	Filters FileSavedSearchFilters `json:"filters"`
 }
 
 type FileFavoriteItem struct {
@@ -123,6 +164,7 @@ type SearchFilters struct {
 	MinSize      *int64
 	MaxSize      *int64
 	SourceID     uint64
+	TagID        uint64
 }
 
 func (filters SearchFilters) Active() bool {
@@ -131,7 +173,8 @@ func (filters SearchFilters) Active() bool {
 		strings.TrimSpace(filters.ModifiedTo) != "" ||
 		filters.MinSize != nil ||
 		filters.MaxSize != nil ||
-		filters.SourceID != 0
+		filters.SourceID != 0 ||
+		filters.TagID != 0
 }
 
 type SearchOptions struct {
@@ -644,6 +687,9 @@ func appendSearchFilters(values url.Values, filters SearchFilters) {
 	if filters.SourceID != 0 {
 		values.Set("source_id", strconv.FormatUint(filters.SourceID, 10))
 	}
+	if filters.TagID != 0 {
+		values.Set("tag_id", strconv.FormatUint(filters.TagID, 10))
+	}
 }
 
 func (c *Client) Search(ctx context.Context, options SearchOptions) (SearchPage, error) {
@@ -728,6 +774,72 @@ func (c *Client) UnpinFileQuickAccess(ctx context.Context, nodeID uint64) error 
 		return responseError(resp)
 	}
 	return nil
+}
+
+func (c *Client) ReorderFileQuickAccess(ctx context.Context, nodeIDs []uint64) error {
+	return c.json(ctx, http.MethodPut, "/api/v1/file-quick-access/order", map[string]any{"node_ids": nodeIDs}, nil)
+}
+
+func (c *Client) FileTags(ctx context.Context) ([]FileTag, error) {
+	var out []FileTag
+	err := c.json(ctx, http.MethodGet, "/api/v1/file-tags", nil, &out)
+	return out, err
+}
+
+func (c *Client) CreateFileTag(ctx context.Context, name, color string) (FileTag, error) {
+	var out FileTag
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-tags", map[string]string{"name": name, "color": color}, &out)
+	return out, err
+}
+
+func (c *Client) UpdateFileTag(ctx context.Context, tagID uint64, input map[string]string) (FileTag, error) {
+	var out FileTag
+	err := c.json(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/file-tags/%d", tagID), input, &out)
+	return out, err
+}
+
+func (c *Client) DeleteFileTag(ctx context.Context, tagID uint64) error {
+	return c.json(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-tags/%d", tagID), nil, nil)
+}
+
+func (c *Client) QueryFileNodeTags(ctx context.Context, nodeIDs []uint64) ([]FileNodeTags, error) {
+	var out []FileNodeTags
+	err := c.json(ctx, http.MethodPost, "/api/v1/nodes/tags/query", map[string]any{"node_ids": nodeIDs}, &out)
+	return out, err
+}
+
+func (c *Client) SetFileTagNodes(ctx context.Context, tagID uint64, nodeIDs []uint64, assigned bool) error {
+	method := http.MethodPut
+	if !assigned {
+		method = http.MethodDelete
+	}
+	return c.json(ctx, method, fmt.Sprintf("/api/v1/file-tags/%d/nodes", tagID), map[string]any{"node_ids": nodeIDs}, nil)
+}
+
+func (c *Client) FileSavedSearches(ctx context.Context) ([]FileSavedSearch, error) {
+	var out []FileSavedSearch
+	err := c.json(ctx, http.MethodGet, "/api/v1/file-saved-searches", nil, &out)
+	return out, err
+}
+
+func (c *Client) CreateFileSavedSearch(ctx context.Context, input FileSavedSearchInput) (FileSavedSearch, error) {
+	var out FileSavedSearch
+	err := c.json(ctx, http.MethodPost, "/api/v1/file-saved-searches", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateFileSavedSearch(ctx context.Context, id uint64, input FileSavedSearchInput) (FileSavedSearch, error) {
+	var out FileSavedSearch
+	err := c.json(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/file-saved-searches/%d", id), input, &out)
+	return out, err
+}
+
+func (c *Client) DeleteFileSavedSearch(ctx context.Context, id uint64) error {
+	return c.json(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/file-saved-searches/%d", id), nil, nil)
+}
+
+func (c *Client) ReorderFileSavedSearches(ctx context.Context, ids []uint64) error {
+	return c.json(ctx, http.MethodPut, "/api/v1/file-saved-searches/order", map[string]any{"ids": ids}, nil)
 }
 
 func (c *Client) FileFavorites(ctx context.Context) ([]FileFavoriteItem, error) {

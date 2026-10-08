@@ -28,12 +28,19 @@ export type XDriveFileExplorerSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
+  tagID?: number
   availability?: XDriveFileExplorerSearchAvailability
 }
 
 export type XDriveFileExplorerSearchSourceOption = {
   id: number
   name: string
+}
+
+export type XDriveFileExplorerSearchTagOption = {
+  id: number
+  name: string
+  color?: string
 }
 
 export type XDriveFileExplorerSearchAvailabilityOption = {
@@ -51,6 +58,7 @@ export function xDriveFileExplorerSearchFiltersActive(
     filters?.minSize !== undefined ||
     filters?.maxSize !== undefined ||
     filters?.sourceID ||
+    filters?.tagID ||
     filters?.availability,
   )
 }
@@ -65,6 +73,7 @@ export function xDriveFileExplorerSearchFiltersSignature(
     filters?.minSize ?? '',
     filters?.maxSize ?? '',
     filters?.sourceID ?? '',
+    filters?.tagID ?? '',
     filters?.availability ?? '',
   ].join('|')
 }
@@ -77,6 +86,7 @@ export function xDriveFileExplorerSearchFilterCount(
   if (filters?.modifiedFrom || filters?.modifiedTo) count += 1
   if (filters?.minSize !== undefined || filters?.maxSize !== undefined) count += 1
   if (filters?.sourceID) count += 1
+  if (filters?.tagID) count += 1
   if (filters?.availability) count += 1
   return count
 }

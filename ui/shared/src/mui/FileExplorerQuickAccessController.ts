@@ -9,6 +9,7 @@ export type XDriveFileExplorerQuickAccessEntry = {
   name: string
   path: string
   crumbs: XDriveCloudFilesCrumb[]
+  position: number
   pinnedAt: string
 }
 
@@ -20,6 +21,7 @@ function projectQuickAccessItem<TNode extends { id: number; name: string }>(
     name: item.node.name,
     path: item.path,
     crumbs: item.crumbs.map((crumb) => ({ ...crumb })),
+    position: item.position ?? 0,
     pinnedAt: item.pinned_at,
   }
 }
@@ -32,6 +34,7 @@ export function useXDriveFileExplorerQuickAccess<
   loadItems,
   pinItem,
   unpinItem,
+  reorderItems,
   onError,
 }: {
   lifecycleKey?: string
@@ -39,6 +42,7 @@ export function useXDriveFileExplorerQuickAccess<
   loadItems: () => Promise<XDriveFileQuickAccessItem<TNode>[]>
   pinItem: (nodeID: number) => Promise<XDriveFileQuickAccessItem<TNode>>
   unpinItem: (nodeID: number) => Promise<unknown>
+  reorderItems?: (nodeIDs: number[]) => Promise<unknown>
   onError: (error: unknown) => void
 }) {
   const [items, setItems] = useState<XDriveFileExplorerQuickAccessEntry[]>([])
@@ -47,6 +51,7 @@ export function useXDriveFileExplorerQuickAccess<
   const loadItemsRef = useRef(loadItems)
   const pinItemRef = useRef(pinItem)
   const unpinItemRef = useRef(unpinItem)
+  const reorderItemsRef = useRef(reorderItems)
   const onErrorRef = useRef(onError)
   const loadRequestRef = useRef(0)
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
@@ -70,6 +75,7 @@ export function useXDriveFileExplorerQuickAccess<
   loadItemsRef.current = loadItems
   pinItemRef.current = pinItem
   unpinItemRef.current = unpinItem
+  reorderItemsRef.current = reorderItems
   onErrorRef.current = onError
 
   const loadFresh = useCallback(async (requestID: number) => {
@@ -203,6 +209,23 @@ export function useXDriveFileExplorerQuickAccess<
     [pin, pinnedIDs, unpin],
   )
 
+  const reorder = useCallback(async (nodeIDs: number[]) => {
+    if (!enabled || !reorderItemsRef.current) return false
+    const previous = items
+    const position = new Map(nodeIDs.map((id, index) => [id, index]))
+    setItems((current) => [...current].sort(
+      (a, b) => (position.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (position.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    ).map((item, index) => ({ ...item, position: index })))
+    try {
+      await reorderItemsRef.current(nodeIDs)
+      return true
+    } catch (error) {
+      setItems(previous)
+      onErrorRef.current(error)
+      return false
+    }
+  }, [enabled, items])
+
   const navigate = useCallback(async (
     nodeID: number,
     onNavigate: (crumbs: XDriveCloudFilesCrumb[]) => void | Promise<void>,
@@ -235,6 +258,7 @@ export function useXDriveFileExplorerQuickAccess<
     pin,
     unpin,
     toggle,
+    reorder,
     navigate,
   }
 }

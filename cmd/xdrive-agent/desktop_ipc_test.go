@@ -387,6 +387,54 @@ func (f *fakeDesktopIPCController) CloudUnpinFileQuickAccess(context.Context, ui
 	return f.err
 }
 
+func (f *fakeDesktopIPCController) CloudReorderFileQuickAccess(context.Context, []uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileTags(context.Context) ([]client.FileTag, error) {
+	return []client.FileTag{{ID: 1, Name: "Work", Color: "#3366CC"}}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateFileTag(context.Context, string, string) (client.FileTag, error) {
+	return client.FileTag{ID: 1, Name: "Work", Color: "#3366CC"}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateFileTag(context.Context, uint64, map[string]string) (client.FileTag, error) {
+	return client.FileTag{ID: 1, Name: "Work", Color: "#3366CC"}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteFileTag(context.Context, uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudQueryFileNodeTags(context.Context, []uint64) ([]client.FileNodeTags, error) {
+	return nil, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSetFileTagNodes(context.Context, uint64, []uint64, bool) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudFileSavedSearches(context.Context) ([]client.FileSavedSearch, error) {
+	return nil, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudCreateFileSavedSearch(context.Context, client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	return client.FileSavedSearch{ID: 1, Name: "Work files"}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudUpdateFileSavedSearch(context.Context, uint64, client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	return client.FileSavedSearch{ID: 1, Name: "Work files"}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudDeleteFileSavedSearch(context.Context, uint64) error {
+	return f.err
+}
+
+func (f *fakeDesktopIPCController) CloudReorderFileSavedSearches(context.Context, []uint64) error {
+	return f.err
+}
+
 func (f *fakeDesktopIPCController) CloudFileFavorites(context.Context) ([]client.FileFavoriteItem, error) {
 	return []client.FileFavoriteItem{{
 		Node:        client.Node{ID: 14, Name: "Favorite.txt", Type: "file", Revision: 1},

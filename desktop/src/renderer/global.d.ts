@@ -56,6 +56,10 @@ import type {
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerGrouping,
   XDriveFileQuickAccessItem,
+  XDriveFileTag,
+  XDriveFileNodeTags,
+  XDriveFileSavedSearch,
+  XDriveFileSavedSearchInput,
   XDriveFileFavoriteItem,
   XDriveFileRecentItem,
   XDriveFileTextPreview,
@@ -190,6 +194,10 @@ declare global {
     items: AgentFileAvailabilityBatchItem[]
   }
 
+  type AgentFileTag = XDriveFileTag
+  type AgentFileNodeTags = XDriveFileNodeTags
+  type AgentFileSavedSearch = XDriveFileSavedSearch
+  type AgentFileSavedSearchInput = XDriveFileSavedSearchInput
   type AgentTransfer = XDriveTransferTask
 
   type AgentTransfers = {
@@ -609,6 +617,18 @@ declare global {
         cloudFileQuickAccess: () => Promise<DesktopResult<AgentCloudQuickAccessItem[]>>
         cloudPinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<AgentCloudQuickAccessItem>>
         cloudUnpinFileQuickAccess: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudReorderFileQuickAccess: (nodeIDs: number[]) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudFileTags: () => Promise<DesktopResult<AgentFileTag[]>>
+        cloudCreateFileTag: (name: string, color: string) => Promise<DesktopResult<AgentFileTag>>
+        cloudUpdateFileTag: (id: number, input: { name?: string; color?: string }) => Promise<DesktopResult<AgentFileTag>>
+        cloudDeleteFileTag: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudQueryFileNodeTags: (nodeIDs: number[]) => Promise<DesktopResult<AgentFileNodeTags[]>>
+        cloudSetFileTagNodes: (tagID: number, nodeIDs: number[], assigned: boolean) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudFileSavedSearches: () => Promise<DesktopResult<AgentFileSavedSearch[]>>
+        cloudCreateFileSavedSearch: (input: AgentFileSavedSearchInput) => Promise<DesktopResult<AgentFileSavedSearch>>
+        cloudUpdateFileSavedSearch: (id: number, input: AgentFileSavedSearchInput) => Promise<DesktopResult<AgentFileSavedSearch>>
+        cloudDeleteFileSavedSearch: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudReorderFileSavedSearches: (ids: number[]) => Promise<DesktopResult<{ ok: boolean }>>
         cloudFileFavorites: () => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
         cloudFavoriteFile: (nodeID: number) => Promise<DesktopResult<AgentCloudFavoriteItem>>
         cloudUnfavoriteFile: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>

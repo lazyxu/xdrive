@@ -4,7 +4,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 
-export type XDriveFileNameDialogMode = 'create-folder' | 'rename'
+export type XDriveFileNameDialogMode = 'create-folder' | 'rename' | 'saved-search'
 
 export function XDriveFileNameDialog({
   open,
@@ -31,10 +31,11 @@ export function XDriveFileNameDialog({
     setError('')
   }, [initialValue, mode, open])
 
-  const title = mode === 'create-folder' ? '新建文件夹' : '重命名'
-  const label = mode === 'create-folder' ? '文件夹名称' : '名称'
+  const title = mode === 'create-folder' ? '新建文件夹' : mode === 'saved-search' ? '保存搜索' : '重命名'
+  const label = mode === 'create-folder' ? '文件夹名称' : mode === 'saved-search' ? '智能文件夹名称' : '名称'
   const submitLabel = mode === 'create-folder' ? '创建' : '保存'
   const loadingLabel = mode === 'create-folder' ? '正在创建…' : '正在保存…'
+  const maxLength = mode === 'saved-search' ? 128 : 255
 
   const close = () => {
     if (!submitting) onClose()
@@ -44,8 +45,12 @@ export function XDriveFileNameDialog({
     const normalized = name.trim()
     const nextError = !normalized
       ? (mode === 'create-folder' ? '请填写文件夹名称' : '请填写名称')
-      : normalized.length > 255
-        ? (mode === 'create-folder' ? '文件夹名称不能超过 255 个字符' : '名称不能超过 255 个字符')
+      : normalized.length > maxLength
+        ? (mode === 'create-folder'
+            ? '文件夹名称不能超过 255 个字符'
+            : mode === 'saved-search'
+              ? '智能文件夹名称不能超过 128 个字符'
+              : '名称不能超过 255 个字符')
         : ''
     setError(nextError)
     if (nextError) return
@@ -84,7 +89,7 @@ export function XDriveFileNameDialog({
             value={name}
             error={Boolean(error)}
             helperText={error || ' '}
-            slotProps={{ htmlInput: { maxLength: 255 } }}
+            slotProps={{ htmlInput: { maxLength } }}
             onChange={(event) => {
               setName(event.target.value)
               if (error) setError('')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
@@ -7,12 +7,16 @@ import {
   XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
+  XDriveFileTagDialog,
+  XDriveFileNameDialog,
   XDriveFileExplorerTrashDeleteDialog,
   useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
   xDriveFileExplorerStandardItemMenuItems,
   useXDriveFileExplorerWorkspace,
   useXDriveFileExplorerQuickAccess,
+  useXDriveFileExplorerOrganization,
+  xDriveProjectFileExplorerNode,
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
@@ -37,6 +41,8 @@ import {
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerNodesForItems,
   xDriveFileExplorerWebDownloadFeedback,
+  xDriveFileExplorerPersistedSearchFilters,
+  xDriveFileExplorerSearchFiltersActive,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -163,6 +169,8 @@ export default function WebFileExplorer({
     changeSearchFilters,
     clearSearch,
     submitSearch,
+    applySearch,
+    searchState,
     nodeByID,
     explorerItems,
     explorerCrumbs,
@@ -266,8 +274,38 @@ export default function WebFileExplorer({
     loadItems: () => api.fileQuickAccess(),
     pinItem: (nodeID) => api.pinFileQuickAccess(nodeID),
     unpinItem: (nodeID) => api.unpinFileQuickAccess(nodeID),
+    reorderItems: (nodeIDs) => api.reorderFileQuickAccess(nodeIDs),
     onError,
   })
+
+  const organizationAdapter = useMemo(() => ({
+    listTags: () => api.fileTags(),
+    createTag: (name: string, color: string) => api.createFileTag(name, color),
+    updateTag: (id: number, input: { name?: string; color?: string }) => api.updateFileTag(id, input),
+    deleteTag: (id: number) => api.deleteFileTag(id),
+    queryNodeTags: (nodeIDs: number[]) => api.fileNodeTags(nodeIDs),
+    addTagNodes: (tagID: number, nodeIDs: number[]) => api.setFileTagNodes(tagID, nodeIDs, true),
+    removeTagNodes: (tagID: number, nodeIDs: number[]) => api.setFileTagNodes(tagID, nodeIDs, false),
+    listSavedSearches: () => api.fileSavedSearches(),
+    createSavedSearch: (input: Parameters<XDriveApi['createFileSavedSearch']>[0]) => api.createFileSavedSearch(input),
+    updateSavedSearch: (id: number, input: Parameters<XDriveApi['updateFileSavedSearch']>[1]) => api.updateFileSavedSearch(id, input),
+    deleteSavedSearch: (id: number) => api.deleteFileSavedSearch(id),
+    reorderSavedSearches: (ids: number[]) => api.reorderFileSavedSearches(ids),
+  }), [api])
+  const organization = useXDriveFileExplorerOrganization({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    adapter: organizationAdapter,
+    onError,
+  })
+  const [tagDialogItems, setTagDialogItems] = useState<XDriveFileExplorerItem[]>([])
+  const [saveSearchOpen, setSaveSearchOpen] = useState(false)
+  const [renameSavedSearch, setRenameSavedSearch] = useState<(typeof organization.savedSearches)[number] | null>(null)
+  const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
+  const [activeTagID, setActiveTagID] = useState<number | null>(null)
+  const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  const canSaveSmartFolder = Boolean(
+    searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
+  )
 
   const favorites = useXDriveFileExplorerFavorites<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
@@ -278,6 +316,23 @@ export default function WebFileExplorer({
   })
 
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
+
+  const loadColumnPage = useCallback(async (
+    parentID: string | number,
+    cursor: string,
+    signal: AbortSignal,
+  ) => {
+    const page = await api.listPageAbortable(Number(parentID), {
+      cursor: cursor || undefined,
+      limit: 200,
+      sort: 'name',
+      order: 'asc',
+    }, signal)
+    return {
+      items: page.items.map((node) => xDriveProjectFileExplorerNode(node, '')),
+      nextCursor: page.next_cursor,
+    }
+  }, [api])
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
     lifecycleKey: navigationSessionStorageKey ?? '',
@@ -582,6 +637,13 @@ export default function WebFileExplorer({
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
         onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
+        loadColumnPage={trashActive || searchStatusText ? undefined : loadColumnPage}
+        onColumnNavigate={trashActive || searchStatusText ? undefined : (nextCrumbs) => {
+          onCloseTrash()
+          void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))
+        }}
+        onColumnOpenItem={trashActive ? undefined : (item) => { void openItem(item, openWebNode) }}
+        onManageTags={trashActive ? undefined : (selected) => setTagDialogItems(selected)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}
@@ -647,7 +709,14 @@ export default function WebFileExplorer({
           <XDriveFileExplorerSearchFilters
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
-            onChange={changeSearchFilters}
+            tagOptions={organization.tagOptions}
+            canSaveSearch={canSaveSmartFolder}
+            onSaveSearch={() => setSaveSearchOpen(true)}
+            onChange={(next) => {
+              setActiveSavedSearchID(null)
+              setActiveTagID(next.tagID ?? null)
+              changeSearchFilters(next)
+            }}
           />
         )}
         navigationPane={(
@@ -691,6 +760,43 @@ export default function WebFileExplorer({
               if (current) void quickAccess.toggle(current.id)
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
+            onReorderQuickAccess={(nodeIDs) => { void quickAccess.reorder(nodeIDs) }}
+            savedSearchesEnabled
+            savedSearches={organization.savedSearches}
+            activeSavedSearchID={activeSavedSearchID}
+            onActivateSavedSearch={(savedSearch) => {
+              onCloseTrash()
+              setActiveSavedSearchID(savedSearch.id)
+              setActiveTagID(savedSearch.filters.tagID ?? null)
+              void applySearch(savedSearch.query, savedSearch.filters)
+            }}
+            onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch)}
+            onReplaceSavedSearch={(savedSearch) => {
+              if (!canSaveSmartFolder) return
+              void organization.updateSavedSearch(savedSearch.id, {
+                name: savedSearch.name,
+                query: searchState.query,
+                filters: persistedSearchFilters,
+              }).then(() => {
+                setActiveSavedSearchID(savedSearch.id)
+                onFeedback('good', '智能文件夹已更新。')
+              })
+            }}
+            canReplaceSavedSearch={canSaveSmartFolder}
+            onDeleteSavedSearch={(id) => {
+              if (activeSavedSearchID === id) setActiveSavedSearchID(null)
+              void organization.deleteSavedSearch(id)
+            }}
+            onReorderSavedSearches={(ids) => { void organization.reorderSavedSearches(ids) }}
+            tagsEnabled
+            tags={organization.tags}
+            activeTagID={activeTagID}
+            onActivateTag={(tag) => {
+              onCloseTrash()
+              setActiveSavedSearchID(null)
+              setActiveTagID(tag.id)
+              void applySearch('', { tagID: tag.id })
+            }}
             favoritesEnabled
             favoriteItems={favorites.items}
             favoritesLoading={favorites.loading}
@@ -733,6 +839,64 @@ export default function WebFileExplorer({
                 ? `上传中 ${Math.round(uploadProgress)}%`
                 : undefined
             )}
+      />
+      <XDriveFileTagDialog
+        open={tagDialogItems.length > 0}
+        nodeIDs={tagDialogItems.map((item) => Number(item.id)).filter((id) => Number.isSafeInteger(id) && id > 0)}
+        tags={organization.tags}
+        busy={Boolean(organization.busyKey)}
+        queryNodeTags={organization.queryNodeTags}
+        onSetTag={async (tagID, nodeIDs, assigned) => {
+          await organization.setTagNodes(tagID, nodeIDs, assigned)
+          if (searchFilters.tagID === tagID) {
+            await applySearch(searchState.query, searchFilters)
+          }
+        }}
+        onCreateTag={organization.createTag}
+        onUpdateTag={organization.updateTag}
+        onDeleteTag={async (tagID) => {
+          await organization.deleteTag(tagID)
+          if (searchFilters.tagID === tagID) {
+            setActiveTagID(null)
+            clearSearch()
+          }
+        }}
+        onClose={() => setTagDialogItems([])}
+      />
+      <XDriveFileNameDialog
+        open={saveSearchOpen}
+        mode="saved-search"
+        onClose={() => setSaveSearchOpen(false)}
+        onError={onError}
+        onSubmit={async (name) => {
+          const created = await organization.createSavedSearch({
+            name,
+            query: searchState.query,
+            filters: persistedSearchFilters,
+          })
+          setActiveSavedSearchID(created.id)
+          if (searchFilters.availability) {
+            onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
+          } else {
+            onFeedback('good', '智能文件夹已保存。')
+          }
+        }}
+      />
+      <XDriveFileNameDialog
+        open={Boolean(renameSavedSearch)}
+        mode="saved-search"
+        initialValue={renameSavedSearch?.name ?? ''}
+        onClose={() => setRenameSavedSearch(null)}
+        onError={onError}
+        onSubmit={async (name) => {
+          if (!renameSavedSearch) return
+          await organization.updateSavedSearch(renameSavedSearch.id, {
+            name,
+            query: renameSavedSearch.query,
+            filters: renameSavedSearch.filters,
+          })
+          onFeedback('good', '智能文件夹已重命名。')
+        }}
       />
       <XDriveFileExplorerTrashDeleteDialog
         target={trash.deleteTarget}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
+import BookmarkAddOutlinedIcon from '@mui/icons-material/BookmarkAddOutlined'
 import {
   Box,
   Button,
@@ -16,12 +17,13 @@ import type {
   XDriveFileExplorerSearchFilters,
   XDriveFileExplorerSearchKind,
   XDriveFileExplorerSearchSourceOption,
+  XDriveFileExplorerSearchTagOption,
 } from '../file-explorer-search'
 import {
   xDriveFileExplorerSearchFilterCount,
 } from '../file-explorer-search'
 
-type FilterMenu = 'kind' | 'modified' | 'size' | 'availability' | 'source'
+type FilterMenu = 'kind' | 'modified' | 'size' | 'availability' | 'source' | 'tag'
 
 const kindLabels: Record<XDriveFileExplorerSearchKind, string> = {
   folder: '文件夹',
@@ -67,12 +69,18 @@ function sizeLabel(filters: XDriveFileExplorerSearchFilters) {
 export function XDriveFileExplorerSearchFilters({
   filters,
   sourceOptions = [],
+  tagOptions = [],
   availabilityOptions = [],
+  canSaveSearch = false,
+  onSaveSearch,
   onChange,
 }: {
   filters: XDriveFileExplorerSearchFilters
   sourceOptions?: readonly XDriveFileExplorerSearchSourceOption[]
+  tagOptions?: readonly XDriveFileExplorerSearchTagOption[]
   availabilityOptions?: readonly XDriveFileExplorerSearchAvailabilityOption[]
+  canSaveSearch?: boolean
+  onSaveSearch?: () => void
   onChange: (filters: XDriveFileExplorerSearchFilters) => void
 }) {
   const [panelAnchor, setPanelAnchor] = useState<HTMLElement | null>(null)
@@ -86,6 +94,10 @@ export function XDriveFileExplorerSearchFilters({
   const availabilityName = useMemo(
     () => availabilityOptions.find((item) => item.value === filters.availability)?.label,
     [availabilityOptions, filters.availability],
+  )
+  const tagName = useMemo(
+    () => tagOptions.find((item) => item.id === filters.tagID)?.name,
+    [filters.tagID, tagOptions],
   )
 
   const open = (next: FilterMenu) => (event: MouseEvent<HTMLElement>) => {
@@ -128,9 +140,24 @@ export function XDriveFileExplorerSearchFilters({
         >
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
             <Typography variant="subtitle2">筛选</Typography>
-            {filterCount > 0 ? (
-              <Button size="small" onClick={() => onChange({})}>清除全部</Button>
-            ) : null}
+            <Stack direction="row" spacing={0.5}>
+              {onSaveSearch ? (
+                <Button
+                  size="small"
+                  startIcon={<BookmarkAddOutlinedIcon fontSize="small" />}
+                  disabled={!canSaveSearch}
+                  onClick={() => {
+                    setPanelAnchor(null)
+                    onSaveSearch()
+                  }}
+                >
+                  保存搜索
+                </Button>
+              ) : null}
+              {filterCount > 0 ? (
+                <Button size="small" onClick={() => onChange({})}>清除全部</Button>
+              ) : null}
+            </Stack>
           </Stack>
           <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.75}>
             <Chip
@@ -181,6 +208,16 @@ export function XDriveFileExplorerSearchFilters({
               onClick={open('source')}
               onDelete={filters.sourceID ? () => onChange({ ...filters, sourceID: undefined }) : undefined}
             />
+            {tagOptions.length > 0 ? (
+              <Chip
+                size="small"
+                variant={filters.tagID ? 'filled' : 'outlined'}
+                color={filters.tagID ? 'primary' : 'default'}
+                label={filters.tagID ? `标签：${tagName ?? filters.tagID}` : '标签'}
+                onClick={open('tag')}
+                onDelete={filters.tagID ? () => onChange({ ...filters, tagID: undefined }) : undefined}
+              />
+            ) : null}
           </Stack>
         </Box>
       </Popover>
@@ -235,6 +272,21 @@ export function XDriveFileExplorerSearchFilters({
           </MenuItem>
         ))}
         {sourceOptions.length === 0 ? <MenuItem disabled>暂无同步文件夹</MenuItem> : null}
+      </Menu>
+
+      <Menu anchorEl={anchor} open={menu === 'tag'} onClose={close}>
+        <MenuItem onClick={() => patch({ tagID: undefined })}>全部标签</MenuItem>
+        {tagOptions.map((tag) => (
+          <MenuItem
+            key={tag.id}
+            selected={filters.tagID === tag.id}
+            onClick={() => patch({ tagID: tag.id })}
+            sx={{ gap: 1 }}
+          >
+            <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: tag.color || 'text.disabled', flexShrink: 0 }} />
+            {tag.name}
+          </MenuItem>
+        ))}
       </Menu>
     </>
   )

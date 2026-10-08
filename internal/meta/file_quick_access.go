@@ -3,8 +3,9 @@ package meta
 import "time"
 
 type FileQuickAccess struct {
-	OwnerID   uint64    `gorm:"primaryKey;autoIncrement:false;index:idx_xd_file_quick_access_owner_created,priority:1"`
+	OwnerID   uint64    `gorm:"primaryKey;autoIncrement:false;index:idx_xd_file_quick_access_owner_created,priority:1;index:idx_xd_file_quick_access_owner_position,priority:1"`
 	NodeID    uint64    `gorm:"primaryKey;autoIncrement:false"`
+	Position  int       `gorm:"not null;default:0;index:idx_xd_file_quick_access_owner_position,priority:2"`
 	CreatedAt time.Time `gorm:"not null;index:idx_xd_file_quick_access_owner_created,priority:2"`
 	UpdatedAt time.Time
 
