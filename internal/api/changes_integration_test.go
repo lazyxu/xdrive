@@ -113,6 +113,9 @@ func TestNodeChangeJournalLifecycleAndOwnerScope(t *testing.T) {
 	deleted := requestNodeChangePage(t, router, token, cursor, 100)
 	assertNodeChange(t, deleted.Changes, file.ID, "delete", "")
 	assertNodeChangeParents(t, deleted.Changes, file.ID, archive.ID)
+	deletedWithPaths := requestNodeChangePageWithDeletedPaths(t, router, token, cursor, 100)
+	assertNodeChange(t, deletedWithPaths.Changes, file.ID, "delete", "archive/c.txt")
+	assertNodeChangeParents(t, deletedWithPaths.Changes, file.ID, archive.ID)
 
 	cursor = deleted.LatestCursor
 	_ = createTestUser(t, db, router, "journal-user-2", "password-456")
@@ -131,6 +134,24 @@ func requestNodeChangePage(t *testing.T, h http.Handler, token string, after uin
 	t.Helper()
 	res := request(t, h, http.MethodGet,
 		fmt.Sprintf("/api/v1/changes?after=%d&limit=%d", after, limit), token, nil, http.StatusOK)
+	var page nodeChangePageDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
+func requestNodeChangePageWithDeletedPaths(
+	t *testing.T,
+	h http.Handler,
+	token string,
+	after uint64,
+	limit int,
+) nodeChangePageDTO {
+	t.Helper()
+	res := request(t, h, http.MethodGet,
+		fmt.Sprintf("/api/v1/changes?after=%d&limit=%d&include_deleted_paths=true", after, limit),
+		token, nil, http.StatusOK)
 	var page nodeChangePageDTO
 	if err := json.Unmarshal(res.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)

@@ -20,6 +20,9 @@ func TestNodeChanges(t *testing.T) {
 		if got := r.URL.Query().Get("limit"); got != "25" {
 			t.Fatalf("limit=%q", got)
 		}
+		if got := r.URL.Query().Get("include_deleted_paths"); got != "" {
+			t.Fatalf("include_deleted_paths=%q want empty", got)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("Authorization=%q", got)
 		}
@@ -45,5 +48,36 @@ func TestNodeChanges(t *testing.T) {
 		change.Node == nil || change.Node.Revision != 3 ||
 		len(change.AffectedParentIDs) != 2 || change.AffectedParentIDs[0] != 2 || change.AffectedParentIDs[1] != 9 {
 		t.Fatalf("change=%+v", change)
+	}
+}
+
+func TestNodeChangesWithDeletedPaths(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/changes" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("after"); got != "9" {
+			t.Fatalf("after=%q", got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "500" {
+			t.Fatalf("limit=%q", got)
+		}
+		if got := r.URL.Query().Get("include_deleted_paths"); got != "true" {
+			t.Fatalf("include_deleted_paths=%q want true", got)
+		}
+		_ = json.NewEncoder(w).Encode(NodeChangePage{
+			Changes:    []NodeChange{{Cursor: 10, NodeID: 7, Operation: "delete", Path: "docs/report.txt"}},
+			NextCursor: 10, LatestCursor: 10,
+		})
+	}))
+	defer server.Close()
+
+	page, err := New(server.URL, "token").NodeChangesWithDeletedPaths(context.Background(), 9, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Changes) != 1 || page.Changes[0].Path != "docs/report.txt" {
+		t.Fatalf("page=%+v", page)
 	}
 }

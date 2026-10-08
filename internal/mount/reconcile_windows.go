@@ -640,7 +640,7 @@ func (p *winProvider) reconcileRemote(ctx context.Context) error {
 
 	const pageLimit = 500
 	for {
-		page, err := p.cli.NodeChanges(ctx, cursor, pageLimit)
+		page, err := p.cli.NodeChangesWithDeletedPaths(ctx, cursor, pageLimit)
 		if err != nil {
 			if nodeChangeJournalUnsupported(err) {
 				p.setRemoteJournal(false, cursor)
@@ -826,8 +826,129 @@ func (p *winProvider) applyRemoteFileUpsertPageFast(
 	return true, nil
 }
 
+type winRemoteFileDeleteSnapshot struct {
+	rel        string
+	base       winState
+	hydratedAt time.Time
+}
+
+func (p *winProvider) snapshotRemoteFileDeletes(
+	changes []client.NodeChange,
+) ([]winRemoteFileDeleteSnapshot, bool) {
+	if len(changes) == 0 || p.policy.hasAlwaysLocal() || p.cacheLimit > 0 {
+		return nil, false
+	}
+
+	seenPaths := make(map[string]struct{}, len(changes))
+	seenNodeIDs := make(map[uint64]struct{}, len(changes))
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	out := make([]winRemoteFileDeleteSnapshot, 0, len(changes))
+	for _, change := range changes {
+		if change.Operation != "delete" || change.Node != nil || change.NodeID == 0 {
+			return nil, false
+		}
+		rel := filepath.ToSlash(strings.Trim(change.Path, "/"))
+		if rel == "" || rel == "." || p.policy.excludedPath(rel) {
+			return nil, false
+		}
+		if _, duplicate := seenPaths[rel]; duplicate {
+			return nil, false
+		}
+		if _, duplicate := seenNodeIDs[change.NodeID]; duplicate {
+			return nil, false
+		}
+		base, exists := p.baseline[rel]
+		if !exists ||
+			base.node.Type != "file" ||
+			base.node.ID != change.NodeID ||
+			base.node.Name != slashBase(rel) {
+			return nil, false
+		}
+		if _, parentExists := p.baseline[slashDir(rel)]; !parentExists {
+			return nil, false
+		}
+		seenPaths[rel] = struct{}{}
+		seenNodeIDs[change.NodeID] = struct{}{}
+		out = append(out, winRemoteFileDeleteSnapshot{
+			rel:        rel,
+			base:       base,
+			hydratedAt: p.hydrated[base.node.ID],
+		})
+	}
+	return out, true
+}
+
+func (p *winProvider) storeBaselinePathDeletes(snapshots []winRemoteFileDeleteSnapshot) {
+	if len(snapshots) == 0 {
+		return
+	}
+	delta := winBaselineDelta{}
+	p.mu.Lock()
+	for _, snapshot := range snapshots {
+		current, exists := p.baseline[snapshot.rel]
+		if !exists || current.node.ID != snapshot.base.node.ID {
+			continue
+		}
+		delete(p.baseline, snapshot.rel)
+		delta.Deletes = append(delta.Deletes, snapshot.rel)
+	}
+	p.mu.Unlock()
+	if len(delta.Deletes) == 0 {
+		return
+	}
+	sort.Strings(delta.Deletes)
+	if err := p.persistComputedBaselineDelta(nil, delta); err != nil {
+		fmt.Fprintln(os.Stderr, "xd: persist Windows sync baseline:", err)
+		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
+	}
+}
+
+func (p *winProvider) applyRemoteFileDeletePageFast(
+	changes []client.NodeChange,
+) (bool, error) {
+	snapshots, eligible := p.snapshotRemoteFileDeletes(changes)
+	if !eligible {
+		return false, nil
+	}
+
+	for _, snapshot := range snapshots {
+		abs := filepath.Join(p.root, filepath.FromSlash(snapshot.rel))
+		info, statErr := os.Lstat(abs)
+		if statErr == nil {
+			if snapshot.hydratedAt.IsZero() || time.Since(snapshot.hydratedAt) >= winHydrationGrace {
+				if info.Size() != snapshot.base.localSize || !info.ModTime().Equal(snapshot.base.localModTime) {
+					return true, fmt.Errorf(
+						"remote deletion conflicts with unsynchronized local changes at %s",
+						snapshot.rel,
+					)
+				}
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return true, statErr
+		}
+	}
+
+	deleted := make([]winRemoteFileDeleteSnapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		abs := filepath.Join(p.root, filepath.FromSlash(snapshot.rel))
+		if err := os.RemoveAll(abs); err != nil {
+			p.storeBaselinePathDeletes(deleted)
+			return true, err
+		}
+		deleted = append(deleted, snapshot)
+	}
+	p.storeBaselinePathDeletes(deleted)
+	p.pruneTransientState()
+	return true, nil
+}
+
 func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []client.NodeChange) (bool, error) {
 	if handled, err := p.applyRemoteFileUpsertPageFast(changes); handled || err != nil {
+		return false, err
+	}
+	if handled, err := p.applyRemoteFileDeletePageFast(changes); handled || err != nil {
 		return false, err
 	}
 

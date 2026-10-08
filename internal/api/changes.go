@@ -41,6 +41,8 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	if !ok {
 		return
 	}
+	includeDeletedPaths := strings.EqualFold(strings.TrimSpace(c.Query("include_deleted_paths")), "true") ||
+		strings.TrimSpace(c.Query("include_deleted_paths")) == "1"
 	uid := userID(c)
 
 	var latest uint64
@@ -128,6 +130,20 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "resolve changed node paths failed")
 		return
 	}
+	deletedPaths := map[uint64]string{}
+	if includeDeletedPaths {
+		deletedNodeIDs := make([]uint64, 0, len(dirty))
+		for _, item := range dirty {
+			if _, exists := nodes[item.NodeID]; !exists {
+				deletedNodeIDs = append(deletedNodeIDs, item.NodeID)
+			}
+		}
+		deletedPaths, err = s.nodePathsIncludingDeleted(uid, deletedNodeIDs)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "resolve deleted node paths failed")
+			return
+		}
+	}
 
 	changes := make([]nodeChangeDTO, 0, len(dirty))
 	for _, item := range dirty {
@@ -140,7 +156,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 		if !exists {
 			changes = append(changes, nodeChangeDTO{
 				Cursor: item.Cursor, NodeID: item.NodeID, Operation: "delete",
-				AffectedParentIDs: affectedParentIDs,
+				AffectedParentIDs: affectedParentIDs, Path: deletedPaths[item.NodeID],
 			})
 			continue
 		}
@@ -198,6 +214,54 @@ WITH RECURSIVE ancestry AS (
 	FROM ancestry AS a
 	JOIN xd_nodes AS p ON p.id = a.parent_id
 	WHERE p.owner_id = ? AND p.deleted_at IS NULL
+)
+SELECT target_id, path
+FROM ancestry
+WHERE parent_id IS NULL
+`, ownerID, nodeIDs, ownerID).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range rows {
+		paths[item.TargetID] = item.Path
+	}
+	return paths, nil
+}
+
+func (s *Server) nodePathsIncludingDeleted(ownerID uint64, nodeIDs []uint64) (map[uint64]string, error) {
+	paths := make(map[uint64]string, len(nodeIDs))
+	if len(nodeIDs) == 0 {
+		return paths, nil
+	}
+	type row struct {
+		TargetID uint64
+		Path     string
+	}
+	var rows []row
+	err := s.DB.Raw(`
+WITH RECURSIVE ancestry AS (
+	SELECT
+		n.id AS target_id,
+		n.id AS current_id,
+		n.parent_id,
+		CASE WHEN n.parent_id IS NULL THEN '' ELSE n.name END::text AS path
+	FROM xd_nodes AS n
+	WHERE n.owner_id = ? AND n.id IN ?
+
+	UNION ALL
+
+	SELECT
+		a.target_id,
+		p.id AS current_id,
+		p.parent_id,
+		CASE
+			WHEN p.parent_id IS NULL THEN a.path
+			WHEN a.path = '' THEN p.name
+			ELSE p.name || '/' || a.path
+		END AS path
+	FROM ancestry AS a
+	JOIN xd_nodes AS p ON p.id = a.parent_id
+	WHERE p.owner_id = ?
 )
 SELECT target_id, path
 FROM ancestry

@@ -26,10 +26,30 @@ type NodeChangePage struct {
 }
 
 func (c *Client) NodeChanges(ctx context.Context, after uint64, limit int) (NodeChangePage, error) {
+	return c.nodeChanges(ctx, after, limit, false)
+}
+
+func (c *Client) NodeChangesWithDeletedPaths(
+	ctx context.Context,
+	after uint64,
+	limit int,
+) (NodeChangePage, error) {
+	return c.nodeChanges(ctx, after, limit, true)
+}
+
+func (c *Client) nodeChanges(
+	ctx context.Context,
+	after uint64,
+	limit int,
+	includeDeletedPaths bool,
+) (NodeChangePage, error) {
 	values := url.Values{}
 	values.Set("after", strconv.FormatUint(after, 10))
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
+	}
+	if includeDeletedPaths {
+		values.Set("include_deleted_paths", "true")
 	}
 	var out NodeChangePage
 	err := c.json(ctx, http.MethodGet, "/api/v1/changes?"+values.Encode(), nil, &out)
