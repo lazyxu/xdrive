@@ -599,26 +599,55 @@ export default function StorageStatsPanel({
                     <Stack spacing={1}>
                       <XDriveSectionHeader level="h3" title="Orphan staging" />
                       {stagingLoading ? <LinearProgress /> : null}
-                      <XDriveTableSurface>
-                        <Table size="small" aria-label="Orphan staging" sx={{ minWidth: 680 }}>
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Staging 文件</TableCell>
-                              <TableCell align="right" sx={{ width: 120 }}>大小</TableCell>
-                              <TableCell sx={{ width: 190 }}>最后修改</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {staging.orphans.map((file) => (
-                              <TableRow key={file.key} hover>
-                                <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{file.key}</TableCell>
-                                <TableCell align="right">{formatBytes(file.size)}</TableCell>
-                                <TableCell>{new Date(file.modified_at).toLocaleString()}</TableCell>
+                      {compactViewport ? (
+                        <Stack spacing={1} data-xdrive-staging-mobile-list aria-label="Orphan staging">
+                          {staging.orphans.map((file) => (
+                            <Box
+                              key={file.key}
+                              sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1.25 }}
+                            >
+                              <Stack spacing={0.75}>
+                                <Typography
+                                  variant="body2"
+                                  fontWeight={600}
+                                  sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                >
+                                  {file.key}
+                                </Typography>
+                                <Stack direction="row" spacing={2} flexWrap="wrap">
+                                  <Typography variant="caption" color="text.secondary">
+                                    大小：{formatBytes(file.size)}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    最后修改：{new Date(file.modified_at).toLocaleString()}
+                                  </Typography>
+                                </Stack>
+                              </Stack>
+                            </Box>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <XDriveTableSurface>
+                          <Table size="small" aria-label="Orphan staging" sx={{ minWidth: 680 }}>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Staging 文件</TableCell>
+                                <TableCell align="right" sx={{ width: 120 }}>大小</TableCell>
+                                <TableCell sx={{ width: 190 }}>最后修改</TableCell>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </XDriveTableSurface>
+                            </TableHead>
+                            <TableBody>
+                              {staging.orphans.map((file) => (
+                                <TableRow key={file.key} hover>
+                                  <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{file.key}</TableCell>
+                                  <TableCell align="right">{formatBytes(file.size)}</TableCell>
+                                  <TableCell>{new Date(file.modified_at).toLocaleString()}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </XDriveTableSurface>
+                      )}
                       <XDrivePaginationControls
                         page={stagingPage}
                         pageSize={STAGING_PAGE_SIZE}
@@ -948,37 +977,79 @@ export default function StorageStatsPanel({
                         ) : unreferencedPage ? (
                           <Stack spacing={1}>
                             {unreferencedLoading ? <LinearProgress /> : null}
-                            <XDriveTableSurface>
-                              <Table size="small" aria-label="待 GC Blob 明细" sx={{ minWidth: 980 }}>
-                                <TableHead>
-                                  <TableRow>
-                                    <TableCell>Storage key</TableCell>
-                                    <TableCell align="right">元数据大小</TableCell>
-                                    <TableCell align="right">物理大小</TableCell>
-                                    <TableCell>State</TableCell>
-                                    <TableCell align="right">Reused Part</TableCell>
-                                    <TableCell>GC 状态</TableCell>
-                                    <TableCell>更新时间</TableCell>
-                                  </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                  {unreferencedPage.items.map((blob) => {
-                                    const status = unreferencedBlobStatus(blob)
-                                    return (
-                                      <TableRow key={blob.sha256} hover>
-                                        <TableCell sx={{ maxWidth: 360, overflowWrap: 'anywhere' }}>{blob.storage_key}</TableCell>
-                                        <TableCell align="right">{formatBytes(blob.metadata_size)}</TableCell>
-                                        <TableCell align="right">{blob.physical_exists ? formatBytes(blob.physical_size) : '不存在'}</TableCell>
-                                        <TableCell>{blob.state}</TableCell>
-                                        <TableCell align="right">{blob.reused_upload_parts.toLocaleString()}</TableCell>
-                                        <TableCell><XDriveStatusBadge tone={status.tone} label={status.label} /></TableCell>
-                                        <TableCell>{new Date(blob.updated_at).toLocaleString()}</TableCell>
-                                      </TableRow>
-                                    )
-                                  })}
-                                </TableBody>
-                              </Table>
-                            </XDriveTableSurface>
+                            {compactViewport ? (
+                              <Stack spacing={1} data-xdrive-unreferenced-mobile-list aria-label="待 GC Blob 明细">
+                                {unreferencedPage.items.map((blob) => {
+                                  const status = unreferencedBlobStatus(blob)
+                                  return (
+                                    <Box
+                                      key={blob.sha256}
+                                      sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1.25 }}
+                                    >
+                                      <Stack spacing={1}>
+                                        <Typography
+                                          variant="body2"
+                                          fontWeight={600}
+                                          sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                        >
+                                          {blob.storage_key}
+                                        </Typography>
+                                        <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+                                          <XDriveStatusBadge tone={status.tone} label={status.label} />
+                                          <Typography variant="caption" color="text.secondary">
+                                            State：{blob.state}
+                                          </Typography>
+                                        </Stack>
+                                        <Box
+                                          sx={{
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                            gap: 1,
+                                          }}
+                                        >
+                                          <Box><Typography variant="caption" color="text.secondary">元数据大小</Typography><Typography variant="body2">{formatBytes(blob.metadata_size)}</Typography></Box>
+                                          <Box><Typography variant="caption" color="text.secondary">物理大小</Typography><Typography variant="body2">{blob.physical_exists ? formatBytes(blob.physical_size) : '不存在'}</Typography></Box>
+                                          <Box><Typography variant="caption" color="text.secondary">Reused Part</Typography><Typography variant="body2">{blob.reused_upload_parts.toLocaleString()}</Typography></Box>
+                                          <Box><Typography variant="caption" color="text.secondary">更新时间</Typography><Typography variant="body2">{new Date(blob.updated_at).toLocaleString()}</Typography></Box>
+                                        </Box>
+                                      </Stack>
+                                    </Box>
+                                  )
+                                })}
+                              </Stack>
+                            ) : (
+                              <XDriveTableSurface>
+                                <Table size="small" aria-label="待 GC Blob 明细" sx={{ minWidth: 980 }}>
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell>Storage key</TableCell>
+                                      <TableCell align="right">元数据大小</TableCell>
+                                      <TableCell align="right">物理大小</TableCell>
+                                      <TableCell>State</TableCell>
+                                      <TableCell align="right">Reused Part</TableCell>
+                                      <TableCell>GC 状态</TableCell>
+                                      <TableCell>更新时间</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {unreferencedPage.items.map((blob) => {
+                                      const status = unreferencedBlobStatus(blob)
+                                      return (
+                                        <TableRow key={blob.sha256} hover>
+                                          <TableCell sx={{ maxWidth: 360, overflowWrap: 'anywhere' }}>{blob.storage_key}</TableCell>
+                                          <TableCell align="right">{formatBytes(blob.metadata_size)}</TableCell>
+                                          <TableCell align="right">{blob.physical_exists ? formatBytes(blob.physical_size) : '不存在'}</TableCell>
+                                          <TableCell>{blob.state}</TableCell>
+                                          <TableCell align="right">{blob.reused_upload_parts.toLocaleString()}</TableCell>
+                                          <TableCell><XDriveStatusBadge tone={status.tone} label={status.label} /></TableCell>
+                                          <TableCell>{new Date(blob.updated_at).toLocaleString()}</TableCell>
+                                        </TableRow>
+                                      )
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </XDriveTableSurface>
+                            )}
                             <XDrivePaginationControls
                               page={unreferencedPageNumber}
                               pageSize={STORAGE_DIAGNOSTIC_PAGE_SIZE}
@@ -1015,30 +1086,63 @@ export default function StorageStatsPanel({
                         ) : legacyPage ? (
                           <Stack spacing={1}>
                             {legacyLoading ? <LinearProgress /> : null}
-                            <XDriveTableSurface>
-                              <Table size="small" aria-label="Legacy 对象明细" sx={{ minWidth: 900 }}>
-                                <TableHead>
-                                  <TableRow>
-                                    <TableCell>Storage key</TableCell>
-                                    <TableCell align="right">大小</TableCell>
-                                    <TableCell align="right">当前文件引用</TableCell>
-                                    <TableCell align="right">历史版本引用</TableCell>
-                                    <TableCell>最后引用</TableCell>
-                                  </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                  {legacyPage.items.map((item) => (
-                                    <TableRow key={item.storage_key} hover>
-                                      <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{item.storage_key}</TableCell>
-                                      <TableCell align="right">{formatBytes(item.size)}</TableCell>
-                                      <TableCell align="right">{item.current_file_refs.toLocaleString()}</TableCell>
-                                      <TableCell align="right">{item.history_version_refs.toLocaleString()}</TableCell>
-                                      <TableCell>{new Date(item.last_referenced_at).toLocaleString()}</TableCell>
+                            {compactViewport ? (
+                              <Stack spacing={1} data-xdrive-legacy-mobile-list aria-label="Legacy 对象明细">
+                                {legacyPage.items.map((item) => (
+                                  <Box
+                                    key={item.storage_key}
+                                    sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1.25 }}
+                                  >
+                                    <Stack spacing={1}>
+                                      <Typography
+                                        variant="body2"
+                                        fontWeight={600}
+                                        sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                      >
+                                        {item.storage_key}
+                                      </Typography>
+                                      <Box
+                                        sx={{
+                                          display: 'grid',
+                                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                          gap: 1,
+                                        }}
+                                      >
+                                        <Box><Typography variant="caption" color="text.secondary">大小</Typography><Typography variant="body2">{formatBytes(item.size)}</Typography></Box>
+                                        <Box><Typography variant="caption" color="text.secondary">最后引用</Typography><Typography variant="body2">{new Date(item.last_referenced_at).toLocaleString()}</Typography></Box>
+                                        <Box><Typography variant="caption" color="text.secondary">当前文件引用</Typography><Typography variant="body2">{item.current_file_refs.toLocaleString()}</Typography></Box>
+                                        <Box><Typography variant="caption" color="text.secondary">历史版本引用</Typography><Typography variant="body2">{item.history_version_refs.toLocaleString()}</Typography></Box>
+                                      </Box>
+                                    </Stack>
+                                  </Box>
+                                ))}
+                              </Stack>
+                            ) : (
+                              <XDriveTableSurface>
+                                <Table size="small" aria-label="Legacy 对象明细" sx={{ minWidth: 900 }}>
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell>Storage key</TableCell>
+                                      <TableCell align="right">大小</TableCell>
+                                      <TableCell align="right">当前文件引用</TableCell>
+                                      <TableCell align="right">历史版本引用</TableCell>
+                                      <TableCell>最后引用</TableCell>
                                     </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </XDriveTableSurface>
+                                  </TableHead>
+                                  <TableBody>
+                                    {legacyPage.items.map((item) => (
+                                      <TableRow key={item.storage_key} hover>
+                                        <TableCell sx={{ maxWidth: 420, overflowWrap: 'anywhere' }}>{item.storage_key}</TableCell>
+                                        <TableCell align="right">{formatBytes(item.size)}</TableCell>
+                                        <TableCell align="right">{item.current_file_refs.toLocaleString()}</TableCell>
+                                        <TableCell align="right">{item.history_version_refs.toLocaleString()}</TableCell>
+                                        <TableCell>{new Date(item.last_referenced_at).toLocaleString()}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </XDriveTableSurface>
+                            )}
                             <XDrivePaginationControls
                               page={legacyPageNumber}
                               pageSize={STORAGE_DIAGNOSTIC_PAGE_SIZE}
