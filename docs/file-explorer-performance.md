@@ -53,6 +53,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation execution root validation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected roots: Copy/Delete locked root validation with File metadata **240 SELECTs -> 2 SELECTs**; Move root validation **120 SELECTs -> 1 SELECT** with no File preload. Recursive mutation/conflict/progress semantics are unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
 | FileOperation delete multi-root subtree aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directory roots, one file each: execution-time subtree summary recursion **120 CTEs -> 1 grouped CTE**; per-root managed-source/share/Trash/revision/undo semantics remain unchanged. |
+| FileOperation delete managed-target preload | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 delete roots: Yike managed-target protection DB work **240 statements -> 2 statements** (one optional-schema probe + one owner target load); first protected root is still rejected in original request order. |
 | FileOperation progress write coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 top-level Move/Delete roots: operation current-item + completion progress writes **240 UPDATEs -> 121 UPDATEs**. Every root still performs one `status=running` cancel checkpoint; the previous root's item/byte delta is folded into the next checkpoint and the final delta is flushed. Copy file-byte deltas use the same coalescer. |
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | Legacy delete reference batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 legacy non-CAS keys: post-commit File/FileVersion reference checks **120 SQL statements -> 1 UNION query**; referenced keys remain protected and physical Store.Delete remains one call per unreferenced key. |
@@ -105,6 +106,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - FileOperation enqueue locks selected roots in one deterministic ID-ordered query and batch-preloads their file metadata, then replays missing/root/revision validation in original request order. This replaces one node query plus one File preload per selected file without changing the first reported failing item.
 - FileOperation delete execution resolves each active subtree once into both its node IDs and aggregate bytes, then reuses that summary for managed-source protection, share revocation, trash marking, and progress instead of recursively walking the same root twice.
 - Multi-root FileOperation Delete resolves all already top-level delete roots through one grouped recursive subtree query, returning an independent ID list and byte total per root. The worker still applies managed-source protection, share revocation, Trash marking, revision validation, undo capture, and progress in original request order.
+- FileOperation Delete loads the owner's Yike managed `target_node_id` values once per execution after a single optional-Sources schema probe, then checks each already-materialized subtree ID list in memory. The first protected root still fails with `managed_source_target` before that root is mutated.
 - Permanent-delete CAS reference release groups unique content keys into batches of at most **200**. Each batch acquires content advisory locks in hash order with one statement, locks all matching `xd_content_blobs` rows with one `FOR UPDATE` query, then applies all validated refcount/state changes in one update statement. Two-phase `deleting` state and per-object physical cleanup are unchanged.
 - CAS physical deletion checks temporary reused upload ranges with `SELECT EXISTS` against the partial index `idx_xd_upload_parts_reused_source_storage(source_storage_key) WHERE reused = TRUE`. The guard remains inside the existing per-blob transaction before `Store.Delete`, so active resumable overwrite ranges still keep the old content alive.
 - FileOperation Copy/Move target-descendant validation walks the target's active ancestor chain in PostgreSQL and returns one scalar `EXISTS` result instead of materializing the source subtree IDs in Go. Managed-source subtree protection likewise stays inside PostgreSQL as a recursive CTE joined directly to `xd_sources`, while Delete keeps its existing ID materialization because those IDs are required for share revocation and Trash updates.
@@ -1271,6 +1273,43 @@ Regression command:
 Decision: **accept** grouped multi-root subtree loading. It removes the remaining selected-root multiplier from Delete's recursive read phase without batching or weakening the mutation semantics.
 
 Regression budget: one FileOperation Delete execution may use at most **1 grouped recursive subtree summary query** for its already top-level selected roots.
+
+### FileOperation delete managed-target preload
+
+Status: **Accepted / structural; wall-clock unmeasured**.
+
+Problem and workload:
+
+- Delete already has each selected root's active subtree IDs in memory;
+- managed Yike target protection still called `yikeManagedTargetInIDsDB` once per root;
+- each call probes whether the optional `xd_sources` table exists and then queries Sources for that root's subtree IDs;
+- stable workload: **120 top-level delete roots**.
+
+BEFORE:
+
+- 120 optional-schema probes;
+- 120 managed-target Source queries;
+- total protection-read work: **240 SQL statements** before considering the normal per-root mutation statements.
+
+AFTER / current:
+
+- `loadYikeManagedTargetIDsDB` performs one optional-Sources schema probe;
+- when Sources exists, one owner/kind query loads all non-null Yike `target_node_id` values into a set;
+- each root checks its already-materialized subtree IDs against that set in memory;
+- the 120-root protection-read workload performs **2 SQL statements** total;
+- core-only schemas without `xd_sources` still return an empty protected set after the single schema probe;
+- the Delete loop remains in original request order, so the first protected root still returns `managed_source_target` before that root's share/Trash/revision mutations;
+- share revocation, Trash assignment, root revision validation, undo capture, cancellation checkpoints and progress are unchanged.
+
+Structural delta: **240 -> 2 managed-target protection SQL statements (-99.2%)** for the 120-root workload. No wall-clock speedup is claimed.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestDelete(ManagedTargetProtectionLoadsOwnerTargetsOnce|ExecutorUsesSelectionWideManagedTargetLoad)$' -count=1`.
+
+Decision: **accept** selection-wide managed-target preload for Delete. It removes the remaining root-count query multiplier from the protection read without batching delete mutations.
+
+Regression budget: Delete managed-target protection may perform at most **one optional-schema probe + one owner target load per execution**, independent of selected-root count.
 
 ### FileOperation Move root-byte aggregation
 
