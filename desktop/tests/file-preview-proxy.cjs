@@ -75,3 +75,56 @@ test('file preview proxy rejects already expired upstream tickets', async (t) =>
   t.after(() => proxy.close())
   await assert.rejects(() => proxy.createURL(31), /expired/)
 })
+
+
+test('file preview proxy reports unique Range coverage and releases streamed tickets', async (t) => {
+  const payload = Buffer.from('0123456789abcdef')
+  const upstream = http.createServer((req, res) => {
+    const raw = req.headers.range || ''
+    const match = /^bytes=(\d+)-(\d+)$/.exec(raw)
+    if (!match) {
+      res.statusCode = 416
+      res.end()
+      return
+    }
+    const start = Number(match[1])
+    const end = Math.min(payload.length - 1, Number(match[2]))
+    res.statusCode = 206
+    res.setHeader('Content-Type', 'video/quicktime')
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${payload.length}`)
+    res.setHeader('Accept-Ranges', 'bytes')
+    res.setHeader('Content-Length', String(end - start + 1))
+    res.end(payload.subarray(start, end + 1))
+  })
+  const upstreamBase = await listen(upstream)
+  t.after(() => new Promise((resolve) => upstream.close(resolve)))
+
+  const progress = []
+  const proxy = new DesktopFilePreviewProxy(
+    async () => {
+      throw new Error('default preview ticket loader must not be used')
+    },
+    (input, init) => fetch(input, init),
+  )
+  t.after(() => proxy.close())
+
+  const localURL = await proxy.createURLFromTicket({
+    url: `${upstreamBase}/motion.mov?ticket=motion-secret`,
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    kind: 'video',
+    mime_type: 'video/quicktime',
+  }, (loaded, total) => progress.push([loaded, total]))
+
+  let response = await fetch(localURL, { headers: { Range: 'bytes=0-7' } })
+  assert.equal(response.status, 206)
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '01234567')
+
+  response = await fetch(localURL, { headers: { Range: 'bytes=4-11' } })
+  assert.equal(response.status, 206)
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '456789ab')
+
+  assert.deepEqual(progress.at(-1), [12, payload.length])
+  assert.equal(proxy.releaseURL(localURL), true)
+  response = await fetch(localURL)
+  assert.equal(response.status, 410)
+})

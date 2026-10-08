@@ -294,7 +294,7 @@ type desktopIPCController interface {
 	CloudSetMediaPeople(context.Context, uint64, []string) (client.MediaPeople, error)
 	CloudSetMediaDescription(context.Context, uint64, string) (client.MediaDescription, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
-	CloudMediaLivePhotoMotion(context.Context, uint64) (agentMediaMotion, error)
+	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
 	CloudSourceRunFailures(context.Context, uint64, string, int, int) ([]client.SourceRunFailure, error)
@@ -607,7 +607,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/media/description", h.mediaDescription)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
-	mux.HandleFunc("GET /v1/media/live-photo-motion", h.mediaLivePhotoMotion)
+	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -3412,24 +3412,17 @@ func (h *desktopIPCHandler) mediaVideoPoster(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *desktopIPCHandler) mediaLivePhotoMotion(w http.ResponseWriter, r *http.Request) {
+func (h *desktopIPCHandler) mediaLivePhotoMotionTicket(w http.ResponseWriter, r *http.Request) {
 	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
 	if !ok {
 		return
 	}
-	motion, err := h.ctrl.CloudMediaLivePhotoMotion(r.Context(), nodeID)
+	ticket, err := h.ctrl.CloudMediaLivePhotoMotionTicket(r.Context(), nodeID)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
-	contentType := strings.TrimSpace(motion.ContentType)
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(motion.Data)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(motion.Data)
+	writeDesktopIPCJSON(w, http.StatusOK, ticket)
 }
 
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {

@@ -68,7 +68,19 @@ export function createDesktopMediaGalleryDataSource(
     listAlbumItemRange: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItemRange(albumID, limit, offset, query),
     loadThumbnail: (nodeID) => agent.getMediaThumbnail(nodeID),
-    loadLivePhotoMotion: (nodeID, onProgress) => agent.getMediaLivePhotoMotion(nodeID, onProgress),
+    loadLivePhotoMotion: async (nodeID, onProgress) => {
+      const result = await agent.getMediaLivePhotoMotion(nodeID, onProgress)
+      if (!result.ok) return result
+      return {
+        ok: true as const,
+        data: {
+          url: result.data,
+          dispose: () => {
+            void agent.releaseMediaLivePhotoMotion(result.data)
+          },
+        },
+      }
+    },
     loadPreviewURL: (nodeID, _kind) => agent.cloudFilePreviewURL(nodeID),
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),

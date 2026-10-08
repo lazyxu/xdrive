@@ -3,6 +3,22 @@ import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number) => void
 let mediaLivePhotoMotionRequestSequence = 0
 
+type MediaLivePhotoProgressEntry = {
+  channel: string
+  listener: Parameters<typeof ipcRenderer.on>[1]
+  timer: ReturnType<typeof setTimeout>
+}
+
+const mediaLivePhotoProgressByURL = new Map<string, MediaLivePhotoProgressEntry>()
+
+function cleanupMediaLivePhotoProgress(url: string) {
+  const entry = mediaLivePhotoProgressByURL.get(url)
+  if (!entry) return
+  mediaLivePhotoProgressByURL.delete(url)
+  clearTimeout(entry.timer)
+  ipcRenderer.removeListener(entry.channel, entry.listener)
+}
+
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
@@ -285,7 +301,8 @@ const agent = Object.freeze({
   ) => {
     const requestID = `motion-${Date.now()}-${++mediaLivePhotoMotionRequestSequence}`
     const channel = 'agent:media-live-photo-motion-progress'
-    const listener = (_event: unknown, payload: unknown) => {
+    let resolvedURL = ''
+    const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, payload: unknown) => {
       if (!onProgress || !payload || typeof payload !== 'object') return
       const value = payload as {
         request_id?: unknown
@@ -301,12 +318,33 @@ const agent = Object.freeze({
         ? value.total_bytes
         : undefined
       onProgress(value.loaded_bytes, totalBytes)
+      if (resolvedURL && totalBytes && value.loaded_bytes >= totalBytes) {
+        cleanupMediaLivePhotoProgress(resolvedURL)
+      }
     }
     if (onProgress) ipcRenderer.on(channel, listener)
     return ipcRenderer.invoke('agent:get-media-live-photo-motion', nodeID, requestID)
-      .finally(() => {
+      .then((result: unknown) => {
+        const value = result as { ok?: unknown; data?: unknown }
+        if (!onProgress || value?.ok !== true || typeof value.data !== 'string') {
+          if (onProgress) ipcRenderer.removeListener(channel, listener)
+          return result
+        }
+        resolvedURL = value.data
+        const timer = setTimeout(
+          () => cleanupMediaLivePhotoProgress(resolvedURL),
+          15 * 60 * 1000,
+        )
+        mediaLivePhotoProgressByURL.set(resolvedURL, { channel, listener, timer })
+        return result
+      }, (error: unknown) => {
         if (onProgress) ipcRenderer.removeListener(channel, listener)
+        throw error
       })
+  },
+  releaseMediaLivePhotoMotion: (url: string) => {
+    cleanupMediaLivePhotoProgress(url)
+    return ipcRenderer.invoke('agent:release-media-live-photo-motion', url)
   },
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),

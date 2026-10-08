@@ -9,6 +9,13 @@ export type XDriveByteProgressHandler = (
   totalBytes?: number,
 ) => void
 
+export type XDriveLivePhotoMotionSource =
+  | string
+  | {
+      url: string
+      dispose?: () => void
+    }
+
 export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'live_photo'
 
 export type XDriveFilePreviewTarget = {

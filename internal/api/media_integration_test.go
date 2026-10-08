@@ -825,6 +825,75 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal("unified LIVP motion bytes changed")
 	}
 
+	liveMotionTicketResponse := request(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-motion-ticket", liveNode.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var liveMotionTicket filePreviewTicketDTO
+	if err := json.Unmarshal(liveMotionTicketResponse.Body.Bytes(), &liveMotionTicket); err != nil {
+		t.Fatal(err)
+	}
+	if liveMotionTicket.Kind != "video" ||
+		liveMotionTicket.MIMEType != "video/quicktime" ||
+		!strings.HasPrefix(
+			liveMotionTicket.URL,
+			fmt.Sprintf("/api/v1/media-live-photo-motion/%d?ticket=", liveNode.ID),
+		) {
+		t.Fatalf("livp motion ticket=%+v", liveMotionTicket)
+	}
+	liveMotionRange := requestWithHeaders(
+		t,
+		router,
+		http.MethodGet,
+		liveMotionTicket.URL,
+		"",
+		nil,
+		http.StatusPartialContent,
+		map[string]string{"Range": "bytes=0-7"},
+	)
+	if !bytes.Equal(liveMotionRange.Body.Bytes(), motionBytes[:8]) {
+		t.Fatalf("livp motion range=%x want=%x", liveMotionRange.Body.Bytes(), motionBytes[:8])
+	}
+	if got := liveMotionRange.Header().Get("Content-Range"); got != fmt.Sprintf("bytes 0-7/%d", len(motionBytes)) {
+		t.Fatalf("livp motion content-range=%q", got)
+	}
+
+	var liveMotionResource meta.MediaDerivedResource
+	if err := db.Where(
+		"node_id = ? AND role = ?",
+		liveNode.ID,
+		meta.MediaDerivedResourceRoleMotion,
+	).First(&liveMotionResource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if liveMotionResource.ByteSize <= 1 {
+		t.Fatal("livp motion resource is unexpectedly small")
+	}
+	if err := db.Model(&meta.MediaDerivedResource{}).
+		Where("node_id = ? AND role = ?", liveNode.ID, meta.MediaDerivedResourceRoleMotion).
+		Update("byte_size", liveMotionResource.ByteSize-1).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(
+		t,
+		router,
+		http.MethodGet,
+		liveMotionTicket.URL,
+		"",
+		nil,
+		http.StatusGone,
+	)
+	if err := db.Model(&meta.MediaDerivedResource{}).
+		Where("node_id = ? AND role = ?", liveNode.ID, meta.MediaDerivedResourceRoleMotion).
+		Update("byte_size", liveMotionResource.ByteSize).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	pairFolder := requestNode(
 		t,
 		router,
@@ -919,6 +988,33 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatal("standalone live photo motion bytes changed")
 	}
 
+	pairMotionTicketResponse := request(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/live-photo-motion-ticket", pairStill.ID),
+		token,
+		nil,
+		http.StatusOK,
+	)
+	var pairMotionTicket filePreviewTicketDTO
+	if err := json.Unmarshal(pairMotionTicketResponse.Body.Bytes(), &pairMotionTicket); err != nil {
+		t.Fatal(err)
+	}
+	pairMotionRange := requestWithHeaders(
+		t,
+		router,
+		http.MethodGet,
+		pairMotionTicket.URL,
+		"",
+		nil,
+		http.StatusPartialContent,
+		map[string]string{"Range": "bytes=0-7"},
+	)
+	if !bytes.Equal(pairMotionRange.Body.Bytes(), pairMotionBytes[:8]) {
+		t.Fatalf("standalone motion range=%x want=%x", pairMotionRange.Body.Bytes(), pairMotionBytes[:8])
+	}
+
 	var pairGroup meta.MediaGroup
 	if err := db.
 		Table("xd_media_groups AS mg").
@@ -994,6 +1090,15 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		token,
 		nil,
 		http.StatusNotFound,
+	)
+	request(
+		t,
+		router,
+		http.MethodGet,
+		pairMotionTicket.URL,
+		"",
+		nil,
+		http.StatusGone,
 	)
 	trashThumbnailBytes := testPNG(t, 4, 3)
 	trashThumbnailNode := uploadTestFile(

@@ -29,7 +29,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { XDriveByteProgressHandler } from '../file-preview'
+import type {
+  XDriveByteProgressHandler,
+  XDriveLivePhotoMotionSource,
+} from '../file-preview'
 import type {
   MediaAlbum,
   MediaGalleryQuery,
@@ -107,7 +110,7 @@ export type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
-) => Promise<string | null>
+) => Promise<XDriveLivePhotoMotionSource | null>
 export type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',

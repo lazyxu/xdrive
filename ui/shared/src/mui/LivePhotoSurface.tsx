@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
 import { PlayCircleOutline as LivePhotoIcon } from '@mui/icons-material'
 import { Box, Chip, CircularProgress, Typography } from '@mui/material'
-import type { XDriveByteProgressHandler } from '../file-preview'
+import type {
+  XDriveByteProgressHandler,
+  XDriveLivePhotoMotionSource,
+} from '../file-preview'
 
 export type XDriveLivePhotoMotionLoader = (
   onProgress?: XDriveByteProgressHandler,
-) => Promise<string | null | undefined>
+) => Promise<XDriveLivePhotoMotionSource | null | undefined>
 
 export type XDriveLivePhotoSurfaceProps = {
   still: ReactNode
@@ -14,7 +17,16 @@ export type XDriveLivePhotoSurfaceProps = {
   label?: string
 }
 
-function revokeMotionURL(value: string) {
+function livePhotoMotionURL(value: XDriveLivePhotoMotionSource) {
+  return typeof value === 'string' ? value : value.url
+}
+
+function disposeLivePhotoMotion(value: XDriveLivePhotoMotionSource) {
+  if (typeof value !== 'string') {
+    value.dispose?.()
+    if (value.url.startsWith('blob:')) URL.revokeObjectURL(value.url)
+    return
+  }
   if (value.startsWith('blob:')) URL.revokeObjectURL(value)
 }
 
@@ -30,6 +42,7 @@ export function XDriveLivePhotoSurface({
 }: XDriveLivePhotoSurfaceProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const motionURLRef = useRef('')
+  const motionSourceRef = useRef<XDriveLivePhotoMotionSource | null>(null)
   const loadGenerationRef = useRef(0)
   const loadStartedRef = useRef(false)
   const holdActiveRef = useRef(false)
@@ -64,8 +77,12 @@ export function XDriveLivePhotoSurface({
       // The subsequent play() call will begin once enough metadata is available.
     }
     video.volume = 1
+    if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setLoading(true)
     setPlaying(true)
-    void video.play().catch(() => {
+    void video.play().then(() => {
+      setLoading(false)
+    }).catch(() => {
+      setLoading(false)
       setPlaying(false)
       setFailed(true)
     })
@@ -92,22 +109,32 @@ export function XDriveLivePhotoSurface({
     void loadMotion(onProgress)
       .then((value) => {
         if (!value) {
-          if (loadGenerationRef.current === generation) setFailed(true)
+          if (loadGenerationRef.current === generation) {
+            setLoading(false)
+            setFailed(true)
+          }
           return
         }
         if (loadGenerationRef.current !== generation) {
-          revokeMotionURL(value)
+          disposeLivePhotoMotion(value)
           return
         }
-        motionURLRef.current = value
-        setLoadProgress(100)
-        setMotionURL(value)
+        const url = livePhotoMotionURL(value)
+        if (!url) {
+          disposeLivePhotoMotion(value)
+          setLoading(false)
+          setFailed(true)
+          return
+        }
+        motionSourceRef.current = value
+        motionURLRef.current = url
+        setMotionURL(url)
       })
       .catch(() => {
-        if (loadGenerationRef.current === generation) setFailed(true)
-      })
-      .finally(() => {
-        if (loadGenerationRef.current === generation) setLoading(false)
+        if (loadGenerationRef.current === generation) {
+          setLoading(false)
+          setFailed(true)
+        }
       })
   }, [failed, loadMotion])
 
@@ -132,21 +159,23 @@ export function XDriveLivePhotoSurface({
     holdActiveRef.current = false
     stopPlayback()
 
-    const current = motionURLRef.current
+    const current = motionSourceRef.current
+    motionSourceRef.current = null
     motionURLRef.current = ''
     setMotionURL('')
     setLoading(false)
     setLoadProgress(null)
     setFailed(false)
-    if (current) revokeMotionURL(current)
+    if (current) disposeLivePhotoMotion(current)
 
     return () => {
       loadGenerationRef.current += 1
       holdActiveRef.current = false
       stopPlayback()
-      const resolved = motionURLRef.current
+      const resolved = motionSourceRef.current
+      motionSourceRef.current = null
       motionURLRef.current = ''
-      if (resolved) revokeMotionURL(resolved)
+      if (resolved) disposeLivePhotoMotion(resolved)
     }
   }, [loadMotion, stopPlayback])
 
@@ -248,10 +277,15 @@ export function XDriveLivePhotoSurface({
           src={motionURL}
           controls={false}
           playsInline
-          preload="auto"
+          preload="metadata"
           disablePictureInPicture
+          onLoadedMetadata={() => {
+            if (!holdActiveRef.current) setLoading(false)
+          }}
+          onCanPlay={() => setLoading(false)}
           onEnded={stopPlayback}
           onError={() => {
+            setLoading(false)
             setPlaying(false)
             setFailed(true)
           }}

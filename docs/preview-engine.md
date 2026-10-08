@@ -232,15 +232,18 @@ The interaction contract is:
 
 - show the still image by default;
 - do not request the motion resource merely because the preview surface mounted;
-- the first press-and-hold starts one motion request; if the user keeps holding, playback
-  begins as soon as the motion resource is ready; releasing during the request prevents
-  autoplay but does not start a second duplicate request on the next hold;
+- the first press-and-hold resolves one motion source; if the user keeps holding, playback
+  begins as soon as the video element has buffered enough data rather than waiting for the
+  complete motion payload; releasing before playback prevents autoplay and reuses the
+  already-resolved source while the preview remains open;
 - when the transport exposes a positive total byte count, render a determinate circular
   download indicator from actual received bytes; otherwise render indeterminate progress
   and never fabricate a percentage;
-- Web and Desktop progress reporting must observe the existing continuous byte stream.
-  It must not introduce range fan-out or smaller network chunks solely for UI progress,
-  and renderer/IPC progress notifications must be throttled;
+- Web progress reporting observes its authenticated response stream. Desktop progress is
+  derived from the existing video Range requests at the protected loopback proxy; overlapping
+  ranges count unique covered bytes only. Neither platform may introduce extra range fan-out
+  or smaller network chunks solely for UI progress, and renderer/IPC notifications must be
+  throttled;
 - press-and-hold on mouse or touch starts motion in the same frame once ready;
 - releasing, cancelling, leaving the pressed surface, or losing focus stops playback
   and returns to the still image;
@@ -258,12 +261,24 @@ still frame, and render the existing `XDriveLivePhotoSurface` with the existing
 owner-scoped motion endpoint. This is file-format presentation, not Gallery grouping.
 Do not infer standalone JPG/HEIC + MOV relationships inside FileExplorer.
 
-Desktop Live Photo motion transport must remain binary end-to-end. xdrive-agent may
-buffer the bounded motion payload for the local Desktop IPC limit, but it must return
-raw bytes; Electron transports those bytes as `ArrayBuffer`, and renderer surfaces create
-a Blob URL. Do not base64-encode motion payloads in Agent IPC or renderer adapters.
-Desktop may relay throttled byte-progress events while reading that same response stream;
-those events are observational only and must not change the motion payload or request shape.
+Desktop Live Photo motion uses the same protected loopback stream architecture as
+ordinary video preview. xdrive-agent obtains only a signed motion ticket; it does not read
+or buffer the motion payload. Electron main hides the signed upstream URL behind the
+existing loopback-only preview proxy, forwards GET/HEAD and Range headers, and streams the
+upstream 200/206 response directly to the video element. The renderer receives only the
+local URL, never a complete motion `ArrayBuffer` or base64 payload.
+
+The signed motion ticket is revision-fenced twice: it binds the still node revision and a
+motion-resource fingerprint. Embedded `.livp` fingerprints include the parent SHA and
+validated byte offset/size; standalone Live Photo fingerprints include the paired motion
+node id, revision, and SHA. A changed container range, overwritten motion file, or changed
+pair therefore makes the old ticket stale.
+
+The loopback proxy may report throttled progress from bytes it actually forwards. Because
+media elements can issue overlapping Range requests, progress must be based on the union of
+covered byte intervals rather than the sum of response lengths. Closing/replacing the
+preview disposes the local motion URL, removes the progress listener, invalidates the local
+proxy token, and aborts any in-flight Range request.
 
 ## FileExplorer boundary
 

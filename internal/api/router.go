@@ -91,6 +91,8 @@ func (s *Server) Router() *gin.Engine {
 	v1.GET("/file-preview/:id", s.filePreviewTicketStream)
 	v1.HEAD("/file-preview/:id", s.filePreviewTicketStream)
 	v1.GET("/media-analysis-preview/:id", s.mediaAnalysisPreviewTicketStream)
+	v1.GET("/media-live-photo-motion/:id", s.mediaLivePhotoMotionTicketStream)
+	v1.HEAD("/media-live-photo-motion/:id", s.mediaLivePhotoMotionTicketStream)
 
 	authed := v1.Group("")
 	authed.Use(s.requireAuth())
@@ -159,6 +161,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.PUT("/media/items/:id/video-poster", s.putMediaVideoPoster)
 	authed.GET("/media/items/:id/analysis-preview", s.mediaAnalysisPreview)
 	authed.GET("/media/items/:id/live-photo-motion", s.mediaLivePhotoMotion)
+	authed.POST("/media/items/:id/live-photo-motion-ticket", s.mediaLivePhotoMotionTicket)
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)

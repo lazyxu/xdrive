@@ -879,11 +879,6 @@ export type AgentMediaThumbnail = {
   data: ArrayBuffer
 }
 
-export type AgentMediaMotion = {
-  content_type: string
-  data: ArrayBuffer
-}
-
 export type AgentBinaryProgressHandler = (
   loadedBytes: number,
   totalBytes?: number,
@@ -1764,16 +1759,13 @@ export class AgentIPCClient {
     )
   }
 
-  mediaLivePhotoMotion(
-    nodeID: number,
-    onProgress?: AgentBinaryProgressHandler,
-  ): Promise<AgentMediaMotion> {
+  mediaLivePhotoMotionTicket(nodeID: number) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
-    return this.requestBinary(
-      `/v1/media/live-photo-motion?${query.toString()}`,
-      45_000,
+    return this.request<AgentFilePreviewTicket>(
+      'GET',
+      `/v1/media/live-photo-motion-ticket?${query.toString()}`,
       undefined,
-      onProgress,
+      45_000,
     )
   }
 
