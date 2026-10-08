@@ -281,3 +281,95 @@ Correctness gate:
 - only the main Gallery range, Albums index, and Places index use the one-row stale probe fast path.
 
 Decision: **Accepted.** The 100k first-open bottleneck was request-time projection reconciliation plus UI wait-all, not VirtualCollection or timeline layout. The next performance question is end-to-end **range response -> first real thumbnail/video poster visible** for the retained first viewport; measure that separately instead of continuing to optimize already-millisecond timeline CPU.
+
+
+## 100k first visible media
+
+Status: **Accepted / measured; no production change**.
+
+This workload starts where the accepted first-open benchmark ends: the first media range is already available, and the measurement asks how long the retained first viewport takes to show real media rather than placeholders.
+
+Stable workload:
+
+- **100,000 Gallery-visible logical items / 115,000 physical media nodes**;
+- mix remains **70,000 photos + 15,000 videos + 15,000 Live Photos**;
+- first viewport is fixed at **56 items**, matching the measured retained window from the accepted 1440 x 900 first-open layout;
+- the benchmark asserts that this viewport contains ordinary photos, videos and Live Photos;
+- image and Live Photo tiles use real JPEG originals, the real Server thumbnail derivative path, the real object store and HTTP transport;
+- cold image/Live Photo requests use concurrency **6**, matching the shared thumbnail scheduler;
+- warm image/Live Photo requests reuse the generated derivative and must not reopen originals or regenerate thumbnails;
+- video tiles use a valid H.264 MP4 original and the real preview-ticket plus Range transport with concurrency **3**, matching the poster scheduler;
+- renderer decode uses the production `xDriveCaptureVideoPosterBlob` function inside Electron/Chromium against a real MP4 Blob;
+- video decode uses **7 cold/warm pairs**. Within each pair the warm revisit reuses the same source Blob URL, so Chromium may reuse source bytes but the current Gallery code still creates a fresh video element and captures a fresh JPEG frame.
+
+Commands:
+
+- Server/object-store first-visible transport:
+  - `XD_GALLERY_FIRST_VISIBLE_PERF=1 XD_TEST_DATABASE_URL=... go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api`;
+- real Chromium video poster decode:
+  - `cd desktop && xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-video-poster-performance-main.cjs`.
+
+Predeclared acceptance / decision thresholds:
+
+- cold image/Live Photo **first visible <= 750 ms** after the range is available;
+- cold image/Live Photo **first 12 visible <= 1.5 s**;
+- warm image/Live Photo **first visible <= 250 ms**;
+- cold video preview source **first bytes <= 500 ms**;
+- if the real Chromium warm video-poster decode median remains above **50% of the cold median**, treat warm revisit as repeated decode rather than useful reuse and continue with the already-existing Server/Agent video-poster cache instead of inventing another cache;
+- if the image/Live Photo thresholds already pass, keep that production path unchanged.
+
+The performance jobs are scoped only to `perf/gallery-first-visible-100k` until the workload variance and budgets are established.
+
+
+### 100k first-visible measured result
+
+Authoritative final GitHub CI workload:
+
+- **100,000 logical / 115,000 physical media**;
+- retained viewport: **56 items** = **38 ordinary photos + 9 videos + 9 Live Photos**;
+- Server first-range query: **586.345 ms**.
+
+Image / Live Photo thumbnail transport:
+
+- cold first visible: **112.041 ms**;
+- cold first 12 visible: **223.689 ms**;
+- cold all 47 image-like tiles: **630.259 ms**;
+- cold per-request p50 / p95: **68.402 / 118.871 ms**;
+- warm first visible: **6.479 ms**;
+- warm first 12 visible: **13.301 ms**;
+- warm all 47 image-like tiles: **35.783 ms**;
+- warm per-request p50 / p95: **4.102 / 8.161 ms**;
+- cold derivative generation opens originals; warm requests reuse derivative storage and do not regenerate thumbnails.
+
+A previous successful run of the identical workload measured cold first visible **117.203 ms**, cold first 12 **235.926 ms**, cold all **668.572 ms**, warm first visible **3.775 ms**, and warm all **34.138 ms**. The two runs are the same order of magnitude and both are comfortably inside the predeclared budgets.
+
+All predeclared image/Live budgets pass by a wide margin. **Decision: keep the production image/Live thumbnail path unchanged.**
+
+Video preview transport:
+
+- cold first preview bytes: **4.711 ms**;
+- cold all 9 viewport videos: **12.681 ms**;
+- warm first preview bytes: **2.825 ms**;
+- warm all 9 viewport videos: **10.776 ms**.
+
+The previous successful run measured **3.403 / 12.629 ms** cold and **3.066 / 9.744 ms** warm, so preview-ticket and first-byte transport is stable at only a few milliseconds and is not a remaining multi-second Gallery-open bottleneck in this synthetic 100k workload.
+
+Real Chromium H.264 poster decode, 7 cold/warm pairs using production `xDriveCaptureVideoPosterBlob`:
+
+- final run first process-level cold decode: **304.900 ms**;
+- final run cold median / steady-cold median: **3.200 / 3.200 ms**;
+- final run warm median: **3.000 ms**;
+- final run warm / steady-cold ratio: **0.938**;
+- generated poster median size: **2,338 bytes**.
+
+A previous successful hosted run measured the same steady state at **2.400 ms** cold and **2.300 ms** warm, but its first process-level cold decode was **5,719.900 ms**. That one-time initialization therefore varied by about **18.8x** across otherwise equivalent hosted runs. Treat the first-process cold value as **diagnostic-only hosted-runner initialization noise**, not an acceptance budget or a generalizable user-visible video cost.
+
+The relative warm-decode trigger is technically met: Gallery currently repeats the decode path on revisit. However, the repeatable work after process initialization is only about **2–3 ms**, while Server preview transport is also only a few milliseconds. Wiring the existing Server/Agent poster cache solely to save this steady-state work would not be a material, repeatable performance improvement on this workload. **Decision: reject that production change for now.**
+
+Benchmark harness correction:
+
+- the first Server attempt reused only 8 JPEG source objects and therefore could not require one original-object open per image node; CAS/derivative reuse made that assertion invalid;
+- the corrected workload uses unique source variants across the 56 viewport positions;
+- timings from that invalid attempt are not used as baseline evidence.
+
+Decision: **Accepted / no production code change.** After the #981 first-open scheduling fix, the synthetic 100k Gallery does not reproduce a multi-second delay before the first real image appears. The next useful investigation, if real installations still report a long blank/placeholder phase, is an integrated Web/Desktop renderer navigation trace from Gallery route activation through first decoded image paint on a real-sized media fixture. That trace should measure actual React commit / image decode / paint timing and treat one-time Chromium video-decoder initialization separately from ordinary Gallery first-media visibility.
