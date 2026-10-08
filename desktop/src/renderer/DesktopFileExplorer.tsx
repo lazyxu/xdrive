@@ -1947,11 +1947,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
             onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch as AgentFileSavedSearch)}
             onReplaceSavedSearch={(savedSearch) => {
               if (!canSaveSmartFolder) return
+              const lifecycleKey = organizationLifecycleKeyRef.current
               void organization.updateSavedSearch(savedSearch.id, {
                 name: savedSearch.name,
                 query: searchState.query,
                 filters: persistedSearchFilters,
               }).then(() => {
+                if (organizationLifecycleKeyRef.current !== lifecycleKey) return
                 setActiveSavedSearchID(savedSearch.id)
                 onFeedback('good', '智能文件夹已更新。')
               })
