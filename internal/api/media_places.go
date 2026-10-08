@@ -78,7 +78,7 @@ func mediaPlaceName(cell mediaPlaceCell) string {
 }
 
 func (s *Server) listMediaPlaces(c *gin.Context) {
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,

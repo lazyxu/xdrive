@@ -201,7 +201,7 @@ func (s *Server) listMediaItems(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
@@ -314,7 +314,7 @@ func (s *Server) getMediaItem(c *gin.Context) {
 }
 
 func (s *Server) listMediaAlbums(c *gin.Context) {
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
@@ -1644,6 +1644,21 @@ func (s *Server) indexMediaNode(
 		}
 	}
 	return out, nil
+}
+
+func (s *Server) refreshMediaIndexForGalleryRead(
+	ctx context.Context,
+	uid uint64,
+	limit int,
+) error {
+	probe, err := s.staleMediaNodes(ctx, &uid, 1)
+	if err != nil {
+		return err
+	}
+	if len(probe) == 0 {
+		return nil
+	}
+	return s.refreshMediaIndexForOwner(ctx, uid, limit)
 }
 
 func (s *Server) refreshMediaIndexForOwner(

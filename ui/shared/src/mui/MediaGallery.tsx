@@ -626,15 +626,7 @@ export function XDriveMediaGalleryPage({
     try {
       const rangePromise = loadTargetRange(target, 0, pageSize)
       if (target.kind === 'all') {
-        const [
-          range,
-          nextAlbums,
-          nextPlaces,
-          nextPets,
-          nextSuggestedPeople,
-          nextPeople,
-        ] = await Promise.all([
-          rangePromise,
+        const facetsPromise = Promise.all([
           source.listAlbums(),
           source.listPlaces
             ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
@@ -644,7 +636,12 @@ export function XDriveMediaGalleryPage({
             ? source.listSuggestedPeople(true, 100)
             : Promise.resolve([]),
           listAllPeople(),
-        ])
+        ]).then(
+          (values) => ({ values, error: null as unknown }),
+          (error: unknown) => ({ values: null, error }),
+        )
+
+        const range = await rangePromise
         if (
           request !== requestID.current ||
           collectionTargetRef.current?.requestID !== request
@@ -655,13 +652,6 @@ export function XDriveMediaGalleryPage({
         setCurrentPet(null)
         setCurrentMemory(null)
         setCurrentCleanupReview(null)
-        setAlbums(nextAlbums)
-        setPlaces(nextPlaces)
-        setPets(nextPets)
-        setSuggestedPeople(
-          nextSuggestedPeople.filter((item) => item.review_state !== 'accepted'),
-        )
-        setPersonIdentities(nextPeople)
         setItems([...range.items])
         setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
         virtualCollection.primePage({
@@ -669,6 +659,32 @@ export function XDriveMediaGalleryPage({
           totalCount: range.total_count,
           offset: range.offset,
           limit: range.limit,
+        })
+
+        void facetsPromise.then((result) => {
+          if (
+            request !== requestID.current ||
+            collectionTargetRef.current?.requestID !== request
+          ) return
+          if (result.error) {
+            reportError(result.error)
+            return
+          }
+          if (!result.values) return
+          const [
+            nextAlbums,
+            nextPlaces,
+            nextPets,
+            nextSuggestedPeople,
+            nextPeople,
+          ] = result.values
+          setAlbums(nextAlbums)
+          setPlaces(nextPlaces)
+          setPets(nextPets)
+          setSuggestedPeople(
+            nextSuggestedPeople.filter((item) => item.review_state !== 'accepted'),
+          )
+          setPersonIdentities(nextPeople)
         })
         return
       }
