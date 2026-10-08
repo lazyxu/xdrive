@@ -2440,3 +2440,36 @@ Regression commands:
 
 Next action: continue the basic sync/delete performance audit. The next larger candidate is reducing full-baseline clone/diff work for small Windows incremental batches, but that should be handled separately because it changes persistence-delta plumbing rather than simple map bookkeeping.
 
+### Windows remote journal file-page path-delta persistence contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary Windows CfAPI **remote change-journal** processing after the baseline is already loaded; this is **not first-open/full reconciliation**;
+- stable structural workload: **10,000 baseline entries** and one journal page containing three independent file mutations: one in-place update, one delete, and one rename/move;
+- evidence method: deterministic path-delta equivalence test plus production source-shape regression; no wall-clock speedup is quoted.
+
+BEFORE:
+
+- every successful journal page finished through `storeBaseline -> persistBaselineDelta -> diffBaseline`;
+- `diffBaseline` iterated the complete previous map and then the complete current map even when only a few file paths changed;
+- the 10,000-entry / three-file workload therefore performs roughly **20,000 baseline map visits in the persistence-diff phase**;
+- the existing `cloneBaseline` at the beginning of the incremental page is separate and remains unchanged by this PR.
+
+AFTER / current:
+
+- pure file journal pages track only exact old/new paths touched by file create/update/move/delete;
+- the same update + delete + move workload compares **4 candidate paths** in the persistence-diff phase;
+- directory upserts/deletes, excluded-path prefix cleanup, unsupported node types, and local unsynchronized file handling that can create a conflict copy all keep the existing full `diffBaseline` fallback;
+- overflow/full reconciliation, state-log framing, CRC, fsync, compaction thresholds, cache enforcement, always-local behavior, journal cursor semantics, and sync conflict handling are unchanged.
+
+Decision: **Accepted.** File nodes have exact-key persistence semantics when the page does not enter a subtree-sensitive or conflict-copy path, so rescanning unrelated baseline entries adds no persistence information.
+
+Regression budget: eligible pure-file journal persistence must remain **O(touched file paths)** for the diff phase; directory/subtree/conflict-sensitive pages must continue using the full-diff fallback. This does **not** claim total incremental reconciliation is O(changes), because baseline cloning remains O(baseline entries).
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsBaselinePathDeltaMatchesFullDeltaForSmallFileBatch$|^TestWindowsRemoteJournalFilePageUsesPathScopedBaselinePersistence$' -count=1`.
+
+Next action: continue basic FileExplorer sync/delete performance auditing. The remaining larger Windows incremental cost is the full baseline clone at page start; handle that separately only if a safe copy-on-write/delta mutation design can preserve reconciliation semantics.

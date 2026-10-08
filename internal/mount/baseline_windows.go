@@ -285,7 +285,23 @@ func (p *winProvider) persistBaselineDelta(previous, current map[string]winState
 	if p.statePath == "" {
 		return nil
 	}
-	delta := diffBaseline(previous, current)
+	return p.persistComputedBaselineDelta(current, diffBaseline(previous, current))
+}
+
+func (p *winProvider) persistBaselinePathDelta(
+	previous, current map[string]winState,
+	paths map[string]struct{},
+) error {
+	if p.statePath == "" {
+		return nil
+	}
+	return p.persistComputedBaselineDelta(current, diffBaselinePaths(previous, current, paths))
+}
+
+func (p *winProvider) persistComputedBaselineDelta(
+	current map[string]winState,
+	delta winBaselineDelta,
+) error {
 	if len(delta.Puts) == 0 && len(delta.Deletes) == 0 {
 		return nil
 	}
@@ -353,6 +369,27 @@ func diffBaseline(previous, current map[string]winState) winBaselineDelta {
 	return delta
 }
 
+func diffBaselinePaths(
+	previous, current map[string]winState,
+	paths map[string]struct{},
+) winBaselineDelta {
+	delta := winBaselineDelta{}
+	for rel := range paths {
+		before, beforeExists := previous[rel]
+		after, afterExists := current[rel]
+		switch {
+		case beforeExists && !afterExists:
+			delta.Deletes = append(delta.Deletes, rel)
+		case afterExists && (!beforeExists || !baselineStateEqual(before, after)):
+			if delta.Puts == nil {
+				delta.Puts = make(map[string]winBaselineEntry)
+			}
+			delta.Puts[rel] = baselineEntry(after)
+		}
+	}
+	sort.Strings(delta.Deletes)
+	return delta
+}
 func baselineEntries(baseline map[string]winState) map[string]winBaselineEntry {
 	out := make(map[string]winBaselineEntry, len(baseline))
 	for rel, state := range baseline {

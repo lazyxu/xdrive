@@ -697,6 +697,8 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	p.mu.Unlock()
 	var baselineByNodeID winBaselineNodeIndex
 	directoryDeletePaths := make([]string, 0)
+	baselineDeltaPaths := make(map[string]struct{}, len(changes)*2)
+	pathScopedBaselineDelta := true
 
 	// A directory move/rename can remap an entire subtree whose descendants do
 	// not receive their own node mutation, so keep that case on full
@@ -709,8 +711,12 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				return false, fmt.Errorf("Windows change journal upsert for node %d has no node payload", change.NodeID)
 			}
 			if change.Node.Type != "dir" {
+				if change.Node.Type != "file" {
+					pathScopedBaselineDelta = false
+				}
 				continue
 			}
+			pathScopedBaselineDelta = false
 			rel := filepath.ToSlash(strings.Trim(change.Path, "/"))
 			if rel == "" || rel == "." {
 				return true, nil
@@ -753,8 +759,16 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				change.NodeID,
 			)
 			baselineByNodeID = nextIndex
-			if exists && oldState.node.Type == "dir" {
-				directoryDeletePaths = append(directoryDeletePaths, oldRel)
+			if exists {
+				switch oldState.node.Type {
+				case "file":
+					baselineDeltaPaths[oldRel] = struct{}{}
+				case "dir":
+					pathScopedBaselineDelta = false
+					directoryDeletePaths = append(directoryDeletePaths, oldRel)
+				default:
+					pathScopedBaselineDelta = false
+				}
 			}
 			continue
 		default:
@@ -770,7 +784,13 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 		}
 	}
 
-	defer p.storeBaseline(baseline)
+	defer func() {
+		if pathScopedBaselineDelta {
+			p.storeBaselineChangedPaths(baseline, baselineDeltaPaths)
+			return
+		}
+		p.storeBaseline(baseline)
+	}()
 	for _, change := range changes {
 		switch change.Operation {
 		case "delete":
@@ -830,8 +850,17 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				rel,
 			)
 			baselineByNodeID = nextIndex
+			if rn.Type == "file" {
+				baselineDeltaPaths[rel] = struct{}{}
+				if oldExists {
+					baselineDeltaPaths[oldRel] = struct{}{}
+				}
+			} else {
+				pathScopedBaselineDelta = false
+			}
 			if p.policy.excludedPath(rel) {
 				if oldExists {
+					pathScopedBaselineDelta = false
 					if err := os.RemoveAll(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
 						return false, err
 					}
@@ -911,6 +940,7 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if exists && localExists && base.node.Type == "file" {
 				if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= winHydrationGrace {
 					if info.Size() != base.localSize || !info.ModTime().Equal(base.localModTime) {
+						pathScopedBaselineDelta = false
 						if err := p.syncLocalFile(ctx, rel, info, baseline, hydrated); err != nil {
 							return false, err
 						}
@@ -1093,11 +1123,32 @@ func (p *winProvider) reconcileRemoteFull(ctx context.Context) error {
 }
 
 func (p *winProvider) storeBaseline(baseline map[string]winState) {
+	p.storeBaselineWithPersistence(baseline, nil)
+}
+
+func (p *winProvider) storeBaselineChangedPaths(
+	baseline map[string]winState,
+	paths map[string]struct{},
+) {
+	p.storeBaselineWithPersistence(baseline, paths)
+}
+
+func (p *winProvider) storeBaselineWithPersistence(
+	baseline map[string]winState,
+	paths map[string]struct{},
+) {
 	p.mu.Lock()
 	previous := p.baseline
 	p.baseline = baseline
 	p.mu.Unlock()
-	if err := p.persistBaselineDelta(previous, baseline); err != nil {
+
+	var err error
+	if paths == nil {
+		err = p.persistBaselineDelta(previous, baseline)
+	} else {
+		err = p.persistBaselinePathDelta(previous, baseline, paths)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "xd: persist Windows sync baseline:", err)
 		emitEvent(Event{Kind: EventSyncFailed, Message: err.Error()})
 	}
