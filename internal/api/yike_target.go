@@ -57,9 +57,16 @@ SELECT EXISTS (
 	return protected, nil
 }
 
-func yikeManagedTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64, ids []uint64) (bool, error) {
-	if db == nil || ownerID == 0 || len(ids) == 0 {
-		return false, nil
+type yikeManagedTargetIDs map[uint64]struct{}
+
+func loadYikeManagedTargetIDsDB(
+	ctx context.Context,
+	db *gorm.DB,
+	ownerID uint64,
+) (yikeManagedTargetIDs, error) {
+	targets := make(yikeManagedTargetIDs)
+	if db == nil || ownerID == 0 {
+		return targets, nil
 	}
 	scoped := db.WithContext(ctx)
 	// Some core-only deployments/tests intentionally create the node schema
@@ -67,15 +74,44 @@ func yikeManagedTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64, 
 	// meaningful when the Sources table exists; ordinary node mutations must
 	// remain independent of that optional schema.
 	if !scoped.Migrator().HasTable(&meta.Source{}) {
+		return targets, nil
+	}
+
+	var ids []uint64
+	if err := scoped.Model(&meta.Source{}).
+		Where("owner_id = ? AND kind = ? AND target_node_id IS NOT NULL", ownerID, yikeSourceKind).
+		Pluck("target_node_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if id != 0 {
+			targets[id] = struct{}{}
+		}
+	}
+	return targets, nil
+}
+
+func yikeManagedTargetInIDs(targets yikeManagedTargetIDs, ids []uint64) bool {
+	if len(targets) == 0 || len(ids) == 0 {
+		return false
+	}
+	for _, id := range ids {
+		if _, protected := targets[id]; protected {
+			return true
+		}
+	}
+	return false
+}
+
+func yikeManagedTargetInIDsDB(ctx context.Context, db *gorm.DB, ownerID uint64, ids []uint64) (bool, error) {
+	if len(ids) == 0 {
 		return false, nil
 	}
-	var count int64
-	if err := scoped.Model(&meta.Source{}).
-		Where("owner_id = ? AND kind = ? AND target_node_id IN ?", ownerID, yikeSourceKind, ids).
-		Count(&count).Error; err != nil {
+	targets, err := loadYikeManagedTargetIDsDB(ctx, db, ownerID)
+	if err != nil {
 		return false, err
 	}
-	return count != 0, nil
+	return yikeManagedTargetInIDs(targets, ids), nil
 }
 
 func yikeAccountID(identity sourceCredentialTestDTO) (int64, error) {

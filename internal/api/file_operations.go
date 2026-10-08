@@ -1458,6 +1458,10 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 		if err != nil {
 			return err
 		}
+		managedTargets, err := loadYikeManagedTargetIDsDB(ctx, tx, uid)
+		if err != nil {
+			return err
+		}
 		for index, ref := range refs {
 			node := roots[index]
 			if err := operationProgress.begin(node.Name); err != nil {
@@ -1470,11 +1474,7 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 			if !ok {
 				return gorm.ErrRecordNotFound
 			}
-			protected, err := yikeManagedTargetInIDsDB(ctx, tx, uid, subtree.IDs)
-			if err != nil {
-				return err
-			}
-			if protected {
+			if yikeManagedTargetInIDs(managedTargets, subtree.IDs) {
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be deleted"}
 			}
 			now := time.Now()
