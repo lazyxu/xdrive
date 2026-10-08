@@ -1605,6 +1605,7 @@ export default function DesktopFileExplorer({
     AgentCloudCrumb,
     XDriveFileExplorerSort
   >({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,

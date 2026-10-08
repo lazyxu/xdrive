@@ -555,6 +555,7 @@ export default function WebFileExplorer({
     dropFolderEntries: dropExternalFolderEntries,
     dropFolderEntriesToCrumb: dropExternalFolderEntriesToCrumb,
   } = useXDriveFileExplorerExternalDropController<Node, Crumb, XDriveFileExplorerSort>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     currentID: current?.id,
     currentCrumbs: crumbs,
     sort,
