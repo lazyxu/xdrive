@@ -67,7 +67,10 @@ test('shared cloud files controller owns sparse range loading, quota and initial
   ]) {
     assert.ok(controller.includes(token), `shared cloud files controller missing: ${token}`)
   }
-  assert.ok(controller.includes('sort: virtualTarget?.sort ?? defaultSort'), 'controller must expose the active range sort without cursor page state')
+  assert.ok(
+    controller.includes('sort: lifecycleCurrent ? virtualTarget?.sort ?? defaultSort : defaultSort'),
+    'controller must expose the active range sort only for the current account lifecycle',
+  )
   assert.equal(controller.includes('pageState'), false, 'directory browsing must not retain cursor page state')
   assert.equal(controller.includes('loadingMore'), false, 'directory browsing must not retain loading-more state')
   assert.equal(controller.includes('loadMoreDirectory'), false, 'directory browsing must not retain a no-op load-more callback')
@@ -94,6 +97,7 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
     'getQuota: () => api.quota()',
     'refreshCurrentDirectoryIfIdle,',
     'enabled: Boolean(profile && !profile.must_change_password)',
+    'lifecycleKey: username',
     'applyQuota',
   ]) {
     assert.ok(webApp.includes(token), `Web cloud controller wiring missing: ${token}`)
@@ -129,6 +133,7 @@ test('Desktop delegates cloud read state and lifecycle to the shared controller'
     'refreshQuota: refreshCloudQuota',
     'loadDirectory: loadCloudDirectory',
     'enabled: agent.connected && configured',
+    "lifecycleKey: `${status?.server ?? ''}\\n${status?.username ?? ''}`",
     'onError: handleCloudFilesError',
   ]) {
     assert.ok(desktopApp.includes(token), `Desktop cloud controller wiring missing: ${token}`)

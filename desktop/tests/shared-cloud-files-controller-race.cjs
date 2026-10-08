@@ -719,3 +719,169 @@ test('debounced change refresh stays bound to the directory that scheduled it', 
     globalThis.clearTimeout = originalClearTimeout
   }
 })
+
+
+test('Cloud Files account lifecycle change reloads identical root and node ids for the new account', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+
+  let account = 'A'
+  let lifecycleKey = 'server-a:user-a'
+  let aRootLoads = 0
+  let bRootLoads = 0
+
+  const port = {
+    getRoot: async () => {
+      if (account === 'A') aRootLoads += 1
+      else bRootLoads += 1
+      return { id: 1 }
+    },
+    getPage: async () => ({ items: [], has_more: false }),
+    getRange: async (parentID, offset, limit) => ({
+      items: [{ id: 10, name: account === 'A' ? 'A.txt' : 'B.txt' }],
+      total_count: 1,
+      total_count_included: true,
+      offset,
+      limit,
+      parent_id: parentID,
+      groups: [],
+    }),
+    getQuota: async () => ({
+      quota_bytes: 100,
+      used_bytes: account === 'A' ? 10 : 20,
+      available_bytes: account === 'A' ? 90 : 80,
+      reserved_bytes: 0,
+    }),
+  }
+
+  const render = () => runtime.render(() => useController({
+    port,
+    enabled: true,
+    lifecycleKey,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    changePollIntervalMs: 0,
+    preserveStateOnDisable: true,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let controller = render()
+
+  assert.equal(aRootLoads, 1)
+  assert.equal(controller.items[0]?.name, 'A.txt')
+  assert.deepEqual(controller.crumbs.map((crumb) => crumb.id), [1])
+
+  account = 'B'
+  lifecycleKey = 'server-b:user-b'
+  render()
+  await flushAsync()
+  controller = render()
+
+  assert.equal(
+    bRootLoads,
+    1,
+    'account B must issue a fresh Cloud Files root load even when enabled and port identity remain unchanged',
+  )
+  assert.equal(
+    controller.items[0]?.name,
+    'B.txt',
+    'account B must never retain account-A projected items when node ids are reused',
+  )
+  assert.deepEqual(controller.crumbs.map((crumb) => crumb.id), [1])
+  assert.equal(controller.quota?.used_bytes, 20)
+})
+
+
+test('late Cloud Files account-A initial range cannot overwrite account B after lifecycle switch', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+
+  let account = 'A'
+  let lifecycleKey = 'server-a:user-a'
+  let releaseA
+  let aRangeCalls = 0
+  let bRangeCalls = 0
+
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getPage: async () => ({ items: [], has_more: false }),
+    getRange: async (parentID, offset, limit) => {
+      if (account === 'A') {
+        aRangeCalls += 1
+        return new Promise((resolve) => {
+          releaseA = () => resolve({
+            items: [{ id: 10, name: 'A.txt' }],
+            total_count: 1,
+            total_count_included: true,
+            offset,
+            limit,
+            parent_id: parentID,
+            groups: [],
+          })
+        })
+      }
+      bRangeCalls += 1
+      return {
+        items: [{ id: 10, name: 'B.txt' }],
+        total_count: 1,
+        total_count_included: true,
+        offset,
+        limit,
+        parent_id: parentID,
+        groups: [],
+      }
+    },
+    getQuota: async () => ({
+      quota_bytes: 100,
+      used_bytes: account === 'A' ? 10 : 20,
+      available_bytes: account === 'A' ? 90 : 80,
+      reserved_bytes: 0,
+    }),
+  }
+
+  const render = () => runtime.render(() => useController({
+    port,
+    enabled: true,
+    lifecycleKey,
+    defaultSort: sort,
+    quotaRefreshIntervalMs: 0,
+    changePollIntervalMs: 0,
+    preserveStateOnDisable: true,
+    onError: (error) => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  assert.equal(aRangeCalls, 1)
+  assert.equal(typeof releaseA, 'function')
+
+  account = 'B'
+  lifecycleKey = 'server-b:user-b'
+  let controller = render()
+
+  assert.deepEqual(
+    controller.items,
+    [],
+    'the first account-B render must hide stale account-A items before lifecycle effects finish',
+  )
+
+  await flushAsync()
+  controller = render()
+  assert.equal(bRangeCalls, 1)
+  assert.equal(controller.items[0]?.name, 'B.txt')
+
+  releaseA()
+  await flushAsync()
+  controller = render()
+
+  assert.equal(
+    controller.items[0]?.name,
+    'B.txt',
+    'a late account-A range completion must be rejected after the lifecycle generation changes',
+  )
+  assert.equal(controller.quota?.used_bytes, 20)
+})

@@ -399,6 +399,7 @@ export default function App({
   } = useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: agent.connected && configured,
+    lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
     preserveStateOnDisable: true,
     onError: handleCloudFilesError,

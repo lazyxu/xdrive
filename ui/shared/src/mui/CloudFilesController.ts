@@ -49,6 +49,7 @@ export type XDriveCloudFilesControllerOptions<
 > = {
   port: XDriveCloudFilesPort<TNode, TQuota, TSort>
   enabled: boolean
+  lifecycleKey?: string
   defaultSort: TSort
   rootLabel?: string
   quotaRefreshIntervalMs?: number
@@ -81,6 +82,7 @@ export function useXDriveCloudFilesController<
 >({
   port,
   enabled,
+  lifecycleKey = '',
   defaultSort,
   rootLabel = '我的文件',
   quotaRefreshIntervalMs = 60_000,
@@ -105,6 +107,7 @@ export function useXDriveCloudFilesController<
   const changeRefreshParentIDRef = useRef<number | null>(null)
   const changeRefreshTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null)
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const crumbsRef = useRef(crumbs)
   const virtualTargetRef = useRef(virtualTarget)
   const onErrorRef = useRef(onError)
@@ -116,8 +119,11 @@ export function useXDriveCloudFilesController<
     onErrorRef.current(error)
   }, [])
 
-  const current = crumbs.at(-1)
-  const virtualQueryKey = xDriveCloudFilesVirtualQueryKey(virtualTarget)
+  const lifecycleCurrent = lifecycleKeyRef.current === lifecycleKey
+  const current = lifecycleCurrent ? crumbs.at(-1) : undefined
+  const virtualQueryKey = lifecycleCurrent
+    ? xDriveCloudFilesVirtualQueryKey(virtualTarget)
+    : `cloud-files:virtual:lifecycle:${lifecycleKey}`
 
   const loadVirtualRange = useCallback(async (
     range: { offset: number; limit: number },
@@ -198,7 +204,7 @@ export function useXDriveCloudFilesController<
   }, [virtualCollection.primePage, virtualCollection.reset])
 
   const virtualDirectory = useMemo<XDriveCloudFilesVirtualDirectory<TNode> | null>(() => {
-    if (!virtualTarget) return null
+    if (!lifecycleCurrent || !virtualTarget) return null
     return {
       itemCount: virtualCollection.totalCount ?? items.length,
       loadedItems: virtualCollection.loadedItems,
@@ -209,6 +215,7 @@ export function useXDriveCloudFilesController<
     }
   }, [
     items.length,
+    lifecycleCurrent,
     virtualCollection.collectRange,
     virtualCollection.ensureViewport,
     virtualCollection.itemAt,
@@ -495,7 +502,7 @@ export function useXDriveCloudFilesController<
   }, [activateVirtualDirectory, defaultSort, port, reportError, rootLabel])
 
   useEffect(() => {
-    if (!enabled) {
+    const invalidateAsyncWork = () => {
       directoryRequestRef.current += 1
       directoryInFlightRequestRef.current = null
       directoryInFlightParentIDRef.current = null
@@ -509,6 +516,26 @@ export function useXDriveCloudFilesController<
         globalThis.clearTimeout(changeRefreshTimerRef.current)
         changeRefreshTimerRef.current = null
       }
+    }
+
+    const lifecycleChanged = lifecycleKeyRef.current !== lifecycleKey
+    if (lifecycleChanged) {
+      lifecycleKeyRef.current = lifecycleKey
+      invalidateAsyncWork()
+      crumbsRef.current = []
+      virtualTargetRef.current = null
+      virtualCollection.reset(`cloud-files:virtual:lifecycle:${lifecycleKey}`)
+      setVirtualTarget(null)
+      setQuota(null)
+      setItems([])
+      setCrumbs([])
+      setLoading(enabled)
+      if (enabled) void loadInitial()
+      return
+    }
+
+    if (!enabled) {
+      invalidateAsyncWork()
       if (preserveStateOnDisable) {
         // Desktop keeps the current directory and grouping across a temporary
         // Agent transport outage. Abort stale range work without discarding
@@ -517,6 +544,8 @@ export function useXDriveCloudFilesController<
         setLoading(false)
         return
       }
+      crumbsRef.current = []
+      virtualTargetRef.current = null
       virtualCollection.reset('cloud-files:virtual:disabled')
       setVirtualTarget(null)
       setQuota(null)
@@ -543,6 +572,7 @@ export function useXDriveCloudFilesController<
   }, [
     defaultSort,
     enabled,
+    lifecycleKey,
     loadDirectory,
     loadInitial,
     preserveStateOnDisable,
@@ -601,13 +631,15 @@ export function useXDriveCloudFilesController<
   }, [enabled, quotaRefreshIntervalMs, refreshQuota])
 
   return {
-    quota,
-    items,
-    crumbs,
+    quota: lifecycleCurrent ? quota : null,
+    items: lifecycleCurrent ? items : [],
+    crumbs: lifecycleCurrent ? crumbs : [],
     current,
-    sort: virtualTarget?.sort ?? defaultSort,
-    grouping: virtualTarget?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
-    loading,
+    sort: lifecycleCurrent ? virtualTarget?.sort ?? defaultSort : defaultSort,
+    grouping: lifecycleCurrent
+      ? virtualTarget?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
+      : XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+    loading: lifecycleCurrent ? loading : true,
     virtualDirectory,
     applyQuota,
     refreshQuota,
