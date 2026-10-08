@@ -59,6 +59,7 @@ const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurf
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
 const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
+const sharedWorkspaceNavigation = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
@@ -1101,8 +1102,10 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.ok(sharedGallery.includes('title="图库"'), 'shared Gallery page must own its workspace title')
   assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must expose Gallery through the shared workspace sidebar')
   assert.ok(desktopApp.includes('selected={view}'), 'Desktop must use its unified workspace key directly')
-  assert.ok(sharedSidebar.includes("selected={selected === 'gallery'}"), 'shared core navigation must own Gallery selection')
-  assert.ok(sharedSidebar.includes('primary="图库"'), 'shared core navigation must own the Gallery label')
+  assert.match(sharedWorkspaceNavigation, /key: 'gallery',\s*label: '图库'/, 'shared core navigation model must expose Gallery with its label')
+  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebar.includes('selected={selected === destination.key}'), 'shared core navigation must select Gallery by its destination key')
+  assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render the Gallery label from its destination')
 })
 
 test('Web exposes Home, files, Gallery, Sync Folders, Local Storage, and Cloud Storage as first-class workspace views', () => {
@@ -1115,8 +1118,10 @@ test('Web exposes Home, files, Gallery, Sync Folders, Local Storage, and Cloud S
   }
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must expose first-class workspaces through the shared workspace sidebar')
   assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
-  for (const label of ['primary="文件"', 'primary="图库"', 'primary="同步文件夹"', 'primary="本地存储"', 'primary="云端存储"']) {
-    assert.ok(sharedSidebar.includes(label), `shared core navigation missing: ${label}`)
+  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render each label from its core destination')
+  for (const label of ['文件', '图库', '同步文件夹', '本地存储', '云端存储']) {
+    assert.ok(sharedWorkspaceNavigation.includes(`label: '${label}'`), `shared core navigation model missing label: ${label}`)
   }
   assert.match(webApp, /<XDriveSourceManager[\s\S]*defaultTargetNodeID=/)
   assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')), false, 'Web must not keep a pass-through Source manager wrapper')

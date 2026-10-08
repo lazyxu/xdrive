@@ -69,6 +69,7 @@ const sharedStatusBadge = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 
 const sharedSourceSummaryCard = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceSummaryCard.tsx'), 'utf8')
 const sharedStatusAlert = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'StatusAlert.tsx'), 'utf8')
 const sharedSidebarNav = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
+const sharedWorkspaceNavigation = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx'), 'utf8')
 const sharedWorkspaceSidebar = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const sharedWorkspaceShell = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedAccountChrome = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
@@ -248,8 +249,10 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     'StorageRoundedIcon',
     'CloudRoundedIcon',
   ]) {
-    assert.ok(sharedSidebarNav.includes(icon), `missing shared core sidebar icon: ${icon}`)
+    assert.ok(sharedWorkspaceNavigation.includes(icon), `missing shared core navigation icon: ${icon}`)
   }
+  assert.ok(sharedSidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebarNav.includes('icon={destination.icon}'), 'shared sidebar must render the icon supplied by each core destination')
   assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
   assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')

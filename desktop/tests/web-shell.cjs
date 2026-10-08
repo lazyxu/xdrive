@@ -6,6 +6,7 @@ const path = require('node:path')
 const repoRoot = path.join(__dirname, '..', '..')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const webStyles = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'styles.css'), 'utf8')
+const webFileExplorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
 const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedWorkspaceSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
@@ -26,13 +27,16 @@ const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
 test('Web AppBar keeps global chrome compact while admin tools live in the shared sidebar', () => {
-  const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"')
+  const backgroundStart = webApp.indexOf('data-xdrive-workspace-background')
+  assert.notEqual(backgroundStart, -1, 'missing authenticated workspace background')
+  const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', backgroundStart)
   const appEnd = webApp.indexOf('</AppBar>', appStart)
   assert.notEqual(appStart, -1, 'missing Web AppBar')
   assert.notEqual(appEnd, -1, 'missing Web AppBar end')
   const appBar = webApp.slice(appStart, appEnd)
 
   assert.ok(appBar.includes('WebAccountMenu'), 'Web AppBar must retain the account menu')
+  assert.ok(appBar.includes('disabled={viewerActive}'), 'Viewer must close account portals as well as making the AppBar inert')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')
@@ -54,7 +58,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
 })
 test('Web first-class workspaces use page chrome except the full-bleed Files workspace', () => {
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
-  assert.ok(webApp.includes("height: { xs: 560, md: '100%' }"), 'Files should render as the application workspace itself')
+  assert.equal(webApp.includes("height: { xs: 560, md: '100%' }"), false, 'Files must use the available workspace height on narrow screens')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库">'), 'shared Gallery page must own workspace page chrome')
   assert.ok(webApp.includes('<XDriveSourceManager'), 'Sync Folders should mount the shared manager directly')
@@ -210,9 +214,8 @@ test('Shared sidebar uses compact system navigation chrome', () => {
   assert.ok(sharedSidebar.includes("fontSize: 11"), 'sidebar section labels should stay visually quiet')
   assert.equal(sharedSidebar.includes('borderTop:'), false, 'sidebar sections should not use long horizontal dividers')
   assert.equal(sharedSidebar.includes('borderLeft:'), false, 'responsive sidebar sections should separate by spacing rather than rules')
-  assert.ok(sharedSidebar.includes("height: responsive ? { xs: 'auto', md: '100%' } : '100%'"), 'responsive sidebar should not force full-height mobile chrome')
-  assert.ok(sharedSidebar.includes("flexDirection: responsive ? { xs: 'row', md: 'column' } : 'column'"), 'responsive sidebar should collapse into one horizontal mobile rail')
-  assert.ok(sharedSidebar.includes("display: responsive ? { xs: 'contents', md: 'block' } : 'block'"), 'responsive extension sections should join the same mobile rail')
+  assert.ok(sharedWorkspaceSidebar.includes('<XDriveWorkspaceCompactNavigation'), 'responsive narrow navigation belongs in the shared sidebar')
+  assert.ok(sharedWorkspaceSidebar.includes("theme.breakpoints.down('md')"), 'compact navigation must use the same breakpoint as the shell')
   assert.ok(sharedSidebar.includes('export function XDriveSidebarBadge'), 'badge rendering must stay centralized')
 })
 
@@ -222,7 +225,7 @@ test('Web and Desktop pass account quota into the shared sidebar footer', () => 
   assert.ok(sharedStorageSummary.includes('diskPercentage'), 'unlimited storage footer should derive disk usage percentage')
   assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota or disk progress')
   assert.ok(sharedWorkspaceSidebar.includes('storageSummary ? ('), 'shared WorkspaceSidebar must own footer placement')
-  assert.ok(sharedWorkspaceSidebar.includes("display: responsive ? { xs: 'none', md: 'block' } : 'block'"), 'shared sidebar must own responsive footer visibility')
+  assert.ok(sharedWorkspaceSidebar.includes('storageSummary={storageSummary}'), 'compact navigation must receive the same account storage summary')
 
   for (const token of [
     'export function xDriveWorkspaceStorageSummary',
@@ -246,14 +249,19 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
     "const files = presentation === 'files'",
     "p: '34px 40px 48px'",
     "'@media (max-width: 960px)'",
-    "'@media (min-width: 900px)'",
+    "height: '100%'",
+    "overflowY: 'auto'",
     "overflow: 'hidden'",
   ]) {
     assert.ok(sharedWorkspaceContent.includes(token), `shared workspace content missing: ${token}`)
   }
-  assert.ok(webApp.includes("height: { md: '100vh' }"), 'wide Web shell should own the viewport without page scrolling')
-  assert.ok(webApp.includes("overflow: { md: 'hidden' }"), 'wide Web shell should clip page scrolling')
-  assert.ok(webApp.includes("height: { xs: 560, md: '100%' }"), 'Web Files surface should fill the shared content area')
+  assert.ok(webApp.includes("height: '100vh'"), 'Web shell must retain a legacy viewport fallback')
+  assert.ok(webApp.includes("'@supports (height: 100dvh)'"), 'Web shell must use the dynamic viewport when supported')
+  assert.ok(webApp.includes("height: '100dvh'"), 'Web shell must fit the mobile viewport')
+  assert.ok(sharedWorkspaceShell.includes("display: responsive ? { xs: 'flex', md: 'grid' } : 'grid'"), 'responsive shell must allocate the content and bottom navigation within the viewport')
+  assert.equal(sharedWorkspaceShell.includes("xs: 'visible'"), false, 'the narrow shell must not introduce document scrolling')
+  assert.equal(webApp.includes("height: { xs: 560, md: '100%' }"), false, 'Web Files must not retain a fixed mobile height')
+  assert.equal(webFileExplorer.includes('minHeight: 420'), false, 'Web FileExplorer must be able to shrink in short mobile viewports')
   for (const legacy of ['.app-shell', '.topbar', '.file-manager-shell', '.files-workspace-surface']) {
     assert.equal(webStyles.includes(legacy), false, `Web shell layout must not stay in CSS: ${legacy}`)
   }
@@ -262,4 +270,12 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
   assert.ok(webApp.includes('presentation={xDriveWorkspacePresentation(appView)}'), 'Web workspace must use shared route presentation')
   assert.ok(desktopApp.includes('presentation={xDriveWorkspacePresentation(view)}'), 'Desktop workspace must use shared route presentation')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
+})
+
+test('Viewer disables the retained Web workspace and compact navigation without remounting it', () => {
+  assert.ok(webApp.includes('data-xdrive-workspace-background'), 'the retained workspace needs a background interaction boundary')
+  assert.ok(webApp.includes("inert: viewerActive ? '' : undefined"), 'Viewer background must be inert, including keyboard navigation')
+  assert.ok(webApp.includes('aria-hidden={viewerActive || undefined}'), 'Viewer background must leave the accessibility tree while covered')
+  assert.ok(webApp.includes('disabled={viewerActive}'), 'the portalled More drawer must be closed/disabled while Viewer is active')
+  assert.equal(/<XDriveWorkspace(?:Shell|Content)[^>]*\bkey=/s.test(webApp), false, 'route and breakpoint changes must not remount the workspace')
 })

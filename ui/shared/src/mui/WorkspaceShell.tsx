@@ -22,12 +22,13 @@ export function XDriveWorkspaceShell({
           width: '100%',
           minWidth: 0,
           minHeight: 0,
-          height: responsive ? { xs: 'auto', md: '100%' } : '100%',
-          display: responsive ? { xs: 'block', md: 'grid' } : 'grid',
+          height: '100%',
+          display: responsive ? { xs: 'flex', md: 'grid' } : 'grid',
+          flexDirection: 'column',
           gridTemplateColumns: responsive
             ? { md: `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)` }
             : `${XDRIVE_SIDEBAR_WIDTH}px minmax(0, 1fr)`,
-          overflow: responsive ? { xs: 'visible', md: 'hidden' } : 'hidden',
+          overflow: 'hidden',
           bgcolor: 'background.default',
           ...(responsive
             ? {}

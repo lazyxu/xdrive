@@ -1,6 +1,7 @@
-import type { MouseEvent, ReactNode } from 'react'
+import type { MouseEvent } from 'react'
 import type { QuotaUsage } from '../models'
-import { Box } from '@mui/material'
+import { Box, useMediaQuery } from '@mui/material'
+import type { Theme } from '@mui/material/styles'
 import {
   XDriveCoreWorkspaceNavItems,
   XDriveSidebarNavItem,
@@ -10,24 +11,11 @@ import {
 } from './SidebarNav'
 import type { XDriveSidebarAppearance, XDriveSidebarBadgeValue } from './SidebarNav'
 import { XDriveSidebarStorageSummary } from './SidebarStorageSummary'
+import { XDriveWorkspaceCompactNavigation } from './WorkspaceCompactNavigation'
+import { xDriveCompactWorkspaceNavigation } from './WorkspaceNavigation'
+import type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel, XDriveSidebarSectionPlacement } from './WorkspaceNavigation'
 
-export type XDriveSidebarDestinationModel = {
-  key: string
-  label: ReactNode
-  icon: ReactNode
-  badge?: XDriveSidebarBadgeValue
-  secondary?: ReactNode
-}
-
-export type XDriveSidebarSectionPlacement = 'before-core' | 'after-core' | 'bottom'
-
-export type XDriveSidebarSectionModel = {
-  key: string
-  label?: ReactNode
-  ariaLabel?: string
-  placement?: XDriveSidebarSectionPlacement
-  items: XDriveSidebarDestinationModel[]
-}
+export type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel, XDriveSidebarSectionPlacement } from './WorkspaceNavigation'
 
 export type XDriveWorkspaceSidebarStorageSummary = {
   usedBytes: number
@@ -68,7 +56,7 @@ function SidebarDestinationItem({
   destination: XDriveSidebarDestinationModel
   selected?: string
   appearance: XDriveSidebarAppearance
-  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
+  onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
   return (
     <XDriveSidebarNavItem
@@ -98,7 +86,7 @@ function SidebarSectionBlock({
   responsive: boolean
   pinnedBottom?: boolean
   fallbackAriaLabel: string
-  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
+  onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
   return (
     <XDriveSidebarSection
@@ -130,6 +118,7 @@ export function XDriveWorkspaceSidebar({
   storageSummary,
   appearance = 'light',
   responsive = false,
+  disabled = false,
   className,
   ariaLabel,
   navAriaLabel,
@@ -142,11 +131,30 @@ export function XDriveWorkspaceSidebar({
   storageSummary?: XDriveWorkspaceSidebarStorageSummary | null
   appearance?: XDriveSidebarAppearance
   responsive?: boolean
+  disabled?: boolean
   className?: string
   ariaLabel: string
   navAriaLabel: string
-  onSelect: (key: string, event: MouseEvent<HTMLDivElement>) => void
+  onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
+  const narrow = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'))
+  if (responsive && narrow) {
+    const navigation = xDriveCompactWorkspaceNavigation({ sections, transferBadge, showLocalStorage })
+    return (
+      <XDriveWorkspaceCompactNavigation
+        {...navigation}
+        selected={selected}
+        storageSummary={storageSummary}
+        appearance={appearance}
+        className={className}
+        ariaLabel={ariaLabel}
+        navAriaLabel={navAriaLabel}
+        disabled={disabled}
+        onSelect={onSelect}
+      />
+    )
+  }
+
   const beforeCoreSections = sections.filter((section) => sectionPlacement(section) === 'before-core')
   const afterCoreSections = sections.filter((section) => sectionPlacement(section) === 'after-core')
   const bottomSections = sections.filter((section) => sectionPlacement(section) === 'bottom')
