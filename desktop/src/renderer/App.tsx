@@ -207,6 +207,12 @@ export default function App({
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
   const transfersRevisionRef = useRef(0)
+  const acceptTransferSnapshot = useCallback((value: AgentTransfers) => {
+    if (value.revision < transfersRevisionRef.current) return false
+    transfersRevisionRef.current = value.revision
+    setTransfers(value)
+    return true
+  }, [])
   const [diagnostics, setDiagnostics] = useState<AgentDiagnosticReport | null>(null)
   const [cloudTrashOpen, setCloudTrashOpen] = useState(false)
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
@@ -495,7 +501,9 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    onTransferHistoryCleared: setTransfers,
+    onTransferHistoryCleared: (value) => {
+      acceptTransferSnapshot(value)
+    },
     rememberOperation: rememberCloudFileOperation,
     refreshOperations: refreshCloudFileOperations,
     onError: (operationError) => setError(
@@ -686,13 +694,7 @@ export default function App({
       if (active) setAgent(value)
     })
     void window.xdriveDesktop.agent.getTransfers().then((value) => {
-      if (
-        active &&
-        value.revision >= transfersRevisionRef.current
-      ) {
-        transfersRevisionRef.current = value.revision
-        setTransfers(value)
-      }
+      if (active) acceptTransferSnapshot(value)
     })
     const unsubscribe = window.xdriveDesktop.agent.onState((value) => {
       if (active) setAgent(value)
@@ -1126,7 +1128,7 @@ export default function App({
 
   const retryTransfer = async (id: string) => {
     const data = await run(`retry-transfer-${id}`, () => window.xdriveDesktop.agent.retryTransfer(id), '传输重试已完成。')
-    if (data) setTransfers(data)
+    if (data) acceptTransferSnapshot(data)
   }
 
   const openCloudTrash = () => setCloudTrashOpen(true)

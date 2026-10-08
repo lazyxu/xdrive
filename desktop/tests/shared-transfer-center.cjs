@@ -138,6 +138,6 @@ test('unified Task Center history clearing preserves active work on Web and Desk
   assert.ok(desktopPreload.includes("cloudClearFileOperationHistory: () => ipcRenderer.invoke('agent:cloud-file-operations-clear')"), 'Desktop preload file-operation-history bridge is missing')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudClearFileOperationHistory()'), 'Desktop must keep server history clearing in its Agent adapter')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep transfer-history clearing in its Agent adapter')
-  assert.ok(desktop.includes('onTransferHistoryCleared: setTransfers'), 'Desktop must apply the cleared transfer-history result locally')
+  assert.ok(desktop.includes('onTransferHistoryCleared: (value) => {') && desktop.includes('acceptTransferSnapshot(value)'), 'Desktop must apply the cleared transfer-history result through the revision-safe snapshot acceptor')
   assert.ok(desktop.includes('operationActions: fileOperationActions'), 'Desktop must delegate Task Center action presentation to the shared controller')
 })
