@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import subprocess
+import tempfile
 import threading
 from typing import Any
 
@@ -25,9 +27,17 @@ CREATIVE_MAX_PROMPT_POINTS = 6
 CREATIVE_MAX_STROKES = 64
 CREATIVE_MAX_STROKE_POINTS = 256
 CREATIVE_OUTPUT_MIME = "image/png"
+CREATIVE_MOVIE_MIME = "video/mp4"
+CREATIVE_MOVIE_WIDTH = 1920
+CREATIVE_MOVIE_HEIGHT = 1080
+CREATIVE_MOVIE_FPS = 30
+CREATIVE_MOVIE_MIN_FRAMES = 2
+CREATIVE_MOVIE_MAX_FRAMES = 30
+CREATIVE_MOVIE_MAX_BYTES = 128 * 1024 * 1024
+CREATIVE_MOVIE_TIMEOUT_SECONDS = 14 * 60
 CREATIVE_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-efficientsam-ti-2025april-int8"
-    "-1024-prompt-mask-cutout-telea-erase-v1"
+    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v2"
 )
 
 
@@ -68,12 +78,28 @@ class CreativeRuntime:
         ]
         self.output_names = ["output_masks", "iou_predictions"]
         self.lock = threading.Lock()
+        try:
+            probe = subprocess.run(
+                ["ffmpeg", "-version"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError("ffmpeg runtime is unavailable") from exc
+        first_line = probe.stdout.splitlines()[0].strip() if probe.stdout else ""
+        if not first_line.startswith("ffmpeg version "):
+            raise RuntimeError("ffmpeg runtime version is invalid")
+        self.ffmpeg_version = first_line.split()[2]
 
     def info(self) -> dict[str, Any]:
         return {
             "protocol_version": CREATIVE_PROTOCOL_VERSION,
             "name": CREATIVE_ANALYZER_NAME,
-            "pipeline_version": CREATIVE_PIPELINE_VERSION,
+            "pipeline_version": (
+                CREATIVE_PIPELINE_VERSION + "-ffmpeg-" + self.ffmpeg_version
+            ),
             "segment_model": {
                 "name": "EfficientSAM-Ti",
                 "version": CREATIVE_MODEL_VERSION,
@@ -81,9 +107,9 @@ class CreativeRuntime:
                 "license": CREATIVE_MODEL_LICENSE,
                 "license_url": CREATIVE_MODEL_LICENSE_URL,
             },
-            "capabilities": ["cutout", "erase"],
+            "capabilities": ["cutout", "erase", "movie"],
             "runtime": {
-                "framework": "opencv_dnn",
+                "framework": "opencv_dnn+ffmpeg",
                 "version": cv.__version__,
                 "device": "cpu",
             },
@@ -335,6 +361,151 @@ class CreativeRuntime:
         result = cv.inpaint(image, mask, radius, cv.INPAINT_TELEA)
         return self._encode_png(result)
 
+    @staticmethod
+    def _validate_movie_task(
+        task: dict[str, Any],
+        image_count: int,
+    ) -> tuple[float, float]:
+        if image_count < CREATIVE_MOVIE_MIN_FRAMES or image_count > CREATIVE_MOVIE_MAX_FRAMES:
+            raise ValueError(
+                "movie requires between "
+                f"{CREATIVE_MOVIE_MIN_FRAMES} and {CREATIVE_MOVIE_MAX_FRAMES} frames"
+            )
+        if task.get("points") not in (None, []) or task.get("strokes") not in (None, []):
+            raise ValueError("movie does not accept cutout or erase prompts")
+        if task.get("cutout_mode") not in (None, ""):
+            raise ValueError("movie does not accept cutout mode")
+        duration_ms = task.get("frame_duration_ms")
+        transition_ms = task.get("transition_ms")
+        if (
+            isinstance(duration_ms, bool)
+            or not isinstance(duration_ms, int)
+            or duration_ms < 1000
+            or duration_ms > 5000
+        ):
+            raise ValueError("creative movie frame duration is invalid")
+        if (
+            isinstance(transition_ms, bool)
+            or not isinstance(transition_ms, int)
+            or transition_ms < 0
+            or transition_ms > 1000
+            or transition_ms >= duration_ms
+        ):
+            raise ValueError("creative movie transition is invalid")
+        return duration_ms / 1000.0, transition_ms / 1000.0
+
+    @staticmethod
+    def _write_movie_frame(path: Path, image: np.ndarray) -> None:
+        if image.ndim != 3 or image.shape[2] != 3:
+            raise RuntimeError("creative movie frame dimensions are invalid")
+        ok = cv.imwrite(
+            str(path),
+            image,
+            [cv.IMWRITE_PNG_COMPRESSION, 2],
+        )
+        if not ok:
+            raise RuntimeError("creative movie frame encoding failed")
+
+    def movie(
+        self,
+        images: list[np.ndarray],
+        task: dict[str, Any],
+    ) -> tuple[bytes, int, int]:
+        duration, transition = self._validate_movie_task(task, len(images))
+        with tempfile.TemporaryDirectory(prefix="xdrive-movie-") as tmp:
+            root = Path(tmp)
+            frame_paths: list[Path] = []
+            for index, image in enumerate(images):
+                frame_path = root / f"frame-{index:03d}.png"
+                self._write_movie_frame(frame_path, image)
+                frame_paths.append(frame_path)
+
+            command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+            for frame_path in frame_paths:
+                command.extend([
+                    "-loop", "1",
+                    "-t", f"{duration:.3f}",
+                    "-i", str(frame_path),
+                ])
+
+            filters: list[str] = []
+            for index in range(len(frame_paths)):
+                filters.append(
+                    f"[{index}:v]"
+                    f"scale={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
+                    "force_original_aspect_ratio=decrease,"
+                    f"pad={CREATIVE_MOVIE_WIDTH}:{CREATIVE_MOVIE_HEIGHT}:"
+                    "(ow-iw)/2:(oh-ih)/2:black,"
+                    f"fps={CREATIVE_MOVIE_FPS},format=yuv420p,setpts=PTS-STARTPTS"
+                    f"[f{index}]"
+                )
+
+            if transition > 0:
+                current = "f0"
+                offset = duration - transition
+                for index in range(1, len(frame_paths)):
+                    output = f"x{index}"
+                    filters.append(
+                        f"[{current}][f{index}]"
+                        f"xfade=transition=fade:duration={transition:.3f}:"
+                        f"offset={offset:.3f}[{output}]"
+                    )
+                    current = output
+                    offset += duration - transition
+                output_label = current
+            else:
+                inputs = "".join(f"[f{index}]" for index in range(len(frame_paths)))
+                filters.append(
+                    f"{inputs}concat=n={len(frame_paths)}:v=1:a=0[outv]"
+                )
+                output_label = "outv"
+
+            output_path = root / "movie.mp4"
+            command.extend([
+                "-filter_complex", ";".join(filters),
+                "-map", f"[{output_label}]",
+                "-an",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                str(output_path),
+            ])
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    timeout=CREATIVE_MOVIE_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("creative movie encoding timed out") from exc
+            if completed.returncode != 0:
+                stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+                if len(stderr) > 1000:
+                    stderr = stderr[-1000:]
+                raise RuntimeError(
+                    "creative movie encoding failed"
+                    + (f": {stderr}" if stderr else "")
+                )
+            data = output_path.read_bytes()
+            if len(data) == 0 or len(data) > CREATIVE_MOVIE_MAX_BYTES:
+                raise RuntimeError("creative movie result size is invalid")
+            if b"ftyp" not in data[:64]:
+                raise RuntimeError("creative movie output is not MP4")
+            return data, CREATIVE_MOVIE_WIDTH, CREATIVE_MOVIE_HEIGHT
+
+    def generate_movie(
+        self,
+        images: list[np.ndarray],
+        task: dict[str, Any],
+    ) -> tuple[bytes, str, int, int]:
+        if task.get("kind") != "movie":
+            raise ValueError("creative movie task kind is invalid")
+        data, width, height = self.movie(images, task)
+        return data, CREATIVE_MOVIE_MIME, width, height
+
     def generate(
         self,
         image: np.ndarray,
@@ -351,6 +522,8 @@ class CreativeRuntime:
             if task.get("points") not in (None, []) or task.get("cutout_mode") not in (None, ""):
                 raise ValueError("erase does not accept cutout prompts")
             data, width, height = self.erase(image, task.get("strokes"))
+        elif kind == "movie":
+            raise ValueError("movie must use the multi-frame generator")
         else:
-            raise ValueError("creative kind must be erase or cutout")
+            raise ValueError("creative kind must be erase, cutout, or movie")
         return data, CREATIVE_OUTPUT_MIME, width, height

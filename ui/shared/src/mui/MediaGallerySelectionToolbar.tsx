@@ -4,6 +4,7 @@ import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined'
+import MovieCreationOutlinedIcon from '@mui/icons-material/MovieCreationOutlined'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
@@ -49,6 +50,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onAddToAlbum,
   onAddTags,
   onDownload,
+  onCreateMovie,
   onDelete,
   onRestore,
   onPermanentDelete,
@@ -64,6 +66,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onAddToAlbum?: (album: MediaAlbum) => Promise<void>
   onAddTags?: (tags: string[]) => Promise<void>
   onDownload?: () => Promise<void>
+  onCreateMovie?: () => void
   onDelete?: () => Promise<void>
   onRestore?: () => Promise<void>
   onPermanentDelete?: () => Promise<void>
@@ -177,6 +180,16 @@ export function XDriveMediaGallerySelectionToolbar({
               onClick={() => { void onDownload().catch(() => undefined) }}
             >
               下载
+            </Button>
+          ) : null}
+          {onCreateMovie && !trashMode ? (
+            <Button
+              size="small"
+              disabled={disabled}
+              startIcon={<MovieCreationOutlinedIcon />}
+              onClick={onCreateMovie}
+            >
+              自动电影
             </Button>
           ) : null}
           {onDelete && !trashMode ? (

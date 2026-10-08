@@ -1195,15 +1195,37 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     }
                     if not common.issubset(task):
                         raise RequestError(400, "creative request is missing preview fields")
-                    preview_task = {key: task[key] for key in common}
-                    image = fetch_creative_preview(
-                        preview_task,
-                        self.server.state.preview_origin,
-                    )
                     try:
-                        data, mime_type, width, height = (
-                            self.server.state.creative_runtime.generate(image, task)
-                        )
+                        if task.get("kind") == "movie":
+                            raw_frames = task.get("movie_frames")
+                            if not isinstance(raw_frames, list):
+                                raise ValueError("creative movie frames must be an array")
+                            images = []
+                            for raw_frame in raw_frames:
+                                if not isinstance(raw_frame, dict) or not common.issubset(raw_frame):
+                                    raise ValueError("creative movie frame is missing preview fields")
+                                preview_task = {key: raw_frame[key] for key in common}
+                                images.append(
+                                    fetch_creative_preview(
+                                        preview_task,
+                                        self.server.state.preview_origin,
+                                    )
+                                )
+                            data, mime_type, width, height = (
+                                self.server.state.creative_runtime.generate_movie(
+                                    images,
+                                    task,
+                                )
+                            )
+                        else:
+                            preview_task = {key: task[key] for key in common}
+                            image = fetch_creative_preview(
+                                preview_task,
+                                self.server.state.preview_origin,
+                            )
+                            data, mime_type, width, height = (
+                                self.server.state.creative_runtime.generate(image, task)
+                            )
                     except ValueError as exc:
                         raise RequestError(400, str(exc)) from exc
                     self._write_json(
@@ -1409,6 +1431,16 @@ def self_test(
             }],
         },
     )
+    movie_mp4, movie_mime, movie_width, movie_height = (
+        creative_runtime.generate_movie(
+            [creative_image, cv.flip(creative_image, 1)],
+            {
+                "kind": "movie",
+                "frame_duration_ms": 1000,
+                "transition_ms": 0,
+            },
+        )
+    )
     if (
         not cutout_png.startswith(b"\x89PNG\r\n\x1a\n")
         or cutout_width != 256
@@ -1416,8 +1448,12 @@ def self_test(
         or not erase_png.startswith(b"\x89PNG\r\n\x1a\n")
         or erase_width != 256
         or erase_height != 256
+        or movie_mime != "video/mp4"
+        or b"ftyp" not in movie_mp4[:64]
+        or movie_width != 1920
+        or movie_height != 1080
     ):
-        raise RuntimeError("creative self-test returned invalid PNG")
+        raise RuntimeError("creative self-test returned invalid output")
     print(
         json.dumps(
             {
@@ -1425,7 +1461,7 @@ def self_test(
                 "opencv": cv.__version__,
                 "pipeline_version": PIPELINE_VERSION,
                 "smart_pipeline_version": SMART_PIPELINE_VERSION,
-                "creative_pipeline_version": CREATIVE_PIPELINE_VERSION,
+                "creative_pipeline_version": creative_runtime.info()["pipeline_version"],
                 "semantic_pipeline_version": SEMANTIC_PIPELINE_VERSION,
                 "embedding_dimensions": int(vector.size),
                 "smart_label_count": len(smart["labels"]),
@@ -1433,6 +1469,7 @@ def self_test(
                 "creative_pipeline_version": CREATIVE_PIPELINE_VERSION,
                 "creative_cutout_bytes": len(cutout_png),
                 "creative_erase_bytes": len(erase_png),
+                "creative_movie_bytes": len(movie_mp4),
             },
             separators=(",", ":"),
         )

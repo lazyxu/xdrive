@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const creativeAnalyzerMaxResponseBytes = CreativeMaxResultBytes + (1 << 20)
+const creativeAnalyzerMaxResponseBytes = (CreativeMaxResultBytes*4)/3 + (2 << 20)
 
 type UnixCreativeAnalyzer struct {
 	socketPath string

@@ -13,10 +13,17 @@ const (
 	CreativeAnalyzerProtocolVersion = 1
 	CreativeCapabilityCutout        = "cutout"
 	CreativeCapabilityErase         = "erase"
+	CreativeCapabilityMovie         = "movie"
 	CreativeMaxPoints               = 6
 	CreativeMaxStrokes              = 64
 	CreativeMaxStrokePoints         = 256
-	CreativeMaxResultBytes          = 32 << 20
+	CreativeMovieMinFrames          = 2
+	CreativeMovieMaxFrames          = 30
+	CreativeMovieMinFrameDurationMS = 1000
+	CreativeMovieMaxFrameDurationMS = 5000
+	CreativeMovieMinTransitionMS    = 0
+	CreativeMovieMaxTransitionMS    = 1000
+	CreativeMaxResultBytes          = 128 << 20
 )
 
 type CreativeAnalyzer interface {
@@ -49,15 +56,25 @@ type CreativeStroke struct {
 	Points []CreativeStrokePoint `json:"points"`
 }
 
+type CreativeMovieFrame struct {
+	PreviewURL       string `json:"preview_url"`
+	PreviewVersion   int    `json:"preview_version"`
+	PreviewEdge      int    `json:"preview_edge"`
+	InputFingerprint string `json:"input_fingerprint"`
+}
+
 type CreativeTask struct {
-	Kind             string           `json:"kind"`
-	PreviewURL       string           `json:"preview_url"`
-	PreviewVersion   int              `json:"preview_version"`
-	PreviewEdge      int              `json:"preview_edge"`
-	InputFingerprint string           `json:"input_fingerprint"`
-	CutoutMode       string           `json:"cutout_mode,omitempty"`
-	Points           []CreativePoint  `json:"points,omitempty"`
-	Strokes          []CreativeStroke `json:"strokes,omitempty"`
+	Kind             string               `json:"kind"`
+	PreviewURL       string               `json:"preview_url"`
+	PreviewVersion   int                  `json:"preview_version"`
+	PreviewEdge      int                  `json:"preview_edge"`
+	InputFingerprint string               `json:"input_fingerprint"`
+	CutoutMode       string               `json:"cutout_mode,omitempty"`
+	Points           []CreativePoint      `json:"points,omitempty"`
+	Strokes          []CreativeStroke     `json:"strokes,omitempty"`
+	MovieFrames      []CreativeMovieFrame `json:"movie_frames,omitempty"`
+	FrameDurationMS  int                  `json:"frame_duration_ms,omitempty"`
+	TransitionMS     int                  `json:"transition_ms,omitempty"`
 }
 
 type CreativeResult struct {
@@ -73,7 +90,7 @@ func normalizeCreativeCapabilities(values []string) ([]string, error) {
 	for _, value := range values {
 		value = strings.ToLower(strings.TrimSpace(value))
 		switch value {
-		case CreativeCapabilityCutout, CreativeCapabilityErase:
+		case CreativeCapabilityCutout, CreativeCapabilityErase, CreativeCapabilityMovie:
 		default:
 			return nil, fmt.Errorf("unsupported creative capability %q", value)
 		}
@@ -118,6 +135,23 @@ func ValidateCreativeAnalyzerInfo(info CreativeAnalyzerInfo) error {
 	return nil
 }
 
+func CreativeAnalyzerSupports(
+	info CreativeAnalyzerInfo,
+	capability string,
+) bool {
+	capabilities, err := normalizeCreativeCapabilities(info.Capabilities)
+	if err != nil {
+		return false
+	}
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	for _, value := range capabilities {
+		if value == capability {
+			return true
+		}
+	}
+	return false
+}
+
 func CreativeAnalyzerVersion(info CreativeAnalyzerInfo) string {
 	capabilities, _ := normalizeCreativeCapabilities(info.Capabilities)
 	return faceAnalyzerVersionToken("creative", []string{
@@ -132,6 +166,26 @@ func CreativeAnalyzerVersion(info CreativeAnalyzerInfo) string {
 
 func validCreativeUnit(value float64) bool {
 	return value >= 0 && value <= 1
+}
+
+func validateCreativeMovieFrame(frame CreativeMovieFrame) error {
+	rawURL := strings.TrimSpace(frame.PreviewURL)
+	parsed, err := url.Parse(rawURL)
+	if rawURL == "" || err != nil ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("creative movie frame preview URL is invalid")
+	}
+	if frame.PreviewVersion <= 0 ||
+		frame.PreviewEdge <= 0 ||
+		frame.PreviewEdge > 4096 {
+		return errors.New("creative movie frame preview contract is invalid")
+	}
+	fingerprint := strings.TrimSpace(frame.InputFingerprint)
+	if fingerprint == "" || len(fingerprint) > 128 {
+		return errors.New("creative movie frame fingerprint is invalid")
+	}
+	return nil
 }
 
 func ValidateCreativeTask(task CreativeTask) error {
@@ -172,9 +226,15 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.Strokes) != 0 {
 			return errors.New("cutout does not accept erase strokes")
 		}
+		if len(task.MovieFrames) != 0 || task.FrameDurationMS != 0 || task.TransitionMS != 0 {
+			return errors.New("cutout does not accept movie inputs")
+		}
 	case CreativeCapabilityErase:
 		if len(task.Points) != 0 || strings.TrimSpace(task.CutoutMode) != "" {
 			return errors.New("erase does not accept cutout prompts")
+		}
+		if len(task.MovieFrames) != 0 || task.FrameDurationMS != 0 || task.TransitionMS != 0 {
+			return errors.New("erase does not accept movie inputs")
 		}
 		if len(task.Strokes) == 0 || len(task.Strokes) > CreativeMaxStrokes {
 			return fmt.Errorf("erase requires between 1 and %d strokes", CreativeMaxStrokes)
@@ -190,8 +250,36 @@ func ValidateCreativeTask(task CreativeTask) error {
 				}
 			}
 		}
+	case CreativeCapabilityMovie:
+		if len(task.Points) != 0 ||
+			len(task.Strokes) != 0 ||
+			strings.TrimSpace(task.CutoutMode) != "" {
+			return errors.New("movie does not accept cutout or erase prompts")
+		}
+		if len(task.MovieFrames) < CreativeMovieMinFrames ||
+			len(task.MovieFrames) > CreativeMovieMaxFrames {
+			return fmt.Errorf(
+				"movie requires between %d and %d frames",
+				CreativeMovieMinFrames,
+				CreativeMovieMaxFrames,
+			)
+		}
+		if task.FrameDurationMS < CreativeMovieMinFrameDurationMS ||
+			task.FrameDurationMS > CreativeMovieMaxFrameDurationMS {
+			return errors.New("creative movie frame duration is invalid")
+		}
+		if task.TransitionMS < CreativeMovieMinTransitionMS ||
+			task.TransitionMS > CreativeMovieMaxTransitionMS ||
+			task.TransitionMS >= task.FrameDurationMS {
+			return errors.New("creative movie transition is invalid")
+		}
+		for _, frame := range task.MovieFrames {
+			if err := validateCreativeMovieFrame(frame); err != nil {
+				return err
+			}
+		}
 	default:
-		return errors.New("creative kind must be erase or cutout")
+		return errors.New("creative kind must be erase, cutout, or movie")
 	}
 	return nil
 }
@@ -201,7 +289,7 @@ func ValidateCreativeResult(result CreativeResult) (CreativeResult, error) {
 		return CreativeResult{}, errors.New("creative result size is invalid")
 	}
 	switch strings.ToLower(strings.TrimSpace(result.MIMEType)) {
-	case "image/png", "image/jpeg":
+	case "image/png", "image/jpeg", "video/mp4":
 	default:
 		return CreativeResult{}, errors.New("creative result MIME type is invalid")
 	}

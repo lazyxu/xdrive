@@ -59,7 +59,10 @@ The image pins:
 - `tokenizers==0.23.2`
 
 The headless OpenCV package is used because the analyzer has no GUI/display
-dependency. ONNX Runtime is CPU-only in the reference path.
+dependency. ONNX Runtime is CPU-only in the reference path. The reference image also
+installs Debian FFmpeg for local slideshow/movie encoding; the runtime uses its H.264
+encoder only inside the optional Photo Intelligence sidecar and never adds FFmpeg to
+the CGO-free xDrive Server.
 
 ## Processing contract
 

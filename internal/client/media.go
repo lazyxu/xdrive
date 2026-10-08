@@ -104,11 +104,14 @@ type MediaCreativeStroke struct {
 }
 
 type MediaCreativeInput struct {
-	Kind       string                `json:"kind"`
-	OutputName string                `json:"output_name,omitempty"`
-	CutoutMode string                `json:"cutout_mode,omitempty"`
-	Points     []MediaCreativePoint  `json:"points,omitempty"`
-	Strokes    []MediaCreativeStroke `json:"strokes,omitempty"`
+	Kind            string                `json:"kind"`
+	OutputName      string                `json:"output_name,omitempty"`
+	CutoutMode      string                `json:"cutout_mode,omitempty"`
+	Points          []MediaCreativePoint  `json:"points,omitempty"`
+	Strokes         []MediaCreativeStroke `json:"strokes,omitempty"`
+	SourceNodeIDs   []uint64              `json:"source_node_ids,omitempty"`
+	FrameDurationMS int                   `json:"frame_duration_ms,omitempty"`
+	TransitionMS    *int                  `json:"transition_ms,omitempty"`
 }
 
 type MediaCreativeGeneration struct {

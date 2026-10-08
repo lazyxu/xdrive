@@ -150,7 +150,7 @@ func main() {
 		creativeAnalyzer, err := photointelligence.NewUnixCreativeAnalyzer(
 			cfg.PhotoFaceAnalyzerSocket,
 			cfg.PhotoFaceAnalyzerToken,
-			5*time.Minute,
+			15*time.Minute,
 		)
 		if err != nil {
 			log.Fatalf("configure photo creative analyzer: %v", err)

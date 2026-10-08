@@ -418,15 +418,18 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 				t.Fatal(err)
 			}
-			if input.Kind != "cutout" ||
-				input.CutoutMode != "object" ||
-				len(input.Points) != 1 ||
-				!input.Points[0].Foreground {
-				t.Fatalf("creative create input=%+v", input)
+			if input.Kind != "movie" ||
+				len(input.SourceNodeIDs) != 2 ||
+				input.SourceNodeIDs[0] != 31 ||
+				input.SourceNodeIDs[1] != 32 ||
+				input.FrameDurationMS != 2000 ||
+				input.TransitionMS == nil ||
+				*input.TransitionMS != 350 {
+				t.Fatalf("creative movie create input=%+v", input)
 			}
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
-				ID: "creative-1", Kind: "cutout", State: "queued",
+				ID: "creative-1", Kind: "movie", State: "queued",
 				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
 			})
 		case 1:
@@ -435,7 +438,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 				t.Fatalf("creative get method=%s path=%q", r.Method, r.URL.Path)
 			}
 			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
-				ID: "creative-1", Kind: "cutout", State: "running",
+				ID: "creative-1", Kind: "movie", State: "running",
 				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
 			})
 		case 2:
@@ -444,7 +447,7 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 				t.Fatalf("creative cancel method=%s path=%q", r.Method, r.URL.Path)
 			}
 			_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
-				ID: "creative-1", Kind: "cutout", State: "cancelled",
+				ID: "creative-1", Kind: "movie", State: "cancelled",
 				SourceAssetID: 1, SourceNodeID: 31, SourceNodeRevision: 1,
 			})
 		default:
@@ -455,13 +458,15 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 	defer server.Close()
 
 	cli := New(server.URL, "token")
+	transition := 350
 	generation, err := cli.CreateMediaCreativeGeneration(
 		context.Background(),
 		31,
 		MediaCreativeInput{
-			Kind:       "cutout",
-			CutoutMode: "object",
-			Points:     []MediaCreativePoint{{X: 0.5, Y: 0.4, Foreground: true}},
+			Kind:            "movie",
+			SourceNodeIDs:   []uint64{31, 32},
+			FrameDurationMS: 2000,
+			TransitionMS:    &transition,
 		},
 	)
 	if err != nil {

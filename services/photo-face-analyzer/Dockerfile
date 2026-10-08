@@ -21,7 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XD_FACE_SOCKET=/run/xdrive-photo-face/photo-face.sock
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/xdrive-photo-face-runtime
