@@ -736,6 +736,44 @@ func (s *Server) putUploadChunk(c *gin.Context) {
 	c.JSON(http.StatusCreated, uploadPartDTO{Index: index, Size: size, SHA256: actualHash})
 }
 
+func (s *Server) uploadFinalizeCanReuseExistingCAS(
+	ctx context.Context,
+	session meta.UploadSession,
+) bool {
+	if session.SHA256 == "" {
+		return false
+	}
+	provider, ok := s.Store.(storage.ObjectStatProvider)
+	if !ok {
+		return false
+	}
+	hash := strings.ToLower(strings.TrimSpace(session.SHA256))
+	casKey, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		return false
+	}
+	var blob meta.ContentBlob
+	if err := s.DB.WithContext(ctx).
+		Select("sha256", "size", "storage_key", "state").
+		Where("sha256 = ?", hash).
+		First(&blob).Error; err != nil {
+		return false
+	}
+	if blob.State != meta.ContentBlobStateReady ||
+		blob.Size != session.TotalSize ||
+		blob.StorageKey != casKey {
+		return false
+	}
+	info, err := provider.Stat(ctx, casKey)
+	return err == nil && info.Size == session.TotalSize
+}
+
+func (s *Server) deleteUploadFinalizeTemp(ctx context.Context, key string) {
+	if key != "" {
+		_ = s.Store.Delete(ctx, key)
+	}
+}
+
 func (s *Server) finalizeUploadSession(c *gin.Context) {
 	session, err := s.ownedUploadSession(userID(c), c.Param("id"))
 	if err != nil {
@@ -808,44 +846,58 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 	}
 
-	newKey := storageKey(session.OwnerID, targetLogical, uuid.NewString())
-	if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), session.TotalSize, session.ID); err != nil {
-		if !writeStorageCapacityError(c, err) {
-			fail(c, http.StatusInternalServerError, "storage capacity check failed")
+	reuseExistingCAS := s.uploadFinalizeCanReuseExistingCAS(c.Request.Context(), session)
+	newKey := ""
+	if !reuseExistingCAS {
+		newKey = storageKey(session.OwnerID, targetLogical, uuid.NewString())
+		if err := s.ensureStorageWriteCapacityWithReservations(c.Request.Context(), session.TotalSize, session.ID); err != nil {
+			if !writeStorageCapacityError(c, err) {
+				fail(c, http.StatusInternalServerError, "storage capacity check failed")
+			}
+			return
 		}
-		return
 	}
 	seq := &uploadPartSequence{ctx: c.Request.Context(), store: s.Store, parts: parts}
 	fullHash := sha256.New()
 	md5Hash := md5.New()
-	size, putErr := s.Store.Put(c.Request.Context(), newKey, io.TeeReader(seq, io.MultiWriter(fullHash, md5Hash)))
+	var size int64
+	var assembleErr error
+	if reuseExistingCAS {
+		size, assembleErr = io.Copy(io.MultiWriter(fullHash, md5Hash), seq)
+	} else {
+		size, assembleErr = s.Store.Put(
+			c.Request.Context(),
+			newKey,
+			io.TeeReader(seq, io.MultiWriter(fullHash, md5Hash)),
+		)
+	}
 	closeErr := seq.Close()
-	if putErr != nil {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+	if assembleErr != nil {
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		fail(c, http.StatusInternalServerError, "assemble upload failed")
 		return
 	}
 	if closeErr != nil {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		fail(c, http.StatusInternalServerError, "close upload chunks failed")
 		return
 	}
 	if size != session.TotalSize {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		fail(c, http.StatusConflict, "assembled size mismatch")
 		return
 	}
 	actualHash := hex.EncodeToString(fullHash.Sum(nil))
 	actualMD5 := hex.EncodeToString(md5Hash.Sum(nil))
 	if session.ExpectedMD5 != "" && !strings.EqualFold(actualMD5, session.ExpectedMD5) {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
 			"error": "file_md5_mismatch", "expected": session.ExpectedMD5, "actual": actualMD5,
 		})
 		return
 	}
 	if session.SHA256 != "" && !strings.EqualFold(actualHash, session.SHA256) {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
 			"error": "file_hash_mismatch", "expected": session.SHA256, "actual": actualHash,
 		})
@@ -854,7 +906,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 
 	casKey, _ := storage.ContentAddressedKey(actualHash)
 	if err := s.ensureContentBlobObject(c.Request.Context(), newKey, casKey, size); err != nil {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		if !writeStorageCapacityError(c, err) {
 			fail(c, http.StatusInternalServerError, "prepare content-addressed blob failed")
 		}
@@ -1003,7 +1055,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return tx.Where("session_id = ?", currentSession.ID).Delete(&meta.UploadPart{}).Error
 	})
 	if err != nil {
-		_ = s.Store.Delete(c.Request.Context(), newKey)
+		s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 		s.cleanupUncommittedContentBlob(c.Request.Context(), actualHash, casKey)
 		if writeQuotaError(c, err) {
 			return
@@ -1027,7 +1079,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		}
 		return
 	}
-	_ = s.Store.Delete(c.Request.Context(), newKey)
+	s.deleteUploadFinalizeTemp(c.Request.Context(), newKey)
 	if skippedFinalize {
 		s.cleanupUncommittedContentBlob(c.Request.Context(), actualHash, casKey)
 	}
