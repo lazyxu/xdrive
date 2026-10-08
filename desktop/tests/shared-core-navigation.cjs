@@ -12,11 +12,11 @@ const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 
-test('shared core navigation owns common destinations and capability-gates local storage', () => {
+test('shared core navigation owns common destinations and capability-gates local storage rendering', () => {
   assert.ok(sharedRoute.includes('export const XDRIVE_CORE_WORKSPACE_KEYS = ['), 'shared route model must own core workspace keys')
   assert.ok(sharedRoute.includes("export type XDriveCoreWorkspaceKey = typeof XDRIVE_CORE_WORKSPACE_KEYS[number]"), 'shared route model must derive the core workspace key union')
   assert.ok(sharedNav.includes('export function XDriveCoreWorkspaceNavItems'))
-  assert.ok(sharedNav.includes('showLocalStorage = false'), 'local storage must be opt-in because it is Desktop-only')
+  assert.ok(sharedNav.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
   assert.ok(
     sharedNav.includes('icon={<CloudOutlinedIcon fontSize="small" />}\n        primary="文件"'),
     'Files should use a cloud icon rather than a local-folder glyph',
@@ -132,18 +132,15 @@ test('Web Home and admin destinations use the same section model contract', () =
   }
 })
 
-test('local storage is Desktop-only while cloud storage remains shared', () => {
+test('local storage is shared across Web and Desktop while platform adapters remain local', () => {
   assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>"), 'Desktop view type must extend the shared full workspace route model')
-  assert.ok(web.includes("type AppView = XDriveRemoteWorkspaceViewKey<"), 'Web view type must extend the shared remote-only workspace route model')
-  assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'shared remote route model must exclude Desktop-only local storage')
-  assert.ok(desktop.includes('showLocalStorage'), 'Desktop must opt into the shared local-storage destination')
-  assert.ok(desktop.includes('<DesktopLocalStoragePage source={localStorageSource} />'), 'Desktop must render Local Storage')
+  assert.ok(web.includes("type AppView = XDriveWorkspaceViewKey<"), 'Web view type must include the shared local-storage route')
+  assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
+  assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
+  assert.ok(web.includes('showLocalStorage'), 'Web must expose the shared local-storage destination')
+  assert.ok(desktop.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render shared Local Storage')
+  assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared Local Storage')
   assert.ok(desktop.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render shared Cloud Storage')
-  assert.equal(web.includes("type AppView = XDriveWorkspaceViewKey"), false, 'Web must not use the route type that includes local storage')
-  assert.equal(web.includes('showLocalStorage'), false, 'Web must not expose the local-storage destination')
-  assert.equal(web.includes('LocalStoragePage'), false, 'Web must not render the Desktop-only Local Storage page')
-  assert.equal(web.includes('localStorageSource'), false, 'Web must not create a local-storage data adapter')
-  assert.ok(sharedRoute.includes("'cloud-storage'"), 'shared remote route model must retain Cloud Storage')
   assert.ok(web.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared Cloud Storage')
 })
 

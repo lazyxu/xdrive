@@ -4,7 +4,7 @@
 
 Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而是把可独立启动、可深链接、可由其他工作区调用的能力注册为 Web 程序。Web 程序使用统一的 App Registry、类型化 launch contract、Hash Route 和 session browse context。设置、属性、分享、历史版本、标签、重命名和冲突确认仍是程序内部 Dialog / Inspector，不升级成独立程序。
 
-当前固定为 **14 个 Web 程序**：
+当前固定为 **15 个 Web 程序**：
 
 | App ID | 名称 | Presentation | 主要启动参数 |
 | --- | --- | --- | --- |
@@ -13,6 +13,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `gallery` | 图库 | workspace | `section?` |
 | `sync-folders` | 同步文件夹 | workspace | `source?` |
 | `tasks` | 任务中心 | workspace | `scope?`, `task?` |
+| `local-storage` | 本地存储 | workspace | 无 |
 | `cloud-storage` | 云端存储 | workspace | 无 |
 | `preview` | 预览 / Quick Look | immersive | `node`, `context?` |
 | `media-viewer` | 图片 / 视频 / 实况查看器 | immersive | `node`, `context?` |

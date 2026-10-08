@@ -8,6 +8,7 @@ export const XDRIVE_WEB_APP_IDS = [
   'gallery',
   'sync-folders',
   'tasks',
+  'local-storage',
   'cloud-storage',
   'preview',
   'media-viewer',
@@ -86,6 +87,7 @@ export interface XDriveWebAppLaunchMap {
   gallery: { section?: XDriveWebGallerySection }
   'sync-folders': { source?: number }
   tasks: { scope?: 'mine' | 'global'; task?: string }
+  'local-storage': Record<string, never>
   'cloud-storage': Record<string, never>
   preview: { node: number; context?: string }
   'media-viewer': { node: number; context?: string }
@@ -185,6 +187,7 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
         },
       }
     case 'overview':
+    case 'local-storage':
     case 'cloud-storage':
     case 'admin-audit':
       return { app, params: {} } as XDriveWebAppRoute

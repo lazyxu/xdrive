@@ -15,7 +15,7 @@ const sharedSourceManager = [
 ].join('\n')
 const sharedSettingsDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx'), 'utf8')
 const sharedCloudStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
-const desktopLocalStoragePage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
+const sharedLocalStoragePage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const sharedShareDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'ShareDialog.tsx'), 'utf8')
 const sharedTrashDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'TrashDialog.tsx'), 'utf8')
 const sharedVersionHistoryDialog = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'VersionHistoryDialog.tsx'), 'utf8')
@@ -42,7 +42,7 @@ const renderer = [
   sharedSourceManager,
   sharedSettingsDialog,
   sharedCloudStoragePage,
-  desktopLocalStoragePage,
+  sharedLocalStoragePage,
   sharedShareDialog,
   sharedTrashDialog,
   sharedVersionHistoryDialog,
@@ -105,7 +105,7 @@ test('desktop renderer default export is the full App root, not a helper compone
 test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '主页',
-    '云端文件',
+    '文件',
     '同步文件夹',
     '立即扫描',
     '同步文件夹设置',
@@ -250,7 +250,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   ]) {
     assert.ok(sharedSidebarNav.includes(icon), `missing shared core sidebar icon: ${icon}`)
   }
-  assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must capability-gate Local Storage')
+  assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')
   assert.ok(sharedWorkspaceSidebar.includes('<XDriveSidebarStorageSummary'), 'shared complete sidebar must own the footer')
   for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {

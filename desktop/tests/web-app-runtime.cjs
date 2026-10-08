@@ -20,13 +20,14 @@ const sourceManager = read('ui', 'shared', 'src', 'mui', 'SourceManager.tsx')
 const gallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const docs = read('docs', 'web-app-runtime.md')
 
-test('Web App Registry contains the fourteen agreed applications', () => {
+test('Web App Registry contains the fifteen agreed applications', () => {
   for (const id of [
     'overview',
     'files',
     'gallery',
     'sync-folders',
     'tasks',
+    'local-storage',
     'cloud-storage',
     'preview',
     'media-viewer',
@@ -124,7 +125,7 @@ test('optional deep-link arguments are consumed by their owning apps', () => {
 
 test('Web App Runtime design document records the navigation and platform boundary', () => {
   for (const token of [
-    '14 个 Web 程序',
+    '15 个 Web 程序',
     '浏览器历史只负责程序级跳转',
     'FileExplorer 自己维护目录与内部标签历史',
     'Desktop',

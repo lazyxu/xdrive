@@ -5,7 +5,7 @@ const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
-const localStorage = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
+const localStorage = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const filesPage = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 
 test('Desktop removes dead storage and cloud subpanel CSS after MUI migrations', () => {

@@ -12,7 +12,7 @@ const storageDistribution = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 
 const sidebarStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
-const localStorage = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopLocalStoragePage.tsx'), 'utf8')
+const localStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
 const desktopApp = [
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8'),
   fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8'),
@@ -78,16 +78,17 @@ test('Global storage owns physical CAS distribution, inventory and cache cleanup
   assert.ok(storageDistribution.includes("value: XDriveStorageDistributionValue"))
 })
 
-test('Local storage is a Desktop-only page and reuses shared metric primitives', () => {
-  assert.ok(localStorage.includes('export function DesktopLocalStoragePage'))
+test('Local storage is one shared Web/Desktop page with platform-specific sections', () => {
+  assert.ok(localStorage.includes('export function XDriveLocalStoragePage'))
   assert.ok(localStorage.includes('title="本地存储"'))
-  assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 1)
-  assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 4)
-  assert.equal(webApp.includes('LocalStoragePage'), false)
-  assert.equal(webApp.includes('localStorageSource'), false)
-  assert.ok(desktopApp.includes('<DesktopLocalStoragePage source={localStorageSource} />'))
-  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 2, 'diagnostics must not add another metric grid')
-  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 12, 'diagnostics must not add pass/warn/fail metric cards')
+  assert.ok(localStorage.includes('title="浏览器存储"'))
+  assert.ok(localStorage.includes('title="Desktop 存储"'))
+  assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
+  assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 8)
+  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'diagnostics must not add another metric grid')
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16, 'diagnostics must not add pass/warn/fail metric cards')
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)
   assert.equal(desktopApp.includes('className="update-metrics"'), false)

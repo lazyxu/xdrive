@@ -158,8 +158,12 @@ requireText(app, [
 if (app.includes('<XDriveWorkspaceSurface presentation="page" title="文件">')) {
   throw new Error('Web files workspace must not render a duplicate page header')
 }
-if (app.includes('LocalStoragePage') || app.includes('localStorageSource')) {
-  throw new Error('Web must not expose Desktop-only Local Storage')
+for (const token of [
+  'showLocalStorage',
+  "appView === 'local-storage'",
+  '<XDriveLocalStoragePage source={localStorageSource} />',
+]) {
+  if (!app.includes(token)) throw new Error('Web must expose shared Local Storage: ' + token)
 }
 for (const primitive of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
   if (app.includes(primitive)) throw new Error(`Web must not assemble sidebar primitive directly: ${primitive}`)
