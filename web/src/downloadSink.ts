@@ -30,6 +30,53 @@ export type XDriveWebActiveDownloadSink = Exclude<
   { kind: 'cancelled' }
 >
 
+export const xDriveWebDownloadProgressIntervalMs = 100
+export const xDriveWebDownloadProgressByteStep = 8 * 1024 * 1024
+
+export function xDriveCreateWebDownloadProgressReporter(
+  report: (done: number) => void,
+  options: {
+    intervalMs?: number
+    byteStep?: number
+    now?: () => number
+  } = {},
+) {
+  const intervalMs = Math.max(0, options.intervalMs ?? xDriveWebDownloadProgressIntervalMs)
+  const byteStep = Math.max(1, options.byteStep ?? xDriveWebDownloadProgressByteStep)
+  const now = options.now ?? (() => (
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
+  ))
+  let lastPublishedAt = now()
+  let lastPublishedDone = 0
+  let latestDone = 0
+
+  const publish = (force: boolean) => {
+    if (latestDone <= lastPublishedDone) return false
+    const current = now()
+    if (
+      !force &&
+      latestDone - lastPublishedDone < byteStep &&
+      current - lastPublishedAt < intervalMs
+    ) {
+      return false
+    }
+    lastPublishedDone = latestDone
+    lastPublishedAt = current
+    report(latestDone)
+    return true
+  }
+
+  return {
+    progress(done: number) {
+      latestDone = Math.max(latestDone, Math.max(0, done))
+      return publish(false)
+    },
+    flush() {
+      return publish(true)
+    },
+  }
+}
+
 function xDriveWebDownloadCancelled(error: unknown) {
   return Boolean(
     error &&

@@ -32,6 +32,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Web archive-download child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N prepared archive leaf files, Transfer Center child registration reuses the Web batch primitive: parent lookup/history trim/full-history persistence/listener publication **N -> 1**; archive prepare, progress polling and payload streaming are unchanged. |
 | Web archive progress persistence batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | For one progress snapshot over N prepared leaf files, TransferStore history trim/full-history persistence/listener publication changes from **up to N+1 -> 1** in steady progress; lifecycle states and 200 ms Server polling are unchanged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
+| Web single-download progress coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | Fast 1 GiB stream at 64 KiB/read: TransferStore progress persistence/listener publications **16,384 -> 128** via 8 MiB byte coalescing; slow streams still publish at <=100 ms cadence and terminal complete/fail remains immediate. |
 | File download metadata joins | **Accepted / structural contract** | Structural / unmeasured wall-clock | Current-file download metadata **2 SQL -> 1 exact JOIN**; historical-version download metadata **2 SQL -> 1 exact JOIN**. Store.Open, Range/ServeContent, ETag/SHA256 headers and payload streaming are unchanged. |
 | Windows hydration range-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | Synthetic 1 GiB single-callback hydration at 4 MiB/range: large response buffers **256 -> 1**; HTTP range requests remain **256**. Original `DownloadRange` API remains compatible. |
 | Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
@@ -1145,6 +1146,39 @@ Decision: **Accepted.** This removes one metadata DB round trip from every ordin
 Regression budget: each current-file or historical-version download metadata lookup must remain **1 SQL statement**, owner-scoped, active-node-only, and file-type constrained. Do not reintroduce GORM Preload or a separate ownership query on these hot paths.
 
 Next action: continue basic sync/delete/download audits and only change paths with another deterministic SQL, request, allocation or I/O multiplier.
+
+### Web single-download progress coalescing contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary authenticated Web file/version download using either File System Access direct-to-disk or legacy Blob streaming;
+- stable structural workload: **1 GiB response**, **64 KiB readable chunks**, all chunks arriving inside one 100 ms window;
+- TransferStore `progress()` persists the complete transfer history and publishes listeners, so progress-call cardinality is the deterministic multiplier;
+- no network/read/write operations are removed and no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every readable chunk called TransferStore `progress()`;
+- the 1 GiB / 64 KiB workload therefore caused **16,384** progress persistence/listener publications before terminal completion.
+
+AFTER / current:
+
+- one per-download reporter publishes after either **8 MiB** of additional bytes or **100 ms**, whichever comes first;
+- the same fast workload causes **128** progress persistence/listener publications;
+- slow transfers still surface progress at about 10 Hz even below the byte threshold;
+- successful completion remains an immediate exact terminal `complete()`;
+- failure flushes the latest successfully transferred byte count before the immediate `fail()`;
+- File System Access writes, Blob fallback buffering, response reads and transfer cancellation/error behavior are unchanged.
+
+Regression budget: ordinary Web download progress must not call TransferStore once per readable chunk. Fast streams remain bounded by one publication per 8 MiB, slow streams by the 100 ms cadence, and terminal success/failure must retain exact final state.
+
+Regression command:
+
+- `node --test desktop/tests/web-download-stream.cjs`.
+
+Next action: continue the basic sync/delete audit and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### Web direct-to-disk download sink
 

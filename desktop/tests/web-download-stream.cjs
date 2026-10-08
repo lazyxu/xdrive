@@ -171,3 +171,72 @@ test('Web download wiring opens the save sink before archive work and skips succ
   assert.ok(explorer.includes('if (!saved) return'), 'cancelled FileExplorer downloads must not show success feedback')
   assert.ok(dialogs.includes('api.downloadVersion(node, version).then(() => undefined)'), 'version adapter must discard the saved boolean cleanly')
 })
+
+test('Web download progress reporter coalesces fast chunk bookkeeping and preserves time/flush visibility', () => {
+  const {
+    xDriveCreateWebDownloadProgressReporter,
+    xDriveWebDownloadProgressByteStep,
+    xDriveWebDownloadProgressIntervalMs,
+  } = loadDownloadSink()
+
+  assert.equal(xDriveWebDownloadProgressByteStep, 8 * 1024 * 1024)
+  assert.equal(xDriveWebDownloadProgressIntervalMs, 100)
+
+  let now = 0
+  const published = []
+  const reporter = xDriveCreateWebDownloadProgressReporter(
+    (done) => published.push(done),
+    { now: () => now },
+  )
+  const chunkSize = 64 * 1024
+  const chunkCount = (1 << 30) / chunkSize
+  for (let index = 1; index <= chunkCount; index += 1) {
+    reporter.progress(index * chunkSize)
+  }
+  assert.equal(published.length, 128, '1 GiB / 64 KiB fast stream must publish once per 8 MiB')
+  assert.equal(published.at(-1), 1 << 30)
+  assert.equal(reporter.flush(), false, 'exact terminal byte step must not publish twice')
+
+  now = 0
+  const slow = []
+  const slowReporter = xDriveCreateWebDownloadProgressReporter(
+    (done) => slow.push(done),
+    { now: () => now },
+  )
+  slowReporter.progress(chunkSize)
+  assert.deepEqual(slow, [])
+  now = 100
+  slowReporter.progress(chunkSize * 2)
+  assert.deepEqual(slow, [chunkSize * 2], 'slow streams must publish at the 100 ms cadence')
+
+  const tail = []
+  now = 0
+  const tailReporter = xDriveCreateWebDownloadProgressReporter(
+    (done) => tail.push(done),
+    { now: () => now },
+  )
+  tailReporter.progress(4 * 1024 * 1024)
+  assert.deepEqual(tail, [])
+  assert.equal(tailReporter.flush(), true)
+  assert.deepEqual(tail, [4 * 1024 * 1024], 'failure flush must preserve the latest valid byte count')
+})
+
+test('Web authenticated download wires one coalesced progress reporter across direct and Blob paths', () => {
+  const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
+  const methodStart = api.indexOf('private async downloadAuthenticated(')
+  const methodEnd = api.indexOf('async function sha256Buffer', methodStart)
+  assert.ok(methodStart >= 0 && methodEnd > methodStart)
+  const method = api.slice(methodStart, methodEnd)
+
+  assert.ok(method.includes('xDriveCreateWebDownloadProgressReporter((done) => {'))
+  assert.ok(method.includes('transferProgress?.progress(done)'), 'direct-to-disk path must use coalesced progress')
+  assert.ok(method.includes('transferProgress?.progress(completed)'), 'Blob stream path must use coalesced progress')
+  assert.equal(
+    method.includes('webTransferStore.progress(transferID, completed, total)'),
+    false,
+    'Blob chunks must not persist TransferStore progress directly',
+  )
+  assert.ok(method.includes('transferProgress?.flush()'), 'failure path must flush the latest valid bytes')
+  assert.ok(method.includes('webTransferStore.complete(transferID, completed, total || completed)'))
+})
+
