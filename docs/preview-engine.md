@@ -355,6 +355,32 @@ Server ticket issuer for binary preview. MIME metadata may refine presentation, 
 must not make an otherwise non-allowlisted original previewable. In particular,
 `image/svg+xml` must not turn an SVG file into an ordinary Image Preview.
 
+## Non-destructive media edit transforms
+
+Gallery basic editing is a presentation layer over the ordinary Preview Engine, not a
+second preview backend.
+
+The durable recipe belongs to Gallery/PhotoAsset semantics. The ordinary preview
+source remains the same signed original/allowed binary stream:
+
+- `FilePreviewSurface` accepts an optional generic media-transform presentation;
+- image transforms are rendered by the shared canvas renderer from the existing image
+  preview source;
+- video trim/rotate/flip uses the existing Range-capable video preview source;
+- Web and Desktop must use the same transform renderer from `ui/shared`;
+- FileExplorer is not required to expose Gallery edit controls, but it must not gain a
+  separate edited-media renderer.
+
+A recipe must be bound to current source identity (node id/revision/SHA-256) and must
+not apply after source replacement. Saving/resetting the recipe must not modify the
+original File, CAS content, SourceItem, PhotoResource identity, EXIF/GPS, Favorite,
+Tags, People, Description, or album membership.
+
+The first editing phase does not create edited binary caches or a second download
+contract. Explicit Download remains the original file. Any future edited export must
+consume the same recipe behind a derivative-renderer boundary; video export must not
+make FFmpeg a dependency of the main CGO-free/distroless Server.
+
 ## Non-goals
 
 The Preview Engine does not own:

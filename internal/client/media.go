@@ -51,6 +51,42 @@ type MediaDerivedResource struct {
 	Size      int64  `json:"size"`
 }
 
+type MediaEditRecipe struct {
+	Version         int        `json:"version"`
+	Revision        uint64     `json:"revision"`
+	SourceCurrent   bool       `json:"source_current"`
+	MediaKind       string     `json:"media_kind"`
+	RotationDegrees int        `json:"rotation_degrees"`
+	FlipHorizontal  bool       `json:"flip_horizontal"`
+	FlipVertical    bool       `json:"flip_vertical"`
+	CropX           float64    `json:"crop_x"`
+	CropY           float64    `json:"crop_y"`
+	CropWidth       float64    `json:"crop_width"`
+	CropHeight      float64    `json:"crop_height"`
+	ExposureEV      float64    `json:"exposure_ev"`
+	Contrast        float64    `json:"contrast"`
+	Saturation      float64    `json:"saturation"`
+	TrimStartMS     int64      `json:"trim_start_ms"`
+	TrimEndMS       int64      `json:"trim_end_ms"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+}
+
+type MediaEditRecipeInput struct {
+	Revision        uint64  `json:"revision"`
+	RotationDegrees int     `json:"rotation_degrees"`
+	FlipHorizontal  bool    `json:"flip_horizontal"`
+	FlipVertical    bool    `json:"flip_vertical"`
+	CropX           float64 `json:"crop_x"`
+	CropY           float64 `json:"crop_y"`
+	CropWidth       float64 `json:"crop_width"`
+	CropHeight      float64 `json:"crop_height"`
+	ExposureEV      float64 `json:"exposure_ev"`
+	Contrast        float64 `json:"contrast"`
+	Saturation      float64 `json:"saturation"`
+	TrimStartMS     int64   `json:"trim_start_ms"`
+	TrimEndMS       int64   `json:"trim_end_ms"`
+}
+
 type MediaResource struct {
 	Kind      string `json:"kind"`
 	NodeID    uint64 `json:"node_id"`
@@ -69,6 +105,7 @@ type MediaItem struct {
 	Tags             []string               `json:"tags,omitempty"`
 	People           []string               `json:"people,omitempty"`
 	Description      string                 `json:"description,omitempty"`
+	EditRecipe       *MediaEditRecipe       `json:"edit_recipe,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
@@ -1134,6 +1171,56 @@ func (c *Client) SetMediaDescription(
 		http.MethodPatch,
 		fmt.Sprintf("/api/v1/media/items/%d/description", nodeID),
 		map[string]string{"description": description},
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) MediaEditRecipe(
+	ctx context.Context,
+	nodeID uint64,
+) (MediaEditRecipe, error) {
+	var out MediaEditRecipe
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/edit", nodeID),
+		nil,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) SaveMediaEditRecipe(
+	ctx context.Context,
+	nodeID uint64,
+	input MediaEditRecipeInput,
+) (MediaEditRecipe, error) {
+	var out MediaEditRecipe
+	err := c.json(
+		ctx,
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/media/items/%d/edit", nodeID),
+		input,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) ResetMediaEditRecipe(
+	ctx context.Context,
+	nodeID, revision uint64,
+) (MediaEditRecipe, error) {
+	var out MediaEditRecipe
+	err := c.json(
+		ctx,
+		http.MethodDelete,
+		fmt.Sprintf(
+			"/api/v1/media/items/%d/edit?revision=%d",
+			nodeID,
+			revision,
+		),
+		nil,
 		&out,
 	)
 	return out, err

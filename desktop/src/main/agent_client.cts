@@ -653,6 +653,42 @@ export type AgentMediaResource = {
   size: number
 }
 
+export type AgentMediaEditRecipe = {
+  version: number
+  revision: number
+  source_current: boolean
+  media_kind: string
+  rotation_degrees: number
+  flip_horizontal: boolean
+  flip_vertical: boolean
+  crop_x: number
+  crop_y: number
+  crop_width: number
+  crop_height: number
+  exposure_ev: number
+  contrast: number
+  saturation: number
+  trim_start_ms: number
+  trim_end_ms: number
+  updated_at?: string
+}
+
+export type AgentMediaEditRecipeInput = {
+  revision: number
+  rotation_degrees: number
+  flip_horizontal: boolean
+  flip_vertical: boolean
+  crop_x: number
+  crop_y: number
+  crop_width: number
+  crop_height: number
+  exposure_ev: number
+  contrast: number
+  saturation: number
+  trim_start_ms: number
+  trim_end_ms: number
+}
+
 export type AgentMediaItem = {
   node: AgentCloudNode
   metadata: AgentMediaMetadata
@@ -661,6 +697,7 @@ export type AgentMediaItem = {
   tags?: string[]
   people?: string[]
   description?: string
+  edit_recipe?: AgentMediaEditRecipe
   resources?: AgentMediaResource[]
   derived_resources?: AgentMediaDerivedResource[]
   live_photo?: boolean
@@ -1424,6 +1461,37 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/pet-items?${query.toString()}`,
+    )
+  }
+
+  mediaEditRecipe(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaEditRecipe>(
+      'GET',
+      `/v1/media/edit?${query.toString()}`,
+    )
+  }
+
+  saveMediaEditRecipe(
+    nodeID: number,
+    input: AgentMediaEditRecipeInput,
+  ) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaEditRecipe>(
+      'PUT',
+      `/v1/media/edit?${query.toString()}`,
+      input,
+    )
+  }
+
+  resetMediaEditRecipe(nodeID: number, revision: number) {
+    const query = new URLSearchParams({
+      node_id: String(nodeID),
+      revision: String(revision),
+    })
+    return this.request<AgentMediaEditRecipe>(
+      'DELETE',
+      `/v1/media/edit?${query.toString()}`,
     )
   }
 

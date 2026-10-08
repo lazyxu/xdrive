@@ -167,6 +167,10 @@ type fakeDesktopIPCController struct {
 	cloudMediaAlbumItems       []client.MediaItem
 	cloudMediaThumbnail        agentMediaThumbnail
 	cloudMediaMotionTicket     client.FilePreviewTicket
+	cloudMediaEdit             client.MediaEditRecipe
+	cloudMediaEditNodeID       uint64
+	cloudMediaEditRevision     uint64
+	cloudMediaEditInput        client.MediaEditRecipeInput
 	cloudMediaKind             string
 	cloudMediaQuery            client.MediaQuery
 	cloudMediaLimit            int
@@ -1264,6 +1268,44 @@ func (f *fakeDesktopIPCController) CloudSetMediaDescription(
 	return client.MediaDescription{Description: description}, f.err
 }
 
+func (f *fakeDesktopIPCController) CloudMediaEditRecipe(
+	_ context.Context,
+	nodeID uint64,
+) (client.MediaEditRecipe, error) {
+	f.cloudMediaEditNodeID = nodeID
+	return f.cloudMediaEdit, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudSaveMediaEditRecipe(
+	_ context.Context,
+	nodeID uint64,
+	input client.MediaEditRecipeInput,
+) (client.MediaEditRecipe, error) {
+	f.cloudMediaEditNodeID = nodeID
+	f.cloudMediaEditInput = input
+	result := f.cloudMediaEdit
+	if result.Revision == 0 {
+		result.Revision = input.Revision + 1
+	}
+	result.RotationDegrees = input.RotationDegrees
+	return result, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudResetMediaEditRecipe(
+	_ context.Context,
+	nodeID, revision uint64,
+) (client.MediaEditRecipe, error) {
+	f.cloudMediaEditNodeID = nodeID
+	f.cloudMediaEditRevision = revision
+	return client.MediaEditRecipe{
+		Version:       1,
+		SourceCurrent: true,
+		MediaKind:     "image",
+		CropWidth:     1,
+		CropHeight:    1,
+	}, f.err
+}
+
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
 	return f.cloudMediaThumbnail, f.err
@@ -2117,6 +2159,10 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ID: "folder:8", Kind: "folder", Name: "Camera Uploads", ItemCount: 1,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
 		}},
+		cloudMediaEdit: client.MediaEditRecipe{
+			Version: 1, Revision: 1, SourceCurrent: true,
+			MediaKind: "image", CropWidth: 1, CropHeight: 1,
+		},
 		cloudMediaPlaces: []client.MediaPlaceFacet{{
 			ID: "place:135:10381", Name: "约 1.355°, 103.815°",
 			Latitude: 1.355, Longitude: 103.815, ItemCount: 2,
@@ -2705,6 +2751,53 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	if res.Code != http.StatusOK ||
 		!strings.Contains(res.Body.String(), `"tags":["Family","Travel"]`) {
 		t.Fatalf("media tags status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/edit?node_id=31",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"revision\":1") {
+		t.Fatalf("media edit get status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaEditNodeID != 31 {
+		t.Fatalf("media edit node=%d want=31", ctrl.cloudMediaEditNodeID)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodPut,
+		"/v1/media/edit?node_id=31",
+		`{"revision":1,"rotation_degrees":90,"crop_width":1,"crop_height":1}`,
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"rotation_degrees\":90") {
+		t.Fatalf("media edit put status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaEditInput.Revision != 1 ||
+		ctrl.cloudMediaEditInput.RotationDegrees != 90 {
+		t.Fatalf("media edit input=%+v", ctrl.cloudMediaEditInput)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodDelete,
+		"/v1/media/edit?node_id=31&revision=1",
+		"",
+	)
+	if res.Code != http.StatusOK || ctrl.cloudMediaEditRevision != 1 {
+		t.Fatalf(
+			"media edit reset status=%d revision=%d body=%s",
+			res.Code,
+			ctrl.cloudMediaEditRevision,
+			res.Body.String(),
+		)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/thumbnail?node_id=31", "")

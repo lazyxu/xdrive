@@ -43,6 +43,8 @@ import type {
   MediaPersonSuggestionReview,
   MediaDuplicateGroup,
   MediaDuplicateGroupList,
+  MediaEditRecipe,
+  MediaEditRecipeInput,
   MediaBurstReview,
   MediaBurstReviewList,
   MediaPersonIdentity,
@@ -244,6 +246,14 @@ export interface MediaGalleryDataSource {
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
   setDescription?: (nodeID: number, description: string) => Promise<string>
+  saveEditRecipe?: (
+    nodeID: number,
+    input: MediaEditRecipeInput,
+  ) => Promise<MediaEditRecipe>
+  resetEditRecipe?: (
+    nodeID: number,
+    revision: number,
+  ) => Promise<MediaEditRecipe>
   createAlbum?: (name: string) => Promise<MediaAlbum>
   createSmartAlbum?: (name: string, query: MediaGalleryQuery) => Promise<MediaAlbum>
   updateSmartAlbum?: (
@@ -1340,6 +1350,51 @@ export function XDriveMediaGalleryPage({
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, patchLoadedItems, query, source])
 
 
+  const saveEditRecipe = useCallback(async (
+    item: MediaItem,
+    input: MediaEditRecipeInput,
+  ) => {
+    if (!source.saveEditRecipe) {
+      throw new Error('当前客户端不支持媒体编辑')
+    }
+    setError('')
+    try {
+      const recipe = await source.saveEditRecipe(item.node.id, input)
+      patchLoadedItems(item.node.id, (value) => ({
+        ...value,
+        edit_recipe: recipe.revision ? recipe : undefined,
+      }))
+      return recipe
+    } catch (editError) {
+      setError(xDriveMediaGalleryErrorMessage(editError))
+      onError?.(editError)
+      throw editError
+    }
+  }, [onError, patchLoadedItems, source])
+
+  const resetEditRecipe = useCallback(async (
+    item: MediaItem,
+    revision: number,
+  ) => {
+    if (!source.resetEditRecipe) {
+      throw new Error('当前客户端不支持重置媒体编辑')
+    }
+    setError('')
+    try {
+      const recipe = await source.resetEditRecipe(item.node.id, revision)
+      patchLoadedItems(item.node.id, (value) => ({
+        ...value,
+        edit_recipe: recipe.revision ? recipe : undefined,
+      }))
+      return recipe
+    } catch (editError) {
+      setError(xDriveMediaGalleryErrorMessage(editError))
+      onError?.(editError)
+      throw editError
+    }
+  }, [onError, patchLoadedItems, source])
+
+
   const setFavoriteBatch = useCallback(async (
     selectedItems: MediaItem[],
     favorite: boolean,
@@ -1580,6 +1635,8 @@ export function XDriveMediaGalleryPage({
         onSetTags={source.setTags ? setTags : undefined}
         onSetPeople={source.setPeople ? setPeople : undefined}
         onSetDescription={source.setDescription ? setDescription : undefined}
+        onSaveEditRecipe={source.saveEditRecipe ? saveEditRecipe : undefined}
+        onResetEditRecipe={source.resetEditRecipe ? resetEditRecipe : undefined}
         onCreateAlbum={source.createAlbum ? createAlbum : undefined}
         onRenameAlbum={
           source.renameAlbum || source.updateSmartAlbum
@@ -1777,6 +1834,14 @@ export interface XDriveMediaGalleryProps {
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
   onSetPeople?: (item: MediaItem, people: string[]) => Promise<string[]>
   onSetDescription?: (item: MediaItem, description: string) => Promise<string>
+  onSaveEditRecipe?: (
+    item: MediaItem,
+    input: MediaEditRecipeInput,
+  ) => Promise<MediaEditRecipe>
+  onResetEditRecipe?: (
+    item: MediaItem,
+    revision: number,
+  ) => Promise<MediaEditRecipe>
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
@@ -2166,6 +2231,20 @@ function MediaTile({
           '& .MuiChip-icon': { color: '#fff' },
         }}
       />
+      {item.edit_recipe?.source_current && item.edit_recipe.revision > 0 ? (
+        <Chip
+          label="已编辑"
+          size="small"
+          data-xdrive-media-edited
+          sx={{
+            position: 'absolute',
+            top: 40,
+            right: 8,
+            bgcolor: 'rgba(0,0,0,.66)',
+            color: '#fff',
+          }}
+        />
+      ) : null}
       {onSetCover ? (
         <Button
           size="small"
@@ -2807,6 +2886,8 @@ export function XDriveMediaGallery({
   onSetTags,
   onSetPeople,
   onSetDescription,
+  onSaveEditRecipe,
+  onResetEditRecipe,
   onCreateAlbum,
   onRenameAlbum,
   onDeleteAlbum,
@@ -2878,6 +2959,51 @@ export function XDriveMediaGallery({
   const [splitDialogOpen, setSplitDialogOpen] = useState(false)
   const [splitNodeIDs, setSplitNodeIDs] = useState<number[]>([])
   const [splitName, setSplitName] = useState('')
+
+  const patchLocalMediaItem = useCallback((
+    nodeID: number,
+    updater: (item: MediaItem) => MediaItem,
+  ) => {
+    setSelected((current) => (
+      current?.node.id === nodeID ? updater(current) : current
+    ))
+    setPreviewItem((current) => (
+      current?.node.id === nodeID ? updater(current) : current
+    ))
+    setSelectedMediaItems((current) => {
+      const selectedItem = current.get(nodeID)
+      if (!selectedItem) return current
+      const next = new Map(current)
+      next.set(nodeID, updater(selectedItem))
+      return next
+    })
+  }, [])
+
+  const saveLocalEditRecipe = useCallback(async (
+    item: MediaItem,
+    input: MediaEditRecipeInput,
+  ) => {
+    if (!onSaveEditRecipe) throw new Error('当前客户端不支持媒体编辑')
+    const recipe = await onSaveEditRecipe(item, input)
+    patchLocalMediaItem(item.node.id, (value) => ({
+      ...value,
+      edit_recipe: recipe.revision ? recipe : undefined,
+    }))
+    return recipe
+  }, [onSaveEditRecipe, patchLocalMediaItem])
+
+  const resetLocalEditRecipe = useCallback(async (
+    item: MediaItem,
+    revision: number,
+  ) => {
+    if (!onResetEditRecipe) throw new Error('当前客户端不支持重置媒体编辑')
+    const recipe = await onResetEditRecipe(item, revision)
+    patchLocalMediaItem(item.node.id, (value) => ({
+      ...value,
+      edit_recipe: recipe.revision ? recipe : undefined,
+    }))
+    return recipe
+  }, [onResetEditRecipe, patchLocalMediaItem])
 
   const openAlbumDialog = (mode: 'create' | 'rename', album?: MediaAlbum) => {
     setAlbumDialog({ mode, album })
@@ -4135,6 +4261,8 @@ export function XDriveMediaGallery({
         onFilmstripSelect={requestPreviewIndex}
         onToggleFavorite={onSetFavorite ? toggleFavorite : undefined}
         onInfo={openPreviewInfo}
+        onSaveEditRecipe={onSaveEditRecipe ? saveLocalEditRecipe : undefined}
+        onResetEditRecipe={onResetEditRecipe ? resetLocalEditRecipe : undefined}
         onDownload={onDownloadItems
           ? (item) => onDownloadItems([item])
           : undefined}

@@ -409,6 +409,42 @@ export interface MediaMetadata {
   thumbnail_height?: number
 }
 
+export interface MediaEditRecipe {
+  version: number
+  revision: number
+  source_current: boolean
+  media_kind: MediaKind
+  rotation_degrees: number
+  flip_horizontal: boolean
+  flip_vertical: boolean
+  crop_x: number
+  crop_y: number
+  crop_width: number
+  crop_height: number
+  exposure_ev: number
+  contrast: number
+  saturation: number
+  trim_start_ms: number
+  trim_end_ms: number
+  updated_at?: string
+}
+
+export interface MediaEditRecipeInput {
+  revision: number
+  rotation_degrees: number
+  flip_horizontal: boolean
+  flip_vertical: boolean
+  crop_x: number
+  crop_y: number
+  crop_width: number
+  crop_height: number
+  exposure_ev: number
+  contrast: number
+  saturation: number
+  trim_start_ms: number
+  trim_end_ms: number
+}
+
 export interface MediaDerivedResource {
   role: string
   name: string
@@ -444,6 +480,7 @@ export interface MediaItem {
   tags?: string[]
   people?: string[]
   description?: string
+  edit_recipe?: MediaEditRecipe
   resources?: MediaResource[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean

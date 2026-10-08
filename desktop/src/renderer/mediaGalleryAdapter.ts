@@ -95,6 +95,8 @@ export function createDesktopMediaGalleryDataSource(
     setTags: (nodeID, tags) => agent.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => agent.setMediaPeople(nodeID, people),
     setDescription: (nodeID, description) => agent.setMediaDescription(nodeID, description),
+    saveEditRecipe: (nodeID, input) => agent.saveMediaEditRecipe(nodeID, input),
+    resetEditRecipe: (nodeID, revision) => agent.resetMediaEditRecipe(nodeID, revision),
     createAlbum: (name) => agent.createMediaAlbum(name),
     createSmartAlbum: (name, query) => agent.createSmartMediaAlbum(name, query),
     updateSmartAlbum: (albumID, revision, input) =>

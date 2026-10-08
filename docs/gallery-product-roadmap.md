@@ -33,7 +33,7 @@ presentation and product intelligence.
 | 9 | Memories / Recent Days / Trips / On This Day | **Current** |
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
-| 12 | Basic non-destructive photo/video editing | Planned |
+| 12 | Basic non-destructive photo/video editing | **Current** |
 | 13 | Optional AI erase / cutout / automatic movies / advanced creation | Planned |
 
 ## Phase 1 — shared Gallery information architecture
@@ -445,3 +445,66 @@ xDrive does **not** infer that two cat/dog photos show the same individual anima
 not write pet names into `PhotoPerson` or `PeopleJSON`, and does not consume provider
 pet/person APIs. Named individual-pet identities require a future pet-specific
 crop/embedding/identity contract and are intentionally outside this phase.
+
+
+## Phase 12 — basic non-destructive photo/video editing
+
+The first editing phase is deliberately **recipe-first and non-destructive**. xDrive
+never rewrites the original Node/File bytes and does not introduce FFmpeg,
+ImageMagick, CGO, or another media-service dependency into the main Server.
+
+### Durable edit intent
+
+Plain image/video PhotoAssets may own one `PhotoEditRecipe`:
+
+- the recipe is owner scoped, revisioned, and updated with optimistic concurrency;
+- it is bound to the current primary Node id + Node revision + SHA-256;
+- replacing the source bytes makes the old recipe stale, so it is not applied to a
+  different file accidentally;
+- a new save with revision 0 may rebuild a stale recipe against the new source,
+  while revision 0 may never overwrite a current concurrent edit.
+
+The initial image recipe supports:
+
+- 90-degree rotation;
+- horizontal / vertical flip;
+- normalized crop;
+- exposure (-2…+2 EV);
+- contrast and saturation (-1…+1).
+
+The initial video recipe supports:
+
+- trim start/end;
+- 90-degree rotation;
+- horizontal / vertical flip.
+
+Live Photo, RAW pair, Burst and other grouped assets are intentionally excluded from
+the first editing contract rather than applying only part of a logical asset.
+
+### Shared presentation
+
+`MediaItem.edit_recipe` is returned only while the recipe source fingerprint still
+matches current canonical media. Web/Desktop use the same `ui/shared`
+`MediaGalleryEditDialog` and the same Preview Engine media-transform contract.
+
+Edited images are redrawn in the shared Preview Engine canvas with crop,
+rotate/flip and color adjustments. Edited videos keep the existing original Range
+stream and apply trim-window plus rotate/flip presentation in the shared video
+renderer. Viewer and Inspector therefore show the same saved recipe.
+
+The Gallery grid keeps the existing thumbnail pipeline and marks current edited
+assets with an **已编辑** badge. Thumbnail regeneration is not a second editing
+implementation.
+
+### Original/export boundary
+
+The existing **Download** action remains an explicit original-file download in this
+phase. The edit dialog states this directly. Saving a recipe does not create a hidden
+copy, mutate CAS, or alter synchronization-folder content.
+
+A future edited-export renderer may consume the same recipe. In particular, edited
+video export/transcoding belongs behind an optional derivative renderer rather than
+adding FFmpeg to the main xDrive Server.
+
+Reset deletes only the saved recipe. The original file and all ordinary Gallery
+metadata remain unchanged.

@@ -22,6 +22,10 @@ const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGal
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
+const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
+const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
+const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
+const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
 const sharedGalleryVirtualGrid = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualGrid.ts')
 const sharedGalleryVirtualTimeline = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVirtualTimeline.ts')
 const sharedGalleryThumbnailScheduler = read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts')
@@ -43,6 +47,7 @@ const sharedGallery = [
   sharedGallerySelectionToolbar,
   sharedGalleryFilmstrip,
   sharedGalleryViewer,
+  sharedGalleryEditDialog,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -427,6 +432,123 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
   assert.equal(sharedGallery.includes('实况视频'), false, 'Gallery must not render Live Photo as a separate video section')
   assert.ok(sharedGallery.includes('loadMotion={loadSelectedLivePhotoMotion}'), 'Gallery must delegate Live Photo motion loading to the shared surface')
   assert.match(sharedGallery, /still=\{\([\s\S]*?<XDriveFilePreviewSurface/, 'Live Photo still image should reuse the Preview Engine before thumbnail fallback')
+})
+
+test('Gallery basic non-destructive editing is one shared Preview Engine contract', () => {
+  for (const token of [
+    'export interface MediaEditRecipe',
+    'export interface MediaEditRecipeInput',
+    'edit_recipe?: MediaEditRecipe',
+  ]) {
+    assert.ok(sharedModels.includes(token), `media edit model missing: ${token}`)
+  }
+
+  for (const token of [
+    'xDriveDefaultMediaEditInput',
+    'xDriveMediaEditInputFromRecipe',
+    'xDriveMediaEditPreviewTransform',
+    'xDriveMediaItemSupportsBasicEditing',
+  ]) {
+    assert.ok(sharedMediaEdit.includes(token), `media edit helper missing: ${token}`)
+  }
+
+  for (const token of [
+    'EditRoundedIcon',
+    'XDriveMediaGalleryEditDialog',
+    'onSaveEditRecipe',
+    'onResetEditRecipe',
+    'xDriveMediaEditPreviewTransform(item.edit_recipe)',
+  ]) {
+    assert.ok(sharedGalleryViewer.includes(token), `Viewer edit contract missing: ${token}`)
+  }
+
+  for (const token of [
+    '原文件不会被改写',
+    '当前“下载”仍下载原始文件',
+    '裁剪时间',
+    '水平翻转',
+    '垂直翻转',
+    '曝光',
+    '对比度',
+    '饱和度',
+    'mediaTransform={xDriveMediaEditPreviewTransform(draft)}',
+  ]) {
+    assert.ok(sharedGalleryEditDialog.includes(token), `Edit dialog missing: ${token}`)
+  }
+
+  for (const token of [
+    'mediaTransform?: XDriveFilePreviewMediaTransform',
+    'XDriveTransformedImagePreview',
+    'XDriveTransformedVideoPreview',
+  ]) {
+    assert.ok(sharedFilePreviewSurface.includes(token), `Preview transform wiring missing: ${token}`)
+  }
+  for (const token of [
+    'component="canvas"',
+    'context.drawImage(',
+    'context.filter',
+    'trimStart',
+    'trimEnd',
+    'video.currentTime',
+    'rotationDegrees',
+  ]) {
+    assert.ok(sharedFilePreviewTransformed.includes(token), `transformed renderer missing: ${token}`)
+  }
+
+  for (const token of [
+    'saveEditRecipe?:',
+    'resetEditRecipe?:',
+    'patchLoadedItems',
+    'setPreviewItem',
+    'setSelectedMediaItems',
+    'data-xdrive-media-edited',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery edit controller missing: ${token}`)
+  }
+  assert.match(sharedGalleryDetails, /mediaTransform=\{xDriveMediaEditPreviewTransform\(item\.edit_recipe\)\}/)
+
+  for (const token of ['saveEditRecipe:', 'resetEditRecipe:']) {
+    assert.ok(sharedGalleryAdapter.includes(token), `shared adapter missing: ${token}`)
+    assert.ok(webAdapter.includes(token), `Web adapter missing: ${token}`)
+    assert.ok(desktopAdapter.includes(token), `Desktop adapter missing: ${token}`)
+  }
+  for (const token of [
+    'saveMediaEditRecipe(',
+    'resetMediaEditRecipe(',
+    '/edit',
+    "method: 'PUT'",
+    "method: 'DELETE'",
+  ]) {
+    assert.ok(webAPI.includes(token), `Web media edit transport missing: ${token}`)
+  }
+  for (const token of [
+    'agent:get-media-edit',
+    'agent:save-media-edit',
+    'agent:reset-media-edit',
+  ]) {
+    assert.ok(preload.includes(token), `Desktop preload edit contract missing: ${token}`)
+    assert.ok(desktopMain.includes(token), `Desktop main edit contract missing: ${token}`)
+  }
+  for (const token of [
+    '/v1/media/edit',
+    'saveMediaEditRecipe(',
+    'resetMediaEditRecipe(',
+  ]) {
+    assert.ok(agentClient.includes(token), `Agent edit transport missing: ${token}`)
+  }
+  for (const token of [
+    'GET /v1/media/edit',
+    'PUT /v1/media/edit',
+    'DELETE /v1/media/edit',
+  ]) {
+    assert.ok(desktopIPC.includes(token), `Desktop Agent IPC edit route missing: ${token}`)
+  }
+
+  assert.equal(
+    sharedGalleryEditDialog.toLowerCase().includes('ffmpeg'),
+    false,
+    'shared editing must not require FFmpeg',
+  )
 })
 
 test('Gallery contracts are node-level and connector-neutral', () => {

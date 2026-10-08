@@ -27,6 +27,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaBurstReviewList,
+  MediaEditRecipe,
+  MediaEditRecipeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   MediaPersonIdentity,
@@ -1157,6 +1159,29 @@ export class XDriveApi {
         method: 'PATCH',
         body: JSON.stringify({ description }),
       },
+    )
+  }
+
+  mediaEditRecipe(nodeID: number) {
+    return this.request<MediaEditRecipe>(
+      `/api/v1/media/items/${nodeID}/edit`,
+    )
+  }
+
+  saveMediaEditRecipe(nodeID: number, input: MediaEditRecipeInput) {
+    return this.request<MediaEditRecipe>(
+      `/api/v1/media/items/${nodeID}/edit`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      },
+    )
+  }
+
+  resetMediaEditRecipe(nodeID: number, revision: number) {
+    return this.request<MediaEditRecipe>(
+      `/api/v1/media/items/${nodeID}/edit?revision=${encodeURIComponent(String(revision))}`,
+      { method: 'DELETE' },
     )
   }
 

@@ -2354,6 +2354,40 @@ func (c *agentController) CloudSetMediaDescription(
 	return cli.SetMediaDescription(ctx, nodeID, description)
 }
 
+func (c *agentController) CloudMediaEditRecipe(
+	ctx context.Context,
+	nodeID uint64,
+) (client.MediaEditRecipe, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaEditRecipe{}, err
+	}
+	return cli.MediaEditRecipe(ctx, nodeID)
+}
+
+func (c *agentController) CloudSaveMediaEditRecipe(
+	ctx context.Context,
+	nodeID uint64,
+	input client.MediaEditRecipeInput,
+) (client.MediaEditRecipe, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaEditRecipe{}, err
+	}
+	return cli.SaveMediaEditRecipe(ctx, nodeID, input)
+}
+
+func (c *agentController) CloudResetMediaEditRecipe(
+	ctx context.Context,
+	nodeID, revision uint64,
+) (client.MediaEditRecipe, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaEditRecipe{}, err
+	}
+	return cli.ResetMediaEditRecipe(ctx, nodeID, revision)
+}
+
 func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {

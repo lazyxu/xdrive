@@ -18,6 +18,41 @@ export type XDriveLivePhotoMotionSource =
 
 export type XDriveFilePreviewKind = 'none' | 'text' | 'image' | 'video' | 'audio' | 'pdf' | 'live_photo'
 
+export type XDriveFilePreviewMediaTransform = {
+  rotationDegrees?: 0 | 90 | 180 | 270 | number
+  flipHorizontal?: boolean
+  flipVertical?: boolean
+  cropX?: number
+  cropY?: number
+  cropWidth?: number
+  cropHeight?: number
+  exposureEV?: number
+  contrast?: number
+  saturation?: number
+  trimStartMS?: number
+  trimEndMS?: number
+}
+
+export function xDriveFilePreviewHasTransform(
+  value?: XDriveFilePreviewMediaTransform | null,
+) {
+  if (!value) return false
+  return Boolean(
+    value.rotationDegrees ||
+    value.flipHorizontal ||
+    value.flipVertical ||
+    Math.abs(value.cropX || 0) > 0.000001 ||
+    Math.abs(value.cropY || 0) > 0.000001 ||
+    Math.abs((value.cropWidth ?? 1) - 1) > 0.000001 ||
+    Math.abs((value.cropHeight ?? 1) - 1) > 0.000001 ||
+    Math.abs(value.exposureEV || 0) > 0.000001 ||
+    Math.abs(value.contrast || 0) > 0.000001 ||
+    Math.abs(value.saturation || 0) > 0.000001 ||
+    (value.trimStartMS || 0) > 0 ||
+    (value.trimEndMS || 0) > 0
+  )
+}
+
 export type XDriveFilePreviewTarget = {
   id: string | number
   name: string

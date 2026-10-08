@@ -2,12 +2,21 @@ import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import { Box, IconButton, Stack, Tooltip } from '@mui/material'
-import type { MediaItem } from '../models'
+import type {
+  MediaEditRecipe,
+  MediaEditRecipeInput,
+  MediaItem,
+} from '../models'
+import {
+  xDriveMediaEditPreviewTransform,
+  xDriveMediaItemSupportsBasicEditing,
+} from '../media-edit'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
@@ -16,6 +25,7 @@ import type {
 } from './FilePreviewSurface'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
+import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { xDriveMediaFallback } from './MediaGalleryPreviewMedia'
@@ -42,6 +52,8 @@ export function XDriveMediaGalleryViewer({
   onFilmstripSelect,
   onToggleFavorite,
   onInfo,
+  onSaveEditRecipe,
+  onResetEditRecipe,
   onDownload,
   onShare,
   onDelete,
@@ -61,6 +73,14 @@ export function XDriveMediaGalleryViewer({
   onFilmstripSelect: (index: number) => void
   onToggleFavorite?: (item: MediaItem) => Promise<void>
   onInfo?: (item: MediaItem) => void
+  onSaveEditRecipe?: (
+    item: MediaItem,
+    input: MediaEditRecipeInput,
+  ) => Promise<MediaEditRecipe>
+  onResetEditRecipe?: (
+    item: MediaItem,
+    revision: number,
+  ) => Promise<MediaEditRecipe>
   onDownload?: (item: MediaItem) => Promise<void>
   onShare?: (item: MediaItem) => void
   onDelete?: (item: MediaItem) => Promise<void>
@@ -68,6 +88,7 @@ export function XDriveMediaGalleryViewer({
 }) {
   const [fullScreen, setFullScreen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [busyAction, setBusyAction] = useState<ViewerAction>('')
 
   const target = useMemo(() => (
@@ -123,6 +144,7 @@ export function XDriveMediaGalleryViewer({
 
   const close = () => {
     setDeleteOpen(false)
+    setEditOpen(false)
     setFullScreen(false)
     onClose()
   }
@@ -145,6 +167,17 @@ export function XDriveMediaGalleryViewer({
                 : <StarBorderRoundedIcon fontSize="small" />}
             </IconButton>
           </span>
+        </Tooltip>
+      ) : null}
+      {onSaveEditRecipe && xDriveMediaItemSupportsBasicEditing(item) ? (
+        <Tooltip title="编辑">
+          <IconButton
+            size="small"
+            aria-label="编辑媒体"
+            onClick={() => setEditOpen(true)}
+          >
+            <EditRoundedIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
       ) : null}
       {onInfo ? (
@@ -249,10 +282,24 @@ export function XDriveMediaGalleryViewer({
               minHeight={320}
               maxHeight={fullScreen ? 4096 : 760}
               interactiveImage
+              mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
             />
           )
         ) : null}
       </XDriveOpenPreviewDialog>
+
+      <XDriveMediaGalleryEditDialog
+        open={editOpen}
+        item={item}
+        loadThumbnail={loadThumbnail}
+        loadPreviewURL={loadPreviewURL}
+        onSave={async (value, input) => {
+          if (!onSaveEditRecipe) throw new Error('当前客户端不支持媒体编辑')
+          return onSaveEditRecipe(value, input)
+        }}
+        onReset={onResetEditRecipe}
+        onClose={() => setEditOpen(false)}
+      />
 
       <XDriveConfirmDialog
         open={deleteOpen}

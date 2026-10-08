@@ -122,6 +122,8 @@ import {
   type AgentMediaTags,
   type AgentMediaPeople,
   type AgentMediaDescription,
+  type AgentMediaEditRecipe,
+  type AgentMediaEditRecipeInput,
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentCreateSourceInput,
@@ -2714,6 +2716,79 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().setMediaDescription(nodeID, description)
   }, false))
+
+  ipcMain.handle(
+    'agent:get-media-edit',
+    (_event, nodeID: unknown) => runAgentAction<AgentMediaEditRecipe>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof nodeID !== 'number' ||
+        !Number.isSafeInteger(nodeID) ||
+        nodeID <= 0
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+      }
+      return requireAgentClient().mediaEditRecipe(nodeID)
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:save-media-edit',
+    (
+      _event,
+      nodeID: unknown,
+      input: unknown,
+    ) => runAgentAction<AgentMediaEditRecipe>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof nodeID !== 'number' ||
+        !Number.isSafeInteger(nodeID) ||
+        nodeID <= 0 ||
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input)
+      ) {
+        throw new AgentIPCError(
+          'invalid_input',
+          0,
+          'Media node id and edit recipe are required.',
+        )
+      }
+      return requireAgentClient().saveMediaEditRecipe(
+        nodeID,
+        input as AgentMediaEditRecipeInput,
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:reset-media-edit',
+    (
+      _event,
+      nodeID: unknown,
+      revision: unknown,
+    ) => runAgentAction<AgentMediaEditRecipe>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof nodeID !== 'number' ||
+        !Number.isSafeInteger(nodeID) ||
+        nodeID <= 0 ||
+        typeof revision !== 'number' ||
+        !Number.isSafeInteger(revision) ||
+        revision <= 0
+      ) {
+        throw new AgentIPCError(
+          'invalid_input',
+          0,
+          'Valid media node id and edit revision are required.',
+        )
+      }
+      return requireAgentClient().resetMediaEditRecipe(nodeID, revision)
+    }, false),
+  )
 
   ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

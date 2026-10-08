@@ -597,6 +597,83 @@ test('media cleanup review uses the scoped Agent API', async (t) => {
   assert.equal(burstPage.total_count, 3)
 })
 
+test('media edit recipe uses the scoped Agent API', async (t) => {
+  let requestIndex = 0
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (requestIndex === 0) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/edit')
+      assert.equal(url.searchParams.get('node_id'), '31')
+      json(res, 200, {
+        version: 1,
+        revision: 1,
+        source_current: true,
+        media_kind: 'image',
+        crop_width: 1,
+        crop_height: 1,
+      })
+    } else if (requestIndex === 1) {
+      assert.equal(req.method, 'PUT')
+      assert.equal(url.pathname, '/v1/media/edit')
+      assert.equal(url.searchParams.get('node_id'), '31')
+      let raw = ''
+      req.on('data', (chunk) => { raw += chunk })
+      req.on('end', () => {
+        const input = JSON.parse(raw)
+        assert.equal(input.revision, 1)
+        assert.equal(input.rotation_degrees, 90)
+        json(res, 200, {
+          version: 1,
+          revision: 2,
+          source_current: true,
+          media_kind: 'image',
+          rotation_degrees: 90,
+          crop_width: 1,
+          crop_height: 1,
+        })
+        requestIndex += 1
+      })
+      return
+    } else {
+      assert.equal(req.method, 'DELETE')
+      assert.equal(url.pathname, '/v1/media/edit')
+      assert.equal(url.searchParams.get('node_id'), '31')
+      assert.equal(url.searchParams.get('revision'), '2')
+      json(res, 200, {
+        version: 1,
+        revision: 0,
+        source_current: true,
+        media_kind: 'image',
+        crop_width: 1,
+        crop_height: 1,
+      })
+    }
+    requestIndex += 1
+  })
+
+  const current = await client.mediaEditRecipe(31)
+  assert.equal(current.revision, 1)
+  const saved = await client.saveMediaEditRecipe(31, {
+    revision: 1,
+    rotation_degrees: 90,
+    flip_horizontal: false,
+    flip_vertical: false,
+    crop_x: 0,
+    crop_y: 0,
+    crop_width: 1,
+    crop_height: 1,
+    exposure_ev: 0,
+    contrast: 0,
+    saturation: 0,
+    trim_start_ms: 0,
+    trim_end_ms: 0,
+  })
+  assert.equal(saved.revision, 2)
+  const reset = await client.resetMediaEditRecipe(31, 2)
+  assert.equal(reset.revision, 0)
+})
+
 test('media Pets and person suggestion review use the scoped Agent API', async (t) => {
   let requestIndex = 0
   const suggestionID = 'auto:v1:' + 'a'.repeat(64)
