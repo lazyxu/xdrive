@@ -78,10 +78,10 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 	}
 	sortPathsByDepth(paths, true)
 
-	processedSubtrees := make([]string, 0)
+	processedSubtrees := make(winPathPrefixSet)
 	var baselineByNodeID winBaselineNodeIndex
 	for _, rel := range paths {
-		if underAny(rel, processedSubtrees) {
+		if processedSubtrees.covers(rel) {
 			continue
 		}
 		abs := filepath.Join(p.root, filepath.FromSlash(rel))
@@ -106,7 +106,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			}
 			if handled {
 				if info.IsDir() {
-					processedSubtrees = append(processedSubtrees, rel)
+					processedSubtrees.add(rel)
 				}
 				continue
 			}
@@ -116,7 +116,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 				if err := p.syncNewDirectoryTree(ctx, rel, baseline); err != nil {
 					return err
 				}
-				processedSubtrees = append(processedSubtrees, rel)
+				processedSubtrees.add(rel)
 			}
 			continue
 		}
@@ -134,9 +134,9 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		}
 	}
 	sortPathsByDepth(deletions, true)
-	deletedPrefix := make([]string, 0)
+	deletedPrefixes := make(winPathPrefixSet)
 	for _, rel := range deletions {
-		if underAny(rel, deletedPrefix) {
+		if deletedPrefixes.covers(rel) {
 			continue
 		}
 		base, ok := baseline[rel]
@@ -148,11 +148,12 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 			if errors.As(err, &apiErr) && (apiErr.Status == 404 || apiErr.Status == 409) {
 				continue
 			}
+			deleteBaselinePrefixes(baseline, deletedPrefixes)
 			return err
 		}
-		deletePrefix(baseline, rel)
-		deletedPrefix = append(deletedPrefix, rel)
+		deletedPrefixes.add(rel)
 	}
+	deleteBaselinePrefixes(baseline, deletedPrefixes)
 	if err := p.applyAlwaysLocal(baseline); err != nil {
 		return err
 	}

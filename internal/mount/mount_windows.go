@@ -589,9 +589,9 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 		}
 	}
 	sort.Slice(missing, func(i, j int) bool { return depth(missing[i]) < depth(missing[j]) })
-	deletedPrefix := []string{}
+	deletedPrefixes := make(winPathPrefixSet)
 	for _, rel := range missing {
-		if underAny(rel, deletedPrefix) {
+		if deletedPrefixes.covers(rel) {
 			continue
 		}
 		if err := p.cli.Delete(ctx, baseline[rel].node.ID, baseline[rel].node.Revision); err != nil {
@@ -600,12 +600,13 @@ func (p *winProvider) reconcile(ctx context.Context) error {
 				continue
 			}
 			if !errors.As(err, &apiErr) || apiErr.Status != 404 {
+				deleteBaselinePrefixes(baseline, deletedPrefixes)
 				return err
 			}
 		}
-		deletedPrefix = append(deletedPrefix, rel)
-		deletePrefix(baseline, rel)
+		deletedPrefixes.add(rel)
 	}
+	deleteBaselinePrefixes(baseline, deletedPrefixes)
 
 	// Pull server-side changes made through Web/API. Local dirty changes were
 	// already uploaded above, so this is a simple last-writer-wins MVP policy.
@@ -794,14 +795,45 @@ func slashBase(s string) string {
 	}
 	return s
 }
+
 func underAny(path string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if path == p || strings.HasPrefix(path, p+"/") {
+	for _, prefix := range prefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}
 	}
 	return false
 }
+
+type winPathPrefixSet map[string]struct{}
+
+func (prefixes winPathPrefixSet) add(path string) {
+	if path == "" {
+		return
+	}
+	prefixes[path] = struct{}{}
+}
+
+func (prefixes winPathPrefixSet) covers(path string) bool {
+	for current := path; current != ""; current = slashDir(current) {
+		if _, ok := prefixes[current]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func deleteBaselinePrefixes(m map[string]winState, prefixes winPathPrefixSet) {
+	if len(prefixes) == 0 {
+		return
+	}
+	for path := range m {
+		if prefixes.covers(path) {
+			delete(m, path)
+		}
+	}
+}
+
 func deletePrefix(m map[string]winState, prefix string) {
 	for k := range m {
 		if k == prefix || strings.HasPrefix(k, prefix+"/") {
