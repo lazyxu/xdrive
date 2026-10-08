@@ -73,8 +73,8 @@ test('shared navigation pane owns a manual lazy tree without following the activ
   }
   assert.equal(
     (pane.match(/pl: 3\.75, pr: 0\.75/g) || []).length,
-    4,
-    'Trash, Quick Access, Favorites and Recent should align their item icons with the root disclosure column',
+    6,
+    'Trash, Quick Access, Smart Folders, Tags, Favorites and Recent should align their item icons with the root disclosure column',
   )
   assert.equal(pane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more row')
 })
@@ -162,15 +162,19 @@ test('navigation tree is a complete internal and external drop target', () => {
 
 test('navigation sections collapse independently and persist locally', () => {
   for (const token of [
-    "type XDriveFileExplorerNavigationSection = 'quickAccess' | 'favorites' | 'recent' | 'tree'",
+    "type XDriveFileExplorerNavigationSection = 'quickAccess' | 'savedSearches' | 'tags' | 'favorites' | 'recent' | 'tree'",
     "defaultNavigationSectionPreferencesKey = 'xdrive.files.navigation_sections'",
     'loadNavigationSectionState',
     'window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))',
     "toggleSection('quickAccess')",
+    "toggleSection('savedSearches')",
+    "toggleSection('tags')",
     "toggleSection('favorites')",
     "toggleSection('recent')",
     "toggleSection('tree')",
     'expandedSections.quickAccess',
+    'expandedSections.savedSearches',
+    'expandedSections.tags',
     'expandedSections.favorites',
     'expandedSections.recent',
     'expandedSections.tree',
@@ -182,8 +186,8 @@ test('navigation sections collapse independently and persist locally', () => {
 })
 
 
-test('navigation sections use spacing instead of repeated divider chrome', () => {
-  assert.equal(pane.includes('<Divider'), false, 'FileExplorer navigation sections should not be separated by repeated dividers')
-  assert.equal(pane.includes('  Divider,'), false, 'navigation pane should not import Divider after section separators are removed')
-  assert.ok((pane.match(/py: 0\.5/g) || []).length >= 4, 'navigation sections should use compact vertical spacing')
+test('navigation sections use spacing while customization keeps one menu divider', () => {
+  assert.equal((pane.match(/<Divider/g) || []).length, 1, 'Sidebar sections must not regain repeated divider chrome')
+  assert.ok(pane.includes('快速访问排序'), 'the single divider should belong to the sidebar customization menu')
+  assert.ok((pane.match(/py: 0\.5/g) || []).length >= 6, 'navigation sections should use compact vertical spacing')
 })

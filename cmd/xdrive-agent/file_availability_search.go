@@ -219,6 +219,7 @@ func agentAvailabilitySearchCacheKey(
 		int64Value(filters.Server.MinSize),
 		int64Value(filters.Server.MaxSize),
 		strconv.FormatUint(filters.Server.SourceID, 10),
+		strconv.FormatUint(filters.Server.TagID, 10),
 		strings.TrimSpace(grouping.Group),
 		foldersFirst,
 		strings.TrimSpace(filters.Availability),

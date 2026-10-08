@@ -69,6 +69,7 @@ export type XDriveFileQuickAccessItem<TNode extends { id: number }> = {
   node: TNode
   path: string
   crumbs: XDriveCloudFilesCrumb[]
+  position: number
   pinned_at: string
 }
 

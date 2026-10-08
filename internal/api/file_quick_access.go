@@ -18,6 +18,7 @@ type fileQuickAccessItemDTO struct {
 	Node     nodeDTO               `json:"node"`
 	Path     string                `json:"path"`
 	Crumbs   []searchBreadcrumbDTO `json:"crumbs"`
+	Position int                   `json:"position"`
 	PinnedAt time.Time             `json:"pinned_at"`
 }
 
@@ -33,6 +34,7 @@ type fileQuickAccessRow struct {
 	SHA256          string
 	Path            string
 	BreadcrumbsJSON string
+	Position        int
 	PinnedAt        time.Time
 }
 
@@ -42,7 +44,7 @@ func (s *Server) fileQuickAccessItems(
 	nodeID uint64,
 ) ([]fileQuickAccessItemDTO, error) {
 	const query = `WITH RECURSIVE pinned AS (
-  SELECT q.node_id, q.created_at AS pinned_at
+  SELECT q.node_id, q.position, q.created_at AS pinned_at
   FROM xd_file_quick_access q
   JOIN xd_nodes n ON n.id = q.node_id
   WHERE q.owner_id = ?
@@ -91,11 +93,12 @@ SELECT
     FROM ancestors a
     WHERE a.pinned_id = n.id
   ) AS breadcrumbs_json,
+  p.position,
   p.pinned_at
 FROM pinned p
 JOIN xd_nodes n ON n.id = p.node_id
 LEFT JOIN xd_files f ON f.node_id = n.id
-ORDER BY p.pinned_at ASC, n.id ASC`
+ORDER BY p.position ASC, p.pinned_at ASC, n.id ASC`
 
 	var rows []fileQuickAccessRow
 	if err := s.DB.WithContext(ctx).Raw(
@@ -123,6 +126,7 @@ ORDER BY p.pinned_at ASC, n.id ASC`
 			},
 			Path:     row.Path,
 			Crumbs:   crumbs,
+			Position: row.Position,
 			PinnedAt: row.PinnedAt,
 		})
 	}
@@ -174,9 +178,15 @@ func (s *Server) pinFileQuickAccess(c *gin.Context) {
 		if count >= fileQuickAccessLimit {
 			return errFileQuickAccessLimit
 		}
+		var maxPosition int
+		if err := tx.Model(&meta.FileQuickAccess{}).Where("owner_id = ?", userID(c)).
+			Select("COALESCE(MAX(position), -1)").Scan(&maxPosition).Error; err != nil {
+			return err
+		}
 		if err := tx.Create(&meta.FileQuickAccess{
-			OwnerID: userID(c),
-			NodeID:  nodeID,
+			OwnerID:  userID(c),
+			NodeID:   nodeID,
+			Position: maxPosition + 1,
 		}).Error; err != nil {
 			return err
 		}
@@ -203,6 +213,55 @@ func (s *Server) pinFileQuickAccess(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, items[0])
+}
+
+func (s *Server) reorderFileQuickAccess(c *gin.Context) {
+	var input struct {
+		NodeIDs []uint64 `json:"node_ids"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || len(input.NodeIDs) > fileQuickAccessLimit {
+		fail(c, http.StatusBadRequest, "invalid quick access order")
+		return
+	}
+	var existing []meta.FileQuickAccess
+	if err := s.DB.WithContext(c.Request.Context()).Where("owner_id = ?", userID(c)).Find(&existing).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "load quick access failed")
+		return
+	}
+	if len(input.NodeIDs) != len(existing) {
+		fail(c, http.StatusConflict, "quick access order is stale")
+		return
+	}
+	allowed := make(map[uint64]struct{}, len(existing))
+	for _, item := range existing {
+		allowed[item.NodeID] = struct{}{}
+	}
+	seen := make(map[uint64]struct{}, len(input.NodeIDs))
+	for _, nodeID := range input.NodeIDs {
+		if _, ok := allowed[nodeID]; !ok {
+			fail(c, http.StatusConflict, "quick access order is stale")
+			return
+		}
+		if _, duplicate := seen[nodeID]; duplicate {
+			fail(c, http.StatusBadRequest, "quick access order contains duplicates")
+			return
+		}
+		seen[nodeID] = struct{}{}
+	}
+	if err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		for position, nodeID := range input.NodeIDs {
+			if err := tx.Model(&meta.FileQuickAccess{}).
+				Where("owner_id = ? AND node_id = ?", userID(c), nodeID).
+				Update("position", position).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, "reorder quick access failed")
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) unpinFileQuickAccess(c *gin.Context) {

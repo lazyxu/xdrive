@@ -12,7 +12,8 @@ import type {
 
 function loadStoredViewMode(storageKey: string): XDriveFileExplorerViewMode {
   if (typeof window === 'undefined') return 'details'
-  return window.localStorage.getItem(storageKey) === 'grid' ? 'grid' : 'details'
+  const stored = window.localStorage.getItem(storageKey)
+  return stored === 'grid' || stored === 'columns' ? stored : 'details'
 }
 
 export type XDriveFileExplorerNavigationTab<TCrumb extends XDriveFileExplorerCrumb> = {
@@ -163,7 +164,7 @@ export function xDriveNormalizeFileExplorerNavigationSession<
       !tab.grouping ||
       typeof tab.grouping !== 'object' ||
       Array.isArray(tab.grouping) ||
-      (tab.viewMode !== 'details' && tab.viewMode !== 'grid')
+      (tab.viewMode !== 'details' && tab.viewMode !== 'grid' && tab.viewMode !== 'columns')
     ) continue
 
     const sort = tab.sort as { key?: unknown; direction?: unknown }

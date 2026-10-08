@@ -1065,6 +1065,7 @@ export type AgentCloudSearchFilters = {
   minSize?: number
   maxSize?: number
   sourceID?: number
+  tagID?: number
   availability?: 'local' | 'always-local' | 'online-only' | 'cloud' | 'mixed' | 'syncing'
 }
 
@@ -1087,6 +1088,7 @@ function appendAgentCloudSearchFilters(
   if (filters.minSize !== undefined) query.set('min_size', String(Math.max(0, Math.trunc(filters.minSize))))
   if (filters.maxSize !== undefined) query.set('max_size', String(Math.max(0, Math.trunc(filters.maxSize))))
   if (filters.sourceID) query.set('source_id', String(Math.max(1, Math.trunc(filters.sourceID))))
+  if (filters.tagID) query.set('tag_id', String(Math.max(1, Math.trunc(filters.tagID))))
   if (filters.availability) query.set('availability', filters.availability)
 }
 
@@ -1094,7 +1096,38 @@ export type AgentCloudQuickAccessItem = {
   node: AgentCloudNode
   path: string
   crumbs: AgentCloudCrumb[]
+  position: number
   pinned_at: string
+}
+
+export type AgentFileTag = {
+  id: number
+  name: string
+  color?: string
+  item_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type AgentFileNodeTags = {
+  node_id: number
+  tags: AgentFileTag[]
+}
+
+export type AgentFileSavedSearch = {
+  id: number
+  name: string
+  query: string
+  filters: AgentCloudSearchFilters
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export type AgentFileSavedSearchInput = {
+  name: string
+  query: string
+  filters: AgentCloudSearchFilters
 }
 
 export type AgentCloudFavoriteItem = {
@@ -2034,6 +2067,58 @@ export class AgentIPCClient {
 
   cloudUnpinFileQuickAccess(nodeID: number) {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/quick-access/unpin', { id: nodeID })
+  }
+
+
+  cloudReorderFileQuickAccess(nodeIDs: number[]) {
+    return this.request<{ ok: boolean }>('PUT', '/v1/cloud/quick-access/order', { node_ids: nodeIDs })
+  }
+
+  cloudFileTags() {
+    return this.request<AgentFileTag[]>('GET', '/v1/cloud/tags')
+  }
+
+  cloudCreateFileTag(name: string, color: string) {
+    return this.request<AgentFileTag>('POST', '/v1/cloud/tags', { name, color })
+  }
+
+  cloudUpdateFileTag(id: number, input: { name?: string; color?: string }) {
+    return this.request<AgentFileTag>('PATCH', '/v1/cloud/tags', { id, ...input })
+  }
+
+  cloudDeleteFileTag(id: number) {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/tags', { id })
+  }
+
+  cloudQueryFileNodeTags(nodeIDs: number[]) {
+    return this.request<AgentFileNodeTags[]>('POST', '/v1/cloud/tags/query', { node_ids: nodeIDs })
+  }
+
+  cloudSetFileTagNodes(tagID: number, nodeIDs: number[], assigned: boolean) {
+    return this.request<{ ok: boolean }>(assigned ? 'PUT' : 'DELETE', '/v1/cloud/tags/nodes', {
+      tag_id: tagID,
+      node_ids: nodeIDs,
+    })
+  }
+
+  cloudFileSavedSearches() {
+    return this.request<AgentFileSavedSearch[]>('GET', '/v1/cloud/saved-searches')
+  }
+
+  cloudCreateFileSavedSearch(input: AgentFileSavedSearchInput) {
+    return this.request<AgentFileSavedSearch>('POST', '/v1/cloud/saved-searches', input)
+  }
+
+  cloudUpdateFileSavedSearch(id: number, input: AgentFileSavedSearchInput) {
+    return this.request<AgentFileSavedSearch>('PATCH', '/v1/cloud/saved-searches', { id, value: input })
+  }
+
+  cloudDeleteFileSavedSearch(id: number) {
+    return this.request<{ ok: boolean }>('DELETE', '/v1/cloud/saved-searches', { id })
+  }
+
+  cloudReorderFileSavedSearches(ids: number[]) {
+    return this.request<{ ok: boolean }>('PUT', '/v1/cloud/saved-searches/order', { ids })
   }
 
   cloudFileFavorites() {

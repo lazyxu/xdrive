@@ -75,6 +75,10 @@ import type {
   XDriveCloudFilesSearchRange,
   XDriveFileOperationType,
   XDriveFileQuickAccessItem,
+  XDriveFileTag,
+  XDriveFileNodeTags,
+  XDriveFileSavedSearch,
+  XDriveFileSavedSearchInput,
   XDriveFileFavoriteItem,
   XDriveFileRecentItem,
   XDriveUploadConflictPolicy,
@@ -321,6 +325,7 @@ function appendFileExplorerSearchFilters(
   if (filters.minSize !== undefined) params.set('min_size', String(Math.max(0, Math.trunc(filters.minSize))))
   if (filters.maxSize !== undefined) params.set('max_size', String(Math.max(0, Math.trunc(filters.maxSize))))
   if (filters.sourceID) params.set('source_id', String(Math.max(1, Math.trunc(filters.sourceID))))
+  if (filters.tagID) params.set('tag_id', String(Math.max(1, Math.trunc(filters.tagID))))
 }
 
 export class XDriveApi {
@@ -1408,6 +1413,10 @@ export class XDriveApi {
   }
 
   listPage(parentID: number, options: XDriveCloudFilesPageOptions = {}) {
+    return this.listPageAbortable(parentID, options)
+  }
+
+  listPageAbortable(parentID: number, options: XDriveCloudFilesPageOptions = {}, signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(Math.min(500, Math.max(1, Math.trunc(options.limit ?? 200)))),
       sort: options.sort ?? 'name',
@@ -1416,7 +1425,10 @@ export class XDriveApi {
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
     if (options.name) query.set('name', options.name)
     if (options.nameInsensitive) query.set('name_ci', options.nameInsensitive)
-    return this.request<XDriveCloudFilesPage<Node>>(`/api/v1/nodes/${parentID}/children?${query.toString()}`)
+    return this.request<XDriveCloudFilesPage<Node>>(
+      `/api/v1/nodes/${parentID}/children?${query.toString()}`,
+      signal ? { signal } : {},
+    )
   }
 
   listRange(
@@ -1464,6 +1476,79 @@ export class XDriveApi {
   unpinFileQuickAccess(nodeID: number) {
     return this.request<void>(`/api/v1/file-quick-access/${nodeID}`, {
       method: 'DELETE',
+    })
+  }
+
+
+  reorderFileQuickAccess(nodeIDs: number[]) {
+    return this.request<void>('/api/v1/file-quick-access/order', {
+      method: 'PUT',
+      body: JSON.stringify({ node_ids: nodeIDs }),
+    })
+  }
+
+  fileTags() {
+    return this.request<XDriveFileTag[]>('/api/v1/file-tags')
+  }
+
+  createFileTag(name: string, color: string) {
+    return this.request<XDriveFileTag>('/api/v1/file-tags', {
+      method: 'POST',
+      body: JSON.stringify({ name, color }),
+    })
+  }
+
+  updateFileTag(id: number, input: { name?: string; color?: string }) {
+    return this.request<XDriveFileTag>(`/api/v1/file-tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })
+  }
+
+  deleteFileTag(id: number) {
+    return this.request<void>(`/api/v1/file-tags/${id}`, { method: 'DELETE' })
+  }
+
+  fileNodeTags(nodeIDs: number[]) {
+    return this.request<XDriveFileNodeTags[]>('/api/v1/nodes/tags/query', {
+      method: 'POST',
+      body: JSON.stringify({ node_ids: nodeIDs }),
+    })
+  }
+
+  setFileTagNodes(tagID: number, nodeIDs: number[], assigned: boolean) {
+    return this.request<{ updated: number }>(`/api/v1/file-tags/${tagID}/nodes`, {
+      method: assigned ? 'PUT' : 'DELETE',
+      body: JSON.stringify({ node_ids: nodeIDs }),
+    })
+  }
+
+  fileSavedSearches() {
+    return this.request<XDriveFileSavedSearch[]>('/api/v1/file-saved-searches')
+  }
+
+  createFileSavedSearch(input: XDriveFileSavedSearchInput) {
+    return this.request<XDriveFileSavedSearch>('/api/v1/file-saved-searches', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  }
+
+  updateFileSavedSearch(id: number, input: XDriveFileSavedSearchInput) {
+    return this.request<XDriveFileSavedSearch>(`/api/v1/file-saved-searches/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })
+  }
+
+  deleteFileSavedSearch(id: number) {
+    return this.request<void>(`/api/v1/file-saved-searches/${id}`, { method: 'DELETE' })
+  }
+
+  reorderFileSavedSearches(ids: number[]) {
+    return this.request<void>('/api/v1/file-saved-searches/order', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
     })
   }
 

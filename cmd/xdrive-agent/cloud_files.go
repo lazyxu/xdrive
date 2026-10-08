@@ -249,6 +249,102 @@ func (c *agentController) CloudUnpinFileQuickAccess(ctx context.Context, nodeID 
 	return cli.UnpinFileQuickAccess(ctx, nodeID)
 }
 
+func (c *agentController) CloudReorderFileQuickAccess(ctx context.Context, nodeIDs []uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.ReorderFileQuickAccess(ctx, nodeIDs)
+}
+
+func (c *agentController) CloudFileTags(ctx context.Context) ([]client.FileTag, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileTags(ctx)
+}
+
+func (c *agentController) CloudCreateFileTag(ctx context.Context, name, color string) (client.FileTag, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileTag{}, err
+	}
+	return cli.CreateFileTag(ctx, name, color)
+}
+
+func (c *agentController) CloudUpdateFileTag(ctx context.Context, tagID uint64, input map[string]string) (client.FileTag, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileTag{}, err
+	}
+	return cli.UpdateFileTag(ctx, tagID, input)
+}
+
+func (c *agentController) CloudDeleteFileTag(ctx context.Context, tagID uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteFileTag(ctx, tagID)
+}
+
+func (c *agentController) CloudQueryFileNodeTags(ctx context.Context, nodeIDs []uint64) ([]client.FileNodeTags, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.QueryFileNodeTags(ctx, nodeIDs)
+}
+
+func (c *agentController) CloudSetFileTagNodes(ctx context.Context, tagID uint64, nodeIDs []uint64, assigned bool) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.SetFileTagNodes(ctx, tagID, nodeIDs, assigned)
+}
+
+func (c *agentController) CloudFileSavedSearches(ctx context.Context) ([]client.FileSavedSearch, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.FileSavedSearches(ctx)
+}
+
+func (c *agentController) CloudCreateFileSavedSearch(ctx context.Context, input client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileSavedSearch{}, err
+	}
+	return cli.CreateFileSavedSearch(ctx, input)
+}
+
+func (c *agentController) CloudUpdateFileSavedSearch(ctx context.Context, id uint64, input client.FileSavedSearchInput) (client.FileSavedSearch, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileSavedSearch{}, err
+	}
+	return cli.UpdateFileSavedSearch(ctx, id, input)
+}
+
+func (c *agentController) CloudDeleteFileSavedSearch(ctx context.Context, id uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteFileSavedSearch(ctx, id)
+}
+
+func (c *agentController) CloudReorderFileSavedSearches(ctx context.Context, ids []uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.ReorderFileSavedSearches(ctx, ids)
+}
+
 func (c *agentController) CloudFileFavorites(ctx context.Context) ([]client.FileFavoriteItem, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

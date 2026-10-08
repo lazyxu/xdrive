@@ -544,7 +544,7 @@ export function xDriveFileExplorerDeleteOperationPlan<
   }
 }
 
-export type XDriveFileExplorerKeyboardViewMode = 'details' | 'grid'
+export type XDriveFileExplorerKeyboardViewMode = 'details' | 'grid' | 'columns'
 
 export type XDriveFileExplorerKeyboardNavigationKey =
   | 'ArrowUp'
