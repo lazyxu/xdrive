@@ -189,6 +189,7 @@ export default function DesktopFileExplorer({
   const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
   const [trashSort, setTrashSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
   const trash = useXDriveFileExplorerTrash({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     enabled: trashActive,
     adapter: trashAdapter,
     sort: trashSort,

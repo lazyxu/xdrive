@@ -37,6 +37,7 @@ function projectTrashNode(node: Node): XDriveFileExplorerItem {
 }
 
 export function useXDriveFileExplorerTrash({
+  lifecycleKey = '',
   enabled,
   adapter,
   sort,
@@ -44,6 +45,7 @@ export function useXDriveFileExplorerTrash({
   onFeedback,
   onChanged,
 }: {
+  lifecycleKey?: string
   enabled: boolean
   adapter: XDriveTrashDialogAdapter
   sort: XDriveFileExplorerSort
@@ -58,9 +60,15 @@ export function useXDriveFileExplorerTrash({
   const requestRef = useRef(0)
   const workingGenerationRef = useRef(0)
   const enabledRef = useRef(enabled)
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const onErrorRef = useRef(onError)
   const onFeedbackRef = useRef(onFeedback)
   const onChangedRef = useRef(onChanged)
+  if (lifecycleKeyRef.current !== lifecycleKey) {
+    lifecycleKeyRef.current = lifecycleKey
+    requestRef.current += 1
+    workingGenerationRef.current += 1
+  }
   enabledRef.current = enabled
   onErrorRef.current = onError
   onFeedbackRef.current = onFeedback
@@ -68,8 +76,8 @@ export function useXDriveFileExplorerTrash({
 
   const rangeEnabled = Boolean(adapter.listTrashRange)
   const rangeQueryKey = rangeEnabled
-    ? `file-explorer-trash:${enabled ? 'enabled' : 'disabled'}:${sort.key}:${sort.direction}`
-    : 'file-explorer-trash:legacy'
+    ? `file-explorer-trash:${lifecycleKey}:${enabled ? 'enabled' : 'disabled'}:${sort.key}:${sort.direction}`
+    : `file-explorer-trash:legacy:${lifecycleKey}`
   const countedRangeKeyRef = useRef('')
   if (countedRangeKeyRef.current && countedRangeKeyRef.current !== rangeQueryKey) {
     countedRangeKeyRef.current = ''
@@ -161,6 +169,16 @@ export function useXDriveFileExplorerTrash({
   ])
 
   useEffect(() => {
+    requestRef.current += 1
+    workingGenerationRef.current += 1
+    countedRangeKeyRef.current = ''
+    setLoading(false)
+    setWorkingKey('')
+    setDeleteTarget(null)
+    setNodes([])
+  }, [lifecycleKey])
+
+  useEffect(() => {
     if (!enabled) {
       requestRef.current += 1
       workingGenerationRef.current += 1
@@ -216,8 +234,12 @@ export function useXDriveFileExplorerTrash({
   ])
   const itemCount = virtualCollection?.itemCount ?? items.length
 
-  const changed = useCallback(async () => {
+  const changed = useCallback(async (workingGeneration?: number) => {
     await refresh()
+    if (
+      workingGeneration !== undefined &&
+      workingGeneration !== workingGenerationRef.current
+    ) return
     await onChangedRef.current?.()
   }, [refresh])
 
@@ -227,10 +249,17 @@ export function useXDriveFileExplorerTrash({
     const workingGeneration = beginWorking(`restore:${node.id}`)
     try {
       await adapter.restoreTrash(node)
+      if (
+        workingGeneration !== workingGenerationRef.current ||
+        !enabledRef.current
+      ) return
       onFeedbackRef.current?.('项目已恢复')
-      await changed()
+      await changed(workingGeneration)
     } catch (error) {
-      onErrorRef.current(error)
+      if (
+        workingGeneration === workingGenerationRef.current &&
+        enabledRef.current
+      ) onErrorRef.current(error)
     } finally {
       finishWorking(workingGeneration)
     }
@@ -251,13 +280,18 @@ export function useXDriveFileExplorerTrash({
     const workingGeneration = beginWorking(`delete:${node.id}`)
     try {
       await adapter.deleteTrash(node)
-      if (workingGeneration === workingGenerationRef.current) {
-        setDeleteTarget(null)
-        onFeedbackRef.current?.('已永久删除')
-      }
-      await changed()
+      if (
+        workingGeneration !== workingGenerationRef.current ||
+        !enabledRef.current
+      ) return
+      setDeleteTarget(null)
+      onFeedbackRef.current?.('已永久删除')
+      await changed(workingGeneration)
     } catch (error) {
-      if (workingGeneration === workingGenerationRef.current) {
+      if (
+        workingGeneration === workingGenerationRef.current &&
+        enabledRef.current
+      ) {
         onErrorRef.current(error)
       }
     } finally {
