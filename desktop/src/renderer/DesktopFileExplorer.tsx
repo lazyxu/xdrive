@@ -1685,6 +1685,7 @@ export default function DesktopFileExplorer({
       />
 
       <XDriveFileExplorer
+        interactionLifecycleKey={navigationSessionStorageKey ?? ''}
         presentation="workspace"
         keyboardProfile={keyboardProfile}
         items={trashActive ? trash.items : explorerItems}
