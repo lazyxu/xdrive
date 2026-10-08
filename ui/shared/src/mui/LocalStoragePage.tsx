@@ -117,7 +117,8 @@ function LocalFolderRow({
       <Box
         sx={{
           minHeight: 48,
-          display: 'flex',
+          display: { xs: 'grid', sm: 'flex' },
+          gridTemplateColumns: { xs: 'auto auto minmax(0, 1fr)', sm: undefined },
           alignItems: 'center',
           gap: 1,
           pl: 1 + depth * 2,
@@ -133,7 +134,7 @@ function LocalFolderRow({
           disabled={children.length === 0}
           aria-label={open ? '折叠文件夹' : '展开文件夹'}
           onClick={() => onToggle(node.path)}
-          sx={{ width: 28, height: 28 }}
+          sx={{ width: { xs: 44, sm: 28 }, height: { xs: 44, sm: 28 } }}
         >
           {children.length === 0
             ? <ChevronRightRoundedIcon fontSize="small" sx={{ opacity: 0 }} />
@@ -150,7 +151,17 @@ function LocalFolderRow({
           </Typography>
         </Box>
         {policySupported && onModeChange ? (
-          <Stack direction="row" spacing={0.5}>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            useFlexGap
+            flexWrap="wrap"
+            sx={{
+              gridColumn: { xs: '1 / -1', sm: 'auto' },
+              pl: { xs: 6.5, sm: 0 },
+              minWidth: 0,
+            }}
+          >
             {(['default', 'exclude', 'always-local'] as XDriveLocalStorageMode[]).map((mode) => (
               <XDriveActionButton
                 key={mode}
@@ -164,7 +175,9 @@ function LocalFolderRow({
             ))}
           </Stack>
         ) : (
-          <Chip size="small" variant="outlined" label="按需访问" />
+          <Box sx={{ gridColumn: { xs: '1 / -1', sm: 'auto' }, pl: { xs: 6.5, sm: 0 } }}>
+            <Chip size="small" variant="outlined" label="按需访问" />
+          </Box>
         )}
       </Box>
       {open ? children.map((child) => (
