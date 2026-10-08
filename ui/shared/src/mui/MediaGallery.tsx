@@ -4,6 +4,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Collections as CollectionsIcon,
   Image as ImageIcon,
+  InfoOutlined as InfoOutlinedIcon,
   Movie as MovieIcon,
   PersonOutline as PersonOutlineIcon,
   Refresh as RefreshIcon,
@@ -27,6 +28,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import type {
   XDriveByteProgressHandler,
@@ -2129,7 +2131,9 @@ function MediaTile({
 }: MediaTileProps) {
   const video = item.metadata.media_kind === 'video'
   const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const clickTimerRef = useRef<number | null>(null)
+  const lastPointerTypeRef = useRef<string | null>(null)
 
   useEffect(() => () => {
     if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
@@ -2163,7 +2167,12 @@ function MediaTile({
       variant="outlined"
       role="button"
       tabIndex={0}
+      onPointerDown={(event) => {
+        lastPointerTypeRef.current = event.pointerType
+      }}
       onClick={(event) => {
+        const pointerType = lastPointerTypeRef.current
+        lastPointerTypeRef.current = null
         if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey) {
           if (clickTimerRef.current !== null) {
             window.clearTimeout(clickTimerRef.current)
@@ -2174,6 +2183,10 @@ function MediaTile({
             metaKey: event.metaKey,
             shiftKey: event.shiftKey,
           })
+          return
+        }
+        if (compactTouch && pointerType === 'touch') {
+          openPreview()
           return
         }
         openDetails()
@@ -2264,7 +2277,9 @@ function MediaTile({
             top: 4,
             left: 4,
             zIndex: 3,
-            p: 0.5,
+            p: compactTouch ? 0 : 0.5,
+            width: compactTouch ? 44 : undefined,
+            height: compactTouch ? 44 : undefined,
             bgcolor: 'rgba(0,0,0,.58)',
             color: '#fff',
             borderRadius: 1,
@@ -2272,6 +2287,42 @@ function MediaTile({
             '&:hover': { bgcolor: 'rgba(0,0,0,.72)' },
           }}
         />
+      ) : null}
+      {compactTouch && !selectionMode ? (
+        <Tooltip title="媒体信息">
+          <IconButton
+            data-xdrive-gallery-touch-info
+            aria-label="媒体信息"
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              lastPointerTypeRef.current = null
+            }}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (clickTimerRef.current !== null) {
+                window.clearTimeout(clickTimerRef.current)
+                clickTimerRef.current = null
+              }
+              onOpen(item)
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            sx={{
+              position: 'absolute',
+              left: 8,
+              bottom: 8,
+              zIndex: 4,
+              width: 44,
+              height: 44,
+              bgcolor: 'rgba(0,0,0,.66)',
+              color: '#fff',
+              '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
+            }}
+          >
+            <InfoOutlinedIcon />
+          </IconButton>
+        </Tooltip>
       ) : null}
       {onSetFavorite ? (
         <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
@@ -2288,6 +2339,8 @@ function MediaTile({
               position: 'absolute',
               top: 8,
               left: selectionMode || selectedForAction ? 42 : 8,
+              width: compactTouch ? 44 : undefined,
+              height: compactTouch ? 44 : undefined,
               bgcolor: 'rgba(0,0,0,.66)',
               color: item.favorite ? 'warning.main' : '#fff',
               '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
