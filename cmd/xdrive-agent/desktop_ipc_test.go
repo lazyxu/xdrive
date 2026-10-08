@@ -66,6 +66,7 @@ type fakeDesktopIPCController struct {
 	err                        error
 	transfers                  *transfer.Manager
 	diagnosticReport           diagnostics.Report
+	localDiskSpace             diagnostics.DiskSpaceInfo
 	reconnectN                 int
 	repairN                    int
 	openLogsN                  int
@@ -294,6 +295,10 @@ func (f *fakeDesktopIPCController) StorageTree(context.Context) (agentStorageTre
 
 func (f *fakeDesktopIPCController) CacheStats() (mount.CacheStats, error) {
 	return f.cacheStats, f.err
+}
+
+func (f *fakeDesktopIPCController) LocalDiskSpace() diagnostics.DiskSpaceInfo {
+	return f.localDiskSpace
 }
 
 func (f *fakeDesktopIPCController) ReleaseReclaimableCache() (mount.CacheReleaseResult, error) {
@@ -1746,6 +1751,9 @@ func TestDesktopIPCStorageAndCache(t *testing.T) {
 			Stats:         mount.CacheStats{Supported: true, UsedBytes: 60, LimitBytes: 200, PinnedBytes: 60},
 			ReleasedBytes: 40, ReleasedFiles: 2,
 		},
+		localDiskSpace: diagnostics.DiskSpaceInfo{
+			Supported: true, FreeBytes: 10 << 30, TotalBytes: 100 << 30, Status: diagnostics.Warn,
+		},
 	}
 	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
 
@@ -1756,6 +1764,12 @@ func TestDesktopIPCStorageAndCache(t *testing.T) {
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/cache", "")
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"reclaimable_bytes\":40") {
 		t.Fatalf("cache status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/local-disk-space", "")
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"free_bytes\":10737418240") ||
+		!strings.Contains(res.Body.String(), "\"status\":\"WARN\"") {
+		t.Fatalf("local disk status=%d body=%s", res.Code, res.Body.String())
 	}
 	res = desktopIPCRequest(t, handler, http.MethodPost, "/v1/cache/release", "")
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"released_bytes\":40") {

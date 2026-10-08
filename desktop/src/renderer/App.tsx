@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
@@ -85,6 +85,7 @@ import {
   xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
+import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopLocalStoragePage } from './DesktopLocalStoragePage'
 import type { DesktopLocalStorageDataSource } from './DesktopLocalStoragePage'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -210,6 +211,8 @@ export default function App({
   const [cloudHistoryNode, setCloudHistoryNode] = useState<AgentCloudNode | null>(null)
   const [cloudHistoryCrumbs, setCloudHistoryCrumbs] = useState<AgentCloudCrumb[]>([])
   const [cloudShareNode, setCloudShareNode] = useState<AgentCloudNode | null>(null)
+  const [cloudFileActionIntent, setCloudFileActionIntent] = useState<DesktopFileExplorerActionIntent | null>(null)
+  const cloudFileActionSequenceRef = useRef(0)
   const [cloudFileExplorerNavigationSnapshot, setCloudFileExplorerNavigationSnapshot] = useState<{
     server: string
     username: string
@@ -406,7 +409,7 @@ export default function App({
   } = useXDriveFileOperationLifecycle<AgentCloudFileOperation>({
     enabled: agent.connected && configured,
     lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
-    taskCenterVisible: view === 'transfers',
+    taskCenterVisible: view === 'transfers' || view === 'overview',
     loadOperations: loadCloudFileOperations,
     onRefreshError: (operationError) => setError(
       operationError instanceof Error ? operationError.message : String(operationError),
@@ -579,7 +582,7 @@ export default function App({
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
     backgroundTaskPort,
     backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
-    backgroundTasksVisible: view === 'transfers',
+    backgroundTasksVisible: view === 'transfers' || view === 'overview',
     globalTasksEnabled: status?.role === 'admin',
     onBackgroundTaskError: (taskError) => setError(
       taskError instanceof Error ? taskError.message : String(taskError),
@@ -1117,6 +1120,15 @@ export default function App({
   }
 
   const openCloudTrash = () => setCloudTrashOpen(true)
+
+  const requestCloudFileAction = useCallback((action: DesktopFileExplorerAction) => {
+    cloudFileActionSequenceRef.current += 1
+    setCloudFileActionIntent({
+      id: cloudFileActionSequenceRef.current,
+      action,
+    })
+    setView('files')
+  }, [])
 
   const openCloud历史版本 = (node: AgentCloudNode, crumbs = cloudCrumbs) => {
     setCloudHistoryNode(node)
@@ -1840,14 +1852,37 @@ export default function App({
             status={status}
             quota={cloudQuota}
             activeTaskCount={taskCenter.badge ?? 0}
+            transfers={transfers.transfers}
+            fileOperations={cloudFileOperations}
+            backgroundTasks={taskCenter.backgroundTasks}
+            activityRevision={[
+              status?.revision ?? 0,
+              transfers.transfers.find((task) => (
+                task.state === 'completed' ||
+                task.state === 'partial' ||
+                task.state === 'failed' ||
+                task.state === 'cancelled'
+              ))?.updated_at ?? '',
+              cloudFileOperations.find((operation) => (
+                operation.status === 'completed' ||
+                operation.status === 'failed' ||
+                operation.status === 'cancelled'
+              ))?.updated_at ?? '',
+            ].join(':')}
             recentSupported={fileRecentSupported}
             favoritesSupported={fileFavoritesSupported}
             fileAvailabilitySupported={fileAvailabilitySupported}
+            localDiskSpaceSupported={agent.hello?.capabilities.includes('local-disk-space') ?? false}
+            folderUploadSupported={Boolean(
+              agent.hello?.capabilities.includes('upload-conflict-preflight') &&
+              agent.hello?.capabilities.includes('upload-conflict-policy')
+            )}
             openFolderLoading={busy === 'folder'}
             onOpenFolder={() => {
               void run('folder', () => window.xdriveDesktop.agent.openFolder())
             }}
             onOpenFiles={() => setView('files')}
+            onRequestFileAction={requestCloudFileAction}
             onOpenGallery={() => setView('gallery')}
             onOpenTransfers={() => setView('transfers')}
             onOpenConflicts={() => setView('conflicts')}
@@ -1934,6 +1969,10 @@ export default function App({
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               transfers: transfers.transfers,
+              actionIntent: cloudFileActionIntent,
+              onActionIntentConsumed: (id) => {
+                setCloudFileActionIntent((current) => current?.id === id ? null : current)
+              },
               keyboardProfile: fileExplorerKeyboardProfile,
               onError: (message) => setError(message),
               onFeedback: (_tone, message) => setNotice(message),

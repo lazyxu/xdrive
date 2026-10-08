@@ -878,6 +878,14 @@ func (c *agentController) CacheStats() (mount.CacheStats, error) {
 	return mount.CacheUsage(root, mountOptionsFromConfig(cfg, c.transfers))
 }
 
+func (c *agentController) LocalDiskSpace() diagnostics.DiskSpaceInfo {
+	_, root, err := c.Settings()
+	if err != nil {
+		return diagnostics.DiskSpaceInfo{Reason: err.Error()}
+	}
+	return diagnostics.DiskSpace(root)
+}
+
 func (c *agentController) ReleaseReclaimableCache() (mount.CacheReleaseResult, error) {
 	cfg, root, err := c.Settings()
 	if err != nil {

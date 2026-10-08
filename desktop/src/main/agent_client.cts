@@ -1066,6 +1066,14 @@ export type AgentCacheReleaseResult = {
   failed_files: number
 }
 
+export type AgentLocalDiskSpace = {
+  supported: boolean
+  reason?: string
+  free_bytes: number
+  total_bytes: number
+  status: 'PASS' | 'WARN' | 'FAIL' | string
+}
+
 type AgentDiscovery = {
   version: number
   base_url: string
@@ -1213,6 +1221,10 @@ export class AgentIPCClient {
 
   cacheStats() {
     return this.request<AgentCacheStats>('GET', '/v1/cache')
+  }
+
+  localDiskSpace() {
+    return this.request<AgentLocalDiskSpace>('GET', '/v1/local-disk-space')
   }
 
   releaseCache() {

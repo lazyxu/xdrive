@@ -13,18 +13,31 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+func platformDiskSpace(mountPath string) (uint64, uint64, error) {
+	volume := filepath.VolumeName(mountPath)
+	if strings.TrimSpace(volume) == "" {
+		return 0, 0, fmt.Errorf("disk volume is unavailable")
+	}
+	path16, err := windows.UTF16PtrFromString(volume + "\\")
+	if err != nil {
+		return 0, 0, err
+	}
+	var free, total, totalFree uint64
+	if err := windows.GetDiskFreeSpaceEx(path16, &free, &total, &totalFree); err != nil {
+		return 0, 0, err
+	}
+	return free, total, nil
+}
+
 func PlatformChecks(mountPath string) []Check {
 	var checks []Check
 	checks = append(checks, windowsUpdateTransactionCheck())
 	if mountPath != "" {
-		path16, err := windows.UTF16PtrFromString(filepath.VolumeName(mountPath) + "\\")
-		if err == nil {
-			var free, total, totalFree uint64
-			if err = windows.GetDiskFreeSpaceEx(path16, &free, &total, &totalFree); err == nil {
-				checks = append(checks, Check{Name: "disk space", Status: diskSpaceStatus(free, total), Detail: fmt.Sprintf("%s free of %s", FormatBytes(free), FormatBytes(total))})
-			} else {
-				checks = append(checks, Check{Name: "disk space", Status: Warn, Detail: err.Error()})
-			}
+		space := DiskSpace(mountPath)
+		if space.Supported {
+			checks = append(checks, Check{Name: "disk space", Status: space.Status, Detail: fmt.Sprintf("%s free of %s", FormatBytes(space.FreeBytes), FormatBytes(space.TotalBytes))})
+		} else {
+			checks = append(checks, Check{Name: "disk space", Status: Warn, Detail: space.Reason})
 		}
 
 		registered, detail := WindowsSyncRootRegistered(mountPath)

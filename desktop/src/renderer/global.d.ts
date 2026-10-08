@@ -242,6 +242,14 @@ declare global {
     failed_files: number
   }
 
+  type AgentLocalDiskSpace = {
+    supported: boolean
+    reason?: string
+    free_bytes: number
+    total_bytes: number
+    status: 'PASS' | 'WARN' | 'FAIL' | string
+  }
+
   type AgentSource = ExternalSource
   type AgentCreateSourceInput = CreateExternalSourceInput
   type AgentUpdateSourceInput = UpdateExternalSourceInput
@@ -389,6 +397,7 @@ declare global {
         getTransfers: () => Promise<AgentTransfers>
         getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
+        getLocalDiskSpace: () => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItems: (
           kind?: string,

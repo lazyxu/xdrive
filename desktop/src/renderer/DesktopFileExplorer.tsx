@@ -89,6 +89,16 @@ type DesktopFileAvailabilityEntry = {
   error?: string
 }
 
+export type DesktopFileExplorerAction =
+  | 'upload-files'
+  | 'upload-folder'
+  | 'create-folder'
+
+export type DesktopFileExplorerActionIntent = {
+  id: number
+  action: DesktopFileExplorerAction
+}
+
 function desktopFileStatusLabel(state: AgentFileAvailability, syncing = false) {
   if (syncing || state.Syncing || state.Mode === 'syncing') return '正在同步'
   if (state.InSync) return '已同步'
@@ -160,6 +170,8 @@ export default function DesktopFileExplorer({
   recentSupported = false,
   transferLifecycleSupported = false,
   transfers = [],
+  actionIntent,
+  onActionIntentConsumed,
   keyboardProfile = 'web',
   onError,
   onFeedback,
@@ -211,6 +223,8 @@ export default function DesktopFileExplorer({
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
   transfers?: readonly AgentTransfer[]
+  actionIntent?: DesktopFileExplorerActionIntent | null
+  onActionIntentConsumed?: (id: number) => void
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
   onError: (message: string) => void
   onFeedback: (tone: 'good' | 'warning', message: string) => void
@@ -278,6 +292,7 @@ export default function DesktopFileExplorer({
   const [navigationAvailabilityItems, setNavigationAvailabilityItems] = useState<readonly XDriveFileExplorerItem[]>([])
   const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0)
   const availabilityRequestRef = useRef(0)
+  const actionIntentRef = useRef(0)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const recent = useXDriveFileExplorerRecent<AgentCloudNode>({
@@ -1164,6 +1179,41 @@ export default function DesktopFileExplorer({
       finishActionBusy(busyToken)
     }
   }
+
+  useEffect(() => {
+    if (
+      !actionIntent ||
+      actionIntent.id === actionIntentRef.current ||
+      trashActive ||
+      !current ||
+      explorerActionBusy
+    ) return
+
+    if (actionIntent.action === 'upload-folder' && !uploadConflictSupported) {
+      actionIntentRef.current = actionIntent.id
+      onActionIntentConsumed?.(actionIntent.id)
+      onError('当前客户端不支持文件夹上传，请更新客户端核心组件。')
+      return
+    }
+
+    actionIntentRef.current = actionIntent.id
+    onActionIntentConsumed?.(actionIntent.id)
+    if (actionIntent.action === 'upload-files') {
+      void uploadFiles()
+    } else if (actionIntent.action === 'upload-folder') {
+      folderUploadInputRef.current?.click()
+    } else {
+      setCreateOpen(true)
+    }
+  }, [
+    actionIntent,
+    current,
+    explorerActionBusy,
+    onActionIntentConsumed,
+    onError,
+    trashActive,
+    uploadConflictSupported,
+  ])
 
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
     if (actionBusyRef.current || fileOperationBusy || uploadBusy) {

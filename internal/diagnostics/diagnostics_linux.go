@@ -10,19 +10,27 @@ import (
 	"syscall"
 )
 
+func platformDiskSpace(mountPath string) (uint64, uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(mountPath, &stat); err != nil {
+		parent := filepath.Dir(mountPath)
+		if parentErr := syscall.Statfs(parent, &stat); parentErr != nil {
+			return 0, 0, err
+		}
+	}
+	free := uint64(stat.Bavail) * uint64(stat.Bsize)
+	total := uint64(stat.Blocks) * uint64(stat.Bsize)
+	return free, total, nil
+}
+
 func PlatformChecks(mountPath string) []Check {
 	var checks []Check
 	if mountPath != "" {
-		var stat syscall.Statfs_t
-		if err := syscall.Statfs(mountPath, &stat); err != nil {
-			parent := filepath.Dir(mountPath)
-			if parentErr := syscall.Statfs(parent, &stat); parentErr != nil {
-				checks = append(checks, Check{Name: "disk space", Status: Warn, Detail: err.Error()})
-			} else {
-				checks = append(checks, linuxDiskCheck(stat))
-			}
+		space := DiskSpace(mountPath)
+		if space.Supported {
+			checks = append(checks, Check{Name: "disk space", Status: space.Status, Detail: fmt.Sprintf("%s free of %s", FormatBytes(space.FreeBytes), FormatBytes(space.TotalBytes))})
 		} else {
-			checks = append(checks, linuxDiskCheck(stat))
+			checks = append(checks, Check{Name: "disk space", Status: Warn, Detail: space.Reason})
 		}
 
 		if out, err := exec.Command("findmnt", "-T", mountPath, "-n", "-o", "FSTYPE,SOURCE").CombinedOutput(); err == nil {
