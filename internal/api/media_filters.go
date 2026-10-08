@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-const mediaSearchMaxRunes = 200
+const (
+	mediaSearchMaxRunes        = 200
+	mediaFacetMaxValues        = 32
+	mediaFacetMaxValueRunes    = 160
+	mediaCameraFacetValueSQL   = "LOWER(TRIM(CONCAT_WS(' ', NULLIF(TRIM(xd_media_metadata.camera_make), ''), NULLIF(TRIM(xd_media_metadata.camera_model), ''))))"
+	mediaCameraFacetDisplaySQL = "TRIM(CONCAT_WS(' ', NULLIF(TRIM(xd_media_metadata.camera_make), ''), NULLIF(TRIM(xd_media_metadata.camera_model), '')))"
+)
 
 type mediaQueryOptions struct {
 	MediaKind      string
@@ -24,6 +32,8 @@ type mediaQueryOptions struct {
 	Favorite       *bool
 	Tag            string
 	Person         string
+	Cameras        []string
+	Formats        []string
 	Place          *mediaPlaceCell
 	PersonCluster  string
 	PersonIdentity string
@@ -49,6 +59,17 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	out.Category = strings.TrimSpace(c.Query("category"))
 	if out.Category != "" && !validMediaCategory(out.Category) {
 		fail(c, http.StatusBadRequest, "category is invalid")
+		return mediaQueryOptions{}, false
+	}
+	var err error
+	out.Cameras, err = normalizeMediaFacetValues("camera", c.QueryArray("camera"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return mediaQueryOptions{}, false
+	}
+	out.Formats, err = normalizeMediaFacetValues("format", c.QueryArray("format"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
 		return mediaQueryOptions{}, false
 	}
 	var ok bool
@@ -135,8 +156,42 @@ func validMediaCategory(value string) bool {
 	}
 }
 
+func normalizeMediaFacetValues(name string, values []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, raw := range values {
+		value := strings.ToLower(strings.TrimSpace(raw))
+		if value == "" {
+			continue
+		}
+		if strings.ContainsRune(value, 0) || len([]rune(value)) > mediaFacetMaxValueRunes {
+			return nil, fmt.Errorf("%s filter is invalid", name)
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+		if len(out) > mediaFacetMaxValues {
+			return nil, fmt.Errorf("%s accepts at most %d values", name, mediaFacetMaxValues)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 func (options mediaQueryOptions) withoutSearch() mediaQueryOptions {
 	options.Search = ""
+	return options
+}
+
+func (options mediaQueryOptions) withoutCameras() mediaQueryOptions {
+	options.Cameras = nil
+	return options
+}
+
+func (options mediaQueryOptions) withoutFormats() mediaQueryOptions {
+	options.Formats = nil
 	return options
 }
 
@@ -200,6 +255,12 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 			"COALESCE(NULLIF(xd_media_metadata.exif_json, ''), '{}')::jsonb @> ?::jsonb",
 			`{"is_panorama":true}`,
 		)
+	}
+	if len(options.Cameras) > 0 {
+		query = query.Where(mediaCameraFacetValueSQL+" IN ?", options.Cameras)
+	}
+	if len(options.Formats) > 0 {
+		query = query.Where("LOWER(TRIM(xd_media_metadata.mime_type)) IN ?", options.Formats)
 	}
 	query = applyMediaSearchFilter(query, options.Search)
 	if options.CapturedFrom != nil {

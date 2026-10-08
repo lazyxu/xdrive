@@ -126,6 +126,20 @@ thumbnail pixels use a non-animated rectangular skeleton rather than one progres
 per visible tile.
 
 
+### Structured camera / format facet contract
+
+Gallery camera and primary-media-format filtering is Server-side and supports multi-select
+OR within one facet group and AND across different filter groups. Camera keys are
+canonical lowercase make+model strings; format keys are canonical lowercase MIME types.
+Smart albums persist these same query fields.
+
+Facet counts are loaded through a dedicated endpoint **only when the advanced filter UI
+asks for them**; ordinary first-page/range loads must not run facet GROUP BY work. Each
+facet count removes its own current selection while preserving the remaining query,
+collection/album scope, and semantic-search result set, so available choices stay useful
+without changing the result semantics.
+
+
 ## Phase 3 — multi-select and shared Selection Toolbar
 
 Gallery selection is owned entirely by the shared Web/Desktop surface. Users can enter
