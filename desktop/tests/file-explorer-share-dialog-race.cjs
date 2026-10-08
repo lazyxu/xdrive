@@ -106,7 +106,14 @@ function loadShareDialog(react) {
     if (request === './DialogActions') return { XDriveDialogActions: 'XDriveDialogActions' }
     if (request === './DialogContent') return { XDriveDialogContent: 'XDriveDialogContent' }
     if (request === './DialogTitle') {
-      return { XDriveDialogTitle: 'XDriveDialogTitle', xDriveDialogPaperProps: {} }
+      return {
+        XDriveDialogTitle: 'XDriveDialogTitle',
+        xDriveDialogPaperProps: {},
+        useXDriveCompactTouchDialog: () => ({
+          compactTouch: false,
+          dialogPaper: {},
+        }),
+      }
     }
     if (request === './FeedbackSnackbar') return { XDriveFeedbackSnackbar: 'XDriveFeedbackSnackbar' }
     if (request === './SectionHeader') return { XDriveSectionHeader: 'XDriveSectionHeader' }
