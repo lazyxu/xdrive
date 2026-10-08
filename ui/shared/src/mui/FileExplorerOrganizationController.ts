@@ -16,14 +16,17 @@ export function useXDriveFileExplorerOrganization({
   enabled?: boolean
   onError: (error: unknown) => void
 }) {
-  const generationRef = useRef(0)
+  const refreshGenerationRef = useRef(0)
+  const lifecycleGenerationRef = useRef(0)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
   const [tags, setTags] = useState<XDriveFileTag[]>([])
   const [savedSearches, setSavedSearches] = useState<Awaited<ReturnType<XDriveFileExplorerOrganizationPort['listSavedSearches']>>>([])
   const [loading, setLoading] = useState(false)
   const [busyKey, setBusyKey] = useState('')
 
   const refresh = useCallback(async () => {
-    const generation = ++generationRef.current
+    const generation = ++refreshGenerationRef.current
     if (!enabled) {
       setTags([])
       setSavedSearches([])
@@ -36,25 +39,30 @@ export function useXDriveFileExplorerOrganization({
         adapter.listTags(),
         adapter.listSavedSearches(),
       ])
-      if (generationRef.current !== generation) return
+      if (refreshGenerationRef.current !== generation) return
       setTags(nextTags)
       setSavedSearches([...nextSavedSearches].sort((a, b) => a.position - b.position || a.id - b.id))
     } catch (error) {
-      if (generationRef.current === generation) onError(error)
+      if (refreshGenerationRef.current === generation) onErrorRef.current(error)
     } finally {
-      if (generationRef.current === generation) setLoading(false)
+      if (refreshGenerationRef.current === generation) setLoading(false)
     }
-  }, [adapter, enabled, onError])
+  }, [adapter, enabled])
 
   useEffect(() => {
-    generationRef.current += 1
+    lifecycleGenerationRef.current += 1
+    refreshGenerationRef.current += 1
     setTags([])
     setSavedSearches([])
     setBusyKey('')
-    void refresh()
     return () => {
-      generationRef.current += 1
+      lifecycleGenerationRef.current += 1
+      refreshGenerationRef.current += 1
     }
+  }, [lifecycleKey])
+
+  useEffect(() => {
+    void refresh()
   }, [lifecycleKey, refresh])
 
   const run = useCallback(async <T,>(
@@ -62,18 +70,21 @@ export function useXDriveFileExplorerOrganization({
     action: () => Promise<T>,
     after?: (value: T) => void,
   ) => {
+    const lifecycleGeneration = lifecycleGenerationRef.current
     setBusyKey(key)
     try {
       const value = await action()
-      after?.(value)
+      if (lifecycleGenerationRef.current === lifecycleGeneration) after?.(value)
       return value
     } catch (error) {
-      onError(error)
+      if (lifecycleGenerationRef.current === lifecycleGeneration) onErrorRef.current(error)
       throw error
     } finally {
-      setBusyKey((current) => current === key ? '' : current)
+      if (lifecycleGenerationRef.current === lifecycleGeneration) {
+        setBusyKey((current) => current === key ? '' : current)
+      }
     }
-  }, [onError])
+  }, [])
 
   const createTag = useCallback((name: string, color: string) => run(
     'tag:create',
@@ -95,17 +106,20 @@ export function useXDriveFileExplorerOrganization({
   ), [adapter, run])
 
   const setTagNodes = useCallback(async (tagID: number, nodeIDs: number[], assigned: boolean) => {
+    const lifecycleGeneration = lifecycleGenerationRef.current
     await run(
       `tag:nodes:${tagID}`,
       () => assigned ? adapter.addTagNodes(tagID, nodeIDs) : adapter.removeTagNodes(tagID, nodeIDs),
     )
+    if (lifecycleGenerationRef.current !== lifecycleGeneration) return
     try {
       const nextTags = await adapter.listTags()
+      if (lifecycleGenerationRef.current !== lifecycleGeneration) return
       setTags(nextTags)
     } catch (error) {
-      onError(error)
+      if (lifecycleGenerationRef.current === lifecycleGeneration) onErrorRef.current(error)
     }
-  }, [adapter, onError, run])
+  }, [adapter, run])
 
   const createSavedSearch = useCallback((input: XDriveFileSavedSearchInput) => run(
     'saved-search:create',
@@ -127,6 +141,7 @@ export function useXDriveFileExplorerOrganization({
   ), [adapter, run])
 
   const reorderSavedSearches = useCallback(async (ids: number[]) => {
+    const lifecycleGeneration = lifecycleGenerationRef.current
     const previous = savedSearches
     const index = new Map(ids.map((id, position) => [id, position]))
     setSavedSearches((current) => [...current].sort(
@@ -135,10 +150,11 @@ export function useXDriveFileExplorerOrganization({
     try {
       await adapter.reorderSavedSearches(ids)
     } catch (error) {
+      if (lifecycleGenerationRef.current !== lifecycleGeneration) return
       setSavedSearches(previous)
-      onError(error)
+      onErrorRef.current(error)
     }
-  }, [adapter, onError, savedSearches])
+  }, [adapter, savedSearches])
 
   const tagOptions = useMemo(
     () => tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
