@@ -160,6 +160,34 @@ func TestFileOperationBatchRootLoadUsesConstantSQL(t *testing.T) {
 		}
 	}
 
+	moveTx := db.Begin()
+	if moveTx.Error != nil {
+		t.Fatal(moveTx.Error)
+	}
+	counter.start()
+	moveLoaded, err := batchLoadNodesTx(moveTx, user.ID, refs, false)
+	moveQueries := counter.stop()
+	if rollbackErr := moveTx.Rollback().Error; rollbackErr != nil {
+		t.Fatal(rollbackErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moveQueries != 1 {
+		t.Fatalf("batch move root validation SELECTs=%d want=1", moveQueries)
+	}
+	if len(moveLoaded) != len(refs) {
+		t.Fatalf("move loaded roots=%d want=%d", len(moveLoaded), len(refs))
+	}
+	for index, node := range moveLoaded {
+		if node.ID != refs[index].ID {
+			t.Fatalf("move loaded[%d].ID=%d want=%d", index, node.ID, refs[index].ID)
+		}
+		if node.File != nil {
+			t.Fatalf("move loaded[%d] unexpectedly preloaded file metadata: %+v", index, node.File)
+		}
+	}
+
 	badRefs := append([]batchNodeRef(nil), refs...)
 	badIndex := 17
 	badRefs[badIndex].Revision++
@@ -181,5 +209,35 @@ func TestFileOperationBatchRootLoadUsesConstantSQL(t *testing.T) {
 		failure.Code != "revision_conflict" ||
 		failure.CurrentRevision != refs[badIndex].Revision {
 		t.Fatalf("revision mismatch failure=%+v", failure)
+	}
+}
+
+func TestFileOperationExecutionUsesBatchRootLoads(t *testing.T) {
+	sourceBytes, err := os.ReadFile("file_operations.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(sourceBytes)
+	for _, functionName := range []string{
+		"executeQueuedBatchCopy",
+		"executeQueuedBatchMove",
+		"executeQueuedBatchDelete",
+	} {
+		start := strings.Index(source, "func (s *Server) "+functionName)
+		if start < 0 {
+			t.Fatalf("missing production function %s", functionName)
+		}
+		rest := source[start+1:]
+		end := strings.Index(rest, "\nfunc ")
+		body := source[start:]
+		if end >= 0 {
+			body = source[start : start+1+end]
+		}
+		if !strings.Contains(body, "batchLoadNodesTx(tx, uid, refs,") {
+			t.Fatalf("%s must batch-load selected roots", functionName)
+		}
+		if strings.Contains(body, "batchLoadNodeTx(tx, uid, ref, index") {
+			t.Fatalf("%s regressed to per-root loading", functionName)
+		}
 	}
 }
