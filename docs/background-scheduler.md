@@ -428,3 +428,10 @@ Center control path. Their cancellation contract is consumer-aware and waiter-sc
 disconnecting one HTTP/Web/Desktop waiter stops only that waiter while the shared underlying derivative task
 continues for other consumers. Cross-Server derivative singleflight uses the same waiter/task distinction, so
 one consumer cannot cancel work still needed by another Server or request.
+
+
+## Task Center focus handoff
+
+Surfaces that create or control a durable background task may hand the canonical task id returned by the control API to the shared Task Center as a one-shot focus request. The Task Center owns row discovery, scrolling, keyboard focus, and selected highlighting. Callers must not query or manipulate Task Center DOM directly.
+
+A focus request has a monotonically increasing request id in addition to the task id. This is required because system-maintenance task ids are stable by kind, so two consecutive runs of the same maintenance task still need two distinct focus requests. Poll refreshes must not repeatedly steal scroll position after a request has already been satisfied.
