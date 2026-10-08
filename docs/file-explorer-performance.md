@@ -46,6 +46,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
 | Windows local-delete baseline pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat local deletions: successful-delete baseline pruning **1,200 baseline-wide prefix scans / up to 721,800 key inspections -> 1 final baseline scan**; processed/deleted subtree coverage uses ancestor-set lookup instead of a growing linear prefix slice. Server DELETE cardinality/order are unchanged. |
 | Windows local-change existence probe reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent local-change paths: filesystem existence probes in `reconcileLocalChanges` **2,400 `Lstat` calls -> 1,200** by recording missing deletion candidates during the first pass; Server DELETE cardinality/order and 404/409 handling are unchanged. |
+| Windows local file-rename baseline fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent file renames in a 100k-entry baseline: prefix-wide baseline scans **2,400 -> 0**; directory rename and directory-target fallback retain subtree semantics. |
 | Windows empty always-local policy fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Default policy with a 100,000-entry baseline: `applyAlwaysLocal` baseline inspections **100,000 -> 0** when no normalized `AlwaysLocalPaths` exist; configured always-local pin/hydrate behavior is unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
@@ -2330,4 +2331,40 @@ Regression commands:
 - `go test ./internal/api -run '^TestFileOperationProgress(CoalescesCompletedDeltas|PreservesDatabaseCancellationCheckpoint|ExecutorsUseCoalescer)$' -count=1`.
 
 Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Windows local file-rename baseline fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI event-driven local rename handling;
+- stable structural workload: **1,200 independent file renames** against a **100,000-entry baseline**;
+- every rename still performs the existing Server `RenameMove` mutation and `cfMarkPathInSync`;
+- evidence method: production source-shape regression plus behavior tests over a 100k-entry baseline; no wall-clock benchmark is quoted.
+
+BEFORE:
+
+- every successful local rename called `deletePrefix(baseline, newPath)`;
+- it then called `moveBaselinePrefix(baseline, oldPath, newPath)`;
+- both helpers scan the whole baseline to discover subtree members;
+- independent file renames have no descendants, so 1,200 file renames performed **2,400 whole-baseline prefix scans** without gaining file-level correctness.
+
+AFTER / current:
+
+- when the source is a file and the exact target is absent or is also a file, baseline bookkeeping uses exact map operations: delete the target key, delete the old key, and write the source state at the new key;
+- the same 1,200-file workload performs **0 prefix-wide baseline scans** in rename bookkeeping;
+- an exact target that is a baseline directory falls back to the old subtree delete/move path;
+- directory source renames also keep the old subtree path because descendants must move with the directory;
+- Server request cardinality, revision/conflict behavior, target parent resolution, path-in-sync marking, and later changed-path processing remain unchanged.
+
+Decision: **Accepted.** A file node cannot own baseline descendants, so scanning the entire baseline twice per ordinary file rename adds work proportional to namespace size without contributing information.
+
+Regression budget: ordinary file rename bookkeeping must not call `deletePrefix` or `moveBaselinePrefix`. Directory renames and directory-target fallback must retain subtree cleanup/move semantics.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsLocalFileRename' -count=1`.
+
+Next action: continue basic FileExplorer sync/delete performance auditing and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 

@@ -191,8 +191,7 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 		return false, err
 	}
 
-	deletePrefix(baseline, rename.NewPath)
-	moveBaselinePrefix(baseline, rename.OldPath, rename.NewPath)
+	moveLocalRenameBaseline(baseline, rename.OldPath, rename.NewPath, base.node.Type)
 	rootState := baseline[rename.NewPath]
 	rootState.node = updated
 	baseline[rename.NewPath] = rootState
@@ -200,6 +199,29 @@ func (p *winProvider) applyLocalRename(ctx context.Context, rename winRename, ba
 		return false, err
 	}
 	return true, nil
+}
+
+func moveLocalRenameBaseline(
+	baseline map[string]winState,
+	oldRel string,
+	newRel string,
+	sourceType string,
+) {
+	if sourceType == "file" {
+		target, targetExists := baseline[newRel]
+		if !targetExists || target.node.Type != "dir" {
+			state, ok := baseline[oldRel]
+			if !ok {
+				return
+			}
+			delete(baseline, newRel)
+			delete(baseline, oldRel)
+			baseline[newRel] = state
+			return
+		}
+	}
+	deletePrefix(baseline, newRel)
+	moveBaselinePrefix(baseline, oldRel, newRel)
 }
 
 func (p *winProvider) reconcileMovedPlaceholder(
