@@ -64,7 +64,8 @@ test('Web delegates Task Center view-model composition to shared', () => {
     'operations: fileOperations',
     'operationActions: fileOperationActions',
     'transferBadge={taskCenter.badge}',
-    '<XDriveTaskCenterPage {...taskCenter.pageProps} />',
+    '<XDriveTaskCenterPage',
+    '{...taskCenter.pageProps}',
   ]) {
     assert.ok(web.includes(token), `Web Task Center wiring missing: ${token}`)
   }
@@ -331,4 +332,30 @@ test('background task history uses one shared active-first cursor controller', (
   assert.ok(desktop.includes('loadGlobalPage'))
   assert.equal(web.includes('IntersectionObserver'), false, 'Web must not own history scrolling')
   assert.equal(desktop.includes('IntersectionObserver'), false, 'Desktop must not own history scrolling')
+})
+
+
+test('Storage maintenance can focus the exact global Task Center row once', () => {
+  for (const token of [
+    'backgroundFocusTaskID?: string',
+    'backgroundFocusRequestID?: number',
+    "querySelectorAll<HTMLElement>('[data-xdrive-background-task-id]')",
+    "target.scrollIntoView({ behavior: 'smooth', block: 'center' })",
+    'focusedRequestRef.current = backgroundFocusRequestID',
+  ]) assert.ok(page.includes(token), 'Task Center focus contract missing: ' + token)
+
+  for (const token of [
+    'data-xdrive-background-task-id={task.id}',
+    'focusedTaskID',
+    'selected={task.id === focusedTaskID}',
+    'focused={task.id === focusedTaskID}',
+  ]) assert.ok(backgroundCenter.includes(token), 'background task focus surface missing: ' + token)
+
+  for (const token of [
+    'result.result_task_id || result.task_id',
+    'taskCenterFocusSequenceRef.current += 1',
+    "taskCenter.pageProps.onBackgroundScopeChange?.('global')",
+    'backgroundFocusTaskID={taskCenterFocus?.taskID}',
+    'backgroundFocusRequestID={taskCenterFocus?.requestID}',
+  ]) assert.ok(web.includes(token), 'Web maintenance focus handoff missing: ' + token)
 })

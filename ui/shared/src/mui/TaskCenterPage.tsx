@@ -80,6 +80,8 @@ export interface XDriveTaskCenterPageProps {
   backgroundHasMore?: boolean
   backgroundLoadingMore?: boolean
   onLoadMoreBackground?: () => void
+  backgroundFocusTaskID?: string
+  backgroundFocusRequestID?: number
   subtitle?: ReactNode
   pageActions?: ReactNode
   clearHistory?: XDriveTaskCenterClearHistory
@@ -116,6 +118,8 @@ export function XDriveTaskCenterPage({
   backgroundHasMore = false,
   backgroundLoadingMore = false,
   onLoadMoreBackground,
+  backgroundFocusTaskID = '',
+  backgroundFocusRequestID = 0,
   subtitle = '统一查看文件操作、上传下载、同步文件夹和后台处理状态。',
   pageActions,
   clearHistory,
@@ -136,6 +140,31 @@ export function XDriveTaskCenterPage({
   onResolveOperationConflict,
 }: XDriveTaskCenterPageProps) {
   const scope = globalTasksEnabled ? backgroundScope : 'mine'
+  const contentRef = useRef<HTMLDivElement>(null)
+  const focusedRequestRef = useRef(0)
+
+  useEffect(() => {
+    if (
+      !backgroundFocusTaskID ||
+      backgroundFocusRequestID <= 0 ||
+      focusedRequestRef.current === backgroundFocusRequestID ||
+      !contentRef.current
+    ) return
+    const target = Array.from(
+      contentRef.current.querySelectorAll<HTMLElement>('[data-xdrive-background-task-id]'),
+    ).find((element) => element.dataset.xdriveBackgroundTaskId === backgroundFocusTaskID)
+    if (!target) return
+    focusedRequestRef.current = backgroundFocusRequestID
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    target.focus({ preventScroll: true })
+  }, [
+    backgroundFocusRequestID,
+    backgroundFocusTaskID,
+    backgroundTasks,
+    globalBackgroundTasks,
+    scope,
+  ])
+
   const syncTasks = backgroundTasks.filter(
     (task) => task.domain === 'sync_run' || task.kind === 'source.sync',
   )
@@ -162,7 +191,7 @@ export function XDriveTaskCenterPage({
       subtitle={subtitle}
       pageActions={actions}
     >
-      <Stack spacing={3}>
+      <Stack ref={contentRef} spacing={3}>
         {globalTasksEnabled ? (
           <Tabs
             value={scope}
@@ -183,6 +212,7 @@ export function XDriveTaskCenterPage({
               tasks={globalBackgroundTasks}
               loading={globalBackgroundTasksLoading}
               controlKey={backgroundControlKey}
+              focusedTaskID={backgroundFocusTaskID}
               onControl={onBackgroundTaskControl}
             />
             <XDriveTaskHistorySentinel
@@ -237,6 +267,7 @@ export function XDriveTaskCenterPage({
                     loading={backgroundTasksLoading}
                     emptyMessage="暂无同步文件夹任务"
                     controlKey={backgroundControlKey}
+                    focusedTaskID={backgroundFocusTaskID}
                     onControl={onBackgroundTaskControl}
                   />
                 </Box>
@@ -250,6 +281,7 @@ export function XDriveTaskCenterPage({
                     loading={backgroundTasksLoading}
                     emptyMessage="暂无后台处理任务"
                     controlKey={backgroundControlKey}
+                    focusedTaskID={backgroundFocusTaskID}
                     onControl={onBackgroundTaskControl}
                   />
                 </Box>

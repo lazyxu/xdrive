@@ -163,10 +163,12 @@ function BackgroundTaskControls({
 function BackgroundTaskItem({
   task,
   controlKey,
+  focused = false,
   onControl,
 }: {
   task: XDriveBackgroundTask
   controlKey: string
+  focused?: boolean
   onControl?: (
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
@@ -179,7 +181,17 @@ function BackgroundTaskItem({
     : xDriveBackgroundTaskKindLabel(task.kind)
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+    <Box
+      data-xdrive-background-task-id={task.id}
+      tabIndex={focused ? -1 : undefined}
+      sx={{
+        border: 1,
+        borderColor: focused ? 'primary.main' : 'divider',
+        borderRadius: 2,
+        overflow: 'hidden',
+        bgcolor: focused ? 'action.selected' : undefined,
+      }}
+    >
       <Stack spacing={1.25} sx={{ px: 1.75, py: 1.5 }}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -275,12 +287,14 @@ export function XDriveBackgroundTaskList({
   loading = false,
   emptyMessage = '暂无任务',
   controlKey = '',
+  focusedTaskID = '',
   onControl,
 }: {
   tasks: XDriveBackgroundTask[]
   loading?: boolean
   emptyMessage?: string
   controlKey?: string
+  focusedTaskID?: string
   onControl?: (
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
@@ -299,6 +313,7 @@ export function XDriveBackgroundTaskList({
           key={task.id}
           task={task}
           controlKey={controlKey}
+          focused={task.id === focusedTaskID}
           onControl={onControl}
         />
       ))}
@@ -310,11 +325,13 @@ export function XDriveBackgroundTaskTable({
   tasks,
   loading = false,
   controlKey = '',
+  focusedTaskID = '',
   onControl,
 }: {
   tasks: XDriveBackgroundTask[]
   loading?: boolean
   controlKey?: string
+  focusedTaskID?: string
   onControl?: (
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
@@ -346,7 +363,13 @@ export function XDriveBackgroundTaskTable({
         </TableHead>
         <TableBody>
           {tasks.map((task) => (
-            <TableRow key={task.id} hover>
+            <TableRow
+              key={task.id}
+              hover
+              selected={task.id === focusedTaskID}
+              data-xdrive-background-task-id={task.id}
+              tabIndex={task.id === focusedTaskID ? -1 : undefined}
+            >
               <TableCell>
                 {task.owner_username ||
                   (task.scope === 'system'

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
@@ -441,6 +441,11 @@ function FileManager({
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+  const [taskCenterFocus, setTaskCenterFocus] = useState<{
+    taskID: string
+    requestID: number
+  } | null>(null)
+  const taskCenterFocusSequenceRef = useRef(0)
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -636,6 +641,7 @@ function FileManager({
   })
 
   const openGlobalTaskCenter = useCallback(() => {
+    setTaskCenterFocus(null)
     taskCenter.pageProps.onBackgroundScopeChange?.('global')
     setAppView('transfers')
   }, [taskCenter.pageProps.onBackgroundScopeChange])
@@ -643,8 +649,22 @@ function FileManager({
   const runStorageMaintenance = useCallback(async (
     kind: 'storage_verify' | 'storage_repair',
   ) => {
-    await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
-  }, [api])
+    const result = await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
+    const taskID = (result.result_task_id || result.task_id || '').trim()
+    taskCenter.pageProps.onBackgroundScopeChange?.('global')
+    if (taskID) {
+      taskCenterFocusSequenceRef.current += 1
+      setTaskCenterFocus({
+        taskID,
+        requestID: taskCenterFocusSequenceRef.current,
+      })
+    }
+    setAppView('transfers')
+  }, [api, taskCenter.pageProps.onBackgroundScopeChange])
+
+  useEffect(() => {
+    if (appView !== 'transfers') setTaskCenterFocus(null)
+  }, [appView])
 
   useEffect(() => {
     if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {
@@ -1020,7 +1040,11 @@ function FileManager({
             onError={handleError}
           />
         ) : appView === 'transfers' ? (
-          <XDriveTaskCenterPage {...taskCenter.pageProps} />
+          <XDriveTaskCenterPage
+            {...taskCenter.pageProps}
+            backgroundFocusTaskID={taskCenterFocus?.taskID}
+            backgroundFocusRequestID={taskCenterFocus?.requestID}
+          />
         ) : appView === 'cloud-storage' ? (
           <XDriveCloudStoragePage source={cloudStorageSource} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (
