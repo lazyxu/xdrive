@@ -20,6 +20,11 @@ export function useXDriveFileExplorerOrganization({
   const lifecycleGenerationRef = useRef(0)
   const reorderGenerationRef = useRef(0)
   const reorderTailRef = useRef<Promise<void>>(Promise.resolve())
+  const mutationRef = useRef<{
+    key: string
+    lifecycleGeneration: number
+    promise: Promise<unknown>
+  } | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
   const [tags, setTags] = useState<XDriveFileTag[]>([])
@@ -56,6 +61,7 @@ export function useXDriveFileExplorerOrganization({
     refreshGenerationRef.current += 1
     reorderGenerationRef.current += 1
     reorderTailRef.current = Promise.resolve()
+    mutationRef.current = null
     setTags([])
     setSavedSearches([])
     setBusyKey('')
@@ -64,6 +70,7 @@ export function useXDriveFileExplorerOrganization({
       refreshGenerationRef.current += 1
       reorderGenerationRef.current += 1
       reorderTailRef.current = Promise.resolve()
+      mutationRef.current = null
     }
   }, [lifecycleKey])
 
@@ -71,25 +78,50 @@ export function useXDriveFileExplorerOrganization({
     void refresh()
   }, [lifecycleKey, refresh])
 
-  const run = useCallback(async <T,>(
+  const run = useCallback(<T,>(
     key: string,
     action: () => Promise<T>,
     after?: (value: T) => void,
-  ) => {
+  ): Promise<T> => {
     const lifecycleGeneration = lifecycleGenerationRef.current
-    setBusyKey(key)
-    try {
-      const value = await action()
-      if (lifecycleGenerationRef.current === lifecycleGeneration) after?.(value)
-      return value
-    } catch (error) {
-      if (lifecycleGenerationRef.current === lifecycleGeneration) onErrorRef.current(error)
-      throw error
-    } finally {
-      if (lifecycleGenerationRef.current === lifecycleGeneration) {
-        setBusyKey((current) => current === key ? '' : current)
-      }
+    const active = mutationRef.current
+    if (
+      active &&
+      active.lifecycleGeneration === lifecycleGeneration &&
+      active.key === key
+    ) {
+      return active.promise as Promise<T>
     }
+
+    setBusyKey(key)
+    const holder = {
+      key,
+      lifecycleGeneration,
+      promise: Promise.resolve(undefined) as Promise<unknown>,
+    }
+    const operation = Promise.resolve()
+      .then(action)
+      .then((value) => {
+        if (lifecycleGenerationRef.current === lifecycleGeneration) after?.(value)
+        return value
+      })
+      .catch((error) => {
+        if (lifecycleGenerationRef.current === lifecycleGeneration) onErrorRef.current(error)
+        throw error
+      })
+      .finally(() => {
+        if (
+          lifecycleGenerationRef.current === lifecycleGeneration &&
+          mutationRef.current === holder
+        ) {
+          mutationRef.current = null
+          setBusyKey((current) => current === key ? '' : current)
+        }
+      })
+
+    holder.promise = operation
+    mutationRef.current = holder
+    return operation
   }, [])
 
   const createTag = useCallback((name: string, color: string) => run(

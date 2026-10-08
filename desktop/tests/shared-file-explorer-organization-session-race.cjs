@@ -252,3 +252,68 @@ test('FileExplorer organization refresh does not invalidate same-lifecycle mutat
   assert.equal(organization.busyKey, '')
   assert.deepEqual(errors, [])
 })
+
+
+test('FileExplorer organization same-tick duplicate mutation is synchronously single-flight', async () => {
+  const runtime = createHookRuntime()
+  const useOrganization = loadOrganizationHook(runtime.react)
+
+  const pendingCreate = deferred()
+  let createCalls = 0
+  const errors = []
+
+  const adapter = {
+    listTags: async () => [],
+    createTag: async () => {
+      createCalls += 1
+      return pendingCreate.promise
+    },
+    updateTag: async () => { throw new Error('unused') },
+    deleteTag: async () => {},
+    queryNodeTags: async () => [],
+    addTagNodes: async () => {},
+    removeTagNodes: async () => {},
+    listSavedSearches: async () => [],
+    createSavedSearch: async () => { throw new Error('unused') },
+    updateSavedSearch: async () => { throw new Error('unused') },
+    deleteSavedSearch: async () => {},
+    reorderSavedSearches: async () => [],
+  }
+
+  const render = () => runtime.render(() => useOrganization({
+    lifecycleKey: 'server-a:user-a',
+    adapter,
+    onError: (error) => errors.push(error),
+  }))
+
+  render()
+  await flushAsync()
+  let organization = render()
+
+  const first = organization.createTag('Tag', '#111111')
+  const second = organization.createTag('Tag', '#111111')
+
+  await flushAsync()
+
+  assert.equal(
+    createCalls,
+    1,
+    'two same-tick submissions for the same organization mutation must not issue duplicate adapter writes',
+  )
+
+  organization = render()
+  assert.equal(organization.busyKey, 'tag:create')
+
+  pendingCreate.resolve({ id: 1, name: 'Tag', color: '#111111' })
+  await Promise.all([first, second])
+  await flushAsync()
+  organization = render()
+
+  assert.equal(organization.busyKey, '')
+  assert.deepEqual(
+    organization.tags.map((tag) => tag.id),
+    [1],
+    'coalesced duplicate mutation completion must publish the result once',
+  )
+  assert.deepEqual(errors, [])
+})
