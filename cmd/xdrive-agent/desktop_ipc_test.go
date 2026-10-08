@@ -135,6 +135,11 @@ type fakeDesktopIPCController struct {
 	cloudMediaItems            []client.MediaItem
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaPlaces           []client.MediaPlaceFacet
+	cloudMediaMemories         []client.MediaMemory
+	cloudMemoryAnchorDate      string
+	cloudMemoryID              string
+	cloudMemoryLimit           int
+	cloudMemoryOffset          int
 	cloudSuggestedPeople       []client.MediaSuggestedPerson
 	cloudSuggestedItems        []client.MediaItem
 	cloudSuggestedID           string
@@ -804,6 +809,32 @@ func (f *fakeDesktopIPCController) CloudMediaAlbums(context.Context) ([]client.M
 
 func (f *fakeDesktopIPCController) CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error) {
 	return append([]client.MediaPlaceFacet(nil), f.cloudMediaPlaces...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaMemories(
+	_ context.Context,
+	anchorDate string,
+	limit int,
+) ([]client.MediaMemory, error) {
+	f.cloudMemoryAnchorDate = anchorDate
+	f.cloudMemoryLimit = limit
+	return append([]client.MediaMemory(nil), f.cloudMediaMemories...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaMemoryItemsRange(
+	_ context.Context,
+	memoryID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudMemoryID = memoryID
+	f.cloudMemoryLimit = limit
+	f.cloudMemoryOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: int64(len(f.cloudMediaItems)),
+		Offset:     offset,
+		Limit:      limit,
+	}, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudMediaSuggestedPeople(
@@ -1960,6 +1991,11 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			Latitude: 1.355, Longitude: 103.815, ItemCount: 2,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
 		}},
+		cloudMediaMemories: []client.MediaMemory{{
+			ID: "recent:2026-10-08", Kind: "recent_day",
+			Title: "今天", Subtitle: "2 个项目", ItemCount: 2,
+			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
+		}},
 		cloudSuggestedPeople: []client.MediaSuggestedPerson{{
 			ID:        "auto:v1:" + strings.Repeat("a", 64),
 			FaceCount: 3, ItemCount: 2,
@@ -2071,6 +2107,47 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), "\"place:135:10381\"") ||
 		!strings.Contains(res.Body.String(), "\"item_count\":2") {
 		t.Fatalf("media places status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/memories?anchor_date=2026-10-08&limit=12",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"recent:2026-10-08\"") {
+		t.Fatalf("media memories status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMemoryAnchorDate != "2026-10-08" || ctrl.cloudMemoryLimit != 12 {
+		t.Fatalf(
+			"media memories not forwarded: anchor=%q limit=%d",
+			ctrl.cloudMemoryAnchorDate,
+			ctrl.cloudMemoryLimit,
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/memory-items?memory_id=recent%3A2026-10-08&limit=25&offset=5",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media memory items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMemoryID != "recent:2026-10-08" ||
+		ctrl.cloudMemoryLimit != 25 ||
+		ctrl.cloudMemoryOffset != 5 {
+		t.Fatalf(
+			"media memory range not forwarded: id=%q limit=%d offset=%d",
+			ctrl.cloudMemoryID,
+			ctrl.cloudMemoryLimit,
+			ctrl.cloudMemoryOffset,
+		)
 	}
 
 	personID := "auto:v1:" + strings.Repeat("a", 64)
@@ -2328,6 +2405,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/items?place=invalid",
 		"/v1/media/places?limit=0",
 		"/v1/media/places?limit=1001",
+		"/v1/media/memories?limit=0",
+		"/v1/media/memories?anchor_date=not-a-date",
+		"/v1/media/memory-items?memory_id=",
 		"/v1/media/people/suggestions?limit=0",
 		"/v1/media/people/suggestion-items?person_id=invalid",
 		"/v1/media/people/identity-items?person_id=invalid",

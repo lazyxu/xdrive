@@ -162,6 +162,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)
+	authed.GET("/media/memories", s.listMediaMemories)
+	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/people/suggestions", s.listMediaSuggestedPeople)
 	authed.GET("/media/people/suggestions/:clusterID/items", s.listMediaSuggestedPersonItems)
 	authed.POST("/media/people/suggestions/:clusterID/adopt", s.adoptMediaSuggestedPerson)

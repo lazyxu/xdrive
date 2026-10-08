@@ -134,6 +134,21 @@ type MediaPlaceFacet struct {
 	AttributionURL string     `json:"attribution_url,omitempty"`
 }
 
+type MediaMemory struct {
+	ID          string     `json:"id"`
+	Kind        string     `json:"kind"`
+	Title       string     `json:"title"`
+	Subtitle    string     `json:"subtitle,omitempty"`
+	StartDate   string     `json:"start_date,omitempty"`
+	EndDate     string     `json:"end_date,omitempty"`
+	AnchorDate  string     `json:"anchor_date,omitempty"`
+	PlaceName   string     `json:"place_name,omitempty"`
+	ItemCount   int64      `json:"item_count"`
+	YearCount   int64      `json:"year_count,omitempty"`
+	CoverNodeID *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
 type MediaSuggestedPerson struct {
 	ID          string     `json:"id"`
 	FaceCount   int64      `json:"face_count"`
@@ -324,6 +339,48 @@ func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet,
 		path += "?" + encoded
 	}
 	var out []MediaPlaceFacet
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaMemories(
+	ctx context.Context,
+	anchorDate string,
+	limit int,
+) ([]MediaMemory, error) {
+	values := url.Values{}
+	if value := strings.TrimSpace(anchorDate); value != "" {
+		values.Set("anchor_date", value)
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/media/memories"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []MediaMemory
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaMemoryItemsRange(
+	ctx context.Context,
+	memoryID string,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/memories/" +
+		url.PathEscape(strings.TrimSpace(memoryID)) + "/items?" + values.Encode()
+	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

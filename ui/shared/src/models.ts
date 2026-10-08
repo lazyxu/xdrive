@@ -494,6 +494,21 @@ export interface MediaPlaceFacet {
   attribution_url?: string
 }
 
+export interface MediaMemory {
+  id: string
+  kind: 'recent_day' | 'on_this_day' | 'trip' | string
+  title: string
+  subtitle?: string
+  start_date?: string
+  end_date?: string
+  anchor_date?: string
+  place_name?: string
+  item_count: number
+  year_count?: number
+  cover_node_id?: number
+  updated_at?: string
+}
+
 export interface MediaSuggestedPerson {
   id: string
   face_count: number

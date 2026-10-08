@@ -3,6 +3,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
+  MediaMemory,
   Node,
   MediaPersonIdentity,
   MediaPersonSplit,
@@ -56,6 +57,15 @@ export interface XDriveMediaGalleryPort {
   listPlaces?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
+  listMemories?: (
+    anchorDate?: string,
+    limit?: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaMemory[]>>
+  listMemoryItemRange?: (
+    memoryID: string,
+    limit: number,
+    offset: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listSuggestedPeople?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaSuggestedPerson[]>>
@@ -252,6 +262,16 @@ export function createXDriveMediaGalleryDataSource(
     listAlbums: () => resolveXDriveTransport(port.listAlbums()),
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
+      : undefined,
+    listMemories: port.listMemories
+      ? (anchorDate, limit) => resolveXDriveTransport(
+          port.listMemories!(anchorDate, limit),
+        )
+      : undefined,
+    listMemoryItemRange: port.listMemoryItemRange
+      ? (memoryID, limit, offset) => resolveXDriveTransport(
+          port.listMemoryItemRange!(memoryID, limit, offset),
+        )
       : undefined,
     listSuggestedPeople: port.listSuggestedPeople
       ? (limit) => resolveXDriveTransport(port.listSuggestedPeople!(limit))

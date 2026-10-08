@@ -106,6 +106,7 @@ import {
   type AgentMediaItemRange,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
+  type AgentMediaMemory,
   type AgentMediaSuggestedPerson,
   type AgentMediaPersonIdentity,
   type AgentMediaPersonSplit,
@@ -1885,6 +1886,61 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().mediaPlaces(requestedLimit)
   }, false))
+
+  ipcMain.handle(
+    'agent:get-media-memories',
+    (
+      _event,
+      anchorDate: unknown = '',
+      limit: unknown = 24,
+    ) => runAgentAction<AgentMediaMemory[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      const requestedAnchorDate = typeof anchorDate === 'string' ? anchorDate.trim() : ''
+      if (
+        requestedAnchorDate &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(requestedAnchorDate)
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Memory anchor date must use YYYY-MM-DD.')
+      }
+      const requestedLimit = limit === undefined ? 24 : limit
+      if (
+        typeof requestedLimit !== 'number' ||
+        !Number.isSafeInteger(requestedLimit) ||
+        requestedLimit < 1 ||
+        requestedLimit > 100
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Memory limit must be between 1 and 100.')
+      }
+      return requireAgentClient().mediaMemories(requestedAnchorDate, requestedLimit)
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-memory-item-range',
+    (
+      _event,
+      memoryID: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof memoryID !== 'string' ||
+        memoryID.trim() === '' ||
+        memoryID.trim().length > 128
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Memory id is invalid.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaMemoryItemRange(
+        memoryID.trim(),
+        window.limit,
+        window.offset,
+      )
+    }, false),
+  )
 
   ipcMain.handle('agent:get-media-suggested-people', (_event, limit: unknown = 24) => runAgentAction<AgentMediaSuggestedPerson[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

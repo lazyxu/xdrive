@@ -18,6 +18,7 @@ import type {
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
+  MediaMemory,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -257,6 +258,7 @@ declare global {
   type AgentMediaItem = MediaItem
   type AgentMediaItemRange = MediaItemRange
   type AgentMediaAlbum = MediaAlbum
+  type AgentMediaMemory = MediaMemory
   type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
   type AgentMediaThumbnail = { content_type: string; data: ArrayBuffer }
@@ -406,6 +408,15 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
+        getMediaMemories: (
+          anchorDate?: string,
+          limit?: number,
+        ) => Promise<DesktopResult<MediaMemory[]>>
+        getMediaMemoryItemRange: (
+          memoryID: string,
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaSuggestedPeople: (limit?: number) => Promise<DesktopResult<MediaSuggestedPerson[]>>
         getMediaSuggestedPersonItems: (
           personID: string,

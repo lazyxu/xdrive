@@ -481,6 +481,47 @@ test('media places use the scoped Agent API', async (t) => {
   assert.equal(places[0].item_count, 4)
 })
 
+test('media memories use the scoped Agent API', async (t) => {
+  let requestIndex = 0
+  const { client } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (requestIndex === 0) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/memories')
+      assert.equal(url.searchParams.get('anchor_date'), '2026-10-08')
+      assert.equal(url.searchParams.get('limit'), '24')
+      json(res, 200, [{
+        id: 'recent:2026-10-08',
+        kind: 'recent_day',
+        title: '今天',
+        subtitle: '4 个项目',
+        item_count: 4,
+        cover_node_id: 31,
+      }])
+    } else {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/memory-items')
+      assert.equal(url.searchParams.get('memory_id'), 'recent:2026-10-08')
+      assert.equal(url.searchParams.get('limit'), '40')
+      assert.equal(url.searchParams.get('offset'), '20')
+      json(res, 200, {
+        items: [{ node: { id: 31, name: 'photo.jpg', type: 'file', revision: 1 } }],
+        total_count: 4,
+        offset: 20,
+        limit: 40,
+      })
+    }
+    requestIndex += 1
+  })
+
+  const memories = await client.mediaMemories('2026-10-08', 24)
+  assert.equal(memories.length, 1)
+  assert.equal(memories[0].id, 'recent:2026-10-08')
+  const page = await client.mediaMemoryItemRange('recent:2026-10-08', 40, 20)
+  assert.equal(page.total_count, 4)
+  assert.equal(page.items[0].node.id, 31)
+})
+
 test('media thumbnail stays binary over Agent IPC', async (t) => {
   const { client, token } = await fixture(t, (req, res) => {
     assert.equal(req.headers.authorization, `Bearer ${token}`)
