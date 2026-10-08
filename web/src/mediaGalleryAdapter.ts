@@ -25,6 +25,12 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
       api.mediaMemories(anchorDate, limit),
     listMemoryItemRange: (memoryID, limit, offset) =>
       api.mediaMemoryItemRange(memoryID, limit, offset),
+    listDuplicateGroups: (limit = 24) => api.mediaDuplicateGroups(limit),
+    listDuplicateItemRange: (duplicateID, limit, offset) =>
+      api.mediaDuplicateItemRange(duplicateID, limit, offset),
+    listBurstReviews: (limit = 24) => api.mediaBurstReviews(limit),
+    listBurstReviewItemRange: (burstID, limit, offset) =>
+      api.mediaBurstReviewItemRange(burstID, limit, offset),
     listSuggestedPeople: (limit = 24) => api.mediaSuggestedPeople(limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       api.mediaSuggestedPersonItems(personID, limit, offset, query),

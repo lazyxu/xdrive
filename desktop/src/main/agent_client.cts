@@ -763,6 +763,46 @@ export type AgentMediaMemory = {
   updated_at?: string
 }
 
+export type AgentMediaDuplicateGroup = {
+  id: string
+  item_count: number
+  file_size_bytes: number
+  logical_duplicate_bytes: number
+  physical_reclaimable_bytes: number
+  recommended_keep_node_id: number
+  recommendation_reason: string
+  cover_node_id?: number
+  updated_at?: string
+}
+
+export type AgentMediaDuplicateGroupList = {
+  groups: AgentMediaDuplicateGroup[]
+  total_groups: number
+  total_items: number
+  logical_duplicate_bytes: number
+  physical_reclaimable_bytes: number
+}
+
+export type AgentMediaBurstReview = {
+  id: string
+  item_count: number
+  recommended_node_id: number
+  recommendation_reason: string
+  cover_node_id?: number
+  total_bytes: number
+  potential_cleanup_bytes: number
+  physical_reclaimable_bytes: number
+  updated_at?: string
+}
+
+export type AgentMediaBurstReviewList = {
+  groups: AgentMediaBurstReview[]
+  total_groups: number
+  total_items: number
+  potential_cleanup_bytes: number
+  physical_reclaimable_bytes: number
+}
+
 export type AgentMediaSuggestedPerson = {
   id: string
   face_count: number
@@ -1305,6 +1345,54 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/memory-items?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateGroups(limit = 24) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    return this.request<AgentMediaDuplicateGroupList>(
+      'GET',
+      `/v1/media/duplicates?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateItemRange(
+    duplicateID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      duplicate_id: duplicateID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/duplicate-items?${query.toString()}`,
+    )
+  }
+
+  mediaBurstReviews(limit = 24) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    return this.request<AgentMediaBurstReviewList>(
+      'GET',
+      `/v1/media/bursts?${query.toString()}`,
+    )
+  }
+
+  mediaBurstReviewItemRange(
+    burstID: string,
+    limit = 200,
+    offset = 0,
+  ) {
+    const query = new URLSearchParams({
+      burst_id: burstID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentMediaItemRange>(
+      'GET',
+      `/v1/media/burst-items?${query.toString()}`,
     )
   }
 

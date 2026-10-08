@@ -108,6 +108,8 @@ import {
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaMemory,
+  type AgentMediaDuplicateGroupList,
+  type AgentMediaBurstReviewList,
   type AgentMediaSuggestedPerson,
   type AgentMediaPersonIdentity,
   type AgentMediaPersonSplit,
@@ -1942,6 +1944,86 @@ function registerIPCHandlers() {
       const window = normalizeMediaRangeWindow(limit, offset)
       return requireAgentClient().mediaMemoryItemRange(
         memoryID.trim(),
+        window.limit,
+        window.offset,
+      )
+    }, false),
+  )
+
+  const normalizeMediaCleanupLimit = (limit: unknown = 24) => {
+    const requestedLimit = limit === undefined ? 24 : limit
+    if (
+      typeof requestedLimit !== 'number' ||
+      !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 ||
+      requestedLimit > 100
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Cleanup review limit must be between 1 and 100.')
+    }
+    return requestedLimit
+  }
+
+  const normalizeMediaCleanupID = (value: unknown, label: string) => {
+    if (
+      typeof value !== 'string' ||
+      value.trim() === '' ||
+      value.trim().length > 128
+    ) {
+      throw new AgentIPCError('invalid_input', 0, `${label} id is invalid.`)
+    }
+    return value.trim()
+  }
+
+  ipcMain.handle(
+    'agent:get-media-duplicate-groups',
+    (_event, limit: unknown = 24) => runAgentAction<AgentMediaDuplicateGroupList>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaDuplicateGroups(normalizeMediaCleanupLimit(limit))
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-duplicate-item-range',
+    (
+      _event,
+      duplicateID: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaDuplicateItemRange(
+        normalizeMediaCleanupID(duplicateID, 'Duplicate'),
+        window.limit,
+        window.offset,
+      )
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-burst-reviews',
+    (_event, limit: unknown = 24) => runAgentAction<AgentMediaBurstReviewList>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaBurstReviews(normalizeMediaCleanupLimit(limit))
+    }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-burst-item-range',
+    (
+      _event,
+      burstID: unknown,
+      limit: unknown = 200,
+      offset: unknown = 0,
+    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaBurstReviewItemRange(
+        normalizeMediaCleanupID(burstID, 'Burst'),
         window.limit,
         window.offset,
       )

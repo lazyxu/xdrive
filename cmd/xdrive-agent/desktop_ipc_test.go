@@ -141,6 +141,12 @@ type fakeDesktopIPCController struct {
 	cloudMemoryID              string
 	cloudMemoryLimit           int
 	cloudMemoryOffset          int
+	cloudDuplicateGroups       client.MediaDuplicateGroupList
+	cloudBurstReviews          client.MediaBurstReviewList
+	cloudDuplicateID           string
+	cloudBurstID               string
+	cloudCleanupLimit          int
+	cloudCleanupOffset         int
 	cloudSuggestedPeople       []client.MediaSuggestedPerson
 	cloudSuggestedItems        []client.MediaItem
 	cloudSuggestedID           string
@@ -834,6 +840,54 @@ func (f *fakeDesktopIPCController) CloudMediaMemoryItemsRange(
 	f.cloudMemoryID = memoryID
 	f.cloudMemoryLimit = limit
 	f.cloudMemoryOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: int64(len(f.cloudMediaItems)),
+		Offset:     offset,
+		Limit:      limit,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaDuplicateGroups(
+	_ context.Context,
+	limit int,
+) (client.MediaDuplicateGroupList, error) {
+	f.cloudCleanupLimit = limit
+	return f.cloudDuplicateGroups, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaDuplicateItemsRange(
+	_ context.Context,
+	duplicateID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudDuplicateID = duplicateID
+	f.cloudCleanupLimit = limit
+	f.cloudCleanupOffset = offset
+	return client.MediaItemRange{
+		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
+		TotalCount: int64(len(f.cloudMediaItems)),
+		Offset:     offset,
+		Limit:      limit,
+	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaBurstReviews(
+	_ context.Context,
+	limit int,
+) (client.MediaBurstReviewList, error) {
+	f.cloudCleanupLimit = limit
+	return f.cloudBurstReviews, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaBurstReviewItemsRange(
+	_ context.Context,
+	burstID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	f.cloudBurstID = burstID
+	f.cloudCleanupLimit = limit
+	f.cloudCleanupOffset = offset
 	return client.MediaItemRange{
 		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
 		TotalCount: int64(len(f.cloudMediaItems)),
@@ -2010,6 +2064,29 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			Title: "今天", Subtitle: "2 个项目", ItemCount: 2,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
 		}},
+		cloudDuplicateGroups: client.MediaDuplicateGroupList{
+			Groups: []client.MediaDuplicateGroup{{
+				ID:        "duplicate:v1:" + strings.Repeat("a", 64),
+				ItemCount: 2, FileSizeBytes: 123,
+				LogicalDuplicateBytes: 123,
+				RecommendedKeepNodeID: 31,
+				RecommendationReason:  "优先保留已收藏副本",
+				CoverNodeID:           ptrUint64(31), UpdatedAt: &now,
+			}},
+			TotalGroups: 1, TotalItems: 2, LogicalDuplicateBytes: 123,
+		},
+		cloudBurstReviews: client.MediaBurstReviewList{
+			Groups: []client.MediaBurstReview{{
+				ID: "burst:v1:42", ItemCount: 3,
+				RecommendedNodeID:    31,
+				RecommendationReason: "同等分辨率下推荐连拍中间帧",
+				CoverNodeID:          ptrUint64(31),
+				TotalBytes:           369, PotentialCleanupBytes: 246,
+				PhysicalReclaimableBytes: 123, UpdatedAt: &now,
+			}},
+			TotalGroups: 1, TotalItems: 3,
+			PotentialCleanupBytes: 246, PhysicalReclaimableBytes: 123,
+		},
 		cloudSuggestedPeople: []client.MediaSuggestedPerson{{
 			ID:        "auto:v1:" + strings.Repeat("a", 64),
 			FaceCount: 3, ItemCount: 2,
@@ -2161,6 +2238,82 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			ctrl.cloudMemoryID,
 			ctrl.cloudMemoryLimit,
 			ctrl.cloudMemoryOffset,
+		)
+	}
+
+	duplicateID := "duplicate:v1:" + strings.Repeat("a", 64)
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/duplicates?limit=12",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), duplicateID) ||
+		!strings.Contains(res.Body.String(), "\"logical_duplicate_bytes\":123") {
+		t.Fatalf("media duplicates status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudCleanupLimit != 12 {
+		t.Fatalf("media duplicate limit=%d want=12", ctrl.cloudCleanupLimit)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/duplicate-items?duplicate_id="+url.QueryEscape(duplicateID)+
+			"&limit=25&offset=5",
+		"",
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media duplicate items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudDuplicateID != duplicateID ||
+		ctrl.cloudCleanupLimit != 25 ||
+		ctrl.cloudCleanupOffset != 5 {
+		t.Fatalf(
+			"duplicate range not forwarded: id=%q limit=%d offset=%d",
+			ctrl.cloudDuplicateID,
+			ctrl.cloudCleanupLimit,
+			ctrl.cloudCleanupOffset,
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/bursts?limit=12",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"burst:v1:42\"") ||
+		!strings.Contains(res.Body.String(), "\"potential_cleanup_bytes\":246") {
+		t.Fatalf("media bursts status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudCleanupLimit != 12 {
+		t.Fatalf("media burst limit=%d want=12", ctrl.cloudCleanupLimit)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/burst-items?burst_id=burst%3Av1%3A42&limit=25&offset=5",
+		"",
+	)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
+		t.Fatalf("media burst items status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudBurstID != "burst:v1:42" ||
+		ctrl.cloudCleanupLimit != 25 ||
+		ctrl.cloudCleanupOffset != 5 {
+		t.Fatalf(
+			"burst range not forwarded: id=%q limit=%d offset=%d",
+			ctrl.cloudBurstID,
+			ctrl.cloudCleanupLimit,
+			ctrl.cloudCleanupOffset,
 		)
 	}
 
@@ -2422,6 +2575,10 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		"/v1/media/memories?limit=0",
 		"/v1/media/memories?anchor_date=not-a-date",
 		"/v1/media/memory-items?memory_id=",
+		"/v1/media/duplicates?limit=0",
+		"/v1/media/duplicate-items?duplicate_id=",
+		"/v1/media/bursts?limit=0",
+		"/v1/media/burst-items?burst_id=",
 		"/v1/media/people/suggestions?limit=0",
 		"/v1/media/people/suggestion-items?person_id=invalid",
 		"/v1/media/people/identity-items?person_id=invalid",

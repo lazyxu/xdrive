@@ -54,6 +54,14 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit),
   getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset),
+  getMediaDuplicateGroups: (limit = 24) =>
+    ipcRenderer.invoke('agent:get-media-duplicate-groups', limit),
+  getMediaDuplicateItemRange: (duplicateID: string, limit = 200, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-duplicate-item-range', duplicateID, limit, offset),
+  getMediaBurstReviews: (limit = 24) =>
+    ipcRenderer.invoke('agent:get-media-burst-reviews', limit),
+  getMediaBurstReviewItemRange: (burstID: string, limit = 200, offset = 0) =>
+    ipcRenderer.invoke('agent:get-media-burst-item-range', burstID, limit, offset),
   getMediaSuggestedPeople: (limit = 24) =>
     ipcRenderer.invoke('agent:get-media-suggested-people', limit),
   getMediaSuggestedPersonItems: (

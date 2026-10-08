@@ -1916,6 +1916,52 @@ func (c *agentController) CloudMediaMemoryItemsRange(
 	return cli.MediaMemoryItemsRange(ctx, memoryID, limit, offset)
 }
 
+func (c *agentController) CloudMediaDuplicateGroups(
+	ctx context.Context,
+	limit int,
+) (client.MediaDuplicateGroupList, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaDuplicateGroupList{}, err
+	}
+	return cli.MediaDuplicateGroups(ctx, limit)
+}
+
+func (c *agentController) CloudMediaDuplicateItemsRange(
+	ctx context.Context,
+	duplicateID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaDuplicateItemsRange(ctx, duplicateID, limit, offset)
+}
+
+func (c *agentController) CloudMediaBurstReviews(
+	ctx context.Context,
+	limit int,
+) (client.MediaBurstReviewList, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBurstReviewList{}, err
+	}
+	return cli.MediaBurstReviews(ctx, limit)
+}
+
+func (c *agentController) CloudMediaBurstReviewItemsRange(
+	ctx context.Context,
+	burstID string,
+	limit, offset int,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaBurstReviewItemsRange(ctx, burstID, limit, offset)
+}
+
 func (c *agentController) CloudMediaSuggestedPeople(
 	ctx context.Context,
 	limit int,

@@ -19,6 +19,8 @@ import type {
   MediaItem,
   MediaItemRange,
   MediaMemory,
+  MediaDuplicateGroupList,
+  MediaBurstReviewList,
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
@@ -267,6 +269,8 @@ declare global {
   type AgentMediaItemRange = MediaItemRange
   type AgentMediaAlbum = MediaAlbum
   type AgentMediaMemory = MediaMemory
+  type AgentMediaDuplicateGroupList = MediaDuplicateGroupList
+  type AgentMediaBurstReviewList = MediaBurstReviewList
   type AgentMediaPeople = { people: string[] }
   type AgentMediaDescription = { description: string }
   type AgentMediaThumbnail = { content_type: string; data: ArrayBuffer }
@@ -423,6 +427,22 @@ declare global {
         ) => Promise<DesktopResult<MediaMemory[]>>
         getMediaMemoryItemRange: (
           memoryID: string,
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
+        getMediaDuplicateGroups: (
+          limit?: number,
+        ) => Promise<DesktopResult<MediaDuplicateGroupList>>
+        getMediaDuplicateItemRange: (
+          duplicateID: string,
+          limit?: number,
+          offset?: number,
+        ) => Promise<DesktopResult<AgentMediaItemRange>>
+        getMediaBurstReviews: (
+          limit?: number,
+        ) => Promise<DesktopResult<MediaBurstReviewList>>
+        getMediaBurstReviewItemRange: (
+          burstID: string,
           limit?: number,
           offset?: number,
         ) => Promise<DesktopResult<AgentMediaItemRange>>

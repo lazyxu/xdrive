@@ -149,6 +149,46 @@ type MediaMemory struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
+type MediaDuplicateGroup struct {
+	ID                       string     `json:"id"`
+	ItemCount                int64      `json:"item_count"`
+	FileSizeBytes            int64      `json:"file_size_bytes"`
+	LogicalDuplicateBytes    int64      `json:"logical_duplicate_bytes"`
+	PhysicalReclaimableBytes int64      `json:"physical_reclaimable_bytes"`
+	RecommendedKeepNodeID    uint64     `json:"recommended_keep_node_id"`
+	RecommendationReason     string     `json:"recommendation_reason"`
+	CoverNodeID              *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt                *time.Time `json:"updated_at,omitempty"`
+}
+
+type MediaDuplicateGroupList struct {
+	Groups                   []MediaDuplicateGroup `json:"groups"`
+	TotalGroups              int64                 `json:"total_groups"`
+	TotalItems               int64                 `json:"total_items"`
+	LogicalDuplicateBytes    int64                 `json:"logical_duplicate_bytes"`
+	PhysicalReclaimableBytes int64                 `json:"physical_reclaimable_bytes"`
+}
+
+type MediaBurstReview struct {
+	ID                       string     `json:"id"`
+	ItemCount                int64      `json:"item_count"`
+	RecommendedNodeID        uint64     `json:"recommended_node_id"`
+	RecommendationReason     string     `json:"recommendation_reason"`
+	CoverNodeID              *uint64    `json:"cover_node_id,omitempty"`
+	TotalBytes               int64      `json:"total_bytes"`
+	PotentialCleanupBytes    int64      `json:"potential_cleanup_bytes"`
+	PhysicalReclaimableBytes int64      `json:"physical_reclaimable_bytes"`
+	UpdatedAt                *time.Time `json:"updated_at,omitempty"`
+}
+
+type MediaBurstReviewList struct {
+	Groups                   []MediaBurstReview `json:"groups"`
+	TotalGroups              int64              `json:"total_groups"`
+	TotalItems               int64              `json:"total_items"`
+	PotentialCleanupBytes    int64              `json:"potential_cleanup_bytes"`
+	PhysicalReclaimableBytes int64              `json:"physical_reclaimable_bytes"`
+}
+
 type MediaSuggestedPerson struct {
 	ID          string     `json:"id"`
 	FaceCount   int64      `json:"face_count"`
@@ -380,6 +420,82 @@ func (c *Client) MediaMemoryItemsRange(
 	values.Set("offset", strconv.Itoa(offset))
 	path := "/api/v1/media/memories/" +
 		url.PathEscape(strings.TrimSpace(memoryID)) + "/items?" + values.Encode()
+	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaDuplicateGroups(
+	ctx context.Context,
+	limit int,
+) (MediaDuplicateGroupList, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/media/duplicates"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out MediaDuplicateGroupList
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaDuplicateItemsRange(
+	ctx context.Context,
+	duplicateID string,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/duplicates/" +
+		url.PathEscape(strings.TrimSpace(duplicateID)) + "/items?" + values.Encode()
+	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaBurstReviews(
+	ctx context.Context,
+	limit int,
+) (MediaBurstReviewList, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/api/v1/media/bursts"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out MediaBurstReviewList
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaBurstReviewItemsRange(
+	ctx context.Context,
+	burstID string,
+	limit, offset int,
+) (MediaItemRange, error) {
+	if offset < 0 {
+		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
+	}
+	values := url.Values{}
+	values.Set("range", "true")
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	values.Set("offset", strconv.Itoa(offset))
+	path := "/api/v1/media/bursts/" +
+		url.PathEscape(strings.TrimSpace(burstID)) + "/items?" + values.Encode()
 	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
