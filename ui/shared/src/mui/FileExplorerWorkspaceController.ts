@@ -211,7 +211,10 @@ export function useXDriveFileExplorerWorkspace<
       },
       collectRange: async (startIndex, endIndex) => {
         const rawItems = await activeCollection.collectRange(startIndex, endIndex)
-        if (!rawItems) return null
+        if (
+          !rawItems ||
+          interactionCacheKeyRef.current !== interactionCacheKey
+        ) return null
         const projectedItems = new Array<XDriveFileExplorerItem>(rawItems.length)
         for (let offset = 0; offset < rawItems.length; offset += 1) {
           const index = startIndex + offset
