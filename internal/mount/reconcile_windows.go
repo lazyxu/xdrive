@@ -79,6 +79,7 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 	sortPathsByDepth(paths, true)
 
 	processedSubtrees := make(winPathPrefixSet)
+	deletions := make([]string, 0)
 	var baselineByNodeID winBaselineNodeIndex
 	for _, rel := range paths {
 		if processedSubtrees.covers(rel) {
@@ -88,6 +89,9 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		info, err := os.Lstat(abs)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
+				if _, exists := baseline[rel]; exists {
+					deletions = append(deletions, rel)
+				}
 				continue
 			}
 			return err
@@ -125,14 +129,6 @@ func (p *winProvider) reconcileLocalChanges(ctx context.Context, raw []winLocalC
 		}
 	}
 
-	deletions := make([]string, 0)
-	for rel := range pathSet {
-		if _, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(rel))); errors.Is(err, os.ErrNotExist) {
-			if _, exists := baseline[rel]; exists {
-				deletions = append(deletions, rel)
-			}
-		}
-	}
 	sortPathsByDepth(deletions, true)
 	deletedPrefixes := make(winPathPrefixSet)
 	for _, rel := range deletions {
