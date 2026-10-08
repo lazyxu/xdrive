@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Box, Dialog, Stack, Typography } from '@mui/material'
+import { Box, Dialog, Stack, Typography, useMediaQuery } from '@mui/material'
 import type { DialogProps } from '@mui/material/Dialog'
 import type { BuildInfo } from '../models'
 import type { XDriveAppearance } from '../preferences'
@@ -62,6 +62,27 @@ export function XDriveSettingsDialog({
   children?: ReactNode
 }) {
   const canUpdateServer = serverUpdate?.canUpdate !== false
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const dialogPaper = compactTouch
+    ? {
+        sx: {
+          ...xDriveDialogPaperProps.sx,
+          width: '100vw',
+          height: '100dvh',
+          minHeight: '100vh',
+          maxHeight: 'none',
+          m: 0,
+          borderRadius: 0,
+          boxSizing: 'border-box',
+          pt: 'env(safe-area-inset-top)',
+          pb: 'env(safe-area-inset-bottom)',
+          '& .MuiDialogTitle-root .MuiIconButton-root': {
+            width: 44,
+            height: 44,
+          },
+        },
+      }
+    : xDriveDialogPaperProps
 
   return (
     <Dialog
@@ -69,8 +90,9 @@ export function XDriveSettingsDialog({
       onClose={onClose}
       maxWidth={maxWidth}
       fullWidth
+      fullScreen={compactTouch}
       scroll="paper"
-      slotProps={{ paper: xDriveDialogPaperProps }}
+      slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
         title="设置"
