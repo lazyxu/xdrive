@@ -152,10 +152,22 @@ export function xDriveMediaGalleryTimelineWindow({
   let startIndex = Number.POSITIVE_INFINITY
   let endIndex = 0
 
-  for (let groupIndex = 0; groupIndex < layout.groups.length; groupIndex += 1) {
+  let low = 0
+  let high = layout.groups.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    const group = layout.groups[middle]
+    if (group.top + group.height < retainedTop) low = middle + 1
+    else high = middle
+  }
+
+  for (
+    let groupIndex = low;
+    groupIndex < layout.groups.length;
+    groupIndex += 1
+  ) {
     const group = layout.groups[groupIndex]
-    const groupBottom = group.top + group.height
-    if (groupBottom < retainedTop || group.top > retainedBottom) continue
+    if (group.top > retainedBottom) break
 
     let startRow = 0
     let endRow = 0
