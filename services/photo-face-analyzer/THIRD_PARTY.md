@@ -94,3 +94,40 @@ The semantic Smart Search pipeline is CPU-only:
 Any change to these semantics changes the relevant analyzer
 `pipeline_version`/model version token, so xDrive invalidates and rebuilds
 derived intelligence rather than mixing incompatible generations.
+
+
+## Gallery creative model provenance
+
+The creative runtime pins OpenCV Zoo EfficientSAM-Ti from commit
+`47534e27c9851bb1128ccc0102f1145e27f23f98`.
+
+| Component | File | SHA-256 | License |
+| --- | --- | --- | --- |
+| EfficientSAM-Ti int8 | `image_segmentation_efficientsam_ti_2025april_int8.onnx` | `5ecc8d59a2802c32246e68553e1cf8ce74cf74ba707b84f206eb9181ff774b4e` | Apache-2.0 |
+
+Source:
+- https://github.com/opencv/opencv_zoo/tree/47534e27c9851bb1128ccc0102f1145e27f23f98/models/image_segmentation_efficientsam
+
+## Gallery creative processing contract
+
+The first creative-tools generation is CPU-only and fully local to the optional
+Photo Intelligence analyzer:
+
+1. EfficientSAM-Ti expands normalized foreground/background point prompts into
+   an object mask for Cutout.
+2. Smart Erase converts user brush strokes into a bounded seed mask and samples
+   foreground prompts for EfficientSAM. The segmented object mask is accepted
+   only when it covers at most 65% of the image; otherwise the explicit brush
+   mask remains authoritative.
+3. OpenCV Telea inpainting fills the accepted erase mask. No remote inference
+   service is contacted and no source photo is modified in place.
+4. Cutout emits a transparent PNG. Erase emits a PNG. xDrive stores each
+   completed result as a new canonical file next to the source while retaining
+   a durable generation record and Task Center history.
+5. The Server sends only a revision/SHA/version-fenced 2048px creative working
+   preview to the local analyzer. The preview is a regenerable cache and can be
+   deleted through the existing analysis-preview cleanup class.
+
+Any change to segmentation prompts, erase-mask admission, inpainting semantics,
+or the pinned model changes the creative pipeline version so incompatible
+generations are never reported as the same analyzer build.

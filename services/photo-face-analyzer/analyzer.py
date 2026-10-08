@@ -27,6 +27,12 @@ import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 
+from creative import (
+    CREATIVE_PIPELINE_VERSION,
+    CREATIVE_PROTOCOL_VERSION,
+    CreativeRuntime,
+)
+
 PROTOCOL_VERSION = 1
 ANALYZER_NAME = "xdrive-opencv-yunet-sface"
 YUNET_MODEL_NAME = "face_detection_yunet_2023mar.onnx"
@@ -114,6 +120,7 @@ MAX_FACES = 256
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_PREVIEW_BYTES = 32 * 1024 * 1024
 PREVIEW_PATH_RE = re.compile(r"^/api/v1/media-analysis-preview/[1-9][0-9]*$")
+CREATIVE_PREVIEW_PATH_RE = re.compile(r"^/api/v1/media-creative-preview/[1-9][0-9]*$")
 
 PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-yunet2023mar"
@@ -317,6 +324,132 @@ def fetch_preview(task: dict[str, Any], allowed_origin: str) -> np.ndarray:
     height, width = image.shape[:2]
     if width <= 0 or height <= 0 or max(width, height) > task["preview_edge"]:
         raise RequestError(502, "analysis preview dimensions are invalid")
+    return image
+
+
+def validate_creative_preview_task(
+    task: dict[str, Any],
+    allowed_origin: str,
+) -> dict[str, Any]:
+    required = {
+        "preview_url",
+        "preview_version",
+        "preview_edge",
+        "input_fingerprint",
+    }
+    if set(task) != required:
+        raise RequestError(400, "invalid creative preview task fields")
+    preview_url = task.get("preview_url")
+    fingerprint = task.get("input_fingerprint")
+    preview_version = task.get("preview_version")
+    preview_edge = task.get("preview_edge")
+    if not isinstance(preview_url, str) or not preview_url:
+        raise RequestError(400, "invalid creative preview URL")
+    if not isinstance(fingerprint, str) or not fingerprint or len(fingerprint) > 128:
+        raise RequestError(400, "invalid creative input fingerprint")
+    if isinstance(preview_version, bool) or not isinstance(preview_version, int) or preview_version <= 0:
+        raise RequestError(400, "invalid creative preview version")
+    if (
+        isinstance(preview_edge, bool)
+        or not isinstance(preview_edge, int)
+        or preview_edge <= 0
+        or preview_edge > 4096
+    ):
+        raise RequestError(400, "invalid creative preview edge")
+    parsed = urlsplit(preview_url)
+    if (
+        parsed.scheme.lower() not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise RequestError(400, "invalid creative preview URL")
+    try:
+        preview_origin = (
+            parsed.scheme.lower(),
+            parsed.hostname.lower(),
+            parsed.port or default_port(parsed.scheme.lower()),
+        )
+    except ValueError as exc:
+        raise RequestError(400, "invalid creative preview URL") from exc
+    if preview_origin != origin_key(allowed_origin):
+        raise RequestError(400, "creative preview URL origin is not allowed")
+    if not CREATIVE_PREVIEW_PATH_RE.fullmatch(parsed.path):
+        raise RequestError(400, "creative preview URL path is not allowed")
+    try:
+        query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError as exc:
+        raise RequestError(400, "creative preview URL query is invalid") from exc
+    if set(query) != {"ticket"} or len(query["ticket"]) != 1 or not query["ticket"][0]:
+        raise RequestError(400, "creative preview URL ticket is invalid")
+    return {
+        "preview_url": preview_url,
+        "preview_version": preview_version,
+        "preview_edge": preview_edge,
+        "input_fingerprint": fingerprint,
+    }
+
+
+def fetch_creative_preview(
+    task: dict[str, Any],
+    allowed_origin: str,
+) -> np.ndarray:
+    task = validate_creative_preview_task(task, allowed_origin)
+    parsed = urlsplit(task["preview_url"])
+    port = parsed.port or default_port(parsed.scheme.lower())
+    connection_class = (
+        http.client.HTTPSConnection
+        if parsed.scheme.lower() == "https"
+        else http.client.HTTPConnection
+    )
+    connection = connection_class(parsed.hostname, port=port, timeout=15)
+    try:
+        path = parsed.path + ("?" + parsed.query if parsed.query else "")
+        connection.request(
+            "GET",
+            path,
+            headers={
+                "Accept": "image/jpeg",
+                "User-Agent": "xdrive-photo-creative/1",
+                "Connection": "close",
+            },
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            raise RequestError(502, "creative preview fetch failed")
+        content_length = response.getheader("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_PREVIEW_BYTES:
+                    raise RequestError(502, "creative preview is too large")
+            except ValueError as exc:
+                raise RequestError(502, "creative preview length is invalid") from exc
+        content_type = (response.getheader("Content-Type") or "").split(";", 1)[0]
+        if content_type.strip().lower() != "image/jpeg":
+            raise RequestError(502, "creative preview is not JPEG")
+        if response.getheader("X-XDrive-Creative-Preview-Version") != str(task["preview_version"]):
+            raise RequestError(502, "creative preview version mismatch")
+        if response.getheader("X-XDrive-Creative-Preview-Edge") != str(task["preview_edge"]):
+            raise RequestError(502, "creative preview edge mismatch")
+        if response.getheader("ETag") != '"' + task["input_fingerprint"] + '"':
+            raise RequestError(502, "creative preview fingerprint mismatch")
+        data = response.read(MAX_PREVIEW_BYTES + 1)
+        if len(data) > MAX_PREVIEW_BYTES:
+            raise RequestError(502, "creative preview is too large")
+    except RequestError:
+        raise
+    except Exception as exc:
+        raise RequestError(502, "creative preview fetch failed") from exc
+    finally:
+        connection.close()
+    encoded = np.frombuffer(data, dtype=np.uint8)
+    image = cv.imdecode(encoded, cv.IMREAD_COLOR)
+    if image is None or image.ndim != 3 or image.shape[2] != 3:
+        raise RequestError(502, "creative preview JPEG cannot be decoded")
+    height, width = image.shape[:2]
+    if width <= 0 or height <= 0 or max(width, height) > task["preview_edge"]:
+        raise RequestError(502, "creative preview dimensions are invalid")
     return image
 
 
@@ -887,12 +1020,14 @@ class AnalyzerState:
         runtime: FaceRuntime,
         smart_runtime: SmartRuntime,
         semantic_runtime: SemanticRuntime,
+        creative_runtime: CreativeRuntime,
         preview_origin: str,
         token: str,
     ) -> None:
         self.runtime = runtime
         self.smart_runtime = smart_runtime
         self.semantic_runtime = semantic_runtime
+        self.creative_runtime = creative_runtime
         self.preview_origin = normalize_origin(preview_origin)
         self.token = token.strip()
 
@@ -977,11 +1112,21 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 )
                 self._write_json(200, self.server.state.semantic_runtime.info())
                 return
+            if method == "GET" and target == "/v1/creative-info":
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-creative-protocol",
+                    CREATIVE_PROTOCOL_VERSION,
+                    "creative",
+                )
+                self._write_json(200, self.server.state.creative_runtime.info())
+                return
             if method == "POST" and target in (
                 "/v1/analyze",
                 "/v1/smart-analyze",
                 "/v1/semantic-image",
                 "/v1/semantic-text",
+                "/v1/creative-generate",
             ):
                 if target == "/v1/analyze":
                     self._require_protocol(
@@ -996,6 +1141,13 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                         "x-xdrive-smart-protocol",
                         SMART_PROTOCOL_VERSION,
                         "smart",
+                    )
+                elif target == "/v1/creative-generate":
+                    self._require_protocol(
+                        headers,
+                        "x-xdrive-creative-protocol",
+                        CREATIVE_PROTOCOL_VERSION,
+                        "creative",
                     )
                 else:
                     self._require_protocol(
@@ -1032,6 +1184,36 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     self._write_json(
                         200,
                         self.server.state.semantic_runtime.embed_text(text),
+                    )
+                    return
+                if target == "/v1/creative-generate":
+                    common = {
+                        "preview_url",
+                        "preview_version",
+                        "preview_edge",
+                        "input_fingerprint",
+                    }
+                    if not common.issubset(task):
+                        raise RequestError(400, "creative request is missing preview fields")
+                    preview_task = {key: task[key] for key in common}
+                    image = fetch_creative_preview(
+                        preview_task,
+                        self.server.state.preview_origin,
+                    )
+                    try:
+                        data, mime_type, width, height = (
+                            self.server.state.creative_runtime.generate(image, task)
+                        )
+                    except ValueError as exc:
+                        raise RequestError(400, str(exc)) from exc
+                    self._write_json(
+                        200,
+                        {
+                            "data": base64.b64encode(data).decode("ascii"),
+                            "mime_type": mime_type,
+                            "width": width,
+                            "height": height,
+                        },
                     )
                     return
                 image = fetch_preview(task, self.server.state.preview_origin)
@@ -1083,6 +1265,30 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
         if not supplied or not hmac.compare_digest(supplied, expected):
             raise RequestError(401, "invalid analyzer token")
 
+    def _write_binary(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        reason = "OK" if status == 200 else "Error"
+        response = (
+            f"HTTP/1.1 {status} {reason}\r\n"
+            f"Content-Type: {content_type}\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Cache-Control: no-store\r\n"
+        )
+        for key, value in (headers or {}).items():
+            response += f"{key}: {value}\r\n"
+        response += "Connection: close\r\n\r\n"
+        try:
+            self.wfile.write(response.encode("ascii"))
+            self.wfile.write(body)
+            self.wfile.flush()
+        except OSError:
+            pass
+
     def _write_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(
             payload,
@@ -1132,6 +1338,7 @@ def self_test(
     runtime: FaceRuntime,
     smart_runtime: SmartRuntime,
     semantic_runtime: SemanticRuntime,
+    creative_runtime: CreativeRuntime,
 ) -> None:
     image = synthetic_image()
     runtime.detector.setInputSize((image.shape[1], image.shape[0]))
@@ -1182,6 +1389,35 @@ def self_test(
         raise RuntimeError("semantic image self-test returned invalid embedding")
     if len(base64.b64decode(semantic_text["embedding"])) != SEMANTIC_DIMENSIONS:
         raise RuntimeError("semantic text self-test returned invalid embedding")
+    creative_image = np.zeros((256, 256, 3), dtype=np.uint8)
+    cv.rectangle(creative_image, (72, 48), (184, 220), (255, 255, 255), -1)
+    cutout_png, _, cutout_width, cutout_height = creative_runtime.generate(
+        creative_image,
+        {
+            "kind": "cutout",
+            "cutout_mode": "object",
+            "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
+        },
+    )
+    erase_png, _, erase_width, erase_height = creative_runtime.generate(
+        creative_image,
+        {
+            "kind": "erase",
+            "strokes": [{
+                "radius": 0.03,
+                "points": [{"x": 0.5, "y": 0.5}, {"x": 0.55, "y": 0.55}],
+            }],
+        },
+    )
+    if (
+        not cutout_png.startswith(b"\x89PNG\r\n\x1a\n")
+        or cutout_width != 256
+        or cutout_height != 256
+        or not erase_png.startswith(b"\x89PNG\r\n\x1a\n")
+        or erase_width != 256
+        or erase_height != 256
+    ):
+        raise RuntimeError("creative self-test returned invalid PNG")
     print(
         json.dumps(
             {
@@ -1189,10 +1425,14 @@ def self_test(
                 "opencv": cv.__version__,
                 "pipeline_version": PIPELINE_VERSION,
                 "smart_pipeline_version": SMART_PIPELINE_VERSION,
+                "creative_pipeline_version": CREATIVE_PIPELINE_VERSION,
                 "semantic_pipeline_version": SEMANTIC_PIPELINE_VERSION,
                 "embedding_dimensions": int(vector.size),
                 "smart_label_count": len(smart["labels"]),
                 "semantic_dimensions": SEMANTIC_DIMENSIONS,
+                "creative_pipeline_version": CREATIVE_PIPELINE_VERSION,
+                "creative_cutout_bytes": len(cutout_png),
+                "creative_erase_bytes": len(erase_png),
             },
             separators=(",", ":"),
         )
@@ -1278,6 +1518,11 @@ def healthcheck(socket_path: str, token: str) -> None:
             "X-XDrive-Semantic-Protocol",
             SEMANTIC_PROTOCOL_VERSION,
         ),
+        (
+            "/v1/creative-info",
+            "X-XDrive-Creative-Protocol",
+            CREATIVE_PROTOCOL_VERSION,
+        ),
     )
     for target, protocol_header, protocol_version in checks:
         connection = UnixHTTPConnection(socket_path, timeout=5)
@@ -1313,6 +1558,7 @@ def serve(args: argparse.Namespace) -> None:
         runtime=FaceRuntime(),
         smart_runtime=SmartRuntime(),
         semantic_runtime=SemanticRuntime(),
+        creative_runtime=CreativeRuntime(),
         preview_origin=preview_origin,
         token=args.token,
     )
@@ -1389,7 +1635,12 @@ def main() -> int:
         return 0
 
     if args.self_test:
-        self_test(FaceRuntime(), SmartRuntime(), SemanticRuntime())
+        self_test(
+            FaceRuntime(),
+            SmartRuntime(),
+            SemanticRuntime(),
+            CreativeRuntime(),
+        )
         return 0
     if args.benchmark:
         benchmark(FaceRuntime(), SmartRuntime(), args.iterations)

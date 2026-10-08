@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,7 +25,9 @@ class PreviewHandler(BaseHTTPRequestHandler):
             self.send_header("Location", "/redirected")
             self.end_headers()
             return
-        if not self.path.startswith("/api/v1/media-analysis-preview/42?ticket="):
+        analysis = self.path.startswith("/api/v1/media-analysis-preview/42?ticket=")
+        creative = self.path.startswith("/api/v1/media-creative-preview/42?ticket=")
+        if not analysis and not creative:
             self.send_error(404)
             return
         self.send_response(200)
@@ -37,14 +40,12 @@ class PreviewHandler(BaseHTTPRequestHandler):
             "ETag",
             '"' + self.fingerprint + '"',
         )
-        self.send_header(
-            "X-XDrive-Analysis-Preview-Version",
-            "1",
-        )
-        self.send_header(
-            "X-XDrive-Analysis-Preview-Edge",
-            "1280",
-        )
+        if creative:
+            self.send_header("X-XDrive-Creative-Preview-Version", "1")
+            self.send_header("X-XDrive-Creative-Preview-Edge", "2048")
+        else:
+            self.send_header("X-XDrive-Analysis-Preview-Version", "1")
+            self.send_header("X-XDrive-Analysis-Preview-Edge", "1280")
         self.end_headers()
         self.wfile.write(self.image_bytes)
 
@@ -58,6 +59,7 @@ class AnalyzerTests(unittest.TestCase):
         cls.runtime = analyzer.FaceRuntime()
         cls.smart_runtime = analyzer.SmartRuntime()
         cls.semantic_runtime = analyzer.SemanticRuntime()
+        cls.creative_runtime = analyzer.CreativeRuntime()
         blank = np.zeros((240, 320, 3), dtype=np.uint8)
         ok, encoded = cv.imencode(".jpg", blank)
         if not ok:
@@ -115,6 +117,11 @@ class AnalyzerTests(unittest.TestCase):
             smart["text_recognizer"]["sha256"],
             analyzer.CRNN_SHA256,
         )
+
+        creative = self.creative_runtime.info()
+        self.assertEqual(creative["protocol_version"], 1)
+        self.assertEqual(creative["capabilities"], ["cutout", "erase"])
+        self.assertEqual(len(creative["segment_model"]["sha256"]), 64)
 
         semantic = self.semantic_runtime.info()
         self.assertEqual(semantic["protocol_version"], 1)
@@ -218,6 +225,7 @@ class AnalyzerTests(unittest.TestCase):
                 self.runtime,
                 self.smart_runtime,
                 self.semantic_runtime,
+                self.creative_runtime,
                 self.preview_origin,
                 "secret",
             )
@@ -374,6 +382,113 @@ class AnalyzerTests(unittest.TestCase):
                     analyzer.SEMANTIC_DIMENSIONS,
                 )
                 self.assertEqual(semantic_text["format"], "i8norm-v1")
+                connection.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+
+    def test_creative_runtime_cutout_and_erase(self) -> None:
+        image = np.zeros((256, 256, 3), dtype=np.uint8)
+        cv.rectangle(image, (70, 45), (185, 220), (255, 255, 255), -1)
+
+        cutout, mime, width, height = self.creative_runtime.generate(
+            image,
+            {
+                "kind": "cutout",
+                "cutout_mode": "object",
+                "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
+            },
+        )
+        self.assertEqual(mime, "image/png")
+        self.assertEqual((width, height), (256, 256))
+        self.assertTrue(cutout.startswith(b"\x89PNG\r\n\x1a\n"))
+
+        erase, mime, width, height = self.creative_runtime.generate(
+            image,
+            {
+                "kind": "erase",
+                "strokes": [{
+                    "radius": 0.03,
+                    "points": [{"x": 0.5, "y": 0.5}, {"x": 0.55, "y": 0.55}],
+                }],
+            },
+        )
+        self.assertEqual(mime, "image/png")
+        self.assertEqual((width, height), (256, 256))
+        self.assertTrue(erase.startswith(b"\x89PNG\r\n\x1a\n"))
+
+
+    def test_creative_unix_socket_protocol_end_to_end(self) -> None:
+        fingerprint = "creative-test-v1-2048"
+        PreviewHandler.fingerprint = fingerprint
+        PreviewHandler.redirect = False
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_path = str(Path(tmp) / "creative.sock")
+            state = analyzer.AnalyzerState(
+                self.runtime,
+                self.smart_runtime,
+                self.semantic_runtime,
+                self.creative_runtime,
+                self.preview_origin,
+                "secret",
+            )
+            server = analyzer.ThreadingUnixHTTPServer(
+                socket_path,
+                analyzer.AnalyzerHandler,
+                state,
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "GET",
+                    "/v1/creative-info",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Creative-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                info = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(info["capabilities"], ["cutout", "erase"])
+                connection.close()
+
+                task = {
+                    "kind": "cutout",
+                    "preview_url": (
+                        self.preview_origin
+                        + "/api/v1/media-creative-preview/42?ticket=abc"
+                    ),
+                    "preview_version": 1,
+                    "preview_edge": 2048,
+                    "input_fingerprint": fingerprint,
+                    "cutout_mode": "object",
+                    "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
+                }
+                payload = json.dumps(task).encode("utf-8")
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/creative-generate",
+                    body=payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(payload)),
+                        "X-XDrive-Creative-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                result = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(result["mime_type"], "image/png")
+                self.assertTrue(base64.b64decode(result["data"]).startswith(
+                    b"\x89PNG\r\n\x1a\n"
+                ))
                 connection.close()
             finally:
                 server.shutdown()

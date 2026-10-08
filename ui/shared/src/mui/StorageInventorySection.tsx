@@ -39,7 +39,7 @@ function cleanupLabel(kind?: StorageCacheCleanupKind) {
     case 'media_thumbnail':
       return '删除缩略图缓存'
     case 'analysis_preview':
-      return '删除分析预览缓存'
+      return '删除分析/创作预览缓存'
     case 'upload_staging':
       return '清理上传临时文件'
     case 'storage_temp':
