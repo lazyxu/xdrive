@@ -159,6 +159,48 @@ func TestManagerCompleteSkippedKeepsZeroTransferredBytes(t *testing.T) {
 	}
 }
 
+func TestManagerStartChildrenBatchPublishesOneRevision(t *testing.T) {
+	const childCount = 1000
+	m := NewManager(20)
+	group := m.StartGroup(Spec{
+		FileName:  "Folder",
+		Kind:      KindUpload,
+		Direction: "upload",
+	})
+	before, _ := m.Snapshot()
+	specs := make([]Spec, childCount)
+	for index := range specs {
+		specs[index] = Spec{
+			FileName:     fmt.Sprintf("file-%04d.bin", index),
+			RelativePath: fmt.Sprintf("Folder/file-%04d.bin", index),
+			Kind:         KindUpload,
+			Direction:    "upload",
+			Phase:        PhaseQueued,
+			TotalBytes:   int64(index + 1),
+		}
+	}
+	handles := m.StartChildrenByID(group.ID(), specs)
+	if len(handles) != childCount {
+		t.Fatalf("batch handles=%d want=%d", len(handles), childCount)
+	}
+	after, tasks := m.Snapshot()
+	if after != before+1 {
+		t.Fatalf("batch revision=%d want=%d", after, before+1)
+	}
+	if len(tasks) != childCount+1 {
+		t.Fatalf("snapshot tasks=%d want=%d", len(tasks), childCount+1)
+	}
+	for _, task := range tasks {
+		if task.ID == group.ID() {
+			continue
+		}
+		if task.ParentID != group.ID() || task.RootID != group.ID() ||
+			task.Scope != ScopeItem || task.State != StateQueued || task.Phase != PhaseQueued {
+			t.Fatalf("unexpected child task: %+v", task)
+		}
+	}
+}
+
 func TestHierarchicalTransferContract(t *testing.T) {
 	m := NewManager(20)
 	group := m.StartGroup(Spec{

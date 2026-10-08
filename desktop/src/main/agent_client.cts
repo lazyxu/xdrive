@@ -165,7 +165,7 @@ export type AgentTransfers = {
 }
 
 export type AgentTransferLifecycleInput = {
-  action: 'start_group' | 'start_child' | 'begin' | 'progress' | 'update_group' | 'finish'
+  action: 'start_group' | 'start_child' | 'start_children' | 'begin' | 'progress' | 'update_group' | 'finish'
   id?: string
   parent_id?: string
   file_name?: string
@@ -184,6 +184,15 @@ export type AgentTransferLifecycleInput = {
   state?: 'completed' | 'partial' | 'failed' | 'cancelled'
   error?: string
   skipped?: boolean
+  children?: Array<{
+    file_name: string
+    path?: string
+    relative_path?: string
+    kind?: string
+    direction?: string
+    bytes_total?: number
+    items_total?: number
+  }>
 }
 
 export type AgentTransferEvent = {
@@ -2536,7 +2545,7 @@ export class AgentIPCClient {
   }
 
   transferLifecycle(input: AgentTransferLifecycleInput) {
-    return this.request<{ id?: string; ok?: boolean }>('POST', '/v1/transfers/lifecycle', input)
+    return this.request<{ id?: string; ids?: string[]; ok?: boolean }>('POST', '/v1/transfers/lifecycle', input)
   }
 
   clearTransferHistory() {

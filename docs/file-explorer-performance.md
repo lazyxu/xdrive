@@ -29,6 +29,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Hierarchical Transfer history trim fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | One group + 1,000 completed child tasks below the 200-root history limit: `trimLocked` history-entry inspections during start/finish **1,003,001 -> 0**. Root-tree retention/eviction semantics are unchanged. |
 | Folder-upload group progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N folder-upload targets, every group-progress publication changes from scanning N child byte slots to an incremental byte total: **O(N) -> O(1)** per publication; `fileSize` probes during target setup **2N -> N** and the N-length `childDone` array is removed. |
 | Web folder-upload child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N queued child tasks under one Web folder-upload group, upfront parent lookup/history trim/full-history persistence/listener publication **N -> 1** via the optional batch lifecycle; all child IDs still exist before group transfer begins. |
+| Agent transfer child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000 queued folder children: Desktop folder-upload lifecycle setup **1,000 Agent IPC requests -> 1**; Agent Manager child-registration revision publications for both Desktop upload and folder download **1,000 -> 1**. Old Agents retain the single-child fallback. |
 | Web archive-download child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N prepared archive leaf files, Transfer Center child registration reuses the Web batch primitive: parent lookup/history trim/full-history persistence/listener publication **N -> 1**; archive prepare, progress polling and payload streaming are unchanged. |
 | Web archive progress persistence batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | For one progress snapshot over N prepared leaf files, TransferStore history trim/full-history persistence/listener publication changes from **up to N+1 -> 1** in steady progress; lifecycle states and 200 ms Server polling are unchanged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
@@ -2109,6 +2110,38 @@ Regression command:
 - `node --test desktop/tests/shared-folder-upload-transfer-groups.cjs`.
 
 Next action: completed for archive child creation by the Web archive-download registration contract below.
+
+### Agent transfer child batch-registration contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Desktop FileExplorer folder upload and Agent-native folder download;
+- stable structural workload: **1,000 leaf files** under one hierarchical Transfer Center group;
+- evidence method: deterministic Manager revision test + Agent IPC batch test + Desktop/Agent source-contract test;
+- samples: n/a for structural request/revision counts.
+
+BEFORE:
+
+- Desktop folder upload registered queued children with **1,000 renderer -> Electron -> Agent lifecycle requests**;
+- each Agent child registration published one transfer revision, so upfront registration published **1,000 revisions**;
+- Agent-native folder download also registered 1,000 children individually before payload transfer, publishing **1,000 revisions**.
+
+AFTER / current:
+
+- capability-gated `start_children` registers the same 1,000 Desktop upload children in **1 IPC request**; each request is bounded to **1,000 children** and the route has a dedicated **1 MiB** JSON ceiling while all ordinary Desktop IPC JSON remains capped at **64 KiB**;
+- larger folders are chunked by the Desktop adapter (for example, 10,000 children -> **10** bounded IPC requests instead of 10,000 single-child requests), preserving target order without allowing one unbounded JSON body;
+- `Manager.StartChildrenByID` inserts the complete child batch under one lock and publishes **1 revision** after the batch;
+- Agent-native folder download reuses the same Manager batch primitive, so its upfront child-registration revisions are **1,000 -> 1**;
+- all child IDs/tasks still exist before the group enters transfer execution, and upload/download payload order, per-file progress, completion, retry and cancellation semantics are unchanged;
+- an older Agent without `transfer-lifecycle-child-batch` keeps the existing shared-controller `startChild` fallback.
+
+Decision: **Accepted.** This removes child-count-scaled control-plane setup without adding transfer concurrency or changing the data plane.
+
+Regression budget: each supported batch of up to **1,000 children** must issue **one Agent lifecycle request and one Manager revision publication**; larger Desktop child sets must be chunked into bounded batches, and no partial child set may be returned for a valid batch.
+
+Next action: continue the basic transfer audit at Agent folder-download progress/group revision publication frequency, then return to sync/delete paths if no larger transfer hotspot remains.
 
 ### Web archive-download child registration/persistence contract
 

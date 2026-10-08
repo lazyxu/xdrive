@@ -2018,6 +2018,7 @@ export default function App({
               favoritesSupported: fileFavoritesSupported,
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
+              transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
               transfers: transfers.transfers,
               actionIntent: cloudFileActionIntent,
               onActionIntentConsumed: (id) => {

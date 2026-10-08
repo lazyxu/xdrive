@@ -745,6 +745,24 @@ func (c *agentController) StartTransferChild(parentID string, spec transfer.Spec
 	return handle.ID(), nil
 }
 
+func (c *agentController) StartTransferChildren(parentID string, specs []transfer.Spec) ([]string, error) {
+	if len(specs) == 0 {
+		return []string{}, nil
+	}
+	handles := c.transfers.StartChildrenByID(parentID, specs)
+	if len(handles) != len(specs) {
+		return nil, errors.New("transfer parent not found")
+	}
+	ids := make([]string, len(handles))
+	for index, handle := range handles {
+		if handle == nil {
+			return nil, errors.New("transfer child registration failed")
+		}
+		ids[index] = handle.ID()
+	}
+	return ids, nil
+}
+
 func (c *agentController) BeginTransfer(id string, progress *transfer.GroupProgress) error {
 	handle := c.transfers.Handle(id)
 	if handle == nil {
