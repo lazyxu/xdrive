@@ -521,7 +521,7 @@ jobs:
           retention-days: 7
 
   gallery-renderer-first-paint-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-renderer-first-paint-100k'
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-media-first-paint-100k'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -546,14 +546,14 @@ jobs:
           rm -rf gallery-perf-results
           mkdir -p gallery-perf-results
           for surface in desktop web; do
-            for scenario in image-cold image-warm; do
+            for scenario in video-cold video-warm live-cold live-warm; do
               for sample in 1 2 3; do
                 xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
               done
             done
           done
-          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 12
-          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 12
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 24
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 24
           echo "=== Gallery renderer first-paint metrics ==="
           for file in gallery-perf-results/*.json; do
             case "$file" in
