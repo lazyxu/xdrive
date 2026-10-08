@@ -244,15 +244,17 @@ function observeFileThumbnailVisibility(host: Element, onVisible: () => void) {
 }
 
 export function XDriveFileExplorerThumbnailProvider({
+  lifecycleKey = '',
   loadThumbnail,
   children,
 }: {
+  lifecycleKey?: string
   loadThumbnail?: XDriveFileExplorerThumbnailLoader
   children: ReactNode
 }) {
   const cache = useMemo<FileThumbnailCache>(
     () => ({ values: new Map(), disposed: false }),
-    [loadThumbnail],
+    [lifecycleKey, loadThumbnail],
   )
 
   useEffect(() => {

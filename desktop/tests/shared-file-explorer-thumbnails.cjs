@@ -11,6 +11,7 @@ const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const properties = read('ui', 'shared', 'src', 'mui', 'FilePropertiesDialog.tsx')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const recent = read('ui', 'shared', 'src', 'mui', 'FileExplorerRecentController.ts')
+const overview = read('desktop', 'src', 'renderer', 'DesktopOverviewPage.tsx')
 const muiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 
 test('FileExplorer thumbnail loading is one shared provider/cache/scheduler', () => {
@@ -31,7 +32,11 @@ test('FileExplorer thumbnail loading is one shared provider/cache/scheduler', ()
 })
 
 test('Details, Grid, properties, Quick Access and Recent use the shared thumbnail visual', () => {
-  assert.ok(explorer.includes('<XDriveFileExplorerThumbnailProvider loadThumbnail={loadThumbnail}>'))
+  assert.ok(explorer.includes('lifecycleKey={interactionScopeKey}'))
+  assert.ok(
+    overview.includes("lifecycleKey={\`${status?.server ?? ''}\\n${status?.username ?? ''}\`}"),
+    'Desktop Overview thumbnails must reset with Server+username lifecycle',
+  )
   assert.ok(explorer.includes('{thumbnailForItem(item, false)}'), 'Details/list thumbnail is missing')
   assert.ok(explorer.includes('{thumbnailForItem(item)}'), 'Grid thumbnail is missing')
   assert.ok(explorer.includes('thumbnailForItem(propertiesDialogItem)'), 'properties thumbnail is missing')

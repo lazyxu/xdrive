@@ -268,7 +268,10 @@ export function DesktopOverviewPage({
   )
 
   return (
-    <XDriveFileExplorerThumbnailProvider loadThumbnail={loadThumbnail}>
+    <XDriveFileExplorerThumbnailProvider
+      lifecycleKey={`${status?.server ?? ''}\n${status?.username ?? ''}`}
+      loadThumbnail={loadThumbnail}
+    >
     <XDriveWorkspaceSurface
       presentation="page"
       title="主页"
