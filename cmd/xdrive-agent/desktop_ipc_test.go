@@ -2919,7 +2919,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		handler,
 		http.MethodPost,
 		"/v1/media/creative?node_id=31",
-		`{"kind":"cutout","cutout_mode":"object","points":[{"x":0.5,"y":0.4,"foreground":true}]}`,
+		`{"kind":"cutout","cutout_mode":"object","cutout_expand":0.02,"cutout_feather":0.01,"points":[{"x":0.5,"y":0.4,"foreground":true}]}`,
 	)
 	if res.Code != http.StatusAccepted ||
 		!strings.Contains(res.Body.String(), "\"id\":\"creative-1\"") {
@@ -2928,6 +2928,8 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	if ctrl.cloudMediaCreativeNodeID != 31 ||
 		ctrl.cloudMediaCreativeInput.Kind != "cutout" ||
 		ctrl.cloudMediaCreativeInput.CutoutMode != "object" ||
+		ctrl.cloudMediaCreativeInput.CutoutExpand != 0.02 ||
+		ctrl.cloudMediaCreativeInput.CutoutFeather != 0.01 ||
 		len(ctrl.cloudMediaCreativeInput.Points) != 1 ||
 		!ctrl.cloudMediaCreativeInput.Points[0].Foreground {
 		t.Fatalf(

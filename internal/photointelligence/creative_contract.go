@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
@@ -12,12 +13,16 @@ import (
 const (
 	CreativeAnalyzerProtocolVersion = 1
 	CreativeCapabilityCutout        = "cutout"
+	CreativeCapabilityCutoutRefine  = "cutout_refine"
 	CreativeCapabilityErase         = "erase"
 	CreativeCapabilityMovie         = "movie"
 	CreativeCapabilityMovieTemplate = "movie_templates"
 	CreativeCapabilityMovieMusic    = "movie_music"
 	CreativeCapabilityCollage       = "collage"
 	CreativeMaxPoints               = 6
+	CreativeCutoutMinExpand         = -0.03
+	CreativeCutoutMaxExpand         = 0.03
+	CreativeCutoutMaxFeather        = 0.03
 	CreativeMaxStrokes              = 64
 	CreativeMaxStrokePoints         = 256
 	CreativeMovieMinFrames          = 2
@@ -83,6 +88,8 @@ type CreativeTask struct {
 	PreviewEdge      int                  `json:"preview_edge"`
 	InputFingerprint string               `json:"input_fingerprint"`
 	CutoutMode       string               `json:"cutout_mode,omitempty"`
+	CutoutExpand     float64              `json:"cutout_expand,omitempty"`
+	CutoutFeather    float64              `json:"cutout_feather,omitempty"`
 	Points           []CreativePoint      `json:"points,omitempty"`
 	Strokes          []CreativeStroke     `json:"strokes,omitempty"`
 	MovieFrames      []CreativeMovieFrame `json:"movie_frames,omitempty"`
@@ -109,6 +116,7 @@ func normalizeCreativeCapabilities(values []string) ([]string, error) {
 		value = strings.ToLower(strings.TrimSpace(value))
 		switch value {
 		case CreativeCapabilityCutout,
+			CreativeCapabilityCutoutRefine,
 			CreativeCapabilityErase,
 			CreativeCapabilityMovie,
 			CreativeCapabilityMovieTemplate,
@@ -189,6 +197,17 @@ func CreativeAnalyzerVersion(info CreativeAnalyzerInfo) string {
 
 func validCreativeUnit(value float64) bool {
 	return value >= 0 && value <= 1
+}
+
+func validCreativeCutoutRefine(expand, feather float64) bool {
+	return !math.IsNaN(expand) &&
+		!math.IsInf(expand, 0) &&
+		!math.IsNaN(feather) &&
+		!math.IsInf(feather, 0) &&
+		expand >= CreativeCutoutMinExpand &&
+		expand <= CreativeCutoutMaxExpand &&
+		feather >= 0 &&
+		feather <= CreativeCutoutMaxFeather
 }
 
 func validateCreativeSourceImage(frame CreativeMovieFrame, label string) error {
@@ -296,6 +315,9 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.Strokes) != 0 {
 			return errors.New("cutout does not accept erase strokes")
 		}
+		if !validCreativeCutoutRefine(task.CutoutExpand, task.CutoutFeather) {
+			return errors.New("creative cutout refinement is invalid")
+		}
 		if len(task.MovieFrames) != 0 ||
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" ||
@@ -307,7 +329,10 @@ func ValidateCreativeTask(task CreativeTask) error {
 			return errors.New("cutout does not accept multi-image inputs")
 		}
 	case CreativeCapabilityErase:
-		if len(task.Points) != 0 || strings.TrimSpace(task.CutoutMode) != "" {
+		if len(task.Points) != 0 ||
+			strings.TrimSpace(task.CutoutMode) != "" ||
+			task.CutoutExpand != 0 ||
+			task.CutoutFeather != 0 {
 			return errors.New("erase does not accept cutout prompts")
 		}
 		if len(task.MovieFrames) != 0 ||
@@ -338,6 +363,8 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.Points) != 0 ||
 			len(task.Strokes) != 0 ||
 			strings.TrimSpace(task.CutoutMode) != "" ||
+			task.CutoutExpand != 0 ||
+			task.CutoutFeather != 0 ||
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" {
 			return errors.New("movie does not accept other creative inputs")
@@ -374,6 +401,8 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.Points) != 0 ||
 			len(task.Strokes) != 0 ||
 			strings.TrimSpace(task.CutoutMode) != "" ||
+			task.CutoutExpand != 0 ||
+			task.CutoutFeather != 0 ||
 			len(task.MovieFrames) != 0 ||
 			strings.TrimSpace(task.MovieTemplate) != "" ||
 			strings.TrimSpace(task.MusicURL) != "" ||

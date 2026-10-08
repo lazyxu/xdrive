@@ -542,6 +542,8 @@ export interface MediaCreativeInput {
   kind: MediaCreativeKind
   output_name?: string
   cutout_mode?: 'object'
+  cutout_expand?: number
+  cutout_feather?: number
   points?: MediaCreativePoint[]
   strokes?: MediaCreativeStroke[]
   source_node_ids?: number[]

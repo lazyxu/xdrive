@@ -500,6 +500,54 @@ func TestMediaCreativeGenerationQueries(t *testing.T) {
 	}
 }
 
+func TestMediaCreativeCutoutRefinementQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != "/api/v1/media/items/41/creative" {
+			t.Fatalf("cutout create method=%s path=%q", r.Method, r.URL.Path)
+		}
+		var input MediaCreativeInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Kind != "cutout" ||
+			input.CutoutMode != "object" ||
+			input.CutoutExpand != 0.02 ||
+			input.CutoutFeather != 0.01 ||
+			len(input.Points) != 1 ||
+			!input.Points[0].Foreground {
+			t.Fatalf("creative cutout input=%+v", input)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(MediaCreativeGeneration{
+			ID: "creative-cutout-1", Kind: "cutout", State: "queued",
+			SourceAssetID: 1, SourceNodeID: 41, SourceNodeRevision: 1,
+		})
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	generation, err := cli.CreateMediaCreativeGeneration(
+		context.Background(),
+		41,
+		MediaCreativeInput{
+			Kind:          "cutout",
+			CutoutMode:    "object",
+			CutoutExpand:  0.02,
+			CutoutFeather: 0.01,
+			Points: []MediaCreativePoint{{
+				X: 0.5, Y: 0.4, Foreground: true,
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generation.ID != "creative-cutout-1" || generation.Kind != "cutout" {
+		t.Fatalf("created cutout generation=%+v", generation)
+	}
+}
+
 func TestMediaCreativeCollageGenerationQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||

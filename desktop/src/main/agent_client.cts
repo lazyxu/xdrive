@@ -718,6 +718,8 @@ export type AgentMediaCreativeInput = {
   kind: 'cutout' | 'erase' | 'movie' | 'collage'
   output_name?: string
   cutout_mode?: 'object'
+  cutout_expand?: number
+  cutout_feather?: number
   points?: AgentMediaCreativePoint[]
   strokes?: AgentMediaCreativeStroke[]
   source_node_ids?: number[]
