@@ -75,6 +75,10 @@ func (p syncPolicy) alwaysLocalPath(rel string) bool {
 	return p.mode(rel) == "always-local"
 }
 
+func (p syncPolicy) hasAlwaysLocal() bool {
+	return len(p.alwaysLocal) > 0
+}
+
 func policyContains(parent, child string) bool {
 	parent = strings.ToLower(strings.Trim(parent, "/"))
 	child = strings.ToLower(strings.Trim(child, "/"))

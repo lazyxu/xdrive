@@ -38,6 +38,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
 | Windows local-delete baseline pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat local deletions: successful-delete baseline pruning **1,200 baseline-wide prefix scans / up to 721,800 key inspections -> 1 final baseline scan**; processed/deleted subtree coverage uses ancestor-set lookup instead of a growing linear prefix slice. Server DELETE cardinality/order are unchanged. |
 | Windows local-change existence probe reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent local-change paths: filesystem existence probes in `reconcileLocalChanges` **2,400 `Lstat` calls -> 1,200** by recording missing deletion candidates during the first pass; Server DELETE cardinality/order and 404/409 handling are unchanged. |
+| Windows empty always-local policy fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Default policy with a 100,000-entry baseline: `applyAlwaysLocal` baseline inspections **100,000 -> 0** when no normalized `AlwaysLocalPaths` exist; configured always-local pin/hydrate behavior is unchanged. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -1965,6 +1966,40 @@ Regression command:
 - `go test ./internal/mount -run '^TestWindowsLocalChangeExistenceProbeSourceShape$' -count=1`.
 
 Next action: continue basic FileExplorer download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Windows empty always-local policy fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI reconciliation with the default normalized storage policy;
+- stable structural workload: **100,000 baseline entries**, `AlwaysLocalPaths` empty after normalization;
+- evidence method: policy unit regression plus source-shape regression that requires the empty-policy guard before the baseline loop;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every local-change and full-reconcile completion calls `applyAlwaysLocal(baseline)`;
+- even when no always-local rule exists, `applyAlwaysLocal` allocates its path slice and inspects every baseline entry;
+- the 100,000-entry default-policy workload therefore performs **100,000 baseline inspections** for work that cannot match any entry.
+
+AFTER / current:
+
+- normalized policy exposes `hasAlwaysLocal()`;
+- `applyAlwaysLocal` returns before allocation or baseline iteration when that predicate is false;
+- the same default-policy workload performs **0 baseline inspections** in this policy phase;
+- when at least one normalized always-local rule exists, path matching, sort order, availability checks, pinning and hydration are byte-for-byte on the existing path.
+
+Decision: **Accepted.** The empty policy mathematically cannot produce an always-local match, so scanning the baseline has no correctness value.
+
+Regression budget: an empty normalized `AlwaysLocalPaths` policy must return before the `for rel, state := range baseline` loop; configured-policy behavior must continue through the existing loop.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestSyncPolicyHasAlwaysLocal$|^TestWindowsApplyAlwaysLocalEmptyPolicyFastPathSourceShape$' -count=1`.
+
+Next action: audit hierarchical Transfer Manager child creation so large folder uploads/downloads do not repeatedly rescan full task history while preserving upfront child visibility.
 
 ### FileOperation progress-write coalescing contract
 
