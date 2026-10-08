@@ -287,6 +287,7 @@ export default function WebFileExplorer({
     if (!initialDirectoryID || current?.id === initialDirectoryID) return
     if (routedDirectoryRef.current === initialDirectoryID) return
     routedDirectoryRef.current = initialDirectoryID
+    const navigationIntentID = beginNavigationIntent()
     let active = true
     void (async () => {
       const chain: Crumb[] = []
@@ -298,16 +299,24 @@ export default function WebFileExplorer({
         if (!node.parent_id) break
         cursor = node.parent_id
       }
-      if (!active) return
+      if (!active || !isNavigationIntentCurrent(navigationIntentID)) return
       chain.reverse()
-      await navigateTo(chain)
+      await navigateTo(chain, true, navigationIntentID)
     })().catch((error) => {
-      if (active) onError(error)
+      if (active && isNavigationIntentCurrent(navigationIntentID)) onError(error)
     })
     return () => {
       active = false
     }
-  }, [api, current?.id, initialDirectoryID, navigateTo, onError])
+  }, [
+    api,
+    beginNavigationIntent,
+    current?.id,
+    initialDirectoryID,
+    isNavigationIntentCurrent,
+    navigateTo,
+    onError,
+  ])
 
   useEffect(() => {
     if (!trashActive && current?.id) onDirectoryChange?.(current.id)
