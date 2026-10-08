@@ -683,13 +683,13 @@ test('media creative generation uses the scoped Agent API', async (t) => {
       assert.equal(url.pathname, '/v1/media/creative')
       assert.equal(url.searchParams.get('node_id'), '31')
       const input = await readJSONBody(req)
-      assert.equal(input.kind, 'cutout')
-      assert.equal(input.cutout_mode, 'object')
-      assert.equal(input.points.length, 1)
-      assert.equal(input.points[0].foreground, true)
+      assert.equal(input.kind, 'movie')
+      assert.deepEqual(input.source_node_ids, [31, 32])
+      assert.equal(input.frame_duration_ms, 2000)
+      assert.equal(input.transition_ms, 350)
       json(res, 202, {
         id: 'creative-1',
-        kind: 'cutout',
+        kind: 'movie',
         state: 'queued',
         source_asset_id: 1,
         source_node_id: 31,
@@ -703,7 +703,7 @@ test('media creative generation uses the scoped Agent API', async (t) => {
       assert.equal(url.searchParams.get('generation_id'), 'creative-1')
       json(res, 200, {
         id: 'creative-1',
-        kind: 'cutout',
+        kind: 'movie',
         state: 'running',
         source_asset_id: 1,
         source_node_id: 31,
@@ -717,7 +717,7 @@ test('media creative generation uses the scoped Agent API', async (t) => {
       assert.equal(url.searchParams.get('generation_id'), 'creative-1')
       json(res, 200, {
         id: 'creative-1',
-        kind: 'cutout',
+        kind: 'movie',
         state: 'cancelled',
         source_asset_id: 1,
         source_node_id: 31,
@@ -730,9 +730,10 @@ test('media creative generation uses the scoped Agent API', async (t) => {
   })
 
   const created = await client.createMediaCreativeGeneration(31, {
-    kind: 'cutout',
-    cutout_mode: 'object',
-    points: [{ x: 0.5, y: 0.4, foreground: true }],
+    kind: 'movie',
+    source_node_ids: [31, 32],
+    frame_duration_ms: 2000,
+    transition_ms: 350,
   })
   assert.equal(created.id, 'creative-1')
   assert.equal(created.state, 'queued')

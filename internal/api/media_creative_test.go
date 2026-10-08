@@ -9,6 +9,7 @@ import (
 
 func creativeTestAsset() editableMediaAsset {
 	return editableMediaAsset{
+		Node:     meta.Node{ID: 11},
 		Metadata: meta.MediaMetadata{MediaKind: meta.MediaKindImage},
 		Asset:    meta.PhotoAsset{Kind: meta.PhotoAssetKindImage},
 	}
@@ -40,6 +41,27 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 	if err != nil || erase.Kind != meta.PhotoCreativeKindErase {
 		t.Fatalf("erase=%+v err=%v", erase, err)
 	}
+
+	movie, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:            meta.PhotoCreativeKindMovie,
+		SourceNodeIDs:   []uint64{11, 22, 33},
+		FrameDurationMS: 2000,
+	}, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(movie.SourceNodeIDs) != 3 ||
+		movie.SourceNodeIDs[0] != 11 ||
+		movie.TransitionMS == nil ||
+		*movie.TransitionMS != 350 {
+		t.Fatalf("movie=%+v", movie)
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:          meta.PhotoCreativeKindMovie,
+		SourceNodeIDs: []uint64{11},
+	}, value); err == nil {
+		t.Fatal("one-frame movie was accepted")
+	}
 }
 
 func TestCreativeOutputName(t *testing.T) {
@@ -50,5 +72,12 @@ func TestCreativeOutputName(t *testing.T) {
 	name, err = creativeOutputName("photo.jpg", "", meta.PhotoCreativeKindErase, "image/jpeg")
 	if err != nil || name != "photo-erase.jpg" {
 		t.Fatalf("name=%q err=%v", name, err)
+	}
+	name, err = creativeOutputName("photo.jpg", "", meta.PhotoCreativeKindMovie, "video/mp4")
+	if err != nil || name != "photo-movie.mp4" {
+		t.Fatalf("movie name=%q err=%v", name, err)
+	}
+	if mediaCreativeRunTimeoutFor(meta.PhotoCreativeKindMovie) != mediaCreativeMovieRunTimeout {
+		t.Fatal("movie timeout mismatch")
 	}
 }

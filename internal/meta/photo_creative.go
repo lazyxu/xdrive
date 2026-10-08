@@ -5,6 +5,7 @@ import "time"
 const (
 	PhotoCreativeKindErase  = "erase"
 	PhotoCreativeKindCutout = "cutout"
+	PhotoCreativeKindMovie  = "movie"
 
 	PhotoCreativeStateQueued    = "queued"
 	PhotoCreativeStateRunning   = "running"
@@ -42,7 +43,7 @@ func (PhotoCreativeGeneration) TableName() string {
 
 func ValidPhotoCreativeKind(kind string) bool {
 	switch kind {
-	case PhotoCreativeKindErase, PhotoCreativeKindCutout:
+	case PhotoCreativeKindErase, PhotoCreativeKindCutout, PhotoCreativeKindMovie:
 		return true
 	default:
 		return false

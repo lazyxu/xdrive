@@ -34,7 +34,7 @@ presentation and product intelligence.
 | 10 | Duplicates + Burst Best Shot + storage cleanup | **Current** |
 | 11 | Pets / people groups / suggestion review | **Current** |
 | 12 | Basic non-destructive photo/video editing | **Current** |
-| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase UI** |
+| 13 | Optional AI erase / cutout / automatic movies / advanced creation | **Current — Cutout + Smart Erase + Auto Movie** |
 
 ## Phase 1 — shared Gallery information architecture
 
@@ -544,10 +544,31 @@ Only ordinary ready image assets are enabled in the first UI. Live Photo, RAW pa
 Burst logical assets and video remain excluded until each has an explicit whole-asset
 creative contract.
 
+### Current: Automatic Movie
+
+The same durable creative-generation pipeline now also supports multi-image local
+slideshow movies:
+
+- select **2–30 ordinary ready image assets** in the shared Gallery Selection Toolbar;
+- the shared Movie dialog preserves and can reorder the selected frame order;
+- per-frame duration is 1–5 seconds and optional fade transition is 0–1 second;
+- the complete ordered source asset/node/revision/SHA list is persisted in the durable
+  recipe and revalidated both before generation and inside the output commit transaction;
+- any changed/deleted source fails the generation rather than mixing source revisions;
+- the optional Photo Intelligence sidecar uses local FFmpeg to produce 1920×1080,
+  H.264/yuv420p MP4 without automatic music;
+- FFmpeg remains outside the CGO-free xDrive Server;
+- the task is the same cancellable/retryable `media.creative.movie` Task Center job;
+- completed output is committed through the same CAS/quota/canonical-node path as
+  Cutout and Smart Erase and previews through the shared video Preview Engine.
+
+Older creative sidecars that advertise only Cutout + Erase remain valid for those two
+tools. Movie capability is checked only when a movie generation actually runs.
+
 ### Still remaining inside Phase 13
 
-- automatic movie / slideshow creation;
 - advanced multi-item composition / templates;
+- optional explicit music/template selection for movies;
 - richer object-selection refinement or additional local creative models.
 
 Those follow-ups must reuse the same durable generation / Task Center / canonical

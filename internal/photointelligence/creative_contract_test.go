@@ -14,8 +14,12 @@ func testCreativeInfo() CreativeAnalyzerInfo {
 			Name: "EfficientSAM-Ti", Version: "2025april-int8",
 			SHA256: strings.Repeat("a", 64), License: "Apache-2.0",
 		},
-		Capabilities: []string{CreativeCapabilityCutout, CreativeCapabilityErase},
-		Runtime:      &FaceAnalyzerRuntimeInfo{Framework: "opencv_dnn", Device: "cpu"},
+		Capabilities: []string{
+			CreativeCapabilityCutout,
+			CreativeCapabilityErase,
+			CreativeCapabilityMovie,
+		},
+		Runtime: &FaceAnalyzerRuntimeInfo{Framework: "opencv_dnn", Device: "cpu"},
 	}
 }
 
@@ -23,6 +27,16 @@ func TestValidateCreativeAnalyzerInfo(t *testing.T) {
 	info := testCreativeInfo()
 	if err := ValidateCreativeAnalyzerInfo(info); err != nil {
 		t.Fatal(err)
+	}
+	info.Capabilities = []string{
+		CreativeCapabilityCutout,
+		CreativeCapabilityErase,
+	}
+	if err := ValidateCreativeAnalyzerInfo(info); err != nil {
+		t.Fatalf("legacy cutout/erase analyzer was rejected: %v", err)
+	}
+	if CreativeAnalyzerSupports(info, CreativeCapabilityMovie) {
+		t.Fatal("legacy analyzer unexpectedly reports movie support")
 	}
 	info.Capabilities = []string{CreativeCapabilityCutout}
 	if err := ValidateCreativeAnalyzerInfo(info); err == nil {
@@ -65,6 +79,28 @@ func TestValidateCreativeTask(t *testing.T) {
 	if err := ValidateCreativeTask(erase); err == nil {
 		t.Fatal("oversized erase brush was accepted")
 	}
+
+	movie := base
+	movie.Kind = CreativeCapabilityMovie
+	movie.MovieFrames = []CreativeMovieFrame{
+		{
+			PreviewURL:     "http://server:8080/api/v1/media-creative-preview/42?ticket=a",
+			PreviewVersion: 1, PreviewEdge: 2048, InputFingerprint: "movie-a",
+		},
+		{
+			PreviewURL:     "http://server:8080/api/v1/media-creative-preview/43?ticket=b",
+			PreviewVersion: 1, PreviewEdge: 2048, InputFingerprint: "movie-b",
+		},
+	}
+	movie.FrameDurationMS = 2000
+	movie.TransitionMS = 350
+	if err := ValidateCreativeTask(movie); err != nil {
+		t.Fatal(err)
+	}
+	movie.TransitionMS = 2000
+	if err := ValidateCreativeTask(movie); err == nil {
+		t.Fatal("movie transition equal to frame duration was accepted")
+	}
 }
 
 func TestValidateCreativeResult(t *testing.T) {
@@ -78,5 +114,12 @@ func TestValidateCreativeResult(t *testing.T) {
 	raw[0] = 9
 	if result.Data[0] != 1 || result.MIMEType != "image/png" {
 		t.Fatalf("result=%+v", result)
+	}
+	movie, err := ValidateCreativeResult(CreativeResult{
+		Data:     []byte{0, 0, 0, 24, 'f', 't', 'y', 'p'},
+		MIMEType: "video/mp4", Width: 1920, Height: 1080,
+	})
+	if err != nil || movie.MIMEType != "video/mp4" {
+		t.Fatalf("movie=%+v err=%v", movie, err)
 	}
 }

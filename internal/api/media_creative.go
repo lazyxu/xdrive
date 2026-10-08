@@ -28,6 +28,7 @@ import (
 const (
 	mediaCreativePreviewTicketKind = "creative"
 	mediaCreativeRunTimeout        = 5 * time.Minute
+	mediaCreativeMovieRunTimeout   = 15 * time.Minute
 	mediaCreativeReconcileInterval = 30 * time.Second
 	mediaCreativeReconcileLimit    = 64
 )
@@ -37,19 +38,32 @@ var (
 	errMediaCreativeCancelled     = errors.New("creative generation cancelled")
 )
 
+type mediaCreativeMovieSource struct {
+	AssetID      uint64 `json:"asset_id"`
+	NodeID       uint64 `json:"node_id"`
+	NodeRevision uint64 `json:"node_revision"`
+	SHA256       string `json:"sha256"`
+}
+
 type mediaCreativeRecipe struct {
-	OutputName string                             `json:"output_name,omitempty"`
-	CutoutMode string                             `json:"cutout_mode,omitempty"`
-	Points     []photointelligence.CreativePoint  `json:"points,omitempty"`
-	Strokes    []photointelligence.CreativeStroke `json:"strokes,omitempty"`
+	OutputName      string                             `json:"output_name,omitempty"`
+	CutoutMode      string                             `json:"cutout_mode,omitempty"`
+	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
+	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
+	MovieSources    []mediaCreativeMovieSource         `json:"movie_sources,omitempty"`
+	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
+	TransitionMS    int                                `json:"transition_ms,omitempty"`
 }
 
 type mediaCreativeInput struct {
-	Kind       string                             `json:"kind"`
-	OutputName string                             `json:"output_name,omitempty"`
-	CutoutMode string                             `json:"cutout_mode,omitempty"`
-	Points     []photointelligence.CreativePoint  `json:"points,omitempty"`
-	Strokes    []photointelligence.CreativeStroke `json:"strokes,omitempty"`
+	Kind            string                             `json:"kind"`
+	OutputName      string                             `json:"output_name,omitempty"`
+	CutoutMode      string                             `json:"cutout_mode,omitempty"`
+	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
+	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
+	SourceNodeIDs   []uint64                           `json:"source_node_ids,omitempty"`
+	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
+	TransitionMS    *int                               `json:"transition_ms,omitempty"`
 }
 
 type mediaCreativeGenerationDTO struct {
@@ -110,6 +124,57 @@ func normalizeMediaCreativeInput(
 			return input, err
 		}
 	}
+	if input.Kind == meta.PhotoCreativeKindMovie {
+		seen := map[uint64]struct{}{value.Node.ID: {}}
+		normalized := []uint64{value.Node.ID}
+		for _, nodeID := range input.SourceNodeIDs {
+			if nodeID == 0 {
+				return input, errors.New("movie source node id is invalid")
+			}
+			if _, exists := seen[nodeID]; exists {
+				continue
+			}
+			seen[nodeID] = struct{}{}
+			normalized = append(normalized, nodeID)
+		}
+		input.SourceNodeIDs = normalized
+		if input.FrameDurationMS == 0 {
+			input.FrameDurationMS = 2000
+		}
+		transition := 350
+		if input.TransitionMS != nil {
+			transition = *input.TransitionMS
+		}
+		input.TransitionMS = &transition
+		frames := make([]photointelligence.CreativeMovieFrame, 0, len(normalized))
+		for range normalized {
+			frames = append(frames, photointelligence.CreativeMovieFrame{
+				PreviewURL:       "https://xdrive.invalid/creative-frame",
+				PreviewVersion:   mediapkg.CreativePreviewVersion,
+				PreviewEdge:      mediapkg.CreativePreviewEdge,
+				InputFingerprint: "creative-movie-validation",
+			})
+		}
+		probe := photointelligence.CreativeTask{
+			Kind:             input.Kind,
+			PreviewURL:       "https://xdrive.invalid/creative",
+			PreviewVersion:   mediapkg.CreativePreviewVersion,
+			PreviewEdge:      mediapkg.CreativePreviewEdge,
+			InputFingerprint: "creative-validation",
+			MovieFrames:      frames,
+			FrameDurationMS:  input.FrameDurationMS,
+			TransitionMS:     transition,
+		}
+		if err := photointelligence.ValidateCreativeTask(probe); err != nil {
+			return input, err
+		}
+		return input, nil
+	}
+	if len(input.SourceNodeIDs) != 0 ||
+		input.FrameDurationMS != 0 ||
+		input.TransitionMS != nil {
+		return input, errors.New("single-image creative tools do not accept movie inputs")
+	}
 	probe := photointelligence.CreativeTask{
 		Kind:             input.Kind,
 		PreviewURL:       "https://xdrive.invalid/creative",
@@ -126,6 +191,188 @@ func normalizeMediaCreativeInput(
 	return input, nil
 }
 
+func mediaCreativeRunTimeoutFor(kind string) time.Duration {
+	if strings.TrimSpace(kind) == meta.PhotoCreativeKindMovie {
+		return mediaCreativeMovieRunTimeout
+	}
+	return mediaCreativeRunTimeout
+}
+
+func (s *Server) resolveMediaCreativeMovieSources(
+	ctx context.Context,
+	ownerID uint64,
+	nodeIDs []uint64,
+) ([]mediaCreativeMovieSource, error) {
+	if len(nodeIDs) < photointelligence.CreativeMovieMinFrames ||
+		len(nodeIDs) > photointelligence.CreativeMovieMaxFrames {
+		return nil, errors.New("movie source count is invalid")
+	}
+	out := make([]mediaCreativeMovieSource, 0, len(nodeIDs))
+	seen := make(map[uint64]struct{}, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID == 0 {
+			return nil, errors.New("movie source node id is invalid")
+		}
+		if _, exists := seen[nodeID]; exists {
+			return nil, errors.New("movie source node ids must be unique")
+		}
+		seen[nodeID] = struct{}{}
+		node, err := s.ownedNode(ownerID, nodeID, true)
+		if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+			return nil, fmt.Errorf("movie source %d is unavailable", nodeID)
+		}
+		metadata, err := s.ensureMediaMetadata(ctx, node)
+		if err != nil {
+			return nil, fmt.Errorf("index movie source %d: %w", nodeID, err)
+		}
+		if metadata.MediaKind != meta.MediaKindImage ||
+			metadata.IndexState != meta.MediaIndexStateReady ||
+			metadata.NodeRevision != node.Revision ||
+			!strings.EqualFold(metadata.SHA256, node.File.SHA256) {
+			return nil, fmt.Errorf("movie source %d is not a ready image", nodeID)
+		}
+		var asset meta.PhotoAsset
+		if err := s.DB.WithContext(ctx).
+			Where(
+				"owner_id = ? AND primary_node_id = ? AND kind = ?",
+				ownerID,
+				nodeID,
+				meta.PhotoAssetKindImage,
+			).
+			First(&asset).Error; err != nil {
+			return nil, fmt.Errorf("movie source %d is not a plain image asset", nodeID)
+		}
+		out = append(out, mediaCreativeMovieSource{
+			AssetID:      asset.ID,
+			NodeID:       node.ID,
+			NodeRevision: node.Revision,
+			SHA256:       strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+		})
+	}
+	return out, nil
+}
+
+func (s *Server) mediaCreativeMovieFrames(
+	ctx context.Context,
+	generation meta.PhotoCreativeGeneration,
+	user meta.User,
+	recipe mediaCreativeRecipe,
+) ([]photointelligence.CreativeMovieFrame, error) {
+	if len(recipe.MovieSources) < photointelligence.CreativeMovieMinFrames ||
+		len(recipe.MovieSources) > photointelligence.CreativeMovieMaxFrames {
+		return nil, errors.New("creative movie source recipe is invalid")
+	}
+	first := recipe.MovieSources[0]
+	if first.AssetID != generation.SourceAssetID ||
+		first.NodeID != generation.SourceNodeID ||
+		first.NodeRevision != generation.SourceNodeRevision ||
+		!strings.EqualFold(first.SHA256, generation.SourceSHA256) {
+		return nil, errMediaCreativeSourceChanged
+	}
+	frames := make([]photointelligence.CreativeMovieFrame, 0, len(recipe.MovieSources))
+	for _, source := range recipe.MovieSources {
+		var node meta.Node
+		if err := s.DB.WithContext(ctx).
+			Preload("File").
+			Where(
+				"id = ? AND owner_id = ? AND type = ? AND revision = ? AND deleted_at IS NULL",
+				source.NodeID,
+				generation.OwnerID,
+				meta.NodeTypeFile,
+				source.NodeRevision,
+			).
+			First(&node).Error; err != nil {
+			return nil, errMediaCreativeSourceChanged
+		}
+		if node.File == nil ||
+			!strings.EqualFold(
+				strings.TrimSpace(node.File.SHA256),
+				strings.TrimSpace(source.SHA256),
+			) {
+			return nil, errMediaCreativeSourceChanged
+		}
+		var asset meta.PhotoAsset
+		if err := s.DB.WithContext(ctx).
+			Where(
+				"id = ? AND owner_id = ? AND primary_node_id = ? AND kind = ?",
+				source.AssetID,
+				generation.OwnerID,
+				source.NodeID,
+				meta.PhotoAssetKindImage,
+			).
+			First(&asset).Error; err != nil {
+			return nil, errMediaCreativeSourceChanged
+		}
+		var metadata meta.MediaMetadata
+		if err := s.DB.WithContext(ctx).
+			Where(
+				"owner_id = ? AND node_id = ? AND node_revision = ? AND sha256 = ? AND index_state = ? AND media_kind = ?",
+				generation.OwnerID,
+				source.NodeID,
+				source.NodeRevision,
+				source.SHA256,
+				meta.MediaIndexStateReady,
+				meta.MediaKindImage,
+			).
+			First(&metadata).Error; err != nil {
+			return nil, errMediaCreativeSourceChanged
+		}
+		previewURL, err := s.photoCreativePreviewURL(
+			ctx,
+			generation.OwnerID,
+			user.SessionVersion,
+			source.NodeID,
+			source.NodeRevision,
+		)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, photointelligence.CreativeMovieFrame{
+			PreviewURL:     previewURL,
+			PreviewVersion: mediapkg.CreativePreviewVersion,
+			PreviewEdge:    mediapkg.CreativePreviewEdge,
+			InputFingerprint: mediapkg.CreativePreviewFingerprint(
+				source.NodeID,
+				source.NodeRevision,
+				source.SHA256,
+			),
+		})
+	}
+	return frames, nil
+}
+
+func validateMediaCreativeMovieSourcesTx(
+	tx *gorm.DB,
+	generation meta.PhotoCreativeGeneration,
+	recipe mediaCreativeRecipe,
+) error {
+	if generation.Kind != meta.PhotoCreativeKindMovie {
+		return nil
+	}
+	for _, source := range recipe.MovieSources {
+		var node meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("File").
+			Where(
+				"id = ? AND owner_id = ? AND revision = ? AND deleted_at IS NULL",
+				source.NodeID,
+				generation.OwnerID,
+				source.NodeRevision,
+			).
+			First(&node).Error; err != nil {
+			return errMediaCreativeSourceChanged
+		}
+		if node.File == nil ||
+			!strings.EqualFold(
+				strings.TrimSpace(node.File.SHA256),
+				strings.TrimSpace(source.SHA256),
+			) {
+			return errMediaCreativeSourceChanged
+		}
+	}
+	return nil
+}
+
 func creativeOutputName(
 	sourceName, requestedName, kind, mimeType string,
 ) (string, error) {
@@ -137,8 +384,11 @@ func creativeOutputName(
 		return requestedName, nil
 	}
 	extension := ".jpg"
-	if strings.EqualFold(strings.TrimSpace(mimeType), "image/png") {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
 		extension = ".png"
+	case "video/mp4":
+		extension = ".mp4"
 	}
 	ext := path.Ext(sourceName)
 	stem := strings.TrimSpace(strings.TrimSuffix(sourceName, ext))
@@ -146,8 +396,11 @@ func creativeOutputName(
 		stem = "image"
 	}
 	suffix := "-erase"
-	if kind == meta.PhotoCreativeKindCutout {
+	switch kind {
+	case meta.PhotoCreativeKindCutout:
 		suffix = "-cutout"
+	case meta.PhotoCreativeKindMovie:
+		suffix = "-movie"
 	}
 	name := stem + suffix + extension
 	if err := meta.ValidateName(name); err != nil {
@@ -180,6 +433,20 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 		CutoutMode: input.CutoutMode,
 		Points:     append([]photointelligence.CreativePoint(nil), input.Points...),
 		Strokes:    append([]photointelligence.CreativeStroke(nil), input.Strokes...),
+	}
+	if input.Kind == meta.PhotoCreativeKindMovie {
+		sources, sourceErr := s.resolveMediaCreativeMovieSources(
+			c.Request.Context(),
+			value.Node.OwnerID,
+			input.SourceNodeIDs,
+		)
+		if sourceErr != nil {
+			fail(c, http.StatusBadRequest, sourceErr.Error())
+			return
+		}
+		recipe.MovieSources = sources
+		recipe.FrameDurationMS = input.FrameDurationMS
+		recipe.TransitionMS = *input.TransitionMS
 	}
 	recipeJSON, err := json.Marshal(recipe)
 	if err != nil {
@@ -387,7 +654,7 @@ func (s *Server) submitMediaCreativeGeneration(
 		},
 		Lease:             s.mediaDerivativeLeaseProvider(taskKey),
 		HeartbeatInterval: mediaDerivativeLeaseHeartbeatInterval,
-		RunTimeout:        mediaCreativeRunTimeout,
+		RunTimeout:        mediaCreativeRunTimeoutFor(generation.Kind),
 		Run: func(taskCtx context.Context) error {
 			return s.runMediaCreativeGeneration(taskCtx, generation.ID)
 		},
@@ -447,6 +714,17 @@ func (s *Server) runMediaCreativeGeneration(
 	if err := photointelligence.ValidateCreativeAnalyzerInfo(info); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
 	}
+	if generation.Kind == meta.PhotoCreativeKindMovie &&
+		!photointelligence.CreativeAnalyzerSupports(
+			info,
+			photointelligence.CreativeCapabilityMovie,
+		) {
+		return s.finishMediaCreativeRunError(
+			ctx,
+			generation.ID,
+			errors.New("local creative analyzer does not support automatic movies"),
+		)
+	}
 	analyzerVersion := photointelligence.CreativeAnalyzerVersion(info)
 	_ = s.DB.WithContext(ctx).Model(&meta.PhotoCreativeGeneration{}).
 		Where("id = ? AND state = ?", generation.ID, meta.PhotoCreativeStateRunning).
@@ -482,6 +760,20 @@ func (s *Server) runMediaCreativeGeneration(
 		CutoutMode: recipe.CutoutMode,
 		Points:     recipe.Points,
 		Strokes:    recipe.Strokes,
+	}
+	if generation.Kind == meta.PhotoCreativeKindMovie {
+		frames, frameErr := s.mediaCreativeMovieFrames(
+			ctx,
+			generation,
+			user,
+			recipe,
+		)
+		if frameErr != nil {
+			return s.finishMediaCreativeRunError(ctx, generation.ID, frameErr)
+		}
+		task.MovieFrames = frames
+		task.FrameDurationMS = recipe.FrameDurationMS
+		task.TransitionMS = recipe.TransitionMS
 	}
 	if err := photointelligence.ValidateCreativeTask(task); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
@@ -694,6 +986,13 @@ func (s *Server) commitMediaCreativeResult(
 				strings.TrimSpace(generation.SourceSHA256),
 			) {
 			return errMediaCreativeSourceChanged
+		}
+		if err := validateMediaCreativeMovieSourcesTx(
+			tx,
+			generation,
+			recipe,
+		); err != nil {
+			return err
 		}
 		if _, err := s.ensureQuotaForStorageKey(
 			tx,

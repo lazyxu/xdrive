@@ -520,7 +520,7 @@ export type PhotoAssetKind =
   | 'burst'
   | string
 
-export type MediaCreativeKind = 'cutout' | 'erase'
+export type MediaCreativeKind = 'cutout' | 'erase' | 'movie'
 
 export interface MediaCreativePoint {
   x: number
@@ -544,6 +544,9 @@ export interface MediaCreativeInput {
   cutout_mode?: 'object'
   points?: MediaCreativePoint[]
   strokes?: MediaCreativeStroke[]
+  source_node_ids?: number[]
+  frame_duration_ms?: number
+  transition_ms?: number
 }
 
 export interface MediaCreativeGeneration {

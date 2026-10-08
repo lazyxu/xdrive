@@ -715,11 +715,14 @@ export type AgentMediaCreativeStroke = {
 }
 
 export type AgentMediaCreativeInput = {
-  kind: 'cutout' | 'erase'
+  kind: 'cutout' | 'erase' | 'movie'
   output_name?: string
   cutout_mode?: 'object'
   points?: AgentMediaCreativePoint[]
   strokes?: AgentMediaCreativeStroke[]
+  source_node_ids?: number[]
+  frame_duration_ms?: number
+  transition_ms?: number
 }
 
 export type AgentMediaCreativeGeneration = {

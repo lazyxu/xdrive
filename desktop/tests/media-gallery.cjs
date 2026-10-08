@@ -24,6 +24,7 @@ const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryF
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
 const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
 const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCreativeDialog.tsx')
+const sharedGalleryMovieDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMovieDialog.tsx')
 const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
 const sharedMediaEdit = read('ui', 'shared', 'src', 'media-edit.ts')
@@ -50,6 +51,7 @@ const sharedGallery = [
   sharedGalleryViewer,
   sharedGalleryEditDialog,
   sharedGalleryCreativeDialog,
+  sharedGalleryMovieDialog,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
 const sharedGalleryAdapter = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
@@ -628,6 +630,58 @@ test('Gallery Creative Tools expose shared durable Cutout and Smart Erase', () =
     'POST /v1/media/creative/cancel',
   ]) {
     assert.ok(desktopIPC.includes(token), `Desktop Agent creative route missing: ${token}`)
+  }
+})
+
+test('Gallery Automatic Movie is a shared multi-selection creative workflow', () => {
+  for (const token of [
+    'XDriveMediaGalleryMovieDialog',
+    'xDriveMediaItemSupportsAutoMovie',
+    'movieSelectionEligible',
+    'selectedMedia.length >= 2',
+    'selectedMedia.length <= 30',
+    'setMovieDialogItems([...selectedMedia])',
+    'onCreateMovie=',
+  ]) {
+    assert.ok(
+      sharedGalleryMain.includes(token) || sharedGallerySelectionToolbar.includes(token),
+      `automatic movie Gallery contract missing: ${token}`,
+    )
+  }
+
+  for (const token of [
+    'data-xdrive-gallery-movie-dialog',
+    '自动电影',
+    "kind: 'movie'",
+    'source_node_ids',
+    'frame_duration_ms',
+    'transition_ms',
+    '2–30 张普通照片',
+    '本地 FFmpeg 编码',
+    "loadPreviewURL(generation.output_node_id, 'video')",
+    'if (!terminalMovieStates.has(next.state)) poll()',
+  ]) {
+    assert.ok(
+      sharedGalleryMovieDialog.includes(token),
+      `automatic movie dialog contract missing: ${token}`,
+    )
+  }
+
+  assert.match(sharedModels, /MediaCreativeKind = 'cutout' \| 'erase' \| 'movie'/)
+  assert.match(sharedModels, /source_node_ids\?: number\[\]/)
+  assert.match(sharedModels, /frame_duration_ms\?: number/)
+  assert.match(sharedModels, /transition_ms\?: number/)
+
+  for (const source of [webAdapter, desktopAdapter, sharedGalleryAdapter]) {
+    assert.ok(
+      source.includes('createCreativeGeneration'),
+      'automatic movie must reuse the existing shared creative transport',
+    )
+    assert.equal(
+      source.includes('createMovie'),
+      false,
+      'automatic movie must not introduce a platform-specific movie endpoint',
+    )
   }
 })
 

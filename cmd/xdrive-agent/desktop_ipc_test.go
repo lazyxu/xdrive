@@ -2940,6 +2940,32 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	res = desktopIPCRequest(
 		t,
 		handler,
+		http.MethodPost,
+		"/v1/media/creative?node_id=31",
+		`{"kind":"movie","source_node_ids":[31,32],"frame_duration_ms":2000,"transition_ms":350}`,
+	)
+	if res.Code != http.StatusAccepted ||
+		!strings.Contains(res.Body.String(), "\"id\":\"creative-1\"") {
+		t.Fatalf("media creative movie create status=%d body=%s", res.Code, res.Body.String())
+	}
+	if ctrl.cloudMediaCreativeNodeID != 31 ||
+		ctrl.cloudMediaCreativeInput.Kind != "movie" ||
+		len(ctrl.cloudMediaCreativeInput.SourceNodeIDs) != 2 ||
+		ctrl.cloudMediaCreativeInput.SourceNodeIDs[0] != 31 ||
+		ctrl.cloudMediaCreativeInput.SourceNodeIDs[1] != 32 ||
+		ctrl.cloudMediaCreativeInput.FrameDurationMS != 2000 ||
+		ctrl.cloudMediaCreativeInput.TransitionMS == nil ||
+		*ctrl.cloudMediaCreativeInput.TransitionMS != 350 {
+		t.Fatalf(
+			"media creative movie input node=%d input=%+v",
+			ctrl.cloudMediaCreativeNodeID,
+			ctrl.cloudMediaCreativeInput,
+		)
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
 		http.MethodGet,
 		"/v1/media/creative?generation_id=creative-1",
 		"",

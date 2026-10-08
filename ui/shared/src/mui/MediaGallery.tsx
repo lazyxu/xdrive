@@ -74,6 +74,10 @@ import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
+import {
+  XDriveMediaGalleryMovieDialog,
+  xDriveMediaItemSupportsAutoMovie,
+} from './MediaGalleryMovieDialog'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveMediaGalleryViewer } from './MediaGalleryViewer'
@@ -2966,6 +2970,7 @@ export function XDriveMediaGallery({
   const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
     () => new Map(),
   )
+  const [movieDialogItems, setMovieDialogItems] = useState<MediaItem[] | null>(null)
   const [albumDialog, setAlbumDialog] = useState<{ mode: 'create' | 'rename'; album?: MediaAlbum } | null>(null)
   const [albumName, setAlbumName] = useState('')
   const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
@@ -3157,6 +3162,10 @@ export function XDriveMediaGallery({
     () => new Set(selectedMediaItems.keys()),
     [selectedMediaItems],
   )
+  const movieSelectionEligible =
+    selectedMedia.length >= 2 &&
+    selectedMedia.length <= 30 &&
+    selectedMedia.every(xDriveMediaItemSupportsAutoMovie)
   const allSelectedFavorite = selectedMedia.length > 0 &&
     selectedMedia.every((item) => Boolean(item.favorite))
   const selectedTrashRoots = useMemo(() => {
@@ -3221,6 +3230,7 @@ export function XDriveMediaGallery({
 
   useEffect(() => {
     clearMediaSelection()
+    setMovieDialogItems(null)
     if (section === 'trash') {
       setSelected(null)
       setPreviewItem(null)
@@ -3560,6 +3570,15 @@ export function XDriveMediaGallery({
           onDownload={!isTrashSection && onDownloadItems
             ? () => runSelectionAction(onDownloadItems, false)
             : undefined}
+          onCreateMovie={
+            !isTrashSection &&
+            movieSelectionEligible &&
+            onCreateCreativeGeneration &&
+            onGetCreativeGeneration &&
+            loadPreviewURL
+              ? () => setMovieDialogItems([...selectedMedia])
+              : undefined
+          }
           onDelete={!isTrashSection && onDeleteItems
             ? () => runSelectionAction(onDeleteItems)
             : undefined}
@@ -4277,6 +4296,21 @@ export function XDriveMediaGallery({
           <Typography color="text.secondary">还没有可浏览的人物</Typography>
         </Paper>
       ) : null}
+
+      <XDriveMediaGalleryMovieDialog
+        open={Boolean(movieDialogItems)}
+        items={movieDialogItems ?? []}
+        loadThumbnail={loadThumbnail}
+        loadPreviewURL={loadPreviewURL}
+        onCreate={onCreateCreativeGeneration}
+        onGet={onGetCreativeGeneration}
+        onCancel={onCancelCreativeGeneration}
+        onCompleted={() => {
+          clearMediaSelection()
+          if (onRefresh) onRefresh()
+        }}
+        onClose={() => setMovieDialogItems(null)}
+      />
 
       <XDriveMediaGalleryViewer
         item={previewItem}

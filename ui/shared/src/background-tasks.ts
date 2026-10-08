@@ -129,6 +129,7 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'media.creative_preview': return '创作预览'
     case 'media.creative.cutout': return '图库抠图'
     case 'media.creative.erase': return '图库智能消除'
+    case 'media.creative.movie': return '图库自动电影'
     case 'photo.face': return '人脸识别'
     case 'photo.smart_search': return '图库智能搜索索引'
     case 'photo.semantic_search': return '图库语义搜索索引'

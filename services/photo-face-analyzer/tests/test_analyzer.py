@@ -120,7 +120,8 @@ class AnalyzerTests(unittest.TestCase):
 
         creative = self.creative_runtime.info()
         self.assertEqual(creative["protocol_version"], 1)
-        self.assertEqual(creative["capabilities"], ["cutout", "erase"])
+        self.assertEqual(creative["capabilities"], ["cutout", "erase", "movie"])
+        self.assertIn("ffmpeg", creative["pipeline_version"])
         self.assertEqual(len(creative["segment_model"]["sha256"]), 64)
 
         semantic = self.semantic_runtime.info()
@@ -419,6 +420,18 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual((width, height), (256, 256))
         self.assertTrue(erase.startswith(b"\x89PNG\r\n\x1a\n"))
 
+        movie, mime, width, height = self.creative_runtime.generate_movie(
+            [image, cv.flip(image, 1)],
+            {
+                "kind": "movie",
+                "frame_duration_ms": 1000,
+                "transition_ms": 0,
+            },
+        )
+        self.assertEqual(mime, "video/mp4")
+        self.assertEqual((width, height), (1920, 1080))
+        self.assertIn(b"ftyp", movie[:64])
+
 
     def test_creative_unix_socket_protocol_end_to_end(self) -> None:
         fingerprint = "creative-test-v1-2048"
@@ -454,7 +467,7 @@ class AnalyzerTests(unittest.TestCase):
                 response = connection.getresponse()
                 info = json.loads(response.read())
                 self.assertEqual(response.status, 200)
-                self.assertEqual(info["capabilities"], ["cutout", "erase"])
+                self.assertEqual(info["capabilities"], ["cutout", "erase", "movie"])
                 connection.close()
 
                 task = {
@@ -489,6 +502,61 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertTrue(base64.b64decode(result["data"]).startswith(
                     b"\x89PNG\r\n\x1a\n"
                 ))
+                connection.close()
+
+                movie_task = {
+                    "kind": "movie",
+                    "preview_url": (
+                        self.preview_origin
+                        + "/api/v1/media-creative-preview/42?ticket=abc"
+                    ),
+                    "preview_version": 1,
+                    "preview_edge": 2048,
+                    "input_fingerprint": fingerprint,
+                    "movie_frames": [
+                        {
+                            "preview_url": (
+                                self.preview_origin
+                                + "/api/v1/media-creative-preview/42?ticket=abc"
+                            ),
+                            "preview_version": 1,
+                            "preview_edge": 2048,
+                            "input_fingerprint": fingerprint,
+                        },
+                        {
+                            "preview_url": (
+                                self.preview_origin
+                                + "/api/v1/media-creative-preview/42?ticket=def"
+                            ),
+                            "preview_version": 1,
+                            "preview_edge": 2048,
+                            "input_fingerprint": fingerprint,
+                        },
+                    ],
+                    "frame_duration_ms": 1000,
+                    "transition_ms": 0,
+                }
+                movie_payload = json.dumps(movie_task).encode("utf-8")
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                connection.request(
+                    "POST",
+                    "/v1/creative-generate",
+                    body=movie_payload,
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(movie_payload)),
+                        "X-XDrive-Creative-Protocol": "1",
+                    },
+                )
+                response = connection.getresponse()
+                movie_result = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(movie_result["mime_type"], "video/mp4")
+                self.assertIn(
+                    b"ftyp",
+                    base64.b64decode(movie_result["data"])[:64],
+                )
                 connection.close()
             finally:
                 server.shutdown()
