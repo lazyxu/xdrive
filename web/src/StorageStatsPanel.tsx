@@ -14,6 +14,8 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
 import {
@@ -55,6 +57,7 @@ const STAGING_PAGE_SIZE = 20
 const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
 
 type StorageMaintenanceKind = 'storage_verify' | 'storage_repair'
+type StorageHistoryDays = 30 | 90 | 180
 
 function unreferencedBlobStatus(blob: StorageUnreferencedBlob) {
   switch (blob.gc_status) {
@@ -133,6 +136,8 @@ export default function StorageStatsPanel({
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
+  const [historyDays, setHistoryDays] = useState<StorageHistoryDays>(30)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [staging, setStaging] = useState<UploadStagingDetail | null>(null)
   const [stagingPage, setStagingPage] = useState(1)
   const [stagingCursors, setStagingCursors] = useState<string[]>([''])
@@ -164,7 +169,6 @@ export default function StorageStatsPanel({
     setError('')
     setStats(null)
     setHealth(null)
-    setHistory(null)
     setStaging(null)
     setStagingPage(1)
     setStagingCursors([''])
@@ -184,24 +188,41 @@ export default function StorageStatsPanel({
     const healthRequest = scope === 'global'
       ? api.adminStorageHealth().catch(() => null)
       : Promise.resolve(null)
-    const historyRequest = scope === 'global'
-      ? api.adminStorageHistory(30).catch(() => null)
-      : Promise.resolve(null)
     const cleanupRunsRequest = scope === 'global'
       ? api.adminStagingCleanupRuns(20, 0).catch(() => [])
       : Promise.resolve([])
-    void Promise.all([request, healthRequest, historyRequest, cleanupRunsRequest])
-      .then(([value, healthValue, historyValue, cleanupRunValues]) => {
+    void Promise.all([request, healthRequest, cleanupRunsRequest])
+      .then(([value, healthValue, cleanupRunValues]) => {
         if (!active) return
         setStats(value)
         setHealth(healthValue)
-        setHistory(historyValue)
         setCleanupRuns(cleanupRunValues)
       })
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [api, scope, reloadKey])
+
+  useEffect(() => {
+    let active = true
+    if (scope !== 'global') {
+      setHistory(null)
+      setHistoryLoading(false)
+      return () => { active = false }
+    }
+    setHistoryLoading(true)
+    void api.adminStorageHistory(historyDays)
+      .then((value) => {
+        if (active) setHistory(value)
+      })
+      .catch(() => {
+        if (active) setHistory(null)
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false)
+      })
+    return () => { active = false }
+  }, [api, historyDays, reloadKey, scope])
 
   const loadStagingPage = async (page: number, fresh = false) => {
     if (scope !== 'global') return
@@ -659,6 +680,30 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && history && (
                 <Stack spacing={1.5}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ sm: 'center' }}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      历史窗口只读取每日持久化快照；切换不会重新扫描 Blob、缓存或 staging。
+                    </Typography>
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={historyDays}
+                      onChange={(_, value: StorageHistoryDays | null) => {
+                        if (value) setHistoryDays(value)
+                      }}
+                      aria-label="存储历史窗口"
+                    >
+                      <ToggleButton value={30}>30 天</ToggleButton>
+                      <ToggleButton value={90}>90 天</ToggleButton>
+                      <ToggleButton value={180}>180 天</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Stack>
+                  {historyLoading ? <LinearProgress aria-label="正在加载存储历史" /> : null}
                   <Stack spacing={1}>
                     <XDriveSectionHeader
                       level="h3"
@@ -683,7 +728,7 @@ export default function StorageStatsPanel({
                     {decisionDescription(history.decision)}
                   </XDriveStatusAlert>
                   <XDriveMetricGrid>
-                    <XDriveMetricCard title="历史样本" value={history.samples.length} suffix={`/ ${history.retention_days} 天`} />
+                    <XDriveMetricCard title="历史样本" value={history.samples.length} suffix={`近 ${historyDays} 天`} />
                     <XDriveMetricCard
                       title="窗口内物理容量变化"
                       value={firstHistory && lastHistory ? formatSignedBytes(lastHistory.cas_physical_bytes - firstHistory.cas_physical_bytes) : '—'}
@@ -697,7 +742,7 @@ export default function StorageStatsPanel({
                   <Stack spacing={1}>
                     <XDriveSectionHeader level="h3" title="历史趋势" />
                     <Typography variant="body2" color="text.secondary">
-                      每 {history.sampling_interval_hours} 小时记录一次，保留 {history.retention_days} 天。下表显示最近 12 个快照。
+                      每 {history.sampling_interval_hours} 小时记录一次，后端保留 {history.retention_days} 天；当前查看近 {historyDays} 天。下表显示最近 12 个快照。
                     </Typography>
                     <XDriveTableSurface>
                       <Table size="small" aria-label="存储历史趋势" sx={{ minWidth: 920 }}>

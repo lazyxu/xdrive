@@ -137,6 +137,10 @@ video-transcode categories, storage temporary files, and unclassified xDrive-res
 rather than silently treating them as zero. Pending-GC and CAS-health availability are tracked independently so older
 physical snapshots are not misrepresented as healthy zero-count samples.
 
+The history API accepts a 1–180 day window while retention remains 180 days. The admin UI exposes fixed 30 / 90 / 180
+day windows. Changing that window reloads only persisted history rows; it must not refresh the live stats/health request
+chain or trigger any physical inventory work.
+
 The history response also derives deterministic anomaly signals from persisted samples only. It must not perform any
 new Store.Open, managed-file walk, cache scan, or staging scan. Current rules cover: missing/stale daily snapshots,
 physical CAS objects missing behind Blob metadata, zero-reference metadata-state inconsistencies, CAS metadata drift,
