@@ -305,7 +305,6 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 
 	uid := userID(c)
-	_ = s.cleanupExpiredUploads(c.Request.Context(), uid)
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
 			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
@@ -324,9 +323,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// of seeing a duplicate-name or stale-revision error.
 	if req.ResumeKey != "" {
 		var existing meta.UploadSession
-		q := s.DB.Where("owner_id = ? AND resume_key = ? AND total_size = ? AND chunk_size = ? AND status IN ?",
+		q := s.DB.Where("owner_id = ? AND resume_key = ? AND total_size = ? AND chunk_size = ? AND status IN ? AND expires_at > ?",
 			uid, req.ResumeKey, req.Size, req.ChunkSize,
-			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped})
+			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped}, time.Now())
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
 		} else if policyProvided {

@@ -38,6 +38,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
+| Upload-start expired-session cleanup | **Accepted / structural contract** | Structural / unmeasured wall-clock | One interactive upload-init request no longer drains up to **16 x 128 = 2,048 expired sessions** plus their part/object deletes. Expired resume rows are ignored by `expires_at > now`; startup/hourly Janitor retains full cleanup. |
 | Instant-upload ownership existence probe | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 same-key current-file refs or 120 same-key historical-version refs: ownership changes from aggregate `COUNT(*)` over all matches to one indexed `EXISTS` union that needs only a boolean result. The outer fast check and in-transaction ownership recheck both remain. |
 | Upload CAS metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | Local/ObjectStatProvider CAS health checks in finalize and instant-upload retain use metadata `Stat` without opening payload handles: healthy-object validation **1 Open + 1 fstat + 1 Close -> 1 metadata Stat** per check. Generic Store fallback remains unchanged. |
 | Upload finalize existing-CAS write elision | **Accepted / structural contract** | Structural / unmeasured wall-clock | A completed upload whose declared SHA256 already has a ready same-size CAS object: finalize full-file assembled Store writes **1 -> 0**; every uploaded byte is still read and SHA256/MD5-verified. |
@@ -210,6 +211,35 @@ Regression budget: payload-buffer instances must remain **O(1) per upload pass**
 
 Next action: Server upload-finalize staging/object-store I/O is audited by the dedicated reused-source contract below; keep the client buffer contract unchanged.
 
+### Upload-start expired-session cleanup contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- interactive `POST /api/v1/uploads` used by FileExplorer/Web/Desktop upload start;
+- cleanup implementation is bounded at **128 sessions x 16 batches = 2,048 expired sessions** per invocation;
+- every expired session may load its UploadParts, delete part/session rows, and delete each non-reused staging object;
+- evidence is the production call graph plus the PostgreSQL upload integration; no wall-clock speedup is claimed.
+
+BEFORE:
+
+- every new upload-init synchronously called `cleanupExpiredUploads(ctx, ownerID)` before resume lookup;
+- one unrelated backlog could therefore add cleanup DB/object-store work for up to **2,048 expired sessions** to a single interactive request.
+
+AFTER / current:
+
+- upload-init performs **0 expired-session cleanup passes**;
+- resume lookup explicitly requires `expires_at > now()`, preserving the old effective behavior where expired sessions were removed before lookup;
+- quota reservation and physical-capacity reservation already count only active, unexpired sessions;
+- `StartUploadJanitor` runs a storage-Janitor pass immediately on startup and hourly thereafter; its staging-cleanup phase still performs the full expired-session drain;
+- explicit abort/finalize expiry handling remains unchanged.
+
+Decision: **Accepted.** Expired-session reclamation is maintenance work and is not required for upload-init quota/capacity correctness.
+
+Regression budget: starting one upload must not delete unrelated expired upload-session rows or staging parts. Expired rows must never be resumed, and Janitor must retain the existing multi-batch drain test.
+
+Next action: continue ordinary download/sync/delete performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### FileOperation enqueue root-validation batch-load contract
 
