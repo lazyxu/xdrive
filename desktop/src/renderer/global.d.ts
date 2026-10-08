@@ -15,6 +15,7 @@ import type {
   FileShare,
   FileVersion,
   MediaAlbum,
+  MediaGalleryFacets,
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
@@ -441,6 +442,10 @@ declare global {
           offset?: number,
           query?: MediaGalleryQuery,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
+        getMediaFacets: (
+          query?: MediaGalleryQuery,
+          albumID?: string,
+        ) => Promise<DesktopResult<MediaGalleryFacets>>
         getMediaTrash: (
           limit?: number,
           offset?: number,

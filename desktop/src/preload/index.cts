@@ -34,6 +34,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -52,6 +54,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -62,6 +66,24 @@ const agent = Object.freeze({
     place?: string
   } = {},
   ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query),
+  getMediaFacets: (
+    query: {
+      search?: string
+      asset_kind?: string
+      category?: string
+      cameras?: string[]
+      formats?: string[]
+      captured_from?: string
+      captured_to?: string
+      has_location?: boolean
+      favorite?: boolean
+      tag?: string
+      person?: string
+      person_identity?: string
+      place?: string
+    } = {},
+    albumID = '',
+  ) => ipcRenderer.invoke('agent:get-media-facets', query, albumID),
   getMediaTrash: (limit = 200, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
@@ -97,6 +119,8 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -121,6 +145,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -147,6 +173,8 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -165,6 +193,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -217,6 +247,8 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
       captured_from?: string
       captured_to?: string
       has_location?: boolean
@@ -236,6 +268,8 @@ const agent = Object.freeze({
         search?: string
         asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
         captured_from?: string
         captured_to?: string
         has_location?: boolean
@@ -259,6 +293,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean
@@ -277,6 +313,8 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    cameras?: string[]
+    formats?: string[]
     captured_from?: string
     captured_to?: string
     has_location?: boolean

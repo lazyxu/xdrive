@@ -134,6 +134,7 @@ type fakeDesktopIPCController struct {
 	cloudDeleteID              uint64
 	cloudDeleteRev             uint64
 	cloudMediaItems            []client.MediaItem
+	cloudMediaFacets           client.MediaGalleryFacets
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaPlaces           []client.MediaPlaceFacet
 	cloudMediaMemories         []client.MediaMemory
@@ -863,6 +864,16 @@ func (f *fakeDesktopIPCController) CloudMediaItemsRange(
 		Items:      append([]client.MediaItem(nil), f.cloudMediaItems...),
 		TotalCount: 640, Offset: offset, Limit: limit,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaFacets(
+	_ context.Context,
+	query client.MediaQuery,
+	albumID string,
+) (client.MediaGalleryFacets, error) {
+	f.cloudMediaQuery = query
+	f.cloudMediaAlbumID = albumID
+	return f.cloudMediaFacets, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudMediaTrash(
@@ -2258,6 +2269,10 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 				IndexState: "ready", HasThumbnail: true,
 			},
 		}},
+		cloudMediaFacets: client.MediaGalleryFacets{
+			Cameras: []client.MediaFacetOption{{Value: "apple iphone 15 pro", Label: "Apple iPhone 15 Pro", ItemCount: 2}},
+			Formats: []client.MediaFacetOption{{Value: "image/jpeg", Label: "JPEG", ItemCount: 1}},
+		},
 		cloudMediaAlbums: []client.MediaAlbum{{
 			ID: "folder:8", Kind: "folder", Name: "Camera Uploads", ItemCount: 1,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
@@ -2362,7 +2377,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&camera=Sony%20ILCE-7M4&camera=APPLE%20IPHONE%2015%20PRO&camera=apple%20iphone%2015%20pro&format=IMAGE%2FJPEG&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -2374,6 +2389,10 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaQuery.Search != "iPhone" ||
 		ctrl.cloudMediaQuery.AssetKind != "live_photo" ||
 		ctrl.cloudMediaQuery.Category != "gif" ||
+		len(ctrl.cloudMediaQuery.Cameras) != 2 ||
+		strings.Join(ctrl.cloudMediaQuery.Cameras, ",") != "apple iphone 15 pro,sony ilce-7m4" ||
+		len(ctrl.cloudMediaQuery.Formats) != 1 ||
+		ctrl.cloudMediaQuery.Formats[0] != "image/jpeg" ||
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
 		ctrl.cloudMediaQuery.Tag != "Travel" ||
@@ -2400,6 +2419,20 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), "\"offset\":200") ||
 		!strings.Contains(res.Body.String(), "\"limit\":25") {
 		t.Fatalf("media item range status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/facets?camera=apple%20iphone%2015%20pro&format=image%2Fjpeg&album_id=folder%3A8",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"Apple iPhone 15 Pro\"") ||
+		!strings.Contains(res.Body.String(), "\"JPEG\"") ||
+		ctrl.cloudMediaAlbumID != "folder:8" {
+		t.Fatalf("media facets status=%d body=%s album=%q", res.Code, res.Body.String(), ctrl.cloudMediaAlbumID)
 	}
 
 	res = desktopIPCRequest(

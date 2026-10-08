@@ -139,6 +139,17 @@ facet count removes its own current selection while preserving the remaining que
 collection/album scope, and semantic-search result set, so available choices stay useful
 without changing the result semantics.
 
+Web and Desktop expose the same shared multi-select controls for **拍摄设备** and
+**文件格式**. Opening the advanced filter popover lazily loads facet counts; selected
+values become ordinary Server-side Gallery query fields and therefore also survive
+smart-album create/update. A smart album requests facets from its saved query without
+also applying the smart-album collection a second time, so self-excluding facet counts
+remain correct. Opening the advanced Popover performs one facet request; opening either
+Autocomplete does not issue a duplicate aggregation. Changing a camera or format
+selection refreshes the cross-facet counts with the immediate draft, and stale facet
+requests are ignored after a newer request or page unmount.
+
+
 
 ## Phase 3 — multi-select and shared Selection Toolbar
 

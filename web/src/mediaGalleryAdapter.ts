@@ -10,6 +10,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listMusicChildren: (parentID) => api.list(parentID),
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => api.mediaItemRange('', limit, offset, query),
+    listFacets: (query, albumID) => api.mediaFacets(query, albumID),
     listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),
     restoreTrashItems: async (items) => {
       for (const root of xDriveMediaGalleryTrashRoots(items)) {

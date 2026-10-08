@@ -631,6 +631,8 @@ export interface MediaGalleryQuery {
   search?: string
   asset_kind?: PhotoAssetKind
   category?: string
+  cameras?: string[]
+  formats?: string[]
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -639,6 +641,17 @@ export interface MediaGalleryQuery {
   person?: string
   person_identity?: string
   place?: string
+}
+
+export interface MediaFacetOption {
+  value: string
+  label: string
+  item_count: number
+}
+
+export interface MediaGalleryFacets {
+  cameras: MediaFacetOption[]
+  formats: MediaFacetOption[]
 }
 
 export interface MediaPlaceFacet {

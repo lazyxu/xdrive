@@ -1,21 +1,30 @@
 import { useState } from 'react'
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
 import {
+  Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   MenuItem,
   Paper,
   Popover,
   Stack,
   TextField,
+  Typography,
 } from '@mui/material'
-import type { MediaGalleryQuery } from '../models'
+import type {
+  MediaFacetOption,
+  MediaGalleryFacets,
+  MediaGalleryQuery,
+} from '../models'
 
 export type MediaGalleryFilterDraft = {
   search: string
   assetKind: string
   category: string
+  cameras: string[]
+  formats: string[]
   capturedFrom: string
   capturedTo: string
   location: 'any' | 'with' | 'without'
@@ -30,6 +39,8 @@ export const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
   search: '',
   assetKind: '',
   category: '',
+  cameras: [],
+  formats: [],
   capturedFrom: '',
   capturedTo: '',
   location: 'any',
@@ -48,12 +59,32 @@ function localDateBoundaryISO(value: string, exclusiveEnd = false) {
   return date.toISOString()
 }
 
+function normalizedFacetValues(values: readonly string[]) {
+  return Array.from(new Set(
+    values.map((value) => value.trim().toLowerCase()).filter(Boolean),
+  )).sort()
+}
+
+function selectedFacetOptions(
+  options: readonly MediaFacetOption[],
+  values: readonly string[],
+) {
+  const byValue = new Map(options.map((option) => [option.value, option]))
+  return values.map((value) => (
+    byValue.get(value) ?? { value, label: value, item_count: 0 }
+  ))
+}
+
 export function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): MediaGalleryQuery {
   const search = draft.search.trim()
+  const cameras = normalizedFacetValues(draft.cameras)
+  const formats = normalizedFacetValues(draft.formats)
   return {
     ...(search ? { search } : {}),
     ...(draft.assetKind ? { asset_kind: draft.assetKind } : {}),
     ...(draft.category ? { category: draft.category } : {}),
+    ...(cameras.length > 0 ? { cameras } : {}),
+    ...(formats.length > 0 ? { formats } : {}),
     ...(draft.capturedFrom
       ? { captured_from: localDateBoundaryISO(draft.capturedFrom) }
       : {}),
@@ -95,6 +126,8 @@ export function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): Media
     search: query.search || '',
     assetKind: query.asset_kind || '',
     category: query.category || '',
+    cameras: normalizedFacetValues(query.cameras ?? []),
+    formats: normalizedFacetValues(query.formats ?? []),
     capturedFrom: mediaGalleryDateInput(query.captured_from),
     capturedTo: mediaGalleryDateInput(query.captured_to, true),
     location: query.has_location === true
@@ -119,6 +152,8 @@ export function hasMediaGalleryFilters(draft: MediaGalleryFilterDraft) {
     draft.search.trim() ||
     draft.assetKind ||
     draft.category ||
+    draft.cameras.length > 0 ||
+    draft.formats.length > 0 ||
     draft.capturedFrom ||
     draft.capturedTo ||
     draft.location !== 'any' ||
@@ -141,6 +176,11 @@ export function XDriveMediaGalleryFilterBar({
   showSearch = true,
   lockedAssetKind = false,
   lockedFavorite = false,
+  facets,
+  facetsLoading = false,
+  facetsError = '',
+  facetsAvailable = false,
+  onRequestFacets,
   onChange,
   onApply,
   onClear,
@@ -156,6 +196,11 @@ export function XDriveMediaGalleryFilterBar({
   showSearch?: boolean
   lockedAssetKind?: boolean
   lockedFavorite?: boolean
+  facets?: MediaGalleryFacets
+  facetsLoading?: boolean
+  facetsError?: string
+  facetsAvailable?: boolean
+  onRequestFacets?: (nextDraft?: MediaGalleryFilterDraft) => void
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
@@ -220,6 +265,80 @@ export function XDriveMediaGalleryFilterBar({
           <MenuItem value="burst">连拍</MenuItem>
           <MenuItem value="sidecar">编辑组合</MenuItem>
         </TextField>
+        {facetsAvailable ? (
+          <>
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              limitTags={1}
+              options={facets?.cameras ?? []}
+              value={selectedFacetOptions(facets?.cameras ?? [], draft.cameras)}
+              loading={facetsLoading}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              getOptionLabel={(option) => option.label}
+              onChange={(_event, values) => {
+                const nextDraft = {
+                  ...draft,
+                  cameras: values.map((option) => option.value),
+                }
+                onChange(nextDraft)
+                onRequestFacets?.(nextDraft)
+              }}
+              noOptionsText={facetsLoading ? '正在加载设备…' : '没有可用设备'}
+              renderOption={(props, option, state) => (
+                <li {...props} key={option.value}>
+                  <Checkbox size="small" checked={state.selected} sx={{ mr: 0.5, p: 0.5 }} />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" noWrap>{option.label}</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                    {option.item_count.toLocaleString('zh-CN')} 项
+                  </Typography>
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField {...params} size="small" label="拍摄设备"
+                  placeholder={draft.cameras.length === 0 ? '全部设备' : undefined} />
+              )}
+              sx={{ minWidth: { xs: '100%', lg: 220 } }}
+            />
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              limitTags={2}
+              options={facets?.formats ?? []}
+              value={selectedFacetOptions(facets?.formats ?? [], draft.formats)}
+              loading={facetsLoading}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              getOptionLabel={(option) => option.label}
+              onChange={(_event, values) => {
+                const nextDraft = {
+                  ...draft,
+                  formats: values.map((option) => option.value),
+                }
+                onChange(nextDraft)
+                onRequestFacets?.(nextDraft)
+              }}
+              noOptionsText={facetsLoading ? '正在加载格式…' : '没有可用格式'}
+              renderOption={(props, option, state) => (
+                <li {...props} key={option.value}>
+                  <Checkbox size="small" checked={state.selected} sx={{ mr: 0.5, p: 0.5 }} />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" noWrap>{option.label}</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                    {option.item_count.toLocaleString('zh-CN')} 项
+                  </Typography>
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField {...params} size="small" label="文件格式"
+                  placeholder={draft.formats.length === 0 ? '全部格式' : undefined} />
+              )}
+              sx={{ minWidth: { xs: '100%', lg: 180 } }}
+            />
+          </>
+        ) : null}
         <TextField
           size="small"
           type="date"
@@ -273,6 +392,16 @@ export function XDriveMediaGalleryFilterBar({
           <MenuItem value="favorite">已收藏</MenuItem>
           <MenuItem value="not-favorite">未收藏</MenuItem>
         </TextField>
+        {facetsAvailable && facetsError ? (
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Typography variant="caption" color="warning.main">设备/格式统计加载失败</Typography>
+            {onRequestFacets ? (
+              <Button size="small" variant="text" onClick={() => onRequestFacets()}>
+                重试
+              </Button>
+            ) : null}
+          </Stack>
+        ) : null}
         {draft.personIdentity ? (
           <Chip
             label={`人物 · ${personIdentityLabel || '未命名人物'}`}
@@ -321,6 +450,8 @@ export function XDriveMediaGalleryFilterBar({
 function mediaGalleryAdvancedFilterCount(draft: MediaGalleryFilterDraft) {
   return [
     draft.assetKind,
+    draft.cameras.length > 0 ? 'cameras' : '',
+    draft.formats.length > 0 ? 'formats' : '',
     draft.capturedFrom,
     draft.capturedTo,
     draft.location !== 'any' ? draft.location : '',
@@ -342,6 +473,11 @@ export function XDriveMediaGalleryFilterToolbar({
   personIdentityLocked = false,
   lockedAssetKind = false,
   lockedFavorite = false,
+  facets,
+  facetsLoading = false,
+  facetsError = '',
+  facetsAvailable = false,
+  onRequestFacets,
   onChange,
   onApply,
   onClear,
@@ -356,6 +492,11 @@ export function XDriveMediaGalleryFilterToolbar({
   personIdentityLocked?: boolean
   lockedAssetKind?: boolean
   lockedFavorite?: boolean
+  facets?: MediaGalleryFacets
+  facetsLoading?: boolean
+  facetsError?: string
+  facetsAvailable?: boolean
+  onRequestFacets?: (nextDraft?: MediaGalleryFilterDraft) => void
   onChange: (next: MediaGalleryFilterDraft) => void
   onApply: () => void
   onClear: () => void
@@ -390,7 +531,10 @@ export function XDriveMediaGalleryFilterToolbar({
           startIcon={<FilterAltOutlinedIcon />}
           aria-expanded={Boolean(anchorEl)}
           aria-haspopup="dialog"
-          onClick={(event) => setAnchorEl(event.currentTarget)}
+          onClick={(event) => {
+            setAnchorEl(event.currentTarget)
+            onRequestFacets?.(draft)
+          }}
           sx={{ flexShrink: 0 }}
         >
           {advancedCount > 0 ? `筛选 · ${advancedCount}` : '筛选'}
@@ -416,6 +560,11 @@ export function XDriveMediaGalleryFilterToolbar({
             showSearch={false}
             lockedAssetKind={lockedAssetKind}
             lockedFavorite={lockedFavorite}
+            facets={facets}
+            facetsLoading={facetsLoading}
+            facetsError={facetsError}
+            facetsAvailable={facetsAvailable}
+            onRequestFacets={onRequestFacets}
             onChange={onChange}
             onApply={() => {
               onApply()

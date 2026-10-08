@@ -15,7 +15,11 @@ func TestMediaItemRangeQueries(t *testing.T) {
 		path string
 		call func(*Client) (MediaItemRange, error)
 	}
-	query := MediaQuery{Search: "marina", Category: "panorama"}
+	query := MediaQuery{
+		Search: "marina", Category: "panorama",
+		Cameras: []string{"apple iphone 15 pro", "sony ilce-7m4"},
+		Formats: []string{"image/jpeg", "video/quicktime"},
+	}
 	cases := []requestCase{
 		{
 			name: "items",
@@ -71,6 +75,12 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				}
 				if got := r.URL.Query().Get("category"); got != "panorama" {
 					t.Fatalf("category=%q", got)
+				}
+				if got := strings.Join(r.URL.Query()["camera"], ","); got != "apple iphone 15 pro,sony ilce-7m4" {
+					t.Fatalf("camera=%q", got)
+				}
+				if got := strings.Join(r.URL.Query()["format"], ","); got != "image/jpeg,video/quicktime" {
+					t.Fatalf("format=%q", got)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(MediaItemRange{
@@ -160,6 +170,40 @@ func TestMediaItemRangeQueries(t *testing.T) {
 		context.Background(), MediaQuery{}, 200, -1,
 	); err == nil {
 		t.Fatal("negative media range offset unexpectedly succeeded")
+	}
+}
+
+func TestMediaFacetQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/media/facets" {
+			t.Fatalf("facet path=%q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("album"); got != "folder:42" {
+			t.Fatalf("album=%q", got)
+		}
+		if got := strings.Join(r.URL.Query()["camera"], ","); got != "apple iphone 15 pro" {
+			t.Fatalf("camera=%q", got)
+		}
+		if got := strings.Join(r.URL.Query()["format"], ","); got != "image/jpeg" {
+			t.Fatalf("format=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode(MediaGalleryFacets{
+			Cameras: []MediaFacetOption{{Value: "apple iphone 15 pro", Label: "Apple iPhone 15 Pro", ItemCount: 12}},
+			Formats: []MediaFacetOption{{Value: "image/jpeg", Label: "JPEG", ItemCount: 8}},
+		})
+	}))
+	defer server.Close()
+	facets, err := New(server.URL, "token").MediaFacets(
+		context.Background(),
+		MediaQuery{Cameras: []string{"apple iphone 15 pro"}, Formats: []string{"image/jpeg"}},
+		"folder:42",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facets.Cameras) != 1 || facets.Cameras[0].ItemCount != 12 ||
+		len(facets.Formats) != 1 || facets.Formats[0].Label != "JPEG" {
+		t.Fatalf("facets=%+v", facets)
 	}
 }
 
