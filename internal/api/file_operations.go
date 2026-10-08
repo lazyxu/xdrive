@@ -1075,6 +1075,10 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 		if err != nil {
 			return err
 		}
+		targetInsideRoots, err := batchTargetInsideNodesTx(tx, uid, parentID, roots)
+		if err != nil {
+			return err
+		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindCopy}
 		replaceOrMerge := false
 		hooks := s.fileOperationCopyHooks(ctx, operation.ID)
@@ -1089,11 +1093,7 @@ func (s *Server) executeQueuedBatchCopy(ctx context.Context, operation meta.File
 				return err
 			}
 			if source.Type == meta.NodeTypeDir {
-				inside, err := batchTargetInsideNode(tx, uid, parentID, source.ID)
-				if err != nil {
-					return err
-				}
-				if inside {
+				if _, inside := targetInsideRoots[source.ID]; inside {
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot copy a directory into itself or its descendant"}
 				}
 			}
@@ -1222,6 +1222,10 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 		if err != nil {
 			return err
 		}
+		targetInsideRoots, err := batchTargetInsideNodesTx(tx, uid, parentID, roots)
+		if err != nil {
+			return err
+		}
 		plan := fileOperationUndoPlan{Kind: fileOperationUndoKindMove}
 		replaceOrMerge := false
 		var rootBytes map[uint64]fileOperationMoveRootBytes
@@ -1244,11 +1248,7 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot move a node into itself"}
 			}
 			if node.Type == meta.NodeTypeDir {
-				inside, err := batchTargetInsideNode(tx, uid, parentID, node.ID)
-				if err != nil {
-					return err
-				}
-				if inside {
+				if _, inside := targetInsideRoots[node.ID]; inside {
 					return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusBadRequest, Code: "invalid_target", Message: "cannot move a directory into its descendant"}
 				}
 			}
