@@ -40,6 +40,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Upload CAS metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | Local/ObjectStatProvider CAS health checks in finalize and instant-upload retain use metadata `Stat` without opening payload handles: healthy-object validation **1 Open + 1 fstat + 1 Close -> 1 metadata Stat** per check. Generic Store fallback remains unchanged. |
 | Archive prepare subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One selected folder with 120 direct child folders and one file in each: recursive child enumeration **121 per-directory child-list queries (+ GORM file preload queries) -> 1 recursive CTE with file metadata join** for that root. ZIP payload streaming is unchanged. |
 | Archive prepare local metadata stat | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000-file archive on `storage.Local`: prepare payload-handle opens/closes **1,000/1,000 -> 0/0**; metadata validation remains **1,000 Stat operations**, and ZIP streaming still opens each payload once. |
+| Archive download progress coalescing | **Accepted / structural contract** | Structural / unmeasured wall-clock | Fast 8 MiB transfer at 64 KiB/read: progress-state callbacks **128 -> 1** inside one <100ms interval; production rate is capped to about **10 Hz per active file** plus terminal flush. ZIP/object reads are unchanged. |
 | FileOperation ancestor coverage | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling files at depth 8: ancestor/top-level coverage **1,200 SELECTs -> 1 recursive CTE** per check; Copy/Move/Delete semantics unchanged. |
 | FileOperation total-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected top-level directories: recursive size aggregation **120 CTEs -> 1 selection CTE**; per-item owner/revision validation remains unchanged. |
 | FileOperation delete subtree summary | **Accepted / structural contract** | Structural / unmeasured wall-clock | Per delete root, execution reuses one recursive subtree query for node IDs + bytes: **2 recursive CTE statements -> 1**; trash/protection/revision semantics unchanged. |
@@ -546,7 +547,40 @@ Decision: **Accepted.** This removes file-count-scaled payload-handle churn from
 
 Regression budget: on `storage.Local`, archive prepare must perform **zero payload opens for stored-object metadata validation**. Do not remove the existence/size check, and do not change the fallback contract for backends without `ObjectStatProvider`.
 
-Next action: continue the basic download path audit, then sync/delete, prioritizing deterministic repeated I/O or unbounded response work.
+Next action: archive ZIP progress bookkeeping is handled by the coalescing contract below; then continue sync/delete, prioritizing deterministic repeated I/O or unbounded response work.
+
+### Archive download progress coalescing contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Archive ZIP data plane with progress tracking enabled;
+- deterministic fast-transfer workload: **8 MiB** payload read in **64 KiB** chunks = **128 data reads**;
+- test freezes the progress clock so all 128 reads occur inside one reporting interval;
+- a second deterministic test advances the clock by exactly **100 ms** to lock periodic reporting and explicit terminal flush behavior;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- `archiveProgressReader` invokes `onRead` for every successful underlying read;
+- each callback reaches `updateArchiveDownloadProgress`, locks the Server-wide `archiveProgressMu`, updates the file state and calls `time.Now()`;
+- the 8 MiB / 64 KiB workload therefore performs **128 progress-state callbacks / mutex updates**.
+
+AFTER / current:
+
+- read bytes accumulate locally in the per-file progress reader;
+- progress state is published at most once every **100 ms** while the file is transferring;
+- EOF/read errors flush pending bytes inside the reader, and the ZIP data plane explicitly flushes again after `io.Copy` returns so writer-side termination cannot strand pending progress;
+- the frozen-clock 128-read workload performs **1 progress-state callback**, with the reported delta exactly equal to **8 MiB**;
+- slow transfers still emit periodic progress at roughly **10 Hz**;
+- ZIP entry creation, Store.Open, io.Copy, byte validation and final completed-size assignment are unchanged.
+
+Decision: **Accepted.** This removes read-count-scaled global progress-lock traffic from fast archive downloads without changing payload streaming or final byte accounting.
+
+Regression budget: archive byte progress must not call the global progress updater once per fast payload read. Periodic updates remain <= about 10 Hz per active file, and pending bytes must flush on EOF/read error or the explicit post-`io.Copy` terminal flush before the terminal file state is recorded.
+
+Next action: continue the basic sync/delete/download audit and only change another deterministic SQL, request, allocation, filesystem, lock, or object-store multiplier.
 
 ## Measured baselines and accepted/rejected changes
 

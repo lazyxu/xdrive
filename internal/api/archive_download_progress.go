@@ -289,15 +289,54 @@ func (s *Server) getArchiveDownloadProgress(c *gin.Context) {
 	c.JSON(http.StatusOK, snapshot)
 }
 
+const archiveProgressReportInterval = 100 * time.Millisecond
+
 type archiveProgressReader struct {
-	reader io.Reader
-	onRead func(int64)
+	reader     io.Reader
+	onRead     func(int64)
+	pending    int64
+	lastReport time.Time
+	now        func() time.Time
+}
+
+func (r *archiveProgressReader) currentTime() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+func (r *archiveProgressReader) report(now time.Time) {
+	if r.onRead == nil || r.pending == 0 {
+		return
+	}
+	delta := r.pending
+	r.pending = 0
+	r.lastReport = now
+	r.onRead(delta)
+}
+
+func (r *archiveProgressReader) Flush() {
+	if r == nil {
+		return
+	}
+	r.report(r.currentTime())
 }
 
 func (r *archiveProgressReader) Read(p []byte) (int, error) {
+	if r.lastReport.IsZero() {
+		r.lastReport = r.currentTime()
+	}
 	n, err := r.reader.Read(p)
-	if n > 0 && r.onRead != nil {
-		r.onRead(int64(n))
+	if n > 0 {
+		r.pending += int64(n)
+	}
+	if r.onRead == nil || r.pending == 0 {
+		return n, err
+	}
+	now := r.currentTime()
+	if err != nil || now.Sub(r.lastReport) >= archiveProgressReportInterval {
+		r.report(now)
 	}
 	return n, err
 }
