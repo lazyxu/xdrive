@@ -2101,7 +2101,7 @@ export class XDriveApi {
 
   async downloadPublicShare(token: string, password: string, filename: string) {
     const response = await fetch(
-      `${API_BASE}/api/v1/public/share/download`,
+      `${API_BASE}/api/v1/public/share/download-ticket`,
       {
         method: 'POST',
         headers: {
@@ -2121,18 +2121,8 @@ export class XDriveApi {
       }
       throw new ApiError(response.status, error)
     }
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    try {
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    } finally {
-      URL.revokeObjectURL(url)
-    }
+    const ticket = (await response.json()) as AuthenticatedDownloadTicket
+    xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)
   }
 
   downloadURL(nodeID: number) {

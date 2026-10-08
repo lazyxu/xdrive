@@ -16,6 +16,7 @@ export default function PublicShareView({ token }: { token: string }) {
   const [downloading, setDownloading] = useState(false)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let active = true
@@ -43,8 +44,10 @@ export default function PublicShareView({ token }: { token: string }) {
     if (!share) return
     setDownloading(true)
     setError('')
+    setNotice('')
     try {
       await api.downloadPublicShare(token, password, share.name)
+      setNotice('已交给浏览器下载。')
       setShare((current) => current ? { ...current, download_count: current.download_count + 1 } : current)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -72,6 +75,7 @@ export default function PublicShareView({ token }: { token: string }) {
 
         {loading && <XDriveStatePanel variant="plain" loading message="正在加载分享…" />}
         {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
+        {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
 
         {share && (
           <Stack spacing={2}>
