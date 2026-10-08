@@ -674,6 +674,76 @@ test('media edit recipe uses the scoped Agent API', async (t) => {
   assert.equal(reset.revision, 0)
 })
 
+test('media creative generation uses the scoped Agent API', async (t) => {
+  let requestIndex = 0
+  const { client } = await fixture(t, async (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (requestIndex === 0) {
+      assert.equal(req.method, 'POST')
+      assert.equal(url.pathname, '/v1/media/creative')
+      assert.equal(url.searchParams.get('node_id'), '31')
+      const input = await readJSONBody(req)
+      assert.equal(input.kind, 'cutout')
+      assert.equal(input.cutout_mode, 'object')
+      assert.equal(input.points.length, 1)
+      assert.equal(input.points[0].foreground, true)
+      json(res, 202, {
+        id: 'creative-1',
+        kind: 'cutout',
+        state: 'queued',
+        source_asset_id: 1,
+        source_node_id: 31,
+        source_node_revision: 1,
+        created_at: '2026-10-08T00:00:00Z',
+        updated_at: '2026-10-08T00:00:00Z',
+      })
+    } else if (requestIndex === 1) {
+      assert.equal(req.method, 'GET')
+      assert.equal(url.pathname, '/v1/media/creative')
+      assert.equal(url.searchParams.get('generation_id'), 'creative-1')
+      json(res, 200, {
+        id: 'creative-1',
+        kind: 'cutout',
+        state: 'running',
+        source_asset_id: 1,
+        source_node_id: 31,
+        source_node_revision: 1,
+        created_at: '2026-10-08T00:00:00Z',
+        updated_at: '2026-10-08T00:00:01Z',
+      })
+    } else {
+      assert.equal(req.method, 'POST')
+      assert.equal(url.pathname, '/v1/media/creative/cancel')
+      assert.equal(url.searchParams.get('generation_id'), 'creative-1')
+      json(res, 200, {
+        id: 'creative-1',
+        kind: 'cutout',
+        state: 'cancelled',
+        source_asset_id: 1,
+        source_node_id: 31,
+        source_node_revision: 1,
+        created_at: '2026-10-08T00:00:00Z',
+        updated_at: '2026-10-08T00:00:02Z',
+      })
+    }
+    requestIndex += 1
+  })
+
+  const created = await client.createMediaCreativeGeneration(31, {
+    kind: 'cutout',
+    cutout_mode: 'object',
+    points: [{ x: 0.5, y: 0.4, foreground: true }],
+  })
+  assert.equal(created.id, 'creative-1')
+  assert.equal(created.state, 'queued')
+
+  const running = await client.mediaCreativeGeneration('creative-1')
+  assert.equal(running.state, 'running')
+
+  const cancelled = await client.cancelMediaCreativeGeneration('creative-1')
+  assert.equal(cancelled.state, 'cancelled')
+})
+
 test('media Pets and person suggestion review use the scoped Agent API', async (t) => {
   let requestIndex = 0
   const suggestionID = 'auto:v1:' + 'a'.repeat(64)

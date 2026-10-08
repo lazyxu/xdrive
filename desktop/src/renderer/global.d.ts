@@ -23,6 +23,8 @@ import type {
   MediaBurstReviewList,
   MediaEditRecipe,
   MediaEditRecipeInput,
+  MediaCreativeGeneration,
+  MediaCreativeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   MediaPersonIdentity,
@@ -565,6 +567,16 @@ declare global {
           nodeID: number,
           revision: number,
         ) => Promise<DesktopResult<MediaEditRecipe>>
+        createMediaCreativeGeneration: (
+          nodeID: number,
+          input: MediaCreativeInput,
+        ) => Promise<DesktopResult<MediaCreativeGeneration>>
+        getMediaCreativeGeneration: (
+          generationID: string,
+        ) => Promise<DesktopResult<MediaCreativeGeneration>>
+        cancelMediaCreativeGeneration: (
+          generationID: string,
+        ) => Promise<DesktopResult<MediaCreativeGeneration>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaLivePhotoStill: (nodeID: number) => Promise<DesktopResult<string>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>

@@ -8,6 +8,8 @@ import type {
   MediaBurstReviewList,
   MediaEditRecipe,
   MediaEditRecipeInput,
+  MediaCreativeGeneration,
+  MediaCreativeInput,
   MediaPetFacet,
   MediaPersonSuggestionReview,
   Node,
@@ -227,6 +229,16 @@ export interface XDriveMediaGalleryPort {
     nodeID: number,
     revision: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaEditRecipe>>
+  createCreativeGeneration?: (
+    nodeID: number,
+    input: MediaCreativeInput,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaCreativeGeneration>>
+  getCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaCreativeGeneration>>
+  cancelCreativeGeneration?: (
+    generationID: string,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaCreativeGeneration>>
   createAlbum?: (
     name: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
@@ -499,6 +511,21 @@ export function createXDriveMediaGalleryDataSource(
     resetEditRecipe: port.resetEditRecipe
       ? (nodeID, revision) => resolveXDriveTransport(
           port.resetEditRecipe!(nodeID, revision),
+        )
+      : undefined,
+    createCreativeGeneration: port.createCreativeGeneration
+      ? (nodeID, input) => resolveXDriveTransport(
+          port.createCreativeGeneration!(nodeID, input),
+        )
+      : undefined,
+    getCreativeGeneration: port.getCreativeGeneration
+      ? (generationID) => resolveXDriveTransport(
+          port.getCreativeGeneration!(generationID),
+        )
+      : undefined,
+    cancelCreativeGeneration: port.cancelCreativeGeneration
+      ? (generationID) => resolveXDriveTransport(
+          port.cancelCreativeGeneration!(generationID),
         )
       : undefined,
     createAlbum: port.createAlbum

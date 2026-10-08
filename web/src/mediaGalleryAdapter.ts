@@ -86,6 +86,12 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     setDescription: (nodeID, description) => api.setMediaDescription(nodeID, description),
     saveEditRecipe: (nodeID, input) => api.saveMediaEditRecipe(nodeID, input),
     resetEditRecipe: (nodeID, revision) => api.resetMediaEditRecipe(nodeID, revision),
+    createCreativeGeneration: (nodeID, input) =>
+      api.createMediaCreativeGeneration(nodeID, input),
+    getCreativeGeneration: (generationID) =>
+      api.mediaCreativeGeneration(generationID),
+    cancelCreativeGeneration: (generationID) =>
+      api.cancelMediaCreativeGeneration(generationID),
     createAlbum: (name) => api.createMediaAlbum(name),
     createSmartAlbum: (name, query) => api.createSmartMediaAlbum(name, query),
     updateSmartAlbum: (albumID, revision, input) =>

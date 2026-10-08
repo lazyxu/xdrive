@@ -310,6 +310,9 @@ type desktopIPCController interface {
 	CloudMediaEditRecipe(context.Context, uint64) (client.MediaEditRecipe, error)
 	CloudSaveMediaEditRecipe(context.Context, uint64, client.MediaEditRecipeInput) (client.MediaEditRecipe, error)
 	CloudResetMediaEditRecipe(context.Context, uint64, uint64) (client.MediaEditRecipe, error)
+	CloudCreateMediaCreativeGeneration(context.Context, uint64, client.MediaCreativeInput) (client.MediaCreativeGeneration, error)
+	CloudMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
+	CloudCancelMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoStillTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
@@ -639,6 +642,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/edit", h.mediaEditRecipe)
 	mux.HandleFunc("PUT /v1/media/edit", h.mediaEditRecipe)
 	mux.HandleFunc("DELETE /v1/media/edit", h.mediaEditRecipe)
+	mux.HandleFunc("POST /v1/media/creative", h.createMediaCreativeGeneration)
+	mux.HandleFunc("GET /v1/media/creative", h.mediaCreativeGeneration)
+	mux.HandleFunc("POST /v1/media/creative/cancel", h.cancelMediaCreativeGeneration)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
@@ -3647,6 +3653,82 @@ func (h *desktopIPCHandler) mediaEditRecipe(w http.ResponseWriter, r *http.Reque
 			"method is not allowed",
 		)
 	}
+}
+
+func desktopIPCCreativeGenerationID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	generationID := strings.TrimSpace(r.URL.Query().Get("generation_id"))
+	if generationID == "" || len(generationID) > 64 {
+		writeDesktopIPCError(
+			w,
+			http.StatusBadRequest,
+			"invalid_media_creative_generation",
+			"valid creative generation id is required",
+		)
+		return "", false
+	}
+	return generationID, true
+}
+
+func (h *desktopIPCHandler) createMediaCreativeGeneration(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	var input client.MediaCreativeInput
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	result, err := h.ctrl.CloudCreateMediaCreativeGeneration(
+		r.Context(),
+		nodeID,
+		input,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, result)
+}
+
+func (h *desktopIPCHandler) mediaCreativeGeneration(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	generationID, ok := desktopIPCCreativeGenerationID(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.ctrl.CloudMediaCreativeGeneration(
+		r.Context(),
+		generationID,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cancelMediaCreativeGeneration(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	generationID, ok := desktopIPCCreativeGenerationID(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.ctrl.CloudCancelMediaCreativeGeneration(
+		r.Context(),
+		generationID,
+	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 type desktopIPCMediaVideoPosterController interface {

@@ -520,6 +520,47 @@ export type PhotoAssetKind =
   | 'burst'
   | string
 
+export type MediaCreativeKind = 'cutout' | 'erase'
+
+export interface MediaCreativePoint {
+  x: number
+  y: number
+  foreground: boolean
+}
+
+export interface MediaCreativeStrokePoint {
+  x: number
+  y: number
+}
+
+export interface MediaCreativeStroke {
+  radius: number
+  points: MediaCreativeStrokePoint[]
+}
+
+export interface MediaCreativeInput {
+  kind: MediaCreativeKind
+  output_name?: string
+  cutout_mode?: 'object'
+  points?: MediaCreativePoint[]
+  strokes?: MediaCreativeStroke[]
+}
+
+export interface MediaCreativeGeneration {
+  id: string
+  kind: MediaCreativeKind | string
+  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | string
+  source_asset_id: number
+  source_node_id: number
+  source_node_revision: number
+  analyzer_version?: string
+  output_node_id?: number
+  last_error?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
 export interface MediaResource {
   kind: 'node' | 'derived' | string
   node_id: number

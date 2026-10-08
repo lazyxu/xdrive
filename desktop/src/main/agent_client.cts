@@ -689,6 +689,45 @@ export type AgentMediaEditRecipeInput = {
   trim_end_ms: number
 }
 
+export type AgentMediaCreativePoint = {
+  x: number
+  y: number
+  foreground: boolean
+}
+
+export type AgentMediaCreativeStrokePoint = {
+  x: number
+  y: number
+}
+
+export type AgentMediaCreativeStroke = {
+  radius: number
+  points: AgentMediaCreativeStrokePoint[]
+}
+
+export type AgentMediaCreativeInput = {
+  kind: 'cutout' | 'erase'
+  output_name?: string
+  cutout_mode?: 'object'
+  points?: AgentMediaCreativePoint[]
+  strokes?: AgentMediaCreativeStroke[]
+}
+
+export type AgentMediaCreativeGeneration = {
+  id: string
+  kind: string
+  state: string
+  source_asset_id: number
+  source_node_id: number
+  source_node_revision: number
+  analyzer_version?: string
+  output_node_id?: number
+  last_error?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
 export type AgentMediaItem = {
   node: AgentCloudNode
   metadata: AgentMediaMetadata
@@ -1525,6 +1564,34 @@ export class AgentIPCClient {
     return this.request<AgentMediaEditRecipe>(
       'DELETE',
       `/v1/media/edit?${query.toString()}`,
+    )
+  }
+
+  createMediaCreativeGeneration(
+    nodeID: number,
+    input: AgentMediaCreativeInput,
+  ) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaCreativeGeneration>(
+      'POST',
+      `/v1/media/creative?${query.toString()}`,
+      input,
+    )
+  }
+
+  mediaCreativeGeneration(generationID: string) {
+    const query = new URLSearchParams({ generation_id: generationID })
+    return this.request<AgentMediaCreativeGeneration>(
+      'GET',
+      `/v1/media/creative?${query.toString()}`,
+    )
+  }
+
+  cancelMediaCreativeGeneration(generationID: string) {
+    const query = new URLSearchParams({ generation_id: generationID })
+    return this.request<AgentMediaCreativeGeneration>(
+      'POST',
+      `/v1/media/creative/cancel?${query.toString()}`,
     )
   }
 

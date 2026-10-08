@@ -87,6 +87,45 @@ type MediaEditRecipeInput struct {
 	TrimEndMS       int64   `json:"trim_end_ms"`
 }
 
+type MediaCreativePoint struct {
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Foreground bool    `json:"foreground"`
+}
+
+type MediaCreativeStrokePoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type MediaCreativeStroke struct {
+	Radius float64                    `json:"radius"`
+	Points []MediaCreativeStrokePoint `json:"points"`
+}
+
+type MediaCreativeInput struct {
+	Kind       string                `json:"kind"`
+	OutputName string                `json:"output_name,omitempty"`
+	CutoutMode string                `json:"cutout_mode,omitempty"`
+	Points     []MediaCreativePoint  `json:"points,omitempty"`
+	Strokes    []MediaCreativeStroke `json:"strokes,omitempty"`
+}
+
+type MediaCreativeGeneration struct {
+	ID                 string     `json:"id"`
+	Kind               string     `json:"kind"`
+	State              string     `json:"state"`
+	SourceAssetID      uint64     `json:"source_asset_id"`
+	SourceNodeID       uint64     `json:"source_node_id"`
+	SourceNodeRevision uint64     `json:"source_node_revision"`
+	AnalyzerVersion    string     `json:"analyzer_version,omitempty"`
+	OutputNodeID       *uint64    `json:"output_node_id,omitempty"`
+	LastError          string     `json:"last_error,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+}
+
 type MediaResource struct {
 	Kind      string `json:"kind"`
 	NodeID    uint64 `json:"node_id"`
@@ -1248,6 +1287,54 @@ func mediaResponseMaxAge(cacheControl string) time.Duration {
 		return time.Duration(seconds) * time.Second
 	}
 	return 0
+}
+
+func (c *Client) CreateMediaCreativeGeneration(
+	ctx context.Context,
+	nodeID uint64,
+	input MediaCreativeInput,
+) (MediaCreativeGeneration, error) {
+	var out MediaCreativeGeneration
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/creative", nodeID),
+		input,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) MediaCreativeGeneration(
+	ctx context.Context,
+	generationID string,
+) (MediaCreativeGeneration, error) {
+	var out MediaCreativeGeneration
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		"/api/v1/media/creative/"+url.PathEscape(strings.TrimSpace(generationID)),
+		nil,
+		&out,
+	)
+	return out, err
+}
+
+func (c *Client) CancelMediaCreativeGeneration(
+	ctx context.Context,
+	generationID string,
+) (MediaCreativeGeneration, error) {
+	var out MediaCreativeGeneration
+	err := c.json(
+		ctx,
+		http.MethodPost,
+		"/api/v1/media/creative/"+
+			url.PathEscape(strings.TrimSpace(generationID))+
+			"/cancel",
+		nil,
+		&out,
+	)
+	return out, err
 }
 
 func (c *Client) MediaThumbnailConditional(
