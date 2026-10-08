@@ -72,6 +72,7 @@ test('Desktop FileExplorer account lifecycle change closes stale local dialogs',
   const effect = compileEffect(filename, callback, {
     actionGenerationRef,
     actionBusyRef,
+    createFolderParentIDRef: { current: 101 },
     setActionBusy: (value) => actionBusyWrites.push(value),
     setCreateOpen: (value) => createOpenWrites.push(value),
     setOpenPreviewItem: (value) => previewWrites.push(value),
