@@ -358,15 +358,30 @@ and the same text/thumbnail/signed-preview loaders already used by Inspector.
 
 The shared interaction contract is:
 
-- `Space` opens Quick Look for the active file;
-- `Space` or `Escape` closes the overlay;
-- `Left` / `Right` move between file entries in the current result set;
+- `Space` opens Quick Look for the active file and `Space` or `Escape` closes the overlay;
+- when Quick Look opens from a multi-selection, it freezes the selected **file** IDs in current
+  result order and `Left` / `Right` browse only that frozen session; navigation must not
+  collapse or rewrite the user's selection;
+- a single-file Quick Look keeps Finder-style result browsing: `Left` / `Right` move between
+  file entries in the current result set and may advance the active single selection;
+- the shared image renderer enables zoom/pan in Quick Look; this is transient presentation state
+  and never writes an edit recipe;
+- Quick Look exposes the shared preview shell's fullscreen mode. Fullscreen uses immersive
+  auto-hiding chrome, and `Escape` exits fullscreen before it closes Quick Look;
+- fullscreen Quick Look may run a lightweight slideshow over the same current Quick Look session;
+  the slideshow advances through the existing Previous/Next contract and stops at the end rather
+  than materializing a second media collection;
+- Quick Look actions stay deliberately small: platform-provided system-open when available,
+  Download/Save As, Share, and Tags. Destructive actions and media editing controls are excluded;
 - `Ctrl/Cmd + Space` preserves the existing keyboard selection-toggle behavior;
-- directories keep Space selection behavior rather than acquiring a fake media preview.
+- directories keep Space selection behavior rather than acquiring a fake media preview;
+- a focused Live Photo owns `Space`/Enter press-and-hold and stops those keys from bubbling to
+  the Quick Look close handler.
 
 Quick Look must not add a second preview endpoint, app-local renderer, inferred Gallery
 pairing semantics, or provider-specific media behavior. Validated `.livp` Quick Look
 reuses the same thumbnail + motion sources and shared `LivePhotoSurface` as Open/Inspector.
+Markup, PDF signing, image editing, and audio/video trimming remain outside FileExplorer Quick Look.
 
 ## Format-extension rule
 

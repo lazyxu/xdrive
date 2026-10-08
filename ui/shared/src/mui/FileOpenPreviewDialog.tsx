@@ -78,11 +78,25 @@ export function XDriveOpenPreviewDialog({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     showChrome()
     event.stopPropagation()
-    if (event.key === 'Escape' || (quickLook && event.key === ' ')) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (fullScreen && onFullScreenChange) {
+        onFullScreenChange(false)
+      } else {
+        onClose()
+      }
+      return
+    }
+    const target = event.target instanceof HTMLElement ? event.target : null
+    const interactiveKeyTarget = Boolean(target?.closest(
+      'button, input, textarea, select, video, audio, iframe, [role="button"], [role="slider"], [contenteditable="true"]',
+    ))
+    if (quickLook && event.key === ' ' && !interactiveKeyTarget) {
       event.preventDefault()
       onClose()
       return
     }
+    if (interactiveKeyTarget) return
     if (event.key === 'ArrowLeft' && canPrevious && onPrevious) {
       event.preventDefault()
       onPrevious()

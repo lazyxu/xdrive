@@ -230,6 +230,7 @@ export function XDriveLivePhotoSurface({
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
       event.preventDefault()
+      event.stopPropagation()
       beginHold()
     }
   }, [beginHold])
@@ -237,6 +238,7 @@ export function XDriveLivePhotoSurface({
   const handleKeyUp = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
+      event.stopPropagation()
       endHold()
     }
   }, [endHold])

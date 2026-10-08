@@ -866,12 +866,18 @@ export default function DesktopFileExplorer({
       item.kind !== 'file' ||
       !item.name.trim().toLowerCase().endsWith('.livp')
     ) return null
+    const lifecycleGeneration = actionGenerationRef.current
     const result = await window.xdriveDesktop.agent.getMediaLivePhotoMotion(Number(item.id), onProgress)
-    if (!result.ok) return null
+    if (
+      lifecycleGeneration !== actionGenerationRef.current ||
+      !result.ok
+    ) return null
+    const motionURL = result.data
     return {
-      url: result.data,
+      url: motionURL,
       dispose: () => {
-        void window.xdriveDesktop.agent.releaseMediaLivePhotoMotion(result.data)
+        if (lifecycleGeneration !== actionGenerationRef.current) return
+        void window.xdriveDesktop.agent.releaseMediaLivePhotoMotion(motionURL)
       },
     }
   }, [])

@@ -204,8 +204,10 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'shared Live Photo surface must own stream URL disposal and bounded preloading',
   )
   assert.ok(
-    desktop.includes('releaseMediaLivePhotoMotion(result.data)'),
-    'Desktop LIVP loader must release protected stream URLs',
+    desktop.includes('const motionURL = result.data') &&
+      desktop.includes('releaseMediaLivePhotoMotion(motionURL)') &&
+      desktop.includes('lifecycleGeneration !== actionGenerationRef.current'),
+    'Desktop LIVP loader must release protected stream URLs only through the owning lifecycle',
   )
   const desktopMotionStart = desktop.indexOf('const loadLivePhotoMotion = useCallback')
   const desktopMotionEnd = desktop.indexOf('const openPreviewNode', desktopMotionStart)
@@ -233,5 +235,64 @@ test('Preview Engine design documents Open versus Download semantics', () => {
   assert.ok(
     docs.includes('Double-clicking a Gallery media') && docs.includes('tile opens the media preview'),
     'Preview Engine design must document Gallery double-click',
+  )
+})
+
+
+test('FileExplorer Quick Look matches the shared Finder-style browsing contract', () => {
+  const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+  for (const token of [
+    'const [quickLookSessionIDs, setQuickLookSessionIDs]',
+    'const selectedSessionItems = selectedKeySet.has(itemKey)',
+    'setQuickLookSessionIDs(selectionSession)',
+    'quickLookSessionIndex',
+    'actions={quickLookActions}',
+    "['system-open', 'download', 'share']",
+    "id: 'tags'",
+  ]) {
+    assert.ok(explorer.includes(token), 'Quick Look session/actions missing: ' + token)
+  }
+
+  const sessionStart = explorer.indexOf('if (quickLookSessionIDs) {')
+  const directoryStart = explorer.indexOf('if (!virtualCollectionEnabled) {', sessionStart)
+  assert.ok(sessionStart >= 0 && directoryStart > sessionStart, 'multi-select Quick Look branch is missing')
+  assert.equal(
+    explorer.slice(sessionStart, directoryStart).includes('commitSelection('),
+    false,
+    'multi-select Quick Look navigation must not collapse the selection',
+  )
+
+  for (const token of [
+    'interactiveImage',
+    'fullScreen={fullScreen}',
+    'immersive={fullScreen}',
+    'slideshowPlaying',
+    'slideshowIntervalMs = 5000',
+    'const onNextRef = useRef(onNext)',
+    'window.setTimeout(() => onNextRef.current?.(), slideshowIntervalMs)',
+    "aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}",
+  ]) {
+    assert.ok(quickLook.includes(token), 'Quick Look fullscreen/zoom/slideshow missing: ' + token)
+  }
+
+  assert.ok(
+    openPreview.includes('if (fullScreen && onFullScreenChange)') &&
+      openPreview.includes('onFullScreenChange(false)'),
+    'Escape must exit fullscreen before closing Quick Look',
+  )
+  assert.ok(
+    livePhoto.includes('event.stopPropagation()'),
+    'Live Photo Space/Enter hold must not bubble to Quick Look close handling',
+  )
+  assert.ok(
+    openPreview.includes('const interactiveKeyTarget = Boolean') &&
+      openPreview.includes("if (quickLook && event.key === ' ' && !interactiveKeyTarget)") &&
+      openPreview.includes('if (interactiveKeyTarget) return'),
+    'Quick Look actions and media controls must own Space/arrow keys while focused',
+  )
+  assert.ok(
+    docs.includes('freezes the selected **file** IDs') &&
+      docs.includes('Markup, PDF signing'),
+    'Preview Engine design must document the Quick Look session and non-goals',
   )
 })
