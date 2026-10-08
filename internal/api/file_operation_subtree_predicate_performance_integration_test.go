@@ -228,4 +228,104 @@ func TestFileOperationSubtreePredicatesAvoidIDMaterialization(t *testing.T) {
 			t.Fatalf("managed-target SQL missing %q: %s", fragment, recursiveStatements[0])
 		}
 	}
+
+	const selectedCount = 120
+	selected := children[:selectedCount]
+
+	capture.reset()
+	for _, node := range selected {
+		inside, err := batchTargetInsideNode(db, user.ID, outside.ID, node.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inside {
+			t.Fatalf("outside target unexpectedly inside selected root %d", node.ID)
+		}
+	}
+	statements = capture.snapshot()
+	legacyAncestorQueries := 0
+	for _, statement := range statements {
+		if strings.Contains(strings.ToLower(statement), "with recursive ancestors") {
+			legacyAncestorQueries++
+		}
+	}
+	if legacyAncestorQueries != selectedCount {
+		t.Fatalf("legacy target-descendant queries=%d want=%d", legacyAncestorQueries, selectedCount)
+	}
+
+	capture.reset()
+	matches, err := batchTargetInsideNodesTx(db, user.ID, outside.ID, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("outside target matched selected roots: %+v", matches)
+	}
+	statements = capture.snapshot()
+	batchAncestorQueries := 0
+	for _, statement := range statements {
+		lower := strings.ToLower(statement)
+		if strings.Contains(lower, "with recursive ancestors") {
+			batchAncestorQueries++
+			for _, fragment := range []string{"select ancestors.id", "ancestors.id in"} {
+				if !strings.Contains(lower, fragment) {
+					t.Fatalf("batch target-descendant SQL missing %q: %s", fragment, statement)
+				}
+			}
+		}
+	}
+	if batchAncestorQueries != 1 {
+		t.Fatalf("batch target-descendant queries=%d want=1; all=%v", batchAncestorQueries, statements)
+	}
+
+	nestedParentID := selected[73].ID
+	nestedTarget := meta.Node{
+		ParentID: &nestedParentID,
+		Name:     "nested-target",
+		Type:     meta.NodeTypeDir,
+		OwnerID:  user.ID,
+		Revision: 1,
+	}
+	if err := db.Create(&nestedTarget).Error; err != nil {
+		t.Fatal(err)
+	}
+	matches, err = batchTargetInsideNodesTx(db, user.ID, nestedTarget.ID, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("nested target matches=%d want=1: %+v", len(matches), matches)
+	}
+	if _, ok := matches[selected[73].ID]; !ok {
+		t.Fatalf("nested target did not match owning selected root %d: %+v", selected[73].ID, matches)
+	}
+}
+
+func TestFileOperationExecutionBatchesTargetDescendantChecks(t *testing.T) {
+	sourceBytes, err := os.ReadFile("file_operations.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(sourceBytes)
+	for _, functionName := range []string{
+		"executeQueuedBatchCopy",
+		"executeQueuedBatchMove",
+	} {
+		start := strings.Index(source, "func (s *Server) "+functionName)
+		if start < 0 {
+			t.Fatalf("missing production function %s", functionName)
+		}
+		rest := source[start+1:]
+		end := strings.Index(rest, "\nfunc ")
+		body := source[start:]
+		if end >= 0 {
+			body = source[start : start+1+end]
+		}
+		if !strings.Contains(body, "batchTargetInsideNodesTx(tx, uid, parentID, roots)") {
+			t.Fatalf("%s must batch target-descendant validation", functionName)
+		}
+		if strings.Contains(body, "batchTargetInsideNode(tx, uid, parentID") {
+			t.Fatalf("%s regressed to per-root target-descendant validation", functionName)
+		}
+	}
 }

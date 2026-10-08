@@ -52,6 +52,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Permanent-delete CAS reference release | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique CAS references: reference-release DB statements **360 -> 3** (one ordered advisory-lock statement, one row-lock load, one batch update). Physical object deletes remain per-object and unchanged. |
 | CAS physical-delete reused-source guard | **Accepted / structural contract** | Structural / unmeasured wall-clock | Reused-source protection changes from `COUNT(*)` over all matches with no source-key index to an exact-key partial-indexed `EXISTS`; a blob referenced by 128 reused chunks no longer requires consuming all 128 matches just to answer a boolean guard. |
 | FileOperation subtree predicates | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201-node source subtree: target-descendant validation **1,201 DB rows -> 1 scalar bool** across the DB/Go boundary; managed-target protection removes the intermediate **1,201-ID Go slice + 1,201-value `IN` list** in favor of one database CTE `EXISTS`. |
+| FileOperation target-descendant batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected source directories with one shared target outside the selection: repeated target-ancestor validation **120 recursive CTEs -> 1 recursive CTE**; request-order failure reporting remains in the existing Copy/Move loops. |
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
 | FileOperation Move replace/merge File preload elimination | **Accepted / structural contract** | Structural / unmeasured wall-clock | Merge root + 120 matching child directories, one source file per child: unused `xd_files` preload SELECTs **242 -> 0** (121 conflict-target preloads + 121 source-child preloads). Node traversal/mutation order is unchanged. |
 | FileOperation Copy source-subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One copied root with 120 child directories and one file each: source-tree reads **242 SELECTs -> 1 recursive CTE with file metadata join**. Destination creates, content-reference retain, hooks/progress and undo remain per node. |
@@ -1301,7 +1302,44 @@ Decision: **Accepted.** This removes avoidable subtree-sized DB/Go materializati
 
 Regression budget: Copy/Move target-descendant checks must not return the full source subtree to Go; managed-source subtree checks must not construct a Go subtree-ID slice or subtree-sized SQL `IN` list.
 
-Next action: continue the basic-path audit at Copy/Move recursive execution and FileExplorer upload preflight batching; only change production behavior when another deterministic hotspot is established.
+Next action: selection-wide target-descendant validation is covered by the dedicated contract below; continue managed-target/progress mutation audits separately.
+
+### FileOperation target-descendant selection batching
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one durable Copy/Move operation with **120 selected sibling source directories**;
+- all selected sources share one target directory outside their subtrees;
+- deterministic SQL capture compares the legacy per-root `batchTargetInsideNode` loop with the selection-wide helper;
+- positive behavior also places the target under selected root #74 and verifies only that root is matched.
+
+BEFORE:
+
+- every selected directory independently executes the same recursive CTE starting from the same target directory;
+- each CTE walks the target's active ancestor chain and tests one source ID;
+- **120 selected directories -> 120 recursive target-ancestor CTEs**.
+
+AFTER / current:
+
+- Copy/Move compute the target ancestor chain once after selected-root validation;
+- one query returns only selected directory IDs that occur in that ancestor chain;
+- **120 selected directories -> 1 recursive target-ancestor CTE**;
+- files are excluded from the candidate set;
+- the existing per-item Copy/Move loops still raise `invalid_target` at the original request index, so user-visible error ordering is unchanged;
+- Move keeps its explicit `node.ID == parentID` self-target error before the descendant membership check;
+- recursive Copy/Move work, managed-source protection, conflict handling, progress, undo, revision and cancellation behavior are unchanged.
+
+Decision: **Accepted.** The target directory is common to the whole operation, so rebuilding its ancestor chain once per selected source adds no correctness value.
+
+Regression budget: durable Copy/Move may execute at most **1 recursive target-ancestor CTE** per non-empty operation regardless of selected directory count up to the existing 200-item limit. Production execution must not call `batchTargetInsideNode` per selected root.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestFileOperation(SubtreePredicatesAvoidIDMaterialization|ExecutionBatchesTargetDescendantChecks)$' -count=1`.
+
+Next action: continue ordinary sync/delete/download performance; keep managed-target batching and progress-write coalescing as separate changes because they have different correctness/cancellation constraints.
 
 ### Desktop warm-thumbnail transport and Agent cache
 

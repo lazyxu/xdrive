@@ -285,6 +285,46 @@ SELECT EXISTS (
 	return inside, nil
 }
 
+func batchTargetInsideNodesTx(tx *gorm.DB, uid, targetID uint64, nodes []meta.Node) (map[uint64]struct{}, error) {
+	ids := make([]uint64, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Type == meta.NodeTypeDir {
+			ids = append(ids, node.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[uint64]struct{}{}, nil
+	}
+
+	type targetAncestorRow struct {
+		ID uint64 `gorm:"column:id"`
+	}
+	var rows []targetAncestorRow
+	if err := tx.Raw(`
+WITH RECURSIVE ancestors AS (
+	SELECT id, parent_id
+	FROM xd_nodes
+	WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	UNION ALL
+	SELECT parent.id, parent.parent_id
+	FROM xd_nodes AS parent
+	JOIN ancestors AS child ON child.parent_id = parent.id
+	WHERE parent.owner_id = ? AND parent.deleted_at IS NULL
+)
+SELECT ancestors.id
+FROM ancestors
+WHERE ancestors.id IN ?
+`, targetID, uid, uid, ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	matches := make(map[uint64]struct{}, len(rows))
+	for _, row := range rows {
+		matches[row.ID] = struct{}{}
+	}
+	return matches, nil
+}
+
 func batchNameExistsTx(tx *gorm.DB, uid, parentID uint64, name string, except uint64) (bool, error) {
 	var count int64
 	query := tx.Model(&meta.Node{}).
