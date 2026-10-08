@@ -58,6 +58,7 @@ function loadWebTransferStore() {
 test('Web TransferStore batches lifecycle persistence and listener publication', () => {
   const { Store, writes } = loadWebTransferStore()
   const store = new Store()
+  store.setScope('test-user')
 
   let publications = 0
   store.subscribe(() => { publications += 1 })
@@ -128,6 +129,7 @@ test('Web TransferStore batches lifecycle persistence and listener publication',
 test('nested Web TransferStore batches flush only at the outer boundary', () => {
   const { Store, writes } = loadWebTransferStore()
   const store = new Store()
+  store.setScope('test-user')
   const groupID = store.startGroup({
     fileName: 'archive.zip',
     itemsTotal: 2,
@@ -155,4 +157,30 @@ test('nested Web TransferStore batches flush only at the outer boundary', () => 
   const items = store.snapshot()
   assert.equal(items.find((item) => item.id === childIDs[0])?.bytes_done, 25)
   assert.equal(items.find((item) => item.id === childIDs[1])?.bytes_done, 40)
+})
+
+
+test('Web TransferStore baseline does not invent speed and unchanged polling is a no-op', () => {
+  const { Store, writes } = loadWebTransferStore()
+  const store = new Store()
+  store.setScope('baseline-user')
+  const id = store.create({
+    fileName: 'resume.bin',
+    kind: 'upload',
+    bytesTotal: 100,
+  })
+
+  store.baseline(id, 80, 100)
+  let item = store.snapshot().find((entry) => entry.id === id)
+  assert.equal(item?.bytes_done, 80)
+  assert.equal(item?.instant_bytes_per_second, 0)
+
+  writes.length = 0
+  let publications = 0
+  const unsubscribe = store.subscribe(() => { publications += 1 })
+  publications = 0
+  store.progress(id, 80, 100)
+  assert.equal(writes.length, 0)
+  assert.equal(publications, 0)
+  unsubscribe()
 })

@@ -4,7 +4,7 @@ import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import type { XDriveSidebarBadgeValue } from './SidebarNav'
 import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
 
@@ -40,9 +40,9 @@ export function xDriveCoreWorkspaceDestinations({
     { key: 'sources', label: '同步文件夹', icon: <CloudSyncRoundedIcon fontSize="small" /> },
     {
       key: 'transfers',
-      label: '传输',
+      label: '任务',
       compactLabel: '任务',
-      icon: <SwapVertRoundedIcon fontSize="small" />,
+      icon: <TaskAltRoundedIcon fontSize="small" />,
       badge: transferBadge,
     },
     ...(showLocalStorage

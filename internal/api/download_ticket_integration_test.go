@@ -19,6 +19,39 @@ import (
 	"gorm.io/gorm"
 )
 
+func waitDownloadTransferProgress(
+	t *testing.T,
+	router http.Handler,
+	accessToken string,
+	transferID string,
+	ready func(downloadTransferProgressDTO) bool,
+) downloadTransferProgressDTO {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		res := request(
+			t,
+			router,
+			http.MethodGet,
+			"/api/v1/download/transfers/"+transferID,
+			accessToken,
+			nil,
+			http.StatusOK,
+		)
+		var progress downloadTransferProgressDTO
+		if err := json.Unmarshal(res.Body.Bytes(), &progress); err != nil {
+			t.Fatal(err)
+		}
+		if ready(progress) {
+			return progress
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("download progress did not converge: %+v", progress)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing.T) {
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -45,7 +78,7 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.DownloadTransfer{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,6 +92,7 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 		Auth:  auth.New("download-ticket-integration-secret", time.Hour),
 	}
 	router := server.Router()
+	peer := (&Server{DB: db, Store: store, Auth: server.Auth}).Router()
 
 	user := meta.User{
 		Username:       "download-owner",
@@ -128,7 +162,9 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(ticket.URL, fmt.Sprintf("/api/v1/file-download/%d?ticket=", node.ID)) ||
-		!ticket.ExpiresAt.After(time.Now()) {
+		!ticket.ExpiresAt.After(time.Now()) ||
+		ticket.TransferID == "" ||
+		ticket.BytesTotal != int64(len(currentBytes)) {
 		t.Fatalf("ticket=%+v", ticket)
 	}
 
@@ -154,6 +190,19 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 	if !bytes.Equal(rangeRes.Body.Bytes(), currentBytes[:7]) {
 		t.Fatalf("range bytes=%q want=%q", rangeRes.Body.Bytes(), currentBytes[:7])
 	}
+	progress := waitDownloadTransferProgress(
+		t,
+		peer,
+		accessToken,
+		ticket.TransferID,
+		func(progress downloadTransferProgressDTO) bool {
+			return progress.BytesDone >= 7 &&
+				progress.Status == meta.DownloadTransferStatusRunning
+		},
+	)
+	if progress.BytesDone != 7 || progress.BytesTotal != int64(len(currentBytes)) {
+		t.Fatalf("range download progress=%+v", progress)
+	}
 
 	if err := db.Model(&meta.Node{}).Where("id = ?", node.ID).Update("revision", 4).Error; err != nil {
 		t.Fatal(err)
@@ -176,12 +225,75 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 	if !strings.HasPrefix(
 		versionTicket.URL,
 		fmt.Sprintf("/api/v1/file-version-download/%d/%d?ticket=", node.ID, version.ID),
-	) {
+	) || versionTicket.TransferID == "" || versionTicket.BytesTotal != int64(len(versionBytes)) {
 		t.Fatalf("version ticket=%+v", versionTicket)
 	}
 	versionRes := request(t, router, http.MethodGet, versionTicket.URL, "", nil, http.StatusOK)
 	if !bytes.Equal(versionRes.Body.Bytes(), versionBytes) {
 		t.Fatalf("version bytes=%q want=%q", versionRes.Body.Bytes(), versionBytes)
+	}
+	versionProgress := waitDownloadTransferProgress(
+		t,
+		peer,
+		accessToken,
+		versionTicket.TransferID,
+		func(progress downloadTransferProgressDTO) bool {
+			return progress.Status == meta.DownloadTransferStatusCompleted
+		},
+	)
+	if versionProgress.BytesDone != int64(len(versionBytes)) ||
+		versionProgress.BytesTotal != int64(len(versionBytes)) {
+		t.Fatalf("version download progress=%+v", versionProgress)
+	}
+
+	retryRangeRes := requestWithHeaders(
+		t,
+		router,
+		http.MethodGet,
+		versionTicket.URL,
+		"",
+		nil,
+		http.StatusPartialContent,
+		map[string]string{"Range": "bytes=0-3"},
+	)
+	if !bytes.Equal(retryRangeRes.Body.Bytes(), versionBytes[:4]) {
+		t.Fatalf("version retry range bytes=%q want=%q", retryRangeRes.Body.Bytes(), versionBytes[:4])
+	}
+	afterRetry := waitDownloadTransferProgress(
+		t,
+		peer,
+		accessToken,
+		versionTicket.TransferID,
+		func(progress downloadTransferProgressDTO) bool {
+			return progress.Status == meta.DownloadTransferStatusCompleted
+		},
+	)
+	if afterRetry.Status != meta.DownloadTransferStatusCompleted {
+		t.Fatalf("completed download regressed after Range retry: %+v", afterRetry)
+	}
+
+	if err := db.Migrator().DropTable(&meta.DownloadTransfer{}); err != nil {
+		t.Fatal(err)
+	}
+	fallbackTicketRes := request(
+		t,
+		router,
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/files/%d/download-ticket", node.ID),
+		accessToken,
+		nil,
+		http.StatusOK,
+	)
+	var fallbackTicket authenticatedDownloadTicketDTO
+	if err := json.Unmarshal(fallbackTicketRes.Body.Bytes(), &fallbackTicket); err != nil {
+		t.Fatal(err)
+	}
+	if fallbackTicket.TransferID != "" {
+		t.Fatalf("progress-unavailable fallback unexpectedly returned transfer id: %+v", fallbackTicket)
+	}
+	fallbackRes := request(t, router, http.MethodGet, fallbackTicket.URL, "", nil, http.StatusOK)
+	if !bytes.Equal(fallbackRes.Body.Bytes(), currentBytes) {
+		t.Fatalf("fallback download bytes=%q want=%q", fallbackRes.Body.Bytes(), currentBytes)
 	}
 
 	if err := db.Model(&meta.User{}).Where("id = ?", user.ID).Update("session_version", 2).Error; err != nil {

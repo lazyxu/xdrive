@@ -614,3 +614,34 @@ func TestUploadFileResumableConflictSkipAtFinalize(t *testing.T) {
 		t.Fatalf("raced skip puts=%d want=1", puts)
 	}
 }
+
+func TestUploadProgressReaderReportsIncrementalReads(t *testing.T) {
+	var samples []int64
+	reader := &uploadProgressReader{
+		reader: strings.NewReader("abcdefghij"),
+		onRead: func(read int64) {
+			samples = append(samples, read)
+		},
+	}
+	buf := make([]byte, 4)
+	for {
+		_, err := reader.Read(buf)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(samples) == 0 {
+		t.Fatal("upload progress reader did not report any bytes")
+	}
+	if got := samples[len(samples)-1]; got != 10 {
+		t.Fatalf("final upload progress=%d want=10 samples=%v", got, samples)
+	}
+	for index := 1; index < len(samples); index++ {
+		if samples[index] <= samples[index-1] {
+			t.Fatalf("upload progress must be monotonic: %v", samples)
+		}
+	}
+}

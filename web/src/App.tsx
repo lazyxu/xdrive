@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import ManageHistoryRoundedIcon from '@mui/icons-material/ManageHistoryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import {
   AppBar,
@@ -38,6 +39,7 @@ import {
   createXDriveSourceManagerAdapter,
   XDriveStatePanel,
   XDriveTaskCenterPage,
+  XDriveTransferPopover,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
   xDriveFileExplorerUploadGroupLabel,
@@ -115,7 +117,7 @@ type ConfirmAction = {
 }
 
 type AppView = XDriveWorkspaceViewKey<
-  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage'
+  'overview' | 'global-tasks' | 'admin-users' | 'admin-audit' | 'admin-storage'
 >
 
 function initialSession(): AuthSession {
@@ -456,15 +458,25 @@ function FileManager({
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
   const { route, launch: launchWebApp, closeViewer } = useXDriveWebAppRuntime()
-  const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app)
+  const workspaceRouteKey = route.app === 'tasks' && route.params.scope === 'global'
+    ? 'global-tasks'
+    : xDriveWebAppWorkspaceKey(route.app)
   const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
   const setAppView = useCallback((view: AppView) => {
+    if (view === 'global-tasks') {
+      launchWebApp({ app: 'tasks', params: { scope: 'global' } })
+      return
+    }
     const app = xDriveWebAppForWorkspaceKey(view)
     if (!app) return
+    if (view === 'transfers') {
+      launchWebApp({ app: 'tasks', params: { scope: 'mine' } })
+      return
+    }
     launchWebApp({ app, params: {} } as XDriveWebAppRoute)
   }, [launchWebApp])
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
@@ -536,6 +548,7 @@ function FileManager({
         if (input?.group) api.updateTransferGroup(id, input.group)
         api.beginTransfer(id)
       },
+      baseline: (id, done, total) => api.baselineTransfer(id, done, total),
       progress: (id, done, total) => api.progressTransfer(id, done, total),
       updateGroup: (id, progress) => api.updateTransferGroup(id, progress),
       finish: (id, input) => api.finishTransfer(id, input),
@@ -610,7 +623,10 @@ function FileManager({
     }
   }, [api, handleError])
 
-  useEffect(() => api.onTransfers(setTransfers), [api])
+  useEffect(() => {
+    api.setTransferScope(username)
+    return api.onTransfers(setTransfers)
+  }, [api, username])
 
   const loadFileOperations = useCallback(
     (limit: number) => api.fileOperations(limit),
@@ -683,7 +699,7 @@ function FileManager({
     operationActions: fileOperationActions,
     backgroundTaskPort,
     backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
-    backgroundTasksVisible: appView === 'transfers' || appView === 'overview',
+    backgroundTasksVisible: appView === 'transfers' || appView === 'global-tasks' || appView === 'overview',
     globalTasksEnabled: profile?.role === 'admin',
     onBackgroundTaskError: handleError,
   })
@@ -699,7 +715,7 @@ function FileManager({
 
   useEffect(() => {
     if (route.app !== 'tasks') return
-    if (route.params.scope) taskCenter.pageProps.onBackgroundScopeChange?.(route.params.scope)
+    taskCenter.pageProps.onBackgroundScopeChange?.(route.params.scope ?? 'mine')
     if (route.params.task) {
       taskCenterFocusSequenceRef.current += 1
       setTaskCenterFocus({
@@ -712,8 +728,8 @@ function FileManager({
   const openGlobalTaskCenter = useCallback(() => {
     setTaskCenterFocus(null)
     taskCenter.pageProps.onBackgroundScopeChange?.('global')
-    setAppView('transfers')
-  }, [taskCenter.pageProps.onBackgroundScopeChange])
+    setAppView('global-tasks')
+  }, [setAppView, taskCenter.pageProps.onBackgroundScopeChange])
 
   const runStorageMaintenance = useCallback(async (
     kind: 'storage_verify' | 'storage_repair',
@@ -728,15 +744,19 @@ function FileManager({
         requestID: taskCenterFocusSequenceRef.current,
       })
     }
-    setAppView('transfers')
-  }, [api, taskCenter.pageProps.onBackgroundScopeChange])
+    setAppView('global-tasks')
+  }, [api, setAppView, taskCenter.pageProps.onBackgroundScopeChange])
 
   useEffect(() => {
-    if (appView !== 'transfers') setTaskCenterFocus(null)
+    if (appView !== 'transfers' && appView !== 'global-tasks') setTaskCenterFocus(null)
   }, [appView])
 
   useEffect(() => {
-    if (profile && profile.role !== 'admin' && appView.startsWith('admin-')) {
+    if (
+      profile &&
+      profile.role !== 'admin' &&
+      (appView === 'global-tasks' || appView.startsWith('admin-'))
+    ) {
       setAppView('files')
     }
   }, [appView, profile])
@@ -995,6 +1015,11 @@ function FileManager({
           placement: 'after-core' as const,
           items: [
             {
+              key: 'global-tasks',
+              label: '全局任务',
+              icon: <ManageHistoryRoundedIcon fontSize="small" />,
+            },
+            {
               key: 'admin-users',
               label: '用户管理',
               icon: <ManageAccountsRoundedIcon fontSize="small" />,
@@ -1058,7 +1083,14 @@ function FileManager({
             }}
           >
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
-          <WebAccountMenu
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <XDriveTransferPopover
+              transfers={transfers}
+              disabled={viewerActive}
+              clearHistory={{ onClear: () => api.clearTransferHistory() }}
+              downloadSpeedCaption="Web 原生下载显示服务端发送速度"
+            />
+            <WebAccountMenu
               disabled={viewerActive}
               username={username}
               api={api}
@@ -1068,6 +1100,7 @@ function FileManager({
               onAppearanceChange={onAppearanceChange}
               onLogout={onLogout}
             />
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -1087,6 +1120,13 @@ function FileManager({
           sections={webSidebarSections}
           storageSummary={xDriveWorkspaceStorageSummary(quota)}
           onSelect={(destination, event) => {
+            if (destination === 'global-tasks') {
+              launchWebApp(
+                { app: 'tasks', params: { scope: 'global' } },
+                event.ctrlKey || event.metaKey ? { newTab: true } : undefined,
+              )
+              return
+            }
             const app = xDriveWebAppForWorkspaceKey(destination)
             if (!app) return
             if (event.ctrlKey || event.metaKey) {
@@ -1248,6 +1288,14 @@ function FileManager({
         ) : appView === 'transfers' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            fixedScope="mine"
+            backgroundFocusTaskID={taskCenterFocus?.taskID}
+            backgroundFocusRequestID={taskCenterFocus?.requestID}
+          />
+        ) : appView === 'global-tasks' && profile?.role === 'admin' ? (
+          <XDriveTaskCenterPage
+            {...taskCenter.pageProps}
+            fixedScope="global"
             backgroundFocusTaskID={taskCenterFocus?.taskID}
             backgroundFocusRequestID={taskCenterFocus?.requestID}
           />

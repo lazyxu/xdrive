@@ -114,7 +114,7 @@ test('desktop GUI defaults to Chinese', () => {
     '添加同步文件夹',
     '目标文件夹',
     '添加同步文件夹',
-    '任务中心',
+    '任务',
     '存储策略',
     '冲突副本',
     '客户端诊断',
@@ -245,7 +245,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     'CloudOutlinedIcon',
     'PhotoLibraryRoundedIcon',
     'CloudSyncRoundedIcon',
-    'SwapVertRoundedIcon',
+    'TaskAltRoundedIcon',
     'StorageRoundedIcon',
     'CloudRoundedIcon',
   ]) {

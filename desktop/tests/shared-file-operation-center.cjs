@@ -100,10 +100,10 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
 
 test('Web and Desktop both render the shared file-operation center through Task Center', () => {
   assert.equal((taskCenter.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'shared Task Center must render one FileOperationCenter')
-  assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain upload/download history')
-  assert.ok(taskCenter.includes('title="任务中心"'), 'shared workspace should own the Task Center title')
-  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render one shared Task Center')
-  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render one shared Task Center')
+  assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task page may render only non-network local transfer work')
+  assert.ok(taskCenter.includes("title={scope === 'global' ? '全局任务' : '任务'}"), 'shared workspace should own Task and Global Task titles')
+  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 2, 'Web must render separate shared Task and Global Task workspaces')
+  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 2, 'Desktop must render separate shared Task and Global Task workspaces')
   assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Web must not duplicate FileOperationCenter composition')
   assert.equal((desktop.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Desktop must not duplicate FileOperationCenter composition')
   assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')), false, 'Desktop must not keep a pass-through Task Center wrapper')

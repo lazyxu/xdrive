@@ -25,6 +25,7 @@ import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
 import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import ManageHistoryRoundedIcon from '@mui/icons-material/ManageHistoryRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
@@ -58,6 +59,7 @@ import {
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDriveTaskCenterPage,
+  XDriveTransferPopover,
   XDriveWorkspaceShell,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -100,7 +102,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>
+type View = XDriveWorkspaceViewKey<'overview' | 'global-tasks' | 'conflicts' | 'diagnostics'>
 
 type ConfirmDialogState = {
   title: string
@@ -597,12 +599,20 @@ export default function App({
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
     backgroundTaskPort,
     backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
-    backgroundTasksVisible: view === 'transfers' || view === 'overview',
+    backgroundTasksVisible: view === 'transfers' || view === 'global-tasks' || view === 'overview',
     globalTasksEnabled: status?.role === 'admin',
     onBackgroundTaskError: (taskError) => setError(
       taskError instanceof Error ? taskError.message : String(taskError),
     ),
   })
+
+  useEffect(() => {
+    taskCenter.pageProps.onBackgroundScopeChange?.(view === 'global-tasks' ? 'global' : 'mine')
+  }, [taskCenter.pageProps.onBackgroundScopeChange, view])
+
+  useEffect(() => {
+    if ((status?.role !== 'admin' || !backgroundTasksSupported) && view === 'global-tasks') setView('files')
+  }, [backgroundTasksSupported, status?.role, view])
 
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
@@ -1282,6 +1292,19 @@ export default function App({
         },
       ],
     },
+    ...(status?.role === 'admin' && backgroundTasksSupported
+      ? [{
+          key: 'admin',
+          label: '管理',
+          ariaLabel: '管理员功能',
+          placement: 'after-core' as const,
+          items: [{
+            key: 'global-tasks',
+            label: '全局任务',
+            icon: <ManageHistoryRoundedIcon fontSize="small" />,
+          }],
+        }]
+      : []),
     {
       key: 'conflicts',
       placement: 'after-core',
@@ -1757,6 +1780,12 @@ export default function App({
 
   const desktopTitlebarActions = (
     <Stack direction="row" alignItems="center" spacing={0.25} className="desktop-titlebar-action-row">
+      <XDriveTransferPopover
+        transfers={transfers.transfers}
+        retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
+        retryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
+        onRetry={(id) => { void retryTransfer(id) }}
+      />
       <XDriveStatusBadge
         ariaLabel="同步状态"
         variant="outlined"
@@ -1922,7 +1951,7 @@ export default function App({
           <DesktopOverviewPage
             status={status}
             quota={cloudQuota}
-            activeTaskCount={taskCenter.badge ?? 0}
+            activeTaskCount={taskCenter.badgeCount}
             transfers={transfers.transfers}
             fileOperations={cloudFileOperations}
             backgroundTasks={taskCenter.backgroundTasks}
@@ -2083,10 +2112,14 @@ export default function App({
         {view === 'transfers' && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
-            subtitle="统一查看文件操作、上传下载、同步文件夹和后台处理状态。"
-            transferRetryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
-            transferRetryDisabled={Boolean(busy) || fileOperationActions.clearHistoryLoading}
-            onRetryTransfer={(id) => { void retryTransfer(id) }}
+            fixedScope="mine"
+          />
+        )}
+
+        {view === 'global-tasks' && status?.role === 'admin' && (
+          <XDriveTaskCenterPage
+            {...taskCenter.pageProps}
+            fixedScope="global"
           />
         )}
 

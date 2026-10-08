@@ -6,6 +6,7 @@ import type { XDriveFileOperationLifecycleItem } from './FileOperationLifecycle'
 type XDriveFileOperationAction =
   | ''
   | 'clear-history'
+  | 'clear-operation-history'
   | `cancel:${string}`
   | `retry:${string}`
   | `undo:${string}`
@@ -224,6 +225,25 @@ export function useXDriveFileOperationActions<
     refreshOperations,
   ])
 
+  const clearOperationHistoryOnly = useCallback(async () => {
+    const generation = beginAction('clear-operation-history')
+    if (generation === null) return false
+    try {
+      await clearOperationHistory()
+      if (!actionIsCurrent(generation)) return false
+      await refreshOperations()
+      if (!actionIsCurrent(generation)) return false
+      onFeedback?.('已清空文件操作历史。')
+      return true
+    } catch (error) {
+      if (!actionIsCurrent(generation)) return false
+      onError(error)
+      return false
+    } finally {
+      finishAction(generation)
+    }
+  }, [actionIsCurrent, beginAction, clearOperationHistory, finishAction, onError, onFeedback, refreshOperations])
+
   const resolvingPolicy: XDriveFileOperationConflictResolution | '' = action.startsWith('resolve:skip:')
     ? 'skip'
     : action.startsWith('resolve:keep_both:')
@@ -243,12 +263,13 @@ export function useXDriveFileOperationActions<
     redoingID: action.startsWith('redo:') ? action.slice('redo:'.length) : '',
     resolvingID,
     resolvingPolicy,
-    clearHistoryLoading: action === 'clear-history',
+    clearHistoryLoading: action === 'clear-history' || action === 'clear-operation-history',
     cancelOperation: cancel,
     retryOperation: retry,
     undoOperation: undo,
     redoOperation: redo,
     resolveConflict: resolve,
+    clearOperationHistoryOnly,
     clearHistory,
   }
 }

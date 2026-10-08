@@ -306,3 +306,71 @@ export function xDriveTransferPercent(task: XDriveTransferTask) {
   }
   return Math.max(0, Math.min(100, task.percent || 0))
 }
+
+
+export type XDriveTransferSpeedSummary = {
+  uploadBytesPerSecond: number
+  downloadBytesPerSecond: number
+  activeUploads: number
+  activeDownloads: number
+  activeTotal: number
+}
+
+export function xDriveTransferNetworkDirection(
+  task: Pick<XDriveTransferTask, 'direction' | 'kind'>,
+): 'upload' | 'download' | undefined {
+  if (task.direction === 'upload' || task.kind === 'upload') return 'upload'
+  if (
+    task.direction === 'download' ||
+    task.kind === 'download' ||
+    task.kind === 'hydration'
+  ) return 'download'
+  return undefined
+}
+
+export function xDriveTransferIsNetwork(
+  task: Pick<XDriveTransferTask, 'direction' | 'kind'>,
+) {
+  return xDriveTransferNetworkDirection(task) !== undefined
+}
+
+export function xDriveTransferSpeedSummary(
+  tasks: readonly XDriveTransferTask[],
+  now = Date.now(),
+  staleAfterMs = 3000,
+): XDriveTransferSpeedSummary {
+  const tree = xDriveTransferTree(tasks)
+  const summary: XDriveTransferSpeedSummary = {
+    uploadBytesPerSecond: 0,
+    downloadBytesPerSecond: 0,
+    activeUploads: 0,
+    activeDownloads: 0,
+    activeTotal: 0,
+  }
+  for (const node of tree) {
+    if (!xDriveTransferActive(node.task)) continue
+    const direction = xDriveTransferNetworkDirection(node.task)
+    if (direction === 'upload') summary.activeUploads += 1
+    if (direction === 'download') summary.activeDownloads += 1
+  }
+  summary.activeTotal = summary.activeUploads + summary.activeDownloads
+
+  const collect = (node: XDriveTransferTreeNode): XDriveTransferTask[] => {
+    const children = node.children.flatMap((child) => (
+      xDriveTransferActive(child.task) ? collect(child) : []
+    ))
+    if (children.length > 0) return children
+    if (!xDriveTransferActive(node.task) || !xDriveTransferIsNetwork(node.task)) return []
+    return [node.task]
+  }
+  for (const task of tree.flatMap(collect)) {
+    const direction = xDriveTransferNetworkDirection(task)
+    if (!direction) continue
+    const updatedAt = Date.parse(task.updated_at)
+    const stale = !Number.isFinite(updatedAt) || now - updatedAt > staleAfterMs
+    const speed = stale ? 0 : Math.max(0, task.instant_bytes_per_second || 0)
+    if (direction === 'upload') summary.uploadBytesPerSecond += speed
+    else summary.downloadBytesPerSecond += speed
+  }
+  return summary
+}

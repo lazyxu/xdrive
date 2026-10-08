@@ -21,7 +21,7 @@ The first delivery is the shared workspace shell. It does not change file select
 
 - `XDriveWorkspaceSidebar` is still the only full navigation component consumed by Web and Desktop.
 - Responsive Web uses compact navigation below the shared MUI `md` breakpoint (900 CSS px). At 900 px and above, retain the sidebar. Desktop's non-responsive shell retains its existing sidebar and 960 px width adjustment.
-- The compact primary destinations are `overview`, `files`, `gallery`, `transfers`, followed by a More button. Home comes from the caller's sections. The compact transfer label is “任务”; the existing workspace key remains `transfers` and the existing Web route remains `tasks`.
+- The compact primary destinations are `overview`, `files`, `gallery`, `transfers`, followed by a More button. Home comes from the caller's sections. The `transfers` workspace key now presents as “任务” on both wide and compact navigation; the existing Web route remains `tasks`. Network upload/download transfers themselves live in the shared top-right transfer Popover instead of this Sidebar destination.
 - More derives all remaining destinations from the same core model and extension sections. Preserve ordering, section labels, badges, optional local storage and caller-provided role filtering. More is local UI state, not a new route.
 - Selection flows through the existing `onSelect(destination, event)` callback, preserving Ctrl/Cmd. Opening or dismissing More does not navigate. Choosing an entry closes More and invokes the callback once.
 - New compact navigation targets are at least 44 CSS px tall. The bottom navigation is in layout flow, outside the content scroll container, with safe-area padding.
@@ -113,7 +113,7 @@ The adaptive Mobile Web implementation is now merged to `master`. Code completio
 - Browsers without that API hand ordinary files/versions to the browser through short-lived authenticated download tickets.
 - Folder/multi-select ZIP downloads use the durable archive-prepare run as the authority, then hand a short-lived archive URL to the browser while Server progress remains authoritative.
 - Public Share validates the share token/password by POST, atomically consumes one `download_count` slot when issuing the short-lived ticket, and allows that ticket to service GET/HEAD/Range retries without incrementing the count again. The ticket remains fenced by share revocation/expiry, owner availability and exact file revision.
-- Browser-owned native downloads do not expose byte progress to the page. UI must say that the transfer was handed to the browser rather than fabricating a page-owned 100% completion.
+- Browser-owned native downloads do not expose browser receive or disk-write byte progress to the page. xDrive may show explicitly labeled Server-send progress/speed from its durable transfer side channel, but must not present that metric as browser completion; if the side channel is unavailable, say that the transfer was handed to the browser instead of fabricating 100% completion.
 
 ### Remaining acceptance
 
@@ -129,3 +129,10 @@ Still run the real application on iOS Safari and Android Chrome, both normal-tab
 - touch-capable Windows device with an attached mouse to confirm actual-pointer semantics.
 
 Offline file pinning, Service Worker caching, incoming Web Share Target and touch drag/reorder remain subsequent enhancements rather than requirements of the merged adaptive-layout milestone.
+
+
+### Transfer / task split
+
+- Narrow Web keeps the same top-right transfer entry as wide Web. It shows aggregate upload/download speed and opens the same shared Popover; it is not duplicated into bottom navigation.
+- “任务” remains a compact primary destination for non-network work. Administrator “全局任务” is role-filtered into More and opens the global scope of the same task runtime.
+- Web native browser-download speed is explicitly server-send speed. Direct-to-disk Web downloads and Desktop downloads continue to use client-observed byte progress.

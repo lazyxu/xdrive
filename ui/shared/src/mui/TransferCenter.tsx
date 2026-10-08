@@ -201,12 +201,14 @@ function TransferLeafItem({
 function TransferGroupItem({
   node,
   depth = 0,
+  compact = false,
   retryDisabled,
   retryingID,
   onRetry,
 }: {
   node: XDriveTransferTreeNode
   depth?: number
+  compact?: boolean
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
@@ -227,8 +229,8 @@ function TransferGroupItem({
     (sum, child) => sum + Math.max(0, child.average_bytes_per_second || 0),
     0,
   )
-  const instantSpeed = childInstantSpeed > 0 ? childInstantSpeed : item.instant_bytes_per_second
-  const averageSpeed = childAverageSpeed > 0 ? childAverageSpeed : item.average_bytes_per_second
+  const instantSpeed = children.length > 0 ? childInstantSpeed : item.instant_bytes_per_second
+  const averageSpeed = children.length > 0 ? childAverageSpeed : item.average_bytes_per_second
   const eta = scanIncomplete ? undefined : xDriveTransferEtaMs({
     ...item,
     bytes_done: bytes.done,
@@ -322,16 +324,32 @@ function TransferGroupItem({
           <Typography variant="caption" color="text.secondary">等待 {progress.queued.toLocaleString('zh-CN')}</Typography>
         </Stack>
 
-        <XDriveDescriptionGrid columns={4}>
-          <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
-          <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
-        </XDriveDescriptionGrid>
+        {compact ? (
+          <Stack direction="row" spacing={1.5} flexWrap="wrap">
+            <Typography variant="caption" color="text.secondary">
+              {formatBytesPerSecond(instantSpeed)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
+            </Typography>
+            {eta !== undefined ? (
+              <Typography variant="caption" color="text.secondary">
+                剩余约 {formatXDriveTransferDuration(eta)}
+              </Typography>
+            ) : null}
+          </Stack>
+        ) : (
+          <XDriveDescriptionGrid columns={4}>
+            <XDriveDescriptionItem label="阶段">{phaseLabel || xDriveTransferStateLabel(item.state)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="总体进度">{bytes.total > 0 ? `${percent.toFixed(1)}%` : '—'}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="当前速度">{formatBytesPerSecond(instantSpeed)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="平均速度">{formatBytesPerSecond(averageSpeed)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="开始时间">{transferTime(item.started_at)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="已耗时">{formatXDriveTransferDuration(item.elapsed_ms)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="预计剩余">{eta === undefined ? (active && !scanIncomplete ? '计算中' : '—') : formatXDriveTransferDuration(eta)}</XDriveDescriptionItem>
+            <XDriveDescriptionItem label="重试次数">{item.retry_count.toLocaleString('zh-CN')}</XDriveDescriptionItem>
+          </XDriveDescriptionGrid>
+        )}
         {item.error ? <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{item.error}</XDriveStatusAlert> : null}
       </Box>
 
@@ -347,6 +365,7 @@ function TransferGroupItem({
                     key={child.task.id}
                     node={child}
                     depth={depth + 1}
+                    compact={compact}
                     retryDisabled={retryDisabled}
                     retryingID={retryingID}
                     onRetry={onRetry}
@@ -372,11 +391,13 @@ function TransferGroupItem({
 
 function TransferTreeItem({
   node,
+  compact = false,
   retryDisabled,
   retryingID,
   onRetry,
 }: {
   node: XDriveTransferTreeNode
+  compact?: boolean
   retryDisabled: boolean
   retryingID: string
   onRetry?: (id: string) => void
@@ -385,6 +406,7 @@ function TransferTreeItem({
     return (
       <TransferGroupItem
         node={node}
+        compact={compact}
         retryDisabled={retryDisabled}
         retryingID={retryingID}
         onRetry={onRetry}
@@ -394,6 +416,7 @@ function TransferTreeItem({
   return (
     <TransferLeafItem
       item={node.task}
+      compact={compact}
       retryDisabled={retryDisabled}
       retryLoading={retryingID === node.task.id}
       onRetry={onRetry}
@@ -404,12 +427,14 @@ function TransferTreeItem({
 export function XDriveTransferCenter({
   transfers,
   loading = false,
+  compact = false,
   retryingID = '',
   retryDisabled = false,
   onRetry,
 }: {
   transfers: XDriveTransferTask[]
   loading?: boolean
+  compact?: boolean
   retryingID?: string
   retryDisabled?: boolean
   onRetry?: (id: string) => void
@@ -430,7 +455,7 @@ export function XDriveTransferCenter({
   ]
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={compact ? 1.25 : 2}>
       <Stack direction="row" spacing={2} flexWrap="wrap">
         <Typography variant="body2"><strong>{active.length}</strong> 进行中</Typography>
         <Typography variant="body2"><strong>{completed.length}</strong> 已完成</Typography>
@@ -450,6 +475,7 @@ export function XDriveTransferCenter({
                 <TransferTreeItem
                   key={node.task.id}
                   node={node}
+                  compact={compact}
                   retryDisabled={retryDisabled}
                   retryingID={retryingID}
                   onRetry={onRetry}

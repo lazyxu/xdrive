@@ -3,7 +3,7 @@ import DriveFolderUploadRoundedIcon from '@mui/icons-material/DriveFolderUploadR
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import { Box, ListItemButton, ListItemText, Paper, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
@@ -231,8 +231,8 @@ export function XDriveHomePage({
               <XDriveActionButton startIcon={<PhotoLibraryRoundedIcon />} onClick={onOpenGallery}>
                 图库
               </XDriveActionButton>
-              <XDriveActionButton startIcon={<SwapVertRoundedIcon />} onClick={onOpenTransfers}>
-                传输
+              <XDriveActionButton startIcon={<TaskAltRoundedIcon />} onClick={onOpenTransfers}>
+                任务
               </XDriveActionButton>
               {onOpenConflicts && conflictCount > 0 ? (
                 <XDriveActionButton intent="warning" onClick={onOpenConflicts}>

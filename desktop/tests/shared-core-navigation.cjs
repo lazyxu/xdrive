@@ -32,7 +32,7 @@ test('shared core navigation owns common destinations and capability-gates local
     "label: '文件'",
     "label: '图库'",
     "label: '同步文件夹'",
-    "label: '传输'",
+    "label: '任务'",
     "label: '本地存储'",
     "label: '云端存储'",
   ]
@@ -103,7 +103,7 @@ test('Web and Desktop consume the same shared WorkspaceSidebar', () => {
     'primary="文件"',
     'primary="图库"',
     'primary="同步文件夹"',
-    'primary="传输"',
+    'primary="任务"',
     'primary="本地存储"',
     'primary="云端存储"',
   ]) {
@@ -129,13 +129,13 @@ test('Web Home and admin destinations use the same section model contract', () =
   assert.ok(web.includes("label: '主页'"))
   assert.ok(web.includes("...(profile?.role === 'admin'"), 'admin section must remain role-gated')
   assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
-  for (const label of ['用户管理', '审计日志', '全局存储']) {
+  for (const label of ['全局任务', '用户管理', '审计日志', '全局存储']) {
     assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
   }
 })
 
 test('local storage is shared across Web and Desktop while platform adapters remain local', () => {
-  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>"), 'Desktop view type must extend the shared full workspace route model')
+  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<'overview' | 'global-tasks' | 'conflicts' | 'diagnostics'>"), 'Desktop view type must extend the shared full workspace route model')
   assert.ok(web.includes("type AppView = XDriveWorkspaceViewKey<"), 'Web view type must include the shared local-storage route')
   assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
   assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
@@ -147,7 +147,7 @@ test('local storage is shared across Web and Desktop while platform adapters rem
 })
 
 test('Desktop Files routing uses the shared files key directly', () => {
-  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>"), 'Desktop must use the shared workspace route key directly')
+  assert.ok(desktop.includes("type View = XDriveWorkspaceViewKey<'overview' | 'global-tasks' | 'conflicts' | 'diagnostics'>"), 'Desktop must use the shared workspace route key directly')
   assert.equal(desktop.includes("view === 'cloud'"), false, 'legacy cloud view key must be removed')
   assert.equal(desktop.includes("setView('cloud')"), false, 'legacy cloud navigation must be removed')
   assert.ok(desktop.includes('selected={view}'), 'Desktop shared sidebar selection should use the real view directly')

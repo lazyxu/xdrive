@@ -361,7 +361,12 @@ func (c *Client) uploadStreamResult(
 		}
 		sum := sha256.Sum256(buf)
 		partHash := hex.EncodeToString(sum[:])
-		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf)
+		baseDone := done
+		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf, func(sent int64) {
+			if progress != nil {
+				progress(baseDone+sent, init.Size)
+			}
+		})
 		if err != nil {
 			return UploadResult{}, err
 		}
@@ -498,7 +503,12 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 		if !strings.EqualFold(partHash, chunkHashes[index]) {
 			return UploadResult{}, fmt.Errorf("upload source changed after hashing at chunk %d", index)
 		}
-		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf)
+		baseDone := done
+		part, err := c.putChunkRetry(ctx, session.ID, index, partHash, buf, func(sent int64) {
+			if progress != nil {
+				progress(baseDone+sent, init.Size)
+			}
+		})
 		if err != nil {
 			return UploadResult{}, err
 		}
@@ -600,10 +610,63 @@ func uploadChunkSize(total, chunkSize int64, index int) int64 {
 	return chunkSize
 }
 
-func (c *Client) putChunkRetry(ctx context.Context, sessionID string, index int, hash string, data []byte) (UploadPart, error) {
+const (
+	uploadProgressReportInterval = 100 * time.Millisecond
+	uploadProgressReportBytes    = 1 << 20
+)
+
+type uploadProgressReader struct {
+	reader       io.Reader
+	onRead       func(int64)
+	read         int64
+	lastReported int64
+	lastReport   time.Time
+}
+
+func (r *uploadProgressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.read += int64(n)
+	}
+	if r.onRead != nil && r.read > r.lastReported {
+		now := time.Now()
+		if r.lastReport.IsZero() ||
+			r.read-r.lastReported >= uploadProgressReportBytes ||
+			now.Sub(r.lastReport) >= uploadProgressReportInterval ||
+			err != nil {
+			r.lastReported = r.read
+			r.lastReport = now
+			r.onRead(r.read)
+		}
+	}
+	return n, err
+}
+
+func (c *Client) putChunkRetry(
+	ctx context.Context,
+	sessionID string,
+	index int,
+	hash string,
+	data []byte,
+	onProgress func(int64),
+) (UploadPart, error) {
 	var last error
+	var maxReported int64
 	for attempt := 0; attempt < 3; attempt++ {
-		part, err := c.PutUploadChunk(ctx, sessionID, index, hash, bytes.NewReader(data))
+		reader := io.Reader(bytes.NewReader(data))
+		if onProgress != nil {
+			reader = &uploadProgressReader{
+				reader: reader,
+				onRead: func(sent int64) {
+					if sent <= maxReported {
+						return
+					}
+					maxReported = sent
+					onProgress(sent)
+				},
+			}
+		}
+		part, err := c.PutUploadChunk(ctx, sessionID, index, hash, reader)
 		if err == nil {
 			return part, nil
 		}

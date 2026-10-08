@@ -1,7 +1,7 @@
 import { xDriveNormalizeTransferTask, xDriveTransferActive } from '../../ui/shared/src'
 import type { XDriveTransferTask } from '../../ui/shared/src'
 
-const STORAGE_KEY = 'xdrive.web.transfer_history'
+const STORAGE_PREFIX = 'xdrive.web.transfer_history.v2:'
 const MAX_HISTORY = 200
 
 function nowISO(now = Date.now()) {
@@ -42,9 +42,14 @@ function trimRootHistory(items: XDriveTransferTask[]) {
 }
 
 
-function loadTransferHistory(): XDriveTransferTask[] {
+function transferStorageKey(scope: string) {
+  return scope ? `${STORAGE_PREFIX}${encodeURIComponent(scope)}` : ''
+}
+
+function loadTransferHistory(scope: string): XDriveTransferTask[] {
+  if (!scope) return []
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const parsed = JSON.parse(localStorage.getItem(transferStorageKey(scope)) || '[]')
     if (!Array.isArray(parsed)) return []
     const now = Date.now()
     return trimRootHistory(
@@ -80,14 +85,25 @@ type WebTransferChildInput = {
 }
 
 class WebTransferStore {
-  private items = loadTransferHistory()
+  private scope = ''
+  private items: XDriveTransferTask[] = []
   private listeners = new Set<(items: XDriveTransferTask[]) => void>()
+  private rateBaselines = new Map<string, { done: number; at: number }>()
   private sequence = 0
   private batchDepth = 0
   private batchChanged = false
 
   snapshot() {
     return [...this.items]
+  }
+
+  setScope(scope: string) {
+    const next = scope.trim()
+    if (next === this.scope) return
+    this.scope = next
+    this.items = loadTransferHistory(next)
+    this.rateBaselines.clear()
+    this.notify()
   }
 
   subscribe(listener: (items: XDriveTransferTask[]) => void) {
@@ -146,6 +162,7 @@ class WebTransferStore {
       updated_at: nowISO(now),
     }
     this.items = [item, ...this.items]
+    this.rateBaselines.set(id, { done: 0, at: now })
     this.trimHistory()
     this.emit()
     return id
@@ -189,6 +206,7 @@ class WebTransferStore {
       updated_at: nowISO(now),
     }
     this.items = [item, ...this.items]
+    this.rateBaselines.set(id, { done: 0, at: now })
     this.trimHistory()
     this.emit()
     return id
@@ -238,6 +256,9 @@ class WebTransferStore {
       }
     })
     const childIDs = children.map((item) => item.id)
+    for (const child of children) {
+      this.rateBaselines.set(child.id, { done: 0, at: now })
+    }
     this.items = [...children.slice().reverse(), ...this.items]
     this.trimHistory()
     this.emit()
@@ -312,8 +333,12 @@ class WebTransferStore {
       const finalDone = completed && !skipped && item.scope === 'item' && item.bytes_total > 0
         ? item.bytes_total
         : item.bytes_done
-      const elapsed = Math.max(0, now - new Date(item.started_at).getTime())
-      const average = elapsed > 0 ? finalDone / (elapsed / 1000) : item.average_bytes_per_second
+      const started = new Date(item.started_at).getTime()
+      const elapsed = Math.max(0, now - started)
+      const rateBaseline = this.rateBaselines.get(id) ?? { done: 0, at: started }
+      const rateElapsed = Math.max(0, now - rateBaseline.at)
+      const rateBytes = Math.max(0, finalDone - rateBaseline.done)
+      const average = rateElapsed > 0 ? rateBytes / (rateElapsed / 1000) : item.average_bytes_per_second
       return {
         ...item,
         state: input.state,
@@ -334,6 +359,25 @@ class WebTransferStore {
     })
   }
 
+  baseline(id: string, bytesDone: number, bytesTotal?: number) {
+    const now = Date.now()
+    this.rateBaselines.set(id, { done: Math.max(0, bytesDone), at: now })
+    this.patch(id, (item) => {
+      const done = Math.max(0, bytesDone)
+      const total = Math.max(0, bytesTotal ?? item.bytes_total)
+      return {
+        ...item,
+        bytes_done: done,
+        bytes_total: total,
+        percent: total > 0 ? Math.max(0, Math.min(100, (done / total) * 100)) : item.percent,
+        instant_bytes_per_second: 0,
+        average_bytes_per_second: 0,
+        elapsed_ms: Math.max(0, now - new Date(item.started_at).getTime()),
+        updated_at: nowISO(now),
+      }
+    })
+  }
+
   progress(id: string, bytesDone: number, bytesTotal?: number) {
     const now = Date.now()
     this.patch(id, (item) => {
@@ -341,10 +385,14 @@ class WebTransferStore {
       const deltaSeconds = Math.max(0.001, (now - previousTime) / 1000)
       const nextDone = Math.max(0, bytesDone)
       const nextTotal = Math.max(0, bytesTotal ?? item.bytes_total)
+      if (nextDone === item.bytes_done && nextTotal === item.bytes_total) return item
       const instant = Math.max(0, (nextDone - item.bytes_done) / deltaSeconds)
       const started = new Date(item.started_at).getTime()
       const elapsed = Math.max(0, now - started)
-      const average = elapsed > 0 ? nextDone / (elapsed / 1000) : 0
+      const rateBaseline = this.rateBaselines.get(id) ?? { done: 0, at: started }
+      const rateElapsed = Math.max(0, now - rateBaseline.at)
+      const rateBytes = Math.max(0, nextDone - rateBaseline.done)
+      const average = rateElapsed > 0 ? rateBytes / (rateElapsed / 1000) : 0
       return {
         ...item,
         bytes_done: nextDone,
@@ -364,8 +412,12 @@ class WebTransferStore {
       const done = Math.max(0, bytesDone ?? item.bytes_done)
       const total = Math.max(0, bytesTotal ?? item.bytes_total)
       const finalDone = total > 0 ? Math.max(done, total) : done
-      const elapsed = Math.max(0, now - new Date(item.started_at).getTime())
-      const average = elapsed > 0 ? finalDone / (elapsed / 1000) : item.average_bytes_per_second
+      const started = new Date(item.started_at).getTime()
+      const elapsed = Math.max(0, now - started)
+      const rateBaseline = this.rateBaselines.get(id) ?? { done: 0, at: started }
+      const rateElapsed = Math.max(0, now - rateBaseline.at)
+      const rateBytes = Math.max(0, finalDone - rateBaseline.done)
+      const average = rateElapsed > 0 ? rateBytes / (rateElapsed / 1000) : item.average_bytes_per_second
       return {
         ...item,
         state: 'completed',
@@ -457,8 +509,10 @@ class WebTransferStore {
     let changed = false
     this.items = this.items.map((item) => {
       if (item.id !== id) return item
+      const next = updater(item)
+      if (next === item) return item
       changed = true
-      return updater(item)
+      return next
     })
     if (!changed) return
     if (this.batchDepth > 0) {
@@ -469,14 +523,21 @@ class WebTransferStore {
     this.emit()
   }
 
-  private emit() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
-    } catch {
-      // Transfer tracking must never block file I/O.
-    }
+  private notify() {
     const snapshot = this.snapshot()
     for (const listener of this.listeners) listener(snapshot)
+  }
+
+  private emit() {
+    const key = transferStorageKey(this.scope)
+    if (key) {
+      try {
+        localStorage.setItem(key, JSON.stringify(this.items))
+      } catch {
+        // Transfer tracking must never block file I/O.
+      }
+    }
+    this.notify()
   }
 }
 

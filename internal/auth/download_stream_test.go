@@ -45,3 +45,26 @@ func TestDownloadStreamTicketRoundTripAndAudienceIsolation(t *testing.T) {
 		t.Fatal("oversized download ticket ttl was accepted")
 	}
 }
+
+func TestTrackedDownloadStreamCarriesTransferID(t *testing.T) {
+	manager := New("tracked-download-stream-test-secret", time.Hour)
+	token, _, err := manager.IssueTrackedDownloadStream(
+		7,
+		3,
+		"file",
+		"42",
+		9,
+		"download-transfer-123",
+		10*time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := manager.ParseDownloadStream(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.ID != "download-transfer-123" {
+		t.Fatalf("transfer id=%q", claims.ID)
+	}
+}

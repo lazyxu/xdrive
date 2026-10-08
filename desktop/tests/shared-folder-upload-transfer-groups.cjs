@@ -27,6 +27,7 @@ test('shared upload controller owns folder group and child lifecycle', () => {
     'startChild:',
     'startChildren?:',
     'begin:',
+    'baseline?:',
     'progress:',
     'updateGroup:',
     'finish:',
@@ -86,6 +87,8 @@ test('single-file upload remains compatible while folder upload uses managed chi
   assert.ok(webApi.includes('const managedExternally = Boolean(transferID)'), 'Web upload must distinguish managed children')
   assert.ok(webApi.includes('const activeTransferID = transferID || webTransferStore.create({'), 'single Web upload must still create its own transfer')
   assert.ok(webApi.includes('if (!managedExternally) webTransferStore.complete('), 'managed Web child must not be completed twice')
+  assert.ok(webApi.includes('reportProgress(completed, true)'), 'resumed bytes must establish a speed baseline')
+  assert.ok(webApi.includes('xhr.upload.onprogress'), 'Web upload speed must update inside a chunk')
 
   assert.ok(agentCloud.includes('CloudUploadWithConflictPolicy('), 'legacy Agent upload method must remain')
   assert.ok(agentCloud.includes('CloudUploadWithConflictPolicyTracked('), 'tracked Agent child upload method is missing')
@@ -125,6 +128,7 @@ test('Web folder upload persists one group with queued children', () => {
     'transferLifecycle: {',
     'startGroup: (input) => api.startTransferGroup(input)',
     'startChild: (groupID, input) => api.startTransferChild(groupID, input)',
+    'baseline: (id, done, total) => api.baselineTransfer(id, done, total)',
     'fileUploads.runGroup({',
     'itemsTotal: entries.length',
     'bytesTotal: entries.reduce',

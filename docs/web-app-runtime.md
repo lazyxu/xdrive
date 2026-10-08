@@ -12,7 +12,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `files` | 文件管理器 | workspace | `dir?` |
 | `gallery` | 图库 | workspace | `section?` |
 | `sync-folders` | 同步文件夹 | workspace | `source?` |
-| `tasks` | 任务中心 | workspace | `scope?`, `task?` |
+| `tasks` | 任务 / 全局任务 | workspace | `scope?`, `task?` |
 | `local-storage` | 本地存储 | workspace | 无 |
 | `cloud-storage` | 云端存储 | workspace | 无 |
 | `preview` | 预览 / Quick Look | immersive | `node`, `context?` |
@@ -125,3 +125,12 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 图片预览在 1× 时支持横向 swipe 切换前后项目；放大后单指移动图片，双指 pinch 缩放，双击在 1× / 2× 间切换。单击内容延迟切换 chrome，从而与双击缩放区分。视频继续由原生 media controls 拥有手势；Live Photo 继续保持按住播放、松开停止，不用 Gallery swipe 覆盖其 hold 语义。
 
 手机布局只是呈现投影：Viewer context、前后项 range 查找、Favorite/Info/Share/Download 等命令以及浏览器 Back/Forward 规则保持原契约。
+
+
+## 传输与任务入口
+
+- 上传、下载以及 Desktop 的 hydration 等网络传输不再占用 Sidebar 一级“传输”页面；Web/Desktop 使用同一个共享 MUI 传输入口，固定在右上角账号区域之前。
+- 右上角入口实时汇总上传速度和下载速度，按传输树叶子去重，停滞后归零；Desktop 使用 Agent 实际传输字节，Web 原生浏览器下载显示服务端发送速度并明确该口径。
+- 点击右上角入口打开共享传输 Popover，继续显示进行中、完成、失败、文件夹父子进度和可用的重试能力。
+- 现有 workspace key `transfers` 保留兼容，但其 Sidebar 展示名固定为“任务”；该页面只显示文件操作、本机非网络处理、同步文件夹运行和其他后台任务。
+- 管理员额外获得独立 Sidebar“全局任务”入口。Web 仍使用 `#/app/tasks?scope=global` 作为 canonical route；普通用户不得看到或进入全局任务视图，Server 的 admin API 继续作为最终权限边界。

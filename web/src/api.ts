@@ -193,6 +193,16 @@ export interface UploadSessionState {
 type AuthenticatedDownloadTicket = {
   url: string
   expires_at: string
+  transfer_id?: string
+  bytes_total?: number
+}
+
+type NativeDownloadProgress = {
+  transfer_id: string
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+  bytes_done: number
+  bytes_total: number
+  error?: string
 }
 
 type ArchiveDownloadPrepareFile = {
@@ -322,6 +332,10 @@ export class XDriveApi {
     return webTransferStore.snapshot()
   }
 
+  setTransferScope(scope: string) {
+    webTransferStore.setScope(scope)
+  }
+
   onTransfers(listener: (items: XDriveTransferTask[]) => void) {
     return webTransferStore.subscribe(listener)
   }
@@ -359,6 +373,10 @@ export class XDriveApi {
 
   beginTransfer(id: string) {
     webTransferStore.begin(id)
+  }
+
+  baselineTransfer(id: string, bytesDone: number, bytesTotal: number) {
+    webTransferStore.baseline(id, bytesDone, bytesTotal)
   }
 
   progressTransfer(id: string, bytesDone: number, bytesTotal: number) {
@@ -1700,7 +1718,7 @@ export class XDriveApi {
     parentID: number,
     file: File,
     conflictPolicy: XDriveUploadConflictPolicy,
-    onProgress?: (percent: number) => void,
+    onProgress?: (percent: number, baseline?: boolean) => void,
     transferID = '',
   ): Promise<XDriveUploadResult> {
     const managedExternally = Boolean(transferID)
@@ -1710,9 +1728,15 @@ export class XDriveApi {
       kind: 'upload',
       bytesTotal: file.size,
     })
-    const reportProgress = (completed: number) => {
-      if (!managedExternally) webTransferStore.progress(activeTransferID, completed, file.size)
-      onProgress?.(file.size === 0 ? 100 : Math.round((completed / file.size) * 100))
+    const reportProgress = (completed: number, baseline = false) => {
+      if (!managedExternally) {
+        if (baseline) webTransferStore.baseline(activeTransferID, completed, file.size)
+        else webTransferStore.progress(activeTransferID, completed, file.size)
+      }
+      onProgress?.(
+        file.size === 0 ? 100 : Math.round((completed / file.size) * 100),
+        baseline,
+      )
     }
 
     try {
@@ -1748,7 +1772,7 @@ export class XDriveApi {
         return { node: session.result, skipped: true, transferred_bytes: 0 }
       }
       if (session.status === 'finalized' && session.result) {
-        reportProgress(file.size)
+        reportProgress(file.size, true)
         if (!managedExternally) webTransferStore.complete(activeTransferID, file.size, file.size)
         return { node: session.result, skipped: false, transferred_bytes: 0 }
       }
@@ -1765,14 +1789,25 @@ export class XDriveApi {
         const existing = received.get(index)
         if (existing && existing.size === expectedSize && existing.sha256 === hash) {
           completed += expectedSize
-          reportProgress(completed)
-          continue
         }
+      }
+      reportProgress(completed, true)
+
+      for (let index = 0; index < session.chunk_count; index += 1) {
+        const start = index * session.chunk_size
+        const end = Math.min(file.size, start + session.chunk_size)
+        const expectedSize = end - start
+        const hash = chunkHashes[index]
+        const existing = received.get(index)
+        if (existing && existing.size === expectedSize && existing.sha256 === hash) continue
 
         const data = await file.slice(start, end).arrayBuffer()
         const actualHash = await sha256Buffer(data)
         if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
-        await this.putUploadChunk(session.id, index, hash, data)
+        const baseCompleted = completed
+        await this.putUploadChunk(session.id, index, hash, data, (loaded) => {
+          reportProgress(baseCompleted + loaded)
+        })
         completed += data.byteLength
         transferredBytes += data.byteLength
         reportProgress(completed)
@@ -1796,16 +1831,35 @@ export class XDriveApi {
     }
   }
 
-  private async putUploadChunk(sessionID: string, index: number, hash: string, data: ArrayBuffer) {
+  private async putUploadChunk(
+    sessionID: string,
+    index: number,
+    hash: string,
+    data: ArrayBuffer,
+    onProgress?: (loaded: number) => void,
+  ) {
     await this.ensureFresh()
-    const send = () => fetch(`${API_BASE}/api/v1/uploads/${sessionID}/chunks/${index}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${this.session.accessToken}`,
-        'Content-Type': 'application/octet-stream',
-        'X-Chunk-SHA256': hash,
-      },
-      body: data,
+    let maxLoaded = 0
+    const send = () => new Promise<{ status: number; statusText: string; responseText: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', `${API_BASE}/api/v1/uploads/${sessionID}/chunks/${index}`)
+      xhr.setRequestHeader('Authorization', `Bearer ${this.session.accessToken}`)
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+      xhr.setRequestHeader('X-Chunk-SHA256', hash)
+      xhr.upload.onprogress = (event) => {
+        const loaded = Math.min(data.byteLength, Math.max(0, event.loaded))
+        if (loaded <= maxLoaded) return
+        maxLoaded = loaded
+        onProgress?.(loaded)
+      }
+      xhr.onerror = () => reject(new TypeError('Chunk upload network error'))
+      xhr.onabort = () => reject(new DOMException('Chunk upload aborted', 'AbortError'))
+      xhr.onload = () => resolve({
+        status: xhr.status,
+        statusText: xhr.statusText,
+        responseText: xhr.responseText,
+      })
+      xhr.send(data)
     })
 
     let response = await send()
@@ -1813,10 +1867,10 @@ export class XDriveApi {
       await this.refresh(true)
       response = await send()
     }
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       let error = response.statusText || 'Chunk upload failed'
       try {
-        const body = (await response.json()) as { error?: string }
+        const body = JSON.parse(response.responseText) as { error?: string }
         if (body.error) error = body.error
       } catch {
         // Keep the HTTP status text.
@@ -2150,6 +2204,69 @@ export class XDriveApi {
     return `${API_BASE}${path}`
   }
 
+  private startNativeTrackedDownload(ticket: AuthenticatedDownloadTicket, filename: string) {
+    const serverTransferID = ticket.transfer_id?.trim() || ''
+    const localTransferID = serverTransferID
+      ? webTransferStore.create({
+          fileName: filename,
+          path: filename,
+          kind: 'download',
+          bytesTotal: Math.max(0, ticket.bytes_total || 0),
+        })
+      : ''
+
+    xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), filename)
+    if (!serverTransferID || !localTransferID) return
+
+    void (async () => {
+      const launchDeadline = Date.now() + 60_000
+      let observedActive = false
+      let lastDone = 0
+      let lastProgressAt = Date.now()
+      try {
+        while (true) {
+          const progress = await this.request<NativeDownloadProgress>(
+            `/api/v1/download/transfers/${encodeURIComponent(serverTransferID)}`,
+          )
+          webTransferStore.progress(localTransferID, progress.bytes_done, progress.bytes_total || ticket.bytes_total || 0)
+          if (progress.bytes_done > lastDone) {
+            lastDone = progress.bytes_done
+            lastProgressAt = Date.now()
+          }
+          if (progress.status === 'running') observedActive = true
+          if (progress.status === 'completed') {
+            webTransferStore.complete(localTransferID, progress.bytes_done, progress.bytes_total || progress.bytes_done)
+            return
+          }
+          if (progress.status === 'failed' || progress.status === 'cancelled') {
+            webTransferStore.finishLifecycle(localTransferID, { state: progress.status, error: progress.error })
+            return
+          }
+          if (!observedActive && Date.now() > launchDeadline) {
+            webTransferStore.finishLifecycle(localTransferID, {
+              state: 'partial',
+              error: '已交给浏览器下载；未检测到服务端传输进度。',
+            })
+            return
+          }
+          if (observedActive && Date.now() - lastProgressAt > 60_000) {
+            webTransferStore.finishLifecycle(localTransferID, {
+              state: 'partial',
+              error: '已交给浏览器下载；服务端进度已停止更新。',
+            })
+            return
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 300))
+        }
+      } catch {
+        webTransferStore.finishLifecycle(localTransferID, {
+          state: 'partial',
+          error: '已交给浏览器下载；无法继续读取服务端进度。',
+        })
+      }
+    })()
+  }
+
   async downloadVersion(node: Node, version: FileVersion) {
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
@@ -2158,7 +2275,7 @@ export class XDriveApi {
         `/api/v1/files/${node.id}/versions/${version.id}/download-ticket`,
         { method: 'POST' },
       )
-      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
+      this.startNativeTrackedDownload(ticket, node.name)
       return true
     }
     await this.downloadAuthenticated(
@@ -2179,7 +2296,7 @@ export class XDriveApi {
         `/api/v1/files/${node.id}/download-ticket`,
         { method: 'POST' },
       )
-      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
+      this.startNativeTrackedDownload(ticket, node.name)
       return true
     }
     await this.downloadAuthenticated(

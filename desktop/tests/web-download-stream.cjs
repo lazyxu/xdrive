@@ -165,7 +165,7 @@ test('Web download wiring opens the save sink before archive work and skips succ
   assert.ok(api.includes("if (!observedActive && Date.now() > launchDeadline)"), 'native archive handoff must fail instead of polling forever when the browser never starts')
   assert.ok(api.includes("if (downloadSink.kind === 'blob')"), 'single-file and version downloads must detect the non-File-System-Access path')
   assert.ok(api.includes('/download-ticket'), 'single-file and version downloads must request short-lived native download tickets')
-  assert.ok(api.includes('xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)'), 'ticket downloads must hand off to the browser instead of materializing a Blob')
+  assert.ok(api.includes('this.startNativeTrackedDownload(ticket, node.name)'), 'ticket downloads must hand off to the browser with side-channel progress instead of materializing a Blob')
 
   const archiveStart = api.indexOf('async downloadArchive(ids: number[], filename: string)')
   const archiveGroup = api.indexOf('const groupID = this.startTransferGroup', archiveStart)

@@ -2,13 +2,16 @@ package api
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
@@ -16,8 +19,10 @@ import (
 const authenticatedDownloadTicketTTL = 10 * time.Minute
 
 type authenticatedDownloadTicketDTO struct {
-	URL       string    `json:"url"`
-	ExpiresAt time.Time `json:"expires_at"`
+	URL        string    `json:"url"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	TransferID string    `json:"transfer_id,omitempty"`
+	BytesTotal int64     `json:"bytes_total,omitempty"`
 }
 
 func (s *Server) fileDownloadTicket(c *gin.Context) {
@@ -36,22 +41,44 @@ func (s *Server) fileDownloadTicket(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, "user not found")
 		return
 	}
-	ticket, expiresAt, err := s.Auth.IssueDownloadStream(
+	transferID := uuid.NewString()
+	ticket, expiresAt, err := s.Auth.IssueTrackedDownloadStream(
 		user.ID,
 		user.SessionVersion,
 		"file",
 		strconv.FormatUint(id, 10),
 		metadata.Revision,
+		transferID,
 		authenticatedDownloadTicketTTL,
 	)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "create file download ticket failed")
 		return
 	}
+	if !s.createDownloadTransfer(
+		c.Request.Context(), transferID, user.ID, "file", strconv.FormatUint(id, 10),
+		metadata.Name, metadata.Size, expiresAt,
+	) {
+		transferID = ""
+		ticket, expiresAt, err = s.Auth.IssueDownloadStream(
+			user.ID,
+			user.SessionVersion,
+			"file",
+			strconv.FormatUint(id, 10),
+			metadata.Revision,
+			authenticatedDownloadTicketTTL,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "create file download ticket failed")
+			return
+		}
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
-		URL:       fmt.Sprintf("/api/v1/file-download/%d?ticket=%s", id, url.QueryEscape(ticket)),
-		ExpiresAt: expiresAt.UTC(),
+		URL:        fmt.Sprintf("/api/v1/file-download/%d?ticket=%s", id, url.QueryEscape(ticket)),
+		ExpiresAt:  expiresAt.UTC(),
+		TransferID: transferID,
+		BytesTotal: metadata.Size,
 	})
 }
 
@@ -87,17 +114,37 @@ func (s *Server) fileVersionDownloadTicket(c *gin.Context) {
 		return
 	}
 	resourceID := fmt.Sprintf("%d:%d", id, versionID)
-	ticket, expiresAt, err := s.Auth.IssueDownloadStream(
+	transferID := uuid.NewString()
+	ticket, expiresAt, err := s.Auth.IssueTrackedDownloadStream(
 		user.ID,
 		user.SessionVersion,
 		"version",
 		resourceID,
 		0,
+		transferID,
 		authenticatedDownloadTicketTTL,
 	)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "create version download ticket failed")
 		return
+	}
+	if !s.createDownloadTransfer(
+		c.Request.Context(), transferID, user.ID, "version", resourceID,
+		metadata.Name, metadata.Size, expiresAt,
+	) {
+		transferID = ""
+		ticket, expiresAt, err = s.Auth.IssueDownloadStream(
+			user.ID,
+			user.SessionVersion,
+			"version",
+			resourceID,
+			0,
+			authenticatedDownloadTicketTTL,
+		)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "create version download ticket failed")
+			return
+		}
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, authenticatedDownloadTicketDTO{
@@ -107,7 +154,9 @@ func (s *Server) fileVersionDownloadTicket(c *gin.Context) {
 			versionID,
 			url.QueryEscape(ticket),
 		),
-		ExpiresAt: expiresAt.UTC(),
+		ExpiresAt:  expiresAt.UTC(),
+		TransferID: transferID,
+		BytesTotal: metadata.Size,
 	})
 }
 
@@ -167,6 +216,8 @@ func (s *Server) fileDownloadTicketStream(c *gin.Context) {
 		metadata.SHA256,
 		metadata.UpdatedAt,
 		fmt.Sprintf("\"%d\"", metadata.Revision),
+		claims.ID,
+		metadata.Size,
 	)
 }
 
@@ -208,6 +259,8 @@ func (s *Server) fileVersionDownloadTicketStream(c *gin.Context) {
 		metadata.SHA256,
 		metadata.CreatedAt,
 		"",
+		claims.ID,
+		metadata.Size,
 	)
 }
 
@@ -216,6 +269,8 @@ func (s *Server) serveAuthenticatedTicketDownload(
 	name, storageKey, sha string,
 	updatedAt time.Time,
 	etag string,
+	transferID string,
+	bytesTotal int64,
 ) {
 	file, err := s.Store.Open(c.Request.Context(), storageKey)
 	if err != nil {
@@ -227,6 +282,11 @@ func (s *Server) serveAuthenticatedTicketDownload(
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(name))
+	contentType := mime.TypeByExtension(filepath.Ext(name))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("Content-Type", contentType)
 	c.Header("Cache-Control", "private, no-store")
 	if etag != "" {
 		c.Header("ETag", etag)
@@ -234,7 +294,11 @@ func (s *Server) serveAuthenticatedTicketDownload(
 	if sha = strings.TrimSpace(sha); sha != "" {
 		c.Header("X-Content-SHA256", sha)
 	}
-	http.ServeContent(c.Writer, c.Request, name, updatedAt, file)
+	if transferID == "" || c.Request.Method == http.MethodHead {
+		http.ServeContent(c.Writer, c.Request, name, updatedAt, file)
+		return
+	}
+	s.serveTrackedDownloadContent(c, transferID, name, updatedAt, file, bytesTotal)
 }
 
 func (s *Server) archiveDownloadTicket(c *gin.Context) {

@@ -27,7 +27,7 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     '新建文件夹',
     '云端文件',
     '图库',
-    '传输',
+    '任务',
     'title="最近活动"',
   ]) assert.ok(sharedHome.includes(token), `shared Home missing: ${token}`)
   for (const token of [

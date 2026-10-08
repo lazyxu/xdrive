@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { Box, CircularProgress, Divider, Stack, Tab, Tabs, Typography } from '@mui/material'
+import { Box, CircularProgress, Divider, Stack, Typography } from '@mui/material'
 import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskControlAction,
@@ -43,12 +43,7 @@ function XDriveTaskHistorySentinel({
     <Box
       ref={ref}
       aria-label="继续加载任务历史"
-      sx={{
-        minHeight: 28,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
     >
       {loading ? <CircularProgress size={18} /> : null}
     </Box>
@@ -62,8 +57,8 @@ export interface XDriveTaskCenterClearHistory {
 }
 
 export interface XDriveTaskCenterPageProps {
-  transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
+  localTransfers?: XDriveTransferTask[]
   backgroundTasks?: XDriveBackgroundTask[]
   globalBackgroundTasks?: XDriveBackgroundTask[]
   backgroundTasksLoading?: boolean
@@ -71,6 +66,7 @@ export interface XDriveTaskCenterPageProps {
   backgroundTasksAvailable?: boolean
   globalTasksEnabled?: boolean
   backgroundScope?: 'mine' | 'global'
+  fixedScope?: 'mine' | 'global'
   onBackgroundScopeChange?: (scope: 'mine' | 'global') => void
   backgroundControlKey?: string
   onBackgroundTaskControl?: (
@@ -85,8 +81,6 @@ export interface XDriveTaskCenterPageProps {
   subtitle?: ReactNode
   pageActions?: ReactNode
   clearHistory?: XDriveTaskCenterClearHistory
-  transferRetryingID?: string
-  transferRetryDisabled?: boolean
   operationCancellingID?: string
   operationRetryingID?: string
   operationUndoingID?: string
@@ -94,7 +88,6 @@ export interface XDriveTaskCenterPageProps {
   operationResolvingID?: string
   operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
   operationDisabled?: boolean
-  onRetryTransfer?: (id: string) => void
   onCancelOperation?: (id: string) => void
   onRetryOperation?: (id: string) => void
   onUndoOperation?: (id: string) => void
@@ -103,8 +96,8 @@ export interface XDriveTaskCenterPageProps {
 }
 
 export function XDriveTaskCenterPage({
-  transfers,
   operations,
+  localTransfers = [],
   backgroundTasks = [],
   globalBackgroundTasks = [],
   backgroundTasksLoading = false,
@@ -112,7 +105,7 @@ export function XDriveTaskCenterPage({
   backgroundTasksAvailable = false,
   globalTasksEnabled = false,
   backgroundScope = 'mine',
-  onBackgroundScopeChange,
+  fixedScope,
   backgroundControlKey = '',
   onBackgroundTaskControl,
   backgroundHasMore = false,
@@ -120,11 +113,9 @@ export function XDriveTaskCenterPage({
   onLoadMoreBackground,
   backgroundFocusTaskID = '',
   backgroundFocusRequestID = 0,
-  subtitle = '统一查看文件操作、上传下载、同步文件夹和后台处理状态。',
+  subtitle = '查看文件操作、本机处理、同步文件夹和后台处理状态。',
   pageActions,
   clearHistory,
-  transferRetryingID = '',
-  transferRetryDisabled = false,
   operationCancellingID = '',
   operationRetryingID = '',
   operationUndoingID = '',
@@ -132,14 +123,14 @@ export function XDriveTaskCenterPage({
   operationResolvingID = '',
   operationResolvingPolicy = '',
   operationDisabled = false,
-  onRetryTransfer,
   onCancelOperation,
   onRetryOperation,
   onUndoOperation,
   onRedoOperation,
   onResolveOperationConflict,
 }: XDriveTaskCenterPageProps) {
-  const scope = globalTasksEnabled ? backgroundScope : 'mine'
+  const requestedScope = fixedScope ?? backgroundScope
+  const scope = requestedScope === 'global' && globalTasksEnabled ? 'global' : 'mine'
   const contentRef = useRef<HTMLDivElement>(null)
   const focusedRequestRef = useRef(0)
 
@@ -157,19 +148,16 @@ export function XDriveTaskCenterPage({
     focusedRequestRef.current = backgroundFocusRequestID
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     target.focus({ preventScroll: true })
-  }, [
-    backgroundFocusRequestID,
-    backgroundFocusTaskID,
-    backgroundTasks,
-    globalBackgroundTasks,
-    scope,
-  ])
+  }, [backgroundFocusRequestID, backgroundFocusTaskID, backgroundTasks, globalBackgroundTasks, scope])
 
   const syncTasks = backgroundTasks.filter(
     (task) => task.domain === 'sync_run' || task.kind === 'source.sync',
   )
   const derivedTasks = backgroundTasks.filter(
-    (task) => task.domain === 'scheduler' && task.kind !== 'source.sync',
+    (task) =>
+      task.domain !== 'file_operation' &&
+      task.domain !== 'sync_run' &&
+      task.kind !== 'source.sync',
   )
   const actions = scope === 'mine'
     ? pageActions ?? (clearHistory ? (
@@ -179,7 +167,7 @@ export function XDriveTaskCenterPage({
         loadingLabel="正在清空…"
         onClick={clearHistory.onClear}
       >
-        清空历史
+        清空文件操作历史
       </XDriveActionButton>
     ) : undefined)
     : undefined
@@ -187,27 +175,13 @@ export function XDriveTaskCenterPage({
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title="任务中心"
-      subtitle={subtitle}
+      title={scope === 'global' ? '全局任务' : '任务'}
+      subtitle={scope === 'global' ? '查看所有用户和系统级后台任务。' : subtitle}
       pageActions={actions}
     >
       <Stack ref={contentRef} spacing={3}>
-        {globalTasksEnabled ? (
-          <Tabs
-            value={scope}
-            onChange={(_event, value: 'mine' | 'global') => onBackgroundScopeChange?.(value)}
-            aria-label="任务视图"
-          >
-            <Tab value="mine" label="我的任务" />
-            <Tab value="global" label="全局任务" />
-          </Tabs>
-        ) : null}
-
         {scope === 'global' ? (
           <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-              全局任务
-            </Typography>
             <XDriveBackgroundTaskTable
               tasks={globalBackgroundTasks}
               loading={globalBackgroundTasksLoading}
@@ -243,18 +217,17 @@ export function XDriveTaskCenterPage({
                 onResolveConflict={onResolveOperationConflict}
               />
             </Box>
-            <Divider />
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                上传与下载
-              </Typography>
-              <XDriveTransferCenter
-                transfers={transfers}
-                retryingID={transferRetryingID}
-                retryDisabled={transferRetryDisabled}
-                onRetry={onRetryTransfer}
-              />
-            </Box>
+            {localTransfers.length > 0 ? (
+              <>
+                <Divider />
+                <Box>
+                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
+                    本机文件处理
+                  </Typography>
+                  <XDriveTransferCenter transfers={localTransfers} compact />
+                </Box>
+              </>
+            ) : null}
             {backgroundTasksAvailable ? (
               <>
                 <Divider />

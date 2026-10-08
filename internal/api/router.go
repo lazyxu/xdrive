@@ -137,6 +137,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.PUT("/file-favorites/:id", s.favoriteFile)
 	authed.DELETE("/file-favorites/:id", s.unfavoriteFile)
 	authed.GET("/file-recent", s.listFileRecent)
+	authed.GET("/download/transfers/:id", s.getDownloadTransfer)
 	authed.GET("/background-tasks", s.listBackgroundTasks)
 	authed.GET("/background-tasks/page", s.listBackgroundTaskPage)
 	authed.GET("/background-tasks/active-summary", s.backgroundTaskActiveSummary)

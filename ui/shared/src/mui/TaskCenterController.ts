@@ -15,7 +15,7 @@ import type {
   XDriveFileOperation,
   XDriveFileOperationConflictResolution,
 } from '..'
-import { xDriveActiveTransferCount, xDriveTransferHasHistory } from '../transfers'
+import { xDriveActiveTransferCount, xDriveTransferIsNetwork } from '../transfers'
 import type { XDriveTransferTask } from '../transfers'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
 
@@ -33,6 +33,7 @@ export type XDriveTaskCenterOperationActions = {
   undoOperation: (id: string) => Promise<boolean>
   redoOperation: (id: string) => Promise<boolean>
   resolveConflict: (id: string, policy: XDriveFileOperationConflictResolution) => Promise<boolean>
+  clearOperationHistoryOnly: () => Promise<boolean>
   clearHistory: () => Promise<boolean>
 }
 
@@ -294,9 +295,6 @@ export function useXDriveTaskCenterController({
   operations,
   operationActions,
   externalBusy = false,
-  transferRetryingID = '',
-  transferRetryDisabled = false,
-  onRetryTransfer,
   conflictResolutionEnabled = true,
   backgroundTaskPort,
   backgroundTasksEnabled = false,
@@ -308,9 +306,6 @@ export function useXDriveTaskCenterController({
   operations: XDriveFileOperation[]
   operationActions: XDriveTaskCenterOperationActions
   externalBusy?: boolean
-  transferRetryingID?: string
-  transferRetryDisabled?: boolean
-  onRetryTransfer?: (id: string) => void | Promise<void>
   conflictResolutionEnabled?: boolean
   backgroundTaskPort?: XDriveBackgroundTaskPort
   backgroundTasksEnabled?: boolean
@@ -318,9 +313,12 @@ export function useXDriveTaskCenterController({
   globalTasksEnabled?: boolean
   onBackgroundTaskError?: (error: unknown) => void
 }) {
-  const activeTransferCount = xDriveActiveTransferCount(transfers)
+  const networkTransfers = transfers.filter(xDriveTransferIsNetwork)
+  const localTransfers = transfers.filter((task) => !xDriveTransferIsNetwork(task))
+  const activeTransferCount = xDriveActiveTransferCount(networkTransfers)
+  const activeLocalTransferCount = xDriveActiveTransferCount(localTransfers)
   const activeOperationCount = xDriveActiveFileOperationCount(operations)
-  const hasHistory = xDriveTransferHasHistory(transfers) || xDriveFileOperationHasHistory(operations)
+  const hasHistory = xDriveFileOperationHasHistory(operations)
   const [backgroundScope, setBackgroundScope] = useState<XDriveBackgroundTaskScope>('mine')
   const [backgroundControlKey, setBackgroundControlKey] = useState('')
 
@@ -341,7 +339,8 @@ export function useXDriveTaskCenterController({
       summaryFileOperationCount +
       Math.max(summaryFileOperationCount, activeOperationCount)
     : activeOperationCount
-  const badgeCount = activeTransferCount + activeBackgroundCount
+  const taskBadgeCount = activeBackgroundCount + activeLocalTransferCount
+  const badgeCount = activeTransferCount + taskBadgeCount
 
   const background = useXDriveBackgroundTasks({
     port: backgroundTaskPort,
@@ -381,8 +380,8 @@ export function useXDriveTaskCenterController({
   ])
 
   const pageProps: XDriveTaskCenterPageProps = {
-    transfers,
     operations,
+    localTransfers,
     backgroundTasks: background.mine,
     globalBackgroundTasks: background.globalTasks,
     backgroundTasksLoading: background.mineLoading,
@@ -401,10 +400,8 @@ export function useXDriveTaskCenterController({
     clearHistory: {
       disabled: !hasHistory || externalBusy || operationActions.busy,
       loading: operationActions.clearHistoryLoading,
-      onClear: () => { void operationActions.clearHistory() },
+      onClear: () => { void operationActions.clearOperationHistoryOnly() },
     },
-    transferRetryingID,
-    transferRetryDisabled,
     operationCancellingID: operationActions.cancellingID,
     operationRetryingID: operationActions.retryingID,
     operationUndoingID: operationActions.undoingID,
@@ -412,7 +409,6 @@ export function useXDriveTaskCenterController({
     operationResolvingID: operationActions.resolvingID,
     operationResolvingPolicy: operationActions.resolvingPolicy,
     operationDisabled: operationActions.busy,
-    onRetryTransfer: onRetryTransfer ? (id) => { void onRetryTransfer(id) } : undefined,
     onCancelOperation: (id) => { void operationActions.cancelOperation(id) },
     onRetryOperation: (id) => { void operationActions.retryOperation(id) },
     onUndoOperation: (id) => { void operationActions.undoOperation(id) },
@@ -425,9 +421,12 @@ export function useXDriveTaskCenterController({
   return {
     activeTransferCount,
     activeOperationCount,
+    activeLocalTransferCount,
     activeBackgroundCount,
     badgeCount,
-    badge: badgeCount || undefined,
+    taskBadgeCount,
+    transferBadge: activeTransferCount || undefined,
+    badge: taskBadgeCount || undefined,
     hasHistory,
     backgroundTasks: background.mine,
     globalBackgroundTasks: background.globalTasks,

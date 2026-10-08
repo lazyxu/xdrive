@@ -7,10 +7,10 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const shared = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
+const popover = read('ui', 'shared', 'src', 'mui', 'TransferPopover.tsx')
 const taskCenter = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
-const actionController = read('ui', 'shared', 'src', 'mui', 'FileOperationActions.ts')
 const taskCenterController = read('ui', 'shared', 'src', 'mui', 'TaskCenterController.ts')
-const sidebarNav = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
+const actionController = read('ui', 'shared', 'src', 'mui', 'FileOperationActions.ts')
 const workspaceNavigation = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'transfers.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
@@ -18,129 +18,74 @@ const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webStore = read('web', 'src', 'transfers.ts')
 const agentCloudFiles = read('cmd', 'xdrive-agent', 'cloud_files.go')
-const agentController = read('cmd', 'xdrive-agent', 'controller.go')
-const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
-const transferModel = read('internal', 'transfer', 'model.go')
-const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
 
-test('shared transfer center exposes detailed progress and history fields', () => {
+test('shared transfer center exposes detailed progress and compact rendering', () => {
   for (const token of [
-    'XDriveTransferCenter',
-    'LinearProgress',
-    '当前大小',
-    '总大小',
-    '百分比',
-    '状态',
-    '开始时间',
-    '已耗时',
-    '预计剩余',
-    '完成时间',
-    '当前速度',
-    '平均速度',
-    '进行中',
-    '已完成',
-    '失败',
-  ]) {
-    assert.ok(shared.includes(token), `shared transfer center missing: ${token}`)
-  }
-  assert.ok(sharedModel.includes('xDriveTransferEtaMs'), 'shared transfer model must calculate ETA')
-  assert.ok(sharedModel.includes('xDriveTransferActive'), 'shared transfer model must classify active transfers')
-  assert.ok(sharedModel.includes('xDriveTransferTerminal'), 'shared transfer model must classify terminal transfers')
-  assert.ok(sharedModel.includes('xDriveActiveTransferCount'), 'shared transfer model must count active transfers')
-  assert.ok(sharedModel.includes('xDriveTransferHasHistory'), 'shared transfer model must detect transfer history')
-  assert.ok(sharedModel.includes("direction: 'upload' | 'download' | 'local' | string"), 'shared transfer direction contract is missing')
+    'XDriveTransferCenter', 'LinearProgress', '当前大小', '总大小', '百分比',
+    '当前速度', '平均速度', '预计剩余', 'xDriveTransferTree',
+    'TransferGroupItem', 'TransferLeafItem', 'compact',
+  ]) assert.ok(shared.includes(token), 'shared Transfer Center missing: ' + token)
 })
 
-test('shared transfer center renders hierarchical group progress and child tasks', () => {
+test('shared network classifier and speed summary avoid parent-child double counting', () => {
   for (const token of [
-    'xDriveTransferTree',
-    'TransferGroupItem',
-    'TransferLeafItem',
-    'Collapse',
-    '文件夹任务',
-    '已发现',
-    '基于当前已发现文件',
-    '成功',
-    '失败',
-    '传输中',
-    '等待',
-    '暂无子任务',
-    '正在发现子任务',
-    'compact',
-    'relative_path',
-  ]) {
-    assert.ok(shared.includes(token), `hierarchical Transfer Center missing: ${token}`)
-  }
-  assert.ok(shared.includes('const roots = xDriveTransferTree(transfers)'), 'Transfer Center must group only root tasks at the top level')
-  assert.ok(shared.includes('xDriveTransferAggregateBytes(item, children)'), 'group byte progress must aggregate child work')
-  assert.ok(shared.includes('xDriveTransferItemProgress(item, children)'), 'group item progress must aggregate child work')
-  assert.ok(shared.includes("item.scan_complete === false"), 'group UI must distinguish discovered totals from final totals')
+    'xDriveTransferNetworkDirection',
+    'xDriveTransferIsNetwork',
+    "task.kind === 'hydration'",
+    'xDriveTransferSpeedSummary',
+    'tree.flatMap(collect)',
+    'staleAfterMs = 3000',
+  ]) assert.ok(sharedModel.includes(token), 'shared speed model missing: ' + token)
+  assert.equal(sharedModel.includes("task.kind === 'dehydration'"), false, 'dehydration must remain local task work')
 })
 
-test('Web and Desktop both render the shared task center workspace', () => {
-  assert.ok(taskCenter.includes('XDriveFileOperationCenter'), 'shared task center must render file operations')
-  assert.ok(taskCenter.includes('XDriveTransferCenter'), 'shared task center must render transfers')
-  assert.ok(taskCenter.includes('清空历史'), 'shared task center must own the unified clear-history action')
-  assert.ok(taskCenter.includes('loading={clearHistory.loading}'), 'shared task center clear-history action must expose loading state')
-  assert.ok(taskCenter.includes('loadingLabel="正在清空…"'), 'shared task center clear-history action must expose loading feedback')
-  assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render the shared task center directly')
-  assert.equal(fs.existsSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopTransfersPage.tsx')), false, 'Desktop must not keep a pass-through Task Center wrapper')
-  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render the shared task center')
-  assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
-  assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
-  assert.match(workspaceNavigation, /key: 'transfers',\s*label: '传输'/, 'shared core navigation model must expose Transfers under its existing workspace key')
-  assert.ok(sidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
-  assert.ok(sidebarNav.includes('primary={destination.label}'), 'shared sidebar must render the Transfers label from its destination')
-  assert.ok(web.includes('<XDriveWorkspaceSidebar'), 'Web must consume the shared workspace sidebar')
-  assert.ok(desktop.includes('<XDriveWorkspaceSidebar'), 'Desktop must consume the shared workspace sidebar')
+test('network transfer UI lives in the top-right shared popover', () => {
+  for (const token of [
+    'XDriveTransferPopover',
+    'transfers.filter(xDriveTransferIsNetwork)',
+    '↑ {uploadLabel}',
+    '↓ {downloadLabel}',
+    '<XDriveTransferCenter',
+    'downloadSpeedCaption',
+  ]) assert.ok(popover.includes(token), 'transfer popover missing: ' + token)
+  assert.equal((web.match(/<XDriveTransferPopover\b/g) || []).length, 1)
+  assert.equal((desktop.match(/<XDriveTransferPopover\b/g) || []).length, 1)
 })
 
-test('Web upload and download operations feed persistent transfer history', () => {
-  assert.ok(webApi.includes('webTransferStore.create'), 'Web API must create transfer records')
-  assert.ok(webApi.includes("kind: 'upload'"), 'Web upload must be tracked')
-  assert.ok(webApi.includes("kind: 'download'"), 'Web download must be tracked')
-  assert.ok(webApi.includes('response.body.getReader()'), 'Web download must stream bytes for progress reporting')
-  assert.ok(webApi.includes('webTransferStore.progress'), 'Web API must publish byte progress')
-  assert.ok(webApi.includes('webTransferStore.complete'), 'Web API must persist completed transfers')
-  assert.ok(webApi.includes('webTransferStore.fail'), 'Web API must persist failed transfers')
-  assert.ok(webStore.includes("xdrive.web.transfer_history"), 'Web transfer history must survive navigation/reload')
-  assert.ok(webStore.includes('MAX_HISTORY = 200'), 'Web transfer history must be bounded')
-  assert.ok(webStore.includes('页面刷新后无法继续跟踪该传输'), 'stale active Web transfers must fail closed after reload')
-  assert.ok(webStore.includes('xDriveTransferActive(normalized)'), 'Web stale-transfer recovery must normalize legacy records before using the shared active selector')
-  assert.ok(webStore.includes('const activeRoots = new Set('), 'Web history clearing must identify active root transfer trees')
-  assert.ok(webStore.includes('.filter(xDriveTransferActive)'), 'Web history clearing must use the shared active selector')
-  assert.ok(webStore.includes('!removeRoots.has(item.root_id || item.id)'), 'Web history clearing must preserve every child under an active root')
+test('Sidebar Tasks retains file operations, local transfers, sync and background work only', () => {
+  assert.match(workspaceNavigation, /key: 'transfers',\s*label: '任务'/)
+  assert.ok(taskCenter.includes('本机文件处理'))
+  assert.ok(taskCenter.includes('localTransfers'))
+  assert.equal(taskCenter.includes('上传与下载'), false)
+  assert.ok(taskCenterController.includes('const networkTransfers = transfers.filter(xDriveTransferIsNetwork)'))
+  assert.ok(taskCenterController.includes('const localTransfers = transfers.filter((task) => !xDriveTransferIsNetwork(task))'))
+  assert.ok(taskCenterController.includes('const taskBadgeCount = activeBackgroundCount + activeLocalTransferCount'))
+  assert.ok(actionController.includes('clearOperationHistoryOnly'))
 })
 
-
-test('Desktop manual upload and download operations feed the Agent transfer manager', () => {
-  assert.ok(agentCloudFiles.includes('transfer.KindUpload'), 'Desktop manual upload must create an upload transfer')
-  assert.ok(agentCloudFiles.includes('UploadFileResumable(ctx'), 'Desktop manual upload must report resumable byte progress')
-  assert.ok(agentCloudFiles.includes('transfer.KindDownload'), 'Desktop manual download must create a download transfer')
-  assert.ok(agentCloudFiles.includes('DownloadToProgress(ctx'), 'Desktop manual download must report streamed byte progress')
-  assert.ok(agentCloudFiles.includes('finishAgentCloudTransfer'), 'Desktop manual transfers must retain success/failure history')
+test('Global Tasks is a separate administrator-only workspace in Web and Desktop', () => {
+  assert.ok(taskCenter.includes("fixedScope?: 'mine' | 'global'"))
+  assert.ok(taskCenter.includes("title={scope === 'global' ? '全局任务' : '任务'}"))
+  assert.ok(web.includes("key: 'global-tasks'"))
+  assert.ok(web.includes("profile?.role === 'admin'"))
+  assert.ok(desktop.includes("key: 'global-tasks'"))
+  assert.ok(desktop.includes("status?.role === 'admin'"))
 })
 
-test('unified Task Center history clearing preserves active work on Web and Desktop', () => {
-  assert.ok(webApi.includes("clearFileOperationHistory()"), 'Web API must expose server file-operation history clearing')
-  assert.ok(webApi.includes("method: 'DELETE'"), 'Web file-operation history clearing must use DELETE')
-  assert.ok(actionController.includes('await clearOperationHistory()'), 'shared action controller must orchestrate file-operation history clearing')
-  assert.ok(actionController.includes('const transferResult = await clearTransferHistory()'), 'shared action controller must orchestrate transfer-history clearing')
-  assert.ok(actionController.includes('await refreshOperations()'), 'shared action controller must refresh operation state after history clearing')
-  assert.ok(web.includes('clearOperationHistory: () => api.clearFileOperationHistory()'), 'Web must keep server history clearing in its REST adapter')
-  assert.ok(web.includes('clearTransferHistory: async () => { api.clearTransferHistory() }'), 'Web must keep local transfer-history clearing in its adapter')
-  assert.ok(taskCenterController.includes('loading: operationActions.clearHistoryLoading'), 'shared Task Center controller must expose clear-history loading state')
-  assert.ok(web.includes('operationActions: fileOperationActions'), 'Web must delegate Task Center action presentation to the shared controller')
+test('Web upload/download speed sources are live and account-scoped', () => {
+  assert.ok(webStore.includes("xdrive.web.transfer_history.v2:"))
+  assert.ok(webStore.includes('setScope(scope: string)'))
+  assert.ok(webStore.includes('baseline(id: string'))
+  assert.ok(web.includes('api.setTransferScope(username)'))
+  assert.ok(webApi.includes('xhr.upload.onprogress'))
+  assert.ok(webApi.includes('reportProgress(completed, true)'))
+  assert.ok(webApi.includes('startNativeTrackedDownload'))
+  assert.ok(webApi.includes('/api/v1/download/transfers/'))
+})
 
-  assert.ok(transferModel.includes('func (m *Manager) ClearHistory()'), 'Desktop transfer manager must have history-only clearing')
-  assert.ok(transferModel.includes('terminalState(e.task.State)'), 'Desktop transfer history clearing must use the shared terminal-state classifier')
-  assert.ok(agentController.includes('c.transfers.ClearHistory()'), 'Desktop controller must use history-only transfer clearing')
-  assert.ok(agentIPC.includes('DELETE /v1/transfers'), 'Desktop Agent IPC must expose transfer history clearing')
-  assert.ok(agentIPC.includes('DELETE /v1/cloud/file-operations'), 'Desktop Agent IPC must expose file-operation history clearing')
-  assert.ok(desktopPreload.includes("clearTransferHistory: () => ipcRenderer.invoke('agent:clear-transfer-history')"), 'Desktop preload transfer-history bridge is missing')
-  assert.ok(desktopPreload.includes("cloudClearFileOperationHistory: () => ipcRenderer.invoke('agent:cloud-file-operations-clear')"), 'Desktop preload file-operation-history bridge is missing')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudClearFileOperationHistory()'), 'Desktop must keep server history clearing in its Agent adapter')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.clearTransferHistory()'), 'Desktop must keep transfer-history clearing in its Agent adapter')
-  assert.ok(desktop.includes('onTransferHistoryCleared: (value) => {') && desktop.includes('acceptTransferSnapshot(value)'), 'Desktop must apply the cleared transfer-history result through the revision-safe snapshot acceptor')
-  assert.ok(desktop.includes('operationActions: fileOperationActions'), 'Desktop must delegate Task Center action presentation to the shared controller')
+test('Desktop transfer speed continues to come from Agent transfer progress', () => {
+  assert.ok(agentCloudFiles.includes('transfer.KindUpload'))
+  assert.ok(agentCloudFiles.includes('UploadFileResumable(ctx'))
+  assert.ok(agentCloudFiles.includes('transfer.KindDownload'))
+  assert.ok(agentCloudFiles.includes('DownloadToProgress(ctx'))
 })

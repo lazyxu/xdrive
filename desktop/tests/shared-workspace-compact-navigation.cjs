@@ -246,7 +246,7 @@ test('core destinations omit unsupported local storage and retain the task badge
   const withLocal = xDriveCoreWorkspaceDestinations({ transferBadge: 7, showLocalStorage: true })
   assert.deepEqual(keys(withLocal), ['files', 'gallery', 'sources', 'transfers', 'local-storage', 'cloud-storage'])
   const tasks = withLocal.find((item) => item.key === 'transfers')
-  assert.equal(tasks.label, '传输')
+  assert.equal(tasks.label, '任务')
   assert.equal(tasks.compactLabel, '任务')
   assert.equal(tasks.badge, 7)
 })
@@ -289,7 +289,7 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
   for (const { profile, expectedMore } of [
     { profile: undefined, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
     { profile: { role: 'user' }, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['sources', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage'] },
+    { profile: { role: 'admin' }, expectedMore: ['sources', 'local-storage', 'cloud-storage', 'global-tasks', 'admin-users', 'admin-audit', 'admin-storage'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])

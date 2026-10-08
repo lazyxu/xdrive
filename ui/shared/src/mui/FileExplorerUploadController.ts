@@ -71,6 +71,7 @@ export type XDriveFileExplorerUploadTransferLifecycle = {
   begin: (id: string, input?: {
     group?: XDriveFileExplorerUploadTransferGroupProgress
   }) => void | Promise<void>
+  baseline?: (id: string, bytesDone: number, bytesTotal: number) => void | Promise<void>
   progress: (id: string, bytesDone: number, bytesTotal: number) => void | Promise<void>
   updateGroup: (
     id: string,
@@ -153,7 +154,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
     parentID: number,
     file: TFile,
     conflictPolicy: XDriveUploadConflictPolicy,
-    onProgress?: (percent: number) => void,
+    onProgress?: (percent: number, baseline?: boolean) => void,
     transferID?: string,
   ) => Promise<XDriveFileExplorerUploadResult>
   transferLifecycle?: XDriveFileExplorerUploadTransferLifecycle
@@ -536,7 +537,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
         }
 
         try {
-          const onProgress = (percent: number) => {
+          const onProgress = (percent: number, baseline = false) => {
             if (!isCurrentLifecycle(lifecycleGeneration)) return
             const normalized = Math.max(0, Math.min(100, percent || 0))
             const nextChildDone = childSizes[index] * normalized / 100
@@ -544,7 +545,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
             childBytesDone = nextChildDone
             if (trackProgress) setProgress(normalized)
             void Promise.resolve(
-              transferLifecycle.progress(childID, childBytesDone, childSizes[index]),
+              baseline && transferLifecycle.baseline
+                ? transferLifecycle.baseline(childID, childBytesDone, childSizes[index])
+                : transferLifecycle.progress(childID, childBytesDone, childSizes[index]),
             ).catch(() => {})
             void Promise.resolve(
               transferLifecycle.updateGroup(groupID, groupProgress()),

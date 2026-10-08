@@ -27,6 +27,30 @@ func (m Manager) IssueDownloadStream(
 	resourceRevision uint64,
 	ttl time.Duration,
 ) (string, time.Time, error) {
+	return m.issueDownloadStream(
+		userID, sessionVersion, resourceKind, resourceID, resourceRevision, "", ttl,
+	)
+}
+
+func (m Manager) IssueTrackedDownloadStream(
+	userID, sessionVersion uint64,
+	resourceKind, resourceID string,
+	resourceRevision uint64,
+	transferID string,
+	ttl time.Duration,
+) (string, time.Time, error) {
+	return m.issueDownloadStream(
+		userID, sessionVersion, resourceKind, resourceID, resourceRevision, strings.TrimSpace(transferID), ttl,
+	)
+}
+
+func (m Manager) issueDownloadStream(
+	userID, sessionVersion uint64,
+	resourceKind, resourceID string,
+	resourceRevision uint64,
+	transferID string,
+	ttl time.Duration,
+) (string, time.Time, error) {
 	resourceKind = strings.TrimSpace(resourceKind)
 	resourceID = strings.TrimSpace(resourceID)
 	if userID == 0 ||
@@ -47,6 +71,7 @@ func (m Manager) IssueDownloadStream(
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        transferID,
 			Subject:   fmt.Sprintf("%d", userID),
 			Audience:  jwt.ClaimStrings{"xdrive-download-stream"},
 		},
