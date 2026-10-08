@@ -159,6 +159,115 @@ func TestManagerCompleteSkippedKeepsZeroTransferredBytes(t *testing.T) {
 	}
 }
 
+func TestManagerChildProgressAndGroupPublishesOneRevision(t *testing.T) {
+	m := NewManager(20)
+	group := m.StartGroup(Spec{
+		FileName:   "Folder",
+		Kind:       KindDownload,
+		Direction:  "download",
+		TotalBytes: 100,
+	})
+	child := m.StartChild(group, Spec{
+		FileName:     "file.bin",
+		RelativePath: "Folder/file.bin",
+		Kind:         KindDownload,
+		Direction:    "download",
+		TotalBytes:   100,
+	})
+	if child == nil {
+		t.Fatal("child handle is nil")
+	}
+
+	before, _ := m.Snapshot()
+	child.BaselineAndUpdateGroup(group, 20, 100, GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      20,
+		BytesTotal:     100,
+		TotalItems:     1,
+		CompletedItems: 0,
+		RunningItems:   1,
+	})
+	afterBaseline, tasks := m.Snapshot()
+	if afterBaseline != before+1 {
+		t.Fatalf("baseline+group revision=%d want=%d", afterBaseline, before+1)
+	}
+	var childTask, groupTask *Task
+	for index := range tasks {
+		switch tasks[index].ID {
+		case child.ID():
+			childTask = &tasks[index]
+		case group.ID():
+			groupTask = &tasks[index]
+		}
+	}
+	if childTask == nil || groupTask == nil {
+		t.Fatalf("missing child/group tasks: %+v", tasks)
+	}
+	if childTask.BytesDone != 20 || childTask.BytesTotal != 100 || childTask.Percent != 20 {
+		t.Fatalf("unexpected child baseline: %+v", *childTask)
+	}
+	if groupTask.BytesDone != 20 || groupTask.BytesTotal != 100 ||
+		groupTask.ItemsRunning != 1 || groupTask.ItemsTotal != 1 {
+		t.Fatalf("unexpected group baseline: %+v", *groupTask)
+	}
+
+	time.Sleep(time.Millisecond)
+	child.ProgressAndUpdateGroup(group, 60, 100, GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      60,
+		BytesTotal:     100,
+		TotalItems:     1,
+		CompletedItems: 0,
+		RunningItems:   1,
+	})
+	afterProgress, tasks := m.Snapshot()
+	if afterProgress != afterBaseline+1 {
+		t.Fatalf("progress+group revision=%d want=%d", afterProgress, afterBaseline+1)
+	}
+	childTask = nil
+	groupTask = nil
+	for index := range tasks {
+		switch tasks[index].ID {
+		case child.ID():
+			childTask = &tasks[index]
+		case group.ID():
+			groupTask = &tasks[index]
+		}
+	}
+	if childTask == nil || groupTask == nil {
+		t.Fatalf("missing child/group tasks after progress: %+v", tasks)
+	}
+	if childTask.BytesDone != 60 || childTask.InstantBytesPerSecond <= 0 ||
+		childTask.AverageBytesPerSecond <= 0 {
+		t.Fatalf("unexpected child progress: %+v", *childTask)
+	}
+	if groupTask.BytesDone != 60 || groupTask.Percent != 60 {
+		t.Fatalf("unexpected group progress: %+v", *groupTask)
+	}
+
+	beforeStandalone, _ := m.Snapshot()
+	child.Progress(70, 100)
+	afterChild, _ := m.Snapshot()
+	if afterChild != beforeStandalone+1 {
+		t.Fatalf("standalone child revision=%d want=%d", afterChild, beforeStandalone+1)
+	}
+	group.UpdateGroup(GroupProgress{
+		Phase:          PhaseTransferring,
+		ScanComplete:   true,
+		BytesDone:      70,
+		BytesTotal:     100,
+		TotalItems:     1,
+		CompletedItems: 0,
+		RunningItems:   1,
+	})
+	afterGroup, _ := m.Snapshot()
+	if afterGroup != afterChild+1 {
+		t.Fatalf("standalone group revision=%d want=%d", afterGroup, afterChild+1)
+	}
+}
+
 func TestManagerStartChildrenBatchPublishesOneRevision(t *testing.T) {
 	const childCount = 1000
 	m := NewManager(20)

@@ -30,6 +30,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Folder-upload group progress aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N folder-upload targets, every group-progress publication changes from scanning N child byte slots to an incremental byte total: **O(N) -> O(1)** per publication; `fileSize` probes during target setup **2N -> N** and the N-length `childDone` array is removed. |
 | Web folder-upload child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N queued child tasks under one Web folder-upload group, upfront parent lookup/history trim/full-history persistence/listener publication **N -> 1** via the optional batch lifecycle; all child IDs still exist before group transfer begins. |
 | Agent transfer child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,000 queued folder children: Desktop folder-upload lifecycle setup **1,000 Agent IPC requests -> 1**; Agent Manager child-registration revision publications for both Desktop upload and folder download **1,000 -> 1**. Old Agents retain the single-child fallback. |
+| Agent folder-download progress publication | **Accepted / structural contract** | Structural / unmeasured wall-clock | One throttled leaf-file progress callback updates child bytes/rate plus group aggregate under one Manager lock: revision publications **2 -> 1 per callback**; download bytes, 100 ms progress throttle, lifecycle states and Transfer Center fields are unchanged. |
 | Web archive-download child registration | **Accepted / structural contract** | Structural / unmeasured wall-clock | For N prepared archive leaf files, Transfer Center child registration reuses the Web batch primitive: parent lookup/history trim/full-history persistence/listener publication **N -> 1**; archive prepare, progress polling and payload streaming are unchanged. |
 | Web archive progress persistence batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | For one progress snapshot over N prepared leaf files, TransferStore history trim/full-history persistence/listener publication changes from **up to N+1 -> 1** in steady progress; lifecycle states and 200 ms Server polling are unchanged. |
 | Web direct-to-disk downloads | **Accepted / structural contract** | Structural / unmeasured wall-clock | File System Access path writes each response chunk directly to the selected file; application-retained payload chunks change from **O(download bytes) -> O(current chunk)**. Blob fallback remains for unsupported browsers. |
@@ -2141,7 +2142,43 @@ Decision: **Accepted.** This removes child-count-scaled control-plane setup with
 
 Regression budget: each supported batch of up to **1,000 children** must issue **one Agent lifecycle request and one Manager revision publication**; larger Desktop child sets must be chunked into bounded batches, and no partial child set may be returned for a valid batch.
 
-Next action: continue the basic transfer audit at Agent folder-download progress/group revision publication frequency, then return to sync/delete paths if no larger transfer hotspot remains.
+Next action: completed by the Agent folder-download progress publication contract below.
+
+### Agent folder-download progress publication contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Agent-native Desktop FileExplorer folder download;
+- one active leaf file whose `DownloadToProgress` callback already reports bytes at the shared client cadence;
+- evidence method: deterministic Manager revision test plus source-contract coverage of the production folder-download callback;
+- samples: n/a for structural revision counts.
+
+BEFORE:
+
+- every progress callback updates the leaf child with `Baseline` / `Progress`, publishing **1 Manager revision**;
+- the same callback immediately updates the folder group aggregate with `UpdateGroup`, publishing **1 more revision**;
+- total control-plane publication cost: **2 Manager revisions per download progress callback**.
+
+AFTER / current:
+
+- `BaselineAndUpdateGroup` / `ProgressAndUpdateGroup` mutate child and group state under one Manager lock and publish once after both are coherent;
+- total control-plane publication cost: **1 Manager revision per download progress callback**;
+- the child's byte/rate calculations and the group's bytes/items/percent calculations retain their existing semantics;
+- the shared download client's existing **100 ms** progress-report throttling is unchanged;
+- file start, completion, failure and cancellation transitions remain separate lifecycle publications; no transfer concurrency or data-plane behavior changes.
+
+Decision: **Accepted.** Child and group progress are one coherent Transfer Center snapshot, so publishing the intermediate child-only state has no correctness or user-visible value.
+
+Regression budget: each Agent folder-download progress callback must advance Manager revision by at most **1** while updating both the active child and its group aggregate. Standalone child/group APIs must continue to publish immediately.
+
+Regression commands:
+
+- `go test ./internal/transfer`;
+- `node --test desktop/tests/shared-folder-download-transfer-groups.cjs`.
+
+Next action: return to basic FileExplorer **sync/delete** performance auditing and only change another deterministic request, SQL, allocation, or publication hotspot.
 
 ### Web archive-download child registration/persistence contract
 
