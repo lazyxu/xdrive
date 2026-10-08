@@ -291,6 +291,62 @@ jobs:
       - name: Measure Gallery first open 100k mixed-media workload
         run: go test -run '^TestMediaGalleryFirstOpenPerformance100K$' -count=1 -v ./internal/api
 
+  gallery-first-visible-server-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_FIRST_VISIBLE_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure Gallery 100k first-visible media transport
+        run: go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api
+
+  gallery-video-poster-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Desktop performance dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure real Chromium video poster decode
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-video-poster-performance-main.cjs
+          cat perf-results/gallery-video-poster-performance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gallery-video-poster-performance
+          path: desktop/perf-results/gallery-video-poster-performance.json
+          if-no-files-found: error
+          retention-days: 7
+
   file-explorer-search-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-search-100k-baseline'
     runs-on: ubuntu-latest
