@@ -133,6 +133,7 @@ function WebAccountMenu({
   serverBuild,
   appearance,
   canUpdateServer,
+  disabled = false,
   onAppearanceChange,
   onLogout,
 }: {
@@ -141,19 +142,26 @@ function WebAccountMenu({
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
   canUpdateServer: boolean
+  disabled?: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [serverUpdateConfirmOpen, setServerUpdateConfirmOpen] = useState(false)
+  useEffect(() => {
+    if (!disabled) return
+    setAnchorEl(null)
+    setSettingsOpen(false)
+    setServerUpdateConfirmOpen(false)
+  }, [disabled])
   const serverUpdatePort = useMemo(() => ({
     getState: () => api.adminServerUpdate(),
     startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
       api.adminStartServerUpdate(source, channel, backupFileData),
   }), [api])
   const serverUpdate = useXDriveServerUpdateController({
-    open: settingsOpen,
+    open: settingsOpen && !disabled,
     enabled: canUpdateServer,
     initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
     port: serverUpdatePort,
@@ -161,10 +169,12 @@ function WebAccountMenu({
 
   return (
     <>
-      <XDriveAccountAvatarButton username={username} onClick={(event) => setAnchorEl(event.currentTarget)} />
+      <XDriveAccountAvatarButton username={username} onClick={(event) => {
+        if (!disabled) setAnchorEl(event.currentTarget)
+      }} />
       <XDriveAccountMenu
         id="web-account-menu"
-        anchorEl={anchorEl}
+        anchorEl={disabled ? null : anchorEl}
         onClose={() => setAnchorEl(null)}
         username={username}
         secondary={`Server ${serverBuild?.version || '未知'}`}
@@ -172,12 +182,12 @@ function WebAccountMenu({
       >
         <XDriveAccountMenuActions
           onClose={() => setAnchorEl(null)}
-          onSettings={() => setSettingsOpen(true)}
-          onLogout={onLogout}
+          onSettings={() => { if (!disabled) setSettingsOpen(true) }}
+          onLogout={() => { if (!disabled) onLogout() }}
         />
       </XDriveAccountMenu>
       <XDriveSettingsDialog
-        open={settingsOpen}
+        open={settingsOpen && !disabled}
         onClose={() => setSettingsOpen(false)}
         subtitle="外观与服务端信息"
         appearance={appearance}
@@ -196,11 +206,11 @@ function WebAccountMenu({
           onSourceChange: serverUpdate.setSource,
           onChannelChange: serverUpdate.setChannel,
           onBackupFileDataChange: serverUpdate.setBackupFileData,
-          onStart: () => setServerUpdateConfirmOpen(true),
+          onStart: () => { if (!disabled) setServerUpdateConfirmOpen(true) },
         }}
       />
       <XDriveConfirmDialog
-        open={serverUpdateConfirmOpen}
+        open={serverUpdateConfirmOpen && !disabled}
         title="确认更新服务端？"
         description={xDriveServerUpdateConfirmationDescription({
           source: serverUpdate.source,
@@ -214,6 +224,7 @@ function WebAccountMenu({
         loadingLabel="正在提交…"
         onCancel={() => setServerUpdateConfirmOpen(false)}
         onConfirm={() => {
+          if (disabled) return
           setServerUpdateConfirmOpen(false)
           void serverUpdate.start()
         }}
@@ -450,6 +461,7 @@ function FileManager({
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
+  const viewerActive = Boolean(xDriveWebAppViewer(route.app))
   const setAppView = useCallback((view: AppView) => {
     const app = xDriveWebAppForWorkspaceKey(view)
     if (!app) return
@@ -1005,20 +1017,35 @@ function FileManager({
   return (
     <Box
       sx={{
-        minHeight: '100vh',
-        height: { md: '100vh' },
-        overflow: { md: 'hidden' },
+        minHeight: 0,
+        height: '100vh',
+        '@supports (height: 100dvh)': { height: '100dvh' },
+        overflow: 'hidden',
         bgcolor: 'background.default',
-        display: { xs: 'block', md: 'flex' },
-        flexDirection: { md: 'column' },
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
+      <Box
+        data-xdrive-workspace-background
+        {...{ inert: viewerActive ? '' : undefined }}
+        aria-hidden={viewerActive || undefined}
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          pl: 'env(safe-area-inset-left)',
+          pr: 'env(safe-area-inset-right)',
+          pb: { xs: 0, md: 'env(safe-area-inset-bottom)' },
+        }}
+      >
       <AppBar
           position="static"
           elevation={0}
           color="inherit"
           className="web-appbar"
-          sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
+          sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
         >
         <Toolbar
             sx={{
@@ -1032,6 +1059,7 @@ function FileManager({
           >
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
           <WebAccountMenu
+              disabled={viewerActive}
               username={username}
               api={api}
               serverBuild={serverBuild}
@@ -1046,12 +1074,13 @@ function FileManager({
       <XDriveWorkspaceShell
         responsive
         className="web-workspace-shell"
-        sx={{ flex: { md: 1 }, minHeight: { md: 0 } }}
+        sx={{ flex: 1, minHeight: 0 }}
       >
         <XDriveWorkspaceSidebar
           ariaLabel="网页端功能区"
           navAriaLabel="网页端功能区导航"
           responsive
+          disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
           showLocalStorage
@@ -1109,8 +1138,8 @@ function FileManager({
           <Box
            
             sx={{
-              height: { xs: 560, md: '100%' },
-              minHeight: { xs: 480, md: 0 },
+              height: '100%',
+              minHeight: 0,
               display: 'flex',
               flexDirection: 'column',
               bgcolor: 'background.paper',
@@ -1244,12 +1273,13 @@ function FileManager({
             onRunStorageMaintenance={runStorageMaintenance}
           />
         ) : (
-          <Box sx={{ height: { xs: 560, md: '100%' }, minHeight: { xs: 480, md: 0 } }}>
+          <Box sx={{ height: '100%', minHeight: 0 }}>
             <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
           </Box>
         )}
         </XDriveWorkspaceContent>
       </XDriveWorkspaceShell>
+      </Box>
 
       {xDriveWebAppViewer(route.app) ? (
         <WebFileViewerApps

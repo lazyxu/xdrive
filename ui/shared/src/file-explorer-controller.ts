@@ -612,6 +612,23 @@ export function xDriveFileExplorerKeyboardTargetIndex({
   return Math.max(0, Math.min(itemCount - 1, target))
 }
 
+export const XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS = 450
+
+export type XDriveFileExplorerTouchItemIntent = 'desktop-select' | 'open' | 'toggle-selection'
+
+export function xDriveFileExplorerTouchItemIntent({
+  compactTouch,
+  pointerType,
+  selectionMode,
+}: {
+  compactTouch: boolean
+  pointerType: string | null | undefined
+  selectionMode: boolean
+}): XDriveFileExplorerTouchItemIntent {
+  if (!compactTouch || pointerType !== 'touch') return 'desktop-select'
+  return selectionMode ? 'toggle-selection' : 'open'
+}
+
 export const XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS = 900
 
 export function xDriveFileExplorerTypeSelectTargetIndex({

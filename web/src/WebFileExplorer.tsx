@@ -704,7 +704,7 @@ export default function WebFileExplorer({
   })
 
   return (
-    <Box sx={{ height: '100%', minHeight: 420, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <input
         ref={uploadInputRef}
         hidden

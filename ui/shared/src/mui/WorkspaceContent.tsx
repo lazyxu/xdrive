@@ -28,28 +28,15 @@ export function XDriveWorkspaceContent({
           width: '100%',
           minWidth: 0,
           minHeight: 0,
-          height: responsive ? { xs: 'auto', md: '100%' } : '100%',
+          height: '100%',
+          flex: responsive ? 1 : undefined,
           ...(files
             ? {
                 display: 'flex',
                 flexDirection: 'column',
                 bgcolor: 'background.paper',
-                ...(responsive
-                  ? {
-                      p: 2,
-                      overflow: 'visible',
-                      '@media (min-width: 721px) and (max-width: 899.95px)': {
-                        p: 4,
-                      },
-                      '@media (min-width: 900px)': {
-                        p: 0,
-                        overflow: 'hidden',
-                      },
-                    }
-                  : {
-                      p: 0,
-                      overflow: 'hidden',
-                    }),
+                p: 0,
+                overflow: 'hidden',
               }
             : responsive
               ? {
