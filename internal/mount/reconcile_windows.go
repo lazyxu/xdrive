@@ -663,11 +663,12 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 	hydrated := cloneHydrated(p.hydrated)
 	p.mu.Unlock()
 	baselineByNodeID := indexBaselinePathsByNodeID(baseline)
+	directoryDeletePaths := make([]string, 0)
 
-	// Directory creates/moves/deletes may implicitly expose or hide an entire
-	// subtree whose descendants do not receive their own node mutation. Keep
-	// those relatively rare operations on the existing full reconciliation
-	// path while files use the incremental fast path.
+	// A directory move/rename can remap an entire subtree whose descendants do
+	// not receive their own node mutation, so keep that case on full
+	// reconciliation. Plain directory creates/deletes can be applied from the
+	// journal payload plus the baseline path index without walking the remote tree.
 	for _, change := range changes {
 		switch change.Operation {
 		case "upsert":
@@ -677,8 +678,22 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if change.Node.Type != "dir" {
 				continue
 			}
+			rel := filepath.ToSlash(strings.Trim(change.Path, "/"))
+			if rel == "" || rel == "." {
+				return true, nil
+			}
 			oldRel, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
-			if !exists || oldRel != change.Path {
+			if !exists {
+				// Brand-new directories start at revision 1. A missing baseline
+				// entry with a later revision can be a restore or a directory
+				// moved in from an excluded subtree, whose descendants may not
+				// have their own journal entries.
+				if change.Node.Revision != 1 {
+					return true, nil
+				}
+				continue
+			}
+			if oldRel != rel {
 				return true, nil
 			}
 			if _, err := os.Lstat(filepath.Join(p.root, filepath.FromSlash(oldRel))); err != nil {
@@ -693,12 +708,21 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			// A directory revision change without a path change is harmless
 			// metadata churn; update it incrementally.
 		case "delete":
-			_, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
+			oldRel, oldState, exists := findBaselinePathByNodeIDIndexed(baseline, baselineByNodeID, change.NodeID)
 			if exists && oldState.node.Type == "dir" {
-				return true, nil
+				directoryDeletePaths = append(directoryDeletePaths, oldRel)
 			}
+			continue
 		default:
 			return false, fmt.Errorf("Windows change journal returned unknown operation %q", change.Operation)
+		}
+	}
+
+	sortPathsByDepth(directoryDeletePaths, true)
+	deletedDirectoryPrefixes := make(winPathPrefixSet)
+	for _, rel := range directoryDeletePaths {
+		if !deletedDirectoryPrefixes.covers(rel) {
+			deletedDirectoryPrefixes.add(rel)
 		}
 	}
 
@@ -710,7 +734,19 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 			if !exists {
 				continue
 			}
+			if deletedDirectoryPrefixes.covers(oldRel) {
+				if _, isDeleteRoot := deletedDirectoryPrefixes[oldRel]; !isDeleteRoot {
+					continue
+				}
+			}
 			abs := filepath.Join(p.root, filepath.FromSlash(oldRel))
+			if base.node.Type == "dir" {
+				if err := os.RemoveAll(abs); err != nil {
+					return false, err
+				}
+				deleteBaselinePrefixIndexed(baseline, baselineByNodeID, oldRel)
+				continue
+			}
 			if base.node.Type == "file" {
 				if info, statErr := os.Lstat(abs); statErr == nil {
 					if t, ok := hydrated[base.node.ID]; !ok || time.Since(t) >= winHydrationGrace {
@@ -749,9 +785,32 @@ func (p *winProvider) applyRemoteChangePage(ctx context.Context, changes []clien
 				continue
 			}
 			if rn.Type == "dir" {
-				state := baseline[rel]
-				state.node = rn
-				baseline[rel] = state
+				if oldExists && oldRel != rel {
+					return true, nil
+				}
+				if !oldExists {
+					parentRel := slashDir(rel)
+					if _, ok := baseline[parentRel]; !ok {
+						return true, nil
+					}
+					abs := filepath.Join(p.root, filepath.FromSlash(rel))
+					if err := os.MkdirAll(abs, 0o755); err != nil {
+						return false, err
+					}
+					info, err := os.Stat(abs)
+					if err != nil {
+						return false, err
+					}
+					baseline[rel] = winState{
+						node:         rn,
+						localModTime: info.ModTime(),
+						localSize:    info.Size(),
+					}
+				} else {
+					state := baseline[rel]
+					state.node = rn
+					baseline[rel] = state
+				}
 				baselineByNodeID[rn.ID] = rel
 				continue
 			}

@@ -31,6 +31,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Linux FUSE read destination-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB sequential read at 128 KiB/FUSE callback: explicit payload buffers **8,192 -> 0**; reads now fill go-fuse's provided `dest` buffer directly. File backing, offsets, EOF and returned bytes are unchanged. |
 | FileExplorer Trash sparse ranges | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,201 trash roots: initial response/materialization **1,201 items -> first 200 items + authoritative total**; later viewport ranges are <=200 items and omit repeated count work. Legacy unpaged Trash API remains compatible. |
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
+| Windows directory journal fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Brand-new (revision-1) remote directory create and known-directory delete journal events no longer trigger `Client.Walk()`: **full-tree Walk fallback -> 0 full-walk requests**. Directory move/rename, restored/moved-in unknown directories, and an existing baseline directory missing locally retain full reconciliation. |
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
 | Windows full-reconcile remote-deletion pruning | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 flat baseline files absent remotely: remote-deletion cleanup **1,200 baseline-wide `deletePrefix` scans / up to 721,800 key inspections -> 1 baseline missing-set scan + 1,200 exact map deletes**. Missing directory subtrees collapse to one physical `RemoveAll` root. |
@@ -91,7 +92,7 @@ This table is the durable status index for the FileExplorer performance track. A
 - Web authenticated file, version, and archive downloads open the File System Access sink before network work when supported, then await one writable chunk at a time while retaining Transfer Center byte progress; unsupported browsers keep the legacy Blob fallback.
 - Current-file and historical-version download metadata are each resolved with one owner-scoped active-file JOIN. Current download no longer uses GORM `Preload("File")`, and version download no longer performs a separate owner-node lookup before loading the version row.
 - Windows CfAPI hydration keeps the existing 4 MiB HTTP range granularity but fills one caller-owned buffer through `DownloadRangeInto` for the lifetime of each fetch callback, rather than allocating one response slice per range. The legacy `DownloadRange` API remains unchanged for compatibility.
-- Windows remote change-journal pages build one `nodeID -> baseline path` index per page. File upsert/delete lookup is O(1) after that build; incremental file delete removes the exact baseline entry directly and file rename moves the exact entry directly. Directory create/move/delete continues to use the existing full-reconcile safety path.
+- Windows remote change-journal pages build one `nodeID -> baseline path` index per page. File upsert/delete lookup is O(1) after that build; incremental file delete removes the exact baseline entry directly and file rename moves the exact entry directly. Brand-new revision-1 directory create and known-directory delete are also incremental; directory move/rename, restored or moved-in unknown directories, and an existing baseline directory missing locally retain the full-reconcile safety path.
 - Resumable uploads reuse one bounded chunk buffer per pass instead of allocating a fresh 4-16 MiB payload slice for every chunk. Path uploads intentionally keep the pre-hash pass plus upload-time rehash so source mutation detection is unchanged; stream uploads reuse one chunk buffer from the first missing chunk onward.
 - Upload finalize keeps a reused source object open across fixed-block overwrite parts with the same source storage key. Interleaved newly uploaded staging chunks do not force that source handle to reopen; staging parts keep their existing per-object open/close behavior.
 - If an upload declares SHA256 and a matching ready CAS blob exists on an `ObjectStatProvider`, finalize still reads every uploaded part and recomputes SHA256/MD5 but hashes directly without writing a duplicate assembled temp object. Stores without metadata stat, missing/stale CAS metadata, or missing/wrong-size CAS objects retain the original assemble-and-promote path.
@@ -179,6 +180,47 @@ Regression commands:
 - `go test ./internal/mount -run '^TestPruneRemoteDeletedBaseline' -count=1`.
 
 Next action: continue ordinary sync/download/delete performance and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+### Windows remote-directory journal fast-path contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- Windows CfAPI remote change-journal polling with the journal already enabled;
+- deterministic directory-create fixture: one known root plus one new direct child directory;
+- deterministic directory-delete fixture: one known directory root with a nested directory and file beneath it;
+- the test HTTP server counts and rejects any `/nodes/root` or `/children` request, so a hidden fallback to `Client.Walk()` fails deterministically;
+- no wall-clock speedup is claimed.
+
+BEFORE:
+
+- any directory upsert whose node was not already present at the same baseline path returned `needFull=true`;
+- any delete of a baseline directory also returned `needFull=true`;
+- `reconcileRemote` therefore followed one ordinary journal page with `Client.Walk()`, loading the owner root and every paged remote directory needed for a complete namespace snapshot;
+- the extra work scaled with the whole remote namespace even when the mutation was only one plain directory create or delete.
+
+AFTER / current:
+
+- a brand-new revision-1 directory whose parent is already known is created/adopted locally with `MkdirAll`, statted once, and inserted into the baseline/index directly;
+- a remote directory delete resolves the old path from the page-local node-ID index, executes one `RemoveAll`, and prunes that baseline prefix with one local baseline scan; descendant delete events in the same page are suppressed even when they appear before the directory-root event;
+- both fixtures execute **0 full-walk requests** after the journal page;
+- directory move/rename still returns `needFull=true` because descendants may not receive their own path mutations;
+- a directory upsert absent from the baseline with `revision > 1` also keeps full reconciliation because it may be a restore or a subtree moved in from an excluded path;
+- an existing baseline directory that is missing locally still falls back to full reconciliation, preserving the existing local-delete/remote-change conflict semantics;
+- excluded-path behavior, file dirty checks, journal cursor handling, cache policy, baseline persistence, and full-reconcile fallback semantics are unchanged.
+
+Decision: **Accepted.** Brand-new directory create and known-directory delete have enough information in the journal payload plus baseline index to update the local tree without a namespace-wide remote snapshot.
+
+Regression budget: brand-new revision-1 directory create and known-directory delete journal pages must perform **0 `Client.Walk()` root/children requests**. Directory move/rename and unknown `revision>1` directory upserts must keep the existing full-reconcile fallback.
+
+Regression commands:
+
+- `go test ./internal/mount -run '^TestWindowsRemoteJournalDirectory(Create|Delete)AvoidsFullWalk$' -count=1`;
+- existing `TestWindowsRemoteJournalDirectoryMoveRequestsFullReconcile` remains the move/rename safety gate;
+- `TestWindowsRemoteJournalUnknownDirectoryUpsertKeepsFullReconcile` locks the restore/moved-in fallback.
+
+Next action: continue basic FileExplorer sync/delete/download performance audits and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
 
 ### Resumable upload chunk-buffer allocation contract
 
