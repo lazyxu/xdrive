@@ -239,6 +239,10 @@ export default function DesktopFileExplorer({
     actionGenerationRef.current += 1
     actionBusyRef.current = null
     setActionBusy('')
+    return () => {
+      actionGenerationRef.current += 1
+      actionBusyRef.current = null
+    }
   }, [navigationSessionStorageKey])
 
   const beginActionBusy = useCallback((key: string) => {

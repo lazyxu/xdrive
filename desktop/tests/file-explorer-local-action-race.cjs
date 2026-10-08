@@ -50,6 +50,56 @@ function extractArrowFunction(name, dependencies = {}) {
   return new Function(...names, transpiled + '\nreturn ' + name)(...values)
 }
 
+
+function extractActionLifecycleEffect(dependencies = {}) {
+  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  const source = fs.readFileSync(filename, 'utf8')
+  const sourceFile = ts.createSourceFile(
+    filename,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  )
+
+  let effect = null
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'useEffect' &&
+      node.arguments.length >= 2 &&
+      ts.isArrayLiteralExpression(node.arguments[1]) &&
+      node.arguments[1].elements.some((element) => (
+        ts.isIdentifier(element) &&
+        element.text === 'navigationSessionStorageKey'
+      ))
+    ) {
+      effect = node.arguments[0].getText(sourceFile)
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  assert.ok(effect, 'missing DesktopFileExplorer local action lifecycle effect')
+
+  const transpiled = ts.transpileModule(
+    'const lifecycleEffect = ' + effect + ';',
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+      fileName: filename,
+    },
+  ).outputText
+
+  const names = Object.keys(dependencies)
+  const values = names.map((key) => dependencies[key])
+  return new Function(...names, transpiled + '\nreturn lifecycleEffect')(...values)
+}
+
 async function flushAsync() {
   await Promise.resolve()
   await Promise.resolve()
@@ -202,4 +252,78 @@ test('Desktop FileExplorer stale download completion cannot clear a newer accoun
   assert.equal(actionBusyRef.current, null)
   assert.deepEqual(feedback, [{ tone: 'good', message: 'B.pdf 已保存。' }])
   assert.deepEqual(errors, [])
+})
+
+
+test('Desktop FileExplorer unmount invalidates pending local action completion', async () => {
+  const busy = []
+  const feedback = []
+  const errors = []
+  const actionBusyRef = { current: null }
+  const actionGenerationRef = { current: 1 }
+  const setActionBusy = (value) => busy.push(value)
+
+  const lifecycleEffect = extractActionLifecycleEffect({
+    actionBusyRef,
+    actionGenerationRef,
+    setActionBusy,
+  })
+  const cleanup = lifecycleEffect()
+
+  const beginActionBusy = extractArrowFunction('beginActionBusy', {
+    useCallback: (callback) => callback,
+    actionBusyRef,
+    actionGenerationRef,
+    setActionBusy,
+  })
+  const isActionBusyCurrent = extractArrowFunction('isActionBusyCurrent', {
+    useCallback: (callback) => callback,
+    actionBusyRef,
+    actionGenerationRef,
+  })
+  const finishActionBusy = extractArrowFunction('finishActionBusy', {
+    useCallback: (callback) => callback,
+    actionBusyRef,
+    isActionBusyCurrent,
+    setActionBusy,
+  })
+
+  let release
+  const window = {
+    xdriveDesktop: {
+      agent: {
+        cloudDownload: () => new Promise((resolve) => {
+          release = () => resolve({
+            ok: true,
+            data: { saved: true },
+          })
+        }),
+      },
+    },
+  }
+  const downloadNode = extractArrowFunction('downloadNode', {
+    beginActionBusy,
+    finishActionBusy,
+    isActionBusyCurrent,
+    window,
+    onError: (message) => errors.push(message),
+    onFeedback: (tone, message) => feedback.push({ tone, message }),
+  })
+
+  const pending = downloadNode({ id: 9, name: 'leaving.pdf' })
+  await flushAsync()
+  assert.equal(typeof release, 'function')
+
+  if (typeof cleanup === 'function') cleanup()
+
+  release()
+  await pending
+
+  assert.deepEqual(
+    feedback,
+    [],
+    'a local action that completes after FileExplorer unmount must not publish stale feedback',
+  )
+  assert.deepEqual(errors, [])
+  assert.equal(actionBusyRef.current, null)
 })
