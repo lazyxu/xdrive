@@ -90,6 +90,7 @@ import {
   xDriveAbortWebDownloadSink,
   xDriveCreateWebDownloadProgressReporter,
   xDriveOpenWebDownloadSink,
+  xDriveStartBrowserDownload,
   xDriveWriteWebDownloadToSink,
 } from './downloadSink'
 import type { XDriveWebActiveDownloadSink } from './downloadSink'
@@ -186,6 +187,11 @@ export interface UploadSessionState {
   expires_at: string
   received_chunks: UploadChunkState[]
   result?: Node
+}
+
+type AuthenticatedDownloadTicket = {
+  url: string
+  expires_at: string
 }
 
 type ArchiveDownloadPrepareFile = {
@@ -2133,9 +2139,21 @@ export class XDriveApi {
     return `${API_BASE}/api/v1/files/${nodeID}/content`
   }
 
+  private nativeDownloadURL(path: string) {
+    return `${API_BASE}${path}`
+  }
+
   async downloadVersion(node: Node, version: FileVersion) {
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
+    if (downloadSink.kind === 'blob') {
+      const ticket = await this.request<AuthenticatedDownloadTicket>(
+        `/api/v1/files/${node.id}/versions/${version.id}/download-ticket`,
+        { method: 'POST' },
+      )
+      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
+      return true
+    }
     await this.downloadAuthenticated(
       `/api/v1/files/${node.id}/versions/${version.id}/content`,
       node.name,
@@ -2149,6 +2167,14 @@ export class XDriveApi {
   async download(node: Node) {
     const downloadSink = await xDriveOpenWebDownloadSink(node.name)
     if (downloadSink.kind === 'cancelled') return false
+    if (downloadSink.kind === 'blob') {
+      const ticket = await this.request<AuthenticatedDownloadTicket>(
+        `/api/v1/files/${node.id}/download-ticket`,
+        { method: 'POST' },
+      )
+      xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)
+      return true
+    }
     await this.downloadAuthenticated(
       `/api/v1/files/${node.id}/content`,
       node.name,

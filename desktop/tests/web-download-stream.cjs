@@ -158,7 +158,10 @@ test('Web download wiring opens the save sink before archive work and skips succ
   assert.equal(sinkSource.includes('BlobPart[]'), false, 'direct sink helper must not retain an aggregate chunk array')
   assert.ok(api.includes('xDriveWriteWebDownloadToSink('), 'authenticated download must use the direct sink helper')
   assert.ok(api.includes("if (downloadSink.kind === 'file-system')"), 'authenticated download must branch to direct-to-disk writing')
-  assert.ok(api.includes('const chunks: BlobPart[] = []'), 'legacy Blob fallback must remain available')
+  assert.ok(api.includes('const chunks: BlobPart[] = []'), 'archive Blob fallback must remain available until native archive handoff lands')
+  assert.ok(api.includes("if (downloadSink.kind === 'blob')"), 'single-file and version downloads must detect the non-File-System-Access path')
+  assert.ok(api.includes('/download-ticket'), 'single-file and version downloads must request short-lived native download tickets')
+  assert.ok(api.includes('xDriveStartBrowserDownload(this.nativeDownloadURL(ticket.url), node.name)'), 'ticket downloads must hand off to the browser instead of materializing a Blob')
 
   const archiveStart = api.indexOf('async downloadArchive(ids: number[], filename: string)')
   const archiveGroup = api.indexOf('const groupID = this.startTransferGroup', archiveStart)
