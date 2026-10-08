@@ -124,3 +124,18 @@ test('shared FileExplorer keeps internal drag/drop and exposes a separate native
     assert.ok(desktop.includes(token), 'Desktop native drag adapter missing: ' + token)
   }
 })
+
+
+test('native drag-out handle is hover/focus only and never reserves Details name-column width', () => {
+  const shared = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
+  for (const token of [
+    "placement: 'details' | 'grid'",
+    'opacity: 0',
+    "pointerEvents: 'none'",
+    "'&:hover [data-xdrive-native-drag-out], &:focus-visible [data-xdrive-native-drag-out], &:focus-within [data-xdrive-native-drag-out]'",
+    "nativeDragOutHandle(item, 'details')",
+    "nativeDragOutHandle(item, 'grid')",
+  ]) {
+    assert.ok(shared.includes(token), 'hover-only native drag-out contract missing: ' + token)
+  }
+})

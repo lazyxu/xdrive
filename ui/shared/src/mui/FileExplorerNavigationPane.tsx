@@ -64,6 +64,34 @@ type XDriveFileExplorerNavigationTreeNode = {
   crumbs: XDriveFileExplorerNavigationTreeCrumb[]
 }
 
+type XDriveFileExplorerNavigationSection = 'quickAccess' | 'favorites' | 'recent' | 'tree'
+type XDriveFileExplorerNavigationSectionState = Record<XDriveFileExplorerNavigationSection, boolean>
+
+const defaultNavigationSectionState: XDriveFileExplorerNavigationSectionState = {
+  quickAccess: true,
+  favorites: true,
+  recent: true,
+  tree: true,
+}
+const defaultNavigationSectionPreferencesKey = 'xdrive.files.navigation_sections'
+
+function loadNavigationSectionState(storageKey: string) {
+  if (typeof window === 'undefined') return { ...defaultNavigationSectionState }
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return { ...defaultNavigationSectionState }
+    const value = JSON.parse(raw) as Partial<XDriveFileExplorerNavigationSectionState>
+    return {
+      quickAccess: typeof value.quickAccess === 'boolean' ? value.quickAccess : true,
+      favorites: typeof value.favorites === 'boolean' ? value.favorites : true,
+      recent: typeof value.recent === 'boolean' ? value.recent : true,
+      tree: typeof value.tree === 'boolean' ? value.tree : true,
+    }
+  } catch {
+    return { ...defaultNavigationSectionState }
+  }
+}
+
 export function XDriveFileExplorerNavigationPane({
   currentCrumbs,
   trashActive = false,
@@ -96,6 +124,7 @@ export function XDriveFileExplorerNavigationPane({
   getItemAvailability,
   onAvailabilityItemsChange,
   onError,
+  sectionPreferencesKey = defaultNavigationSectionPreferencesKey,
 }: {
   currentCrumbs: readonly XDriveFileExplorerNavigationTreeCrumb[]
   trashActive?: boolean
@@ -141,6 +170,7 @@ export function XDriveFileExplorerNavigationPane({
   getItemAvailability?: (item: XDriveFileExplorerItem) => XDriveFileExplorerAvailability | undefined
   onAvailabilityItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
   onError?: (error: unknown) => void
+  sectionPreferencesKey?: string
 }) {
   const [pageByParent, setPageByParent] = useState<Record<string, {
     children: XDriveFileExplorerNavigationTreeNode[]
@@ -160,6 +190,25 @@ export function XDriveFileExplorerNavigationPane({
     loadDirectoryPageGenerationRef.current += 1
   }
   const [dropTargetID, setDropTargetID] = useState<number | null>(null)
+  const [expandedSections, setExpandedSections] = useState<XDriveFileExplorerNavigationSectionState>(
+    () => loadNavigationSectionState(sectionPreferencesKey),
+  )
+
+  useEffect(() => {
+    setExpandedSections(loadNavigationSectionState(sectionPreferencesKey))
+  }, [sectionPreferencesKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(sectionPreferencesKey, JSON.stringify(expandedSections))
+  }, [expandedSections, sectionPreferencesKey])
+
+  const toggleSection = (section: XDriveFileExplorerNavigationSection) => {
+    setExpandedSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }))
+  }
 
   const rootNode = useMemo(() => {
     const root = currentCrumbs[0]
@@ -510,7 +559,8 @@ export function XDriveFileExplorerNavigationPane({
       data-xdrive-file-explorer-navigation-tree
       aria-label="文件夹导航"
       sx={{
-        width: 232,
+        width: '100%',
+        minWidth: 0,
         height: '100%',
         minHeight: 0,
         overflow: 'auto',
@@ -538,11 +588,34 @@ export function XDriveFileExplorerNavigationPane({
       ) : null}
 
       {quickAccessEnabled ? (
-        <Box component="nav" aria-label="快速访问" sx={{ px: 0.75, pb: 0.75 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30, pl: 0.75 }}>
-            <Typography variant="caption" fontWeight={700} color="text.secondary">
-              快速访问
-            </Typography>
+        <Box
+          component="nav"
+          aria-label="快速访问"
+          sx={{
+            px: 0.75,
+            pb: 0.75,
+            '& > :not(:first-child)': {
+              display: expandedSections.quickAccess ? undefined : 'none',
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30 }}>
+            <Stack direction="row" alignItems="center" spacing={0.25}>
+              <IconButton
+                size="small"
+                aria-label={expandedSections.quickAccess ? '折叠快速访问' : '展开快速访问'}
+                aria-expanded={expandedSections.quickAccess}
+                onClick={() => toggleSection('quickAccess')}
+                sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+              >
+                {expandedSections.quickAccess
+                  ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                  : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+              </IconButton>
+              <Typography variant="caption" fontWeight={700} color="text.secondary">
+                快速访问
+              </Typography>
+            </Stack>
             {canPinCurrent ? (
               <Tooltip title={currentQuickAccessPinned ? '取消固定当前文件夹' : '固定当前文件夹'}>
                 <span>
@@ -619,8 +692,29 @@ export function XDriveFileExplorerNavigationPane({
       {quickAccessEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
 
       {favoritesEnabled ? (
-        <Box component="nav" aria-label="收藏" sx={{ px: 0.75, pb: 0.75 }}>
-          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minHeight: 30, pl: 0.75 }}>
+        <Box
+          component="nav"
+          aria-label="收藏"
+          sx={{
+            px: 0.75,
+            pb: 0.75,
+            '& > :not(:first-child)': {
+              display: expandedSections.favorites ? undefined : 'none',
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+            <IconButton
+              size="small"
+              aria-label={expandedSections.favorites ? '折叠收藏' : '展开收藏'}
+              aria-expanded={expandedSections.favorites}
+              onClick={() => toggleSection('favorites')}
+              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+            >
+              {expandedSections.favorites
+                ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+            </IconButton>
             <StarRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
             <Typography variant="caption" fontWeight={700} color="text.secondary">
               收藏
@@ -686,9 +780,30 @@ export function XDriveFileExplorerNavigationPane({
       {favoritesEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
 
       {recentEnabled ? (
-        <Box component="nav" aria-label="最近使用" sx={{ px: 0.75, pb: 0.75 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30, pl: 0.75 }}>
-            <Stack direction="row" alignItems="center" spacing={0.5}>
+        <Box
+          component="nav"
+          aria-label="最近使用"
+          sx={{
+            px: 0.75,
+            pb: 0.75,
+            '& > :not(:first-child)': {
+              display: expandedSections.recent ? undefined : 'none',
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30 }}>
+            <Stack direction="row" alignItems="center" spacing={0.25}>
+              <IconButton
+                size="small"
+                aria-label={expandedSections.recent ? '折叠最近使用' : '展开最近使用'}
+                aria-expanded={expandedSections.recent}
+                onClick={() => toggleSection('recent')}
+                sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+              >
+                {expandedSections.recent
+                  ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                  : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+              </IconButton>
               <HistoryRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
               <Typography variant="caption" fontWeight={700} color="text.secondary">
                 最近使用
@@ -750,8 +865,30 @@ export function XDriveFileExplorerNavigationPane({
 
       {recentEnabled ? <Divider sx={{ mb: 0.75 }} /> : null}
 
-      <Box role="tree" aria-label="文件夹树">
-        {rootNode ? renderNode(rootNode, 0) : null}
+      <Box component="nav" aria-label="文件夹" sx={{ px: 0.75, pb: 0.75 }}>
+        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+          <IconButton
+            size="small"
+            aria-label={expandedSections.tree ? '折叠文件夹树' : '展开文件夹树'}
+            aria-expanded={expandedSections.tree}
+            onClick={() => toggleSection('tree')}
+            sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+          >
+            {expandedSections.tree
+              ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+              : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+          </IconButton>
+          <Typography variant="caption" fontWeight={700} color="text.secondary">
+            文件夹
+          </Typography>
+        </Stack>
+        <Box
+          role="tree"
+          aria-label="文件夹树"
+          sx={{ display: expandedSections.tree ? 'block' : 'none' }}
+        >
+          {rootNode ? renderNode(rootNode, 0) : null}
+        </Box>
       </Box>
     </Box>
   )

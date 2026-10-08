@@ -58,7 +58,11 @@ test('Recent preserves thumbnail identity and supported image/video media is eli
 
 test('FileExplorer file thumbnails use square frames without rounded clipping', () => {
   assert.ok(
-    explorer.includes("width: 24,\n                            height: 24,\n                            flex: '0 0 24px',\n                            overflow: 'hidden',\n                            borderRadius: 0,"),
+    explorer.includes('width: 24,') &&
+      explorer.includes('height: 24,') &&
+      explorer.includes("flex: '0 0 24px'") &&
+      explorer.includes("overflow: 'hidden'") &&
+      explorer.includes('borderRadius: 0,'),
     'Details thumbnail frame must remain square',
   )
   assert.ok(

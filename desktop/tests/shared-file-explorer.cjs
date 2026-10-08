@@ -44,8 +44,8 @@ test('shared FileExplorer provides command bar, details/grid views, and status b
 })
 
 test('shared FileExplorer uses configurable system-style density without breaking virtualization math', () => {
-  assert.ok(explorer.includes('const detailsNormalRowHeight = 38'), 'normal details density token is missing')
-  assert.ok(explorer.includes('const detailsCompactRowHeight = 30'), 'compact details density token is missing')
+  assert.ok(explorer.includes('const detailsNormalRowHeight = 36'), 'normal details density token is missing')
+  assert.ok(explorer.includes('const detailsCompactRowHeight = 28'), 'compact details density token is missing')
   assert.ok(explorer.includes("const detailsRowHeight = viewPreferences.detailsDensity === 'compact'"), 'details virtualization row height must follow the selected density')
   assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should remain compact')
   assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
@@ -253,7 +253,8 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
   ]) {
     assert.ok(explorer.includes(token), `missing preview/properties feature: ${token}`)
   }
-  assert.ok(explorer.includes("width: 'clamp(248px, 27vw, 328px)'"), 'inspector should use a bounded system-style side pane')
+  assert.ok(explorer.includes('width: viewPreferences.inspectorWidth'), 'inspector should use the persisted resizable pane width')
+  assert.ok(explorer.includes('data-xdrive-file-explorer-inspector-splitter'), 'inspector should expose a resize splitter')
   for (const token of [
     'export function XDriveFilePropertiesDialog({',
     'aria-label="文件属性"',
@@ -351,5 +352,16 @@ test('folder downloads stay capability-aware across Web and Desktop', () => {
     desktopExplorer.includes('folderTreeDownloadSupported &&') &&
       desktopExplorer.includes('cloudDownloadFolder('),
     'Desktop must prefer true hierarchical folder download when the Agent capability is available',
+  )
+})
+
+
+test('standard Details rows stay single-line at native file-manager density', () => {
+  assert.ok(explorer.includes('const detailsNormalRowHeight = 36'))
+  assert.ok(explorer.includes('const detailsCompactRowHeight = 28'))
+  assert.equal(
+    explorer.includes("viewPreferences.detailsDensity === 'normal' && item.secondaryLabel"),
+    false,
+    'standard Details rows must not render a second secondary-label line',
   )
 })

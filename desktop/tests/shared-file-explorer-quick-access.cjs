@@ -92,7 +92,9 @@ test('shared navigation pane renders one Quick Access section above the lazy fol
     '取消固定当前文件夹',
     'onNavigateQuickAccess',
     'onUnpinQuickAccess',
-    '<Box role="tree" aria-label="文件夹树">',
+    'role="tree"',
+    'aria-label="文件夹树"',
+    'expandedSections.tree',
   ]) assert.ok(navigation.includes(token), 'shared navigation Quick Access UI missing: ' + token)
 })
 
