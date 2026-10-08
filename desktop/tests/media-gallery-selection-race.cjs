@@ -69,6 +69,7 @@ test('Gallery selection actions are synchronously single-flight within one rende
   const pending = deferred()
   const selectedMedia = [{ node: { id: 1, name: 'A.jpg' } }]
   const busyWrites = []
+  const selectionActionGenerationRef = { current: 0 }
   let actionCalls = 0
   let clearCalls = 0
 
@@ -79,6 +80,7 @@ test('Gallery selection actions are synchronously single-flight within one rende
       useCallback: (callback) => callback,
       selectedMedia,
       selectionBusyRef: { current: false },
+      selectionActionGenerationRef,
       setSelectionBusy: (value) => busyWrites.push(value),
       clearMediaSelection: () => { clearCalls += 1 },
     },
