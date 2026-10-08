@@ -43,6 +43,7 @@ import {
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerSearchFiltersActive,
+  xDriveFileExplorerSearchFiltersSignature,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -355,7 +356,12 @@ export default function WebFileExplorer({
   const [renameSavedSearch, setRenameSavedSearch] = useState<(typeof organization.savedSearches)[number] | null>(null)
   const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
   const [activeTagID, setActiveTagID] = useState<number | null>(null)
+  const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
+  organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
+  const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
+  organizationSearchScopeKeyRef.current = organizationSearchScopeKey
   const canSaveSmartFolder = Boolean(
     searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
   )
@@ -917,12 +923,17 @@ export default function WebFileExplorer({
             onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch)}
             onReplaceSavedSearch={(savedSearch) => {
               if (!canSaveSmartFolder) return
+              const lifecycleKey = organizationLifecycleKeyRef.current
+              const searchScopeKey = organizationSearchScopeKeyRef.current
               void organization.updateSavedSearch(savedSearch.id, {
                 name: savedSearch.name,
                 query: searchState.query,
                 filters: persistedSearchFilters,
               }).then(() => {
-                setActiveSavedSearchID(savedSearch.id)
+                if (organizationLifecycleKeyRef.current !== lifecycleKey) return
+                if (organizationSearchScopeKeyRef.current === searchScopeKey) {
+                  setActiveSavedSearchID(savedSearch.id)
+                }
                 onFeedback('good', '智能文件夹已更新。')
               })
             }}
@@ -991,7 +1002,13 @@ export default function WebFileExplorer({
         busy={Boolean(organization.busyKey)}
         queryNodeTags={organization.queryNodeTags}
         onSetTag={async (tagID, nodeIDs, assigned) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           await organization.setTagNodes(tagID, nodeIDs, assigned)
+          if (
+            organizationLifecycleKeyRef.current !== lifecycleKey ||
+            organizationSearchScopeKeyRef.current !== searchScopeKey
+          ) return
           if (searchFilters.tagID === tagID) {
             await applySearch(searchState.query, searchFilters)
           }
@@ -999,7 +1016,13 @@ export default function WebFileExplorer({
         onCreateTag={organization.createTag}
         onUpdateTag={organization.updateTag}
         onDeleteTag={async (tagID) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           await organization.deleteTag(tagID)
+          if (
+            organizationLifecycleKeyRef.current !== lifecycleKey ||
+            organizationSearchScopeKeyRef.current !== searchScopeKey
+          ) return
           if (searchFilters.tagID === tagID) {
             setActiveTagID(null)
             clearSearch()
@@ -1013,12 +1036,17 @@ export default function WebFileExplorer({
         onClose={() => setSaveSearchOpen(false)}
         onError={onError}
         onSubmit={async (name) => {
+          const lifecycleKey = organizationLifecycleKeyRef.current
+          const searchScopeKey = organizationSearchScopeKeyRef.current
           const created = await organization.createSavedSearch({
             name,
             query: searchState.query,
             filters: persistedSearchFilters,
           })
-          setActiveSavedSearchID(created.id)
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
+          if (organizationSearchScopeKeyRef.current === searchScopeKey) {
+            setActiveSavedSearchID(created.id)
+          }
           if (searchFilters.availability) {
             onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
           } else {
@@ -1034,11 +1062,13 @@ export default function WebFileExplorer({
         onError={onError}
         onSubmit={async (name) => {
           if (!renameSavedSearch) return
+          const lifecycleKey = organizationLifecycleKeyRef.current
           await organization.updateSavedSearch(renameSavedSearch.id, {
             name,
             query: renameSavedSearch.query,
             filters: renameSavedSearch.filters,
           })
+          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
           onFeedback('good', '智能文件夹已重命名。')
         }}
       />
