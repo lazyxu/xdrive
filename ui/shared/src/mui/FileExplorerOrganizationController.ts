@@ -18,6 +18,8 @@ export function useXDriveFileExplorerOrganization({
 }) {
   const refreshGenerationRef = useRef(0)
   const lifecycleGenerationRef = useRef(0)
+  const reorderGenerationRef = useRef(0)
+  const reorderTailRef = useRef<Promise<void>>(Promise.resolve())
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
   const [tags, setTags] = useState<XDriveFileTag[]>([])
@@ -52,12 +54,16 @@ export function useXDriveFileExplorerOrganization({
   useEffect(() => {
     lifecycleGenerationRef.current += 1
     refreshGenerationRef.current += 1
+    reorderGenerationRef.current += 1
+    reorderTailRef.current = Promise.resolve()
     setTags([])
     setSavedSearches([])
     setBusyKey('')
     return () => {
       lifecycleGenerationRef.current += 1
       refreshGenerationRef.current += 1
+      reorderGenerationRef.current += 1
+      reorderTailRef.current = Promise.resolve()
     }
   }, [lifecycleKey])
 
@@ -140,21 +146,56 @@ export function useXDriveFileExplorerOrganization({
     () => setSavedSearches((current) => current.filter((item) => item.id !== id)),
   ), [adapter, run])
 
-  const reorderSavedSearches = useCallback(async (ids: number[]) => {
+  const reorderSavedSearches = useCallback((ids: number[]) => {
     const lifecycleGeneration = lifecycleGenerationRef.current
-    const previous = savedSearches
+    const reorderGeneration = reorderGenerationRef.current + 1
+    reorderGenerationRef.current = reorderGeneration
     const index = new Map(ids.map((id, position) => [id, position]))
     setSavedSearches((current) => [...current].sort(
       (a, b) => (index.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (index.get(b.id) ?? Number.MAX_SAFE_INTEGER),
     ).map((item, position) => ({ ...item, position })))
-    try {
-      await adapter.reorderSavedSearches(ids)
-    } catch (error) {
-      if (lifecycleGenerationRef.current !== lifecycleGeneration) return
-      setSavedSearches(previous)
-      onErrorRef.current(error)
-    }
-  }, [adapter, savedSearches])
+
+    const operation = reorderTailRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (lifecycleGenerationRef.current !== lifecycleGeneration) return
+        try {
+          await adapter.reorderSavedSearches(ids)
+        } catch (error) {
+          if (
+            lifecycleGenerationRef.current !== lifecycleGeneration ||
+            reorderGenerationRef.current !== reorderGeneration
+          ) return
+          try {
+            const restored = await adapter.listSavedSearches()
+            if (
+              lifecycleGenerationRef.current !== lifecycleGeneration ||
+              reorderGenerationRef.current !== reorderGeneration
+            ) return
+            setSavedSearches([...restored].sort(
+              (a, b) => a.position - b.position || a.id - b.id,
+            ))
+          } catch (refreshError) {
+            if (
+              lifecycleGenerationRef.current === lifecycleGeneration &&
+              reorderGenerationRef.current === reorderGeneration
+            ) {
+              onErrorRef.current(refreshError)
+            }
+            return
+          }
+          if (
+            lifecycleGenerationRef.current === lifecycleGeneration &&
+            reorderGenerationRef.current === reorderGeneration
+          ) {
+            onErrorRef.current(error)
+          }
+        }
+      })
+
+    reorderTailRef.current = operation
+    return operation
+  }, [adapter])
 
   const tagOptions = useMemo(
     () => tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
