@@ -9,6 +9,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   formatXDriveTransferDuration,
@@ -164,11 +165,13 @@ function BackgroundTaskItem({
   task,
   controlKey,
   focused = false,
+  ownerLabel,
   onControl,
 }: {
   task: XDriveBackgroundTask
   controlKey: string
   focused?: boolean
+  ownerLabel?: string
   onControl?: (
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
@@ -201,6 +204,14 @@ function BackgroundTaskItem({
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Typography variant="subtitle2" fontWeight={700}>{title}</Typography>
+              {ownerLabel ? (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`用户：${ownerLabel}`}
+                  data-xdrive-background-task-owner
+                />
+              ) : null}
               <XDriveStatusBadge
                 tone={taskTone(task.state)}
                 label={xDriveBackgroundTaskStateLabel(task.state)}
@@ -337,12 +348,41 @@ export function XDriveBackgroundTaskTable({
     action: XDriveBackgroundTaskControlAction,
   ) => void
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
+
   if (loading && tasks.length === 0) {
     return <XDriveStatePanel variant="plain" loading message="正在加载全局任务…" />
   }
   if (tasks.length === 0) {
     return <XDriveStatePanel variant="plain" message="暂无全局任务" />
   }
+
+  if (compactViewport) {
+    return (
+      <Stack
+        spacing={1.25}
+        data-xdrive-background-task-mobile-list
+        aria-label="全局后台任务"
+      >
+        {tasks.map((task) => (
+          <BackgroundTaskItem
+            key={task.id}
+            task={task}
+            controlKey={controlKey}
+            focused={task.id === focusedTaskID}
+            ownerLabel={
+              task.owner_username ||
+              (task.scope === 'system'
+                ? '系统'
+                : task.owner_id ? `#${task.owner_id}` : '—')
+            }
+            onControl={onControl}
+          />
+        ))}
+      </Stack>
+    )
+  }
+
   return (
     <XDriveTableSurface>
       <Table size="small" aria-label="全局后台任务">
