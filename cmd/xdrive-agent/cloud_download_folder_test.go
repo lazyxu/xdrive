@@ -10,6 +10,37 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
+func TestAgentCloudFolderDownloadByteProgressIsIncremental(t *testing.T) {
+	progress := newAgentCloudFolderDownloadByteProgress(300)
+	currentDone := int64(0)
+	currentTotal := int64(100)
+
+	progress.update(&currentDone, &currentTotal, 20, 100)
+	if progress.done != 20 || progress.total != 300 {
+		t.Fatalf("first update done/total=%d/%d want 20/300", progress.done, progress.total)
+	}
+
+	progress.update(&currentDone, &currentTotal, 60, 120)
+	if progress.done != 60 || progress.total != 320 || currentDone != 60 || currentTotal != 120 {
+		t.Fatalf(
+			"corrected update done/total/current=%d/%d/%d/%d want 60/320/60/120",
+			progress.done, progress.total, currentDone, currentTotal,
+		)
+	}
+
+	progress.complete(&currentDone, &currentTotal)
+	if progress.done != 120 || progress.total != 320 || currentDone != 120 {
+		t.Fatalf("complete done/total/current=%d/%d/%d want 120/320/120", progress.done, progress.total, currentDone)
+	}
+
+	failedDone := int64(0)
+	failedTotal := int64(200)
+	progress.update(&failedDone, &failedTotal, 50, 200)
+	if progress.done != 170 || progress.total != 320 {
+		t.Fatalf("failed partial progress done/total=%d/%d want 170/320", progress.done, progress.total)
+	}
+}
+
 func TestScanAgentCloudDownloadFolderBuildsLeafManifest(t *testing.T) {
 	root := client.Node{ID: 1, Name: "Projects", Type: meta.NodeTypeDir}
 	tree := map[uint64][]client.Node{
