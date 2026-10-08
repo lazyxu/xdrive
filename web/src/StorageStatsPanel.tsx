@@ -17,6 +17,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   XDriveActionButton,
@@ -135,6 +136,7 @@ export default function StorageStatsPanel({
   onOpenTaskCenter?: () => void
   onRunStorageMaintenance?: (kind: StorageMaintenanceKind) => Promise<void>
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const [stats, setStats] = useState<StorageStats | null>(null)
   const [health, setHealth] = useState<StorageHealth | null>(null)
@@ -760,34 +762,65 @@ export default function StorageStatsPanel({
                     <Typography variant="body2" color="text.secondary">
                       每 {history.sampling_interval_hours} 小时记录一次，后端保留 {history.retention_days} 天；当前查看近 {historyDays} 天。下表显示最近 12 个快照。
                     </Typography>
-                    <XDriveTableSurface>
-                      <Table size="small" aria-label="存储历史趋势" sx={{ minWidth: 920 }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>时间</TableCell>
-                            <TableCell align="right">CAS Blob</TableCell>
-                            <TableCell align="right">物理容量</TableCell>
-                            <TableCell align="right">逻辑容量</TableCell>
-                            <TableCell align="right">去重倍率</TableCell>
-                            <TableCell align="right">&lt;64 KiB 数量</TableCell>
-                            <TableCell align="right">≥16 MiB 字节</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {history.samples.slice(-12).reverse().map((point) => (
-                            <TableRow key={point.slot_at} hover>
-                              <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
-                              <TableCell align="right">{point.cas_blob_count.toLocaleString()}</TableCell>
-                              <TableCell align="right">{formatBytes(point.cas_physical_bytes)}</TableCell>
-                              <TableCell align="right">{formatBytes(point.cas_logical_referenced_bytes)}</TableCell>
-                              <TableCell align="right">{point.cas_dedup_ratio.toFixed(2)}×</TableCell>
-                              <TableCell align="right">{(point.small_lt64_kib_count_share * 100).toFixed(1)}%</TableCell>
-                              <TableCell align="right">{(point.large_ge16_mib_byte_share * 100).toFixed(1)}%</TableCell>
+                    {compactViewport ? (
+                      <Stack spacing={1} data-xdrive-storage-history-mobile-list aria-label="存储历史趋势">
+                        {history.samples.slice(-12).reverse().map((point) => (
+                          <Box
+                            key={point.slot_at}
+                            sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1.25 }}
+                          >
+                            <Stack spacing={1}>
+                              <Typography variant="body2" fontWeight={700}>
+                                {new Date(point.slot_at).toLocaleString()}
+                              </Typography>
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                  gap: 1,
+                                }}
+                              >
+                                <Box><Typography variant="caption" color="text.secondary">CAS Blob</Typography><Typography variant="body2">{point.cas_blob_count.toLocaleString()}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">去重倍率</Typography><Typography variant="body2">{point.cas_dedup_ratio.toFixed(2)}×</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">物理容量</Typography><Typography variant="body2">{formatBytes(point.cas_physical_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">逻辑容量</Typography><Typography variant="body2">{formatBytes(point.cas_logical_referenced_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">&lt;64 KiB 数量</Typography><Typography variant="body2">{(point.small_lt64_kib_count_share * 100).toFixed(1)}%</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">≥16 MiB 字节</Typography><Typography variant="body2">{(point.large_ge16_mib_byte_share * 100).toFixed(1)}%</Typography></Box>
+                              </Box>
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <XDriveTableSurface>
+                        <Table size="small" aria-label="存储历史趋势" sx={{ minWidth: 920 }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>时间</TableCell>
+                              <TableCell align="right">CAS Blob</TableCell>
+                              <TableCell align="right">物理容量</TableCell>
+                              <TableCell align="right">逻辑容量</TableCell>
+                              <TableCell align="right">去重倍率</TableCell>
+                              <TableCell align="right">&lt;64 KiB 数量</TableCell>
+                              <TableCell align="right">≥16 MiB 字节</TableCell>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </XDriveTableSurface>
+                          </TableHead>
+                          <TableBody>
+                            {history.samples.slice(-12).reverse().map((point) => (
+                              <TableRow key={point.slot_at} hover>
+                                <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
+                                <TableCell align="right">{point.cas_blob_count.toLocaleString()}</TableCell>
+                                <TableCell align="right">{formatBytes(point.cas_physical_bytes)}</TableCell>
+                                <TableCell align="right">{formatBytes(point.cas_logical_referenced_bytes)}</TableCell>
+                                <TableCell align="right">{point.cas_dedup_ratio.toFixed(2)}×</TableCell>
+                                <TableCell align="right">{(point.small_lt64_kib_count_share * 100).toFixed(1)}%</TableCell>
+                                <TableCell align="right">{(point.large_ge16_mib_byte_share * 100).toFixed(1)}%</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </XDriveTableSurface>
+                    )}
                   </Stack>
                   <Stack spacing={1}>
                     <XDriveSectionHeader
@@ -798,48 +831,74 @@ export default function StorageStatsPanel({
                     <Typography variant="body2" color="text.secondary">
                       旧样本没有完整物理快照时，缓存、staging 和未分类项显示为 —；未引用 Blob 与 Legacy 仍读取历史样本中的独立统计列。
                     </Typography>
-                    <XDriveTableSurface>
-                      <Table size="small" aria-label="存储异常与缓存趋势" sx={{ minWidth: 1540 }}>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>时间</TableCell>
-                            <TableCell align="right">未引用 Blob</TableCell>
-                            <TableCell align="right">Legacy</TableCell>
-                            <TableCell align="right">Staging orphan / 可回收</TableCell>
-                            <TableCell align="right">图片缩略图</TableCell>
-                            <TableCell align="right">视频 Poster</TableCell>
-                            <TableCell align="right">分析预览</TableCell>
-                            <TableCell align="right">其他媒体 / Preview / 转码</TableCell>
-                            <TableCell align="right">存储临时文件</TableCell>
-                            <TableCell align="right">未分类</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {history.samples.slice(-12).reverse().map((point) => (
-                            <TableRow key={point.slot_at + ':anomaly'} hover>
-                              <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
-                              <TableCell align="right">
-                                {formatBytes(point.unreferenced_blob_bytes)} · {point.unreferenced_blob_count.toLocaleString()} 个
-                              </TableCell>
-                              <TableCell align="right">
-                                {formatBytes(point.legacy_physical_bytes)} · {point.legacy_blob_count.toLocaleString()} 个
-                              </TableCell>
-                              <TableCell align="right">
-                                {point.anomaly_snapshot_available
-                                  ? `${formatBytes(point.staging_orphan_bytes)} / ${formatBytes(point.staging_reclaimable_bytes)}`
-                                  : '—'}
-                              </TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.media_thumbnail_bytes)}</TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.video_poster_bytes)}</TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.analysis_preview_bytes)}</TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, storageHistoryOtherCacheBytes(point))}</TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.storage_temp_bytes)}</TableCell>
-                              <TableCell align="right">{storageHistorySnapshotBytes(point, point.unclassified_bytes)}</TableCell>
+                    {compactViewport ? (
+                      <Stack spacing={1} data-xdrive-storage-anomaly-history-mobile-list aria-label="存储异常与缓存趋势">
+                        {history.samples.slice(-12).reverse().map((point) => (
+                          <Box
+                            key={point.slot_at + ':anomaly'}
+                            sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 1.25 }}
+                          >
+                            <Stack spacing={1}>
+                              <Typography variant="body2" fontWeight={700}>
+                                {new Date(point.slot_at).toLocaleString()}
+                              </Typography>
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                  gap: 1,
+                                }}
+                              >
+                                <Box><Typography variant="caption" color="text.secondary">未引用 Blob</Typography><Typography variant="body2">{formatBytes(point.unreferenced_blob_bytes)} · {point.unreferenced_blob_count.toLocaleString()} 个</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">Legacy</Typography><Typography variant="body2">{formatBytes(point.legacy_physical_bytes)} · {point.legacy_blob_count.toLocaleString()} 个</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">Staging orphan / 可回收</Typography><Typography variant="body2">{point.anomaly_snapshot_available ? `${formatBytes(point.staging_orphan_bytes)} / ${formatBytes(point.staging_reclaimable_bytes)}` : '—'}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">图片缩略图</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, point.media_thumbnail_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">视频 Poster</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, point.video_poster_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">分析预览</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, point.analysis_preview_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">其他媒体 / Preview / 转码</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, storageHistoryOtherCacheBytes(point))}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">存储临时文件</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, point.storage_temp_bytes)}</Typography></Box>
+                                <Box><Typography variant="caption" color="text.secondary">未分类</Typography><Typography variant="body2">{storageHistorySnapshotBytes(point, point.unclassified_bytes)}</Typography></Box>
+                              </Box>
+                            </Stack>
+                          </Box>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <XDriveTableSurface>
+                        <Table size="small" aria-label="存储异常与缓存趋势" sx={{ minWidth: 1540 }}>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>时间</TableCell>
+                              <TableCell align="right">未引用 Blob</TableCell>
+                              <TableCell align="right">Legacy</TableCell>
+                              <TableCell align="right">Staging orphan / 可回收</TableCell>
+                              <TableCell align="right">图片缩略图</TableCell>
+                              <TableCell align="right">视频 Poster</TableCell>
+                              <TableCell align="right">分析预览</TableCell>
+                              <TableCell align="right">其他媒体 / Preview / 转码</TableCell>
+                              <TableCell align="right">存储临时文件</TableCell>
+                              <TableCell align="right">未分类</TableCell>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </XDriveTableSurface>
+                          </TableHead>
+                          <TableBody>
+                            {history.samples.slice(-12).reverse().map((point) => (
+                              <TableRow key={point.slot_at + ':anomaly'} hover>
+                                <TableCell>{new Date(point.slot_at).toLocaleString()}</TableCell>
+                                <TableCell align="right">{formatBytes(point.unreferenced_blob_bytes)} · {point.unreferenced_blob_count.toLocaleString()} 个</TableCell>
+                                <TableCell align="right">{formatBytes(point.legacy_physical_bytes)} · {point.legacy_blob_count.toLocaleString()} 个</TableCell>
+                                <TableCell align="right">{point.anomaly_snapshot_available ? `${formatBytes(point.staging_orphan_bytes)} / ${formatBytes(point.staging_reclaimable_bytes)}` : '—'}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, point.media_thumbnail_bytes)}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, point.video_poster_bytes)}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, point.analysis_preview_bytes)}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, storageHistoryOtherCacheBytes(point))}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, point.storage_temp_bytes)}</TableCell>
+                                <TableCell align="right">{storageHistorySnapshotBytes(point, point.unclassified_bytes)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </XDriveTableSurface>
+                    )}
                   </Stack>
                 </Stack>
               )}
