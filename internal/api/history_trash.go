@@ -517,25 +517,55 @@ type activeSubtreeSummary struct {
 	Bytes int64
 }
 
-func activeSubtreeSummaryDB(db *gorm.DB, uid, root uint64) (activeSubtreeSummary, error) {
+func activeSubtreeSummariesDB(
+	db *gorm.DB,
+	uid uint64,
+	roots []uint64,
+) (map[uint64]activeSubtreeSummary, error) {
+	summaries := make(map[uint64]activeSubtreeSummary, len(roots))
+	if len(roots) == 0 {
+		return summaries, nil
+	}
+
+	uniqueRoots := make(map[uint64]struct{}, len(roots))
+	rootIDs := make([]uint64, 0, len(roots))
+	for _, root := range roots {
+		if _, exists := uniqueRoots[root]; exists {
+			continue
+		}
+		uniqueRoots[root] = struct{}{}
+		rootIDs = append(rootIDs, root)
+	}
+
 	type row struct {
+		RootID   uint64 `gorm:"column:root_id"`
 		ID       uint64 `gorm:"column:id"`
 		Bytes    int64  `gorm:"column:bytes"`
 		Overflow bool   `gorm:"column:overflow"`
 	}
 	var rows []row
-	err := db.Raw(`WITH RECURSIVE tree AS (
-SELECT id FROM xd_nodes WHERE id = ? AND owner_id = ? AND deleted_at IS NULL
+	err := db.Raw(`WITH RECURSIVE roots AS (
+SELECT id
+FROM xd_nodes
+WHERE id IN ? AND owner_id = ? AND deleted_at IS NULL
+),
+tree AS (
+SELECT roots.id AS root_id, roots.id AS id
+FROM roots
 UNION ALL
-SELECT n.id FROM xd_nodes n JOIN tree t ON n.parent_id = t.id
+SELECT tree.root_id, n.id
+FROM tree
+JOIN xd_nodes n ON n.parent_id = tree.id
 WHERE n.owner_id = ? AND n.deleted_at IS NULL
 ),
 stats AS (
-SELECT COALESCE(SUM(f.size), 0)::numeric AS bytes
+SELECT tree.root_id, COALESCE(SUM(f.size), 0)::numeric AS bytes
 FROM tree
 LEFT JOIN xd_files f ON f.node_id = tree.id
+GROUP BY tree.root_id
 )
-SELECT tree.id,
+SELECT tree.root_id,
+       tree.id,
        CASE
          WHEN stats.bytes > 9223372036854775807 THEN 9223372036854775807
          WHEN stats.bytes < -9223372036854775808 THEN -9223372036854775808
@@ -546,25 +576,37 @@ SELECT tree.id,
          stats.bytes < -9223372036854775808
        ) AS overflow
 FROM tree
-CROSS JOIN stats
-ORDER BY tree.id`, root, uid, uid).Scan(&rows).Error
+JOIN stats ON stats.root_id = tree.root_id
+ORDER BY tree.root_id, tree.id`, rootIDs, uid, uid).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		if row.Overflow {
+			return nil, errors.New("file operation size overflow")
+		}
+		summary := summaries[row.RootID]
+		summary.IDs = append(summary.IDs, row.ID)
+		summary.Bytes = row.Bytes
+		summaries[row.RootID] = summary
+	}
+	if len(summaries) != len(rootIDs) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return summaries, nil
+}
+
+func activeSubtreeSummaryDB(db *gorm.DB, uid, root uint64) (activeSubtreeSummary, error) {
+	summaries, err := activeSubtreeSummariesDB(db, uid, []uint64{root})
 	if err != nil {
 		return activeSubtreeSummary{}, err
 	}
-	if len(rows) == 0 {
+	summary, ok := summaries[root]
+	if !ok {
 		return activeSubtreeSummary{}, gorm.ErrRecordNotFound
 	}
-	if rows[0].Overflow {
-		return activeSubtreeSummary{}, errors.New("file operation size overflow")
-	}
-	ids := make([]uint64, 0, len(rows))
-	for _, row := range rows {
-		ids = append(ids, row.ID)
-	}
-	return activeSubtreeSummary{
-		IDs:   ids,
-		Bytes: rows[0].Bytes,
-	}, nil
+	return summary, nil
 }
 
 func activeSubtreeIDsDB(db *gorm.DB, uid, root uint64) ([]uint64, error) {
