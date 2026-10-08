@@ -269,6 +269,8 @@ test('Desktop FileExplorer unmount invalidates pending local action completion',
     actionBusyRef,
     actionGenerationRef,
     setActionBusy,
+    setCreateOpen: () => {},
+    setOpenPreviewItem: () => {},
   })
   const cleanup = lifecycleEffect()
 

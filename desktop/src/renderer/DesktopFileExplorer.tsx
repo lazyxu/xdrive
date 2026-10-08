@@ -240,6 +240,8 @@ export default function DesktopFileExplorer({
     actionGenerationRef.current += 1
     actionBusyRef.current = null
     setActionBusy('')
+    setCreateOpen(false)
+    setOpenPreviewItem(null)
     return () => {
       actionGenerationRef.current += 1
       actionBusyRef.current = null
