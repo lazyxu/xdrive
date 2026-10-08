@@ -601,6 +601,7 @@ export default function WebFileExplorer({
         />
       ) : null}
       <XDriveFileExplorer
+        interactionLifecycleKey={navigationSessionStorageKey ?? ''}
         presentation="workspace"
         keyboardProfile={FILE_KEYBOARD_PROFILE}
         items={trashActive ? trash.items : explorerItems}

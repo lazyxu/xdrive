@@ -40,6 +40,7 @@ const emptyColumn = (): ColumnState => ({
 })
 
 export function XDriveFileExplorerColumnView({
+  lifecycleKey = '',
   crumbs,
   selectedIDs,
   loadPage,
@@ -48,6 +49,7 @@ export function XDriveFileExplorerColumnView({
   onOpenFile,
   onItemContextMenu,
 }: {
+  lifecycleKey?: string
   crumbs: readonly XDriveFileExplorerCrumb[]
   selectedIDs: readonly XDriveFileExplorerID[]
   loadPage: (parentID: XDriveFileExplorerID, cursor: string, signal: AbortSignal) => Promise<XDriveFileExplorerColumnPage>
@@ -61,6 +63,7 @@ export function XDriveFileExplorerColumnView({
   columnsRef.current = columns
   const controllersRef = useRef(new Map<string, AbortController>())
   const generationRef = useRef(new Map<string, number>())
+  const lifecycleKeyRef = useRef(lifecycleKey)
   const crumbSignature = crumbs.map((crumb) => String(crumb.id)).join('/')
 
   const load = useCallback(async (parentID: XDriveFileExplorerID, append: boolean) => {
@@ -112,6 +115,15 @@ export function XDriveFileExplorerColumnView({
   }, [loadPage])
 
   useEffect(() => {
+    if (lifecycleKeyRef.current !== lifecycleKey) {
+      lifecycleKeyRef.current = lifecycleKey
+      for (const controller of controllersRef.current.values()) controller.abort()
+      controllersRef.current.clear()
+      generationRef.current.clear()
+      columnsRef.current = {}
+      setColumns({})
+    }
+
     const activeKeys = new Set(crumbs.map((crumb) => String(crumb.id)))
     setColumns((current) => Object.fromEntries(
       Object.entries(current).filter(([key]) => activeKeys.has(key)),
@@ -129,7 +141,7 @@ export function XDriveFileExplorerColumnView({
         void load(crumb.id, false).catch(() => undefined)
       }
     }
-  }, [crumbSignature, crumbs, load])
+  }, [crumbSignature, crumbs, lifecycleKey, load])
 
   useEffect(() => () => {
     for (const controller of controllersRef.current.values()) controller.abort()

@@ -774,6 +774,7 @@ type XDriveFileExplorerMarqueePointer = {
 export function XDriveFileExplorer({
   items,
   crumbs,
+  interactionLifecycleKey = '',
   loading = false,
   presentation = 'card',
   keyboardProfile = 'web',
@@ -862,6 +863,7 @@ export function XDriveFileExplorer({
 }: {
   items: XDriveFileExplorerItem[]
   crumbs: XDriveFileExplorerCrumb[]
+  interactionLifecycleKey?: string
   loading?: boolean
   presentation?: XDriveFileExplorerPresentation
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
@@ -1089,7 +1091,10 @@ export function XDriveFileExplorer({
     [selectedIDs],
   )
 
-  const interactionScopeKey = virtualCollection?.interactionKey ?? derivedPath
+  const interactionScopeKey = [
+    interactionLifecycleKey,
+    virtualCollection?.interactionKey ?? derivedPath,
+  ].join('\n')
   const externalDropScopeKeyRef = useRef(interactionScopeKey)
   const externalDropGenerationRef = useRef(0)
   if (externalDropScopeKeyRef.current !== interactionScopeKey) {
@@ -4738,6 +4743,7 @@ export function XDriveFileExplorer({
       >
         {viewMode === 'columns' && loadColumnPage && onColumnNavigate ? (
           <XDriveFileExplorerColumnView
+            lifecycleKey={interactionScopeKey}
             crumbs={crumbs}
             selectedIDs={selectedIDs}
             loadPage={loadColumnPage}
