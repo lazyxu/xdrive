@@ -328,3 +328,33 @@ test('Gallery 100k first-open UI baseline', () => {
   assert.equal(result.layoutGroups, firstOpenTimelineDays)
   assert.equal(result.retainedItems > 0 && result.retainedItems < firstOpenPageSize, true)
 })
+
+test('Gallery renderer first-paint benchmark isolates transport from renderer mount latency', () => {
+  const harness = fs.readFileSync(
+    path.join(repo, 'ui', 'shared', 'src', 'mui', 'GalleryPerformanceHarness.tsx'),
+    'utf8',
+  )
+  const traceMain = fs.readFileSync(
+    path.join(repo, 'desktop', 'scripts', 'gallery-renderer-first-paint-trace-main.cjs'),
+    'utf8',
+  )
+  const githubCI = fs.readFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'utf8')
+  const gitlabCI = fs.readFileSync(path.join(repo, '.gitlab-ci.yml'), 'utf8')
+
+  for (const token of [
+    'gridCommitToThumbnailRequestMs',
+    'thumbnailResolvedToImageMountMs',
+    'thumbnailResolvedToDecodeMs',
+    'decodedToPaintMs',
+  ]) {
+    assert.ok(harness.includes(token), 'renderer timing slice missing: ' + token)
+  }
+  assert.ok(traceMain.includes("sampleArg = process.argv.find((value) => /^sample-\\d+$/.test(value))"))
+  assert.ok(traceMain.includes('sampleSuffix = `sample${sample}`'))
+  assert.ok(githubCI.includes('for sample in 1 2 3; do'))
+  assert.ok(gitlabCI.includes('for sample in 1 2 3; do'))
+  assert.ok(githubCI.includes("find gallery-perf-results -maxdepth 1 -type f -name '*.json'"))
+  assert.ok(githubCI.includes("-name '*-trace.json'"))
+  assert.ok(gitlabCI.includes("find gallery-perf-results -maxdepth 1 -type f -name '*.json'"))
+  assert.ok(gitlabCI.includes("-name '*-trace.json'"))
+})
