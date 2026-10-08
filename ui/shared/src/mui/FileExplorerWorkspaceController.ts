@@ -137,7 +137,10 @@ export function useXDriveFileExplorerWorkspace<
     grouping: navigation.grouping,
     onError,
     onSearchIntent: navigation.beginNavigationIntent,
-    workspaceKey: navigation.activeTabID,
+    workspaceKey: JSON.stringify([
+      navigationSessionStorageKey ?? '',
+      navigation.activeTabID,
+    ]),
   })
   searchActiveRef.current = search.searchResults !== null
   clearSearchRef.current = search.clearSearch

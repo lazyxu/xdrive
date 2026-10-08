@@ -56,7 +56,11 @@ test('shared search controller preserves range search state per workspace tab', 
   ]) {
     assert.ok(search.includes(token), 'tab search-state contract missing: ' + token)
   }
-  assert.ok(workspace.includes('workspaceKey: navigation.activeTabID'), 'workspace must bind search state to the active tab')
+  assert.ok(
+    workspace.includes("navigationSessionStorageKey ?? ''") &&
+    workspace.includes('navigation.activeTabID'),
+    'workspace must bind search state to both the account lifecycle and active tab',
+  )
   assert.ok(workspace.includes('searchActive: () => searchActiveRef.current'), 'navigation sort/group behavior must observe the active tab search state')
   assert.ok(search.includes('groupingSignature'), 'search tab state must bind ranges to grouping identity')
 })
