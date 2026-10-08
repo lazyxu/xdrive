@@ -23,15 +23,27 @@ const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
 const server = read('internal', 'api', 'file_text_preview.go')
 const previewServer = read('internal', 'api', 'file_preview.go')
 
-test('safe text-preview contract excludes active and secret-prone content', () => {
-  for (const token of ['XDriveFileTextPreview', 'xDriveFileSupportsTextPreview', "'txt'", "'json'", "'md'"]) {
+test('bounded text-preview contract supports common source/config text without key material', () => {
+  for (const token of [
+    'XDriveFileTextPreview',
+    'xDriveFileSupportsTextPreview',
+    "'txt'",
+    "'json'",
+    "'md'",
+    "'js'",
+    "'cpp'",
+    "'go'",
+    "'html'",
+    "'svg'",
+    "'.env'",
+  ]) {
     assert.ok(preview.includes(token), 'missing shared text-preview token: ' + token)
   }
-  for (const forbidden of ["'html'", "'svg'", "'pem'", "'key'", "'.env'"]) {
-    assert.equal(preview.includes(forbidden), false, 'unsafe preview extension leaked into shared allowlist: ' + forbidden)
+  for (const forbidden of ["'pem'", "'key'"]) {
+    assert.equal(preview.includes(forbidden), false, 'secret key extension leaked into shared allowlist: ' + forbidden)
   }
   for (const token of [
-    'fileTextPreviewLimit = 64 << 10',
+    'fileTextPreviewLimit = 1 << 20',
     'bytes.IndexByte(data, 0)',
     'utf8.Valid(data)',
     'http.StatusUnsupportedMediaType',
@@ -61,7 +73,7 @@ test('shared Preview Engine owns classification and renderer surface', () => {
     'component="video"',
     'component="audio"',
     'component="iframe"',
-    '仅显示前 64 KiB',
+    '仅显示前 1 MiB',
   ]) {
     assert.ok(previewSurface.includes(token), 'missing shared Preview Surface token: ' + token)
   }

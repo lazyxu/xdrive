@@ -336,13 +336,14 @@ to make preview work.
 
 ### Open Preview dialog
 
-Ordinary file opening in Web/Desktop FileExplorer and ordinary image/video opening in Gallery
-must use the shared `XDriveOpenPreviewDialog` presentation shell.
+The Preview Engine owns rendering, not the platform meaning of ordinary **Open**.
 
-The shell owns common preview chrome and navigation only. It may optionally expose
-fullscreen, immersive chrome auto-hide, and caller-provided action/footer slots, but
-those slots do not transfer domain ownership into the Preview Engine. Its content must
-remain:
+- Web FileExplorer ordinary Open dispatches through the **Web App Resolver**. Images/video/Live Photo open `media-viewer`, text/source/config opens `text-viewer`, PDF opens `pdf-viewer`, and audio opens `audio-player`.
+- Desktop FileExplorer ordinary file Open uses the **OS default application**. Directories remain inside xDrive FileExplorer. `Open With…` stays a separate native action.
+- Web `preview` and Desktop Quick Look are explicit preview surfaces and continue to reuse the shared Preview Engine.
+- Gallery media viewing continues to reuse the shared Preview Engine while keeping Gallery-only semantics outside it.
+
+`XDriveOpenPreviewDialog` remains the shared overlay shell where an overlay presentation is appropriate. Route-level Web viewer apps may provide their own app chrome, but their content still reuses:
 
 - `FilePreviewSurface` for ordinary text/PDF/image/video/audio preview;
 - `FilePreviewSurface` + `LivePhotoSurface` for a validated single-file `.livp`;
@@ -350,12 +351,11 @@ remain:
 
 The ordinary image renderer may opt into shared zoom/pan interaction. Zoom/pan is
 presentation state only: it does not change preview identity, request another source
-contract, or persist an edited image. Gallery Viewer enables this mode; Inspector and
-ordinary FileExplorer preview are unchanged unless they explicitly opt in.
+contract, or persist an edited image.
 
-Explicit Download remains a separate file-management action. Web/Desktop FileExplorer must
-not treat double-click/Enter/open as an implicit download. Desktop may additionally expose
-an explicit system-shell Open action, but it must not replace the shared preview semantics.
+Explicit Download remains a separate file-management action. Web Open must not silently
+download an unsupported file, and Desktop Open must not download before handing the managed
+path to the OS default application.
 
 Gallery keeps media information, EXIF/GPS, Favorite/Tags/People/albums, and Live Photo
 motion semantics outside the ordinary Preview Engine. Double-clicking a Gallery media
@@ -469,3 +469,17 @@ Changes to Preview Engine behavior should preserve tests covering:
 - Desktop loopback proxy credential isolation
 - Gallery ordinary-media use of `FilePreviewSurface`
 - absence of legacy media-specific playback paths
+
+
+## Web Preview App 边界
+
+Web 的 `preview`、`media-viewer`、`pdf-viewer`、`audio-player` 都是 Preview Engine 的程序级入口，**不是新的渲染引擎**。它们继续复用 `FilePreviewSurface`、Live Photo surface、preview ticket、thumbnail 与媒体 transform 能力。
+
+- Web `preview` 对应 Quick Look 语义：Space/Esc 返回、←/→ 在启动 context 中切换，多选 context 保持冻结顺序，全屏可播放 5 秒幻灯片。
+- `media-viewer` 只处理图片、视频与 Live Photo；来自 Gallery 的 context 可以追加 Favorite / Info / Albums 等图库语义。
+- `text-viewer` 第一版使用只读 textarea；共享文本预览上限为 **1 MiB**，超过时明确显示 truncated 提示。
+- PDF/Audio Viewer 继续使用 Server signed preview ticket，不创建第二套下载/stream transport。
+- Viewer 只把 canonical node ID 和短 context session ID 放到 URL；目录/Search/Gallery 大集合通过 range contract 与 sessionStorage 恢复。
+- Viewer 作为覆盖层保持调用方 workspace 挂载，因此关闭/浏览器 Back 后应恢复原 Files/Gallery 状态。
+
+路由和 App Registry 的规范见 `docs/web-app-runtime.md`。

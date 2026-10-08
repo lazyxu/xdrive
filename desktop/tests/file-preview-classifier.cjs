@@ -60,7 +60,6 @@ test('binary preview classification is extension-allowlist based', () => {
 
 test('MIME metadata cannot broaden binary previewability', () => {
   const cases = [
-    { name: 'icon.svg', kind: 'file', mimeType: 'image/svg+xml' },
     { name: 'payload.bin', kind: 'file', mimeType: 'image/png' },
     { name: 'payload.bin', kind: 'file', mimeType: 'video/mp4' },
     { name: 'payload.bin', kind: 'file', mimeType: 'audio/mpeg' },
@@ -87,9 +86,22 @@ test('directories are never preview-classified as files', () => {
   )
 })
 
-test('bounded text preview classification still wins for text files', () => {
-  assert.equal(xDriveFileSupportsTextPreview('README', 'file'), true)
-  assert.equal(xDriveClassifyFilePreview({ name: 'README', kind: 'file' }), 'text')
-  assert.equal(xDriveClassifyFilePreview({ name: 'notes.txt', kind: 'file' }), 'text')
+test('bounded text preview classification covers common source and config files', () => {
+  for (const name of [
+    'README',
+    'notes.txt',
+    'index.js',
+    'header.h',
+    'source.cpp',
+    'main.go',
+    'index.html',
+    'icon.svg',
+    '.env',
+    '.env.local',
+    '.eslintrc.json',
+  ]) {
+    assert.equal(xDriveFileSupportsTextPreview(name, 'file'), true, name)
+    assert.equal(xDriveClassifyFilePreview({ name, kind: 'file' }), 'text', name)
+  }
   assert.equal(xDriveFileSupportsTextPreview('README', 'dir'), false)
 })

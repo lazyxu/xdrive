@@ -61,6 +61,7 @@ import type {
   XDriveFileExplorerSort,
   XDriveSidebarSectionModel,
   XDriveRemoteWorkspaceViewKey,
+  MediaGallerySection,
 } from '@xdrive/ui/mui'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
@@ -72,14 +73,19 @@ import type {
   XDriveTransferTask,
   XDriveFileOperation,
   XDriveCloudFilesPort,
+  XDriveWebAppBrowseContext,
+  XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
 import StorageStatsPanel from './StorageStatsPanel'
 import WebFileExplorer from './WebFileExplorer'
 import WebOverviewPage from './WebOverviewPage'
+import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
+import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
+import { xDriveWebAppForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
@@ -434,7 +440,17 @@ function FileManager({
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
-  const [appView, setAppView] = useState<AppView>('overview')
+  const { route, launch: launchWebApp, closeViewer } = useXDriveWebAppRuntime()
+  const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app)
+  const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
+    () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
+  )
+  const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
+  const setAppView = useCallback((view: AppView) => {
+    const app = xDriveWebAppForWorkspaceKey(view)
+    if (!app) return
+    launchWebApp({ app, params: {} } as XDriveWebAppRoute)
+  }, [launchWebApp])
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
@@ -456,6 +472,10 @@ function FileManager({
 
   const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api), [api])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
+
+  useEffect(() => {
+    if (workspaceRouteKey) setLastWorkspaceView(workspaceRouteKey as AppView)
+  }, [workspaceRouteKey])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
@@ -644,6 +664,27 @@ function FileManager({
     globalTasksEnabled: profile?.role === 'admin',
     onBackgroundTaskError: handleError,
   })
+
+  useEffect(() => {
+    if (route.app === 'admin-storage' && route.params.task) {
+      launchWebApp({
+        app: 'tasks',
+        params: { scope: 'global', task: route.params.task },
+      }, { replace: true })
+    }
+  }, [launchWebApp, route])
+
+  useEffect(() => {
+    if (route.app !== 'tasks') return
+    if (route.params.scope) taskCenter.pageProps.onBackgroundScopeChange?.(route.params.scope)
+    if (route.params.task) {
+      taskCenterFocusSequenceRef.current += 1
+      setTaskCenterFocus({
+        taskID: route.params.task,
+        requestID: taskCenterFocusSequenceRef.current,
+      })
+    }
+  }, [route, taskCenter.pageProps.onBackgroundScopeChange])
 
   const openGlobalTaskCenter = useCallback(() => {
     setTaskCenterFocus(null)
@@ -882,6 +923,35 @@ function FileManager({
 
   const openHistory = (node: Node) => setHistoryNode(node)
 
+  const openWebFile = (node: Node, context: XDriveWebAppBrowseContext) => {
+    const contextID = xDriveCreateWebAppBrowseSession(context)
+    const next = xDriveWebOpenRouteForNode(node, contextID)
+    if (!next) {
+      setFeedback({ tone: 'warning', message: '此文件暂时没有可用的 Web 打开程序。可使用下载、分享或属性查看。' })
+      return
+    }
+    launchWebApp(next, { viewerReturn: true })
+  }
+
+  const openWebQuickLook = (node: Node, context: XDriveWebAppBrowseContext) => {
+    const contextID = xDriveCreateWebAppBrowseSession(context)
+    launchWebApp({
+      app: 'preview',
+      params: { node: node.id, context: contextID },
+    }, { viewerReturn: true })
+  }
+
+  const openWebNodeInBrowserTab = (node: Node) => {
+    const next = node.type === 'dir'
+      ? ({ app: 'files', params: { dir: node.id } } satisfies XDriveWebAppRoute)
+      : xDriveWebOpenRouteForNode(node)
+    if (!next) {
+      setFeedback({ tone: 'warning', message: '此文件暂时没有可用的 Web 打开程序。' })
+      return
+    }
+    launchWebApp(next, { newTab: true })
+  }
+
   const webSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
@@ -975,7 +1045,15 @@ function FileManager({
           transferBadge={taskCenter.badge}
           sections={webSidebarSections}
           storageSummary={xDriveWorkspaceStorageSummary(quota)}
-          onSelect={(destination) => setAppView(destination as AppView)}
+          onSelect={(destination, event) => {
+            const app = xDriveWebAppForWorkspaceKey(destination)
+            if (!app) return
+            if (event.ctrlKey || event.metaKey) {
+              launchWebApp({ app, params: {} } as XDriveWebAppRoute, { newTab: true })
+              return
+            }
+            setAppView(destination as AppView)
+          }}
         />
 
         <XDriveWorkspaceContent
@@ -1033,6 +1111,7 @@ function FileManager({
                 virtualDirectory={virtualDirectory}
                 loading={loading}
                 navigationSessionStorageKey={`xdrive.files.navigation_session.v1:${encodeURIComponent(username)}`}
+                initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}
                 uploadProgress={fileUploads.progress}
                 onLoadDirectory={loadDirectory}
                 onRefreshCurrentDirectoryIfIdle={refreshCurrentDirectoryIfIdle}
@@ -1070,22 +1149,56 @@ function FileManager({
                 onFeedback={(tone, message) => setFeedback({ tone, message })}
                 onShare={setShareNode}
                 onHistory={openHistory}
+                onOpenFile={openWebFile}
+                onOpenQuickLook={openWebQuickLook}
+                onOpenNodeInBrowserTab={openWebNodeInBrowserTab}
+                onDirectoryChange={(nodeID) => {
+                  if (route.app === 'files' && route.params.dir !== nodeID) {
+                    launchWebApp({ app: 'files', params: { dir: nodeID } }, { replace: true })
+                  }
+                }}
                 onError={handleError}
               />
           </Box>
         ) : appView === 'gallery' ? (
           <XDriveMediaGalleryPage
             source={gallerySource}
+            initialSection={route.app === 'gallery'
+              ? route.params.section as MediaGallerySection | undefined
+              : undefined}
+            onSectionRouteChange={(section) => {
+              if (route.app === 'gallery' && route.params.section !== section) {
+                launchWebApp({ app: 'gallery', params: { section } }, { replace: true })
+              }
+            }}
             shareDialog={{
               adapter: shareDialogAdapter,
               expiryMode: 'datetime',
               listVariant: 'table',
+            }}
+            onOpenViewer={(item, context) => {
+              const contextID = xDriveCreateWebAppBrowseSession({
+                kind: 'gallery',
+                target: context.target,
+                activeIndex: context.activeIndex,
+                totalCount: context.totalCount,
+              })
+              launchWebApp({
+                app: 'media-viewer',
+                params: { node: item.node.id, context: contextID },
+              }, { viewerReturn: true })
             }}
             onError={handleError}
           />
         ) : appView === 'sources' ? (
           <XDriveSourceManager
             adapter={sourceManagerAdapter}
+            initialSourceID={route.app === 'sync-folders' ? route.params.source : undefined}
+            onSelectedSourceChange={(sourceID) => {
+              if (route.app === 'sync-folders' && route.params.source !== sourceID) {
+                launchWebApp({ app: 'sync-folders', params: { source: sourceID } }, { replace: true })
+              }
+            }}
             defaultTargetNodeID={current?.id}
             defaultTargetLabel={current?.name ?? '我的文件'}
             defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
@@ -1103,6 +1216,7 @@ function FileManager({
           <AdminUsersPanel
             api={api}
             currentUserID={profile.id}
+            focusUserID={route.app === 'admin-users' ? route.params.user : undefined}
             onChanged={() => { void refreshQuota() }}
           />
         ) : appView === 'admin-audit' && profile?.role === 'admin' ? (
@@ -1111,6 +1225,7 @@ function FileManager({
           <StorageStatsPanel
             api={api}
             scope="global"
+            focusSection={route.app === 'admin-storage' ? route.params.section : undefined}
             onOpenTaskCenter={openGlobalTaskCenter}
             onRunStorageMaintenance={runStorageMaintenance}
           />
@@ -1121,6 +1236,21 @@ function FileManager({
         )}
         </XDriveWorkspaceContent>
       </XDriveWorkspaceShell>
+
+      {xDriveWebAppViewer(route.app) ? (
+        <WebFileViewerApps
+          route={route}
+          api={api}
+          gallerySource={gallerySource}
+          shareDialogAdapter={shareDialogAdapter}
+          onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
+          onClose={(node) => closeViewer({
+            app: 'files',
+            params: { dir: node?.parent_id },
+          })}
+          onError={handleError}
+        />
+      ) : null}
 
       <XDriveUploadConflictDialog {...fileUploads.dialogProps} />
 

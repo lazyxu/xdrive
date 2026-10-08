@@ -63,16 +63,23 @@ export type XDriveFilePreviewTarget = {
 }
 
 const xDriveTextPreviewExtensions = new Set([
-  'bash', 'bat', 'c', 'cc', 'cfg', 'cmd', 'conf', 'cpp', 'cs', 'css', 'csv', 'fish',
-  'go', 'gql', 'gradle', 'graphql', 'h', 'hpp', 'ini', 'java', 'js', 'json', 'jsonl',
-  'jsx', 'kt', 'kts', 'less', 'log', 'md', 'markdown', 'properties', 'proto', 'ps1',
-  'py', 'rb', 'rs', 'scss', 'sh', 'sql', 'text', 'toml', 'ts', 'tsv', 'tsx', 'txt',
-  'xml', 'yaml', 'yml', 'zsh',
+  'asm', 'astro', 'bash', 'bat', 'c', 'cc', 'cfg', 'cjs', 'cljs', 'clj', 'cmd', 'conf',
+  'cpp', 'cs', 'css', 'csv', 'cxx', 'dart', 'erl', 'ex', 'exs', 'fish', 'fs', 'fsx',
+  'go', 'gql', 'gradle', 'graphql', 'groovy', 'h', 'hpp', 'hrl', 'hs', 'hxx', 'ini',
+  'htm', 'html', 'java', 'js', 'json', 'jsonl', 'jsx', 'kt', 'kts', 'less', 'lock',
+  'log', 'lua', 'm', 'md', 'markdown', 'mjs', 'mk', 'mm', 'nix', 'patch', 'php',
+  'pl', 'pm', 'properties', 'proto', 'ps1', 'py', 'r', 'rb', 'rs', 's', 'scala',
+  'scss', 'sh', 'sol', 'sql', 'svelte', 'svg', 'swift', 'tex', 'text', 'tf',
+  'tfvars', 'toml', 'ts', 'tsv', 'tsx', 'txt', 'vb', 'vbs', 'vue', 'xml', 'yaml',
+  'yml', 'zig', 'zsh',
 ])
 
 const xDriveTextPreviewBasenames = new Set([
-  'copying', 'dockerfile', 'license', 'makefile', 'readme',
-  '.editorconfig', '.gitattributes', '.gitignore',
+  'cmakelists.txt', 'copying', 'dockerfile', 'gemfile', 'jenkinsfile', 'license',
+  'makefile', 'procfile', 'rakefile', 'readme',
+  '.babelrc', '.browserslistrc', '.dockerignore', '.editorconfig', '.env',
+  '.eslintignore', '.eslintrc', '.gitattributes', '.gitignore', '.gitmodules',
+  '.npmignore', '.npmrc', '.prettierignore', '.prettierrc', '.stylelintrc', '.yarnrc',
 ])
 
 const xDriveImagePreviewExtensions = new Set([
@@ -97,7 +104,13 @@ function xDrivePreviewExtension(name: string) {
 export function xDriveFileSupportsTextPreview(name: string, kind: 'dir' | 'file') {
   if (kind !== 'file') return false
   const base = name.trim().toLowerCase()
-  if (xDriveTextPreviewBasenames.has(base)) return true
+  if (
+    xDriveTextPreviewBasenames.has(base) ||
+    base.startsWith('.env.') ||
+    base.startsWith('.eslintrc.') ||
+    base.startsWith('.prettierrc.') ||
+    base.startsWith('.stylelintrc.')
+  ) return true
   return xDriveTextPreviewExtensions.has(xDrivePreviewExtension(base))
 }
 

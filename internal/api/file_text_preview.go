@@ -12,22 +12,35 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
-const fileTextPreviewLimit = 64 << 10
+const fileTextPreviewLimit = 1 << 20
 
 var fileTextPreviewExtensions = map[string]struct{}{
-	".bash": {}, ".bat": {}, ".c": {}, ".cc": {}, ".cfg": {}, ".cmd": {}, ".conf": {},
-	".cpp": {}, ".cs": {}, ".css": {}, ".csv": {}, ".fish": {}, ".go": {}, ".gql": {},
-	".gradle": {}, ".graphql": {}, ".h": {}, ".hpp": {}, ".ini": {}, ".java": {}, ".js": {},
-	".json": {}, ".jsonl": {}, ".jsx": {}, ".kt": {}, ".kts": {}, ".less": {}, ".log": {},
-	".md": {}, ".markdown": {}, ".properties": {}, ".proto": {}, ".ps1": {}, ".py": {},
-	".rb": {}, ".rs": {}, ".scss": {}, ".sh": {}, ".sql": {}, ".text": {}, ".toml": {},
-	".ts": {}, ".tsv": {}, ".tsx": {}, ".txt": {}, ".xml": {}, ".yaml": {}, ".yml": {},
-	".zsh": {},
+	".asm": {}, ".astro": {}, ".bash": {}, ".bat": {}, ".c": {}, ".cc": {}, ".cfg": {},
+	".cjs": {}, ".cljs": {}, ".clj": {}, ".cmd": {}, ".conf": {}, ".cpp": {}, ".cs": {},
+	".css": {}, ".csv": {}, ".cxx": {}, ".dart": {}, ".erl": {}, ".ex": {}, ".exs": {},
+	".fish": {}, ".fs": {}, ".fsx": {}, ".go": {}, ".gql": {}, ".gradle": {},
+	".graphql": {}, ".groovy": {}, ".h": {}, ".hpp": {}, ".hrl": {}, ".hs": {},
+	".htm": {}, ".html": {}, ".hxx": {}, ".ini": {}, ".java": {}, ".js": {},
+	".json": {}, ".jsonl": {}, ".jsx": {}, ".kt": {}, ".kts": {}, ".less": {},
+	".lock": {}, ".log": {}, ".lua": {}, ".m": {}, ".md": {}, ".markdown": {},
+	".mjs": {}, ".mk": {}, ".mm": {}, ".nix": {}, ".patch": {}, ".php": {},
+	".pl": {}, ".pm": {},
+	".properties": {}, ".proto": {}, ".ps1": {}, ".py": {}, ".rb": {}, ".rs": {},
+	".r": {}, ".s": {}, ".scala": {}, ".scss": {}, ".sh": {}, ".sol": {}, ".sql": {},
+	".svelte": {}, ".svg": {}, ".swift": {}, ".tex": {}, ".text": {}, ".tf": {},
+	".tfvars": {}, ".toml": {}, ".ts": {}, ".tsv": {}, ".tsx": {}, ".txt": {},
+	".vb": {}, ".vbs": {}, ".vue": {}, ".xml": {}, ".yaml": {}, ".yml": {},
+	".zig": {}, ".zsh": {},
 }
 
 var fileTextPreviewBasenames = map[string]struct{}{
-	"copying": {}, "dockerfile": {}, "license": {}, "makefile": {}, "readme": {},
-	".editorconfig": {}, ".gitattributes": {}, ".gitignore": {},
+	"cmakelists.txt": {}, "copying": {}, "dockerfile": {}, "gemfile": {},
+	"jenkinsfile": {}, "license": {}, "makefile": {}, "procfile": {}, "rakefile": {},
+	"readme": {}, ".babelrc": {}, ".browserslistrc": {}, ".dockerignore": {},
+	".editorconfig": {}, ".env": {}, ".eslintignore": {}, ".eslintrc": {},
+	".gitattributes": {}, ".gitignore": {}, ".gitmodules": {}, ".npmignore": {},
+	".npmrc": {}, ".prettierignore": {}, ".prettierrc": {}, ".stylelintrc": {},
+	".yarnrc": {},
 }
 
 type fileTextPreviewDTO struct {
@@ -39,6 +52,12 @@ type fileTextPreviewDTO struct {
 func fileTextPreviewSupportedName(name string) bool {
 	base := strings.ToLower(strings.TrimSpace(filepath.Base(name)))
 	if _, ok := fileTextPreviewBasenames[base]; ok {
+		return true
+	}
+	if strings.HasPrefix(base, ".env.") ||
+		strings.HasPrefix(base, ".eslintrc.") ||
+		strings.HasPrefix(base, ".prettierrc.") ||
+		strings.HasPrefix(base, ".stylelintrc.") {
 		return true
 	}
 	_, ok := fileTextPreviewExtensions[strings.ToLower(filepath.Ext(base))]

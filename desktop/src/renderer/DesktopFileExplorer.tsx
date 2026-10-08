@@ -27,8 +27,6 @@ import {
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
-  XDriveFilePreviewSurface,
-  XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
   XDriveFileTagDialog,
@@ -248,7 +246,6 @@ export default function DesktopFileExplorer({
   const [actionBusy, setActionBusy] = useState('')
   const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
   const actionGenerationRef = useRef(1)
-  const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
 
   useEffect(() => {
     actionGenerationRef.current += 1
@@ -258,7 +255,6 @@ export default function DesktopFileExplorer({
     uploadPickerParentIDRef.current = null
     folderUploadPickerParentIDRef.current = null
     setCreateOpen(false)
-    setOpenPreviewItem(null)
     setTagDialogItems([])
     setSaveSearchOpen(false)
     setRenameSavedSearch(null)
@@ -926,17 +922,6 @@ export default function DesktopFileExplorer({
     }
   }, [])
 
-  const openPreviewNode = (node: AgentCloudNode) => {
-    setOpenPreviewItem({
-      id: node.id,
-      name: node.name,
-      kind: node.type,
-      size: node.size,
-      updatedAt: node.updated_at,
-      revision: node.revision,
-    })
-  }
-
   const copyItemPaths = (selected: XDriveFileExplorerItem[]) => {
     if (selected.length === 0) return
     const text = selected
@@ -1463,7 +1448,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
-      onOpen: () => { void openWorkspaceItem(item, openPreviewNode) },
+      onOpen: node.type === 'file'
+        ? () => { void openLocalNode(node) }
+        : () => { void openWorkspaceItem(item, () => undefined) },
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
         : undefined,
@@ -1477,9 +1464,6 @@ const desktopTransferLifecycleChildBatchSize = 1000
         : undefined,
       favorite: favorites.favoriteIDs.has(node.id),
       favoriteDisabled: favorites.busyID !== null,
-      onSystemOpen: node.type === 'file'
-        ? () => { void openLocalNode(node) }
-        : undefined,
       onDownload: node.type === 'file'
         ? () => { void downloadNode(node) }
         : (folderTreeDownloadSupported || archiveDownloadSupported)
@@ -1793,7 +1777,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onUploadFolder={!trashActive && uploadConflictSupported
           ? openFolderUploadPicker
           : undefined}
-        onOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
+        onOpenItem={trashActive ? undefined : (item) => {
+          const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+          if (!node) return
+          if (node.type === 'file') void openLocalNode(node)
+          else void openWorkspaceItem(item, () => undefined)
+        }}
         onOpenItemInNewTab={!trashActive && canNewTab
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
@@ -1806,7 +1795,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
           onCloseTrash()
           void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))
         }}
-        onColumnOpenItem={trashActive ? undefined : (item) => { void openWorkspaceItem(item, openPreviewNode) }}
+        onColumnOpenItem={trashActive ? undefined : (item) => {
+          const node = xDriveFileExplorerNodeForItem(item, nodeByID)
+          if (!node) return
+          if (node.type === 'file') void openLocalNode(node)
+          else void openWorkspaceItem(item, () => undefined)
+        }}
         onManageTags={!trashActive && fileTagsSupported ? (selected) => setTagDialogItems(selected) : undefined}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -2109,26 +2103,6 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onCancel={trash.cancelPermanentDelete}
         onConfirm={() => { void trash.confirmPermanentDelete() }}
       />
-      <XDriveOpenPreviewDialog
-        open={Boolean(openPreviewItem)}
-        title={openPreviewItem?.name ?? ''}
-        onClose={() => setOpenPreviewItem(null)}
-      >
-        <XDriveFilePreviewSurface
-          target={openPreviewItem}
-          loadTextPreview={loadTextPreview}
-          loadImagePreview={loadThumbnail}
-          loadPreviewURL={loadPreviewURL}
-          loadLivePhotoMotion={loadLivePhotoMotion}
-          fallback={(
-            <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
-              此文件暂无可用预览
-            </Box>
-          )}
-          minHeight={320}
-          maxHeight={760}
-        />
-      </XDriveOpenPreviewDialog>
 
       <XDriveUploadConflictDialog {...uploadConflictDialogProps} />
 

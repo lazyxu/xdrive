@@ -95,10 +95,12 @@ function initialResetValues(): ResetForm {
 export default function AdminUsersPanel({
   api,
   currentUserID,
+  focusUserID,
   onChanged,
 }: {
   api: XDriveApi
   currentUserID: number
+  focusUserID?: number
   onChanged: () => void
 }) {
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -139,6 +141,16 @@ export default function AdminUsersPanel({
     // api is stable for one authenticated session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
+
+  useEffect(() => {
+    if (!focusUserID || users.length === 0) return
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-xdrive-admin-user-id="${focusUserID}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusUserID, users])
 
   const showActionError = (title: string, err: unknown, fallback: string) => {
     setActionError({
@@ -306,7 +318,12 @@ export default function AdminUsersPanel({
                   </TableHead>
                   <TableBody>
                     {users.map((user) => (
-                      <TableRow key={user.id} hover>
+                      <TableRow
+                        key={user.id}
+                        hover
+                        data-xdrive-admin-user-id={user.id}
+                        selected={focusUserID === user.id}
+                      >
                         <TableCell>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Typography variant="body2" fontWeight={user.id === currentUserID ? 700 : 400}>

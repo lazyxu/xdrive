@@ -9,13 +9,16 @@ func TestFileTextPreviewSupportedName(t *testing.T) {
 	for _, name := range []string{
 		"README", "LICENSE", "Dockerfile", ".gitignore",
 		"notes.txt", "README.md", "data.json", "config.yaml", "main.go", "query.sql",
+		"index.js", "module.mjs", "header.h", "source.cpp", "app.vue", "main.swift",
+		"index.html", "icon.svg", "CMakeLists.txt", "Jenkinsfile", ".env", ".env.local",
+		".eslintrc.json", ".prettierrc.yaml", ".npmrc",
 	} {
 		if !fileTextPreviewSupportedName(name) {
 			t.Fatalf("expected text preview support for %q", name)
 		}
 	}
 	for _, name := range []string{
-		"index.html", "graphic.svg", "secret.pem", "private.key", ".env",
+		"secret.pem", "private.key",
 		"photo.jpg", "video.mp4", "archive.zip", "unknown.bin",
 	} {
 		if fileTextPreviewSupportedName(name) {

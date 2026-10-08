@@ -32,6 +32,7 @@ import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
+import type { XDriveWebAppGalleryTarget } from '../web-app'
 import type {
   MediaAlbum,
   MediaGalleryQuery,
@@ -284,20 +285,14 @@ export type MediaCleanupReviewTarget =
   | { kind: 'duplicate'; group: MediaDuplicateGroup }
   | { kind: 'burst'; group: MediaBurstReview }
 
-type MediaGalleryCollectionTarget = {
-  kind:
-    | 'all'
-    | 'album'
-    | 'suggested-person'
-    | 'person'
-    | 'memory'
-    | 'duplicate-review'
-    | 'burst-review'
-    | 'pet'
-    | 'trash'
-  id?: string
-  query: MediaGalleryQuery
+type MediaGalleryCollectionTarget = XDriveWebAppGalleryTarget & {
   requestID: number
+}
+
+export type XDriveMediaGalleryOpenViewerContext = {
+  target: XDriveWebAppGalleryTarget
+  activeIndex: number
+  totalCount: number
 }
 
 function mediaGalleryQuerySignature(query: MediaGalleryQuery) {
@@ -395,6 +390,9 @@ export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
+  initialSection?: MediaGallerySection
+  onSectionRouteChange?: (section: MediaGallerySection) => void
+  onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   onError?: (error: unknown) => void
 }
 
@@ -402,6 +400,9 @@ export function XDriveMediaGalleryPage({
   source,
   pageSize = 100,
   shareDialog,
+  initialSection,
+  onSectionRouteChange,
+  onOpenViewer,
   onError,
 }: XDriveMediaGalleryPageProps) {
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
@@ -426,7 +427,8 @@ export function XDriveMediaGalleryPage({
   const [currentMemory, setCurrentMemory] = useState<MediaMemory | null>(null)
   const [currentCleanupReview, setCurrentCleanupReview] =
     useState<MediaCleanupReviewTarget | null>(null)
-  const [section, setSection] = useState<MediaGallerySection>('library')
+  const routeSectionInitializedRef = useRef(false)
+  const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
@@ -778,6 +780,7 @@ export function XDriveMediaGalleryPage({
   }, [reportError, source, virtualCollection.reset])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    onSectionRouteChange?.(nextSection)
     setCurrentPet(null)
     if (nextSection !== 'memories') setCurrentMemory(null)
     if (nextSection !== 'cleanup') setCurrentCleanupReview(null)
@@ -811,7 +814,7 @@ export function XDriveMediaGalleryPage({
       return
     }
     void loadFirstPage(null, nextQuery)
-  }, [loadCleanup, loadFirstPage, loadMemories])
+  }, [loadCleanup, loadFirstPage, loadMemories, onSectionRouteChange])
 
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
@@ -1563,11 +1566,20 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, onError, source])
 
   useEffect(() => {
-    void loadFirstPage(null, {})
-    return () => {
-      requestID.current += 1
+    if (initialSection === undefined) {
+      if (routeSectionInitializedRef.current) return
+      routeSectionInitializedRef.current = true
+      void loadFirstPage(null, {})
+      return
     }
-  }, [loadFirstPage])
+    routeSectionInitializedRef.current = true
+    if (initialSection === 'library') void loadFirstPage(null, {})
+    else selectSection(initialSection)
+  }, [initialSection, loadFirstPage, selectSection])
+
+  useEffect(() => () => {
+    requestID.current += 1
+  }, [])
 
   return (
     <XDriveWorkspaceSurface presentation="page" title="图库">
@@ -1640,6 +1652,16 @@ export function XDriveMediaGalleryPage({
         onDeleteItems={source.deleteItems ? deleteItems : undefined}
         onDownloadItems={source.downloadItems ? downloadItems : undefined}
         onShareItem={shareDialog ? setShareItem : undefined}
+        onOpenViewer={onOpenViewer ? (item, activeIndex) => {
+          const target = collectionTargetRef.current
+          if (!target) return
+          const { requestID: _requestID, ...serializableTarget } = target
+          onOpenViewer(item, {
+            target: serializableTarget,
+            activeIndex,
+            totalCount: galleryVirtualCollection.itemCount,
+          })
+        } : undefined}
         onRestoreTrashItems={source.restoreTrashItems ? restoreTrashItems : undefined}
         onPermanentlyDeleteTrashItems={
           source.permanentlyDeleteTrashItems ? permanentlyDeleteTrashItems : undefined
@@ -1848,6 +1870,7 @@ export interface XDriveMediaGalleryProps {
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
   onShareItem?: (item: MediaItem) => void
+  onOpenViewer?: (item: MediaItem, logicalIndex: number) => void
   onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
   onPermanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   onSetTags?: (item: MediaItem, tags: string[]) => Promise<string[]>
@@ -2910,6 +2933,7 @@ export function XDriveMediaGallery({
   onDeleteItems,
   onDownloadItems,
   onShareItem,
+  onOpenViewer,
   onRestoreTrashItems,
   onPermanentlyDeleteTrashItems,
   onSetTags,
@@ -3078,10 +3102,15 @@ export function XDriveMediaGallery({
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
   const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
     if (section === 'trash') return
+    const activeIndex = index ?? items.findIndex((candidate) => candidate.node.id === item.node.id)
+    if (onOpenViewer && activeIndex >= 0) {
+      onOpenViewer(item, activeIndex)
+      return
+    }
     setPreviewItem(item)
     setPreviewLogicalIndex(index ?? null)
     setPendingPreviewIndex(null)
-  }, [section])
+  }, [items, onOpenViewer, section])
   const previewIndex = previewLogicalIndex ?? (
     previewItem
       ? items.findIndex((item) => item.node.id === previewItem.node.id)

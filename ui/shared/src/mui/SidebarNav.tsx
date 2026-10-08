@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
@@ -145,7 +145,7 @@ export function XDriveCoreWorkspaceNavItems({
   transferBadge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
   showLocalStorage?: boolean
-  onSelect: (key: XDriveCoreWorkspaceKey) => void
+  onSelect: (key: XDriveCoreWorkspaceKey, event: MouseEvent<HTMLDivElement>) => void
 }) {
   return (
     <>
@@ -154,21 +154,21 @@ export function XDriveCoreWorkspaceNavItems({
         icon={<CloudOutlinedIcon fontSize="small" />}
         primary="文件"
         appearance={appearance}
-        onClick={() => onSelect('files')}
+        onClick={(event) => onSelect('files', event)}
       />
       <XDriveSidebarNavItem
         selected={selected === 'gallery'}
         icon={<PhotoLibraryRoundedIcon fontSize="small" />}
         primary="图库"
         appearance={appearance}
-        onClick={() => onSelect('gallery')}
+        onClick={(event) => onSelect('gallery', event)}
       />
       <XDriveSidebarNavItem
         selected={selected === 'sources'}
         icon={<CloudSyncRoundedIcon fontSize="small" />}
         primary="同步文件夹"
         appearance={appearance}
-        onClick={() => onSelect('sources')}
+        onClick={(event) => onSelect('sources', event)}
       />
       <XDriveSidebarNavItem
         selected={selected === 'transfers'}
@@ -176,7 +176,7 @@ export function XDriveCoreWorkspaceNavItems({
         primary="传输"
         badge={transferBadge}
         appearance={appearance}
-        onClick={() => onSelect('transfers')}
+        onClick={(event) => onSelect('transfers', event)}
       />
       {showLocalStorage ? (
         <XDriveSidebarNavItem
@@ -184,7 +184,7 @@ export function XDriveCoreWorkspaceNavItems({
           icon={<StorageRoundedIcon fontSize="small" />}
           primary="本地存储"
           appearance={appearance}
-          onClick={() => onSelect('local-storage')}
+          onClick={(event) => onSelect('local-storage', event)}
         />
       ) : null}
       <XDriveSidebarNavItem
@@ -192,7 +192,7 @@ export function XDriveCoreWorkspaceNavItems({
         icon={<CloudRoundedIcon fontSize="small" />}
         primary="云端存储"
         appearance={appearance}
-        onClick={() => onSelect('cloud-storage')}
+        onClick={(event) => onSelect('cloud-storage', event)}
       />
     </>
   )
@@ -250,7 +250,7 @@ export function XDriveSidebarNavItem({
   badge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
   className?: string
-  onClick?: () => void
+  onClick?: (event: MouseEvent<HTMLDivElement>) => void
 }) {
   const dark = appearance === 'dark'
 

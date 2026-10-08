@@ -771,6 +771,12 @@ type XDriveFileExplorerMarqueePointer = {
   host: HTMLDivElement
 }
 
+export type XDriveFileExplorerQuickLookRequest = {
+  item: XDriveFileExplorerItem
+  sessionIDs?: XDriveFileExplorerID[]
+  logicalIndex: number
+}
+
 export function XDriveFileExplorer({
   items,
   crumbs,
@@ -807,6 +813,7 @@ export function XDriveFileExplorer({
   onOpenItem,
   onOpenItemInNewTab,
   onPreviewItem,
+  onOpenQuickLook,
   onNativeDragOutItem,
   loadColumnPage,
   onColumnNavigate,
@@ -896,6 +903,7 @@ export function XDriveFileExplorer({
   onOpenItem?: (item: XDriveFileExplorerItem) => void
   onOpenItemInNewTab?: (item: XDriveFileExplorerItem) => void
   onPreviewItem?: (item: XDriveFileExplorerItem) => void
+  onOpenQuickLook?: (request: XDriveFileExplorerQuickLookRequest) => void
   onNativeDragOutItem?: (item: XDriveFileExplorerItem) => void
   loadColumnPage?: (
     parentID: XDriveFileExplorerID,
@@ -2017,10 +2025,18 @@ export function XDriveFileExplorer({
       commitSelection([item.id], [item])
       anchorSelectionAt(item, index)
     }
+    onPreviewItem?.(item)
+    if (onOpenQuickLook) {
+      onOpenQuickLook({
+        item,
+        sessionIDs: selectionSession ?? undefined,
+        logicalIndex: index,
+      })
+      return
+    }
     setQuickLookSessionIDs(selectionSession)
     setQuickLookItemID(item.id)
     setQuickLookLogicalIndex(index)
-    onPreviewItem?.(item)
   }
 
   const closeQuickLook = () => {

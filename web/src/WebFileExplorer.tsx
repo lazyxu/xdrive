@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress } from '@mui/material'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
-  XDriveFilePreviewSurface,
-  XDriveOpenPreviewDialog,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
   XDriveFileTagDialog,
@@ -27,6 +26,7 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
+  XDriveFileExplorerQuickLookRequest,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
   XDriveTrashDialogAdapter,
@@ -52,6 +52,7 @@ import type {
   XDriveFileExplorerSearchSourceOption,
   XDriveByteProgressHandler,
   XDriveFileExplorerMediaDetailsRef,
+  XDriveWebAppBrowseContext,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
@@ -75,6 +76,7 @@ export default function WebFileExplorer({
   virtualDirectory,
   loading,
   navigationSessionStorageKey,
+  initialDirectoryID,
   uploadProgress,
   onLoadDirectory,
   onRefreshCurrentDirectoryIfIdle,
@@ -98,6 +100,10 @@ export default function WebFileExplorer({
   onFeedback,
   onShare,
   onHistory,
+  onOpenFile,
+  onOpenQuickLook,
+  onOpenNodeInBrowserTab,
+  onDirectoryChange,
   onError,
 }: {
   api: XDriveApi
@@ -106,6 +112,7 @@ export default function WebFileExplorer({
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
   loading: boolean
   navigationSessionStorageKey?: string
+  initialDirectoryID?: number
   uploadProgress: number | null
   onLoadDirectory: (
     id: number,
@@ -139,6 +146,10 @@ export default function WebFileExplorer({
   onFeedback: (tone: 'good' | 'warning', message: string) => void
   onShare: (node: Node) => void
   onHistory: (node: Node) => void
+  onOpenFile: (node: Node, context: XDriveWebAppBrowseContext) => void
+  onOpenQuickLook: (node: Node, context: XDriveWebAppBrowseContext) => void
+  onOpenNodeInBrowserTab: (node: Node) => void
+  onDirectoryChange?: (nodeID: number) => void
   onError: (error: unknown) => void
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -265,6 +276,37 @@ export default function WebFileExplorer({
     onError,
   })
 
+  const routedDirectoryRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!initialDirectoryID || current?.id === initialDirectoryID) return
+    if (routedDirectoryRef.current === initialDirectoryID) return
+    routedDirectoryRef.current = initialDirectoryID
+    let active = true
+    void (async () => {
+      const chain: Crumb[] = []
+      let cursor = initialDirectoryID
+      for (let depth = 0; depth < 256; depth += 1) {
+        const node = await api.node(cursor)
+        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
+        chain.push({ id: node.id, name: node.name })
+        if (!node.parent_id) break
+        cursor = node.parent_id
+      }
+      if (!active) return
+      chain.reverse()
+      await navigateTo(chain)
+    })().catch((error) => {
+      if (active) onError(error)
+    })
+    return () => {
+      active = false
+    }
+  }, [api, current?.id, initialDirectoryID, navigateTo, onError])
+
+  useEffect(() => {
+    if (!trashActive && current?.id) onDirectoryChange?.(current.id)
+  }, [current?.id, onDirectoryChange, trashActive])
+
   const refreshCurrentDirectory = onRefreshCurrentDirectoryIfIdle
 
   const loadTreeDirectoryPage = useCallback(
@@ -314,6 +356,54 @@ export default function WebFileExplorer({
     searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
   )
 
+  const logicalIndexForItem = useCallback((item: XDriveFileExplorerItem) => {
+    if (explorerVirtualCollection) {
+      for (const [index, candidate] of explorerVirtualCollection.loadedItems) {
+        if (Number(candidate.id) === Number(item.id)) return index
+      }
+    }
+    const index = explorerItems.findIndex((candidate) => Number(candidate.id) === Number(item.id))
+    return index >= 0 ? index : 0
+  }, [explorerItems, explorerVirtualCollection])
+
+  const browseContextForItem = useCallback((
+    item: XDriveFileExplorerItem,
+    sessionIDs?: readonly (string | number)[],
+    explicitIndex?: number,
+  ): XDriveWebAppBrowseContext => {
+    if (sessionIDs && sessionIDs.length > 1) {
+      const nodeIDs = sessionIDs.map(Number).filter((value) => Number.isSafeInteger(value) && value > 0)
+      const activeIndex = Math.max(0, nodeIDs.findIndex((id) => id === Number(item.id)))
+      return { kind: 'selection', nodeIDs, activeIndex }
+    }
+    const activeIndex = explicitIndex ?? logicalIndexForItem(item)
+    if (searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters)) {
+      return {
+        kind: 'search',
+        query: searchState.query,
+        filters: persistedSearchFilters,
+        sort,
+        grouping,
+        activeIndex,
+      }
+    }
+    return {
+      kind: 'directory',
+      directoryID: current?.id ?? Number(explorerCrumbs.at(-1)?.id ?? 0),
+      sort,
+      grouping,
+      activeIndex,
+    }
+  }, [
+    current?.id,
+    explorerCrumbs,
+    grouping,
+    logicalIndexForItem,
+    persistedSearchFilters,
+    searchState.query,
+    sort,
+  ])
+
   const favorites = useXDriveFileExplorerFavorites<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
     loadItems: () => api.fileFavorites(),
@@ -321,8 +411,6 @@ export default function WebFileExplorer({
     unfavoriteItem: (nodeID) => api.unfavoriteFile(nodeID),
     onError,
   })
-
-  const [openPreviewItem, setOpenPreviewItem] = useState<XDriveFileExplorerItem | null>(null)
 
   const loadColumnPage = useCallback(async (
     parentID: string | number,
@@ -456,15 +544,22 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const openWebNode = (node: Node) => {
-    setOpenPreviewItem({
-      id: node.id,
-      name: node.name,
-      kind: node.type,
-      size: node.size,
-      updatedAt: node.updated_at,
-      revision: node.revision,
-    })
+  const openWebNode = (node: Node, item?: XDriveFileExplorerItem) => {
+    onOpenFile(
+      node,
+      item
+        ? browseContextForItem(item)
+        : { kind: 'selection', nodeIDs: [node.id], activeIndex: 0 },
+    )
+  }
+
+  const openWebQuickLook = (request: XDriveFileExplorerQuickLookRequest) => {
+    const node = nodeByID.get(Number(request.item.id))
+    if (!node) return
+    onOpenQuickLook(
+      node,
+      browseContextForItem(request.item, request.sessionIDs, request.logicalIndex),
+    )
   }
 
   const copyItemPaths = async (selected: XDriveFileExplorerItem[]) => {
@@ -511,9 +606,9 @@ export default function WebFileExplorer({
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
 
-    return xDriveFileExplorerStandardItemMenuItems({
+    const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
-      onOpen: () => { void openItem(item, openWebNode) },
+      onOpen: () => { void openItem(item, (opened) => openWebNode(opened, item)) },
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
         : undefined,
@@ -532,6 +627,15 @@ export default function WebFileExplorer({
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
       onDelete: () => onRemove(node),
     })
+    return [
+      ...standardItems,
+      {
+        id: 'open-browser-tab',
+        label: '在新浏览器标签页打开',
+        icon: <OpenInNewRoundedIcon fontSize="small" />,
+        onSelect: () => onOpenNodeInBrowserTab(node),
+      },
+    ]
   }
 
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
@@ -656,17 +760,18 @@ export default function WebFileExplorer({
         onCreateFolder={trashActive ? undefined : onCreateFolder}
         onUpload={trashActive ? undefined : openUploadPicker}
         onUploadFolder={trashActive ? undefined : openFolderUploadPicker}
-        onOpenItem={trashActive ? undefined : (item) => { void openItem(item, openWebNode) }}
+        onOpenItem={trashActive ? undefined : (item) => { void openItem(item, (node) => openWebNode(node, item)) }}
         onOpenItemInNewTab={!trashActive && canNewTab
           ? (item) => { void openItemInNewTab(item) }
           : undefined}
         onPreviewItem={trashActive ? undefined : (item) => { void recent.record(Number(item.id)) }}
+        onOpenQuickLook={trashActive ? undefined : openWebQuickLook}
         loadColumnPage={trashActive || searchStatusText ? undefined : loadColumnPage}
         onColumnNavigate={trashActive || searchStatusText ? undefined : (nextCrumbs) => {
           onCloseTrash()
           void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))
         }}
-        onColumnOpenItem={trashActive ? undefined : (item) => { void openItem(item, openWebNode) }}
+        onColumnOpenItem={trashActive ? undefined : (item) => { void openItem(item, (node) => openWebNode(node, item)) }}
         onManageTags={trashActive ? undefined : (selected) => setTagDialogItems(selected)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -929,26 +1034,6 @@ export default function WebFileExplorer({
         onCancel={trash.cancelPermanentDelete}
         onConfirm={() => { void trash.confirmPermanentDelete() }}
       />
-      <XDriveOpenPreviewDialog
-        open={Boolean(openPreviewItem)}
-        title={openPreviewItem?.name ?? ''}
-        onClose={() => setOpenPreviewItem(null)}
-      >
-        <XDriveFilePreviewSurface
-          target={openPreviewItem}
-          loadTextPreview={loadTextPreview}
-          loadImagePreview={loadThumbnail}
-          loadPreviewURL={loadPreviewURL}
-          loadLivePhotoMotion={loadLivePhotoMotion}
-          fallback={(
-            <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
-              此文件暂无可用预览
-            </Box>
-          )}
-          minHeight={320}
-          maxHeight={760}
-        />
-      </XDriveOpenPreviewDialog>
     </Box>
   )
 }

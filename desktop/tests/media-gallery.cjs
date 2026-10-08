@@ -1013,7 +1013,8 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
 
 test('Web exposes Home, files, Gallery, Sync Folders, and Cloud Storage as first-class workspace views', () => {
   assert.ok(webApp.includes('type AppView = XDriveRemoteWorkspaceViewKey<'), 'Web workspace view type must extend the shared remote route model')
-  assert.ok(webApp.includes("useState<AppView>('overview')"), 'Home should be the initial Web workspace')
+  assert.ok(webApp.includes('useXDriveWebAppRuntime()'), 'Web workspace selection must come from the Web App Runtime')
+  assert.ok(webApp.includes("?? 'overview'"), 'Home should remain the fallback initial Web workspace')
   assert.ok(webApp.includes("key: 'overview'") && webApp.includes("label: '主页'"), 'Web must expose Home before the shared core')
   for (const view of ['files', 'gallery', 'sources', 'cloud-storage']) {
     assert.ok(sharedRoute.includes(`'${view}'`), `shared workspace route missing first-class workspace: ${view}`)

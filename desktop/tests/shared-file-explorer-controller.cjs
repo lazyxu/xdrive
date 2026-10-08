@@ -321,20 +321,20 @@ test('shared FileExplorer controller owns item lookup and open-item planning', (
     assert.equal(source.includes('xDriveFileExplorerOpenItemPlan('), false, `${label} must not branch open-item planning locally`)
     assert.ok(source.includes('openItem'), `${label} must consume the workspace open-item adapter`)
   }
-  assert.ok(web.includes('const openWebNode = (node: Node) => {'), 'Web must keep platform open execution local')
-  assert.ok(web.includes('setOpenPreviewItem({'), 'Web open must target the shared preview dialog instead of downloading')
+  assert.ok(web.includes('const openWebNode = (node: Node, item?: XDriveFileExplorerItem) => {'), 'Web must keep platform open execution local')
+  assert.ok(web.includes('onOpenFile(') && web.includes('browseContextForItem(item)'), 'Web Open must delegate to the Web App Resolver with collection context')
   assert.ok(web.includes('await api.download(plan.file)'), 'Web explicit Download must keep authenticated file download local')
   assert.equal(
     web.slice(
-      web.indexOf('const openWebNode = (node: Node) => {'),
+      web.indexOf('const openWebNode = (node: Node, item?: XDriveFileExplorerItem) => {'),
       web.indexOf('const downloadSelected = async'),
     ).includes('api.download('),
     false,
     'Web Open must not implicitly download',
   )
-  assert.ok(desktop.includes('openWorkspaceItem(item, openPreviewNode)'), 'Desktop primary Open must target shared preview while shared workspace owns dispatch')
-  assert.ok(desktop.includes("onSystemOpen: node.type === 'file'"), 'Desktop must preserve explicit system-shell Open')
-  assert.ok(desktop.includes('void openLocalNode(node)'), 'Desktop explicit system-shell Open must keep native execution local')
+  assert.ok(desktop.includes("onOpen: node.type === 'file'"), 'Desktop primary Open must route files to the OS default application')
+  assert.ok(desktop.includes('void openLocalNode(node)'), 'Desktop native Open execution must remain platform-local')
+  assert.equal(desktop.includes("onSystemOpen: node.type === 'file'"), false, 'Desktop must not duplicate ordinary Open with a second system-shell item')
 
   assert.equal(web.includes('normalizedSearchCrumbs'), false, 'Web must not normalize search crumbs locally')
   assert.equal(desktop.includes('normalizeSearchCrumbs'), false, 'Desktop must not normalize search crumbs locally')

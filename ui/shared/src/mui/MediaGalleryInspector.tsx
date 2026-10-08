@@ -19,6 +19,7 @@ import type {
 export type XDriveMediaDetailsInspectorProps =
   XDriveMediaDetailsContentProps & {
     onClose: () => void
+    overlayZIndex?: number
   }
 
 function MediaInspectorHeader({
@@ -59,6 +60,7 @@ function MediaInspectorHeader({
 export function XDriveMediaDetailsInspector({
   item,
   onClose,
+  overlayZIndex,
   ...contentProps
 }: XDriveMediaDetailsInspectorProps) {
   const theme = useTheme()
@@ -84,7 +86,7 @@ export function XDriveMediaDetailsInspector({
           bottom: 20,
           width: 360,
           minHeight: 0,
-          zIndex: theme.zIndex.appBar - 1,
+          zIndex: overlayZIndex ?? theme.zIndex.appBar - 1,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
