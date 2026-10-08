@@ -167,6 +167,7 @@ export default function WebFileExplorer({
   const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
   useEffect(() => {
     let active = true
+    setSearchSourceOptions([])
     void api.sources().then((sources) => {
       if (active) setSearchSourceOptions(sources.map((source) => ({ id: source.id, name: source.name })))
     }).catch((error) => {
@@ -175,7 +176,7 @@ export default function WebFileExplorer({
     return () => {
       active = false
     }
-  }, [api, onError])
+  }, [api, navigationSessionStorageKey, onError])
 
   const recent = useXDriveFileExplorerRecent<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
