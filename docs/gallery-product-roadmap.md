@@ -110,6 +110,22 @@ retention and the bounded thumbnail scheduler therefore continue to control memo
 network work independently from tile size.
 
 
+### Photo-wall presentation
+
+Grid and Timeline use one compact **4px** gutter and square, zero-radius media tiles.
+Ordinary still images do not carry a permanent “图片” badge; persistent badges are
+reserved for media semantics that help scanning the wall, including video duration,
+Live Photo, RAW, burst, GIF, panorama, sidecar/edit relations and cleanup recommendations.
+Multiple badges share one stacked top-right lane so they never overlap.
+
+Desktop keeps the file name and an unselected Favorite control visually quiet until
+hover/focus, while existing favorites remain visible. Compact touch keeps the dedicated
+Info/Favorite/selection controls at 44 CSS px and places Favorite after the selection
+target without overlap. Thumbnail requests keep the existing bounded scheduler; pending
+thumbnail pixels use a non-animated rectangular skeleton rather than one progress spinner
+per visible tile.
+
+
 ## Phase 3 — multi-select and shared Selection Toolbar
 
 Gallery selection is owned entirely by the shared Web/Desktop surface. Users can enter

@@ -85,7 +85,7 @@ const preview = transpile(previewPath, previewSource, (id) => {
     return { jsx: () => null, jsxs: () => null, Fragment: Symbol('Fragment') }
   }
   if (id === '@mui/icons-material') return { Image: function Image() {}, Movie: function Movie() {} }
-  if (id === '@mui/material') return { Box: function Box() {}, CircularProgress: function CircularProgress() {} }
+  if (id === '@mui/material') return { Box: function Box() {}, Skeleton: function Skeleton() {} }
   if (id === './MediaGalleryVideoPoster') {
     return { xDriveCaptureVideoPosterBlob: async () => null }
   }

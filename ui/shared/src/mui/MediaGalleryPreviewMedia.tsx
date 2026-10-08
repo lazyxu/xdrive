@@ -4,7 +4,7 @@ import {
   Image as ImageIcon,
   Movie as MovieIcon,
 } from '@mui/icons-material'
-import { Box, CircularProgress } from '@mui/material'
+import { Box, Skeleton } from '@mui/material'
 import type { MediaMetadata } from '../models'
 import { xDriveCaptureVideoPosterBlob } from './MediaGalleryVideoPoster'
 
@@ -64,9 +64,13 @@ export function XDriveMediaAsyncThumbnail({
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%' }}>
-        <CircularProgress size={22} />
-      </Box>
+      <Skeleton
+        variant="rectangular"
+        animation={false}
+        width="100%"
+        height="100%"
+        sx={{ borderRadius: 0 }}
+      />
     )
   }
   return (

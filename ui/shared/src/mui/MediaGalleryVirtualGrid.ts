@@ -1,5 +1,5 @@
 export const XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH = 150
-export const XDRIVE_MEDIA_GALLERY_GRID_GAP = 8
+export const XDRIVE_MEDIA_GALLERY_GRID_GAP = 4
 export const XDRIVE_MEDIA_GALLERY_OVERSCAN_ROWS = 2
 
 export type XDriveMediaGalleryGridMetrics = {

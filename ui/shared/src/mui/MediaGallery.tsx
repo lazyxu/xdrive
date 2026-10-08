@@ -2002,7 +2002,7 @@ function mediaAssetChipLabel(item: MediaItem) {
           ? xDriveMediaFormatDuration(item.metadata.duration_ms)
           : '视频'
       }
-      return '图片'
+      return null
   }
 }
 
@@ -2142,6 +2142,7 @@ function MediaTile({
 }: MediaTileProps) {
   const video = item.metadata.media_kind === 'video'
   const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
+  const mediaBadgeLabel = mediaAssetChipLabel(item)
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const clickTimerRef = useRef<number | null>(null)
   const lastPointerTypeRef = useRef<string | null>(null)
@@ -2176,6 +2177,7 @@ function MediaTile({
   return (
     <Paper
       variant="outlined"
+      data-xdrive-media-tile
       role="button"
       tabIndex={0}
       onPointerDown={(event) => {
@@ -2224,13 +2226,23 @@ function MediaTile({
         aspectRatio: '1 / 1',
         cursor: 'pointer',
         bgcolor: 'action.hover',
-        borderColor: selectedForAction ? 'primary.main' : 'divider',
-        boxShadow: selectedForAction ? 2 : 0,
-        '&:hover .media-name': { opacity: 1 },
+        border: 0,
+        borderRadius: 0,
+        boxShadow: 'none',
+        outline: selectedForAction ? '2px solid' : 'none',
+        outlineColor: selectedForAction ? 'primary.main' : 'transparent',
+        outlineOffset: selectedForAction ? -2 : 0,
+        '&:hover .media-name, &:focus-visible .media-name, &:focus-within .media-name': {
+          opacity: 1,
+        },
+        '&:hover .media-favorite, &:focus-within .media-favorite': {
+          opacity: 1,
+          pointerEvents: 'auto',
+        },
         '&:focus-visible': {
           outline: '2px solid',
           outlineColor: 'primary.main',
-          outlineOffset: 2,
+          outlineOffset: 1,
         },
       }}
     >
@@ -2253,22 +2265,6 @@ function MediaTile({
           revokeOnDispose={!thumbnailScheduler}
         />
       )}
-      {recommendedForCleanup ? (
-        <Chip
-          size="small"
-          label="建议保留"
-          data-xdrive-media-cleanup-recommended
-          sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            zIndex: 4,
-            bgcolor: 'background.paper',
-            boxShadow: 1,
-            fontWeight: 700,
-          }}
-        />
-      ) : null}
       {(selectionMode || selectedForAction) ? (
         <Checkbox
           size="small"
@@ -2338,6 +2334,7 @@ function MediaTile({
       {onSetFavorite ? (
         <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
           <IconButton
+            className="media-favorite"
             size="small"
             aria-label={item.favorite ? '取消收藏' : '收藏'}
             onClick={(event) => {
@@ -2349,9 +2346,12 @@ function MediaTile({
             sx={{
               position: 'absolute',
               top: 8,
-              left: selectionMode || selectedForAction ? 42 : 8,
+              left: selectionMode || selectedForAction ? (compactTouch ? 52 : 42) : 8,
               width: compactTouch ? 44 : undefined,
               height: compactTouch ? 44 : undefined,
+              opacity: compactTouch || item.favorite ? 1 : 0,
+              pointerEvents: compactTouch || item.favorite ? 'auto' : 'none',
+              transition: 'opacity 120ms ease, background-color 120ms ease',
               bgcolor: 'rgba(0,0,0,.66)',
               color: item.favorite ? 'warning.main' : '#fff',
               '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
@@ -2361,32 +2361,56 @@ function MediaTile({
           </IconButton>
         </Tooltip>
       ) : null}
-      <Chip
-        icon={livePhoto ? <XDriveLivePhotoGlyph size={20} /> : video ? <MovieIcon /> : <ImageIcon />}
-        label={mediaAssetChipLabel(item)}
-        size="small"
-        sx={{
-          position: 'absolute',
-          top: 8,
-          right: 8,
-          bgcolor: 'rgba(0,0,0,.66)',
-          color: '#fff',
-          '& .MuiChip-icon': { color: '#fff' },
-        }}
-      />
-      {item.edit_recipe?.source_current && item.edit_recipe.revision > 0 ? (
-        <Chip
-          label="已编辑"
-          size="small"
-          data-xdrive-media-edited
+      {(recommendedForCleanup || mediaBadgeLabel || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
+        <Stack
+          spacing={0.5}
+          alignItems="flex-end"
+          data-xdrive-media-tile-badges
           sx={{
             position: 'absolute',
-            top: 40,
+            top: 8,
             right: 8,
-            bgcolor: 'rgba(0,0,0,.66)',
-            color: '#fff',
+            zIndex: 4,
+            pointerEvents: 'none',
           }}
-        />
+        >
+          {recommendedForCleanup ? (
+            <Chip
+              size="small"
+              label="建议保留"
+              data-xdrive-media-cleanup-recommended
+              sx={{
+                bgcolor: 'background.paper',
+                color: 'text.primary',
+                boxShadow: 1,
+                fontWeight: 700,
+              }}
+            />
+          ) : null}
+          {mediaBadgeLabel ? (
+            <Chip
+              icon={livePhoto ? <XDriveLivePhotoGlyph size={20} /> : video ? <MovieIcon /> : <ImageIcon />}
+              label={mediaBadgeLabel}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(0,0,0,.66)',
+                color: '#fff',
+                '& .MuiChip-icon': { color: '#fff' },
+              }}
+            />
+          ) : null}
+          {item.edit_recipe?.source_current && item.edit_recipe.revision > 0 ? (
+            <Chip
+              label="已编辑"
+              size="small"
+              data-xdrive-media-edited
+              sx={{
+                bgcolor: 'rgba(0,0,0,.66)',
+                color: '#fff',
+              }}
+            />
+          ) : null}
+        </Stack>
       ) : null}
       {onSetCover ? (
         <Button
@@ -2422,7 +2446,8 @@ function MediaTile({
           px: 1,
           pt: 2.5,
           pb: 0.75,
-          opacity: { xs: 1, md: 0 },
+          opacity: 0,
+          pointerEvents: 'none',
           transition: 'opacity 120ms ease',
           background: 'linear-gradient(transparent, rgba(0,0,0,.72))',
         }}
@@ -2471,7 +2496,7 @@ function MediaTileGrid({
       sx={{
         display: 'grid',
         gridTemplateColumns: `repeat(auto-fill, minmax(${minTileWidth}px, 1fr))`,
-        gap: 1,
+        gap: `${XDRIVE_MEDIA_GALLERY_GRID_GAP}px`,
       }}
     >
       {items.map((item, index) => (
@@ -2684,6 +2709,8 @@ function MediaVirtualTileGrid({
           sx={{
             aspectRatio: '1 / 1',
             bgcolor: 'action.hover',
+            border: 0,
+            borderRadius: 0,
             opacity: 0.55,
           }}
         />
@@ -2930,6 +2957,8 @@ function MediaVirtualTimeline({
                 sx={{
                   aspectRatio: '1 / 1',
                   bgcolor: 'action.hover',
+                  border: 0,
+                  borderRadius: 0,
                   opacity: 0.55,
                 }}
               />
