@@ -24,6 +24,9 @@ const (
 	CreativeMovieMaxFrameDurationMS = 5000
 	CreativeMovieMinTransitionMS    = 0
 	CreativeMovieMaxTransitionMS    = 1000
+	CreativeMovieTemplateClassic    = "classic"
+	CreativeMovieTemplateFill       = "fill"
+	CreativeMovieTemplateKenBurns   = "ken_burns"
 	CreativeCollageMinImages        = 2
 	CreativeCollageMaxImages        = 9
 	CreativeCollageTemplateGrid     = "grid"
@@ -80,6 +83,7 @@ type CreativeTask struct {
 	Points           []CreativePoint      `json:"points,omitempty"`
 	Strokes          []CreativeStroke     `json:"strokes,omitempty"`
 	MovieFrames      []CreativeMovieFrame `json:"movie_frames,omitempty"`
+	MovieTemplate    string               `json:"movie_template,omitempty"`
 	CollageImages    []CreativeMovieFrame `json:"collage_images,omitempty"`
 	CollageTemplate  string               `json:"collage_template,omitempty"`
 	FrameDurationMS  int                  `json:"frame_duration_ms,omitempty"`
@@ -200,6 +204,18 @@ func validateCreativeSourceImage(frame CreativeMovieFrame, label string) error {
 	return nil
 }
 
+func validCreativeMovieTemplate(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "",
+		CreativeMovieTemplateClassic,
+		CreativeMovieTemplateFill,
+		CreativeMovieTemplateKenBurns:
+		return true
+	default:
+		return false
+	}
+}
+
 func validCreativeCollageTemplate(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case CreativeCollageTemplateGrid,
@@ -253,6 +269,7 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.MovieFrames) != 0 ||
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" ||
+			strings.TrimSpace(task.MovieTemplate) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("cutout does not accept multi-image inputs")
@@ -264,6 +281,7 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if len(task.MovieFrames) != 0 ||
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" ||
+			strings.TrimSpace(task.MovieTemplate) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("erase does not accept multi-image inputs")
@@ -307,6 +325,9 @@ func ValidateCreativeTask(task CreativeTask) error {
 			task.TransitionMS >= task.FrameDurationMS {
 			return errors.New("creative movie transition is invalid")
 		}
+		if !validCreativeMovieTemplate(task.MovieTemplate) {
+			return errors.New("creative movie template is invalid")
+		}
 		for _, frame := range task.MovieFrames {
 			if err := validateCreativeSourceImage(frame, "movie frame"); err != nil {
 				return err
@@ -317,6 +338,7 @@ func ValidateCreativeTask(task CreativeTask) error {
 			len(task.Strokes) != 0 ||
 			strings.TrimSpace(task.CutoutMode) != "" ||
 			len(task.MovieFrames) != 0 ||
+			strings.TrimSpace(task.MovieTemplate) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("collage does not accept other creative inputs")

@@ -694,6 +694,10 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
     '自动电影',
     "kind: 'movie'",
     'source_node_ids',
+    'movie_template',
+    '经典适配',
+    '满屏裁切',
+    'Ken Burns',
     'frame_duration_ms',
     'transition_ms',
     '2–30 张普通照片',
@@ -709,6 +713,7 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
 
   assert.match(sharedModels, /MediaCreativeKind = 'cutout' \| 'erase' \| 'movie' \| 'collage'/)
   assert.match(sharedModels, /source_node_ids\?: number\[\]/)
+  assert.match(sharedModels, /movie_template\?: 'classic' \| 'fill' \| 'ken_burns'/)
   assert.match(sharedModels, /frame_duration_ms\?: number/)
   assert.match(sharedModels, /transition_ms\?: number/)
 

@@ -685,6 +685,7 @@ test('media creative generation uses the scoped Agent API', async (t) => {
       const input = await readJSONBody(req)
       assert.equal(input.kind, 'movie')
       assert.deepEqual(input.source_node_ids, [31, 32])
+      assert.equal(input.movie_template, 'fill')
       assert.equal(input.frame_duration_ms, 2000)
       assert.equal(input.transition_ms, 350)
       json(res, 202, {
@@ -732,6 +733,7 @@ test('media creative generation uses the scoped Agent API', async (t) => {
   const created = await client.createMediaCreativeGeneration(31, {
     kind: 'movie',
     source_node_ids: [31, 32],
+    movie_template: 'fill',
     frame_duration_ms: 2000,
     transition_ms: 350,
   })

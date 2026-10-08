@@ -51,6 +51,7 @@ type mediaCreativeRecipe struct {
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	MovieSources    []mediaCreativeMovieSource         `json:"movie_sources,omitempty"`
+	MovieTemplate   string                             `json:"movie_template,omitempty"`
 	CollageSources  []mediaCreativeMovieSource         `json:"collage_sources,omitempty"`
 	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
@@ -64,6 +65,7 @@ type mediaCreativeInput struct {
 	Points          []photointelligence.CreativePoint  `json:"points,omitempty"`
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64                           `json:"source_node_ids,omitempty"`
+	MovieTemplate   string                             `json:"movie_template,omitempty"`
 	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
 	TransitionMS    *int                               `json:"transition_ms,omitempty"`
@@ -118,6 +120,7 @@ func normalizeMediaCreativeInput(
 	input.Kind = strings.TrimSpace(input.Kind)
 	input.CutoutMode = strings.TrimSpace(input.CutoutMode)
 	input.OutputName = strings.TrimSpace(input.OutputName)
+	input.MovieTemplate = strings.ToLower(strings.TrimSpace(input.MovieTemplate))
 	input.CollageTemplate = strings.ToLower(strings.TrimSpace(input.CollageTemplate))
 	if value.Metadata.MediaKind != meta.MediaKindImage ||
 		value.Asset.Kind != meta.PhotoAssetKindImage {
@@ -167,6 +170,9 @@ func normalizeMediaCreativeInput(
 			if input.CollageTemplate != "" {
 				return input, errors.New("movie does not accept collage template")
 			}
+			if input.MovieTemplate == "" {
+				input.MovieTemplate = photointelligence.CreativeMovieTemplateClassic
+			}
 			if input.FrameDurationMS == 0 {
 				input.FrameDurationMS = 2000
 			}
@@ -176,9 +182,13 @@ func normalizeMediaCreativeInput(
 			}
 			input.TransitionMS = &transition
 			probe.MovieFrames = frames
+			probe.MovieTemplate = input.MovieTemplate
 			probe.FrameDurationMS = input.FrameDurationMS
 			probe.TransitionMS = transition
 		} else {
+			if input.MovieTemplate != "" {
+				return input, errors.New("collage does not accept movie template")
+			}
 			if input.FrameDurationMS != 0 || input.TransitionMS != nil {
 				return input, errors.New("collage does not accept movie timing")
 			}
@@ -194,6 +204,7 @@ func normalizeMediaCreativeInput(
 		return input, nil
 	}
 	if len(input.SourceNodeIDs) != 0 ||
+		input.MovieTemplate != "" ||
 		input.CollageTemplate != "" ||
 		input.FrameDurationMS != 0 ||
 		input.TransitionMS != nil {
@@ -513,6 +524,7 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 			return
 		}
 		recipe.MovieSources = sources
+		recipe.MovieTemplate = input.MovieTemplate
 		recipe.FrameDurationMS = input.FrameDurationMS
 		recipe.TransitionMS = *input.TransitionMS
 	case meta.PhotoCreativeKindCollage:
@@ -864,6 +876,10 @@ func (s *Server) runMediaCreativeGeneration(
 			return s.finishMediaCreativeRunError(ctx, generation.ID, frameErr)
 		}
 		task.MovieFrames = frames
+		task.MovieTemplate = strings.TrimSpace(recipe.MovieTemplate)
+		if task.MovieTemplate == "" {
+			task.MovieTemplate = photointelligence.CreativeMovieTemplateClassic
+		}
 		task.FrameDurationMS = recipe.FrameDurationMS
 		task.TransitionMS = recipe.TransitionMS
 	case meta.PhotoCreativeKindCollage:

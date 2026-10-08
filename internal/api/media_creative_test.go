@@ -52,6 +52,7 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 	}
 	if len(movie.SourceNodeIDs) != 3 ||
 		movie.SourceNodeIDs[0] != 11 ||
+		movie.MovieTemplate != photointelligence.CreativeMovieTemplateClassic ||
 		movie.TransitionMS == nil ||
 		*movie.TransitionMS != 350 {
 		t.Fatalf("movie=%+v", movie)
@@ -61,6 +62,13 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 		SourceNodeIDs: []uint64{11},
 	}, value); err == nil {
 		t.Fatal("one-frame movie was accepted")
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:          meta.PhotoCreativeKindMovie,
+		SourceNodeIDs: []uint64{11, 22},
+		MovieTemplate: "freeform",
+	}, value); err == nil {
+		t.Fatal("unsupported movie template was accepted")
 	}
 
 	collage, err := normalizeMediaCreativeInput(mediaCreativeInput{

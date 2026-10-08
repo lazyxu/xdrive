@@ -2942,7 +2942,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		handler,
 		http.MethodPost,
 		"/v1/media/creative?node_id=31",
-		`{"kind":"movie","source_node_ids":[31,32],"frame_duration_ms":2000,"transition_ms":350}`,
+		`{"kind":"movie","source_node_ids":[31,32],"movie_template":"ken_burns","frame_duration_ms":2000,"transition_ms":350}`,
 	)
 	if res.Code != http.StatusAccepted ||
 		!strings.Contains(res.Body.String(), "\"id\":\"creative-1\"") {
@@ -2953,6 +2953,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		len(ctrl.cloudMediaCreativeInput.SourceNodeIDs) != 2 ||
 		ctrl.cloudMediaCreativeInput.SourceNodeIDs[0] != 31 ||
 		ctrl.cloudMediaCreativeInput.SourceNodeIDs[1] != 32 ||
+		ctrl.cloudMediaCreativeInput.MovieTemplate != "ken_burns" ||
 		ctrl.cloudMediaCreativeInput.FrameDurationMS != 2000 ||
 		ctrl.cloudMediaCreativeInput.TransitionMS == nil ||
 		*ctrl.cloudMediaCreativeInput.TransitionMS != 350 {
