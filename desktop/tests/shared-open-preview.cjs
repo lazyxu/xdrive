@@ -318,3 +318,39 @@ test('FileExplorer Quick Look matches the shared Finder-style browsing contract'
     'Preview Engine design must document the Quick Look session and non-goals',
   )
 })
+
+
+test('shared image preview does not restart source loading on equivalent target rerenders', () => {
+  const generationMarker = 'const generation = previewGenerationRef.current + 1'
+  const effectBodyStart = preview.lastIndexOf('useEffect(() => {', preview.indexOf(generationMarker))
+  const effectDepsStart = preview.indexOf('  }, [', preview.indexOf(generationMarker))
+  const effectDepsEnd = preview.indexOf('  ])', effectDepsStart)
+  assert.ok(effectBodyStart >= 0 && effectDepsStart > effectBodyStart && effectDepsEnd > effectDepsStart,
+    'shared preview loading effect is missing')
+  const dependencies = preview.slice(effectDepsStart, effectDepsEnd)
+  assert.equal(
+    /\n\s*target,/.test(dependencies),
+    false,
+    'equivalent target object rerenders must not restart image preview loading',
+  )
+  for (const loader of ['loadImagePreview', 'loadPreviewURL', 'loadTextPreview']) {
+    assert.equal(
+      new RegExp('\\n\\s*' + loader + ',').test(dependencies),
+      false,
+      loader + ' callback identity churn must not restart image preview loading',
+    )
+  }
+  for (const identity of ['previewKind', 'previewTargetID', 'previewTargetRevision']) {
+    assert.ok(
+      dependencies.includes(identity),
+      'shared preview loading must still restart when ' + identity + ' changes',
+    )
+  }
+  assert.ok(
+    preview.includes('const previewTargetRef = useRef(target)') &&
+      preview.includes('const previewLoadersRef = useRef({') &&
+      preview.includes('const currentTarget = previewTargetRef.current') &&
+      preview.includes('const loaders = previewLoadersRef.current'),
+    'shared preview must read the latest target/loaders through refs without identity-triggered reloads',
+  )
+})
