@@ -791,9 +791,9 @@ function FileManager({
     await uploadTargets(files.map((file) => ({ parentID, file })), true, action)
   }
 
-  const uploadFiles = async (files: FileList | null) => {
-    if (!current || !files?.length) return
-    await uploadFilesTo(current.id, Array.from(files))
+  const uploadFiles = async (parentID: number, files: FileList | null) => {
+    if (!files?.length) return
+    await uploadFilesTo(parentID, Array.from(files))
   }
 
   const uploadFolderEntriesTo = async (
@@ -840,9 +840,8 @@ function FileManager({
     return result
   }
 
-  const uploadFolderFiles = async (files: FileList | null) => {
-    if (!current || !files?.length) return
-    const expectedCurrentID = current.id
+  const uploadFolderFiles = async (expectedCurrentID: number, files: FileList | null) => {
+    if (!files?.length) return
     try {
       await uploadFolderEntriesTo(
         expectedCurrentID,

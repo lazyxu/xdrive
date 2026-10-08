@@ -62,12 +62,14 @@ test('Web FileExplorer uses real file operations and server search', () => {
     'api.rename(node.id, node.revision, name)',
     'onRenameItem={trashActive ? undefined : renameItem}',
     'onRemove(node)',
-    'onUploadFiles(event.target.files)',
+    'onUploadFiles(parentID, event.target.files)',
   ]) {
     assert.ok(explorer.includes(token), `missing real Web Explorer operation: ${token}`)
   }
   assert.ok(explorer.includes('getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}'), 'Web Explorer item context menu is not wired')
   assert.ok(explorer.includes('backgroundMenuItems={trashActive ? [] : backgroundMenuItems}'), 'Web Explorer background context menu is not wired')
+  assert.ok(explorer.includes('uploadPickerParentIDRef.current = current.id'), 'Web file picker must capture its opening parent')
+  assert.ok(explorer.includes('onUpload={trashActive ? undefined : openUploadPicker}'), 'Web FileExplorer must open uploads through the parent-owning picker helper')
   const openStart = explorer.indexOf('const openWebNode = (node: Node) =>')
   const downloadStart = explorer.indexOf('const downloadSelected = async')
   assert.ok(openStart >= 0 && downloadStart > openStart, 'Web Open/Download adapters are missing')
@@ -291,7 +293,7 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
     'folderUploadInputRef',
     "element.setAttribute('webkitdirectory', '')",
     "element.setAttribute('directory', '')",
-    'onUploadFolder={trashActive ? undefined : () => folderUploadInputRef.current?.click()}',
+    'onUploadFolder={trashActive ? undefined : openFolderUploadPicker}',
   ]) {
     assert.ok(explorer.includes(token), `missing Web folder-upload picker: ${token}`)
   }
@@ -311,6 +313,7 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
   ]) {
     assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)
   }
+  assert.ok(explorer.includes('folderUploadPickerParentIDRef.current = current.id'), 'Web folder picker must capture its opening parent')
   assert.equal(app.includes('listChildren: (id) => api.list(id)'), false, 'Web folder-upload conflict reuse must not list the whole parent directory')
 })
 
