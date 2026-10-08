@@ -45,6 +45,12 @@ type mediaCreativeMovieSource struct {
 	SHA256       string `json:"sha256"`
 }
 
+type mediaCreativeMusicSource struct {
+	NodeID       uint64 `json:"node_id"`
+	NodeRevision uint64 `json:"node_revision"`
+	SHA256       string `json:"sha256"`
+}
+
 type mediaCreativeRecipe struct {
 	OutputName      string                             `json:"output_name,omitempty"`
 	CutoutMode      string                             `json:"cutout_mode,omitempty"`
@@ -52,6 +58,7 @@ type mediaCreativeRecipe struct {
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	MovieSources    []mediaCreativeMovieSource         `json:"movie_sources,omitempty"`
 	MovieTemplate   string                             `json:"movie_template,omitempty"`
+	MusicSource     *mediaCreativeMusicSource          `json:"music_source,omitempty"`
 	CollageSources  []mediaCreativeMovieSource         `json:"collage_sources,omitempty"`
 	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
@@ -66,6 +73,7 @@ type mediaCreativeInput struct {
 	Strokes         []photointelligence.CreativeStroke `json:"strokes,omitempty"`
 	SourceNodeIDs   []uint64                           `json:"source_node_ids,omitempty"`
 	MovieTemplate   string                             `json:"movie_template,omitempty"`
+	MusicNodeID     uint64                             `json:"music_node_id,omitempty"`
 	CollageTemplate string                             `json:"collage_template,omitempty"`
 	FrameDurationMS int                                `json:"frame_duration_ms,omitempty"`
 	TransitionMS    *int                               `json:"transition_ms,omitempty"`
@@ -189,6 +197,9 @@ func normalizeMediaCreativeInput(
 			if input.MovieTemplate != "" {
 				return input, errors.New("collage does not accept movie template")
 			}
+			if input.MusicNodeID != 0 {
+				return input, errors.New("collage does not accept movie music")
+			}
 			if input.FrameDurationMS != 0 || input.TransitionMS != nil {
 				return input, errors.New("collage does not accept movie timing")
 			}
@@ -205,6 +216,7 @@ func normalizeMediaCreativeInput(
 	}
 	if len(input.SourceNodeIDs) != 0 ||
 		input.MovieTemplate != "" ||
+		input.MusicNodeID != 0 ||
 		input.CollageTemplate != "" ||
 		input.FrameDurationMS != 0 ||
 		input.TransitionMS != nil {
@@ -285,6 +297,35 @@ func (s *Server) resolveMediaCreativeMovieSources(
 		})
 	}
 	return out, nil
+}
+
+func (s *Server) resolveMediaCreativeMusicSource(
+	ctx context.Context,
+	ownerID, nodeID uint64,
+) (*mediaCreativeMusicSource, error) {
+	if nodeID == 0 {
+		return nil, nil
+	}
+	node, err := s.ownedNode(ownerID, nodeID, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		return nil, errors.New("movie music file is unavailable")
+	}
+	descriptor, ok := filePreviewDescriptorForName(node.Name)
+	if !ok || descriptor.Kind != "audio" {
+		return nil, errors.New("movie music must be a supported audio file")
+	}
+	if node.File.Size <= 0 || node.File.Size > photointelligence.CreativeMovieMaxMusicBytes {
+		return nil, errors.New("movie music file size is invalid")
+	}
+	sha := strings.ToLower(strings.TrimSpace(node.File.SHA256))
+	if len(sha) != 64 {
+		return nil, errors.New("movie music file fingerprint is invalid")
+	}
+	return &mediaCreativeMusicSource{
+		NodeID:       node.ID,
+		NodeRevision: node.Revision,
+		SHA256:       sha,
+	}, nil
 }
 
 func (s *Server) resolveMediaCreativeCollageSources(
@@ -392,6 +433,56 @@ func (s *Server) mediaCreativeMovieFrames(
 	return frames, nil
 }
 
+func (s *Server) mediaCreativeMovieMusic(
+	ctx context.Context,
+	generation meta.PhotoCreativeGeneration,
+	user meta.User,
+	recipe mediaCreativeRecipe,
+) (string, string, error) {
+	if recipe.MusicSource == nil {
+		return "", "", nil
+	}
+	source := *recipe.MusicSource
+	var node meta.Node
+	if err := s.DB.WithContext(ctx).
+		Preload("File").
+		Where(
+			"id = ? AND owner_id = ? AND type = ? AND revision = ? AND deleted_at IS NULL",
+			source.NodeID,
+			generation.OwnerID,
+			meta.NodeTypeFile,
+			source.NodeRevision,
+		).
+		First(&node).Error; err != nil {
+		return "", "", errMediaCreativeSourceChanged
+	}
+	if node.File == nil ||
+		!strings.EqualFold(
+			strings.TrimSpace(node.File.SHA256),
+			strings.TrimSpace(source.SHA256),
+		) {
+		return "", "", errMediaCreativeSourceChanged
+	}
+	descriptor, ok := filePreviewDescriptorForName(node.Name)
+	if !ok || descriptor.Kind != "audio" {
+		return "", "", errMediaCreativeSourceChanged
+	}
+	if node.File.Size <= 0 || node.File.Size > photointelligence.CreativeMovieMaxMusicBytes {
+		return "", "", errMediaCreativeSourceChanged
+	}
+	musicURL, err := s.photoCreativeAudioURL(
+		ctx,
+		generation.OwnerID,
+		user.SessionVersion,
+		source.NodeID,
+		source.NodeRevision,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	return musicURL, strings.ToLower(strings.TrimSpace(source.SHA256)), nil
+}
+
 func (s *Server) mediaCreativeCollageImages(
 	ctx context.Context,
 	generation meta.PhotoCreativeGeneration,
@@ -443,6 +534,35 @@ func validateMediaCreativeSourcesTx(
 				strings.TrimSpace(node.File.SHA256),
 				strings.TrimSpace(source.SHA256),
 			) {
+			return errMediaCreativeSourceChanged
+		}
+	}
+	if generation.Kind == meta.PhotoCreativeKindMovie && recipe.MusicSource != nil {
+		source := *recipe.MusicSource
+		var node meta.Node
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Preload("File").
+			Where(
+				"id = ? AND owner_id = ? AND type = ? AND revision = ? AND deleted_at IS NULL",
+				source.NodeID,
+				generation.OwnerID,
+				meta.NodeTypeFile,
+				source.NodeRevision,
+			).
+			First(&node).Error; err != nil {
+			return errMediaCreativeSourceChanged
+		}
+		if node.File == nil ||
+			!strings.EqualFold(
+				strings.TrimSpace(node.File.SHA256),
+				strings.TrimSpace(source.SHA256),
+			) {
+			return errMediaCreativeSourceChanged
+		}
+		descriptor, ok := filePreviewDescriptorForName(node.Name)
+		if !ok || descriptor.Kind != "audio" ||
+			node.File.Size <= 0 ||
+			node.File.Size > photointelligence.CreativeMovieMaxMusicBytes {
 			return errMediaCreativeSourceChanged
 		}
 	}
@@ -525,6 +645,18 @@ func (s *Server) createMediaCreativeGeneration(c *gin.Context) {
 		}
 		recipe.MovieSources = sources
 		recipe.MovieTemplate = input.MovieTemplate
+		if input.MusicNodeID != 0 {
+			music, musicErr := s.resolveMediaCreativeMusicSource(
+				c.Request.Context(),
+				value.Node.OwnerID,
+				input.MusicNodeID,
+			)
+			if musicErr != nil {
+				fail(c, http.StatusBadRequest, musicErr.Error())
+				return
+			}
+			recipe.MusicSource = music
+		}
 		recipe.FrameDurationMS = input.FrameDurationMS
 		recipe.TransitionMS = *input.TransitionMS
 	case meta.PhotoCreativeKindCollage:
@@ -840,6 +972,34 @@ func (s *Server) runMediaCreativeGeneration(
 	if err := json.Unmarshal([]byte(generation.RecipeJSON), &recipe); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
 	}
+	if generation.Kind == meta.PhotoCreativeKindMovie {
+		template := strings.TrimSpace(recipe.MovieTemplate)
+		if template == "" {
+			template = photointelligence.CreativeMovieTemplateClassic
+		}
+		if template != photointelligence.CreativeMovieTemplateClassic &&
+			!photointelligence.CreativeAnalyzerSupports(
+				info,
+				photointelligence.CreativeCapabilityMovieTemplate,
+			) {
+			return s.finishMediaCreativeRunError(
+				ctx,
+				generation.ID,
+				errors.New("local creative analyzer does not support movie templates"),
+			)
+		}
+		if recipe.MusicSource != nil &&
+			!photointelligence.CreativeAnalyzerSupports(
+				info,
+				photointelligence.CreativeCapabilityMovieMusic,
+			) {
+			return s.finishMediaCreativeRunError(
+				ctx,
+				generation.ID,
+				errors.New("local creative analyzer does not support movie music"),
+			)
+		}
+	}
 	previewURL, err := s.photoCreativePreviewURL(
 		ctx,
 		generation.OwnerID,
@@ -880,6 +1040,17 @@ func (s *Server) runMediaCreativeGeneration(
 		if task.MovieTemplate == "" {
 			task.MovieTemplate = photointelligence.CreativeMovieTemplateClassic
 		}
+		musicURL, musicFingerprint, musicErr := s.mediaCreativeMovieMusic(
+			ctx,
+			generation,
+			user,
+			recipe,
+		)
+		if musicErr != nil {
+			return s.finishMediaCreativeRunError(ctx, generation.ID, musicErr)
+		}
+		task.MusicURL = musicURL
+		task.MusicFingerprint = musicFingerprint
 		task.FrameDurationMS = recipe.FrameDurationMS
 		task.TransitionMS = recipe.TransitionMS
 	case meta.PhotoCreativeKindCollage:

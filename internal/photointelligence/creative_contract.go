@@ -14,6 +14,8 @@ const (
 	CreativeCapabilityCutout        = "cutout"
 	CreativeCapabilityErase         = "erase"
 	CreativeCapabilityMovie         = "movie"
+	CreativeCapabilityMovieTemplate = "movie_templates"
+	CreativeCapabilityMovieMusic    = "movie_music"
 	CreativeCapabilityCollage       = "collage"
 	CreativeMaxPoints               = 6
 	CreativeMaxStrokes              = 64
@@ -27,6 +29,7 @@ const (
 	CreativeMovieTemplateClassic    = "classic"
 	CreativeMovieTemplateFill       = "fill"
 	CreativeMovieTemplateKenBurns   = "ken_burns"
+	CreativeMovieMaxMusicBytes      = 128 << 20
 	CreativeCollageMinImages        = 2
 	CreativeCollageMaxImages        = 9
 	CreativeCollageTemplateGrid     = "grid"
@@ -84,6 +87,8 @@ type CreativeTask struct {
 	Strokes          []CreativeStroke     `json:"strokes,omitempty"`
 	MovieFrames      []CreativeMovieFrame `json:"movie_frames,omitempty"`
 	MovieTemplate    string               `json:"movie_template,omitempty"`
+	MusicURL         string               `json:"music_url,omitempty"`
+	MusicFingerprint string               `json:"music_fingerprint,omitempty"`
 	CollageImages    []CreativeMovieFrame `json:"collage_images,omitempty"`
 	CollageTemplate  string               `json:"collage_template,omitempty"`
 	FrameDurationMS  int                  `json:"frame_duration_ms,omitempty"`
@@ -106,6 +111,8 @@ func normalizeCreativeCapabilities(values []string) ([]string, error) {
 		case CreativeCapabilityCutout,
 			CreativeCapabilityErase,
 			CreativeCapabilityMovie,
+			CreativeCapabilityMovieTemplate,
+			CreativeCapabilityMovieMusic,
 			CreativeCapabilityCollage:
 		default:
 			return nil, fmt.Errorf("unsupported creative capability %q", value)
@@ -204,6 +211,29 @@ func validateCreativeSourceImage(frame CreativeMovieFrame, label string) error {
 	return nil
 }
 
+func validCreativeMusic(task CreativeTask) error {
+	rawURL := strings.TrimSpace(task.MusicURL)
+	fingerprint := strings.ToLower(strings.TrimSpace(task.MusicFingerprint))
+	if rawURL == "" && fingerprint == "" {
+		return nil
+	}
+	if rawURL == "" || len(fingerprint) != 64 {
+		return errors.New("creative movie music contract is invalid")
+	}
+	for _, value := range fingerprint {
+		if (value < '0' || value > '9') && (value < 'a' || value > 'f') {
+			return errors.New("creative movie music fingerprint is invalid")
+		}
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("creative movie music URL is invalid")
+	}
+	return nil
+}
+
 func validCreativeMovieTemplate(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "",
@@ -270,6 +300,8 @@ func ValidateCreativeTask(task CreativeTask) error {
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" ||
 			strings.TrimSpace(task.MovieTemplate) != "" ||
+			strings.TrimSpace(task.MusicURL) != "" ||
+			strings.TrimSpace(task.MusicFingerprint) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("cutout does not accept multi-image inputs")
@@ -282,6 +314,8 @@ func ValidateCreativeTask(task CreativeTask) error {
 			len(task.CollageImages) != 0 ||
 			strings.TrimSpace(task.CollageTemplate) != "" ||
 			strings.TrimSpace(task.MovieTemplate) != "" ||
+			strings.TrimSpace(task.MusicURL) != "" ||
+			strings.TrimSpace(task.MusicFingerprint) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("erase does not accept multi-image inputs")
@@ -328,6 +362,9 @@ func ValidateCreativeTask(task CreativeTask) error {
 		if !validCreativeMovieTemplate(task.MovieTemplate) {
 			return errors.New("creative movie template is invalid")
 		}
+		if err := validCreativeMusic(task); err != nil {
+			return err
+		}
 		for _, frame := range task.MovieFrames {
 			if err := validateCreativeSourceImage(frame, "movie frame"); err != nil {
 				return err
@@ -339,6 +376,8 @@ func ValidateCreativeTask(task CreativeTask) error {
 			strings.TrimSpace(task.CutoutMode) != "" ||
 			len(task.MovieFrames) != 0 ||
 			strings.TrimSpace(task.MovieTemplate) != "" ||
+			strings.TrimSpace(task.MusicURL) != "" ||
+			strings.TrimSpace(task.MusicFingerprint) != "" ||
 			task.FrameDurationMS != 0 ||
 			task.TransitionMS != 0 {
 			return errors.New("collage does not accept other creative inputs")

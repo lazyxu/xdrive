@@ -25,6 +25,7 @@ const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryView
 const sharedGalleryEditDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryEditDialog.tsx')
 const sharedGalleryCreativeDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCreativeDialog.tsx')
 const sharedGalleryCollageDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCollageDialog.tsx')
+const sharedGalleryMusicPickerDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMusicPickerDialog.tsx')
 const sharedGalleryMovieDialog = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMovieDialog.tsx')
 const sharedFilePreviewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const sharedFilePreviewTransformed = read('ui', 'shared', 'src', 'mui', 'FilePreviewTransformedMedia.tsx')
@@ -53,6 +54,7 @@ const sharedGallery = [
   sharedGalleryEditDialog,
   sharedGalleryCreativeDialog,
   sharedGalleryCollageDialog,
+  sharedGalleryMusicPickerDialog,
   sharedGalleryMovieDialog,
 ].join('\n')
 const sharedLivePhotoSurface = read('ui', 'shared', 'src', 'mui', 'LivePhotoSurface.tsx')
@@ -673,6 +675,27 @@ test('Gallery Collage is a shared multi-selection creative workflow', () => {
   }
 })
 
+test('Gallery music picker reuses shared FileExplorer and thin platform listing adapters', () => {
+  for (const token of [
+    'data-xdrive-gallery-music-picker',
+    'XDriveFileExplorer',
+    'xDriveMediaGalleryMusicNodeSupported',
+    'AAC、FLAC、M4A、MP3、OGG、WAV、WMA',
+    'onSelectionChange',
+    'onOpenItem',
+    'onCrumbClick',
+  ]) {
+    assert.ok(sharedGalleryMusicPickerDialog.includes(token), `music picker contract missing: ${token}`)
+  }
+  for (const token of ['loadMusicRoot', 'listMusicChildren']) {
+    assert.ok(sharedGalleryMain.includes(token) || sharedGalleryAdapter.includes(token))
+  }
+  assert.ok(webAdapter.includes('loadMusicRoot: () => api.root()'))
+  assert.ok(webAdapter.includes('listMusicChildren: (parentID) => api.list(parentID)'))
+  assert.ok(desktopAdapter.includes('loadMusicRoot: () => agent.cloudRoot()'))
+  assert.ok(desktopAdapter.includes('listMusicChildren: (parentID) => agent.cloudChildren(parentID)'))
+})
+
 test('Gallery Automatic Movie is a shared multi-selection creative workflow', () => {
   for (const token of [
     'XDriveMediaGalleryMovieDialog',
@@ -695,9 +718,12 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
     "kind: 'movie'",
     'source_node_ids',
     'movie_template',
+    'music_node_id',
     '经典适配',
     '满屏裁切',
     'Ken Burns',
+    '选择音乐',
+    'XDriveMediaGalleryMusicPickerDialog',
     'frame_duration_ms',
     'transition_ms',
     '2–30 张普通照片',
@@ -714,6 +740,7 @@ test('Gallery Automatic Movie is a shared multi-selection creative workflow', ()
   assert.match(sharedModels, /MediaCreativeKind = 'cutout' \| 'erase' \| 'movie' \| 'collage'/)
   assert.match(sharedModels, /source_node_ids\?: number\[\]/)
   assert.match(sharedModels, /movie_template\?: 'classic' \| 'fill' \| 'ken_burns'/)
+  assert.match(sharedModels, /music_node_id\?: number/)
   assert.match(sharedModels, /frame_duration_ms\?: number/)
   assert.match(sharedModels, /transition_ms\?: number/)
 

@@ -35,6 +35,7 @@ CREATIVE_MOVIE_MIN_FRAMES = 2
 CREATIVE_MOVIE_MAX_FRAMES = 30
 CREATIVE_MOVIE_MAX_BYTES = 128 * 1024 * 1024
 CREATIVE_MOVIE_TIMEOUT_SECONDS = 14 * 60
+CREATIVE_MOVIE_MAX_MUSIC_BYTES = 128 * 1024 * 1024
 CREATIVE_MOVIE_TEMPLATES = {"classic", "fill", "ken_burns"}
 CREATIVE_COLLAGE_MIME = "image/jpeg"
 CREATIVE_COLLAGE_SIZE = 2048
@@ -45,7 +46,7 @@ CREATIVE_COLLAGE_MAX_BYTES = 32 * 1024 * 1024
 CREATIVE_COLLAGE_TEMPLATES = {"grid", "featured", "columns", "rows"}
 CREATIVE_PIPELINE_VERSION = (
     f"opencv-{cv.__version__}-cpu-efficientsam-ti-2025april-int8"
-    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v3-collage-v1"
+    "-1024-prompt-mask-cutout-telea-erase-ffmpeg-slideshow-v5-music-collage-v1"
 )
 
 
@@ -115,7 +116,14 @@ class CreativeRuntime:
                 "license": CREATIVE_MODEL_LICENSE,
                 "license_url": CREATIVE_MODEL_LICENSE_URL,
             },
-            "capabilities": ["cutout", "erase", "movie", "collage"],
+            "capabilities": [
+                "cutout",
+                "erase",
+                "movie",
+                "movie_templates",
+                "movie_music",
+                "collage",
+            ],
             "runtime": {
                 "framework": "opencv_dnn+ffmpeg",
                 "version": cv.__version__,
@@ -543,6 +551,22 @@ class CreativeRuntime:
         duration_ms = task.get("frame_duration_ms")
         transition_ms = task.get("transition_ms")
         template = task.get("movie_template") or "classic"
+        music_url = task.get("music_url")
+        music_fingerprint = task.get("music_fingerprint")
+        has_music_url = isinstance(music_url, str) and bool(music_url)
+        has_music_fingerprint = (
+            isinstance(music_fingerprint, str) and bool(music_fingerprint)
+        )
+        if has_music_url != has_music_fingerprint:
+            raise ValueError("creative movie music contract is invalid")
+        if has_music_fingerprint and (
+            len(music_fingerprint) != 64
+            or any(
+                ch not in "0123456789abcdef"
+                for ch in music_fingerprint.lower()
+            )
+        ):
+            raise ValueError("creative movie music fingerprint is invalid")
         if not isinstance(template, str) or template not in CREATIVE_MOVIE_TEMPLATES:
             raise ValueError("creative movie template is invalid")
         if (
@@ -578,8 +602,20 @@ class CreativeRuntime:
         self,
         images: list[np.ndarray],
         task: dict[str, Any],
+        music_data: bytes | None = None,
     ) -> tuple[bytes, int, int]:
         duration, transition, template = self._validate_movie_task(task, len(images))
+        has_music = bool(task.get("music_url"))
+        if has_music != (music_data is not None):
+            raise ValueError("creative movie music payload is invalid")
+        if music_data is not None and (
+            len(music_data) == 0 or len(music_data) > CREATIVE_MOVIE_MAX_MUSIC_BYTES
+        ):
+            raise ValueError("creative movie music payload size is invalid")
+        if music_data is not None and hashlib.sha256(music_data).hexdigest() != (
+            task.get("music_fingerprint") or ""
+        ).lower():
+            raise ValueError("creative movie music payload fingerprint mismatch")
         with tempfile.TemporaryDirectory(prefix="xdrive-movie-") as tmp:
             root = Path(tmp)
             frame_paths: list[Path] = []
@@ -594,6 +630,15 @@ class CreativeRuntime:
                     "-loop", "1",
                     "-t", f"{duration:.3f}",
                     "-i", str(frame_path),
+                ])
+            music_input_index: int | None = None
+            if music_data is not None:
+                music_path = root / "music-input.bin"
+                music_path.write_bytes(music_data)
+                music_input_index = len(frame_paths)
+                command.extend([
+                    "-stream_loop", "-1",
+                    "-i", str(music_path),
                 ])
 
             filters: list[str] = []
@@ -654,11 +699,32 @@ class CreativeRuntime:
                 )
                 output_label = "outv"
 
+            if music_input_index is not None:
+                movie_duration = (
+                    len(frame_paths) * duration
+                    - max(0, len(frame_paths) - 1) * transition
+                )
+                filters.append(
+                    f"[{music_input_index}:a:0]"
+                    "volume=0.18,"
+                    f"atrim=0:{movie_duration:.3f},"
+                    "asetpts=PTS-STARTPTS[audio]"
+                )
+
             output_path = root / "movie.mp4"
             command.extend([
                 "-filter_complex", ";".join(filters),
                 "-map", f"[{output_label}]",
-                "-an",
+            ])
+            if music_input_index is None:
+                command.append("-an")
+            else:
+                command.extend([
+                    "-map", "[audio]",
+                    "-c:a", "aac",
+                    "-b:a", "160k",
+                ])
+            command.extend([
                 "-c:v", "libx264",
                 "-preset", "veryfast",
                 "-crf", "23",
@@ -694,10 +760,11 @@ class CreativeRuntime:
         self,
         images: list[np.ndarray],
         task: dict[str, Any],
+        music_data: bytes | None = None,
     ) -> tuple[bytes, str, int, int]:
         if task.get("kind") != "movie":
             raise ValueError("creative movie task kind is invalid")
-        data, width, height = self.movie(images, task)
+        data, width, height = self.movie(images, task, music_data)
         return data, CREATIVE_MOVIE_MIME, width, height
 
     def generate(

@@ -45,6 +45,7 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 	movie, err := normalizeMediaCreativeInput(mediaCreativeInput{
 		Kind:            meta.PhotoCreativeKindMovie,
 		SourceNodeIDs:   []uint64{11, 22, 33},
+		MusicNodeID:     44,
 		FrameDurationMS: 2000,
 	}, value)
 	if err != nil {
@@ -52,6 +53,7 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 	}
 	if len(movie.SourceNodeIDs) != 3 ||
 		movie.SourceNodeIDs[0] != 11 ||
+		movie.MusicNodeID != 44 ||
 		movie.MovieTemplate != photointelligence.CreativeMovieTemplateClassic ||
 		movie.TransitionMS == nil ||
 		*movie.TransitionMS != 350 {
@@ -88,6 +90,13 @@ func TestNormalizeMediaCreativeInput(t *testing.T) {
 		CollageTemplate: "freeform",
 	}, value); err == nil {
 		t.Fatal("unsupported collage template was accepted")
+	}
+	if _, err := normalizeMediaCreativeInput(mediaCreativeInput{
+		Kind:          meta.PhotoCreativeKindCollage,
+		SourceNodeIDs: []uint64{11, 22},
+		MusicNodeID:   44,
+	}, value); err == nil {
+		t.Fatal("collage movie music was accepted")
 	}
 }
 

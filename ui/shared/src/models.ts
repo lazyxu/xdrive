@@ -546,6 +546,7 @@ export interface MediaCreativeInput {
   strokes?: MediaCreativeStroke[]
   source_node_ids?: number[]
   movie_template?: 'classic' | 'fill' | 'ken_burns'
+  music_node_id?: number
   collage_template?: 'grid' | 'featured' | 'columns' | 'rows'
   frame_duration_ms?: number
   transition_ms?: number

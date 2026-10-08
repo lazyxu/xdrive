@@ -18,6 +18,8 @@ func testCreativeInfo() CreativeAnalyzerInfo {
 			CreativeCapabilityCutout,
 			CreativeCapabilityErase,
 			CreativeCapabilityMovie,
+			CreativeCapabilityMovieTemplate,
+			CreativeCapabilityMovieMusic,
 			CreativeCapabilityCollage,
 		},
 		Runtime: &FaceAnalyzerRuntimeInfo{Framework: "opencv_dnn", Device: "cpu"},
@@ -38,6 +40,12 @@ func TestValidateCreativeAnalyzerInfo(t *testing.T) {
 	}
 	if CreativeAnalyzerSupports(info, CreativeCapabilityMovie) {
 		t.Fatal("legacy analyzer unexpectedly reports movie support")
+	}
+	if CreativeAnalyzerSupports(info, CreativeCapabilityMovieTemplate) {
+		t.Fatal("legacy analyzer unexpectedly reports movie-template support")
+	}
+	if CreativeAnalyzerSupports(info, CreativeCapabilityMovieMusic) {
+		t.Fatal("legacy analyzer unexpectedly reports movie-music support")
 	}
 	if CreativeAnalyzerSupports(info, CreativeCapabilityCollage) {
 		t.Fatal("legacy analyzer unexpectedly reports collage support")
@@ -114,6 +122,18 @@ func TestValidateCreativeTask(t *testing.T) {
 	if err := ValidateCreativeTask(movie); err == nil {
 		t.Fatal("unsupported movie template was accepted")
 	}
+	movie.MovieTemplate = CreativeMovieTemplateClassic
+	movie.MusicURL = "http://server:8080/api/v1/file-preview/99?ticket=music"
+	movie.MusicFingerprint = strings.Repeat("b", 64)
+	if err := ValidateCreativeTask(movie); err != nil {
+		t.Fatalf("movie music contract was rejected: %v", err)
+	}
+	movie.MusicFingerprint = "bad"
+	if err := ValidateCreativeTask(movie); err == nil {
+		t.Fatal("invalid movie music fingerprint was accepted")
+	}
+	movie.MusicURL = ""
+	movie.MusicFingerprint = ""
 
 	collage := base
 	collage.Kind = CreativeCapabilityCollage

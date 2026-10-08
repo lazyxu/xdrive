@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import MovieCreationOutlinedIcon from '@mui/icons-material/MovieCreationOutlined'
+import MusicNoteRoundedIcon from '@mui/icons-material/MusicNoteRounded'
 import {
   Alert,
   Box,
@@ -19,12 +20,14 @@ import type {
   MediaCreativeGeneration,
   MediaCreativeInput,
   MediaItem,
+  Node,
 } from '../models'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
 import {
   XDriveMediaAsyncThumbnail,
 } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryMusicPickerDialog } from './MediaGalleryMusicPickerDialog'
 
 const terminalMovieStates = new Set(['completed', 'failed', 'cancelled'])
 const movieTemplates = [
@@ -58,6 +61,8 @@ export function XDriveMediaGalleryMovieDialog({
   items,
   loadThumbnail,
   loadPreviewURL,
+  loadMusicRoot,
+  listMusicChildren,
   onCreate,
   onGet,
   onCancel,
@@ -71,6 +76,8 @@ export function XDriveMediaGalleryMovieDialog({
     nodeID: number,
     kind: 'image' | 'video',
   ) => Promise<string | null>
+  loadMusicRoot?: () => Promise<Node>
+  listMusicChildren?: (parentID: number) => Promise<Node[]>
   onCreate?: (
     item: MediaItem,
     input: MediaCreativeInput,
@@ -84,6 +91,8 @@ export function XDriveMediaGalleryMovieDialog({
   const movieActionGenerationRef = useRef(0)
   const [orderedItems, setOrderedItems] = useState<MediaItem[]>([])
   const [movieTemplate, setMovieTemplate] = useState<MovieTemplate>('classic')
+  const [musicNode, setMusicNode] = useState<Node | null>(null)
+  const [musicPickerOpen, setMusicPickerOpen] = useState(false)
   const [frameDurationMS, setFrameDurationMS] = useState(2000)
   const [transitionMS, setTransitionMS] = useState(350)
   const [outputName, setOutputName] = useState('')
@@ -98,6 +107,8 @@ export function XDriveMediaGalleryMovieDialog({
     if (!open) return
     setOrderedItems(items.slice(0, 30))
     setMovieTemplate('classic')
+    setMusicNode(null)
+    setMusicPickerOpen(false)
     setFrameDurationMS(2000)
     setTransitionMS(350)
     setOutputName('')
@@ -202,6 +213,7 @@ export function XDriveMediaGalleryMovieDialog({
         output_name: outputName.trim() || undefined,
         source_node_ids: orderedItems.map((item) => item.node.id),
         movie_template: movieTemplate,
+        music_node_id: musicNode?.id,
         frame_duration_ms: frameDurationMS,
         transition_ms: transitionMS,
       }
@@ -241,15 +253,16 @@ export function XDriveMediaGalleryMovieDialog({
   }
 
   return (
-    <Dialog
-      open={open}
-      onClose={() => !busy && onClose()}
-      maxWidth="md"
-      fullWidth
-      slotProps={{ paper: xDriveDialogPaperProps }}
-      data-xdrive-gallery-movie-dialog
-    >
-      <XDriveDialogTitle
+    <>
+      <Dialog
+        open={open}
+        onClose={() => !busy && onClose()}
+        maxWidth="md"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+        data-xdrive-gallery-movie-dialog
+      >
+        <XDriveDialogTitle
         title="自动电影"
         subtitle="将 2–30 张普通照片按顺序生成本地 1080p MP4；原图不会被修改。"
         onClose={() => !busy && onClose()}
@@ -337,9 +350,44 @@ export function XDriveMediaGalleryMovieDialog({
             />
           </Stack>
 
+          <Paper variant="outlined" sx={{ p: 1.25 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <MusicNoteRoundedIcon color={musicNode ? 'primary' : 'disabled'} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600} noWrap>
+                  {musicNode ? musicNode.name : '无配乐'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {musicNode
+                    ? '生成时会循环到影片结束并以较低背景音量混入；原音频不会被修改。'
+                    : '可从 xDrive 选择一个音频文件作为背景配乐。'}
+                </Typography>
+              </Box>
+              {musicNode ? (
+                <Button
+                  size="small"
+                  disabled={generating || busy}
+                  onClick={() => setMusicNode(null)}
+                >
+                  移除
+                </Button>
+              ) : null}
+              {loadMusicRoot && listMusicChildren ? (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={generating || busy}
+                  onClick={() => setMusicPickerOpen(true)}
+                >
+                  {musicNode ? '更换' : '选择音乐'}
+                </Button>
+              ) : null}
+            </Stack>
+          </Paper>
+
           <Typography variant="caption" color="text.secondary">
             {movieTemplates.find((option) => option.value === movieTemplate)?.hint}
-            {' · '}预计时长约 {durationSeconds.toFixed(1)} 秒 · 无自动配乐 · 本地 FFmpeg 编码
+            {' · '}预计时长约 {durationSeconds.toFixed(1)} 秒 · 本地 FFmpeg 编码
           </Typography>
 
           <Stack spacing={1}>
@@ -422,6 +470,20 @@ export function XDriveMediaGalleryMovieDialog({
           {generation?.state === 'completed' ? '重新生成' : '生成电影'}
         </Button>
       </DialogActions>
-    </Dialog>
+      </Dialog>
+
+      {loadMusicRoot && listMusicChildren ? (
+        <XDriveMediaGalleryMusicPickerDialog
+          open={musicPickerOpen}
+          loadRoot={loadMusicRoot}
+          listChildren={listMusicChildren}
+          onChoose={(node) => {
+            setMusicNode(node)
+            setMusicPickerOpen(false)
+          }}
+          onClose={() => setMusicPickerOpen(false)}
+        />
+      ) : null}
+    </>
   )
 }
