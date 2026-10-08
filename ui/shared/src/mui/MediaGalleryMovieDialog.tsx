@@ -74,6 +74,7 @@ export function XDriveMediaGalleryMovieDialog({
   onClose: () => void
 }) {
   const completedRef = useRef('')
+  const movieActionGenerationRef = useRef(0)
   const [orderedItems, setOrderedItems] = useState<MediaItem[]>([])
   const [frameDurationMS, setFrameDurationMS] = useState(2000)
   const [transitionMS, setTransitionMS] = useState(350)
@@ -84,6 +85,8 @@ export function XDriveMediaGalleryMovieDialog({
   const [error, setError] = useState('')
 
   useEffect(() => {
+    movieActionGenerationRef.current += 1
+    setBusy(false)
     if (!open) return
     setOrderedItems(items.slice(0, 30))
     setFrameDurationMS(2000)
@@ -179,6 +182,8 @@ export function XDriveMediaGalleryMovieDialog({
 
   const createMovie = async () => {
     if (!onCreate || !allSupported || generating || orderedItems.length < 2) return
+    const actionGeneration = movieActionGenerationRef.current
+    const isCurrent = () => actionGeneration === movieActionGenerationRef.current
     setBusy(true)
     setError('')
     setResultURL('')
@@ -190,31 +195,38 @@ export function XDriveMediaGalleryMovieDialog({
         frame_duration_ms: frameDurationMS,
         transition_ms: transitionMS,
       }
-      setGeneration(await onCreate(orderedItems[0], input))
+      const next = await onCreate(orderedItems[0], input)
+      if (isCurrent()) setGeneration(next)
     } catch (createError) {
+      if (!isCurrent()) return
       setError(
         createError instanceof Error
           ? createError.message
           : '创建自动电影任务失败',
       )
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
 
   const cancelMovie = async () => {
     if (!generation || !onCancel || !generating) return
+    const actionGeneration = movieActionGenerationRef.current
+    const isCurrent = () => actionGeneration === movieActionGenerationRef.current
     setBusy(true)
+    setError('')
     try {
-      setGeneration(await onCancel(generation.id))
+      const next = await onCancel(generation.id)
+      if (isCurrent()) setGeneration(next)
     } catch (cancelError) {
+      if (!isCurrent()) return
       setError(
         cancelError instanceof Error
           ? cancelError.message
           : '取消自动电影失败',
       )
     } finally {
-      setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
 
