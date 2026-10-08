@@ -281,6 +281,7 @@ export default function DesktopFileExplorer({
   const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
   useEffect(() => {
     let active = true
+    setSearchSourceOptions([])
     void window.xdriveDesktop.agent.getSources().then((result) => {
       if (active && result.ok) {
         setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
@@ -289,7 +290,7 @@ export default function DesktopFileExplorer({
     return () => {
       active = false
     }
-  }, [])
+  }, [navigationSessionStorageKey])
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
   )
