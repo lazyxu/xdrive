@@ -96,6 +96,15 @@ function storageHistoryOtherCacheBytes(point: StorageHistoryPoint) {
   return point.media_other_bytes + point.preview_cache_bytes + point.video_transcode_bytes
 }
 
+function storageHistoryAnomalyDetail(anomaly: StorageHistory['anomalies'][number]) {
+  const details: string[] = [anomaly.message]
+  if (anomaly.current_count) details.push(`${anomaly.current_count.toLocaleString()} 项`)
+  if (anomaly.current_bytes) details.push(formatBytes(anomaly.current_bytes))
+  if (anomaly.delta_bytes) details.push(`变化 ${formatSignedBytes(anomaly.delta_bytes)}`)
+  if (anomaly.age_hours) details.push(`距今 ${anomaly.age_hours.toFixed(1)} 小时`)
+  return details.join(' · ')
+}
+
 function decisionDescription(decision: StorageDecision) {
   if (decision.priority === 'collecting') {
     return `已有 ${decision.sample_count} 个有效样本，跨度 ${decision.span_hours.toFixed(0)} 小时；至少需要 4 个样本且覆盖 24 小时。`
@@ -650,6 +659,26 @@ export default function StorageStatsPanel({
 
               {scope === 'global' && history && (
                 <Stack spacing={1.5}>
+                  <Stack spacing={1}>
+                    <XDriveSectionHeader
+                      level="h3"
+                      title="需要处理"
+                      subtitle="基于已持久化的每日快照进行确定性异常判断；不会因为打开页面重新扫描存储。"
+                    />
+                    {history.anomalies.length > 0 ? history.anomalies.map((anomaly) => (
+                      <XDriveStatusAlert
+                        key={anomaly.key}
+                        tone={anomaly.severity === 'bad' ? 'bad' : 'warning'}
+                        title={anomaly.title}
+                      >
+                        {storageHistoryAnomalyDetail(anomaly)}
+                      </XDriveStatusAlert>
+                    )) : (
+                      <XDriveStatusAlert tone="good" title="未发现存储异常">
+                        最近的每日快照未命中物理缺失、CAS 元数据漂移、GC backlog、未分类数据或缓存突增规则。
+                      </XDriveStatusAlert>
+                    )}
+                  </Stack>
                   <XDriveStatusAlert tone={decisionTone(history.decision)} title={decisionMessage(history.decision)}>
                     {decisionDescription(history.decision)}
                   </XDriveStatusAlert>

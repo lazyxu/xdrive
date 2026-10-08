@@ -176,3 +176,96 @@ func TestStorageHistorySnapshotToleratesLegacyRows(t *testing.T) {
 		}
 	}
 }
+
+func storageHistoryAnomalyKeys(values []storageHistoryAnomalyDTO) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value.Key] = true
+	}
+	return out
+}
+
+func TestStorageHistoryAnomaliesDetectsIntegrityAndFreshnessIssues(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	points := []storageHistoryPointDTO{{
+		SlotAt:                            now.Add(-48 * time.Hour),
+		CapturedAt:                        now.Add(-48 * time.Hour),
+		AnomalySnapshotAvailable:          true,
+		GCClassificationSnapshotAvailable: true,
+		CASHealthSnapshotAvailable:        true,
+		PhysicalMissingBlobCount:          2,
+		PhysicalMissingMetadataBytes:      20,
+		MetadataInconsistentBlobCount:     3,
+		MetadataInconsistentBlobBytes:     30,
+		StaleDeletingBlobCount:            4,
+		DeletingBlobMetadataBytes:         40,
+		MissingMetadataCount:              1,
+		RefCountMismatchCount:             2,
+		UnclassifiedBytes:                 50,
+	}}
+
+	anomalies := storageHistoryAnomalies(points, now)
+	keys := storageHistoryAnomalyKeys(anomalies)
+	for _, key := range []string{
+		"snapshot_stale",
+		"physical_missing",
+		"metadata_inconsistent",
+		"cas_metadata_drift",
+		"stale_deleting",
+		"unclassified_storage",
+	} {
+		if !keys[key] {
+			t.Fatalf("missing anomaly %q: %+v", key, anomalies)
+		}
+	}
+}
+
+func TestStorageHistoryAnomaliesDetectsStalledAndGrowingBacklogs(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	points := make([]storageHistoryPointDTO, 0, 3)
+	for index := 0; index < 3; index++ {
+		points = append(points, storageHistoryPointDTO{
+			SlotAt:                            now.Add(time.Duration(index-2) * 24 * time.Hour),
+			CapturedAt:                        now.Add(time.Duration(index-2) * 24 * time.Hour),
+			AnomalySnapshotAvailable:          true,
+			GCClassificationSnapshotAvailable: true,
+			BlockedByUploadBlobCount:          int64(2 + index),
+			BlockedByUploadBlobBytes:          int64(128+index*16) << 20,
+			UnreferencedBlobCount:             int64(10 + index),
+			UnreferencedBlobBytes:             int64(index) * (128 << 20),
+			MediaThumbnailBytes:               1 << 30,
+		})
+	}
+	points[1].MediaThumbnailBytes = 2 << 30
+	points[2].MediaThumbnailBytes = 16 << 30
+
+	anomalies := storageHistoryAnomalies(points, now)
+	keys := storageHistoryAnomalyKeys(anomalies)
+	for _, key := range []string{
+		"blocked_by_upload_stalled",
+		"unreferenced_growth",
+		"cache_growth_spike",
+	} {
+		if !keys[key] {
+			t.Fatalf("missing anomaly %q: %+v", key, anomalies)
+		}
+	}
+}
+
+func TestStorageHistoryAnomaliesDoNotTreatLegacyUnavailableFieldsAsZero(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	points := []storageHistoryPointDTO{{
+		SlotAt:                now.Add(-time.Hour),
+		CapturedAt:            now.Add(-time.Hour),
+		UnreferencedBlobBytes: 10,
+	}}
+	anomalies := storageHistoryAnomalies(points, now)
+	if len(anomalies) != 0 {
+		t.Fatalf("legacy point produced false anomalies: %+v", anomalies)
+	}
+
+	missing := storageHistoryAnomalies(nil, now)
+	if len(missing) != 1 || missing[0].Key != "snapshot_missing" {
+		t.Fatalf("missing history anomaly=%+v", missing)
+	}
+}

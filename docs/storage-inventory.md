@@ -137,6 +137,13 @@ video-transcode categories, storage temporary files, and unclassified xDrive-res
 rather than silently treating them as zero. Pending-GC and CAS-health availability are tracked independently so older
 physical snapshots are not misrepresented as healthy zero-count samples.
 
+The history response also derives deterministic anomaly signals from persisted samples only. It must not perform any
+new Store.Open, managed-file walk, cache scan, or staging scan. Current rules cover: missing/stale daily snapshots,
+physical CAS objects missing behind Blob metadata, zero-reference metadata-state inconsistencies, CAS metadata drift,
+stale deleting objects, unclassified xDrive data, three-sample UploadPart GC stalls, three-sample unreferenced-byte
+growth, and large day-over-day cache spikes. Rules that require snapshot fields must ignore older samples where the
+corresponding availability flag is false; unavailable historical fields are never interpreted as zero.
+
 ### Database
 
 The PostgreSQL row displays the resolved `XD_POSTGRES_DATA_DIR`.

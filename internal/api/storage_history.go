@@ -15,12 +15,16 @@ import (
 )
 
 const (
-	storageSampleInterval      = 24 * time.Hour
-	storageSampleCheckInterval = time.Hour
-	storageSampleRetention     = 180 * 24 * time.Hour
-	storageDecisionWindow      = 7 * 24 * time.Hour
-	storageDecisionMinSpan     = 24 * time.Hour
-	storageDecisionMinSamples  = 4
+	storageSampleInterval          = 24 * time.Hour
+	storageSampleCheckInterval     = time.Hour
+	storageSampleRetention         = 180 * 24 * time.Hour
+	storageDecisionWindow          = 7 * 24 * time.Hour
+	storageDecisionMinSpan         = 24 * time.Hour
+	storageDecisionMinSamples      = 4
+	storageSnapshotStaleAfter      = 36 * time.Hour
+	storageGrowthWindowSamples     = 3
+	storageUnreferencedGrowthFloor = int64(64 << 20)
+	storageCacheGrowthFloor        = int64(10 << 30)
 )
 
 type storageHistoryPointDTO struct {
@@ -87,11 +91,24 @@ type storageDecisionDTO struct {
 	ReasonCodes                 []string `json:"reason_codes"`
 }
 
+type storageHistoryAnomalyDTO struct {
+	Key          string    `json:"key"`
+	Severity     string    `json:"severity"`
+	Title        string    `json:"title"`
+	Message      string    `json:"message"`
+	ObservedAt   time.Time `json:"observed_at"`
+	CurrentCount int64     `json:"current_count,omitempty"`
+	CurrentBytes int64     `json:"current_bytes,omitempty"`
+	DeltaBytes   int64     `json:"delta_bytes,omitempty"`
+	AgeHours     float64   `json:"age_hours,omitempty"`
+}
+
 type storageHistoryDTO struct {
-	Samples               []storageHistoryPointDTO `json:"samples"`
-	Decision              storageDecisionDTO       `json:"decision"`
-	SamplingIntervalHours int                      `json:"sampling_interval_hours"`
-	RetentionDays         int                      `json:"retention_days"`
+	Samples               []storageHistoryPointDTO   `json:"samples"`
+	Anomalies             []storageHistoryAnomalyDTO `json:"anomalies"`
+	Decision              storageDecisionDTO         `json:"decision"`
+	SamplingIntervalHours int                        `json:"sampling_interval_hours"`
+	RetentionDays         int                        `json:"retention_days"`
 }
 
 func (s *Server) StartStorageSampler(ctx context.Context) {
@@ -399,10 +416,220 @@ func (s *Server) loadStorageHistory(ctx context.Context, now time.Time, days int
 	}
 	return storageHistoryDTO{
 		Samples:               points,
+		Anomalies:             storageHistoryAnomalies(points, now.UTC()),
 		Decision:              storageDecision(points),
 		SamplingIntervalHours: int(storageSampleInterval / time.Hour),
 		RetentionDays:         int(storageSampleRetention / (24 * time.Hour)),
 	}, nil
+}
+
+func storageHistoryCacheBytes(point storageHistoryPointDTO) int64 {
+	return point.MediaThumbnailBytes +
+		point.VideoPosterBytes +
+		point.AnalysisPreviewBytes +
+		point.MediaOtherBytes +
+		point.PreviewCacheBytes +
+		point.VideoTranscodeBytes
+}
+
+func storageHistoryAvailableTail(
+	points []storageHistoryPointDTO,
+	count int,
+	available func(storageHistoryPointDTO) bool,
+) []storageHistoryPointDTO {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]storageHistoryPointDTO, 0, count)
+	for index := len(points) - 1; index >= 0 && len(out) < count; index-- {
+		if !available(points[index]) {
+			break
+		}
+		out = append(out, points[index])
+	}
+	for left, right := 0, len(out)-1; left < right; left, right = left+1, right-1 {
+		out[left], out[right] = out[right], out[left]
+	}
+	return out
+}
+
+func storageHistoryMonotonicNonDecreasing(
+	points []storageHistoryPointDTO,
+	value func(storageHistoryPointDTO) int64,
+) bool {
+	if len(points) < storageGrowthWindowSamples {
+		return false
+	}
+	for index := 1; index < len(points); index++ {
+		if value(points[index]) < value(points[index-1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func storageHistoryAnomalies(
+	points []storageHistoryPointDTO,
+	now time.Time,
+) []storageHistoryAnomalyDTO {
+	now = now.UTC()
+	if len(points) == 0 {
+		return []storageHistoryAnomalyDTO{{
+			Key: "snapshot_missing", Severity: "warning",
+			Title:      "尚无每日存储快照",
+			Message:    "Storage sampler 尚未生成可用于异常判断的完整快照。",
+			ObservedAt: now,
+		}}
+	}
+
+	latest := points[len(points)-1]
+	observedAt := latest.CapturedAt.UTC()
+	anomalies := make([]storageHistoryAnomalyDTO, 0, 8)
+	add := func(value storageHistoryAnomalyDTO) {
+		value.ObservedAt = observedAt
+		anomalies = append(anomalies, value)
+	}
+
+	age := now.Sub(observedAt)
+	if age > storageSnapshotStaleAfter {
+		add(storageHistoryAnomalyDTO{
+			Key: "snapshot_stale", Severity: "warning",
+			Title:    "每日存储快照已过期",
+			Message:  "最近一次完整物理快照超过 36 小时未更新，请检查 Storage sampler。",
+			AgeHours: age.Hours(),
+		})
+	}
+
+	if latest.GCClassificationSnapshotAvailable {
+		if latest.PhysicalMissingBlobCount > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "physical_missing", Severity: "bad",
+				Title:        "CAS 物理对象缺失",
+				Message:      "存在 Blob 元数据但对应物理对象不存在，应运行存储完整性校验。",
+				CurrentCount: latest.PhysicalMissingBlobCount,
+				CurrentBytes: latest.PhysicalMissingMetadataBytes,
+			})
+		}
+		if latest.MetadataInconsistentBlobCount > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "metadata_inconsistent", Severity: "bad",
+				Title:        "待 GC Blob 元数据状态异常",
+				Message:      "存在 ref_count=0 但状态不符合 GC 合同的 Blob，应检查或修复 CAS 元数据。",
+				CurrentCount: latest.MetadataInconsistentBlobCount,
+				CurrentBytes: latest.MetadataInconsistentBlobBytes,
+			})
+		}
+		blocked := storageHistoryAvailableTail(
+			points,
+			storageGrowthWindowSamples,
+			func(point storageHistoryPointDTO) bool {
+				return point.GCClassificationSnapshotAvailable
+			},
+		)
+		if len(blocked) == storageGrowthWindowSamples &&
+			storageHistoryMonotonicNonDecreasing(
+				blocked,
+				func(point storageHistoryPointDTO) int64 {
+					return point.BlockedByUploadBlobBytes
+				},
+			) &&
+			blocked[0].BlockedByUploadBlobCount > 0 &&
+			latest.BlockedByUploadBlobCount > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "blocked_by_upload_stalled", Severity: "warning",
+				Title:        "恢复上传持续阻塞 Blob GC",
+				Message:      "连续 3 个每日快照中被 UploadPart 占用的待 GC 数据没有下降，请检查长期未完成的恢复上传。",
+				CurrentCount: latest.BlockedByUploadBlobCount,
+				CurrentBytes: latest.BlockedByUploadBlobBytes,
+				DeltaBytes:   latest.BlockedByUploadBlobBytes - blocked[0].BlockedByUploadBlobBytes,
+			})
+		}
+	}
+
+	if latest.CASHealthSnapshotAvailable {
+		drift := latest.MissingMetadataCount +
+			latest.RefCountMismatchCount +
+			latest.StateMismatchCount +
+			latest.SizeMismatchCount +
+			latest.KeyHashMismatchCount +
+			latest.InvalidStateCount
+		if drift > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "cas_metadata_drift", Severity: "bad",
+				Title:        "CAS 元数据一致性异常",
+				Message:      "每日快照检测到 CAS 引用、状态、大小、Key/Hash 或状态值不一致。",
+				CurrentCount: drift,
+			})
+		}
+		if latest.StaleDeletingBlobCount > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "stale_deleting", Severity: "warning",
+				Title:        "Deleting Blob 长时间未清理",
+				Message:      "存在超过正常 Janitor 窗口仍处于 deleting 状态的 Blob。",
+				CurrentCount: latest.StaleDeletingBlobCount,
+				CurrentBytes: latest.DeletingBlobMetadataBytes,
+			})
+		}
+	}
+
+	if latest.AnomalySnapshotAvailable && latest.UnclassifiedBytes > 0 {
+		add(storageHistoryAnomalyDTO{
+			Key: "unclassified_storage", Severity: "warning",
+			Title:        "存在未分类 xDrive 存储数据",
+			Message:      "存储根目录出现无法归入已知主数据、缓存或临时目录的数据，请检查存储清单。",
+			CurrentBytes: latest.UnclassifiedBytes,
+		})
+	}
+
+	unreferenced := storageHistoryAvailableTail(
+		points,
+		storageGrowthWindowSamples,
+		func(storageHistoryPointDTO) bool { return true },
+	)
+	if len(unreferenced) == storageGrowthWindowSamples &&
+		storageHistoryMonotonicNonDecreasing(
+			unreferenced,
+			func(point storageHistoryPointDTO) int64 {
+				return point.UnreferencedBlobBytes
+			},
+		) {
+		delta := latest.UnreferencedBlobBytes - unreferenced[0].UnreferencedBlobBytes
+		relativeFloor := unreferenced[0].UnreferencedBlobBytes / 4
+		if relativeFloor < storageUnreferencedGrowthFloor {
+			relativeFloor = storageUnreferencedGrowthFloor
+		}
+		if delta >= relativeFloor && latest.UnreferencedBlobBytes > 0 {
+			add(storageHistoryAnomalyDTO{
+				Key: "unreferenced_growth", Severity: "warning",
+				Title:        "待 GC 数据连续增长",
+				Message:      "最近 3 个每日快照中未引用 Blob 持续增长且达到异常阈值，请检查 Janitor 与 GC backlog。",
+				CurrentCount: latest.UnreferencedBlobCount,
+				CurrentBytes: latest.UnreferencedBlobBytes,
+				DeltaBytes:   delta,
+			})
+		}
+	}
+
+	if len(points) >= 2 && latest.AnomalySnapshotAvailable {
+		previous := points[len(points)-2]
+		if previous.AnomalySnapshotAvailable {
+			currentCache := storageHistoryCacheBytes(latest)
+			previousCache := storageHistoryCacheBytes(previous)
+			delta := currentCache - previousCache
+			if delta >= storageCacheGrowthFloor &&
+				(previousCache == 0 || delta >= previousCache/2) {
+				add(storageHistoryAnomalyDTO{
+					Key: "cache_growth_spike", Severity: "warning",
+					Title:        "缓存容量单日异常增长",
+					Message:      "媒体缩略图、Poster、分析预览或其他缓存单日增长超过阈值，请确认是否符合近期媒体处理量。",
+					CurrentBytes: currentCache,
+					DeltaBytes:   delta,
+				})
+			}
+		}
+	}
+
+	return anomalies
 }
 
 func storageWorkloadShares(buckets []storageSizeBucketDTO, totalCount, totalBytes int64) (small64, small256, large16 float64) {
