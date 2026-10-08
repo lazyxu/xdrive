@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
@@ -13,9 +14,16 @@ func TestLegacyLIVPMetadataRequiresRefresh(t *testing.T) {
 		t.Fatal("legacy livp metadata was not marked stale")
 	}
 
+	versionOne := legacy
+	versionOne.ContainerKind = "livp"
+	versionOne.DerivedResourceVersion = 1
+	if !legacyLIVPMetadata(node, versionOne) {
+		t.Fatal("v1 livp metadata must be reindexed for the real-container contract")
+	}
+
 	current := legacy
 	current.ContainerKind = "livp"
-	current.DerivedResourceVersion = 1
+	current.DerivedResourceVersion = mediapkg.LIVPDerivedResourceVersion
 	if legacyLIVPMetadata(node, current) {
 		t.Fatal("current livp metadata was marked stale")
 	}

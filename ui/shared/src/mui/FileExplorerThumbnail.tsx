@@ -7,10 +7,10 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import PlayCircleOutlineRoundedIcon from '@mui/icons-material/PlayCircleOutlineRounded'
 import { Box } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { XDriveFileExplorerItem } from './FileExplorer'
+import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 
 export type XDriveFileExplorerThumbnailLoader = (
   item: XDriveFileExplorerItem,
@@ -377,7 +377,7 @@ export function XDriveFileExplorerThumbnail({
           sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       ) : fallback)}
-      {livePhoto ? (
+      {livePhoto && !failed && Boolean(item.thumbnail || src) ? (
         <Box
           component="span"
           title="实况照片"
@@ -396,7 +396,7 @@ export function XDriveFileExplorerThumbnail({
             pointerEvents: 'none',
           }}
         >
-          <PlayCircleOutlineRoundedIcon sx={{ fontSize: 14 }} />
+          <XDriveLivePhotoGlyph size={14} />
         </Box>
       ) : null}
     </Box>

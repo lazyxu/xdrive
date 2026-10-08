@@ -111,7 +111,11 @@ export function XDriveMediaGalleryViewer({
   ])
 
   const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
-    if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video')) return null
+    if (
+      !item ||
+      !loadPreviewURL ||
+      (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')
+    ) return null
     return loadPreviewURL(item.node.id, kind)
   }, [item?.node.id, loadPreviewURL])
 

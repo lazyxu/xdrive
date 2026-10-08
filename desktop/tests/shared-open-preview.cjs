@@ -166,6 +166,24 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'loadLivePhotoMotion',
   ]) assert.ok(preview.includes(token), 'shared LIVP preview missing: ' + token)
 
+  assert.ok(
+    web.includes('api.mediaLivePhotoStillURL(Number(item.id))'),
+    'Web FileExplorer must use the signed LIVP still preview before thumbnail fallback',
+  )
+  assert.ok(
+    desktop.includes('getMediaLivePhotoStill(Number(item.id))'),
+    'Desktop FileExplorer must use the protected LIVP still preview before thumbnail fallback',
+  )
+  assert.ok(
+    preview.includes("kind: Exclude<XDriveFilePreviewKind, 'none' | 'text'>"),
+    'shared Preview Engine must admit live_photo through the signed preview URL loader',
+  )
+  assert.ok(
+    preview.includes("previewKind !== 'image' && previewKind !== 'live_photo'") &&
+      preview.includes('onError={loadImageFallback}'),
+    'LIVP original still decode failure must fall back to the existing thumbnail loader',
+  )
+
   for (const source of [web, desktop]) {
     assert.ok(source.includes('const loadLivePhotoMotion = useCallback'), 'FileExplorer adapter must load LIVP motion')
     assert.ok(source.includes('onProgress?: XDriveByteProgressHandler'), 'FileExplorer LIVP loader must expose byte progress')
@@ -176,8 +194,8 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'shared FilePreviewSurface must forward byte progress into LIVP transport',
   )
   assert.ok(
-    livePhoto.includes('loadMotion(onProgress)') && livePhoto.includes('按住加载并播放'),
-    'shared Live Photo surface must fetch motion only after the first hold',
+    livePhoto.includes('loadMotion(onProgress)') && livePhoto.includes('按住播放，松开停止'),
+    'shared Live Photo surface must fetch motion only after the first hold and preserve hold/release semantics',
   )
   assert.ok(
     previewModel.includes('XDriveLivePhotoMotionSource') &&
@@ -200,6 +218,10 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   assert.ok(
     docs.includes('validated `.livp`') && docs.includes('FileExplorer'),
     'Preview Engine design must document the LIVP FileExplorer exception',
+  )
+  assert.ok(
+    livePhoto.includes('XDriveLivePhotoGlyph') && !livePhoto.includes('PlayCircleOutline'),
+    'shared Live Photo surface must use a Live Photo glyph rather than a generic play button',
   )
 })
 

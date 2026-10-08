@@ -297,6 +297,7 @@ type desktopIPCController interface {
 	CloudSaveMediaEditRecipe(context.Context, uint64, client.MediaEditRecipeInput) (client.MediaEditRecipe, error)
 	CloudResetMediaEditRecipe(context.Context, uint64, uint64) (client.MediaEditRecipe, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
+	CloudMediaLivePhotoStillTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudSources(context.Context) ([]client.Source, error)
 	CloudSourceRuns(context.Context, uint64, int, int) ([]client.SyncRun, error)
@@ -613,6 +614,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("DELETE /v1/media/edit", h.mediaEditRecipe)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
+	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
@@ -3465,6 +3467,19 @@ func (h *desktopIPCHandler) mediaVideoPoster(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *desktopIPCHandler) mediaLivePhotoStillTicket(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	ticket, err := h.ctrl.CloudMediaLivePhotoStillTicket(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, ticket)
 }
 
 func (h *desktopIPCHandler) mediaLivePhotoMotionTicket(w http.ResponseWriter, r *http.Request) {

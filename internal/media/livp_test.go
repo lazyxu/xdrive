@@ -32,6 +32,27 @@ func TestInspectLIVPValidatesEmbeddedIdentifiers(t *testing.T) {
 	}
 }
 
+func TestInspectLIVPAcceptsContainerPairWithoutEmbeddedIdentifiers(t *testing.T) {
+	archive := buildStoredLIVP(t, []livpTestEntry{
+		{Name: "IMG_0002.HEIC.jpeg", Data: buildJPEGWithAppleIdentifier("")},
+		{Name: "IMG_0002.HEIC.mov", Data: buildMovieWithQuickTimeIdentifier("")},
+	}, "0002000000300000000000030000000000000000313030304C495650")
+
+	info, err := InspectLIVP(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.AssetIdentifier != "" {
+		t.Fatalf("identifier=%q want empty optional identifier", info.AssetIdentifier)
+	}
+	if info.Still.Kind != KindImage || info.Motion.Kind != KindVideo {
+		t.Fatalf("unexpected member kinds: still=%q motion=%q", info.Still.Kind, info.Motion.Kind)
+	}
+	if info.StillOffset <= 0 || info.MotionOffset <= info.StillOffset {
+		t.Fatalf("unexpected offsets: still=%d motion=%d", info.StillOffset, info.MotionOffset)
+	}
+}
+
 func TestInspectLIVPIgnoresProviderZipComment(t *testing.T) {
 	const identifier = "62C56C15-5AB9-431A-B33E-B864F75A51C7"
 	archive := buildStoredLIVP(t, []livpTestEntry{
@@ -197,6 +218,20 @@ func TestParseLIVPContainerDescriptorValidatesPersistedRanges(t *testing.T) {
 		descriptor.Still.Offset != 32 ||
 		descriptor.Motion.Size != 400 {
 		t.Fatalf("descriptor=%+v", descriptor)
+	}
+
+	withoutIdentifier, err := ParseLIVPContainerDescriptor(`{
+		"asset_identifier":"",
+		"still":{"name":"still.jpg","offset":32,"size":100,"mime_type":"image/jpeg"},
+		"motion":{"name":"motion.mov","offset":132,"size":400,"mime_type":"video/quicktime"}
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutIdentifier.AssetIdentifier != "" ||
+		withoutIdentifier.Still.Offset != 32 ||
+		withoutIdentifier.Motion.Size != 400 {
+		t.Fatalf("descriptor without identifier=%+v", withoutIdentifier)
 	}
 
 	for _, invalid := range []string{

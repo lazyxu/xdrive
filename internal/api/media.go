@@ -1452,7 +1452,8 @@ func (s *Server) ensureMediaMetadata(
 
 func legacyLIVPMetadata(node meta.Node, row meta.MediaMetadata) bool {
 	return strings.EqualFold(filepath.Ext(node.Name), ".livp") &&
-		(strings.TrimSpace(row.ContainerKind) == "" || row.DerivedResourceVersion < 1)
+		(strings.TrimSpace(row.ContainerKind) == "" ||
+			row.DerivedResourceVersion < mediapkg.LIVPDerivedResourceVersion)
 }
 
 func (s *Server) indexMediaNode(
@@ -1516,7 +1517,7 @@ func (s *Server) indexMediaNode(
 		RelationJSON:             extracted.RelationJSON,
 		DerivedResourceVersion: func() int {
 			if strings.EqualFold(filepath.Ext(node.Name), ".livp") {
-				return 1
+				return mediapkg.LIVPDerivedResourceVersion
 			}
 			return 0
 		}(),
@@ -1707,9 +1708,11 @@ func (s *Server) staleMediaQuery(
 			"n.type = ? AND n.deleted_at IS NULL AND "+
 				"(mm.node_id IS NULL OR mm.node_revision <> n.revision OR mm.sha256 <> f.sha256 OR "+
 				"COALESCE(mm.relation_evidence_version, 0) < ? OR "+
-				"(lower(n.name) LIKE '%.livp' AND (COALESCE(mm.container_kind, '') = '' OR mm.derived_resource_version < 1)))",
+				"(lower(n.name) LIKE '%.livp' AND (COALESCE(mm.container_kind, '') = '' OR "+
+				"COALESCE(mm.derived_resource_version, 0) < ?)))",
 			meta.NodeTypeFile,
 			mediapkg.RelationEvidenceVersion,
+			mediapkg.LIVPDerivedResourceVersion,
 		)
 }
 
@@ -1824,6 +1827,187 @@ func (s *Server) currentMediaDerivedResource(
 		return meta.MediaDerivedResource{}, errors.New("invalid media resource range")
 	}
 	return row, nil
+}
+
+const mediaLivePhotoStillPreviewKind = "live_still"
+
+type mediaLivePhotoStillDescriptor struct {
+	Resource    meta.MediaDerivedResource
+	Name        string
+	MIMEType    string
+	ModifiedAt  time.Time
+	Fingerprint string
+	ETag        string
+}
+
+func mediaLivePhotoStillEmbeddedFingerprint(
+	node meta.Node,
+	resource meta.MediaDerivedResource,
+) string {
+	return fmt.Sprintf(
+		"livp-still:%d:%d:%s:%d:%d",
+		node.ID,
+		node.Revision,
+		strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+		resource.ByteOffset,
+		resource.ByteSize,
+	)
+}
+
+func (s *Server) resolveMediaLivePhotoStill(
+	ctx context.Context,
+	node meta.Node,
+) (mediaLivePhotoStillDescriptor, error) {
+	metadata, err := s.ensureMediaMetadata(ctx, node)
+	if err != nil {
+		return mediaLivePhotoStillDescriptor{}, err
+	}
+	if metadata.ContainerKind != mediapkg.ContainerKindLIVP {
+		return mediaLivePhotoStillDescriptor{}, gorm.ErrRecordNotFound
+	}
+	resource, err := s.currentMediaDerivedResource(
+		ctx,
+		node,
+		meta.MediaDerivedResourceRoleStill,
+	)
+	if err != nil {
+		return mediaLivePhotoStillDescriptor{}, err
+	}
+	contentType := strings.TrimSpace(resource.MIMEType)
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+	return mediaLivePhotoStillDescriptor{
+		Resource:    resource,
+		Name:        resource.Name,
+		MIMEType:    contentType,
+		ModifiedAt:  metadata.UpdatedAt,
+		Fingerprint: mediaLivePhotoStillEmbeddedFingerprint(node, resource),
+		ETag: fmt.Sprintf(
+			"\"live-photo-still-%s-%d-%d\"",
+			strings.ToLower(strings.TrimSpace(node.File.SHA256)),
+			resource.ByteOffset,
+			resource.ByteSize,
+		),
+	}, nil
+}
+
+func (s *Server) mediaLivePhotoStillTicket(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	node, err := s.ownedNode(userID(c), id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	descriptor, err := s.resolveMediaLivePhotoStill(c.Request.Context(), node)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusNotFound, "live photo still not found")
+		} else {
+			fail(c, http.StatusInternalServerError, "resolve live photo still failed")
+		}
+		return
+	}
+	user, ok := currentUser(c)
+	if !ok {
+		fail(c, http.StatusUnauthorized, "user not found")
+		return
+	}
+	ticket, expiresAt, err := s.Auth.IssuePreviewResourceStream(
+		user.ID,
+		user.SessionVersion,
+		node.ID,
+		node.Revision,
+		mediaLivePhotoStillPreviewKind,
+		descriptor.Fingerprint,
+		filePreviewTicketTTL,
+	)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "create live photo still ticket failed")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, filePreviewTicketDTO{
+		URL: fmt.Sprintf(
+			"/api/v1/media-live-photo-still/%d?ticket=%s",
+			node.ID,
+			url.QueryEscape(ticket),
+		),
+		ExpiresAt: expiresAt.UTC(),
+		Kind:      "image",
+		MIMEType:  descriptor.MIMEType,
+	})
+}
+
+func (s *Server) mediaLivePhotoStillTicketStream(c *gin.Context) {
+	id, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid media id")
+		return
+	}
+	claims, err := s.Auth.ParsePreviewStream(strings.TrimSpace(c.Query("ticket")))
+	if err != nil ||
+		claims.NodeID != id ||
+		claims.PreviewKind != mediaLivePhotoStillPreviewKind ||
+		strings.TrimSpace(claims.ResourceFingerprint) == "" {
+		fail(c, http.StatusUnauthorized, "invalid live photo still ticket")
+		return
+	}
+
+	var user meta.User
+	if err := s.DB.WithContext(c.Request.Context()).First(&user, claims.UserID).Error; err != nil {
+		fail(c, http.StatusUnauthorized, "invalid live photo still ticket")
+		return
+	}
+	if user.DisabledAt != nil ||
+		user.MustChangePassword ||
+		claims.SessionVersion != user.SessionVersion {
+		fail(c, http.StatusUnauthorized, "live photo still ticket is no longer valid")
+		return
+	}
+
+	node, err := s.ownedNode(claims.UserID, id, true)
+	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
+		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if node.Revision != claims.NodeRevision {
+		fail(c, http.StatusGone, "live photo still ticket is stale")
+		return
+	}
+	descriptor, err := s.resolveMediaLivePhotoStill(c.Request.Context(), node)
+	if err != nil || descriptor.Fingerprint != claims.ResourceFingerprint {
+		fail(c, http.StatusGone, "live photo still ticket is stale")
+		return
+	}
+
+	file, err := s.Store.Open(c.Request.Context(), node.File.StorageKey)
+	if err != nil {
+		fail(c, http.StatusNotFound, "stored content not found")
+		return
+	}
+	defer file.Close()
+
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Header("Content-Type", descriptor.MIMEType)
+	c.Header("ETag", descriptor.ETag)
+	http.ServeContent(
+		c.Writer,
+		c.Request,
+		descriptor.Name,
+		descriptor.ModifiedAt,
+		io.NewSectionReader(
+			file,
+			descriptor.Resource.ByteOffset,
+			descriptor.Resource.ByteSize,
+		),
+	)
 }
 
 const mediaLivePhotoMotionPreviewKind = "live_motion"

@@ -1,11 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import { PlayCircleOutline as LivePhotoIcon } from '@mui/icons-material'
 import { Box, Chip, CircularProgress, Typography } from '@mui/material'
 import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
+
+export function XDriveLivePhotoGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <Box
+      component="span"
+      aria-hidden
+      sx={{
+        width: size,
+        height: size,
+        position: 'relative',
+        display: 'inline-block',
+        borderRadius: '50%',
+        border: '1.5px solid currentColor',
+        boxSizing: 'border-box',
+        '&::before, &::after': {
+          content: '""',
+          position: 'absolute',
+          borderRadius: '50%',
+          border: '1px solid currentColor',
+          boxSizing: 'border-box',
+        },
+        '&::before': { inset: '2px' },
+        '&::after': { inset: '4px' },
+      }}
+    />
+  )
+}
 
 export type XDriveLivePhotoMotionLoader = (
   onProgress?: XDriveByteProgressHandler,
@@ -215,25 +241,13 @@ export function XDriveLivePhotoSurface({
     }
   }, [endHold])
 
-  const statusLabel = failed
-    ? '实况不可用'
-    : loading
-      ? loadProgress === null
-        ? '实况加载中'
-        : `实况加载 ${Math.round(loadProgress)}%`
-      : playing
-        ? '实况播放中'
-        : motionURL
-          ? '实况'
-          : '实况待加载'
-
-  const holdLabel = motionURL ? '按住播放' : '按住加载并播放'
+  const statusLabel = failed ? '实况不可用' : '实况'
 
   return (
     <Box
       role="button"
       tabIndex={0}
-      aria-label={`${label}。按住加载并播放，松开停止。`}
+      aria-label={`${label}。按住播放，松开停止。`}
       aria-pressed={playing}
       aria-busy={loading}
       onPointerDown={handlePointerDown}
@@ -314,7 +328,7 @@ export function XDriveLivePhotoSurface({
               value={loadProgress ?? undefined}
             />
           ) : (
-            <LivePhotoIcon fontSize="small" />
+            <XDriveLivePhotoGlyph size={14} />
           )
         }
         label={statusLabel}
@@ -369,27 +383,6 @@ export function XDriveLivePhotoSurface({
         </Box>
       ) : null}
 
-      {!loading && !failed && loadMotion && !playing ? (
-        <Typography
-          variant="caption"
-          sx={{
-            position: 'absolute',
-            left: '50%',
-            bottom: 12,
-            transform: 'translateX(-50%)',
-            px: 1.25,
-            py: 0.5,
-            borderRadius: 999,
-            bgcolor: 'rgba(0, 0, 0, 0.56)',
-            color: 'common.white',
-            pointerEvents: 'none',
-            whiteSpace: 'nowrap',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          {holdLabel}
-        </Typography>
-      ) : null}
     </Box>
   )
 }

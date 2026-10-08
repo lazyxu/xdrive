@@ -768,6 +768,27 @@ test('media thumbnail stays binary over Agent IPC', async (t) => {
   )
 })
 
+test('Live Photo still uses a signed stream ticket over Agent IPC', async (t) => {
+  const expiresAt = new Date(Date.now() + 60_000).toISOString()
+  const { client, token } = await fixture(t, (req, res) => {
+    assert.equal(req.headers.authorization, `Bearer ${token}`)
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(url.pathname, '/v1/media/live-photo-still-ticket')
+    assert.equal(url.searchParams.get('node_id'), '31')
+    json(res, 200, {
+      url: 'https://drive.example/api/v1/media-live-photo-still/31?ticket=signed',
+      expires_at: expiresAt,
+      kind: 'image',
+      mime_type: 'image/jpeg',
+    })
+  })
+
+  const result = await client.mediaLivePhotoStillTicket(31)
+  assert.equal(result.kind, 'image')
+  assert.equal(result.mime_type, 'image/jpeg')
+  assert.equal(result.url.includes('ticket=signed'), true)
+})
+
 test('Live Photo motion uses a signed stream ticket over Agent IPC', async (t) => {
   const expiresAt = new Date(Date.now() + 60_000).toISOString()
   const { client, token } = await fixture(t, (req, res) => {

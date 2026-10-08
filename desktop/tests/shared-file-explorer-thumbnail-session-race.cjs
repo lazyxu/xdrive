@@ -119,6 +119,9 @@ function loadThumbnailProvider(runtime) {
     if (request === 'react') return runtime.react
     if (request === 'react/jsx-runtime') return jsxRuntime
     if (request === '@mui/material') return { Box: () => null }
+    if (request === './LivePhotoSurface') {
+      return { XDriveLivePhotoGlyph: () => null }
+    }
     if (request === '@mui/icons-material/PlayCircleOutlineRounded') {
       return { __esModule: true, default: () => null }
     }

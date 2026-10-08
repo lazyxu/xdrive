@@ -299,6 +299,7 @@ const agent = Object.freeze({
   resetMediaEditRecipe: (nodeID: number, revision: number) =>
     ipcRenderer.invoke('agent:reset-media-edit', nodeID, revision),
   getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
+  getMediaLivePhotoStill: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),
   getMediaLivePhotoMotion: (
     nodeID: number,

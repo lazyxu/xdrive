@@ -58,6 +58,11 @@ test('Recent preserves thumbnail identity and supported image/video media is eli
   assert.ok(explorer.includes("'livp'"), 'FileExplorer image-like thumbnail allowlist must include LIVP')
   assert.ok(explorer.includes("return fileKind === 'image' || fileKind === 'video'"))
   assert.ok(thumbnail.includes('title="实况照片"'), 'LIVP thumbnails must expose a static Live Photo badge')
+  assert.ok(thumbnail.includes('XDriveLivePhotoGlyph'), 'LIVP thumbnails must use the shared Live Photo glyph instead of a play button')
+  assert.ok(
+    thumbnail.includes('livePhoto && !failed && Boolean(item.thumbnail || src)'),
+    'LIVP badge must not claim Live Photo readiness over a failed/generic placeholder',
+  )
   assert.ok(
     explorer.includes("'3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'"),
     'FileExplorer video poster eligibility must cover the shared common-video allowlist',

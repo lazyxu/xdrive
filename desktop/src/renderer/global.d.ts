@@ -558,6 +558,7 @@ declare global {
           revision: number,
         ) => Promise<DesktopResult<MediaEditRecipe>>
         getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaLivePhotoStill: (nodeID: number) => Promise<DesktopResult<string>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>
         getMediaLivePhotoMotion: (
           nodeID: number,
