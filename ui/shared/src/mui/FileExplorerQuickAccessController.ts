@@ -86,8 +86,12 @@ export function useXDriveFileExplorerQuickAccess<
   onErrorRef.current = onError
 
   const loadFresh = useCallback(async (requestID: number) => {
+    const reorderGeneration = reorderGenerationRef.current
     const next = (await loadItemsRef.current()).map(projectQuickAccessItem)
-    if (requestID === loadRequestRef.current) setItems(next)
+    if (
+      requestID === loadRequestRef.current &&
+      reorderGeneration === reorderGenerationRef.current
+    ) setItems(next)
     return next
   }, [])
 
