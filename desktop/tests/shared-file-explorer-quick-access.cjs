@@ -74,7 +74,9 @@ test('shared controller owns quick-access state and refreshes identity before na
   ]) assert.ok(controller.includes(token), 'shared quick-access controller missing: ' + token)
 
   for (const token of [
-    'if (requestID === loadRequestRef.current) setItems(next)',
+    'const reorderGeneration = reorderGenerationRef.current',
+    'requestID === loadRequestRef.current &&',
+    'reorderGeneration === reorderGenerationRef.current',
     'if (requestID === loadRequestRef.current) setLoading(false)',
     'loadRequestRef.current += 1',
   ]) assert.ok(controller.includes(token), 'shared quick-access race guard missing: ' + token)
