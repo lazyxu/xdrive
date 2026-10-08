@@ -178,6 +178,13 @@ resource instead of weakening the raw-preview allowlist.
 
 The image renderer prefers the original signed preview URL.
 
+Image preview loading is keyed by stable source identity, not React object/function identity.
+Equivalent parent rerenders for the same node id, node revision, and preview kind must not
+clear the current image, show the loading spinner again, or request the same preview source
+again merely because the caller recreated a target object or inline loader callback. A real
+node/revision/preview-kind change starts a new preview generation and keeps the existing
+stale-completion fencing and blob URL cleanup rules.
+
 If the browser/Electron runtime cannot decode the original image, it may fall back to
 the existing thumbnail loader. This is particularly important for formats with uneven
 native runtime support.

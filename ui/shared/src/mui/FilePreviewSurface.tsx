@@ -98,6 +98,20 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [usingImageFallback, setUsingImageFallback] = useState(false)
   const previewURLRef = useRef('')
   const previewGenerationRef = useRef(0)
+  const previewTargetRef = useRef(target)
+  const previewLoadersRef = useRef({
+    text: loadTextPreview,
+    image: loadImagePreview,
+    url: loadPreviewURL,
+  })
+  previewTargetRef.current = target
+  previewLoadersRef.current = {
+    text: loadTextPreview,
+    image: loadImagePreview,
+    url: loadPreviewURL,
+  }
+  const previewTargetID = target?.id
+  const previewTargetRevision = target?.revision
   const coarsePointer = useMediaQuery('(pointer: coarse)')
   const imageDragRef = useRef<{
     pointerID: number
@@ -316,18 +330,20 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     let active = true
     const generation = previewGenerationRef.current + 1
     previewGenerationRef.current = generation
+    const currentTarget = previewTargetRef.current
+    const loaders = previewLoadersRef.current
     setTextPreview(null)
     assignPreviewURL('')
     setLoading(false)
     setFailed(false)
     setUsingImageFallback(false)
 
-    if (!target || previewKind === 'none') return () => undefined
+    if (!currentTarget || previewKind === 'none') return () => undefined
 
     if (previewKind === 'text') {
-      if (!loadTextPreview) return () => undefined
+      if (!loaders.text) return () => undefined
       setLoading(true)
-      void loadTextPreview(target)
+      void loaders.text(currentTarget)
         .then((value) => {
           if (!active) return
           if (value) setTextPreview(value)
@@ -344,25 +360,25 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       }
     }
 
-    const canLoadOriginal = Boolean(loadPreviewURL)
+    const canLoadOriginal = Boolean(loaders.url)
     const canLoadImageFallback =
       (previewKind === 'image' || previewKind === 'live_photo') &&
-      Boolean(loadImagePreview)
+      Boolean(loaders.image)
     if (!canLoadOriginal && !canLoadImageFallback) return () => undefined
 
     setLoading(true)
     void (async () => {
       let value: string | null | undefined = null
-      if (loadPreviewURL) {
-        value = await loadPreviewURL(target, previewKind)
+      if (loaders.url) {
+        value = await loaders.url(currentTarget, previewKind)
       }
       let fallback = false
       if (
         !value &&
         (previewKind === 'image' || previewKind === 'live_photo') &&
-        loadImagePreview
+        loaders.image
       ) {
-        value = await loadImagePreview(target)
+        value = await loaders.image(currentTarget)
         fallback = Boolean(value)
       }
       return { value, fallback }
@@ -392,11 +408,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
   }, [
     assignPreviewURL,
-    loadImagePreview,
-    loadPreviewURL,
-    loadTextPreview,
     previewKind,
-    target,
+    previewTargetID,
+    previewTargetRevision,
   ])
 
   const loadImageFallback = useCallback(() => {
