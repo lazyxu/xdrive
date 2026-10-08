@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   xDriveFileExplorerCanPaste,
   xDriveFileExplorerClipboardFromItems,
@@ -15,12 +15,22 @@ import type {
 export function useXDriveFileExplorerClipboard<
   TNode extends XDriveFileExplorerOperationNode,
 >({
+  lifecycleKey = '',
   nodeByID,
 }: {
+  lifecycleKey?: string
   nodeByID: ReadonlyMap<number, TNode>
 }) {
   const [clipboard, setClipboard] = useState<XDriveFileExplorerClipboard<TNode> | null>(null)
   const generationRef = useRef(0)
+
+  useEffect(() => {
+    generationRef.current += 1
+    setClipboard(null)
+    return () => {
+      generationRef.current += 1
+    }
+  }, [lifecycleKey])
 
   const setFromItems = (
     mode: XDriveFileExplorerClipboardMode,

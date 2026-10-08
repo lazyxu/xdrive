@@ -247,6 +247,7 @@ export function useXDriveFileExplorerWorkspace<
   ])
 
   const clipboard = useXDriveFileExplorerClipboard<TNode>({
+    lifecycleKey: navigationSessionStorageKey ?? '',
     nodeByID: projection.nodeByID,
   })
 
