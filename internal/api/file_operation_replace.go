@@ -59,6 +59,26 @@ func (s *Server) trashFileOperationConflictTx(ctx context.Context, tx *gorm.DB, 
 	return nil
 }
 
+type fileOperationCopySourceSnapshot struct {
+	rootID           uint64
+	childrenByParent map[uint64][]meta.Node
+}
+
+func (snapshot *fileOperationCopySourceSnapshot) load(
+	tx *gorm.DB,
+	uid uint64,
+) (map[uint64][]meta.Node, error) {
+	if snapshot.childrenByParent != nil {
+		return snapshot.childrenByParent, nil
+	}
+	childrenByParent, err := loadFileOperationCopySubtree(tx, uid, snapshot.rootID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.childrenByParent = childrenByParent
+	return childrenByParent, nil
+}
+
 func (s *Server) copyNodeReplaceOrMergeTx(
 	ctx context.Context,
 	tx *gorm.DB,
@@ -70,12 +90,39 @@ func (s *Server) copyNodeReplaceOrMergeTx(
 	hooks *copyNodeTxHooks,
 	index int,
 ) (meta.Node, bool, error) {
+	return s.copyNodeReplaceOrMergeTxLoaded(
+		ctx, tx, uid, source, parentID, name, relativePath, hooks, index,
+		&fileOperationCopySourceSnapshot{rootID: source.ID},
+	)
+}
+
+func (s *Server) copyNodeReplaceOrMergeTxLoaded(
+	ctx context.Context,
+	tx *gorm.DB,
+	uid uint64,
+	source meta.Node,
+	parentID uint64,
+	name string,
+	relativePath string,
+	hooks *copyNodeTxHooks,
+	index int,
+	sourceSnapshot *fileOperationCopySourceSnapshot,
+) (meta.Node, bool, error) {
 	target, exists, err := fileOperationNameConflictNodeTx(tx, uid, parentID, name, 0)
 	if err != nil {
 		return meta.Node{}, false, err
 	}
 	if !exists {
-		copied, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, relativePath, hooks)
+		var childrenByParent map[uint64][]meta.Node
+		if source.Type == meta.NodeTypeDir {
+			childrenByParent, err = sourceSnapshot.load(tx, uid)
+			if err != nil {
+				return meta.Node{}, false, err
+			}
+		}
+		copied, err := s.copyNodeTxWithHooksLoaded(
+			tx, uid, source, parentID, name, relativePath, hooks, childrenByParent,
+		)
 		return copied, false, err
 	}
 	if source.Type == meta.NodeTypeDir && target.Type == meta.NodeTypeDir {
@@ -91,18 +138,18 @@ func (s *Server) copyNodeReplaceOrMergeTx(
 				return meta.Node{}, false, err
 			}
 		}
-		var children []meta.Node
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("File").
-			Where("owner_id = ? AND parent_id = ? AND deleted_at IS NULL", uid, source.ID).
-			Order("type ASC, name ASC").Find(&children).Error; err != nil {
+		childrenByParent, err := sourceSnapshot.load(tx, uid)
+		if err != nil {
 			return meta.Node{}, false, err
 		}
-		for _, child := range children {
+		for _, child := range childrenByParent[source.ID] {
 			childPath := child.Name
 			if relativePath != "" {
 				childPath = relativePath + "/" + child.Name
 			}
-			if _, _, err := s.copyNodeReplaceOrMergeTx(ctx, tx, uid, child, target.ID, child.Name, childPath, hooks, index); err != nil {
+			if _, _, err := s.copyNodeReplaceOrMergeTxLoaded(
+				ctx, tx, uid, child, target.ID, child.Name, childPath, hooks, index, sourceSnapshot,
+			); err != nil {
 				return meta.Node{}, false, err
 			}
 		}
@@ -116,7 +163,16 @@ func (s *Server) copyNodeReplaceOrMergeTx(
 	if err := s.trashFileOperationConflictTx(ctx, tx, uid, target, index); err != nil {
 		return meta.Node{}, false, err
 	}
-	copied, err := s.copyNodeTxWithHooks(tx, uid, source, parentID, name, relativePath, hooks)
+	var childrenByParent map[uint64][]meta.Node
+	if source.Type == meta.NodeTypeDir {
+		childrenByParent, err = sourceSnapshot.load(tx, uid)
+		if err != nil {
+			return meta.Node{}, false, err
+		}
+	}
+	copied, err := s.copyNodeTxWithHooksLoaded(
+		tx, uid, source, parentID, name, relativePath, hooks, childrenByParent,
+	)
 	return copied, true, err
 }
 

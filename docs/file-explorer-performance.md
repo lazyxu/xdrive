@@ -53,6 +53,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | FileOperation Move root-byte aggregation | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 selected sibling directories, one file each: execution-time root-byte recursion **120 CTEs -> 1 grouped CTE**; Move root loads no longer preload `xd_files`. Processed byte totals and conflict/replace semantics stay unchanged. |
 | FileOperation Move replace/merge File preload elimination | **Accepted / structural contract** | Structural / unmeasured wall-clock | Merge root + 120 matching child directories, one source file per child: unused `xd_files` preload SELECTs **242 -> 0** (121 conflict-target preloads + 121 source-child preloads). Node traversal/mutation order is unchanged. |
 | FileOperation Copy source-subtree loading | **Accepted / structural contract** | Structural / unmeasured wall-clock | One copied root with 120 child directories and one file each: source-tree reads **242 SELECTs -> 1 recursive CTE with file metadata join**. Destination creates, content-reference retain, hooks/progress and undo remain per node. |
+| FileOperation Copy replace/merge source snapshot | **Accepted / structural contract** | Structural / unmeasured wall-clock | Replace/merge root + 120 matching target directories, one source file per child: recursive source enumeration **242 SELECTs -> 1 source-subtree CTE** while target conflict/protection checks remain dynamic per destination level. |
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
 | 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
@@ -1156,6 +1157,43 @@ Regression command:
 - `go test ./internal/api -run '^TestFileOperationCopyLoadsSourceSubtreeOnce$' -count=1`.
 
 Next action: continue the basic sync/delete performance audit; only change paths with another deterministic request, SQL, allocation, or I/O multiplier.
+
+### FileOperation Copy replace/merge source-snapshot contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- one Copy operation using the replace policy;
+- source root directory with **120 direct child directories**, each containing **1 file** with valid File metadata;
+- destination already contains the matching root directory and all **120 matching child directories**, so Copy follows the recursive merge path;
+- evidence method: PostgreSQL SQL capture around the real `copyNodeReplaceOrMergeTx` traversal plus copied-file assertions;
+- wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- every source directory in the merge path independently loaded active children with one node-list query plus one `Preload("File")` query;
+- the merge root plus 120 matching child directories therefore emitted **121 node-list SELECTs + 121 File preload SELECTs = 242 source-enumeration SELECTs**;
+- target-side exact-name conflict checks were dynamic per level and remain necessary because the destination tree is mutated during merge.
+
+AFTER / current:
+
+- the first source-directory enumeration lazily loads the complete source subtree with the already accepted `loadFileOperationCopySubtree` recursive CTE and File metadata join;
+- recursive merge levels reuse the resulting `parent_id -> children` map;
+- when a destination conflict disappears or a non-directory target is replaced, `copyNodeTxWithHooksLoaded` consumes the same source snapshot instead of issuing another source-tree load;
+- the stable workload changes recursive source enumeration from **242 SELECTs -> 1 recursive source-subtree CTE**;
+- destination conflict lookup, managed-source protection, target replacement/trash, copy hooks/progress, content-reference retain, destination inserts and recursion order remain unchanged;
+- the source snapshot is loaded lazily only after the same target conflict/protection/hook gates that previously preceded source child enumeration.
+
+Decision: **Accepted.** Source traversal is read-only and already has a one-CTE representation used by ordinary Copy; reusing it in replace/merge removes directory-count-scaled source reads without precomputing the mutable target side.
+
+Regression budget: one Copy replace/merge root may issue at most **1 source-subtree recursive CTE**, regardless of descendant directory count. Target conflict/protection queries must remain live and must not be replaced by a stale target snapshot.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestFileOperationCopyMergeLoadsSourceSubtreeOnce$' -count=1`.
+
+Next action: continue ordinary download / sync / delete audits and only change another deterministic SQL, request, allocation, filesystem, lock, or object-store multiplier.
 
 ### FileOperation subtree predicate materialization
 
