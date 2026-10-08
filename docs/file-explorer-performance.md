@@ -42,6 +42,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows change-journal baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + one 500-change page of missing deletes: node-path resolution **1,000 full baseline scans / ~100M entry checks -> 1 index build + 1,000 map lookups**; incremental file delete/rename no longer run full-map prefix scans. |
 | Windows change-journal same-path upsert index fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline, ordinary same-path upsert page: full `nodeID -> path` index builds **1 -> 0**; rename/move/new-path ambiguity and delete retain lazy full-index fallback. |
 | Windows same-path file journal baseline-clone bypass | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline + one ordinary same-path existing-file upsert: full baseline copies **1 -> 0** and full hydrated-map copies **1 -> 0**; only the touched file state/hydration timestamp is snapshotted. Rename/delete/directory/conflict/policy cases retain the full-baseline path. |
+| Windows exact file-delete journal baseline-clone bypass | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k-entry baseline + one ordinary soft-deleted file: Windows full baseline copies **1 -> 0**, full hydrated-map copies **1 -> 0**, and nodeID full-map index build **1 -> 0**. Deleted-path resolution is opt-in for Windows only; default Web change polling keeps the old query cost. Hard delete / empty path / directory / conflict / policy cases retain the full-baseline path. |
 | Windows directory journal fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Brand-new (revision-1) remote directory create and known-directory delete journal events no longer trigger `Client.Walk()`: **full-tree Walk fallback -> 0 full-walk requests**. Directory move/rename, restored/moved-in unknown directories, and an existing baseline directory missing locally retain full reconciliation. |
 | Windows local moved-placeholder baseline index | **Accepted / structural contract** | Structural / unmeasured wall-clock | 100k baseline + 500 moved-placeholder node lookups from the existing baseline: node-path resolution **500 independent linear baseline lookups -> 1 lazy index-build pass + 500 map lookups**. Batches with no moved placeholder build no index; post-index additions retain one-scan fallback + cache. |
 | Windows conflict source refresh | **Accepted / structural contract** | Structural / unmeasured wall-clock | Both live local-sync and full-reconcile overwrite-conflict recovery now restore the server winner via **1 exact `GET /nodes/:id` / 1 returned node** instead of `Client.Walk()` (**root + every directory page + whole-tree path map**). Conflict-copy upload and winner placeholder semantics are unchanged. |
@@ -2512,6 +2513,126 @@ Regression commands:
 - `go test ./internal/mount -run '^TestWindowsRemoteJournal(SamePathFileUpsertSnapshotIsBounded|FastPathPrecedesBaselineClone|PathUpdatePersistsWithoutFullCurrentMap)$' -count=1`.
 
 Next action: continue ordinary FileExplorer download/sync/delete performance auditing; do not broaden this fast path into rename/delete/directory/conflict handling without separate evidence.
+
+### Windows exact file-delete journal baseline-clone bypass contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary Windows CfAPI remote change-journal page after the baseline is loaded;
+- stable structural workload: **100,001 baseline entries** (root + 100,000 files) and one remote delete for an already-known file;
+- the delete is an ordinary xDrive soft delete whose deleted Node row still retains its name/parent chain;
+- evidence method: changes API opt-in integration contract + deterministic 100k bounded-snapshot/source-shape tests; no wall-clock speedup is quoted.
+
+BEFORE:
+
+- the default changes API emitted delete events without a path;
+- Windows therefore could not do an exact baseline-key lookup for delete and entered the generic journal path;
+- that path cloned the full baseline and hydrated map before processing the page and lazily built a full nodeID -> path index for the delete;
+- one known-file delete in a 100k baseline therefore performed **1 full baseline clone + 1 full hydrated-map clone + 1 full baseline index-build scan**.
+
+AFTER / current:
+
+- the existing changes API keeps its default response/query cost unchanged for Web/FileExplorer polling;
+- Windows explicitly requests `include_deleted_paths=true`; only that request resolves retained soft-deleted node paths with one owner-scoped recursive CTE for the page;
+- hard-deleted/unresolvable nodes continue to return an empty path;
+- Windows accepts the fast path only when every change is a unique file delete whose supplied path exactly maps to the same baseline node ID/type/name and whose parent path is still known;
+- eligible pages snapshot only the touched file state and hydration timestamp, preserve the existing unsynchronized-local-change conflict check, remove the exact local files, and append a path-delete baseline delta;
+- the same 100k workload performs **0 full baseline clones**, **0 full hydrated-map clones**, and **0 nodeID full-map index builds**;
+- empty path, node/path mismatch, directory delete, excluded/Always Local/cache-limit policy, and local modification conflicts retain the established path.
+
+Decision: **Accepted.** The Server metadata work is opt-in and batched, while exact known-file deletion has path-local baseline semantics. Hard deletes and subtree-sensitive cases remain conservative.
+
+Regression budget: one eligible exact file-delete page must not call `cloneBaseline`, `cloneHydrated`, or scan `p.baseline` before applying the delete. The fast-path snapshot must remain **O(changes)**. Default `/changes` requests must not resolve deleted paths. Local unsynchronized modifications must still block the remote delete without removing the file or baseline entry.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestNodeChangeJournalLifecycleAndOwnerScope
+- `go test ./internal/client -run '^TestNodeChanges' -count=1`;
+- `go test ./internal/mount -run '^TestWindowsRemoteJournal(SamePathFileDeleteSnapshotIsBounded|FileDeleteFastPathPrecedesBaselineClone|FileDeleteFastPathPreservesLocalConflict|FileDeletePathDeltaPersistsWithoutFullCurrentMap)$' -count=1`.
+
+Next action: continue ordinary FileExplorer download/sync/delete performance auditing and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
+
+### FileOperation Delete root-update coalescing contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- durable FileOperation Delete execution used by FileExplorer;
+- stable workload: **120 top-level sibling files**, each with current File metadata;
+- PostgreSQL integration invokes the real `executeQueuedBatchDelete` path and counts only `UPDATE xd_nodes` statements during execution;
+- roots are loaded by `batchLoadNodesTx(..., preload=true)`, which takes `FOR UPDATE` locks and validates every requested revision before mutation;
+- the BEFORE baseline was validated by the phase-1 authoritative API race run before production code changed;
+- wall-clock timing is intentionally not quoted.
+
+BEFORE:
+
+- each root subtree is marked deleted/trash-root with one `xd_nodes` UPDATE;
+- each already locked/revision-validated root then receives a second `xd_nodes` UPDATE only to increment root revision/update time;
+- **120 roots -> 240 `xd_nodes` UPDATE statements**.
+
+AFTER / current:
+
+- one root-scoped SQL statement marks active subtree rows deleted, assigns `trash_root_id`, increments only the selected root revision, and updates timestamps;
+- the same statement carries a root revision precondition and returns whether that exact root was updated, preserving the old defensive revision-conflict outcome even though roots are already locked;
+- a selected root already soft-deleted earlier in the same transaction keeps its existing `deleted_at` / `trash_root_id` while still receiving the same revision +1 / `updated_at` mutation as before;
+- **120 roots -> 120 `xd_nodes` UPDATE statements**;
+- Share revocation remains one statement per root and different roots are intentionally not batched, preserving per-root progress/cancellation checkpoints and trash-root identity.
+
+Decision: **Accepted.** The second root-only statement repeated mutation work already guarded by the selected-root lock/revision validation. Folding it into the subtree statement removes one SQL round trip per root without changing Delete ordering, undo-plan revisions, cancellation checkpoints, or Trash semantics.
+
+Regression budget: Delete execution must perform at most **1 `xd_nodes` UPDATE per selected top-level root**. Root revision mismatch must mutate zero subtree rows and surface the existing `revision_conflict`; an already-deleted selected root must preserve its prior Trash identity while still receiving the revision bump.
+
+Regression commands:
+
+- `go test ./internal/api -run '^TestFileOperationDelete(NodeUpdatesCoalesced|RootsAreRevisionLockedBeforeMutation)$|^TestMarkFileOperationDeleteSubtreePreservesSemantics$' -count=1`.
+
+Next action: continue ordinary FileExplorer **upload-finalize / download / sync / delete** performance auditing; the remaining larger Windows incremental cost is the full baseline clone at journal-page start.
+
+### Resumable upload incremental reservation bookkeeping contract
+
+Status: **Accepted / complexity-only / unmeasured wall-clock**.
+
+Workload and method:
+
+- ordinary resumable FileExplorer upload after a session is created; this is **not a first-open or 100k listing workload**;
+- stable structural workload: **128 newly uploaded chunks** in one active session, matching a 1 GiB file at the default 8 MiB chunk size;
+- evidence method: PostgreSQL statement capture around the reservation bookkeeping path plus the existing resumable-upload integration assertions; no wall-clock speedup is quoted.
+
+BEFORE:
+
+- every successful chunk insert called `refreshUploadReservation`;
+- that helper selected **all UploadPart rows already recorded for the session** and summed them in Go before one `reserved_bytes` UPDATE;
+- 128 sequential new chunks therefore executed **128 full-session UploadPart SELECTs** and materialized **1 + 2 + ... + 128 = 8,256 UploadPart rows** only to maintain the reservation counter;
+- idempotent same-hash chunk retries still return before this path, and are unchanged.
+
+AFTER / current:
+
+- the upload transaction already holds the UploadSession row lock and knows the previous part size and the newly committed part size;
+- normal chunk inserts update `reserved_bytes` from that byte delta with **0 full-session UploadPart SELECTs**;
+- same-size part replacement requires **0 reservation UPDATEs** because received-byte coverage is unchanged;
+- invalid or legacy-inconsistent reservation state falls back to the existing full recomputation, preserving capacity safety rather than trusting a bad counter;
+- resume-time repair/recalculation, chunk hashing, object writes, quota reservation, session expiry, and finalize semantics are unchanged.
+
+Decision: **Accepted.** Reservation state is a deterministic function of the already locked session counter plus the committed part-size delta, so rescanning every previously received chunk on each new chunk adds no information on the normal path.
+
+Regression budget: a valid active upload must perform **0 full-session UploadPart scans per newly committed chunk** for reservation maintenance. The fallback full scan remains required only for inconsistent reservation state.
+
+Regression command:
+
+- `go test ./internal/api -run '^TestUploadChunkReservationUsesIncrementalBookkeeping$' -count=1`.
+
+Next action: continue ordinary FileExplorer **upload-finalize / download / sync / delete** performance auditing; do not optimize 100k first-open behavior.
+
+ -count=1`;
+- `go test ./internal/client -run '^TestNodeChanges' -count=1`;
+- `go test ./internal/mount -run '^TestWindowsRemoteJournal(SamePathFileDeleteSnapshotIsBounded|FileDeleteFastPathPrecedesBaselineClone|FileDeleteFastPathPreservesLocalConflict|FileDeletePathDeltaPersistsWithoutFullCurrentMap)$' -count=1`.
+
+Next action: continue ordinary FileExplorer download/sync/delete performance auditing and only change another deterministic request, SQL, allocation, filesystem, lock, or object-store multiplier.
+
 
 ### FileOperation Delete root-update coalescing contract
 
