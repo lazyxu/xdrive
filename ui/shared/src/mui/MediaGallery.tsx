@@ -37,6 +37,7 @@ import type {
 import type { XDriveWebAppGalleryTarget } from '../web-app'
 import type {
   MediaAlbum,
+  MediaGalleryFacets,
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
@@ -145,6 +146,7 @@ export interface MediaGalleryDataSource {
     offset: number,
     query?: MediaGalleryQuery,
   ) => Promise<MediaItemRange>
+  listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   listTrashItemRange?: (
     limit: number,
     offset: number,
@@ -418,6 +420,10 @@ export function XDriveMediaGalleryPage({
   onOpenViewer,
   onError,
 }: XDriveMediaGalleryPageProps) {
+  const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
+  const [facetsLoading, setFacetsLoading] = useState(false)
+  const [facetsError, setFacetsError] = useState('')
+  const facetRequestID = useRef(0)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [memories, setMemories] = useState<MediaMemory[]>([])
@@ -849,6 +855,29 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, onSectionRouteChange])
+
+  const requestFacets = useCallback(async (
+    nextDraft: MediaGalleryFilterDraft = draftFilters,
+  ) => {
+    if (!source.listFacets || currentSuggestedPerson || currentPet || currentMemory || currentCleanupReview) return
+    const request = ++facetRequestID.current
+    setFacetsLoading(true)
+    setFacetsError('')
+    setFacets({ cameras: [], formats: [] })
+    try {
+      const facetQuery = mediaGalleryQueryFromDraft(nextDraft)
+      const albumID = currentAlbum && currentAlbum.kind !== 'smart' ? currentAlbum.id : undefined
+      const nextFacets = await source.listFacets(facetQuery, albumID)
+      if (request !== facetRequestID.current) return
+      setFacets(nextFacets)
+    } catch (facetError) {
+      if (request !== facetRequestID.current) return
+      setFacetsError(xDriveMediaGalleryErrorMessage(facetError))
+      onError?.(facetError)
+    } finally {
+      if (request === facetRequestID.current) setFacetsLoading(false)
+    }
+  }, [currentAlbum, currentCleanupReview, currentMemory, currentPet, currentSuggestedPerson, draftFilters, onError, source])
 
   const applyFilters = useCallback(() => {
     const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
@@ -1609,6 +1638,7 @@ export function XDriveMediaGalleryPage({
 
   useEffect(() => () => {
     requestID.current += 1
+    facetRequestID.current += 1
   }, [])
 
   return (
@@ -1661,6 +1691,11 @@ export function XDriveMediaGalleryPage({
               activeMediaType !== 'panorama'
             }
             lockedFavorite={section === 'favorites'}
+            facets={facets}
+            facetsLoading={facetsLoading}
+            facetsError={facetsError}
+            facetsAvailable={Boolean(source.listFacets) && !currentSuggestedPerson}
+            onRequestFacets={requestFacets}
             onChange={setDraftFilters}
             onApply={applyFilters}
             onClear={clearFilters}

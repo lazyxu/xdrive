@@ -785,6 +785,8 @@ export type AgentMediaQuery = {
   search?: string
   asset_kind?: string
   category?: string
+  cameras?: string[]
+  formats?: string[]
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -802,6 +804,12 @@ function appendAgentMediaQuery(
   if (filters.search?.trim()) query.set('q', filters.search.trim())
   if (filters.asset_kind) query.set('asset_kind', filters.asset_kind)
   if (filters.category?.trim()) query.set('category', filters.category.trim())
+  for (const camera of filters.cameras ?? []) {
+    if (camera.trim()) query.append('camera', camera.trim())
+  }
+  for (const format of filters.formats ?? []) {
+    if (format.trim()) query.append('format', format.trim())
+  }
   if (filters.captured_from) query.set('captured_from', filters.captured_from)
   if (filters.captured_to) query.set('captured_to', filters.captured_to)
   if (filters.has_location !== undefined) {
@@ -816,6 +824,17 @@ function appendAgentMediaQuery(
     query.set('person_identity', filters.person_identity.trim())
   }
   if (filters.place?.trim()) query.set('place', filters.place.trim())
+}
+
+export type AgentMediaFacetOption = {
+  value: string
+  label: string
+  item_count: number
+}
+
+export type AgentMediaGalleryFacets = {
+  cameras: AgentMediaFacetOption[]
+  formats: AgentMediaFacetOption[]
 }
 
 export type AgentMediaAlbum = {
@@ -1439,6 +1458,17 @@ export class AgentIPCClient {
   }
 
 
+
+  mediaFacets(filters: AgentMediaQuery = {}, albumID = '') {
+    const query = new URLSearchParams()
+    appendAgentMediaQuery(query, filters)
+    if (albumID.trim()) query.set('album_id', albumID.trim())
+    const encoded = query.toString()
+    return this.request<AgentMediaGalleryFacets>(
+      'GET',
+      `/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
 
   mediaTrash(limit = 200, offset = 0) {
     const query = new URLSearchParams({

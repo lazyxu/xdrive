@@ -21,6 +21,7 @@ import type {
   FileVersion,
   MeResult,
   MediaAlbum,
+  MediaGalleryFacets,
   MediaGalleryQuery,
   MediaItem,
   MediaItemRange,
@@ -251,6 +252,12 @@ function appendMediaGalleryQuery(
   if (query.search?.trim()) values.set('q', query.search.trim())
   if (query.asset_kind) values.set('asset_kind', query.asset_kind)
   if (query.category?.trim()) values.set('category', query.category.trim())
+  for (const camera of query.cameras ?? []) {
+    if (camera.trim()) values.append('camera', camera.trim())
+  }
+  for (const format of query.formats ?? []) {
+    if (format.trim()) values.append('format', format.trim())
+  }
   if (query.captured_from) values.set('captured_from', query.captured_from)
   if (query.captured_to) values.set('captured_to', query.captured_to)
   if (query.has_location !== undefined) {
@@ -693,6 +700,16 @@ export class XDriveApi {
   }
 
 
+
+  mediaFacets(filters: MediaGalleryQuery = {}, albumID = '') {
+    const query = new URLSearchParams()
+    appendMediaGalleryQuery(query, filters)
+    if (albumID.trim()) query.set('album', albumID.trim())
+    const encoded = query.toString()
+    return this.request<MediaGalleryFacets>(
+      `/api/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
 
   mediaTrashRange(limit = 200, offset = 0) {
     const query = new URLSearchParams({

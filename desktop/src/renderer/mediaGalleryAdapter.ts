@@ -11,6 +11,7 @@ export function createDesktopMediaGalleryDataSource(
     listMusicChildren: (parentID) => agent.cloudChildren(parentID),
     listItems: (limit, offset, query) => agent.getMediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => agent.getMediaItemRange('', limit, offset, query),
+    listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
     listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),
     restoreTrashItems: async (items) => {
       for (const root of xDriveMediaGalleryTrashRoots(items)) {

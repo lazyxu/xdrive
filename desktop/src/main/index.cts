@@ -109,6 +109,7 @@ import {
   type AgentFileExplorerGrouping,
   type AgentMediaItem,
   type AgentMediaItemRange,
+  type AgentMediaGalleryFacets,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaMemory,
@@ -1295,6 +1296,27 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.category = input.category
   }
+  for (const [key, label] of [
+    ['cameras', 'camera'],
+    ['formats', 'format'],
+  ] as const) {
+    const raw = input[key]
+    if (raw === undefined) continue
+    if (
+      !Array.isArray(raw) ||
+      raw.length > 32 ||
+      !raw.every((value) => (
+        typeof value === 'string' &&
+        value.trim().length > 0 &&
+        [...value.trim()].length <= 160
+      ))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, `Media ${label} filters are invalid.`)
+    }
+    out[key] = Array.from(new Set(
+      raw.map((value) => (value as string).trim().toLowerCase()),
+    )).sort()
+  }
   for (const key of ['captured_from', 'captured_to'] as const) {
     const raw = input[key]
     if (raw === undefined) continue
@@ -1893,6 +1915,31 @@ function registerIPCHandlers() {
       window.limit,
       window.offset,
       normalizeMediaGalleryQuery(query),
+    )
+  }, false))
+
+  ipcMain.handle('agent:get-media-facets', (
+    _event,
+    query: unknown = undefined,
+    albumID: unknown = '',
+  ) => runAgentAction<AgentMediaGalleryFacets>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' ||
+      (
+        albumID.trim() &&
+        !['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => (
+          albumID.trim().startsWith(prefix) &&
+          albumID.trim().length > prefix.length
+        ))
+      )
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media album id is invalid.')
+    }
+    return requireAgentClient().mediaFacets(
+      normalizeMediaGalleryQuery(query),
+      albumID.trim(),
     )
   }, false))
 

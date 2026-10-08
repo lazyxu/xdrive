@@ -185,6 +185,8 @@ type MediaSmartAlbumQuery struct {
 	Search         string     `json:"search,omitempty"`
 	AssetKind      string     `json:"asset_kind,omitempty"`
 	Category       string     `json:"category,omitempty"`
+	Cameras        []string   `json:"cameras,omitempty"`
+	Formats        []string   `json:"formats,omitempty"`
 	CapturedFrom   *time.Time `json:"captured_from,omitempty"`
 	CapturedTo     *time.Time `json:"captured_to,omitempty"`
 	HasLocation    *bool      `json:"has_location,omitempty"`
@@ -216,6 +218,17 @@ type MediaPlaceFacet struct {
 	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
 	Attribution    string     `json:"attribution,omitempty"`
 	AttributionURL string     `json:"attribution_url,omitempty"`
+}
+
+type MediaFacetOption struct {
+	Value     string `json:"value"`
+	Label     string `json:"label"`
+	ItemCount int64  `json:"item_count"`
+}
+
+type MediaGalleryFacets struct {
+	Cameras []MediaFacetOption `json:"cameras"`
+	Formats []MediaFacetOption `json:"formats"`
 }
 
 type MediaMemory struct {
@@ -323,6 +336,8 @@ type MediaQuery struct {
 	Search         string
 	AssetKind      string
 	Category       string
+	Cameras        []string
+	Formats        []string
 	CapturedFrom   *time.Time
 	CapturedTo     *time.Time
 	HasLocation    *bool
@@ -345,6 +360,16 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Category); value != "" {
 		values.Set("category", value)
+	}
+	for _, camera := range q.Cameras {
+		if value := strings.TrimSpace(camera); value != "" {
+			values.Add("camera", value)
+		}
+	}
+	for _, format := range q.Formats {
+		if value := strings.TrimSpace(format); value != "" {
+			values.Add("format", value)
+		}
 	}
 	if q.CapturedFrom != nil {
 		values.Set("captured_from", q.CapturedFrom.UTC().Format(time.RFC3339))
@@ -424,6 +449,25 @@ func (c *Client) MediaItemsRangeQuery(
 	values.Set("offset", strconv.Itoa(offset))
 	path := "/api/v1/media/items?" + values.Encode()
 	var out MediaItemRange
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaFacets(
+	ctx context.Context,
+	query MediaQuery,
+	albumID string,
+) (MediaGalleryFacets, error) {
+	values := url.Values{}
+	query.add(values)
+	if value := strings.TrimSpace(albumID); value != "" {
+		values.Set("album", value)
+	}
+	path := "/api/v1/media/facets"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out MediaGalleryFacets
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

@@ -271,6 +271,59 @@ test('Gallery photo wall keeps ordinary media quiet while preserving semantic ba
   )
 })
 
+test('Gallery camera and format facets stay lazy, shared, and wired across Web/Desktop', () => {
+  for (const token of ['cameras?: string[]', 'formats?: string[]', 'MediaGalleryFacets']) {
+    assert.ok(sharedModels.includes(token), 'Gallery facet model missing: ' + token)
+  }
+  for (const token of [
+    '<Autocomplete',
+    'label="拍摄设备"',
+    'label="文件格式"',
+    'option.item_count.toLocaleString',
+    'onRequestFacets?.(draft)',
+    'facetsAvailable',
+  ]) {
+    assert.ok(sharedGalleryFilters.includes(token), 'Gallery facet UI missing: ' + token)
+  }
+  assert.match(sharedGalleryMain, /listFacets\?:/)
+  assert.match(sharedGalleryMain, /const requestFacets = useCallback/)
+  assert.match(sharedGalleryMain, /source\.listFacets\(facetQuery, albumID\)/)
+  const loadFirstPageStart = sharedGalleryMain.indexOf('const loadFirstPage = useCallback')
+  const loadMemoriesStart = sharedGalleryMain.indexOf('const loadMemories = useCallback', loadFirstPageStart)
+  assert.equal(
+    sharedGalleryMain.slice(loadFirstPageStart, loadMemoriesStart).includes('listFacets('),
+    false,
+    'first Gallery range load must not aggregate camera/format facets',
+  )
+
+  assert.match(webAPI, /mediaFacets\(/)
+  assert.match(webAPI, /\/api\/v1\/media\/facets/)
+  assert.match(webAPI, /values\.append\('camera'/)
+  assert.match(webAPI, /values\.append\('format'/)
+  assert.match(webAdapter, /listFacets: \(query, albumID\) => api\.mediaFacets\(query, albumID\)/)
+
+  assert.match(agentClient, /mediaFacets\(/)
+  assert.match(agentClient, /query\.append\('camera'/)
+  assert.match(agentClient, /query\.append\('format'/)
+  assert.match(desktopIPC, /GET \/v1\/media\/facets/)
+  assert.match(desktopIPC, /CloudMediaFacets/)
+  assert.match(desktopMain, /agent:get-media-facets/)
+  assert.match(preload, /getMediaFacets:/)
+  assert.match(desktopAdapter, /listFacets: \(query, albumID\) => agent\.getMediaFacets\(query, albumID\)/)
+  assert.equal(
+    (preload.match(/cameras\?: string\[\]/g) || []).length,
+    (preload.match(/formats\?: string\[\]/g) || []).length,
+    'Desktop preload must expose cameras/formats together on every Gallery query shape',
+  )
+  assert.ok(
+    (preload.match(/cameras\?: string\[\]/g) || []).length >= 11,
+    'Desktop preload must expose facets on range/person/album/smart-album query contracts',
+  )
+  assert.doesNotMatch(sharedGalleryFilters, /onOpen=\{onRequestFacets\}/)
+  assert.match(sharedGalleryFilters, /onRequestFacets\?\.\(nextDraft\)/)
+  assert.match(sharedGalleryMain, /facetRequestID\.current \+= 1/)
+})
+
 test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => {
   for (const token of [
     '<XDriveMediaGalleryViewer',
@@ -935,13 +988,14 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   assert.match(agentClient, /category/)
   assert.match(desktopIPC, /Category/)
 
-  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaPets()', 'mediaPetItemRange(', 'mediaSuggestedPeopleWithReview(', 'reviewMediaSuggestedPerson(', 'addMediaSuggestedPersonToPerson(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotionURL(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
+  for (const token of ['mediaItems(', 'mediaItemRange(', 'mediaFacets(', 'mediaTrashRange(', 'mediaAlbums()', 'mediaPlaces(', 'mediaMemories(', 'mediaMemoryItemRange(', 'mediaDuplicateGroups(', 'mediaDuplicateItemRange(', 'mediaBurstReviews(', 'mediaBurstReviewItemRange(', 'mediaPets()', 'mediaPetItemRange(', 'mediaSuggestedPeopleWithReview(', 'reviewMediaSuggestedPerson(', 'addMediaSuggestedPersonToPerson(', 'mediaSuggestedPeople(', 'mediaSuggestedPersonItems(', 'mediaSuggestedPersonItemRange(', 'mediaPeople(', 'mediaPersonItems(', 'mediaPersonItemRange(', 'adoptMediaSuggestedPerson(', 'updateMediaPerson(', 'mergeMediaPeople(', 'splitMediaPerson(', 'mediaAlbumItems(', 'mediaAlbumItemRange(', 'createMediaAlbum(', 'renameMediaAlbum(', 'deleteMediaAlbum(', 'createSmartMediaAlbum(', 'updateSmartMediaAlbum(', 'deleteSmartMediaAlbum(', 'addMediaAlbumItems(', 'removeMediaAlbumItem(', 'setMediaFavorite(', 'setMediaTags(', 'setMediaPeople(', 'setMediaDescription(', 'mediaThumbnail(', 'mediaLivePhotoMotionURL(', 'filePreviewURL(', 'appendMediaGalleryQuery(', 'preview-ticket']) {
     assert.ok(webAPI.includes(token), `Web API missing ${token}`)
   }
 
   for (const token of [
     'api.mediaItems(',
     'api.mediaItemRange(',
+    'api.mediaFacets(',
     'api.mediaTrashRange(',
     'api.mediaAlbums()',
     'api.mediaPlaces(',
@@ -989,6 +1043,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
   for (const token of [
     'getMediaItems:',
     'getMediaItemRange:',
+    'getMediaFacets:',
     'getMediaTrash:',
     'getMediaAlbums:',
     'getMediaPlaces:',

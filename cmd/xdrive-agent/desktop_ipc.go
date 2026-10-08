@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -270,6 +271,7 @@ type desktopIPCController interface {
 	CloudRevokeShare(context.Context, uint64) error
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaItemsRange(context.Context, client.MediaQuery, int, int) (client.MediaItemRange, error)
+	CloudMediaFacets(context.Context, client.MediaQuery, string) (client.MediaGalleryFacets, error)
 	CloudMediaTrash(context.Context, int, int) (client.MediaItemRange, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
@@ -607,6 +609,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
+	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
@@ -2650,6 +2653,24 @@ func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {
 	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
+func (h *desktopIPCHandler) mediaFacets(w http.ResponseWriter, r *http.Request) {
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
+		return
+	}
+	albumID := strings.TrimSpace(r.URL.Query().Get("album_id"))
+	if albumID != "" && !desktopIPCValidMediaAlbumID(albumID, false) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_id", "album_id must be a Gallery album id")
+		return
+	}
+	facets, err := h.ctrl.CloudMediaFacets(r.Context(), query, albumID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, facets)
+}
+
 func (h *desktopIPCHandler) mediaTrash(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := desktopIPCMediaWindow(w, r)
 	if !ok {
@@ -3847,6 +3868,12 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 	}
 
 	var ok bool
+	if out.Cameras, ok = desktopIPCMediaFacetValues(w, r, "camera"); !ok {
+		return client.MediaQuery{}, false
+	}
+	if out.Formats, ok = desktopIPCMediaFacetValues(w, r, "format"); !ok {
+		return client.MediaQuery{}, false
+	}
 	if out.CapturedFrom, ok = desktopIPCMediaTime(w, r, "captured_from"); !ok {
 		return client.MediaQuery{}, false
 	}
@@ -3908,6 +3935,37 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 		out.Place = raw
 	}
 	return out, true
+}
+
+func desktopIPCMediaFacetValues(
+	w http.ResponseWriter,
+	r *http.Request,
+	name string,
+) ([]string, bool) {
+	rawValues := r.URL.Query()[name]
+	if len(rawValues) > 32 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_"+name, name+" accepts at most 32 values")
+		return nil, false
+	}
+	seen := make(map[string]struct{}, len(rawValues))
+	values := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		value := strings.ToLower(strings.TrimSpace(raw))
+		if value == "" {
+			continue
+		}
+		if strings.ContainsRune(value, 0) || len([]rune(value)) > 160 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_"+name, name+" filter is invalid")
+			return nil, false
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values, true
 }
 
 func desktopIPCMediaTime(
