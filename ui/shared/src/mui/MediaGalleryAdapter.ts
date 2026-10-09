@@ -3,6 +3,8 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  MediaSelectionSnapshot,
+  MediaSelectionSnapshotPage,
   NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaDuplicateOrganizeApplyInput,
@@ -80,6 +82,16 @@ export interface XDriveMediaGalleryPort {
     albumID?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaGalleryFacets>>
   getIndexStatus?: () => Promise<XDriveMediaGalleryTransportResult<MediaGalleryIndexStatus>>
+  createSelectionSnapshot?: (
+    query: MediaGalleryQuery, albumID?: string, day?: string,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionSnapshot>>
+  getSelectionSnapshot?: (
+    token: string, offset: number, limit: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionSnapshotPage>>
+  setSelectionExcluded?: (
+    token: string, nodeID: number, excluded: boolean, version: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionSnapshot>>
+  deleteSelectionSnapshot?: (token: string) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<NodeLocation>>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizePlan>>
   applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizeApplyResult>>
@@ -394,6 +406,24 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     getIndexStatus: port.getIndexStatus
       ? () => resolveXDriveTransport(port.getIndexStatus!())
+      : undefined,
+    createSelectionSnapshot: port.createSelectionSnapshot
+      ? (query, albumID, day) => resolveXDriveTransport(
+          port.createSelectionSnapshot!(query, albumID, day),
+        )
+      : undefined,
+    getSelectionSnapshot: port.getSelectionSnapshot
+      ? (token, offset, limit) => resolveXDriveTransport(
+          port.getSelectionSnapshot!(token, offset, limit),
+        )
+      : undefined,
+    setSelectionExcluded: port.setSelectionExcluded
+      ? (token, nodeID, excluded, version) => resolveXDriveTransport(
+          port.setSelectionExcluded!(token, nodeID, excluded, version),
+        )
+      : undefined,
+    deleteSelectionSnapshot: port.deleteSelectionSnapshot
+      ? async (token) => { await resolveXDriveTransport(port.deleteSelectionSnapshot!(token)) }
       : undefined,
     getNodeLocation: port.getNodeLocation
       ? (nodeID, signal) => resolveXDriveTransport(port.getNodeLocation!(nodeID, signal))

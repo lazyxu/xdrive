@@ -13,6 +13,13 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listItemRange: (limit, offset, query, signal) => api.mediaItemRange('', limit, offset, query, signal),
     listFacets: (query, albumID) => api.mediaFacets(query, albumID),
     getIndexStatus: () => api.mediaIndexStatus(),
+    createSelectionSnapshot: (query, albumID, day) =>
+      api.createMediaSelectionSnapshot(query, albumID, day),
+    getSelectionSnapshot: (token, offset, limit) =>
+      api.getMediaSelectionSnapshot(token, offset, limit),
+    setSelectionExcluded: (token, nodeID, excluded, version) =>
+      api.setMediaSelectionExcluded(token, nodeID, excluded, version),
+    deleteSelectionSnapshot: (token) => api.deleteMediaSelectionSnapshot(token),
     getNodeLocation: (nodeID, signal) => api.nodeLocation(nodeID, signal),
     getDuplicateOrganizePlan: (keeperNodeID, nodeIDs) => api.mediaDuplicateOrganizePlan(keeperNodeID, nodeIDs),
     applyDuplicateOrganize: (input) => api.mediaDuplicateOrganizeApply(input),

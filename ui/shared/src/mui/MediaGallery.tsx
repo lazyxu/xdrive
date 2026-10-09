@@ -61,6 +61,8 @@ import type {
   MediaFolderView,
   MediaItem,
   MediaItemRange,
+  MediaSelectionSnapshot,
+  MediaSelectionSnapshotPage,
   MediaMemory,
   MediaPetFacet,
   MediaPersonSuggestionReview,
@@ -110,6 +112,8 @@ import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplic
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveMediaGallerySelectionReviewDialog } from './MediaGallerySelectionReviewDialog'
+import { XDriveMediaGalleryQuerySelection } from './MediaGalleryQuerySelection'
+import type { XDriveMediaGalleryQuerySelectionActions } from './MediaGalleryQuerySelection'
 import { XDriveMediaGalleryAlbumOrganizer } from './MediaGalleryAlbumOrganizer'
 import type { XDriveMediaGalleryAlbumFolderActions } from './MediaGalleryAlbumOrganizer'
 import {
@@ -191,6 +195,16 @@ export interface MediaGalleryDataSource {
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
+  createSelectionSnapshot?: (
+    query: MediaGalleryQuery, albumID?: string, day?: string,
+  ) => Promise<MediaSelectionSnapshot>
+  getSelectionSnapshot?: (
+    token: string, offset: number, limit: number,
+  ) => Promise<MediaSelectionSnapshotPage>
+  setSelectionExcluded?: (
+    token: string, nodeID: number, excluded: boolean, version: number,
+  ) => Promise<MediaSelectionSnapshot>
+  deleteSelectionSnapshot?: (token: string) => Promise<void>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<MediaDuplicateOrganizePlan>
   applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<MediaDuplicateOrganizeApplyResult>
@@ -2184,6 +2198,22 @@ export function XDriveMediaGalleryPage({
         searchActive={Boolean(appliedFilterQuery.search?.trim())}
         appliedQuery={appliedFilterQuery}
         appliedScopeLabel={appliedScopeLabel}
+        querySelectionActions={(
+          collectionTarget &&
+          (collectionTarget.kind === 'all' || collectionTarget.kind === 'album') &&
+          !collectionTarget.query.fold_duplicates &&
+          !collectionTarget.query.fold_member_ids?.length &&
+          source.createSelectionSnapshot && source.getSelectionSnapshot &&
+          source.setSelectionExcluded && source.deleteSelectionSnapshot
+        ) ? {
+          create: (day) => source.createSelectionSnapshot!(
+            { ...collectionTarget.query, anchor_node_id: undefined },
+            collectionTarget.kind === 'album' ? collectionTarget.id || '' : '', day,
+          ),
+          page: source.getSelectionSnapshot,
+          exclude: source.setSelectionExcluded,
+          release: source.deleteSelectionSnapshot,
+        } : undefined}
         draftPending={draftPending}
         searchOrder={searchOrder}
         indexStatus={indexStatus}
@@ -2575,6 +2605,7 @@ export interface XDriveMediaGalleryProps {
   filtersActive?: boolean
   onClearFilters?: () => void
   filters?: ReactNode
+  querySelectionActions?: XDriveMediaGalleryQuerySelectionActions
   loadThumbnail: MediaThumbnailLoader
   loadMusicRoot?: () => Promise<Node>
   listMusicChildren?: (parentID: number) => Promise<Node[]>
@@ -3948,6 +3979,7 @@ export function XDriveMediaGallery({
   filtersActive = false,
   onClearFilters,
   filters,
+  querySelectionActions,
   loadThumbnail,
   loadNodeLocation,
   onShowInFolder,
@@ -5399,6 +5431,18 @@ export function XDriveMediaGallery({
             </Button>
           ) : null}
         </Stack>
+      ) : null}
+
+      {showPhotoCollection && !isTrashSection && !foldDuplicates &&
+       !currentCleanupReview && querySelectionActions ? (
+        <XDriveMediaGalleryQuerySelection
+          key={collectionKey}
+          actions={querySelectionActions}
+          sortBy={sortBy}
+          timeZone={timeZone}
+          disabled={selectionBusy || loading}
+          onActivated={clearMediaSelection}
+        />
       ) : null}
 
       {showPhotoCollection && selectionMode ? (

@@ -476,3 +476,11 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   deliberately distinct from the G07 phase-1 review of explicitly loaded
   items. Query-wide mutations, Task Center progress, partial failures and
   iOS/Android/device QA are NOT implemented by this stage.
+
+- 2026-10-09: G07 phase 2b Web-only candidate (stacked after Phase 2a).
+  Gallery exposes explicit server-frozen whole-query / IANA-day selection and
+  bounded 100-row read-only review with excludes, restores and honest totals.
+  The token is released on close and scope teardown; filtered/folded and
+  expired snapshots are never converted into MediaItem[] batch operations.
+  This does not claim Desktop support, durable jobs or final 100k/real-device
+  acceptance. Existing explicit multi-selection behavior is preserved.

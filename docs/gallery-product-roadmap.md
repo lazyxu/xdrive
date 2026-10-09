@@ -1337,3 +1337,22 @@ cancel, retry, partial failure details, and 10k/100k DB/physical-device tests.
 This phase does **not** complete G07. PostgreSQL tenant-isolation/day filtering,
 DST, optimistic concurrency, exclusions, and 100k bounded-page contracts are
 covered by tests, but full CI and actual runtime metrics are still pending.
+
+### G07 phase 2b — Web query-wide and day selection (stacked candidate, 2026-10-09)
+
+**Candidate / requires Phase 2a merge, CI and real-device review.** Web now
+uses the optional shared Gallery snapshot port to explicitly freeze the current
+owner-authorized server query (including sort, timezone, folder and album scope)
+or one IANA calendar day, without loading unloaded MediaItem objects. An
+accessible, paged 100-row inspector shows the exact selected/excluded count,
+stale revision hints, and explicit exclude/restore. Scope changes and closing
+release the ephemeral token. An over-100k result surfaces the Server's 413
+rather than selecting a truncated subset. Duplicate-fold mode is not eligible.
+
+**Boundary:** the snapshot is intentionally read-only: existing Gallery
+favorites/album/tag/download/delete handlers still receive only explicitly
+loaded items. Do not pass a snapshot token to them. Desktop cannot show this
+control until the authorized Agent/IPC transport is implemented. Phase 3
+remains durable, bounded Task Center operations with per-item fresh ACL and
+revision validation, progress, cancellation, retries and partial-failure audit.
+Live Web/desktop and physical device evidence is still pending.

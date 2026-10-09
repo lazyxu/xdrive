@@ -621,6 +621,32 @@ export interface MediaItemRange {
   timeline_group_sets?: MediaTimelineGroupSets
 }
 
+/** Temporary, owner-scoped and versioned; never a durable batch job. */
+export interface MediaSelectionSnapshot {
+  token: string
+  version: number
+  total: number
+  selected: number
+  excluded: number
+  day: string
+  expires_at: string
+  scope?: 'known_photo_assets'
+}
+
+export interface MediaSelectionSnapshotItem {
+  node_id: number
+  revision: number
+  name: string
+  stale: boolean
+}
+
+export interface MediaSelectionSnapshotPage extends MediaSelectionSnapshot {
+  offset: number
+  limit: number
+  items: MediaSelectionSnapshotItem[]
+  has_more: boolean
+}
+
 export interface MediaAlbumFolder {
   id: number
   parent_id: number
