@@ -9,13 +9,19 @@ The currently implemented L01-A is **Server-only, fail-closed**: the kind `local
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | L01-A | local_folder push/paused activation gate; integration regression; AGENTS progress rule | implemented in this change; CI/merge separate |
-| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | registration/credential + Root identity binding implemented separately; native approval/execution and run-level device proof not implemented |
+| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | registration/binding and Source Run proof preflight staged; native approval, transaction-bound enforcement and execution remain incomplete |
 | L02 | Windows/Linux streaming scan, stable local identity, per-root journal/state | not implemented |
 | L03 | Planner + resumable upload + SourceItem commit, crash/idempotency recovery | not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | not implemented |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
+
+## L01-B2-A Source Run executor-proof preflight (non-operational)
+
+For the seven Source Run **mutating** endpoints (begin, observe, commit, failures, progress, heartbeat, finish), local-folder Sources require a verified owner-scoped device enrollment token and the exact bound Device ID, Root UUID and fingerprint. The owner's JWT alone is insufficient. All existing non-local-folder Source executors are unchanged. Source Run cancel remains a signed-in owner's control operation and does not require the executing device's secret.
+
+This phase is a **preflight only**, not final transactional revocation fencing: the subsequent Agent/Server implementation must validate the device and binding within every corresponding write transaction, bound to the run's accepted device/root/config revision, to avoid revoke-versus-commit TOCTOU races. Existing regular file upload APIs remain owner-authenticated rather than device- or Source-scoped; they must not be treated as an authorized local Source commit. The L01-A activation and BeginSourceRun hard-deny is preserved until all these end-to-end checks are in place.
 
 ## L01-B identity/binding staging (non-operational)
 

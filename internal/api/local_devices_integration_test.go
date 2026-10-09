@@ -14,6 +14,108 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
+func TestLocalFolderSourceRunDeviceProofIsRequiredOnEveryWriteStage(t *testing.T) {
+	db, server, owner, other, root := setupFilePropertiesTestDB(t)
+	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}, &meta.SourceRunFailure{}); err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	server.Auth = auth.New("local-source-executor-proof-test", time.Hour)
+	server.RefreshTTL = 24 * time.Hour
+	router := server.Router()
+	ownerToken, err := server.Auth.Issue(owner.ID, owner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherToken, err := server.Auth.Issue(other.ID, other.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deviceToken := "safe-raw-local-device-secret-contains-at-least-32-bytes"
+	now := time.Now().UTC()
+	device := meta.ClientDevice{
+		ID: uuid.NewString(), OwnerID: owner.ID, Name: "Source executor", Platform: "windows",
+		CredentialHash: deviceCredentialDigest(deviceToken),
+		CreatedAt:      now, UpdatedAt: now,
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	rootID := uuid.NewString()
+	fingerprint := strings.Repeat("b", 64)
+	rootNodeID := root.ID
+	source := meta.Source{
+		OwnerID: owner.ID, Name: "Local push run authorization", Kind: meta.SourceKindLocalFolder,
+		Direction: meta.SourceDirectionPush, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+		Revision: 1, TargetNodeID: &rootNodeID,
+	}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	binding := meta.LocalSourceBinding{
+		SourceID: source.ID, OwnerID: owner.ID, DeviceID: device.ID,
+		RootID: rootID, RootFingerprint: fingerprint, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	prefix := fmt.Sprintf("/api/v1/sources/%d/runs", source.ID)
+	runID := uuid.NewString()
+	paths := []string{
+		prefix,
+		prefix + "/" + runID + "/observe",
+		prefix + "/" + runID + "/commit",
+		prefix + "/" + runID + "/failures",
+		prefix + "/" + runID + "/progress",
+		prefix + "/" + runID + "/heartbeat",
+		prefix + "/" + runID + "/finish",
+	}
+	valid := map[string]string{
+		"X-XDrive-Device-ID":              device.ID,
+		"X-XDrive-Local-Root-ID":          rootID,
+		"X-XDrive-Local-Root-Fingerprint": fingerprint,
+		"X-XDrive-Device-Token":           deviceToken,
+	}
+	for _, path := range paths {
+		request(t, router, http.MethodPost, path, ownerToken, nil, http.StatusForbidden)
+		requestWithHeaders(t, router, http.MethodPost, path, otherToken, nil, http.StatusNotFound, valid)
+		incorrectToken := map[string]string{
+			"X-XDrive-Device-ID":              device.ID,
+			"X-XDrive-Local-Root-ID":          rootID,
+			"X-XDrive-Local-Root-Fingerprint": fingerprint,
+			"X-XDrive-Device-Token":           "wrong",
+		}
+		requestWithHeaders(t, router, http.MethodPost, path, ownerToken, nil, http.StatusForbidden, incorrectToken)
+	}
+	wrongRoot := map[string]string{
+		"X-XDrive-Device-ID":              device.ID,
+		"X-XDrive-Local-Root-ID":          uuid.NewString(),
+		"X-XDrive-Local-Root-Fingerprint": fingerprint,
+		"X-XDrive-Device-Token":           deviceToken,
+	}
+	requestWithHeaders(t, router, http.MethodPost, prefix, ownerToken, nil, http.StatusForbidden, wrongRoot)
+	// Valid proof cannot bypass the L01-A fail-closed executor readiness gate.
+	requestWithHeaders(t, router, http.MethodPost, prefix, ownerToken,
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())),
+		http.StatusConflict, valid)
+	var count int64
+	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", source.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("local folder started %d runs without native executor", count)
+	}
+	revokedAt := now.Add(time.Second)
+	if err := db.Model(&meta.ClientDevice{}).Where("id = ?", device.ID).
+		Update("revoked_at", revokedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPost, prefix, ownerToken,
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())),
+		http.StatusForbidden, valid)
+}
+
 func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
@@ -109,7 +211,7 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
 		map[string]string{"If-Match": `"2"`})
 	request(t, router, http.MethodPost, sourceURL+"/runs", ownerToken,
-		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusConflict)
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusForbidden)
 
 	revokeURL := "/api/v1/devices/" + enrolled.Device.ID + "/revoke"
 	request(t, router, http.MethodPost, revokeURL, ownerToken, nil, http.StatusNoContent)

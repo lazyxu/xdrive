@@ -157,7 +157,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		map[string]string{"If-Match": `"1"`})
 	request(t, router, http.MethodPost, localURL+"/trigger", tokenA, nil, http.StatusConflict)
 	request(t, router, http.MethodPost, localURL+"/runs", tokenA,
-		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusConflict)
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusForbidden)
 	// Even an accidentally forced "active" status must not let a local-folder
 	// Source execute without the future device-bound authorization protocol.
 	if err := db.Model(&meta.Source{}).Where("id = ?", localCreated.ID).
@@ -165,7 +165,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	request(t, router, http.MethodPost, localURL+"/runs", tokenA,
-		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusConflict)
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusForbidden)
 	var localRunCount int64
 	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", localCreated.ID).Count(&localRunCount).Error; err != nil {
 		t.Fatal(err)
