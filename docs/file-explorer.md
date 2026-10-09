@@ -4,7 +4,7 @@ This document is the canonical **non-performance** FileExplorer design contract 
 
 ## Shared architecture
 
-- Mobile Web FileExplorer is a full-screen Web App: its main/root occupies the entire browser-available dynamic viewport, including former global header/footer space. Do not wrap it in a persistent mobile global AppBar, bottom navigation or desktop outer page padding. Use the shared on-demand application-navigation overlay for app/account/transfer access. Its own command/address/status bars remain part of FileExplorer. Follow [Mobile Web](mobile-web.md) and verify main/root bounds against the viewport itself, with the same mounted directory/tab/scroll state across responsive changes and Viewer return.
+- **Mobile Web has an independent iOS-style Files presentation** (approved Q1–Q6). Follow [Mobile Files](mobile-files-ios.md) and [Mobile Web](mobile-web.md). The App Frame still fills the dynamic viewport and owns App-level exit/navigation/transfers, but Mobile Files has its own Recent/Browse/Favorites rail, folder heading, global Search and ··· actions. It no longer shrinks the Desktop FileExplorer command/address/status bars. The Mobile rail is Files-internal, not global navigation. File operation controllers, Web API, identity/Server ranges and Viewer are reused.
 - Web and Desktop use the shared FileExplorer interaction/model layer and shared MUI surface under `ui/shared`.
 - Platform-specific transport remains local: Web REST/fetch stays in Web; Desktop Electron/Agent IPC and native-shell integration stay in Desktop.
 - Server is authoritative for filesystem semantics that require the full namespace. Clients must not reconstruct recursive filesystem state by paginating/traversing the tree in the renderer.
@@ -438,6 +438,8 @@ Do not bypass this boundary with renderer-side absolute paths or generic shell e
 
 ### Compact touch dragging and sidebar order
 
+**Mobile iOS Files override:** The legacy shared compact-touch commands and 44px selection drag handle described below are historical for the Desktop-class shared surface. Mobile Web now uses the independent [iOS Files presentation](mobile-files-ios.md): 450ms hold arms a single contact; stationary release opens its menu, movement uses the existing bounded pointer drag controller, and multi-selection remains available through the top-right ··· menu. No per-row More overlay or permanent operation bar is reinstated.
+
 Below900 CSS px, a44px handle in the persistent selection controls moves the complete selected projection to a mounted folder or breadcrumb. The same handle opens the existing Move To destination chooser on an ordinary tap. Existing Move/Copy To controls remain available. The handle is disabled with an explanation while selection is incomplete, renaming is active, the complete selection is unavailable, or the existing mutation limit is exceeded; no loaded-only subset is submitted. The drag snapshots source IDs/revisions, and the destination is revalidated against the current mounted projection at release.
 
 Quick Access and Smart Folder rows expose a sibling44px drag/order handle. Dragging shows a before/after insertion target; tapping or using Enter/Space opens **上移 / 下移** with first/last boundaries. Name-sorted Quick Access explains that manual ordering must be selected first. Both paths submit the same complete ordered-ID callbacks. Quick Access keeps its existing optimistic order rollback; Smart Folders keep their existing Organization serialization. No new mutation queue or local-only order is introduced.
@@ -464,13 +466,13 @@ Do not replace the internal drag lifecycle with native drag-out and do not expos
 
 ## Windows-style shared chrome
 
-The Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like interaction hierarchy:
+The wide-Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like interaction hierarchy; **Mobile Web is deliberately exempt** and follows [its dedicated design contract](mobile-files-ios.md):
 
 - the address bar remains breadcrumb-first, enters a raw editable path on focus/shortcut, and keeps compact square-ish segments instead of rounded app-navigation pills;
 - Search covers all authorized files and folders and receives more horizontal space than secondary command controls;
 - structured Search filters stay Server-backed but are collapsed behind one **筛选** trigger; active filter count remains visible without keeping four chips permanently on the command bar;
 - **视图** is the single layout/density control; do not add a second Details/Grid toggle beside it;
-- **排序与分组** is one menu containing Server-backed sort field, explicit **升序/降序**, Server-backed group mode, and **文件夹优先**. Choosing a field preserves direction; choosing the already-active state is idempotent. The status area and trigger expose the current field, direction, group, folders-first and effective view. The compact status strip sits above the list so the application's floating navigation trigger cannot obscure its text; wide layouts keep the footer. Details header clicks retain their usual sort-direction toggle;
+- **排序与分组** is one menu containing Server-backed sort field, explicit **升序/降序**, Server-backed group mode, and **文件夹优先**. Choosing a field preserves direction; choosing the already-active state is idempotent. The status area and trigger expose the current field, direction, group, folders-first and effective view. The compact status strip sits above the list so the mobile File App title and its internal Recent/Browse/Favorites rail cannot obscure its content; wide layouts keep the footer. Details header clicks retain their usual sort-direction toggle;
 - the folder tree is manually expanded by the user and does not auto-expand or highlight itself merely because navigation changed elsewhere;
 - Trash, Quick Access, Favorites, and Recent item icons reserve the same left disclosure-slot width as the root folder row, so their visual icon column lines up with **我的文件**;
 - Grid item visual boxes are square at every density and file/folder fallback icons use the same size token within each density.
@@ -573,7 +575,7 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 ### Column View
 
 - `columns` is the third shared FileExplorer view mode beside `details` and `grid`; it is persisted in the same tab/session view-mode contract.
-- Compact presentation below 900 CSS px projects a saved `columns` preference into the shared Details list, independently of pointer type. Inherited or restored tabs receive the same 52 px rows, per-item More actions and explicit multi-select as other mobile lists. Actual touch events retain the compact touch open/select contract; ordinary mouse clicks retain selection/double-click semantics, including when a mouse is attached to a phone.
+- Mobile Web below 900 CSS px now uses its own [iOS Files surface](mobile-files-ios.md): two-line 68px rows, a Mobile-only List/Grid preference, and no per-item More overlays or mobile file tabs. Wide Web/Desktop keep the persisted shared `columns`/Details/Grid preference untouched, so 899→900px does not rewrite it. Touch and attached-mouse accessibility are tested independently.
 - This responsive projection must not call `onViewModeChange` or rewrite the saved tab/session preference. Returning to a wide viewport restores Column View. Explicit List/Grid choices still use the existing shared preference callback. Navigation, toolbar, filter and view chrome follow the same width boundary so narrow mouse windows cannot clip the filter in a desktop command bar.
 - A context without directory column loaders, including Search, projects a saved `columns` preference to Details at every width. Rendering, range loading, keyboard geometry and status share that effective view. Clearing Search restores the saved Columns preference when its loaders become available; only an explicit view choice writes the preference.
 - Every visible column is one paged directory request. Columns must never fetch an entire large directory only to render Finder-style hierarchy.

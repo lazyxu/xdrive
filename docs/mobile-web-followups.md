@@ -4,6 +4,8 @@
 
 实现继续复用 shared controller / React / MUI 与现有 Server 契约。**2026-10-09 新版 Mobile App Frame 合同：**应用根占满可用动态视口，顶部由 App 自己维护统一返回、应用导航和传输入口；不再使用遮挡内容的全局悬浮按钮，不恢复全局 AppBar/底栏。Files/Gallery 短按打开、静止长按弹出 Context Menu，Files 可拖到有效文件夹；不在每个文件或照片上叠加收藏、信息或 More 操作按钮。术语统一为“同步文件夹”和“属性”。
 
+**新增已批准 Mobile Files 专项（Q1–Q6）：** Mobile Web Files 使用独立 iOS 风格呈现层，仅复用现有 Web API/Controller。最近/浏览/收藏三分类、首次浏览首页/再次恢复、滚动折叠全库搜索、右上角 ··· 命令、蓝色文件夹与两行列表/图标视图、全库 Server 搜索范围全部锁定。单一真正规范见 [Mobile Files](mobile-files-ios.md)。原 M01–M11 的旧 Desktop-like UI 证据属于历史阶段，不可误写成新版真机验收。
+
 状态含义：**进行中**仅代表当前代码变更；**待完善/验收**代表用户已批准，但尚未逐项完成；**已验证**必须附真实命令、版本和结果；**真机待验**不能用 Chromium 模拟或源代码检查代替。
 
 ## 固定顺序
