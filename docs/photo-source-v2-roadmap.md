@@ -570,11 +570,30 @@ protocol after a metadata-only duplicate annotation union:
   Paused Pull sources still present a possible reimport risk; no local
   SourceItem linkage does not certify absence of the file remotely.
 
-This fixture can call the **real Server SourceRun API** while simulating
-only the executor's already-downloaded Node/File/PhotoAsset commit. It does
-not access live Synology or Yike, perform remote Range downloads, or prove
-future provider-specific cursor/tombstone behavior. It also does **not**
-simulate permanent deletion of an original: source-initiated reimport after
-destructive Trash/GC remains a distinct safety gate. Backup/Mirror replay,
-restoration, rollback and edit-version preservation must be separately
-proven before allowing a one-click destructive duplicate cleanup.
+### Source-managed duplicate moved to Trash, then Backup replay (2026-10-09)
+
+A dedicated follow-on regression extends the confirmed metadata-only
+consolidation fixture with a **real authenticated `DELETE /nodes/:id`**
+move-to-Trash of a specific source-owned original (not its keeper). The old
+PhotoAsset and real Node remain frozen in Trash. A new, real Backup Pull
+SourceRun sees the **same existing remote identity and SHA** again and
+must return `action=create` rather than `unchanged`, reassigning the
+**same SourceItem identity** to a new independent real Node, not reviving
+the trashed Node or selecting the keeper. Duplicate commit delivery remains
+idempotent. The reimport must not silently inherit the keeper's favorite,
+tags, people labels, descriptions or source-album membership. This
+deliberately defines and tests *no suppression* for Backup Pull reimport
+after local Trash; user-initiated source-copy removal alone does not
+persistently erase a file that still exists remotely.
+
+This fixture calls the **real Server Trash and SourceRun APIs** while simulating
+only the executor's already-downloaded Node/File/PhotoAsset creation. It does
+not contact live Synology or Yike, perform remote Range downloads, prove
+provider-specific cursors/tombstones, or exercise permanent deletion and
+CAS/GC. Backup Pull behavior after Trash is not Mirror deletion handling:
+Mirror's two-pass/24h missing policy, full Live/RAW resource deletion,
+audit-backed Undo, edit-version conflict preservation and real connectors
+are **still separate gates** before allowing one-click destructive
+duplicate consolidation. The independently merged #1164 native CAS/quota
+regression covers physical shared-Blob reference safety, not these
+remote-provider rules.
