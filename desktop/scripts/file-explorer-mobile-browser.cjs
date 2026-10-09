@@ -258,6 +258,105 @@ async function main() {
       check('scroll motion does not trigger tap-open', await opened(), [])
       check('scroll motion cancels pending long-press selection', (await state()).selectedIDs, [])
       await sample('details-touch-scroll')
+
+      // Real trusted mobile pointer stream, with pointer capture on the stable
+      // FileExplorer Paper. No synthetic React dispatch or dataTransfer spoofing.
+      const dragPoint = async (locator) => {
+        const box = await locator.boundingBox()
+        assert.ok(box, 'touch drag target must exist')
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      }
+      const enterTouchSelection = async (mode) => {
+        await reset(mode)
+        await page.getByRole('button', { name: '选择', exact: true }).tap()
+        await settle()
+      }
+      const touchDragFrom = async (itemName, destination) => {
+        const handle = row(itemName).locator('[data-xdrive-file-explorer-touch-drag-handle]')
+        await handle.waitFor({ state: 'visible' })
+        const targetArea = destination === 'folder'
+          ? row('文件夹')
+          : destination === 'crumb'
+            ? page.locator('[data-xdrive-file-explorer-drop-crumb-index="0"]')
+            : row('beta.txt')
+        const from = await dragPoint(handle)
+        const to = await dragPoint(targetArea)
+        const start = await handle.boundingBox()
+        check('drag handle preserves independent44px target', start.width >= 44 && start.height >= 44, true)
+        check('only touch handle disables native pan', await handle.evaluate((element) =>
+          getComputedStyle(element).touchAction), 'none')
+        await touchAt('touchStart', from)
+        await touchAt('touchMove', { x: from.x + 12, y: from.y + 4 })
+        await touchAt('touchMove', to)
+        await settle()
+        return { handle, from, to, targetArea }
+      }
+      await enterTouchSelection('details')
+      await touchDragFrom('alpha.txt', 'folder')
+      check('touch drag highlights the live destination folder', await row('文件夹').evaluate((element) =>
+        getComputedStyle(element).outlineStyle), 'solid')
+      await touchAt('touchEnd')
+      await settle()
+      check('touch drag submits one atomic move using existing callback', (await state()).events.filter((event) =>
+        event.type === 'drop').map((event) => ({ ids: event.ids, value: event.value })), [
+        { ids: [1, 3], value: 'move' },
+      ])
+      check('completed drag clears its overlay', await page.locator('[data-xdrive-file-explorer-touch-drag-status]').count(), 0)
+      await sample('details-touch-folder-drop')
+
+      await enterTouchSelection('details')
+      await tapRow('alpha.txt')
+      await tapRow('beta.txt')
+      await page.evaluate(() => window.fileExplorerHarness.clearEvents())
+      await touchDragFrom('alpha.txt', 'folder')
+      await touchAt('touchEnd')
+      await settle()
+      check('dragging one selected item carries the full selection', (await state()).events.filter((event) =>
+        event.type === 'drop').map((event) => event.ids), [[1, 2, 3]])
+      check('after drop selected identities remain intact', (await state()).selectedIDs.map(String).sort(), ['1', '2'])
+
+      await enterTouchSelection('grid')
+      await touchDragFrom('alpha.txt', 'folder')
+      await touchAt('touchEnd')
+      await settle()
+      check('grid touch drop uses same callback without remount', (await state()).events.filter((event) =>
+        event.type === 'drop').map((event) => event.ids), [[1, 3]])
+
+      await enterTouchSelection('details')
+      await touchDragFrom('alpha.txt', 'crumb')
+      check('touch drag highlights breadcrumb target', await page.locator('[data-xdrive-file-explorer-drop-crumb-index="0"]').evaluate((element) =>
+        getComputedStyle(element).outlineStyle), 'solid')
+      await touchAt('touchEnd')
+      await settle()
+      check('breadcrumb touch release uses existing parent operation', (await state()).events.filter((event) =>
+        event.type === 'crumb-drop').map((event) => event.ids), [[1, 0]])
+
+      await enterTouchSelection('details')
+      await touchDragFrom('alpha.txt', 'invalid')
+      await touchAt('touchEnd')
+      await settle()
+      check('releasing over ordinary file cancels instead of moving', (await state()).events.filter((event) =>
+        event.type === 'drop' || event.type === 'crumb-drop'), [])
+
+      await enterTouchSelection('details')
+      await touchDragFrom('alpha.txt', 'folder')
+      await page.keyboard.press('Escape')
+      await touchAt('touchEnd')
+      await settle()
+      check('Escape cancels an in-flight touch drag', (await state()).events.filter((event) =>
+        event.type === 'drop'), [])
+      check('Escape clears drop highlight and overlay', await row('文件夹').evaluate((element) =>
+        getComputedStyle(element).outlineStyle !== 'solid') &&
+        await page.locator('[data-xdrive-file-explorer-touch-drag-status]').count() === 0, true)
+
+      await enterTouchSelection('details')
+      await touchDragFrom('alpha.txt', 'folder')
+      await touchAt('touchCancel')
+      await settle()
+      check('pointer cancellation never dispatches a file move', (await state()).events.filter((event) =>
+        event.type === 'drop'), [])
+      await sample('details-touch-drag-cancel')
+
       await input.detach()
 
       // A mouse remains a mouse even while the viewport's primary pointer is

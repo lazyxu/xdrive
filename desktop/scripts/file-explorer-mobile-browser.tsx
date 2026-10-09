@@ -103,6 +103,8 @@ function Fixture() {
         onDownloadItems={(selection) => record({ type: 'download', ids: selection.map((item) => item.id) })}
         onDeleteItems={(selection) => record({ type: 'delete', ids: selection.map((item) => item.id) })}
         onDropItemsToFolder={(selection, target, operation) => record({ type: 'drop', ids: [...selection.map((item) => item.id), target.id], value: operation })}
+        onDropItemsToCrumb={(selection, target, operation) => record({ type: 'crumb-drop', ids: [...selection.map((item) => item.id), target.id], value: operation })}
+        onMoveItemsTo={(selection) => record({ type: 'move-to', ids: selection.map((item) => item.id) })}
         onUpload={() => record({ type: 'upload' })}
         onRefresh={() => record({ type: 'refresh' })}
         searchValue={searchValue}
