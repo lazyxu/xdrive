@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, or search-return.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, or files-organization.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -32,8 +32,12 @@ const rootChildren = [childFolder, ...Array.from({ length: 96 }, (_, index) =>
 const folderChildren = Array.from({ length: 64 }, (_, index) =>
   makeNode(300 + index, `nested-${String(index + 1).padStart(3, '0')}.txt`, 2));
 const searchReturnScenario = options.scenario === 'search-return';
-const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : 240 }, (_, index) => ({
-  node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario ? 2 : 1),
+const filesOperationsScenario = options.scenario === 'files-operations';
+const filesOrganizationScenario = options.scenario === 'files-organization';
+let operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
+const organizationFixture = { tags: [], savedSearches: [], tagCreates: [], savedCreates: [], assignments: [], tagQueries: [], assignedNodeIDs: new Set(), rejectTagRead: true };
+const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : filesOrganizationScenario ? 24 : 240 }, (_, index) => ({
+  node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario || filesOrganizationScenario ? 2 : 1),
   metadata: { media_kind: 'image', mime_type: 'image/png', width: 80, height: 80, captured_at: stamp,
     index_state: 'ready', has_thumbnail: true, thumbnail_mime_type: 'image/png', thumbnail_width: 80, thumbnail_height: 80 },
   favorite: false, tags: [], people: [],
@@ -41,7 +45,7 @@ const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : 240 }, (_,
 const mediaByID = new Map(mediaItems.map((item) => [item.node.id, item]));
 // One image in the real Files API enables the actual Quick Look caller route.
 if (options.scenario === 'fullscreen') rootChildren.push(mediaItems[0].node);
-if (searchReturnScenario) folderChildren.push(...mediaItems.map((item) => item.node));
+if (searchReturnScenario || filesOrganizationScenario) folderChildren.push(...mediaItems.map((item) => item.node));
 const allNodes = new Map([rootNode, ...rootChildren, ...folderChildren, ...mediaItems.map((item) => item.node)].map((node) => [node.id, node]));
 // A small, valid 80x80 PNG exercises the real thumbnail/preview decode path.
 const imagePNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAc0lEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNew7gDdvwGf2GYUOgAAAABJRU5ErkJggg==', 'base64');
@@ -73,14 +77,78 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/nodes/root': return plain(rootNode);
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
     case 'GET /api/v1/file-operations':
-      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return [];
+      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesOperationsScenario ? operationFixture.operations : [];
+    case 'POST /api/v1/file-operations': {
+      assert(filesOperationsScenario, 'File-operation writes belong to the explicit operation scenario');
+      queryOnly(url, []);
+      const body = jsonBody(request);
+      assert.deepEqual(Object.keys(body).sort(), ['items', 'parent_id', 'type']);
+      assert.equal(body.type, 'copy');
+      assert.equal(body.parent_id, 2);
+      assert.deepEqual(body.items, [{ id: 100, revision: 2 }, { id: 101, revision: 1 }]);
+      operationFixture.creates.push(body);
+      const operation = { id: 'qa-copy-1', type: body.type, parent_id: body.parent_id, status: 'queued',
+        conflict_policy: 'fail', total_items: body.items.length, processed_items: 0, total_bytes: 8192,
+        processed_bytes: 0, percent: 0, retryable: false, created_at: stamp, updated_at: stamp };
+      operationFixture.operations = [operation];
+      return operation;
+    }
     case 'GET /api/v1/changes':
       queryOnly(url, ['after', 'limit']); integerQuery(url, 'after', 0, 100); integerQuery(url, 'limit', 200, 1000);
       return { changes: [], next_cursor: 1, latest_cursor: 1, has_more: false, reset_required: false };
     case 'GET /api/v1/file-quick-access': return plain([]);
-    case 'GET /api/v1/file-tags': return plain([]);
-    case 'GET /api/v1/file-saved-searches': return plain([]);
+    case 'GET /api/v1/file-tags':
+      if (filesOrganizationScenario) {
+        queryOnly(url, []);
+        if (organizationFixture.rejectTagRead) return { __fixtureStatus: 503, __fixturePurpose: 'organization read fails before explicit retry', __fixtureBody: { error: '标签目录暂时不可用，请重试。' } };
+        return organizationFixture.tags;
+      }
+      return plain([]);
+    case 'POST /api/v1/file-tags': {
+      assert(filesOrganizationScenario, 'Tag writes belong to the organization scenario');
+      queryOnly(url, []);
+      const body = jsonBody(request);
+      assert.deepEqual(Object.keys(body).sort(), ['color', 'name']);
+      assert.equal(body.name, '旅行'); assert.equal(body.color, '#6B7280');
+      organizationFixture.tagCreates.push(body);
+      const tag = { id: 7, ...body, item_count: 0, created_at: stamp, updated_at: stamp };
+      organizationFixture.tags = [tag];
+      return tag;
+    }
+    case 'GET /api/v1/file-saved-searches': return plain(filesOrganizationScenario ? organizationFixture.savedSearches : []);
+    case 'POST /api/v1/file-saved-searches': {
+      assert(filesOrganizationScenario, 'Saved-search writes belong to the organization scenario');
+      queryOnly(url, []);
+      const body = jsonBody(request);
+      assert.deepEqual(body, { name: '图片搜索', query: 'photo', filters: { kind: 'image' } });
+      organizationFixture.savedCreates.push(body);
+      const saved = { id: 17, ...body, position: 0, created_at: stamp, updated_at: stamp };
+      organizationFixture.savedSearches = [saved];
+      return saved;
+    }
+    case 'PUT /api/v1/file-tags/7/nodes':
+    case 'DELETE /api/v1/file-tags/7/nodes': {
+      assert(filesOrganizationScenario, 'Assignments belong to the organization scenario');
+      queryOnly(url, []);
+      const body = jsonBody(request);
+      assert.deepEqual(body, { node_ids: [100] });
+      const assigned = request.method() === 'PUT';
+      if (assigned) organizationFixture.assignedNodeIDs.add(100);
+      else organizationFixture.assignedNodeIDs.delete(100);
+      organizationFixture.tags[0].item_count = organizationFixture.assignedNodeIDs.size;
+      organizationFixture.assignments.push({ assigned, nodeIDs: body.node_ids });
+      return { updated: 1 };
+    }
     case 'GET /api/v1/file-favorites': return plain([]);
+    case 'GET /api/v1/trash': {
+      assert(filesOrganizationScenario, 'Trash inspection belongs to the explicit organization scenario');
+      queryOnly(url, ['range', 'offset', 'limit', 'sort', 'order', 'include_count']);
+      assert.equal(url.searchParams.get('range'), 'true');
+      assert.equal(url.searchParams.get('sort'), 'name'); assert.equal(url.searchParams.get('order'), 'asc');
+      const offset = integerQuery(url, 'offset', 0, 0);
+      const limit = integerQuery(url, 'limit', 200, 500);
+      return { items: [], total_count: 0, offset, limit, sort: 'name', order: 'asc' };
+    }
     case 'GET /api/v1/sources': return plain([]);
     case 'GET /api/v1/sources/overview': return plain([]);
     case 'GET /api/v1/me/storage':
@@ -114,6 +182,19 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/file-recent':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50); return [];
     case 'GET /api/v1/search': {
+      if (filesOrganizationScenario) {
+        queryOnly(url, ['q', 'offset', 'limit', 'sort', 'order', 'kind', 'tag_id', 'group', 'folders_first']);
+        const query = url.searchParams.get('q') || '';
+        assert(['photo', 'invoice', ''].includes(query));
+        assert.equal(url.searchParams.get('sort'), 'name'); assert.equal(url.searchParams.get('order'), 'asc');
+        assert([null, 'image'].includes(url.searchParams.get('kind')));
+        assert([null, '7'].includes(url.searchParams.get('tag_id')));
+        const nodes = query === 'photo' ? mediaItems.map(({ node }) => node) : [];
+        const offset = integerQuery(url, 'offset', 0, nodes.length);
+        const limit = integerQuery(url, 'limit', 200, 200);
+        assert(limit > 0);
+        return { items: nodes.slice(offset, offset + limit).map((node) => ({ node, path: `/验收目录/${node.name}`, breadcrumbs: [rootNode, childFolder] })), total_count: nodes.length, offset, limit, sort: 'name', order: 'asc', groups: [] };
+      }
       assert(searchReturnScenario, 'Search transport belongs to the explicit search-return scenario');
       queryOnly(url, ['q', 'offset', 'limit', 'sort', 'order', 'kind', 'group', 'folders_first']);
       assert.equal(url.searchParams.get('q'), 'photo');
@@ -137,6 +218,10 @@ function fixtureFor(request, role) {
       const body = jsonBody(request);
       assert.deepEqual(Object.keys(body), ['node_ids']);
       assert(Array.isArray(body.node_ids) && body.node_ids.every((id) => allNodes.has(id)), 'Unknown tag query node');
+      if (filesOrganizationScenario) {
+        organizationFixture.tagQueries.push(body.node_ids);
+        return body.node_ids.map((nodeID) => ({ node_id: nodeID, tags: organizationFixture.assignedNodeIDs.has(nodeID) ? organizationFixture.tags : null }));
+      }
       return body.node_ids.map((nodeID) => ({ node_id: nodeID, tags: [] }));
     }
     case 'GET /api/v1/background-tasks/page':
@@ -148,11 +233,12 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin');
       return plain({ supported: true, state: 'idle', source: 'github', channel: 'master', backup_file_data: false });
     case 'GET /api/v1/media/items': {
-      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir']);
+      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone']);
       // The shared Gallery already sends its persisted chronological sort.
       // This viewport fixture exercises the default captured/descending state.
       assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
       assert.equal(url.searchParams.get('sort_dir') || 'desc', 'desc');
+      assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
       const offset = integerQuery(url, 'offset', 0, mediaItems.length);
       const limit = integerQuery(url, 'limit', 200, 500);
       const items = mediaItems.slice(offset, offset + limit);
@@ -190,6 +276,46 @@ function fixtureFor(request, role) {
       ? { items: filtered.slice(offset, offset + limit), total_count: filtered.length, total_count_included: true, offset, limit, sort, order }
       : { items: filtered.slice(0, limit), has_more: false, sort, order };
   }
+  if (filesOperationsScenario && key === 'PATCH /api/v1/nodes/100') {
+    queryOnly(url, []);
+    const body = jsonBody(request), node = allNodes.get(100);
+    assert.deepEqual(Object.keys(body), ['name']);
+    assert.equal(request.headers()['if-match'], `"${node.revision}"`);
+    operationFixture.renames.push({ ...body, ifMatch: request.headers()['if-match'] });
+    if (operationFixture.rejectRename) {
+      operationFixture.rejectRename = false;
+      return { __fixtureStatus: 409, __fixtureBody: { error: '验收：此名称已存在，请更改名称后重试。' } };
+    }
+    Object.assign(node, { name: body.name, revision: node.revision + 1 });
+    return node;
+  }
+  match = /^GET \/api\/v1\/file-operations\/(qa-copy-\d+)$/.exec(key);
+  if (filesOperationsScenario && match) {
+    queryOnly(url, []);
+    const operation = operationFixture.operations.find((candidate) => candidate.id === match[1]);
+    assert(operation, 'Read must reference an actually accepted operation');
+    return operation;
+  }
+  match = /^POST \/api\/v1\/file-operations\/(qa-copy-\d+)\/(resolve|cancel)$/.exec(key);
+  if (filesOperationsScenario && match) {
+    queryOnly(url, []);
+    const operation = operationFixture.operations.find((candidate) => candidate.id === match[1]);
+    assert(operation, 'Action must reference an actually accepted operation');
+    if (match[2] === 'resolve') {
+      assert.equal(operation.status, 'failed');
+      assert.equal(operation.failure_code, 'name_conflict');
+      assert.deepEqual(jsonBody(request), { conflict_policy: 'keep_both' });
+      operationFixture.continuations.push({ id: operation.id, ...jsonBody(request) });
+      const continuation = { ...operation, id: 'qa-copy-2', status: 'queued', conflict_policy: 'keep_both', retry_of_id: operation.id,
+        error: undefined, failure_code: undefined, failed_item_id: undefined, current_item: undefined };
+      operationFixture.operations = [continuation, ...operationFixture.operations];
+      return continuation;
+    }
+    assert.deepEqual(jsonBody(request), {});
+    operationFixture.cancellations.push(operation.id);
+    Object.assign(operation, { status: 'cancel_requested', cancel_requested_at: stamp });
+    return operation;
+  }
   match = /^GET \/api\/v1\/nodes\/(\d+)$/.exec(key);
   if (match && allNodes.has(Number(match[1]))) return plain(allNodes.get(Number(match[1])));
   match = /^POST \/api\/v1\/file-recent\/(\d+)$/.exec(key);
@@ -218,7 +344,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario)) {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -283,7 +409,7 @@ async function loadFiles(context, origin, role) {
   page.on('console', (message) => {
     if (message.type() !== 'error') return;
     const entry = { role, stage: activeStage, message: message.text(), url: message.location().url };
-    if (expectedConsoleURLs.has(entry.url) && /Failed to load resource:.*404/.test(entry.message)) result.expectedConsoleErrors.push(entry);
+    if (expectedConsoleURLs.has(entry.url) && /Failed to load resource:.*(?:404|409|503)/.test(entry.message)) result.expectedConsoleErrors.push(entry);
     else result.consoleErrors.push(entry);
   });
   await page.goto(`${origin}/#/app/files`, { waitUntil: 'domcontentloaded' });
@@ -452,7 +578,7 @@ async function inheritedColumnsAcceptance() {
   await folder.tap();
   await firstFile.tap();
   check(`${activeStage}: taps select two without opening`, page.url() === rootURL && await page.locator('[data-xdrive-file-explorer-item][aria-selected="true"]').count() === 2 && await page.getByRole('button', { name: '复制所选项目', exact: true }).isEnabled());
-  await page.getByRole('button', { name: '完成', exact: true }).tap();
+  await page.getByRole('button', { name: '完成选择', exact: true }).tap();
   check(`${activeStage}: Done clears selection`, await page.locator('[data-xdrive-file-explorer-item][aria-selected="true"]').count() === 0);
   await folder.tap();
   await page.waitForURL(/\/files\?dir=2$/);
@@ -491,6 +617,241 @@ async function filesAcceptance(role) {
     check(`${activeStage}: mounted content identity`, await page.evaluate(() => window.__mobileQaIdentity.main === document.querySelector('main') && window.__mobileQaIdentity.files === document.querySelector('[data-xdrive-file-explorer]') && window.__mobileQaIdentity.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]')));
     check(`${activeStage}: directory retained`, page.url() === directoryURL && await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'nested-001.txt' }).count() > 0);
   }
+}
+
+// Actual built Web adapter and App composition, including the real REST payloads
+// and Task Center route. The controlled service never writes user data.
+async function filesOperationsAcceptance(role) {
+  activeStage = `${role}-operations-setup`;
+  if (role === 'admin') {
+    await navigateWorkspace('全局任务', 'tasks');
+    check(`${activeStage}: administrator starts from global task scope`, /scope=global/.test(page.url()));
+    await navigateWorkspace('文件', 'files');
+  }
+  const firstName = 'document-001.txt';
+  await page.getByRole('button', { name: `更多操作：${firstName}`, exact: true }).tap();
+  await page.getByRole('button', { name: '重命名', exact: true }).tap();
+  const rename = page.getByRole('dialog', { name: /^重命名/ });
+  await rename.waitFor();
+  activeStage = `${role}-operations-rename-error-retry`;
+  await rename.getByRole('textbox').fill('重命名验收.txt');
+  await rename.getByRole('button', { name: '保存', exact: true }).tap();
+  await rename.getByText('验收：此名称已存在，请更改名称后重试。', { exact: true }).waitFor();
+  check(`${activeStage}: actual API rejection retains the entered name`, await rename.getByRole('textbox').inputValue() === '重命名验收.txt');
+  check(`${activeStage}: rename submits the original revision`, operationFixture.renames.length === 1 && operationFixture.renames[0].ifMatch === '"1"', operationFixture.renames);
+  await rename.getByRole('button', { name: '保存', exact: true }).tap();
+  await rename.waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: '更多操作：重命名验收.txt', exact: true }).waitFor();
+  check(`${activeStage}: retry uses one request and refreshes the real Files row`, operationFixture.renames.length === 2 && allNodes.get(100).revision === 2, operationFixture.renames);
+  const finish = page.getByRole('button', { name: '完成选择', exact: true });
+  if (await finish.isVisible()) await finish.tap();
+  await page.getByRole('button', { name: '选择', exact: true }).tap();
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: '重命名验收.txt' }).tap();
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-002.txt' }).tap();
+  await page.getByText('已选择 2 项', { exact: true }).waitFor();
+  const sourceURL = page.url(), sourceHistory = await page.evaluate(() => history.length);
+  await page.evaluate(() => { window.__mobileQaOperationIdentity = { files: document.querySelector('[data-xdrive-file-explorer]'), scroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]') }; });
+  const sourceUnchanged = () => page.evaluate(({ sourceURL, sourceHistory }) =>
+    location.href === sourceURL && history.length === sourceHistory &&
+    window.__mobileQaOperationIdentity.files === document.querySelector('[data-xdrive-file-explorer]') &&
+    window.__mobileQaOperationIdentity.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]'), { sourceURL, sourceHistory });
+  activeStage = `${role}-operations-move-cancel`;
+  await page.getByRole('button', { name: '移动到…', exact: true }).tap();
+  const move = page.getByRole('dialog', { name: /^移动到文件夹/ });
+  await move.getByRole('button', { name: '打开文件夹 验收目录', exact: true }).waitFor();
+  check(`${activeStage}: same-parent move is explained and blocked`, await move.getByRole('button', { name: '移动到这里', exact: true }).isDisabled() && /已在此文件夹/.test(await move.innerText()));
+  await move.getByRole('button', { name: '取消', exact: true }).tap();
+  await move.waitFor({ state: 'hidden' });
+  check(`${activeStage}: cancelling does not submit or navigate Files`, operationFixture.creates.length === 0 && await sourceUnchanged());
+
+  activeStage = `${role}-operations-copy-target`;
+  await page.getByRole('button', { name: '复制到…', exact: true }).tap();
+  const copy = page.getByRole('dialog', { name: /^复制到文件夹/ });
+  await copy.getByRole('button', { name: '打开文件夹 验收目录', exact: true }).tap();
+  await copy.getByText('此位置没有子文件夹。', { exact: true }).waitFor();
+  check(`${activeStage}: target path is authoritative`, /我的文件.*验收目录/.test(await copy.locator('[data-xdrive-file-explorer-destination-path]').innerText()));
+  check(`${activeStage}: browsing target preserves Files URL, history and mounted scroll owner`, await sourceUnchanged());
+  await copy.getByRole('button', { name: '复制到这里', exact: true }).tap();
+  await copy.waitFor({ state: 'hidden' });
+  check(`${activeStage}: submits the entire selected immutable revision snapshot once`, operationFixture.creates.length === 1, operationFixture.creates);
+  const feedback = page.locator('[data-xdrive-file-explorer-action-feedback]');
+  await feedback.getByRole('button', { name: '查看任务', exact: true }).waitFor();
+  check(`${activeStage}: accepted task feedback remains inside Files`, /复制/.test(await feedback.innerText()) && await sourceUnchanged());
+
+  activeStage = `${role}-operations-task-focus-and-conflict`;
+  Object.assign(operationFixture.operations[0], { status: 'failed', failure_code: 'name_conflict',
+    error: '目标已有同名文件，整个复制操作没有提交。', current_item: '重命名验收.txt', failed_item_id: 100,
+    updated_at: '2026-10-08T12:00:01Z' });
+  await feedback.getByRole('button', { name: '查看任务', exact: true }).tap();
+  await page.waitForURL(/\/tasks\?scope=mine$/);
+  const predecessor = page.locator('[data-xdrive-file-operation-id="qa-copy-1"]');
+  await predecessor.waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-xdrive-file-operation-id') === 'qa-copy-1');
+  check(`${activeStage}: View Task opens owner scope and focuses its actual operation row`, /scope=mine/.test(page.url()) && await predecessor.evaluate((element) => document.activeElement === element));
+  await predecessor.getByRole('button', { name: '保留两者', exact: true }).waitFor();
+  await predecessor.getByRole('button', { name: '保留两者', exact: true }).tap();
+  const continuation = page.locator('[data-xdrive-file-operation-id="qa-copy-2"]');
+  await continuation.waitFor();
+  check(`${activeStage}: conflict action uses the real continuation endpoint once`, operationFixture.continuations.length === 1 && operationFixture.continuations[0].conflict_policy === 'keep_both', operationFixture.continuations);
+  check(`${activeStage}: predecessor cannot repeat conflict resolution`, await predecessor.getByRole('button', { name: '保留两者', exact: true }).count() === 0);
+  activeStage = `${role}-operations-cancel-continuation`;
+  await continuation.getByRole('button', { name: '取消', exact: true }).tap();
+  await continuation.getByText('正在取消', { exact: true }).first().waitFor();
+  check(`${activeStage}: cancellation refers to the continuation, not its predecessor`, JSON.stringify(operationFixture.cancellations) === JSON.stringify(['qa-copy-2']), operationFixture.cancellations);
+  Object.assign(operationFixture.operations.find((operation) => operation.id === 'qa-copy-2'), { status: 'cancelled', updated_at: '2026-10-08T12:00:04Z' });
+  await continuation.getByText('已取消', { exact: true }).first().waitFor();
+  check(`${activeStage}: final cancelled status comes from the service`, true);
+  await geometry(`${role}-operations-task-viewport`);
+  await navigateWorkspace('文件', 'files');
+  await page.getByRole('button', { name: '更多操作：重命名验收.txt', exact: true }).waitFor();
+  check(`${activeStage}: returning reaches the source folder and refreshed file`, page.url() === sourceURL);
+  await geometry(`${role}-operations-files-return`);
+  activeStage = `${role}-operations-ordinary-task-reopen`;
+  await page.evaluate(() => {
+    window.__mobileQaOperationFocusEvents = [];
+    window.__mobileQaOperationFocusListener = (event) => {
+      const id = event.target?.getAttribute?.('data-xdrive-file-operation-id');
+      if (id) window.__mobileQaOperationFocusEvents.push(id);
+    };
+    document.addEventListener('focusin', window.__mobileQaOperationFocusListener);
+  });
+  await navigateWorkspace('任务', 'tasks');
+  await predecessor.waitFor();
+  await settle();
+  const replayedFocus = await page.evaluate(() => {
+    document.removeEventListener('focusin', window.__mobileQaOperationFocusListener);
+    return window.__mobileQaOperationFocusEvents;
+  });
+  check(`${activeStage}: ordinary navigation does not replay a consumed Files focus request`, replayedFocus.length === 0, replayedFocus);
+  result.samples[`${role}-operation-payloads`] = JSON.parse(JSON.stringify(operationFixture));
+}
+
+async function filesOrganizationAcceptance() {
+  const drawer = page.locator('[data-xdrive-file-explorer-touch-navigation-drawer]');
+  const openNavigation = async () => {
+    await page.getByRole('button', { name: '位置', exact: true }).tap();
+    await drawer.waitFor();
+  };
+  const closeNavigation = async () => {
+    if (await drawer.isVisible()) await drawer.getByRole('button', { name: '关闭位置', exact: true }).tap();
+    await drawer.waitFor({ state: 'hidden' });
+  };
+  const query = async (value) => {
+    await page.getByRole('button', { name: '搜索全部文件和文件夹', exact: true }).tap();
+    const input = page.getByRole('textbox', { name: '搜索全部文件和文件夹', exact: true });
+    await input.fill(value); await input.press('Enter');
+    await page.waitForFunction((value) => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes(`搜索：“${value}”`), value);
+    // Each call changes the Search scope, which closes the compact editor.
+    // Wait for that transition rather than tapping its departing close button.
+    await input.waitFor({ state: 'hidden' });
+  };
+  const savedRow = () => drawer.getByRole('button', { name: '图片搜索', exact: true });
+  activeStage = 'user-organization-read-retry';
+  await page.evaluate(() => { window.__organizationCaller = { main: document.querySelector('main'), files: document.querySelector('[data-xdrive-file-explorer]'), scroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]') }; });
+  await openNavigation();
+  const tagsSection = drawer.getByRole('navigation', { name: '标签', exact: true });
+  await tagsSection.getByRole('button', { name: '重新加载标签', exact: true }).waitFor();
+  check(`${activeStage}: failed definitions are not a false empty state`, !(await tagsSection.innerText()).includes('暂无标签'));
+  organizationFixture.rejectTagRead = false;
+  await tagsSection.getByRole('button', { name: '重新加载标签', exact: true }).tap();
+  await tagsSection.getByText('暂无标签', { exact: true }).waitFor();
+  check(`${activeStage}: actual retry restores a confirmed empty list`, (await tagsSection.innerText()).includes('暂无标签'));
+
+  activeStage = 'user-organization-management';
+  const beforeQueries = organizationFixture.tagQueries.length;
+  await tagsSection.getByRole('button', { name: '管理标签', exact: true }).tap();
+  const management = page.getByRole('dialog', { name: /^管理标签/ });
+  await management.waitFor();
+  check(`${activeStage}: management opens with no selected file`, organizationFixture.tagQueries.length === beforeQueries && organizationFixture.assignments.length === 0);
+  await management.getByRole('textbox', { name: '新标签', exact: true }).fill('旅行');
+  await management.getByRole('button', { name: '添加', exact: true }).tap();
+  await management.getByRole('button', { name: '编辑标签 旅行', exact: true }).waitFor();
+  check(`${activeStage}: creating a definition makes one exact write and no assignment`, organizationFixture.tagCreates.length === 1 && organizationFixture.assignments.length === 0 && organizationFixture.tagQueries.length === beforeQueries, organizationFixture.tagCreates);
+  await management.getByRole('button', { name: '完成', exact: true }).tap();
+  await management.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '管理标签');
+  check(`${activeStage}: management returns focus to its navigation entry`, await tagsSection.getByRole('button', { name: '管理标签', exact: true }).evaluate((element) => element === document.activeElement));
+  check(`${activeStage}: confirmed zero global count is visible`, (await tagsSection.innerText()).includes('共 0 项'));
+  await closeNavigation();
+
+  activeStage = 'user-organization-save-rules';
+  await query('photo');
+  await page.getByRole('button', { name: '筛选文件', exact: true }).tap();
+  const filters = page.getByRole('dialog', { name: '文件筛选', exact: true });
+  await filters.getByRole('button', { name: '类型', exact: true }).tap();
+  await page.getByRole('menuitem', { name: '图片', exact: true }).tap();
+  await page.getByRole('button', { name: '关闭筛选', exact: true }).tap();
+  await filters.waitFor({ state: 'hidden' });
+  await openNavigation();
+  await drawer.getByRole('button', { name: '保存当前搜索', exact: true }).tap();
+  const save = page.getByRole('dialog', { name: /^保存搜索/ });
+  await save.getByRole('textbox', { name: '智能文件夹名称', exact: true }).fill('图片搜索');
+  await save.getByRole('button', { name: '保存', exact: true }).tap();
+  await save.waitFor({ state: 'hidden' });
+  await savedRow().waitFor();
+  check(`${activeStage}: one saved rule contains the actual query and filters`, organizationFixture.savedCreates.length === 1, organizationFixture.savedCreates);
+  const ruleText = await drawer.locator('[data-xdrive-saved-search-rule="17"]').innerText();
+  check(`${activeStage}: query and image predicate are readable in navigation`, ruleText.includes('photo') && ruleText.includes('类型：图片'), ruleText);
+  check(`${activeStage}: saved rule matches actual Search`, await savedRow().getAttribute('aria-current') === 'page');
+  await page.screenshot({ path: path.join(outputDir, 'user-organization-saved-rule.png') });
+  await drawer.getByRole('navigation', { name: '回收站', exact: true }).getByRole('button', { name: '回收站', exact: true }).tap();
+  await page.waitForFunction(() => document.querySelector('[data-xdrive-file-explorer]')?.textContent.includes('回收站为空'));
+  await drawer.waitFor({ state: 'hidden' });
+  await openNavigation();
+  check(`${activeStage}: Trash does not claim the retained background Search as active`, await savedRow().getAttribute('aria-current') === null && await drawer.getByRole('button', { name: '保存当前搜索', exact: true }).isDisabled());
+  await savedRow().tap();
+  await page.waitForFunction(() => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes('搜索：“photo”'));
+  await drawer.waitFor({ state: 'hidden' });
+  await openNavigation();
+  check(`${activeStage}: saved activation leaves Trash and restores the matching Search`, await savedRow().getAttribute('aria-current') === 'page');
+  await closeNavigation();
+
+  activeStage = 'user-organization-search-matching';
+  await query('invoice');
+  await openNavigation();
+  check(`${activeStage}: changed query removes the old active marker`, await savedRow().getAttribute('aria-current') === null);
+  check(`${activeStage}: changed rule remains readable`, (await drawer.locator('[data-xdrive-saved-search-rule="17"]').innerText()).includes('photo'));
+  await savedRow().tap();
+  await page.waitForFunction(() => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes('搜索：“photo”'));
+  await drawer.waitFor({ state: 'hidden' });
+  await openNavigation();
+  check(`${activeStage}: saved activation restores the actual rule`, await savedRow().getAttribute('aria-current') === 'page');
+  await closeNavigation();
+  await page.getByRole('button', { name: '更多操作：photo-001.png', exact: true }).tap();
+  await page.getByText('显示所在文件夹', { exact: true }).tap();
+  await page.waitForURL(/\/files\?dir=2$/);
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'nested-001.txt' }).waitFor();
+  await openNavigation();
+  check(`${activeStage}: directory navigation clears the saved active marker`, await savedRow().getAttribute('aria-current') === null);
+  await closeNavigation();
+  await query('invoice');
+  await page.getByRole('button', { name: '后退', exact: true }).tap();
+  await page.waitForURL(/\/files\?dir=1$/);
+  await page.waitForFunction(() => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes('搜索：“photo”'));
+  await openNavigation();
+  check(`${activeStage}: history restores the saved marker from restored Search`, await savedRow().getAttribute('aria-current') === 'page');
+  await closeNavigation();
+  await page.getByRole('button', { name: '清除搜索与筛选', exact: true }).tap();
+
+  activeStage = 'user-organization-assignment';
+  await page.getByRole('button', { name: '更多操作：document-001.txt', exact: true }).tap();
+  await page.getByText('标签…', { exact: true }).tap();
+  const assignment = page.getByRole('dialog', { name: /^设置标签/ });
+  const add = assignment.getByRole('button', { name: '为当前选择添加标签 旅行', exact: true });
+  await add.waitFor();
+  check(`${activeStage}: actual untagged null wire value is readable`, await add.isEnabled() && organizationFixture.tagQueries.some((ids) => ids.length === 1 && ids[0] === 100), organizationFixture.tagQueries);
+  await add.tap();
+  const remove = assignment.getByRole('button', { name: '从当前选择移除标签 旅行', exact: true });
+  await remove.waitFor();
+  check(`${activeStage}: assignment submits one complete selected identity`, organizationFixture.assignments.length === 1 && organizationFixture.assignments[0].assigned, organizationFixture.assignments);
+  await remove.tap();
+  await add.waitFor();
+  check(`${activeStage}: removing assignment preserves the tag definition`, organizationFixture.assignments.length === 2 && !organizationFixture.assignments[1].assigned && organizationFixture.tags.length === 1, organizationFixture.assignments);
+  await assignment.getByRole('button', { name: '完成', exact: true }).tap();
+  await assignment.waitFor({ state: 'hidden' });
+  check(`${activeStage}: actual Files owner remains mounted throughout`, await page.evaluate(() => window.__organizationCaller.main === document.querySelector('main') && window.__organizationCaller.files === document.querySelector('[data-xdrive-file-explorer]') && window.__organizationCaller.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]')));
+  await geometry('user-organization-files-return');
+  result.samples['user-organization-payloads'] = { ...organizationFixture, assignedNodeIDs: [...organizationFixture.assignedNodeIDs] };
 }
 
 // Actual built WebFileExplorer -> App media-viewer route -> caller return.
@@ -627,6 +988,9 @@ async function searchReturnAcceptance() {
   await page.waitForURL(callerURL);
   await page.waitForFunction((count) => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes(`${count} 个结果`), mediaItems.length);
   await page.waitForFunction(() => Math.abs(document.querySelector('[data-xdrive-file-explorer-scroll-host]').scrollTop - window.__searchReturnCaller.scrollTop) <= 1).catch(() => {});
+  // Scroll restoration precedes virtual row rendering; wait for data readiness,
+  // then independently assert the retained selection without scrolling it.
+  await item.waitFor({ state: 'attached', timeout: 5000 });
   await verifyCaller('user-search-containing-folder-back', false, false);
   const searchRequests = Object.entries(result.requests).filter(([key]) => key.includes(' GET /api/v1/search?'));
   result.samples['user-search-range-requests'] = searchRequests;
@@ -974,15 +1338,17 @@ async function fullscreenAcceptance(role) {
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
-  if (searchReturnScenario) {
+  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario) {
     const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     result.runnerSHA256 = hash(__filename);
     result.builtWebSHA256 = {
       'index.html': hash(path.join(distRoot, 'index.html')),
       ...Object.fromEntries(fs.readdirSync(path.join(distRoot, 'assets')).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => [`assets/${name}`, hash(path.join(distRoot, 'assets', name))])),
     };
-    result.fixture.searchItems = mediaItems.length;
-    result.fixture.searchDefinition = { query: 'photo', filters: { kind: 'image' }, sort: 'name', order: 'asc', group: 'none', foldersFirst: true, parentID: 2 };
+    if (searchReturnScenario) {
+      result.fixture.searchItems = mediaItems.length;
+      result.fixture.searchDefinition = { query: 'photo', filters: { kind: 'image' }, sort: 'name', order: 'asc', group: 'none', foldersFirst: true, parentID: 2 };
+    }
   }
   const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
   const server = http.createServer((request, response) => {
@@ -999,11 +1365,16 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' || searchReturnScenario ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario ? [{ role: 'user' }]
+      : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
           : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
     for (const { role, viewMode, galleryDensity } of cases) {
+      if (filesOperationsScenario) {
+        operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
+        Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });
+      }
       const scenarioLabel = viewMode ? `${role}-inherited-${viewMode}` : galleryDensity ? `${role}-gallery-density-${galleryDensity}` : role;
       activeStage = `${scenarioLabel}-startup`;
       // A new process also supports single-process portable Chromium, which
@@ -1011,7 +1382,7 @@ async function main() {
       browser = await chromium.launch({ headless: true, executablePath: process.env.XDRIVE_BROWSER_EXECUTABLE || undefined, args,
         env: process.env.XDRIVE_BROWSER_FONTCONFIG ? { ...process.env, FONTCONFIG_PATH: process.env.XDRIVE_BROWSER_FONTCONFIG } : process.env });
       result.browserVersion = browser.version();
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, serviceWorkers: 'block' });
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, timezoneId: 'UTC', serviceWorkers: 'block' });
       await context.addInitScript(({ role, origin, viewMode, galleryDensity }) => {
         if (location.origin !== origin) return;
         localStorage.setItem('xdrive.access_token', 'local-browser-qa-token');
@@ -1039,6 +1410,12 @@ async function main() {
             return;
           }
           const body = fixtureFor(request, role);
+          if (body?.__fixtureStatus) {
+            expectedConsoleURLs.add(request.url());
+            result.expectedApiErrors.push({ request: key, status: body.__fixtureStatus, purpose: body.__fixturePurpose || 'actual rename rejected by the controlled API' });
+            await route.fulfill({ status: body.__fixtureStatus, contentType: 'application/json', body: JSON.stringify(body.__fixtureBody) });
+            return;
+          }
           await route.fulfill({ status: 200, contentType: Buffer.isBuffer(body) ? 'image/png' : 'application/json', body: Buffer.isBuffer(body) ? body : JSON.stringify(body) });
         } catch (error) {
           result.unknownRequests.push({ stage: activeStage, request: key, message: error.message });
@@ -1052,6 +1429,8 @@ async function main() {
         await galleryOverlayAcceptance(role, galleryDensity);
       } else if (options.scenario === 'fullscreen') await fullscreenAcceptance(role);
       else if (searchReturnScenario) await searchReturnAcceptance();
+      else if (filesOperationsScenario) await filesOperationsAcceptance(role);
+      else if (filesOrganizationScenario) await filesOrganizationAcceptance();
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);

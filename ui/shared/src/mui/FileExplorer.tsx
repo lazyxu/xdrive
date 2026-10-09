@@ -68,6 +68,7 @@ import {
 import type { ButtonProps } from '@mui/material'
 import type { MediaItem } from '../models'
 import { formatBytes } from '../format'
+import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
 import type {
   XDriveByteProgressHandler,
   XDriveFileTextPreview,
@@ -115,6 +116,7 @@ import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
+import { XDriveFileNameDialogView, xDriveFileNameValidationError } from './FileNameDialog'
 import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveFileExplorerColumnView } from './FileExplorerColumnView'
 import type { XDriveFileExplorerColumnPage } from './FileExplorerColumnView'
@@ -465,6 +467,22 @@ export type XDriveFileExplorerVirtualCollection = {
   ) => Promise<readonly XDriveFileExplorerItem[] | null>
   retainInteractionIDs?: (ids: readonly XDriveFileExplorerID[]) => void
   groups?: readonly XDriveFileExplorerGroupIndex[]
+}
+
+export type XDriveFileExplorerSelectionAction =
+  | 'copy'
+  | 'cut'
+  | 'delete'
+  | 'download'
+  | 'manage-tags'
+  | 'move-to'
+  | 'copy-to'
+
+type FileExplorerSelectionLoad = {
+  intent: number
+  scope: string
+  loaded: number
+  total: number
 }
 
 export type XDriveFileExplorerReturnSnapshot = {
@@ -866,6 +884,8 @@ export function XDriveFileExplorer({
   defaultSelectedIDs = [],
   onSelectionChange,
   onCopyItems,
+  onCopyItemsTo,
+  onMoveItemsTo,
   onCopyPaths,
   onCutItems,
   onPaste,
@@ -877,6 +897,8 @@ export function XDriveFileExplorer({
   onDownloadItems,
   folderDownloadSupported = false,
   onDeleteItems,
+  getSelectionActionDisabledReason,
+  actionFeedback,
   onRenameItem,
   renameDisabled = false,
   detailsPreferencesKey,
@@ -963,6 +985,8 @@ export function XDriveFileExplorer({
   defaultSelectedIDs?: readonly XDriveFileExplorerID[]
   onSelectionChange?: (ids: XDriveFileExplorerID[]) => void
   onCopyItems?: (items: XDriveFileExplorerItem[]) => void
+  onCopyItemsTo?: (items: XDriveFileExplorerItem[]) => void
+  onMoveItemsTo?: (items: XDriveFileExplorerItem[]) => void
   onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
   onCutItems?: (items: XDriveFileExplorerItem[]) => void
   onPaste?: (operationOverride?: XDriveFileExplorerCopyMoveOperation) => void
@@ -974,6 +998,12 @@ export function XDriveFileExplorer({
   onDownloadItems?: (items: XDriveFileExplorerItem[]) => void
   folderDownloadSupported?: boolean
   onDeleteItems?: (items: XDriveFileExplorerItem[]) => void
+  getSelectionActionDisabledReason?: (
+    action: XDriveFileExplorerSelectionAction,
+    items: readonly XDriveFileExplorerItem[],
+    selectedCount: number,
+  ) => string | null | undefined
+  actionFeedback?: ReactNode
   onRenameItem?: (item: XDriveFileExplorerItem, name: string) => void | Promise<void>
   renameDisabled?: boolean
   detailsPreferencesKey?: string
@@ -1064,6 +1094,15 @@ export function XDriveFileExplorer({
   const compactViewport = useMediaQuery('(max-width:899.95px)')
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
+  const [selectionLoad, setSelectionLoad] = useState<FileExplorerSelectionLoad | null>(null)
+  const selectionLoadRef = useRef<FileExplorerSelectionLoad | null>(null)
+  const [selectionLoadFeedback, setSelectionLoadFeedback] = useState('')
+  const selectionToggleRef = useRef<HTMLButtonElement | null>(null)
+  const restoreSelectionFocusRef = useRef(false)
+  const updateSelectionLoad = (next: FileExplorerSelectionLoad | null) => {
+    selectionLoadRef.current = next
+    setSelectionLoad(next)
+  }
   const [touchSearchOpen, setTouchSearchOpen] = useState(false)
   const [navigationDrawerOpen, setNavigationDrawerOpen] = useState(false)
   const lastPointerTypeRef = useRef<string | null>(null)
@@ -1266,6 +1305,8 @@ export function XDriveFileExplorer({
     typeSelectRef.current = { query: '', updatedAt: 0 }
     typeSelectIntentRef.current += 1
     selectionIntentRef.current += 1
+    updateSelectionLoad(null)
+    setSelectionLoadFeedback('')
     quickLookIntentRef.current += 1
     selectionItemCacheRef.current.clear()
     setPropertiesItems([])
@@ -1529,15 +1570,53 @@ export function XDriveFileExplorer({
     interactionProjection.itemByKey.get(explorerIDKey(id))
       ?? selectionItemCacheRef.current.get(explorerIDKey(id))
   )
+  const renamingItem = renamingID === null ? null : logicalItemByID(renamingID) ?? null
   const selectedItems = useMemo(
-    () => selectedIDs
-      .map((id) => (
-        interactionProjection.itemByKey.get(explorerIDKey(id))
-          ?? selectionItemCacheRef.current.get(explorerIDKey(id))
+    () => [...selectedKeySet]
+      .map((key) => (
+        interactionProjection.itemByKey.get(key)
+          ?? selectionItemCacheRef.current.get(key)
       ))
       .filter((item): item is XDriveFileExplorerItem => Boolean(item)),
-    [interactionProjection.itemByKey, selectedIDs],
+    [interactionProjection.itemByKey, selectedKeySet],
   )
+  const selectedCount = selectedKeySet.size
+  const unavailableSelectedCount = Math.max(0, selectedCount - selectedItems.length)
+  const selectionActionDisabledReason = (
+    action: XDriveFileExplorerSelectionAction,
+    targets: readonly XDriveFileExplorerItem[] = selectedItems,
+    count = selectedCount,
+  ): string | null => {
+    if (count === 0) return '请先选择项目'
+    if (targets.length !== count) return '部分所选项目暂不可用，请清除后重新选择。'
+    const reason = getSelectionActionDisabledReason?.(action, targets, count)
+    if (reason) return reason
+    if (action === 'download' && !targets.some((item) => item.kind === 'file' || folderDownloadSupported)) {
+      return '当前平台仅支持下载所选文件。'
+    }
+    return null
+  }
+  const runSelectionAction = (
+    action: XDriveFileExplorerSelectionAction,
+    callback: ((items: XDriveFileExplorerItem[]) => void) | undefined,
+    targets: readonly XDriveFileExplorerItem[] = selectedItems,
+    count = selectedCount,
+  ) => {
+    if (callback && !selectionActionDisabledReason(action, targets, count)) callback([...targets])
+  }
+  const supportedSelectionActions: XDriveFileExplorerSelectionAction[] = []
+  if (onCopyItems) supportedSelectionActions.push('copy')
+  if (onCutItems) supportedSelectionActions.push('cut')
+  if (onCopyItemsTo) supportedSelectionActions.push('copy-to')
+  if (onMoveItemsTo) supportedSelectionActions.push('move-to')
+  if (onDownloadItems) supportedSelectionActions.push('download')
+  if (onDeleteItems) supportedSelectionActions.push('delete')
+  if (onManageTags) supportedSelectionActions.push('manage-tags')
+  const selectionDisabledReasons = selectedCount > 0 ? [...new Set(
+    supportedSelectionActions
+      .map((action) => selectionActionDisabledReason(action))
+      .filter((reason): reason is string => Boolean(reason)),
+  )] : []
   const activeIndex = activeItemID === null
     ? -1
     : (logicalIndexOf(activeItemID) ?? activeLogicalIndex ?? -1)
@@ -1608,11 +1687,15 @@ export function XDriveFileExplorer({
     resolvedItems: readonly XDriveFileExplorerItem[] = [],
   ) => {
     selectionIntentRef.current += 1
+    updateSelectionLoad(null)
+    setSelectionLoadFeedback('')
     applySelection(ids, resolvedItems)
   }
 
   const beginSelectionIntent = () => {
     selectionIntentRef.current += 1
+    updateSelectionLoad(null)
+    setSelectionLoadFeedback('')
     return selectionIntentRef.current
   }
 
@@ -1657,6 +1740,86 @@ export function XDriveFileExplorer({
     }
     return virtualCollection.collectRange(start, end)
   }
+
+  const selectAllItems = () => {
+    if (logicalItemCount === 0 || loading || searchSummary?.resultCount === null) return
+    const intent = beginSelectionIntent()
+    const scope = interactionScopeKey
+    const total = logicalItemCount
+    if (!virtualCollectionEnabled) {
+      const selectableItems = interactionProjection.orderedItems
+      commitSelectionIntent(intent, selectableItems.map((item) => item.id), selectableItems)
+      if (activeItemID === null && selectableItems[0]) {
+        setActiveItemID(selectableItems[0].id)
+        setActiveLogicalIndex(0)
+      }
+      return
+    }
+    updateSelectionLoad({ intent, scope, loaded: 0, total })
+    void (async () => {
+      const resolved: XDriveFileExplorerItem[] = []
+      let committed = false
+      const isCurrent = () => (
+        selectionIntentRef.current === intent && interactionScopeKeyRef.current === scope
+      )
+      try {
+        for (let start = 0; start < total; start += XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE) {
+          if (!isCurrent()) return
+          const end = Math.min(total - 1, start + XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE - 1)
+          // The Workspace range bridge retains raw metadata, including pages
+          // already in view, until the complete identity set can be committed.
+          const chunk = virtualCollection?.collectRange
+            ? await virtualCollection.collectRange(start, end)
+            : await resolveLogicalRange(start, end)
+          if (!isCurrent()) return
+          if (!chunk || chunk.length !== end - start + 1) {
+            setSelectionLoadFeedback('未能完成全选，已保留原选择。请重试全选。')
+            return
+          }
+          resolved.push(...chunk)
+          updateSelectionLoad({ intent, scope, loaded: resolved.length, total })
+        }
+        if (new Set(resolved.map((item) => explorerIDKey(item.id))).size !== total) {
+          setSelectionLoadFeedback('结果在加载期间发生变化，已保留原选择。请刷新后重试全选。')
+          return
+        }
+        committed = commitSelectionIntent(intent, resolved.map((item) => item.id), resolved)
+        if (!committed) return
+        if (activeItemID === null && resolved[0]) {
+          setActiveItemID(resolved[0].id)
+          setActiveLogicalIndex(0)
+        }
+      } catch {
+        if (isCurrent()) setSelectionLoadFeedback('未能完成全选，已保留原选择。请重试全选。')
+      } finally {
+        if (selectionLoadRef.current?.intent === intent) updateSelectionLoad(null)
+        if (!committed && !selectionLoadRef.current && interactionScopeKeyRef.current === scope) {
+          virtualCollection?.retainInteractionIDs?.(selectedIDsRef.current)
+        }
+      }
+    })()
+  }
+
+  const cancelSelectionLoad = () => {
+    if (!selectionLoadRef.current) return
+    selectionIntentRef.current += 1
+    updateSelectionLoad(null)
+    setSelectionLoadFeedback('已取消全选加载，保留原选择。')
+    virtualCollection?.retainInteractionIDs?.(selectedIDsRef.current)
+  }
+
+  const finishTouchSelection = () => {
+    restoreSelectionFocusRef.current = true
+    clearSelection()
+    setTouchSelectionMode(false)
+  }
+
+  useEffect(() => {
+    if (!touchSelectionMode && restoreSelectionFocusRef.current) {
+      restoreSelectionFocusRef.current = false
+      if (compactViewport) selectionToggleRef.current?.focus()
+    }
+  }, [compactViewport, touchSelectionMode])
 
   const anchorSelectionAt = (
     item: XDriveFileExplorerItem,
@@ -1961,13 +2124,9 @@ export function XDriveFileExplorer({
   const submitRename = async (item: XDriveFileExplorerItem) => {
     if (!onRenameItem || renameCancelledRef.current || renameSubmittingRef.current) return
     const normalized = renameDraft.trim()
-    if (!normalized) {
-      setRenameError('请填写名称')
-      renameInputRef.current?.focus()
-      return
-    }
-    if (normalized.length > 255) {
-      setRenameError('名称不能超过 255 个字符')
+    const validationError = xDriveFileNameValidationError(normalized, 'rename')
+    if (validationError) {
+      setRenameError(validationError)
       renameInputRef.current?.focus()
       return
     }
@@ -2023,11 +2182,11 @@ export function XDriveFileExplorer({
       input.focus()
       input.setSelectionRange(0, xDriveFileExplorerRenameSelectionEnd(item.name, item.kind))
     })
-  }, [interactionProjection.itemByKey, renamingID])
+  }, [compactViewport, interactionProjection.itemByKey, renamingID])
 
   const renderItemName = (item: XDriveFileExplorerItem, grid: boolean) => {
     const renaming = renamingID !== null && explorerIDKey(renamingID) === explorerIDKey(item.id)
-    if (renaming) {
+    if (renaming && !compactViewport) {
       return (
         <TextField
           inputRef={renameInputRef}
@@ -2038,7 +2197,7 @@ export function XDriveFileExplorer({
           error={Boolean(renameError)}
           title={renameError || undefined}
           aria-label={'重命名 ' + item.name}
-          slotProps={{ htmlInput: { maxLength: 255, spellCheck: false } }}
+          slotProps={{ htmlInput: { spellCheck: false } }}
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onChange={(event) => {
@@ -2410,13 +2569,15 @@ export function XDriveFileExplorer({
       commitSelection([item.id], [item])
       anchorSelectionAt(item)
     }
-    const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length > 0
+    const contextSelected = selectedKeySet.has(explorerIDKey(item.id))
+    const contextSelectionCount = contextSelected ? selectedCount : 1
+    const selection = contextSelected && selectedItems.length > 0
       ? selectedItems
       : [item]
-    let actionItems = selection.length > 1 ? [] : (getItemMenuItems?.(item) ?? []).filter((action) => (
+    let actionItems = contextSelectionCount > 1 ? [] : (getItemMenuItems?.(item) ?? []).filter((action) => (
       !compactViewport || !['open-new-tab', 'open-browser-tab'].includes(action.id)
     ))
-    if (selection.length === 1 && onRenameItem) {
+    if (contextSelectionCount === 1 && onRenameItem) {
       const inlineRename: XDriveFileExplorerMenuItem = {
         id: 'rename',
         label: '重命名',
@@ -2444,7 +2605,8 @@ export function XDriveFileExplorer({
         label: '剪切',
         icon: <ContentCutRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0,
-        onSelect: () => onCutItems(selection),
+        disabled: Boolean(selectionActionDisabledReason('cut', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('cut', onCutItems, selection, contextSelectionCount),
       })
     }
     if (onCopyItems) {
@@ -2453,39 +2615,65 @@ export function XDriveFileExplorer({
         label: '复制',
         icon: <ContentCopyRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
-        onSelect: () => onCopyItems(selection),
+        disabled: Boolean(selectionActionDisabledReason('copy', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('copy', onCopyItems, selection, contextSelectionCount),
+      })
+    }
+    if (onMoveItemsTo) {
+      clipboardItems.push({
+        id: 'move-to',
+        label: '移动到…',
+        icon: <ContentCutRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
+        disabled: Boolean(selectionActionDisabledReason('move-to', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('move-to', onMoveItemsTo, selection, contextSelectionCount),
+      })
+    }
+    if (onCopyItemsTo) {
+      clipboardItems.push({
+        id: 'copy-to',
+        label: '复制到…',
+        icon: <ContentCopyRoundedIcon fontSize="small" />,
+        dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
+        disabled: Boolean(selectionActionDisabledReason('copy-to', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('copy-to', onCopyItemsTo, selection, contextSelectionCount),
       })
     }
     if (onCopyPaths) {
       clipboardItems.push({
         id: 'copy-path',
-        label: selection.length > 1 ? '复制所选路径' : '复制路径',
+        label: contextSelectionCount > 1 ? '复制所选路径' : '复制路径',
         icon: <ContentCopyRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
-        onSelect: () => onCopyPaths(selection),
+        disabled: selection.length !== contextSelectionCount,
+        onSelect: () => {
+          if (selection.length === contextSelectionCount) onCopyPaths(selection)
+        },
       })
     }
     const bulkItems: XDriveFileExplorerMenuItem[] = []
     const downloadableSelection = selection.some((candidate) => (
       candidate.kind === 'file' || folderDownloadSupported
     ))
-    if (selection.length > 1 && onDownloadItems && downloadableSelection) {
+    if (contextSelectionCount > 1 && onDownloadItems && downloadableSelection) {
       bulkItems.push({
         id: 'download-selected',
         label: folderDownloadSupported ? '下载所选项目' : '下载所选文件',
         icon: <DownloadRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length + clipboardItems.length > 0,
-        onSelect: () => onDownloadItems(selection),
+        disabled: Boolean(selectionActionDisabledReason('download', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('download', onDownloadItems, selection, contextSelectionCount),
       })
     }
-    if (selection.length > 1 && onDeleteItems) {
+    if (contextSelectionCount > 1 && onDeleteItems) {
       bulkItems.push({
         id: 'delete-selected',
         label: '删除所选项目',
         icon: <DeleteOutlineRoundedIcon fontSize="small" />,
         danger: true,
         dividerBefore: actionItems.length + clipboardItems.length > 0 && bulkItems.length === 0,
-        onSelect: () => onDeleteItems(selection),
+        disabled: Boolean(selectionActionDisabledReason('delete', selection, contextSelectionCount)),
+        onSelect: () => runSelectionAction('delete', onDeleteItems, selection, contextSelectionCount),
       })
     }
     const organizationItems: XDriveFileExplorerMenuItem[] = onManageTags ? [{
@@ -2493,14 +2681,18 @@ export function XDriveFileExplorer({
       label: '标签…',
       icon: <LocalOfferRoundedIcon fontSize="small" />,
       dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
-      onSelect: () => onManageTags(selection),
+      disabled: Boolean(selectionActionDisabledReason('manage-tags', selection, contextSelectionCount)),
+      onSelect: () => runSelectionAction('manage-tags', onManageTags, selection, contextSelectionCount),
     }] : []
     const inspectorItems: XDriveFileExplorerMenuItem[] = [{
       id: 'properties',
       label: '属性',
       icon: <InfoOutlinedIcon fontSize="small" />,
       dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length + organizationItems.length > 0,
-      onSelect: () => setPropertiesItems(selection),
+      disabled: selection.length !== contextSelectionCount,
+      onSelect: () => {
+        if (selection.length === contextSelectionCount) setPropertiesItems(selection)
+      },
     }]
     const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems]
     if (menuItems.length === 0) return
@@ -3431,35 +3623,7 @@ export function XDriveFileExplorer({
     }
     if (command === 'select-all') {
       event.preventDefault()
-      if (!virtualCollectionEnabled) {
-        const selectableItems = interactionProjection.orderedItems
-        commitSelection(
-          selectableItems.map((candidate) => candidate.id),
-          selectableItems,
-        )
-        if (activeItemID === null && selectableItems[0]) {
-          setActiveItemID(selectableItems[0].id)
-          setActiveLogicalIndex(0)
-        }
-        return
-      }
-
-      const intent = beginSelectionIntent()
-      void resolveLogicalRange(0, logicalItemCount - 1).then((resolved) => {
-        if (!resolved || resolved.length !== logicalItemCount) return
-        if (!commitSelectionIntent(
-          intent,
-          resolved.map((candidate) => candidate.id),
-          resolved,
-        )) {
-          releaseInteractionMetadata()
-          return
-        }
-        if (activeItemID === null && resolved[0]) {
-          setActiveItemID(resolved[0].id)
-          setActiveLogicalIndex(0)
-        }
-      })
+      selectAllItems()
       return
     }
     if (command === 'copy-path' && onCopyPaths) {
@@ -3468,7 +3632,7 @@ export function XDriveFileExplorer({
         : activeItem
           ? [activeItem]
           : []
-      if (targets.length > 0) {
+      if (targets.length > 0 && (selectedCount === 0 || targets.length === selectedCount)) {
         event.preventDefault()
         onCopyPaths(targets)
         return
@@ -3476,12 +3640,12 @@ export function XDriveFileExplorer({
     }
     if (command === 'copy' && onCopyItems && selectedItems.length > 0) {
       event.preventDefault()
-      onCopyItems(selectedItems)
+      runSelectionAction('copy', onCopyItems)
       return
     }
     if (command === 'cut' && onCutItems && selectedItems.length > 0) {
       event.preventDefault()
-      onCutItems(selectedItems)
+      runSelectionAction('cut', onCutItems)
       return
     }
     if (
@@ -3495,7 +3659,7 @@ export function XDriveFileExplorer({
     }
     if (command === 'delete' && onDeleteItems && selectedItems.length > 0) {
       event.preventDefault()
-      onDeleteItems(selectedItems)
+      runSelectionAction('delete', onDeleteItems)
       return
     }
 
@@ -3519,7 +3683,11 @@ export function XDriveFileExplorer({
       return
     }
 
-    if (event.key === 'Escape') clearSelection()
+    if (event.key === 'Escape') {
+      if (selectionLoadRef.current) cancelSelectionLoad()
+      else if (compactViewport && touchSelectionMode) finishTouchSelection()
+      else clearSelection()
+    }
   }
 
   const mediaDetailsForItem = (item: XDriveFileExplorerItem) => {
@@ -3843,8 +4011,8 @@ export function XDriveFileExplorer({
     [selectedItems],
   )
   const selectedHasFiles = selectedItems.some((item) => item.kind === 'file')
-  const selectionStatusText = selectedItems.length > 0
-    ? `已选择 ${selectedItems.length} 项${selectedHasFiles ? ` · ${formatBytes(selectedSize)}` : ''}`
+  const selectionStatusText = selectedCount > 0
+    ? `已选择 ${selectedCount} 项${unavailableSelectedCount > 0 ? ` · ${unavailableSelectedCount} 项暂不可用` : ''}${selectedHasFiles && unavailableSelectedCount === 0 ? ` · ${formatBytes(selectedSize)}` : ''}`
     : ''
   const viewStatusText = compactViewport
     ? viewMode === 'details' ? '列表' : viewMode === 'grid' ? '网格' : '分栏'
@@ -4481,6 +4649,8 @@ export function XDriveFileExplorer({
     const onRangeChange = virtualCollection?.onRangeChange
     if (viewMode === 'columns' || !onRangeChange || logicalItemCount <= 0) return
     if (pendingViewRestoreRef.current?.key === returnStateKey) return
+    const selecting = selectionLoadRef.current
+    if (selecting?.scope === interactionScopeKey && selecting.intent === selectionIntentRef.current) return
     const keyboardRange = pendingKeyboardRangeRef.current
     if (keyboardRange?.scope === interactionScopeKey && keyboardRange.intent === selectionIntentRef.current) return
     const groupedSegments = viewMode === 'details'
@@ -4507,6 +4677,7 @@ export function XDriveFileExplorer({
     logicalItemCount,
     interactionScopeKey,
     keyboardRangeVersion,
+    selectionLoad,
     returnStateKey,
     viewMode,
     virtualCollection?.onRangeChange,
@@ -4989,13 +5160,14 @@ export function XDriveFileExplorer({
         ref={commandBarRef}
         data-xdrive-file-explorer-command-bar
         data-xdrive-file-explorer-touch-command-bar={compactViewport ? '' : undefined}
-        direction="row"
+        direction={compactViewport && touchSelectionMode ? 'column' : 'row'}
         alignItems="center"
         sx={{
           px: 1.25,
           py: 0.5,
           minHeight: 40,
           minWidth: 0,
+          flexShrink: 0,
           overflow: 'hidden',
           gap: 0.75,
           '& .MuiButton-root': { minHeight: 30, px: 1, borderRadius: 1 },
@@ -5017,25 +5189,37 @@ export function XDriveFileExplorer({
           ) : null}
           {touchSelectionMode ? (
             <>
-              <Typography variant="body2" fontWeight={600} noWrap sx={{ minWidth: 0, flex: 1, px: 0.5 }}>
-                已选择 {selectedItems.length} 项
-              </Typography>
+              <Stack direction="row" alignItems="center" gap={1} sx={{ width: '100%', minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600} sx={{ minWidth: 0, flex: 1, px: 0.5, overflowWrap: 'anywhere' }}>
+                  已选择 {selectedCount} 项
+                </Typography>
+                <Button size="small" onClick={finishTouchSelection} sx={{ flexShrink: 0 }}>
+                  完成选择
+                </Button>
+              </Stack>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={0.5} sx={{ width: '100%', minWidth: 0, flexWrap: 'wrap' }}>
               {onCopyItems ? (
-                <IconButton aria-label="复制所选项目" disabled={selectedItems.length === 0} onClick={() => onCopyItems(selectedItems)}>
+                <IconButton aria-label="复制所选项目" title={selectionActionDisabledReason('copy') || '复制所选项目'} disabled={Boolean(selectionActionDisabledReason('copy'))} onClick={() => runSelectionAction('copy', onCopyItems)}>
                   <ContentCopyRoundedIcon fontSize="small" />
+                </IconButton>
+              ) : null}
+              {onCutItems ? (
+                <IconButton aria-label="剪切所选项目" title={selectionActionDisabledReason('cut') || '剪切所选项目'} disabled={Boolean(selectionActionDisabledReason('cut'))} onClick={() => runSelectionAction('cut', onCutItems)}>
+                  <ContentCutRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
               {onDownloadItems ? (
                 <IconButton
                   aria-label="下载所选项目"
-                  disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}
-                  onClick={() => onDownloadItems(selectedItems)}
+                  title={selectionActionDisabledReason('download') || '下载所选项目'}
+                  disabled={Boolean(selectionActionDisabledReason('download'))}
+                  onClick={() => runSelectionAction('download', onDownloadItems)}
                 >
                   <DownloadRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
               {onDeleteItems ? (
-                <IconButton aria-label="删除所选项目" disabled={selectedItems.length === 0} onClick={() => onDeleteItems(selectedItems)} sx={{ color: 'error.main' }}>
+                <IconButton aria-label="删除所选项目" title={selectionActionDisabledReason('delete') || '删除所选项目'} disabled={Boolean(selectionActionDisabledReason('delete'))} onClick={() => runSelectionAction('delete', onDeleteItems)} sx={{ color: 'error.main' }}>
                   <DeleteOutlineRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
@@ -5051,15 +5235,7 @@ export function XDriveFileExplorer({
               >
                 <MoreHorizRoundedIcon fontSize="small" />
               </IconButton>
-              <Button
-                size="small"
-                onClick={() => {
-                  setTouchSelectionMode(false)
-                  clearSelection()
-                }}
-              >
-                完成
-              </Button>
+              </Stack>
             </>
           ) : (
             <>
@@ -5096,9 +5272,9 @@ export function XDriveFileExplorer({
           {onCutItems ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentCutRoundedIcon />}
-              title={fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
-              disabled={selectedItems.length === 0}
-              onClick={() => onCutItems(selectedItems)}
+              title={selectionActionDisabledReason('cut') || fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
+              disabled={Boolean(selectionActionDisabledReason('cut'))}
+              onClick={() => runSelectionAction('cut', onCutItems)}
             >
               剪切
             </XDriveFileExplorerCommandButton>
@@ -5106,9 +5282,9 @@ export function XDriveFileExplorer({
           {onCopyItems ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentCopyRoundedIcon />}
-              title={fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
-              disabled={selectedItems.length === 0}
-              onClick={() => onCopyItems(selectedItems)}
+              title={selectionActionDisabledReason('copy') || fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
+              disabled={Boolean(selectionActionDisabledReason('copy'))}
+              onClick={() => runSelectionAction('copy', onCopyItems)}
             >
               复制
             </XDriveFileExplorerCommandButton>
@@ -5126,8 +5302,9 @@ export function XDriveFileExplorer({
           {onDownloadItems ? (
             <XDriveFileExplorerCommandButton
               startIcon={<DownloadRoundedIcon />}
-              disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}
-              onClick={() => onDownloadItems(selectedItems)}
+              title={selectionActionDisabledReason('download') || '下载所选项目'}
+              disabled={Boolean(selectionActionDisabledReason('download'))}
+              onClick={() => runSelectionAction('download', onDownloadItems)}
             >
               下载
             </XDriveFileExplorerCommandButton>
@@ -5135,9 +5312,9 @@ export function XDriveFileExplorer({
           {onDeleteItems ? (
             <XDriveFileExplorerCommandButton
               startIcon={<DeleteOutlineRoundedIcon />}
-              title={fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
-              disabled={selectedItems.length === 0}
-              onClick={() => onDeleteItems(selectedItems)}
+              title={selectionActionDisabledReason('delete') || fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
+              disabled={Boolean(selectionActionDisabledReason('delete'))}
+              onClick={() => runSelectionAction('delete', onDeleteItems)}
               sx={{ color: 'error.main' }}
             >
               删除
@@ -5180,6 +5357,7 @@ export function XDriveFileExplorer({
                 <SortRoundedIcon fontSize="small" />
               </IconButton>
               <Button
+                ref={selectionToggleRef}
                 size="small"
                 sx={{ minWidth: 44, px: 0.5, flexShrink: 0 }}
                 onClick={() => {
@@ -5525,6 +5703,85 @@ export function XDriveFileExplorer({
 
       <Divider />
 
+      <Box
+        data-xdrive-file-explorer-context-panel
+        role={compactViewport ? 'region' : undefined}
+        aria-label={compactViewport ? '选择、搜索与操作状态' : undefined}
+        sx={compactViewport ? {
+          minHeight: 0,
+          minWidth: 0,
+          flex: '0 1 auto',
+          maxHeight: '45%',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+        } : { display: 'contents' }}
+      >
+      {(compactViewport && touchSelectionMode) || selectedCount > 0 || selectionLoad || selectionLoadFeedback ? (
+        <Box data-xdrive-file-explorer-selection-scope sx={{ flexShrink: 0, px: 1.25, py: 0.5, borderBottom: 1, borderColor: 'divider' }}>
+          {compactViewport && (onMoveItemsTo || onCopyItemsTo) ? (
+            <Stack data-xdrive-file-explorer-destination-actions direction="row" gap={1} sx={{ flexWrap: 'wrap', mb: 0.5 }}>
+              {onMoveItemsTo ? (
+                <Button
+                  startIcon={<ContentCutRoundedIcon />}
+                  title={selectionActionDisabledReason('move-to') || '选择移动的目标文件夹'}
+                  disabled={Boolean(selectionActionDisabledReason('move-to'))}
+                  onClick={() => runSelectionAction('move-to', onMoveItemsTo)}
+                  sx={{ minHeight: 44, minWidth: 44, whiteSpace: 'normal', overflowWrap: 'anywhere' }}
+                >移动到…</Button>
+              ) : null}
+              {onCopyItemsTo ? (
+                <Button
+                  startIcon={<ContentCopyRoundedIcon />}
+                  title={selectionActionDisabledReason('copy-to') || '选择副本的目标文件夹'}
+                  disabled={Boolean(selectionActionDisabledReason('copy-to'))}
+                  onClick={() => runSelectionAction('copy-to', onCopyItemsTo)}
+                  sx={{ minHeight: 44, minWidth: 44, whiteSpace: 'normal', overflowWrap: 'anywhere' }}
+                >复制到…</Button>
+              ) : null}
+            </Stack>
+          ) : null}
+          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+            {searchSummary
+              ? `选择范围：当前搜索的全部 ${logicalItemCount} 个结果，包含未加载结果。`
+              : `选择范围：当前目录“${crumbs.at(-1)?.name ?? derivedPath}”的 ${logicalItemCount} 个项目，不包含子目录内容。`}
+          </Typography>
+          <Stack direction="row" alignItems="center" gap={1} sx={{ flexWrap: 'wrap' }}>
+            {selectionLoad ? (
+              <>
+                <Typography role="status" variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                  正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项
+                </Typography>
+                <Button onClick={cancelSelectionLoad} sx={{ minHeight: 44, minWidth: 44 }}>取消选择加载</Button>
+              </>
+            ) : (
+              <Button
+                onClick={selectAllItems}
+                disabled={logicalItemCount === 0 || loading || searchSummary?.resultCount === null}
+                sx={{ minHeight: 44, minWidth: 44 }}
+              >
+                {searchSummary ? '全选搜索结果' : '全选当前目录'}
+              </Button>
+            )}
+            <Button disabled={selectedCount === 0 && !selectionLoad} onClick={clearSelection} sx={{ minHeight: 44, minWidth: 44 }}>
+              清除选择
+            </Button>
+          </Stack>
+          {unavailableSelectedCount > 0 ? (
+            <Typography role="status" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{unavailableSelectedCount} 项暂不可用</Typography>
+          ) : null}
+          {selectionLoadFeedback ? <Typography role="status" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{selectionLoadFeedback}</Typography> : null}
+        </Box>
+      ) : null}
+      {selectionDisabledReasons.length > 0 ? (
+        <Box data-xdrive-file-explorer-selection-action-reasons sx={{ flexShrink: 0, px: 1.25, py: 0.5, maxHeight: 96, overflowY: 'auto' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+            部分操作暂不可用：{selectionDisabledReasons.join(' ')}
+          </Typography>
+        </Box>
+      ) : null}
+      {actionFeedback ? (
+        <Box data-xdrive-file-explorer-action-feedback-slot sx={{ minWidth: 0, flexShrink: 0 }}>{actionFeedback}</Box>
+      ) : null}
       {searchSummary ? (
         <Box data-xdrive-file-explorer-search-summary sx={{ flexShrink: 0, px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
@@ -5564,6 +5821,7 @@ export function XDriveFileExplorer({
           ) : null}
         </Stack>
       ) : null}
+      </Box>
 
       <Drawer
         anchor="left"
@@ -5594,7 +5852,15 @@ export function XDriveFileExplorer({
         </Box>
       </Drawer>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      <Box sx={{
+        flex: 1,
+        // A short selection surface must retain one complete row below its
+        // sticky header; the adjacent context panel can scroll its contents.
+        minHeight: compactViewport && touchSelectionMode && viewMode === 'details' && logicalItemCount > 0
+          ? `calc(${detailsRowHeight}px + max(${detailsHeaderHeight}px, 1.5rem))`
+          : 0,
+        display: 'flex',
+      }}>
       {navigationPane && viewPreferences.navigationPaneVisible && !compactViewport ? (
         <>
           <Box
@@ -6249,6 +6515,26 @@ export function XDriveFileExplorer({
         onNext={() => moveQuickLook(1)}
         onClose={closeQuickLook}
       />
+
+      {compactViewport && renamingItem ? (
+        <XDriveFileNameDialogView
+          open
+          mode="rename"
+          name={renameDraft}
+          error={renameError}
+          submitting={renameSubmitting}
+          inputRef={renameInputRef}
+          disableRestoreFocus
+          onNameChange={(value) => {
+            setRenameDraft(value)
+            if (renameError) setRenameError('')
+          }}
+          onSubmit={() => { void submitRename(renamingItem) }}
+          onClose={() => {
+            if (!renameSubmittingRef.current) cancelRename(renamingItem)
+          }}
+        />
+      ) : null}
 
       {compactViewport ? (
         <Drawer

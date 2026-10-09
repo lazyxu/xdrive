@@ -1239,7 +1239,7 @@ export type AgentFileTag = {
 
 export type AgentFileNodeTags = {
   node_id: number
-  tags: AgentFileTag[]
+  tags: AgentFileTag[] | null
 }
 
 export type AgentFileSavedSearch = {

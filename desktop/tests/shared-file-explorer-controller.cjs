@@ -214,7 +214,7 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     'xDriveFileExplorerDropItemsPlan(',
     "await runPlan('drop-items', plan, clearSearch)",
     'xDriveFileExplorerDropItemsToParentPlan(',
-    'canPaste: canPaste(disabled || busy)',
+    'canPaste: canPaste(disabled || busy || Boolean(pasteDisabledReason))',
   ]) {
     assert.ok(operationController.includes(token), `shared operation controller missing: ${token}`)
   }

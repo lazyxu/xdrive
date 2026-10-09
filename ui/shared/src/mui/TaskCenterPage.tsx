@@ -94,6 +94,8 @@ export interface XDriveTaskCenterPageProps {
   operationResolvingID?: string
   operationResolvingPolicy?: XDriveFileOperationConflictResolution | ''
   operationDisabled?: boolean
+  operationFocusID?: string
+  operationFocusRequestID?: number
   onRetryTransfer?: (id: string) => void
   onCancelOperation?: (id: string) => void
   onRetryOperation?: (id: string) => void
@@ -131,6 +133,8 @@ export function XDriveTaskCenterPage({
   operationResolvingID = '',
   operationResolvingPolicy = '',
   operationDisabled = false,
+  operationFocusID = '',
+  operationFocusRequestID = 0,
   onRetryTransfer,
   onCancelOperation,
   onRetryOperation,
@@ -221,6 +225,8 @@ export function XDriveTaskCenterPage({
                 resolvingID={operationResolvingID}
                 resolvingPolicy={operationResolvingPolicy}
                 disabled={operationDisabled}
+                operationFocusID={operationFocusID}
+                operationFocusRequestID={operationFocusRequestID}
                 onCancel={onCancelOperation}
                 onRetry={onRetryOperation}
                 onUndo={onUndoOperation}

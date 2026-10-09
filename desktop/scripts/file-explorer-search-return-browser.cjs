@@ -321,7 +321,7 @@ async function main() {
         await page.getByText('显示所在文件夹', { exact: true }).click(); await waitFolder(page)
         await button(page, '后退').click()
         await assertReturn(page, before, 'logical-zero Back restores')
-        check('Back restores explicit touch selection mode', await button(page, '完成').count(), 1)
+        check('Back restores explicit touch selection mode', await button(page, '完成选择').count(), 1)
         check('Back retains logical-zero selection anchor', (await state(page)).returnSnapshot?.selectionAnchorIndex, 0)
         await capture(page, 'zero-anchor-touch-selection')
       })

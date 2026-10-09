@@ -292,3 +292,108 @@ export function xDriveFileOperationConflictPolicyLabel(
     default: return '遇到冲突时停止'
   }
 }
+
+/** Counts and optional item failures from the actual Desktop download result. */
+export type XDriveFileExplorerDownloadResult = {
+  downloaded: number
+  failed: number
+  skippedFolders: number
+  failures?: readonly { name: string; message: string }[]
+  canceled?: boolean
+}
+
+export type XDriveFileExplorerActionFeedbackValue =
+  | { kind: 'operation'; operation: XDriveFileOperation }
+  | { kind: 'download'; result: XDriveFileExplorerDownloadResult }
+
+export type XDriveFileExplorerActionFeedbackPresentation = {
+  tone: 'neutral' | 'busy' | 'good' | 'warning' | 'bad'
+  title: string
+  message: string
+  details: Array<{ label: string; value: string }>
+  operationID?: string
+}
+
+export function xDriveFileExplorerActionFeedback(
+  value: XDriveFileExplorerActionFeedbackValue,
+): XDriveFileExplorerActionFeedbackPresentation {
+  if (value.kind === 'download') {
+    const result = value.result
+    const parts = [`已下载 ${result.downloaded.toLocaleString('zh-CN')} 个文件`]
+    if (result.failed > 0) parts.push(`${result.failed.toLocaleString('zh-CN')} 个失败`)
+    if (result.skippedFolders > 0) parts.push(`跳过 ${result.skippedFolders.toLocaleString('zh-CN')} 个文件夹`)
+    return {
+      tone: result.canceled ? 'neutral'
+        : result.failed > 0 ? result.downloaded > 0 ? 'warning' : 'bad'
+          : result.skippedFolders > 0 ? 'warning' : result.downloaded > 0 ? 'good' : 'neutral',
+      title: result.canceled ? '下载已取消'
+        : result.failed > 0 ? result.downloaded > 0 ? '部分文件下载失败' : '下载失败'
+          : result.downloaded > 0 ? '下载完成' : '没有下载文件',
+      message: `${parts.join('，')}。`,
+      details: (result.failures ?? []).map((failure) => ({
+        label: failure.name || '文件',
+        value: failure.message || '下载失败',
+      })),
+    }
+  }
+
+  const operation = value.operation
+  const count = operation.total_items.toLocaleString('zh-CN')
+  const atomic = operation.type === 'copy' || operation.type === 'move' || operation.type === 'delete'
+  const details: XDriveFileExplorerActionFeedbackPresentation['details'] = []
+  let tone: XDriveFileExplorerActionFeedbackPresentation['tone'] = 'busy'
+  let message = `任务共 ${count} 个项目。`
+
+  switch (operation.status) {
+    case 'queued':
+      message = `任务已提交，等待执行。涉及 ${count} 个项目。`
+      break
+    case 'running':
+      // Progress counters are not a committed per-item outcome ledger.
+      message = `处理进度：${operation.processed_items.toLocaleString('zh-CN')} / ${count} 个项目，任务尚未完成。`
+      break
+    case 'cancel_requested':
+      message = `已请求取消，等待任务确认。涉及 ${count} 个项目。`
+      break
+    case 'cancelled':
+      tone = 'neutral'
+      message = `${atomic ? '本次整批操作已取消，未提交任何更改。' : '任务已取消。'}涉及 ${count} 个项目。`
+      break
+    case 'failed':
+      tone = 'bad'
+      message = `${atomic ? '本次整批操作失败，未提交任何更改。' : '任务失败。'}涉及 ${count} 个项目。`
+      break
+    case 'completed':
+      tone = operation.conflict_policy === 'skip' ? 'warning' : 'good'
+      // Completed skip-policy counters include skipped roots; their number is
+      // not returned by the current operation DTO.
+      message = operation.conflict_policy === 'skip'
+        ? `任务已完成，按“跳过冲突”策略处理。任务共 ${count} 个项目，跳过数量未提供。`
+        : `任务已完成，共 ${count} 个项目。`
+      break
+  }
+
+  if (operation.status === 'failed') {
+    const failedItem = xDriveFileOperationFailureItemLabel(operation)
+    const reason = xDriveFileOperationFailureMessage(operation)
+    if (failedItem) details.push({ label: '失败项目', value: failedItem })
+    details.push({ label: '原因', value: reason })
+    if (operation.failure_code) details.push({ label: '错误代码', value: operation.failure_code })
+    if (operation.error && operation.error !== reason) {
+      details.push({ label: '详细信息', value: operation.error })
+    }
+  } else if (xDriveFileOperationActive(operation.status) && operation.current_item) {
+    details.push({ label: '当前项目', value: operation.current_item })
+  }
+  if (operation.conflict_policy && operation.conflict_policy !== 'fail') {
+    details.push({ label: '冲突策略', value: xDriveFileOperationConflictPolicyLabel(operation.conflict_policy) })
+  }
+
+  return {
+    tone,
+    title: `${xDriveFileOperationTypeLabel(operation.type)} · ${xDriveFileOperationStatusLabel(operation.status)}`,
+    message,
+    details,
+    operationID: operation.id,
+  }
+}

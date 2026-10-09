@@ -1,6 +1,6 @@
 # Mobile Files: search return and explicit presentation
 
-Status: Implementation, independent review and final local gates complete; PR delivery remains the final gate. Approved ordered scope M04 then M05, following M01–M03 in PR #1092. The original immediate dependency was `09bf8bdeb06382573ed03d17a680e2d43890c321`. After #1092 landed, only this work's single commit was reconstructed without conflicts onto `daf35bced5f8ebb56055572c27e9ac52005f19d8`.
+Status: Merged through PR #1093 after successful PR CI run `37891182368`; merge `b2e1d8d122e0513944d59e2e36d6569ee787f7a0`, remote branch removed. Approved ordered scope M04 then M05, following M01–M03 in PR #1092. The original immediate dependency was `09bf8bdeb06382573ed03d17a680e2d43890c321`. After #1092 landed, only this work's single commit was reconstructed without conflicts onto `daf35bced5f8ebb56055572c27e9ac52005f19d8`.
 
 ## Contract
 
@@ -17,7 +17,7 @@ Sort fields preserve direction; direction has explicit choices. Show grouping, f
 - [x] Parent integrates the shared FileExplorer view-state bridge, search summary/clear, explicit sort/view UI and both platform adapters.
 - [x] Browser agent supplies real-component regressions for deep return, partial loading, current conditions, native focus, sort and responsive view projection.
 - [x] Reconcile canonical contracts and M04/M05 evidence; run focused browser and controller suites, typecheck, Web lint/build and materially related regressions. Final shared browser 104/174/54, actual Web 48 and full App 901 pass; Desktop 1,327 pass/0 fail/1 existing skip. The concrete compact status/navigation overlap has the same first-red → green geometry assertion.
-- [ ] Independent review, one-commit PR CI, linear merge and cleanup. Native device claims remain governed by the M49 matrix.
+- [x] Independent review, one-commit PR CI, linear merge and remote cleanup. Native device claims remain governed by the M49 matrix.
 
 ## Validation boundary
 

@@ -249,7 +249,7 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
     'data-xdrive-file-explorer-inspector',
     'data-xdrive-file-explorer-preview',
     "label: '属性'",
-    'onSelect: () => setPropertiesItems(selection)',
+    'if (selection.length === contextSelectionCount) setPropertiesItems(selection)',
     "command === 'properties'",
     '<XDriveFilePropertiesDialog',
     '选择一个项目以查看预览和属性。',
@@ -385,7 +385,10 @@ test('shared FileExplorer keeps Command Bar layout stable across selection chang
   for (const token of [
     'disabled={selectedItems.length === 0}',
     'disabled={!canPaste}',
-    "disabled={!selectedItems.some((item) => item.kind === 'file' || folderDownloadSupported)}",
+    "disabled={Boolean(selectionActionDisabledReason('download'))}",
+    "disabled={Boolean(selectionActionDisabledReason('copy'))}",
+    "disabled={Boolean(selectionActionDisabledReason('cut'))}",
+    "disabled={Boolean(selectionActionDisabledReason('delete'))}",
   ]) {
     assert.ok(commandBar.includes(token), 'stable Command Bar slot missing: ' + token)
   }

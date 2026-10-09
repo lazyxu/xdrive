@@ -1,0 +1,34 @@
+# Mobile Files: selection, operation flow and organization
+
+Status: M06–M08 local acceptance and independent review complete, in the user's approved order; GitHub PR delivery follows. Immediate tested dependency is PR #1093 head `5d048aeba72e6a2f5fe32d166a68c7c1c387aed8`. Branch `feat/mobile-files-selection-actions` starts with one work commit above that head; amend only. PR #1093 merged as `b2e1d8d1`; the one M06 delta was rebased without conflicts onto fixed base `b2e1d8d122e0513944d59e2e36d6569ee787f7a0`. GitHub PR CI remains the delivery gate. GitLab direct-master delivery remains blocked by the previously reported automatic approval rejection and must not be retried through another path.
+
+## M06 contract
+
+Pre-delivery integration: after local checkpoint `6cc22919`, master advanced by ten commits. The one work commit was rebased onto fixed base `31defbde7ca272548de7b1891036c055ec4a51d8`; tested integrated source is `5098e57e09a2a61c9f61175bcfeaf0e10d1ebfd9`. The sole Organization hook conflict reuses the upstream visible-scope ref, adds M08's masked read error/initial pending state, and retains all upstream distinct-intent serialization. Integrated Desktop1532/0/1, shared organization184, actual organization33/operations72/Search48 and focused merge review53 pass; typecheck/lint/build pass. Earlier checkpoint counts and hashes remain historical evidence.
+
+Selection reports unique selected identities and the actual current-directory or all-files Search scope. Touch users can select the complete logical result set, clear it and finish selection. Loading a complete selection is explicit, cancellable and keeps its count distinct from currently loaded rows. Selection changes, scope changes and session changes must not accept an obsolete completion; any missing runtime guard requires a concrete first-red before a production fix.
+
+Keep the selection count and exit visible on a compact summary row. Primary file actions occupy a separate responsive row inside Files, with actual 44px targets and readable disabled reasons. Preserve mouse/keyboard behavior and M04 return state. Completing touch selection clears selection and restores focus; widening keeps selected identities under the existing mixed-input contract.
+
+Operation eligibility is independent of selection capacity. The existing Server copy/move/delete batch accepts at most 200 roots and is atomic. Archive download accepts at most 1,000 roots; Desktop's fallback file batch accepts at most 1,000 files while reporting skipped folders separately. Never truncate a selected set or silently split a mutation. Unavailable selected metadata must be reported before a partially resolved set can be submitted. The adapters own Server limits and transport capability; the shared UI consumes a small action-availability callback.
+
+Reuse App-owned file-operation lifecycle data and the existing Task Center. A submitted job can be traced from Files with its real status, failing item and details entry; there must be no additional poller or history store. A failed/cancelled atomic action did not partially commit. Completion under skip-conflict policy does not reveal an exact changed/skipped count. Desktop's genuine download result aggregate can report successes, failures and skipped folders; Web's one-file/one-ZIP flow cannot invent per-file outcomes.
+
+## Following ordered work
+
+- **M07:** use one shared paged destination dialog, authoritative directory crumbs and existing operation plans. Connect direct Move/Copy To, valid target selection, same-name conflict, cancel/retry/continuations and compact rename Save/Cancel/error. Keep picker history local. Reproduce the known same-history newer-query/late-completion risk before any new guard.
+- **M08:** make Tags, Smart Folders/saved searches and Favorites discoverable in empty/loading/error states; show saved predicates and real current-rule matching. Keep tag management separate from assigning tags to selected items. Reuse the already-merged organization mutation/refresh protections. Reproduce stale active markers before correcting them.
+
+M09 shared Properties and later items remain separate. Their read-only audits are prepared, but they do not authorize skipping the sequence or claiming those items complete.
+
+## Work and validation
+
+- [x] Reproduce compact selection scope, target geometry, complete logical selection and exit failures using the real shared Workspace/FileExplorer browser fixture. Actual baseline Ctrl+A lost both directory and Search selections through competing viewport retention. Compact count clipped at 200% text.
+- [x] Implement M06 shared UI and adapter eligibility, with no silently omitted selected roots. Keep 1,024 logical selection uncapped; distinguish transport limits from metadata-retention fixture success. Actual adapters reproduced 1,001-root/file download bypass before the fix.
+- [x] Reuse truthful operation/download outcomes and existing task navigation; validate partial and atomic states separately. M06 renderer 286/286, composed feedback 14/14 and download feedback ordering 3/3 pass. Rebased normal Desktop gate 1,389 pass / 0 fail / 1 existing optional skip; typecheck, Web lint and build pass.
+- [x] Complete M07 destination/rename/conflict/cancel/retry with first-red lifecycle coverage. Composed315/315, builtApp72/72; M06 selection286/286, sharedSearch104/104, builtAppSearch48/48 and fullscreen901/901 regressions pass. Normal Desktop1430pass/0fail/1existing optional skip; typecheck, Web lint/build pass. App Task focus remount was reproduced and fixed; row-readiness, old Finish label and timezone regressions were fixture corrections.
+- [x] Complete M08 organization discovery, rule summaries and matching-state coverage. Shared browser184/184, actual builtApp33/33 and builtApp Search-return48/48 pass. The actual Server `tags:null` representation, management without a selection, portable saved-rule matching, retained Search behind Trash, failed reads, tag-definition versus assignment outcomes, UTF-8 names and compact input targets all have preserved before/after evidence.
+- [x] Update canonical Files/Mobile Web contracts and M49 evidence; run focused composed/browser regressions and normal build/test gates. Final Desktop1499pass/0fail/1existing optional skip; typecheck, Web lint/build pass. Existing fixture compatibility corrections are recorded separately from product defects. Independent organization review48/48 and TagDialog/browser review found no remaining blocker.
+- [ ] Independent review, exactly-one-commit PR CI, linear merge and branch cleanup.
+
+Native iOS/Android tab/installed, keyboard, address-bar, safe-area and assistive-technology checks remain explicit matrix entries. Renderer measurements are not native certification. No Server contract expansion is needed for the core flows; exact per-item durable outcome ledgers would be a separate explicit design decision.

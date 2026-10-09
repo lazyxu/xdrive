@@ -34,7 +34,8 @@ export function useXDriveFileExplorerOrganization({
   onErrorRef.current = onError
   const [tags, setTags] = useState<XDriveFileTag[]>([])
   const [savedSearches, setSavedSearches] = useState<Awaited<ReturnType<XDriveFileExplorerOrganizationPort['listSavedSearches']>>>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(enabled)
+  const [error, setError] = useState('')
   const [busyKey, setBusyKey] = useState('')
   // The passive lifecycle reset cannot protect the first render after
   // changing accounts or disabling the Organization sidebar.
@@ -46,9 +47,11 @@ export function useXDriveFileExplorerOrganization({
       setTags([])
       setSavedSearches([])
       setLoading(false)
+      setError('')
       return
     }
     setLoading(true)
+    setError('')
     try {
       const [nextTags, nextSavedSearches] = await Promise.all([
         adapter.listTags(),
@@ -58,7 +61,10 @@ export function useXDriveFileExplorerOrganization({
       setTags(nextTags)
       setSavedSearches([...nextSavedSearches].sort((a, b) => a.position - b.position || a.id - b.id))
     } catch (error) {
-      if (refreshGenerationRef.current === generation) onErrorRef.current(error)
+      if (refreshGenerationRef.current === generation) {
+        setError(error instanceof Error ? error.message : String(error))
+        onErrorRef.current(error)
+      }
     } finally {
       if (refreshGenerationRef.current === generation) setLoading(false)
     }
@@ -76,6 +82,7 @@ export function useXDriveFileExplorerOrganization({
     setTags([])
     setSavedSearches([])
     setBusyKey('')
+    setError('')
     return () => {
       lifecycleGenerationRef.current += 1
       refreshGenerationRef.current += 1
@@ -92,7 +99,7 @@ export function useXDriveFileExplorerOrganization({
     // The disabled frame must not reveal the previously enabled list.
     visibleScopeRef.current = { lifecycleKey, enabled }
     void refresh()
-  }, [lifecycleKey, refresh])
+  }, [lifecycleKey, enabled, refresh])
 
   const run = useCallback(<T,>(
     key: string,
@@ -311,6 +318,7 @@ export function useXDriveFileExplorerOrganization({
     tagOptions,
     savedSearches: visibleSavedSearches,
     loading: scopeVisible ? loading : enabled,
+    error: scopeVisible ? error : '',
     busyKey: scopeVisible ? busyKey : '',
     refresh,
     queryNodeTags: adapter.queryNodeTags,

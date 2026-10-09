@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress } from '@mui/material'
 import {
@@ -6,6 +7,7 @@ import {
   XDriveFileExplorerNavigationPane,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
+  XDriveFileExplorerDestinationDialog,
   XDriveFileTagDialog,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashDeleteDialog,
@@ -26,6 +28,7 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
+  XDriveFileExplorerSelectionAction,
   XDriveFileExplorerQuickLookRequest,
   XDriveFileExplorerSort,
   XDriveFileExplorerWorkspaceVirtualDirectory,
@@ -39,9 +42,12 @@ import {
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerWebDownloadPlan,
-  xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerResolveSelectionNodes,
+  xDriveFileExplorerSelectionActionDisabledReason,
   xDriveFileExplorerWebDownloadFeedback,
   xDriveFileExplorerPersistedSearchFilters,
+  xDriveFileExplorerOrganizationSearchState,
+  xDriveFileExplorerSavedSearchRuleLabels,
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
@@ -95,6 +101,7 @@ export default function WebFileExplorer({
   onRemove,
   onRemoveMany,
   onOperationQueued,
+  actionFeedback,
   canUndo = false,
   onUndo,
   canRedo = false,
@@ -141,6 +148,7 @@ export default function WebFileExplorer({
   onRemove: (node: Node) => void
   onRemoveMany: (nodes: Node[]) => void
   onOperationQueued: (operation: XDriveFileOperation) => void
+  actionFeedback?: ReactNode
   canUndo?: boolean
   onUndo?: () => void
   canRedo?: boolean
@@ -164,6 +172,8 @@ export default function WebFileExplorer({
   useEffect(() => {
     uploadPickerParentIDRef.current = null
     folderUploadPickerParentIDRef.current = null
+    setTagDialogItems([])
+    setTagDialogMode(null)
   }, [navigationSessionStorageKey])
   const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
   useEffect(() => {
@@ -203,8 +213,8 @@ export default function WebFileExplorer({
     nodeByID,
     explorerItems,
     explorerCrumbs,
-    copyItems,
-    cutItems,
+    copyItems: copyWorkspaceItems,
+    cutItems: cutWorkspaceItems,
     planPaste,
     completePaste,
     canPaste,
@@ -380,19 +390,23 @@ export default function WebFileExplorer({
     onError,
   })
   const [tagDialogItems, setTagDialogItems] = useState<XDriveFileExplorerItem[]>([])
+  const [tagDialogMode, setTagDialogMode] = useState<'manage' | 'assign' | null>(null)
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [renameSavedSearch, setRenameSavedSearch] = useState<(typeof organization.savedSearches)[number] | null>(null)
-  const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
-  const [activeTagID, setActiveTagID] = useState<number | null>(null)
+  const organizationSearchState = xDriveFileExplorerOrganizationSearchState({
+    active: !trashActive && searchState.results !== null,
+    query: searchState.query,
+    filters: searchFilters,
+    savedSearches: organization.savedSearches,
+  })
+  const { activeSavedSearchID, activeTagID } = organizationSearchState
   const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
   const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
   const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
   organizationSearchScopeKeyRef.current = organizationSearchScopeKey
-  const canSaveSmartFolder = Boolean(
-    searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
-  )
+  const canSaveSmartFolder = organizationSearchState.canSaveCurrentSearch
 
   const logicalIndexForItem = useCallback((item: XDriveFileExplorerItem) => {
     if (explorerVirtualCollection) {
@@ -483,8 +497,13 @@ export default function WebFileExplorer({
     pasteClipboard,
     dropItemsToFolder,
     dropItemsToCrumb,
+    destinationRequest,
+    openDestination,
+    closeDestination,
+    submitDestination,
   } = useXDriveFileExplorerOperationController<Node, XDriveFileOperation>({
     lifecycleKey: navigationSessionStorageKey ?? '',
+    maxItems: 200,
     nodeByID,
     currentID: current?.id,
     planPaste,
@@ -500,6 +519,35 @@ export default function WebFileExplorer({
     onFeedback,
     onError,
   })
+
+  const getSelectionActionDisabledReason = (
+    action: XDriveFileExplorerSelectionAction,
+    selected: readonly XDriveFileExplorerItem[],
+    selectedCount: number,
+  ) => {
+    const mutation = ['copy', 'cut', 'delete', 'move-to', 'copy-to'].includes(action)
+    return xDriveFileExplorerSelectionActionDisabledReason({
+      selected,
+      selectedCount,
+      nodeByID,
+      maxItems: mutation ? 200 : action === 'manage-tags' ? 500 : action === 'download' ? 1000 : undefined,
+      requireRevision: mutation,
+    })
+  }
+  const allowSelectionAction = (
+    action: XDriveFileExplorerSelectionAction,
+    selected: readonly XDriveFileExplorerItem[],
+  ) => {
+    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
+    if (reason) onError(new Error(reason))
+    return !reason
+  }
+  const copyItems = (selected: XDriveFileExplorerItem[]) => {
+    if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
+  }
+  const cutItems = (selected: XDriveFileExplorerItem[]) => {
+    if (allowSelectionAction('cut', selected)) cutWorkspaceItems(selected)
+  }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
     if (item.kind !== 'file') return null
@@ -629,7 +677,9 @@ export default function WebFileExplorer({
   }
 
   const downloadSelected = async (selected: XDriveFileExplorerItem[]) => {
-    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    if (!allowSelectionAction('download', selected)) return
+    const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+    if (!nodes) return
     const plan = xDriveFileExplorerWebDownloadPlan(nodes)
     if (plan.kind === 'none') return
     try {
@@ -819,12 +869,7 @@ export default function WebFileExplorer({
           resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
           loading: searchLoading,
           error: searchError,
-          onClear: () => {
-            if (clearSearch()) {
-              setActiveSavedSearchID(null)
-              setActiveTagID(null)
-            }
-          },
+          onClear: () => { clearSearch() },
           onRetry: () => { void retrySearch() },
         } : undefined}
         canGoBack={!trashActive && canGoBack}
@@ -850,7 +895,13 @@ export default function WebFileExplorer({
           void navigateTo(nextCrumbs.map((crumb) => ({ id: Number(crumb.id), name: crumb.name })))
         }}
         onColumnOpenItem={trashActive ? undefined : (item) => { void openItem(item, (node) => openWebNode(node, item)) }}
-        onManageTags={trashActive ? undefined : (selected) => setTagDialogItems(selected)}
+        onManageTags={trashActive ? undefined : (selected) => {
+          if (!allowSelectionAction('manage-tags', selected)) return
+          setTagDialogItems(selected)
+          setTagDialogMode('assign')
+        }}
+        getSelectionActionDisabledReason={getSelectionActionDisabledReason}
+        actionFeedback={actionFeedback}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}
@@ -864,6 +915,8 @@ export default function WebFileExplorer({
         onCopyItems={trashActive ? undefined : copyItems}
         onCopyPaths={trashActive ? undefined : (selected) => { void copyItemPaths(selected) }}
         onCutItems={trashActive ? undefined : cutItems}
+        onMoveItemsTo={trashActive ? undefined : (selected) => openDestination('move', selected, crumbs)}
+        onCopyItemsTo={trashActive ? undefined : (selected) => openDestination('copy', selected, crumbs)}
         onPaste={trashActive ? undefined : (operationOverride) => { void pasteClipboard(operationOverride) }}
         canPaste={!trashActive && fileOperationCanPaste}
         canUndo={!trashActive && canUndo}
@@ -873,8 +926,9 @@ export default function WebFileExplorer({
         onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}
         folderDownloadSupported={!trashActive}
         onDeleteItems={trashActive ? undefined : (selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) onRemoveMany(nodes)
+          if (!allowSelectionAction('delete', selected)) return
+          const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+          if (nodes?.length) onRemoveMany(nodes)
         }}
         onRenameItem={trashActive ? undefined : renameItem}
         renameDisabled={trashActive || fileOperationBusy}
@@ -919,11 +973,7 @@ export default function WebFileExplorer({
             tagOptions={organization.tagOptions}
             canSaveSearch={canSaveSmartFolder}
             onSaveSearch={() => setSaveSearchOpen(true)}
-            onChange={(next) => {
-              setActiveSavedSearchID(null)
-              setActiveTagID(next.tagID ?? null)
-              changeSearchFilters(next)
-            }}
+            onChange={changeSearchFilters}
           />
         )}
         navigationPane={(
@@ -972,36 +1022,44 @@ export default function WebFileExplorer({
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
             onReorderQuickAccess={(nodeIDs) => { void quickAccess.reorder(nodeIDs) }}
+            organizationLoading={organization.loading}
+            organizationError={organization.error}
+            onRetryOrganization={() => { void organization.refresh() }}
+            onManageTags={() => {
+              setTagDialogItems([])
+              setTagDialogMode('manage')
+            }}
+            onSaveCurrentSearch={() => setSaveSearchOpen(true)}
+            canSaveCurrentSearch={canSaveSmartFolder}
+            savedSearchRuleLabels={(saved) => xDriveFileExplorerSavedSearchRuleLabels(saved, {
+              sourceOptions: searchSourceOptions,
+              tagOptions: organization.tagOptions,
+            })}
+            currentSearchNotice={organizationSearchState.currentSearchNotice}
             savedSearchesEnabled
             savedSearches={organization.savedSearches}
             activeSavedSearchID={activeSavedSearchID}
+            matchingSavedSearchIDs={organizationSearchState.matchingSavedSearchIDs}
             onActivateSavedSearch={(savedSearch) => {
               onCloseTrash()
-              setActiveSavedSearchID(savedSearch.id)
-              setActiveTagID(savedSearch.filters.tagID ?? null)
               void applySearch(savedSearch.query, savedSearch.filters)
             }}
             onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch)}
             onReplaceSavedSearch={(savedSearch) => {
               if (!canSaveSmartFolder) return
               const lifecycleKey = organizationLifecycleKeyRef.current
-              const searchScopeKey = organizationSearchScopeKeyRef.current
               void organization.updateSavedSearch(savedSearch.id, {
                 name: savedSearch.name,
                 query: searchState.query,
                 filters: persistedSearchFilters,
               }).then(() => {
                 if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-                if (organizationSearchScopeKeyRef.current === searchScopeKey) {
-                  setActiveSavedSearchID(savedSearch.id)
-                }
                 onFeedback('good', '智能文件夹已更新。')
-              })
+              }, () => undefined)
             }}
             canReplaceSavedSearch={canSaveSmartFolder}
             onDeleteSavedSearch={(id) => {
-              if (activeSavedSearchID === id) setActiveSavedSearchID(null)
-              void organization.deleteSavedSearch(id)
+              void organization.deleteSavedSearch(id).catch(() => undefined)
             }}
             onReorderSavedSearches={(ids) => { void organization.reorderSavedSearches(ids) }}
             tagsEnabled
@@ -1009,8 +1067,6 @@ export default function WebFileExplorer({
             activeTagID={activeTagID}
             onActivateTag={(tag) => {
               onCloseTrash()
-              setActiveSavedSearchID(null)
-              setActiveTagID(tag.id)
               void applySearch('', { tagID: tag.id })
             }}
             favoritesEnabled
@@ -1056,10 +1112,26 @@ export default function WebFileExplorer({
                 : undefined
             )}
       />
+      {destinationRequest && (
+        <XDriveFileExplorerDestinationDialog
+          open
+          lifecycleKey={navigationSessionStorageKey ?? ''}
+          operation={destinationRequest.operation}
+          sources={destinationRequest.sources}
+          initialCrumbs={destinationRequest.initialCrumbs}
+          loadDirectoryPage={loadTreeDirectoryPage}
+          onSubmit={submitDestination}
+          onClose={closeDestination}
+        />
+      )}
       <XDriveFileTagDialog
-        open={tagDialogItems.length > 0}
-        nodeIDs={tagDialogItems.map((item) => Number(item.id)).filter((id) => Number.isSafeInteger(id) && id > 0)}
+        open={tagDialogMode !== null}
+        mode={tagDialogMode ?? 'assign'}
+        nodeIDs={tagDialogItems.map((item) => Number(item.id))}
         tags={organization.tags}
+        tagsLoading={organization.loading}
+        tagsError={organization.error}
+        onRetryTags={() => { void organization.refresh() }}
         busy={Boolean(organization.busyKey)}
         queryNodeTags={organization.queryNodeTags}
         onSetTag={async (tagID, nodeIDs, assigned) => {
@@ -1085,11 +1157,13 @@ export default function WebFileExplorer({
             organizationSearchScopeKeyRef.current !== searchScopeKey
           ) return
           if (searchFilters.tagID === tagID) {
-            setActiveTagID(null)
             clearSearch()
           }
         }}
-        onClose={() => setTagDialogItems([])}
+        onClose={() => {
+          setTagDialogItems([])
+          setTagDialogMode(null)
+        }}
       />
       <XDriveFileNameDialog
         open={saveSearchOpen}
@@ -1098,16 +1172,12 @@ export default function WebFileExplorer({
         onError={onError}
         onSubmit={async (name) => {
           const lifecycleKey = organizationLifecycleKeyRef.current
-          const searchScopeKey = organizationSearchScopeKeyRef.current
-          const created = await organization.createSavedSearch({
+          await organization.createSavedSearch({
             name,
             query: searchState.query,
             filters: persistedSearchFilters,
           })
           if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          if (organizationSearchScopeKeyRef.current === searchScopeKey) {
-            setActiveSavedSearchID(created.id)
-          }
           if (searchFilters.availability) {
             onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
           } else {

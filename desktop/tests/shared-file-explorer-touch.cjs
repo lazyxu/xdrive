@@ -28,7 +28,7 @@ test('compact touch provides direct open and explicit multi-select without touch
     'onOpenItem?.(item)',
     "Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 10) {\n      suppressTouchClickRef.current = true",
     'draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}',
-    '已选择 {selectedItems.length} 项',
+    '已选择 {selectedCount} 项',
     'setTouchSelectionMode(false)',
     '完成',
   ]) {
