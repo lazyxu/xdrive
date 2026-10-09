@@ -30,6 +30,8 @@ function Root() {
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 const perfSearch = new URLSearchParams(window.location.search)
+const realGalleryFoldPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_FOLD_PERF === '1'
+  && perfSearch.get('xdriveGalleryRealFold') === '1'
 const realGalleryColdPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_COLD_PERF === '1'
   && perfSearch.get('xdriveGalleryRealCold') === '1'
 const fileExplorerPerfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1'
@@ -48,6 +50,7 @@ const perfWindow = window as Window & {
   __xdriveGalleryPerfBoot?: string | null
   __xdriveGalleryPerfBootError?: string
   __xdriveGalleryRealColdError?: string
+  __xdriveGalleryRealFoldError?: string
   __xdriveLargeTransferPerfBoot?: string | null
   __xdriveLargeTransferPerfBootError?: string
 }
@@ -55,7 +58,19 @@ perfWindow.__xdriveFileExplorerPerfBoot = fileExplorerPerfScenario
 perfWindow.__xdriveGalleryPerfBoot = galleryPerfScenario
 perfWindow.__xdriveLargeTransferPerfBoot = largeTransferPerfScenario
 
-if (realGalleryColdPerf) {
+if (realGalleryFoldPerf) {
+  void import('./GalleryRealFoldPerformanceHarness').then((module) => {
+    root.render(
+      <XDriveAppearanceThemeProvider appearance="light">
+        <module.XDriveGalleryRealFoldPerformanceHarness />
+      </XDriveAppearanceThemeProvider>,
+    )
+  }).catch(error => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    perfWindow.__xdriveGalleryRealFoldError = message
+    console.error('__XDRIVE_GALLERY_REAL_FOLD_BOOT_ERROR__' + message)
+  })
+} else if (realGalleryColdPerf) {
   void import('./GalleryRealColdPerformanceHarness').then((module) => {
     root.render(
       <XDriveAppearanceThemeProvider appearance="light">

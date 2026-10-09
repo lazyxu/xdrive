@@ -4,6 +4,26 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## P0 100k verified duplicate-fold ON/OFF actual Web browser (2026-10-09)
+
+**Status: Measured baseline / production unchanged / evidence-amended PR CI pending (#1178).** Three fresh native PostgreSQL 17 schemas each contained **100,000 logical PhotoAssets, 115,000 physical media Nodes, 15,000 paired Live Photos**, 2,000 identical-*metadata* five-copy groups (10,000 copied assets). The ON query returned **92,000** logical cards; OFF returned **100,000**. First visible items were real decodable CAS JPEGs; offscreen synthetic SHA identities were not verified by original-byte comparisons.
+
+[Native CI 37944712440 / job 113867892798](https://github.com/lazyxu/xdrive/actions/runs/37944712440/job/113867892798), **n=3 fresh real Chromium browsers**. Each run performs one **cold OFF**, then four **warm toggles ON1/OFF1/ON2/OFF2**, all via the production Gallery UI and Gin HTTP. Every stage returned correct 100-row sparse ranges, ≥12 decoded images and only **63 mounted tiles**. Timings are p50 across the three fresh samples, measured in ms:
+
+| Stage | HTTP range | Toggle/open → 12 decoded images + two-rAF proxy |
+| --- | ---: | ---: |
+| Initial cold OFF | **1,015.9** | **1,854.1** |
+| Warm ON1 | **2,814.2** | **3,052.3** |
+| Warm OFF1 | **1,474.6** | **1,699.1** |
+| Warm ON2 | **2,801.7** | **2,943.7** |
+| Warm OFF2 | **1,395.1** | **1,548.6** |
+
+Harness-reported median of per-process paired warm toggle times: **ON 2,949.35 ms**, **OFF 1,623.85 ms**. **3 of 6** warm ON observations exceeded the provisional **3,000 ms** diagnostic budget (max **3,175 ms**), including ON1 p50; this merits targeted SQL/CPU profiling. Cold initial OFF had a **162 ms maximum Long Task** (above the 100 ms diagnostic line); warm switches had Long Tasks ≤99 ms. Do not compare cold OFF with warm ON as a speedup or measure literal GPU paint. Heap/renderer RSS figures are *snapshots*, not peaks.
+
+**Decision:** no production optimization in this measurement PR, no BEFORE/AFTER claim. Next gate: attribute the full-equivalence fold-index / ranking / count / timeline SQL versus renderer CPU on the **same** 100k fixture; only keep a change following paired, repeatable material gains without correctness, heap, SQL or request-count regression. This is separate from #1140's PostgreSQL-only SQL cohort.
+
+**Repro/evidence:** `VITE_XDRIVE_GALLERY_REAL_FOLD_PERF=1`, `XD_TEST_DATABASE_URL=postgres://...`, `xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-real-fold-main.cjs`; scoped GitHub/GitLab `gallery-web-real-fold-100k-performance` job. Exact sample JSON including response ranges, time/Long Tasks, heap/WS snapshots, CAS requests and bytes is committed in `docs/performance-evidence/gallery-web-real-fold-100k/ci-run-37944712440.json` with benchmark SHA/CI provenance. The evidence-amended **one-work-commit PR must pass a new full CI** before merge; no live-user-library, physical-device or offscreen-byte-equivalence claim.
+
 ## P0 Desktop 100k production Electron cold Gallery activation (2026-10-09)
 
 Status: **Measured native Desktop baseline / no production optimization**.
