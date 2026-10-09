@@ -125,6 +125,38 @@ test('saved filters remain visible and clearable when their source or tag option
   } finally { view.unmount() }
 })
 
+test('the filter editor keeps full option names and exact custom bounds from the shared formatter', () => {
+  const sourceName = '很长的项目同步名称 / '.repeat(12)
+  const tagName = '研究标签 <原图> & travel 🧭 '.repeat(12)
+  const upper = '2026-10-09T12:34:56Z'
+  const view = mount({ sourceID: 7, tagID: 9, minSize: 0, maxSize: 1234, modifiedTo: upper }, {
+    sourceOptions: [{ id: 7, name: sourceName }], tagOptions: [{ id: 9, name: tagName }],
+  })
+  try {
+    view.click('筛选文件')
+    assert.ok(view.button(`同步文件夹：${sourceName}`))
+    assert.ok(view.button(`标签：${tagName}`))
+    assert.ok(view.button(`大小：至少 0 字节 · 至多 ${(1234).toLocaleString()} 字节`))
+    assert.ok(view.button(`修改时间：止 ${new Date(upper).toLocaleString()}`))
+    view.click('清除大小')
+    assert.equal(view.changes.at(-1).minSize, undefined)
+    assert.equal(view.changes.at(-1).maxSize, undefined)
+    assert.equal(view.changes.at(-1).modifiedTo, upper)
+    assert.equal(view.changes.at(-1).tagID, 9)
+  } finally { view.unmount() }
+})
+
+test('wide filter chips retain their existing concise custom-size and modified-time labels', () => {
+  const view = mount({ kind: 'image', minSize: 1234, modifiedFrom: '2026-10-01T00:00:00Z', sourceID: 7, tagID: 9 })
+  try {
+    view.resize(false)
+    view.click('筛选文件')
+    for (const label of ['类型：图片', '大小：已筛选', '修改时间：已筛选', '同步文件夹：项目同步', '标签：旅行']) {
+      assert.ok(view.button(label), label)
+    }
+  } finally { view.unmount() }
+})
+
 test('closing the parent panel also closes a nested filter menu', () => {
   const view = mount()
   try {

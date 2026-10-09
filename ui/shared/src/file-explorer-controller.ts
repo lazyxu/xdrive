@@ -467,6 +467,18 @@ export function xDriveFileExplorerDirectoryCrumbs<
   return [...currentCrumbs, { id: node.id, name: node.name }]
 }
 
+export function xDriveFileExplorerContainingFolderCrumbs(
+  node: Pick<Node, 'type'>,
+  searchCrumbs?: readonly XDriveFileExplorerCrumb[],
+): XDriveFileExplorerCrumb[] | null {
+  if (!searchCrumbs?.length) return null
+  // Search file crumbs stop at the parent; directory crumbs include the result.
+  const parentCrumbs = node.type === 'dir' ? searchCrumbs.slice(0, -1) : searchCrumbs
+  return parentCrumbs.length > 0
+    ? xDriveFileExplorerNormalizeCrumbs(parentCrumbs)
+    : null
+}
+
 export function xDriveFileExplorerNodeForItem<
   TNode extends Pick<Node, 'id'>,
 >(

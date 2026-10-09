@@ -25,6 +25,7 @@ import {
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
+  xDriveFileExplorerSearchFilterLabels,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -356,6 +357,10 @@ export default function DesktopFileExplorer({
     searchValue,
     searchFilters,
     searchLoading,
+    searchReady,
+    searchError,
+    retrySearch,
+    searchVirtualCollection,
     changeSearchValue,
     changeSearchFilters,
     clearSearch,
@@ -393,6 +398,8 @@ export default function DesktopFileExplorer({
     submitPath,
     openItem: openWorkspaceItem,
     openItemInNewTab,
+    showItemInContainingFolder,
+    explorerViewState,
     explorerVirtualCollection,
     externallySorted,
     searchStatusText,
@@ -1480,6 +1487,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
+      onShowContainingFolder: searchState.results !== null
+        ? () => { void showItemInContainingFolder(item) }
+        : undefined,
       onOpen: node.type === 'file'
         ? () => { void openLocalNode(node) }
         : () => { void openWorkspaceItem(item, () => undefined) },
@@ -1777,7 +1787,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
         loading={trashActive ? trash.loading : loading || searchLoading || explorerActionBusy}
-        emptyMessage={trashActive ? '回收站为空' : undefined}
+        emptyMessage={trashActive ? '回收站为空' : searchState.results !== null
+          ? searchError ? '搜索未完成，请重试' : searchReady ? '未找到匹配的文件或文件夹' : '正在搜索…'
+          : undefined}
         loadThumbnail={loadThumbnail}
         loadTextPreview={textPreviewSupported ? loadTextPreview : undefined}
         loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}
@@ -1793,6 +1805,25 @@ const desktopTransferLifecycleChildBatchSize = 1000
         searchValue={trashActive ? '' : searchValue}
         onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
+        viewState={trashActive ? undefined : explorerViewState}
+        searchSummary={!trashActive && searchState.results !== null ? {
+          query: searchState.query,
+          conditions: xDriveFileExplorerSearchFilterLabels(searchFilters, {
+            sourceOptions: searchSourceOptions,
+            tagOptions: fileTagsSupported ? organization.tagOptions : [],
+            availabilityOptions: fileAvailabilitySupported ? desktopSearchAvailabilityOptions : [],
+          }),
+          resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
+          loading: searchLoading,
+          error: searchError,
+          onClear: () => {
+            if (clearSearch()) {
+              setActiveSavedSearchID(null)
+              setActiveTagID(null)
+            }
+          },
+          onRetry: () => { void retrySearch() },
+        } : undefined}
         canGoBack={!trashActive && canGoBack}
         canGoForward={!trashActive && canGoForward}
         canGoUp={!trashActive && canGoUp}

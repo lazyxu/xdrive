@@ -22,7 +22,7 @@ test('shared FileExplorer exports one reusable Web/Desktop shell', () => {
 })
 
 test('shared FileExplorer provides Explorer-style navigation chrome', () => {
-  for (const label of ['后退', '前进', '上一级', '刷新', '文件路径', '搜索文件和文件夹']) {
+  for (const label of ['后退', '前进', '上一级', '刷新', '文件路径', '搜索全部文件和文件夹']) {
     assert.ok(explorer.includes(label), `missing explorer navigation affordance: ${label}`)
   }
   assert.ok(explorer.includes('<Breadcrumbs'), 'Explorer address bar needs breadcrumb navigation')
@@ -64,8 +64,8 @@ test('shared FileExplorer uses configurable system-style density without breakin
 
 test('shared FileExplorer uses Windows-style compact navigation and command chrome', () => {
   assert.ok(explorer.includes('data-xdrive-file-explorer-address-bar'), 'address bar marker is missing')
-  assert.ok(explorer.includes("crumbs.at(-1)?.name ?? '当前位置'"), 'search must name the current folder')
-  assert.ok(explorer.includes("width: { xs: 180, sm: 280, md: 320, lg: 360 }"), 'contextual search should have useful width')
+  assert.ok(explorer.includes('placeholder="搜索全部文件"'), 'search must name the actual owner-wide Server scope')
+  assert.ok(explorer.includes("width: { xs: 180, sm: 280, md: 320, lg: 360 }"), 'search should have useful width')
   assert.ok(explorer.includes('排序与分组'), 'sort and group must share one command surface')
   assert.equal(explorer.includes('<ToggleButtonGroup'), false, 'View menu must be the single layout control')
   for (const token of [

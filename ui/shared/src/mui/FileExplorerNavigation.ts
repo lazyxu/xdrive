@@ -37,6 +37,14 @@ type XDriveFileExplorerClosedTab<TCrumb extends XDriveFileExplorerCrumb> = {
   index: number
 }
 
+type XDriveFileExplorerRuntimeHistoryEntry = {
+  key: string
+  order?: {
+    sort: XDriveFileExplorerSort
+    grouping: XDriveFileExplorerGrouping
+  }
+}
+
 export type XDriveFileExplorerNavigationState<
   TCrumb extends XDriveFileExplorerCrumb,
 > = {
@@ -278,10 +286,12 @@ function cloneNavigationTab<TCrumb extends XDriveFileExplorerCrumb>(
   tab: XDriveFileExplorerNavigationTab<TCrumb>,
 ): XDriveFileExplorerNavigationTab<TCrumb> {
   return {
-    ...tab,
+    id: tab.id,
     history: tab.history.map((entry) => entry.map((crumb) => ({ ...crumb }))),
+    historyIndex: tab.historyIndex,
     sort: { ...tab.sort },
     grouping: { ...tab.grouping },
+    viewMode: tab.viewMode,
   }
 }
 
@@ -405,6 +415,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     () => cloneNavigationState(initialNavigationStateRef.current!),
   )
   const closedTabsRef = useRef<XDriveFileExplorerClosedTab<TCrumb>[]>([])
+  // Crumb-array identity is private to this mounted controller. It survives
+  // Back/Forward and is deliberately absent from persisted navigation DTOs.
+  const runtimeHistoryRef = useRef(new WeakMap<TCrumb[], XDriveFileExplorerRuntimeHistoryEntry>())
+  const nextHistoryEntryIDRef = useRef(1)
   const [closedTabCount, setClosedTabCount] = useState(0)
   const navigationStateRef = useRef(navigationState)
   navigationStateRef.current = navigationState
@@ -457,6 +471,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       sourceTabID: undefined,
     }
     closedTabsRef.current = []
+    runtimeHistoryRef.current = new WeakMap()
     setClosedTabCount(0)
     navigationStateRef.current = nextState
     setNavigationState(nextState)
@@ -481,11 +496,62 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       current: XDriveFileExplorerNavigationState<TCrumb>,
     ) => XDriveFileExplorerNavigationState<TCrumb>,
   ) => {
-    const next = updater(navigationStateRef.current)
+    const previous = navigationStateRef.current
+    let next = updater(previous)
+    const sourceTab = previous.tabs.find((tab) => tab.id === previous.activeTabID)
+    const targetTab = next.tabs.find((tab) => tab.id === next.activeTabID)
+    const sourceEntry = sourceTab?.history[sourceTab.historyIndex]
+    const targetEntry = targetTab?.history[targetTab.historyIndex]
+    if (sourceEntry && sourceTab && sourceEntry !== targetEntry) {
+      const runtime = runtimeHistoryEntry(sourceEntry)
+      runtime.order = {
+        sort: { ...sourceTab.sort },
+        grouping: { ...sourceTab.grouping },
+      }
+    }
+    if (targetEntry && sourceEntry !== targetEntry) {
+      const order = runtimeHistoryEntry(targetEntry).order
+      if (order) {
+        next = {
+          ...next,
+          tabs: next.tabs.map((tab) => tab.id === next.activeTabID
+            ? { ...tab, sort: { ...order.sort }, grouping: { ...order.grouping } }
+            : tab),
+        }
+      }
+    }
     navigationStateRef.current = next
     setNavigationState(next)
     onNavigationStateChangeRef.current?.(cloneNavigationState(next))
     storeNavigationSession(navigationSessionStorageKey, next, maxTabs)
+  }
+
+  function runtimeHistoryEntry(entry: TCrumb[]) {
+    let runtime = runtimeHistoryRef.current.get(entry)
+    if (!runtime) {
+      runtime = { key: `entry-${nextHistoryEntryIDRef.current++}` }
+      runtimeHistoryRef.current.set(entry, runtime)
+    }
+    return runtime
+  }
+
+  const cloneRuntimeTab = (tab: XDriveFileExplorerNavigationTab<TCrumb>) => {
+    const cloned = cloneNavigationTab(tab)
+    cloned.history.forEach((entry, index) => {
+      runtimeHistoryRef.current.set(entry, runtimeHistoryEntry(tab.history[index]))
+    })
+    return cloned
+  }
+
+  const historyOrder = (
+    tab: XDriveFileExplorerNavigationTab<TCrumb>,
+    index = tab.historyIndex,
+  ) => {
+    const entry = tab.history[index]
+    return (entry && runtimeHistoryEntry(entry).order) || {
+      sort: tab.sort,
+      grouping: tab.grouping,
+    }
   }
 
   const rememberClosedTabs = (
@@ -496,7 +562,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const closedIDSet = new Set(closedIDs)
     const snapshots = stateTabs.flatMap((tab, index) => (
       closedIDSet.has(tab.id)
-        ? [{ tab: cloneNavigationTab(tab), index }]
+        ? [{ tab: cloneRuntimeTab(tab), index }]
         : []
     ))
     if (snapshots.length === 0) return
@@ -532,6 +598,28 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   const sort = activeTab?.sort ?? XDRIVE_FILE_EXPLORER_DEFAULT_SORT
   const grouping = activeTab?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
   const viewMode = activeTab?.viewMode ?? initialViewMode
+  const activeHistoryEntry = history[historyIndex]
+  const activeHistoryEntryKey = activeHistoryEntry
+    ? runtimeHistoryEntry(activeHistoryEntry).key
+    : ''
+  const retainedHistoryEntries = useMemo(() => {
+    const retained: { tabID: string; key: string }[] = []
+    for (const tab of [...tabs, ...closedTabsRef.current.map((snapshot) => snapshot.tab)]) {
+      const start = Math.max(0, Math.min(
+        tab.historyIndex - Math.floor(fileExplorerNavigationSessionHistoryLimit / 2),
+        tab.history.length - fileExplorerNavigationSessionHistoryLimit,
+      ))
+      tab.history.forEach((entry, index) => {
+        const runtime = runtimeHistoryEntry(entry)
+        if (index >= start && index < start + fileExplorerNavigationSessionHistoryLimit) {
+          retained.push({ tabID: tab.id, key: runtime.key })
+        } else {
+          delete runtime.order
+        }
+      })
+    }
+    return retained
+  }, [tabs, closedTabCount, navigationSessionStorageKey])
 
   const isSearchActive = () => (
     typeof searchActive === 'function' ? searchActive() : searchActive
@@ -610,8 +698,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       const committed = await onLoadDirectory(
         target.id,
         targetCrumbs,
-        targetTab.sort,
-        targetTab.grouping,
+        historyOrder(targetTab).sort,
+        historyOrder(targetTab).grouping,
       )
       if (!isNavigationCurrent(requestID) || committed !== false) return
       const currentCrumbs = lastCrumbsRef.current
@@ -658,11 +746,11 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   }
 
   const changeSort = (nextSort: XDriveFileExplorerSort) => {
+    const requestID = beginNavigation(activeTabID)
     if (isSearchActive() || !current) {
       updateActiveTab((tab) => ({ ...tab, sort: nextSort }))
       return
     }
-    const requestID = beginNavigation(activeTabID)
     void (async () => {
       const committed = await onLoadDirectory(
         current.id,
@@ -676,11 +764,11 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   }
 
   const changeGrouping = (nextGrouping: XDriveFileExplorerGrouping) => {
+    const requestID = beginNavigation(activeTabID)
     if (isSearchActive() || !current) {
       updateActiveTab((tab) => ({ ...tab, grouping: { ...nextGrouping } }))
       return
     }
-    const requestID = beginNavigation(activeTabID)
     void (async () => {
       const committed = await onLoadDirectory(
         current.id,
@@ -740,7 +828,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = next?.at(-1)
     if (!target) return
     const requestID = beginNavigation(activeTabID)
-    const committed = await onLoadDirectory(target.id, next, sort, grouping)
+    const order = historyOrder(activeTab, nextIndex)
+    const committed = await onLoadDirectory(target.id, next, order.sort, order.grouping)
     if (committed === false || !isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
@@ -753,7 +842,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = next?.at(-1)
     if (!target) return
     const requestID = beginNavigation(activeTabID)
-    const committed = await onLoadDirectory(target.id, next, sort, grouping)
+    const order = historyOrder(activeTab, nextIndex)
+    const committed = await onLoadDirectory(target.id, next, order.sort, order.grouping)
     if (committed === false || !isNavigationCurrent(requestID)) return
     updateActiveTab((tab) => ({ ...tab, historyIndex: nextIndex }))
     finishNavigation(next)
@@ -807,8 +897,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
-      targetTab.sort,
-      targetTab.grouping,
+      historyOrder(targetTab).sort,
+      historyOrder(targetTab).grouping,
     )
     if (committed === false || !isNavigationCurrent(requestID)) return
     commitNavigationState((currentState) => ({
@@ -851,8 +941,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
-      targetTab.sort,
-      targetTab.grouping,
+      historyOrder(targetTab).sort,
+      historyOrder(targetTab).grouping,
     )
     if (committed === false || !isNavigationCurrent(requestID)) return
     rememberClosedTabs(tabs, [id])
@@ -953,8 +1043,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
-      targetTab.sort,
-      targetTab.grouping,
+      historyOrder(targetTab).sort,
+      historyOrder(targetTab).grouping,
     )
     if (committed === false || !isNavigationCurrent(requestID)) return false
 
@@ -1005,8 +1095,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
-      targetTab.sort,
-      targetTab.grouping,
+      historyOrder(targetTab).sort,
+      historyOrder(targetTab).grouping,
     )
     if (committed === false || !isNavigationCurrent(requestID)) return false
 
@@ -1028,7 +1118,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     const snapshot = closedTabsRef.current.at(-1)
     if (!snapshot) return false
-    const restored = cloneNavigationTab(snapshot.tab)
+    const restored = cloneRuntimeTab(snapshot.tab)
     if (currentState.tabs.some((tab) => tab.id === restored.id)) {
       restored.id = `tab-${nextTabIDRef.current++}`
     }
@@ -1040,12 +1130,11 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const committed = await onLoadDirectory(
       target.id,
       targetCrumbs,
-      restored.sort,
-      restored.grouping,
+      historyOrder(restored).sort,
+      historyOrder(restored).grouping,
     )
     if (committed === false || !isNavigationCurrent(requestID)) return false
 
-    consumeClosedTab(snapshot)
     commitNavigationState((state) => {
       const nextTabs = [...state.tabs]
       const insertIndex = Math.max(
@@ -1055,6 +1144,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       nextTabs.splice(insertIndex, 0, restored)
       return { tabs: nextTabs, activeTabID: restored.id }
     })
+    // Keep the closed entry retained until its live tab has committed. A
+    // synchronous render between these updates must not prune its Search state.
+    consumeClosedTab(snapshot)
     finishNavigation(targetCrumbs)
     return true
   }
@@ -1098,6 +1190,8 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     canGoUp: crumbs.length > 1,
     tabs: tabSummaries,
     activeTabID,
+    activeHistoryEntryKey,
+    retainedHistoryEntries,
     openTab,
     newTab,
     activateTab,

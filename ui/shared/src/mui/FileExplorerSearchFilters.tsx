@@ -27,25 +27,12 @@ import type {
 } from '../file-explorer-search'
 import {
   xDriveFileExplorerSearchFilterCount,
+  xDriveFileExplorerSearchFilterFieldLabels,
+  xDriveFileExplorerSearchKindLabels as kindLabels,
+  xDriveFileExplorerSearchSizeLabel as sizeLabel,
 } from '../file-explorer-search'
 
 type FilterMenu = 'kind' | 'modified' | 'size' | 'availability' | 'source' | 'tag'
-
-const kindLabels: Record<XDriveFileExplorerSearchKind, string> = {
-  folder: '文件夹',
-  file: '全部文件',
-  image: '图片',
-  video: '视频',
-  audio: '音频',
-  pdf: 'PDF',
-  document: '文档',
-  spreadsheet: '表格',
-  presentation: '演示文稿',
-  archive: '压缩文件',
-  code: '代码',
-  text: '文本',
-  other: '其他文件',
-}
 
 function startOfDayISO(daysAgo = 0) {
   const value = new Date()
@@ -59,29 +46,6 @@ function startOfYearISO() {
   value.setMonth(0, 1)
   value.setHours(0, 0, 0, 0)
   return value.toISOString()
-}
-
-function sizeLabel(filters: XDriveFileExplorerSearchFilters) {
-  const min = filters.minSize
-  const max = filters.maxSize
-  if (min === undefined && max === undefined) return '大小'
-  if (min === 0 && max === (1 << 20) - 1) return '大小：< 1 MiB'
-  if (min === 1 << 20 && max === (100 << 20) - 1) return '大小：1–100 MiB'
-  if (min === 100 << 20 && max === (1 << 30) - 1) return '大小：100 MiB–1 GiB'
-  if (min === 1 << 30 && max === undefined) return '大小：≥ 1 GiB'
-  return '大小：已筛选'
-}
-
-function modifiedLabel(filters: XDriveFileExplorerSearchFilters) {
-  const format = (value: string) => {
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-  }
-  const bounds = [
-    filters.modifiedFrom ? `起 ${format(filters.modifiedFrom)}` : '',
-    filters.modifiedTo ? `止 ${format(filters.modifiedTo)}` : '',
-  ].filter(Boolean)
-  return bounds.length > 0 ? `修改时间：${bounds.join(' · ')}` : '修改时间'
 }
 
 export function XDriveFileExplorerSearchFilters({
@@ -109,17 +73,9 @@ export function XDriveFileExplorerSearchFilters({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const panelOpen = Boolean(panelAnchor) && panelCompactViewport === compactViewport
   const filterCount = xDriveFileExplorerSearchFilterCount(filters)
-  const sourceName = useMemo(
-    () => sourceOptions.find((item) => item.id === filters.sourceID)?.name,
-    [filters.sourceID, sourceOptions],
-  )
-  const availabilityName = useMemo(
-    () => availabilityOptions.find((item) => item.value === filters.availability)?.label,
-    [availabilityOptions, filters.availability],
-  )
-  const tagName = useMemo(
-    () => tagOptions.find((item) => item.id === filters.tagID)?.name,
-    [filters.tagID, tagOptions],
+  const filterLabels = useMemo(
+    () => xDriveFileExplorerSearchFilterFieldLabels(filters, { sourceOptions, tagOptions, availabilityOptions }),
+    [filters, sourceOptions, tagOptions, availabilityOptions],
   )
 
   const open = (next: FilterMenu) => (event: MouseEvent<HTMLElement>) => {
@@ -203,12 +159,6 @@ export function XDriveFileExplorerSearchFilters({
       ) : null}
     </Stack>
   )
-  const mobileSize = sizeLabel(filters) === '大小：已筛选'
-    ? `大小：${[
-      filters.minSize !== undefined ? `至少 ${filters.minSize.toLocaleString()} 字节` : '',
-      filters.maxSize !== undefined ? `至多 ${filters.maxSize.toLocaleString()} 字节` : '',
-    ].filter(Boolean).join(' · ')}`
-    : sizeLabel(filters)
   const menuProps = {
     anchorEl: menuOpen ? anchor : null,
     onClose: close,
@@ -289,12 +239,12 @@ export function XDriveFileExplorerSearchFilters({
             data-xdrive-file-explorer-search-filters
             sx={{ p: 1.5, minHeight: 0, flex: '1 1 auto', overflowY: 'auto', overscrollBehavior: 'contain' }}
           >
-            {mobileField('kind', '类型', filters.kind ? `类型：${kindLabels[filters.kind]}` : '类型', Boolean(filters.kind), { kind: undefined })}
-            {mobileField('modified', '修改时间', modifiedLabel(filters), Boolean(filters.modifiedFrom || filters.modifiedTo), { modifiedFrom: undefined, modifiedTo: undefined })}
-            {mobileField('size', '大小', mobileSize, filters.minSize !== undefined || filters.maxSize !== undefined, { minSize: undefined, maxSize: undefined })}
-            {availabilityOptions.length > 0 || filters.availability ? mobileField('availability', '可用性', filters.availability ? `可用性：${availabilityName ?? filters.availability}` : '可用性', Boolean(filters.availability), { availability: undefined }) : null}
-            {mobileField('source', '同步文件夹', filters.sourceID ? `同步文件夹：${sourceName ?? filters.sourceID}` : '同步文件夹', Boolean(filters.sourceID), { sourceID: undefined })}
-            {tagOptions.length > 0 || filters.tagID ? mobileField('tag', '标签', filters.tagID ? `标签：${tagName ?? filters.tagID}` : '标签', Boolean(filters.tagID), { tagID: undefined }) : null}
+            {mobileField('kind', '类型', filterLabels.kind, Boolean(filters.kind), { kind: undefined })}
+            {mobileField('modified', '修改时间', filterLabels.modified, Boolean(filters.modifiedFrom || filters.modifiedTo), { modifiedFrom: undefined, modifiedTo: undefined })}
+            {mobileField('size', '大小', filterLabels.size, filters.minSize !== undefined || filters.maxSize !== undefined, { minSize: undefined, maxSize: undefined })}
+            {availabilityOptions.length > 0 || filters.availability ? mobileField('availability', '可用性', filterLabels.availability, Boolean(filters.availability), { availability: undefined }) : null}
+            {mobileField('source', '同步文件夹', filterLabels.source, Boolean(filters.sourceID), { sourceID: undefined })}
+            {tagOptions.length > 0 || filters.tagID ? mobileField('tag', '标签', filterLabels.tag, Boolean(filters.tagID), { tagID: undefined }) : null}
           </Stack>
           <Stack
             direction="row"
@@ -356,7 +306,7 @@ export function XDriveFileExplorerSearchFilters({
               size="small"
               variant={filters.kind ? 'filled' : 'outlined'}
               color={filters.kind ? 'primary' : 'default'}
-              label={filters.kind ? `类型：${kindLabels[filters.kind]}` : '类型'}
+              label={filterLabels.kind}
               onClick={open('kind')}
               onDelete={filters.kind ? () => onChange({ ...filters, kind: undefined }) : undefined}
             />
@@ -385,7 +335,7 @@ export function XDriveFileExplorerSearchFilters({
                 size="small"
                 variant={filters.availability ? 'filled' : 'outlined'}
                 color={filters.availability ? 'primary' : 'default'}
-                label={filters.availability ? `可用性：${availabilityName ?? filters.availability}` : '可用性'}
+                label={filterLabels.availability}
                 onClick={open('availability')}
                 onDelete={filters.availability
                   ? () => onChange({ ...filters, availability: undefined })
@@ -396,7 +346,7 @@ export function XDriveFileExplorerSearchFilters({
               size="small"
               variant={filters.sourceID ? 'filled' : 'outlined'}
               color={filters.sourceID ? 'primary' : 'default'}
-              label={filters.sourceID ? `同步文件夹：${sourceName ?? filters.sourceID}` : '同步文件夹'}
+              label={filterLabels.source}
               onClick={open('source')}
               onDelete={filters.sourceID ? () => onChange({ ...filters, sourceID: undefined }) : undefined}
             />
@@ -405,7 +355,7 @@ export function XDriveFileExplorerSearchFilters({
                 size="small"
                 variant={filters.tagID ? 'filled' : 'outlined'}
                 color={filters.tagID ? 'primary' : 'default'}
-                label={filters.tagID ? `标签：${tagName ?? filters.tagID}` : '标签'}
+                label={filterLabels.tag}
                 onClick={open('tag')}
                 onDelete={filters.tagID ? () => onChange({ ...filters, tagID: undefined }) : undefined}
               />

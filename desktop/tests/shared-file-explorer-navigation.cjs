@@ -108,8 +108,8 @@ test('FileExplorer session restore stays shared and persists only committed open
     "initialNavigationSourceRef.current = initialNavigationState",
     "initialNavigationSourceRef.current === 'session'",
     'const requestID = beginNavigation(targetTab.id)',
-    'targetTab.sort,',
-    'targetTab.grouping,',
+    'historyOrder(targetTab).sort,',
+    'historyOrder(targetTab).grouping,',
     'if (!isNavigationCurrent(requestID) || committed !== false) return',
     'history: [fallbackCrumbs]',
   ]) {

@@ -13,14 +13,17 @@ import type {
 } from '../file-explorer-grouping'
 import {
   xDriveFileExplorerDirectoryCrumbs,
+  xDriveFileExplorerContainingFolderCrumbs,
   xDriveFileExplorerDispatchOpenItem,
   xDriveFileExplorerSubmitPath,
 } from '../file-explorer-controller'
 import type { XDriveFileExplorerSearchResultLike } from '../file-explorer-controller'
 import type {
   XDriveFileExplorerItem,
+  XDriveFileExplorerReturnSnapshot,
   XDriveFileExplorerSort,
   XDriveFileExplorerVirtualCollection,
+  XDriveFileExplorerViewStateBridge,
 } from './FileExplorer'
 import {
   useXDriveFileExplorerClipboard,
@@ -111,10 +114,21 @@ export function useXDriveFileExplorerWorkspace<
   onError: (error: unknown) => void
 }) {
   const searchActiveRef = useRef(false)
-  const clearSearchRef = useRef<() => void>(() => {})
   const interactionNodeCacheRef = useRef(new Map<number, TNode>())
   const interactionSearchCacheRef = useRef(new Map<number, TSearch>())
   const interactionCacheKeyRef = useRef('')
+  const returnSnapshotsRef = useRef(new Map<string, {
+    snapshot: XDriveFileExplorerReturnSnapshot
+    nodes: Map<number, TNode>
+    searches: Map<number, TSearch>
+  }>())
+  const returnSignaturesRef = useRef(new Map<string, string>())
+  const returnLifecycleRef = useRef(navigationSessionStorageKey)
+  if (returnLifecycleRef.current !== navigationSessionStorageKey) {
+    returnLifecycleRef.current = navigationSessionStorageKey
+    returnSnapshotsRef.current.clear()
+    returnSignaturesRef.current.clear()
+  }
 
   const navigation = useXDriveFileExplorerNavigation({
     crumbs,
@@ -125,11 +139,21 @@ export function useXDriveFileExplorerWorkspace<
     navigationSessionStorageKey,
     onNavigationStateChange,
     onAfterNavigate: (nextCrumbs) => {
-      clearSearchRef.current()
       const target = nextCrumbs.at(-1)
       if (target && nextCrumbs.length > 1) void onDirectoryAccess?.(target.id)
     },
   })
+
+  const workspaceKey = JSON.stringify([
+    navigationSessionStorageKey ?? '',
+    navigation.activeTabID,
+    navigation.activeHistoryEntryKey,
+  ])
+  const retainedWorkspaceKeys = useMemo(() => navigation.retainedHistoryEntries.map((entry) => JSON.stringify([
+    navigationSessionStorageKey ?? '',
+    entry.tabID,
+    entry.key,
+  ])), [navigation.retainedHistoryEntries, navigationSessionStorageKey])
 
   const search = useXDriveFileExplorerSearch<TSearch>({
     loadRange: loadSearchRange,
@@ -137,20 +161,40 @@ export function useXDriveFileExplorerWorkspace<
     grouping: navigation.grouping,
     onError,
     onSearchIntent: navigation.beginNavigationIntent,
-    workspaceKey: JSON.stringify([
-      navigationSessionStorageKey ?? '',
-      navigation.activeTabID,
-    ]),
+    workspaceKey,
+    retainedWorkspaceKeys,
   })
   searchActiveRef.current = search.searchResults !== null
-  clearSearchRef.current = search.clearSearch
+
+  const contentSignature = JSON.stringify([
+    search.searchResults === null ? 'directory' : 'search',
+    search.searchState.query,
+    xDriveFileExplorerSearchFiltersSignature(search.searchState.filters),
+    navigation.sort.key,
+    navigation.sort.direction,
+    xDriveFileExplorerGroupingSignature(navigation.grouping),
+  ])
+  const retainedKeySet = useMemo(() => new Set([...retainedWorkspaceKeys, workspaceKey]), [retainedWorkspaceKeys, workspaceKey])
+  const retainedKeySetRef = useRef(retainedKeySet)
+  retainedKeySetRef.current = retainedKeySet
+  for (const key of returnSignaturesRef.current.keys()) {
+    if (!retainedKeySet.has(key)) {
+      returnSignaturesRef.current.delete(key)
+      returnSnapshotsRef.current.delete(key)
+    }
+  }
+  const previousSignature = returnSignaturesRef.current.get(workspaceKey)
+  if (previousSignature !== undefined && previousSignature !== contentSignature) {
+    returnSnapshotsRef.current.delete(workspaceKey)
+  }
+  returnSignaturesRef.current.set(workspaceKey, contentSignature)
 
   const directoryVirtualItems = search.searchResults === null
     ? directoryVirtualCollection?.loadedItems
     : undefined
   const interactionCacheKey = [
     navigationSessionStorageKey ?? '',
-    navigation.activeTabID,
+    workspaceKey,
     crumbs.at(-1)?.id ?? 0,
     search.searchResults === null ? '' : search.searchState.query,
     search.searchResults === null ? '' : xDriveFileExplorerSearchFiltersSignature(search.searchState.filters),
@@ -162,6 +206,15 @@ export function useXDriveFileExplorerWorkspace<
     interactionCacheKeyRef.current = interactionCacheKey
     interactionNodeCacheRef.current.clear()
     interactionSearchCacheRef.current.clear()
+  }
+  const returning = returnSnapshotsRef.current.get(workspaceKey)
+  if (returning?.snapshot.contentSignature === contentSignature) {
+    for (const [id, node] of returning.nodes) {
+      if (!interactionNodeCacheRef.current.has(id)) interactionNodeCacheRef.current.set(id, node)
+    }
+    for (const [id, result] of returning.searches) {
+      if (!interactionSearchCacheRef.current.has(id)) interactionSearchCacheRef.current.set(id, result)
+    }
   }
 
   const projection = useXDriveFileExplorerProjection<
@@ -179,11 +232,61 @@ export function useXDriveFileExplorerWorkspace<
   })
 
   for (const [id, node] of interactionNodeCacheRef.current) {
-    projection.nodeByID.set(id, node)
+    if (!projection.nodeByID.has(id)) projection.nodeByID.set(id, node)
   }
   for (const [id, result] of interactionSearchCacheRef.current) {
-    projection.searchByID.set(id, result)
+    if (!projection.searchByID.has(id)) projection.searchByID.set(id, result)
   }
+
+  const explorerViewState = useMemo<XDriveFileExplorerViewStateBridge>(() => ({
+    stateKey: workspaceKey,
+    contentSignature,
+    ready: search.searchResults === null
+      ? Boolean(navigation.activeHistoryEntryKey)
+      : search.searchReady,
+    readSnapshot: () => {
+      const record = returnSnapshotsRef.current.get(workspaceKey)
+      return record?.snapshot.contentSignature === contentSignature ? record.snapshot : undefined
+    },
+    writeSnapshot: (snapshot) => {
+      if (
+        returnLifecycleRef.current !== navigationSessionStorageKey ||
+        !retainedKeySetRef.current.has(workspaceKey) ||
+        returnSignaturesRef.current.get(workspaceKey) !== contentSignature ||
+        snapshot.contentSignature !== contentSignature
+      ) return
+      const previous = returnSnapshotsRef.current.get(workspaceKey)
+      const nodes = new Map<number, TNode>()
+      const searches = new Map<number, TSearch>()
+      // Capture from this render's projection: the active shared interaction
+      // refs may already belong to a later entry when child cleanup runs.
+      for (const selectedID of snapshot.selectedIDs) {
+        const id = Number(selectedID)
+        const node = projection.nodeByID.get(id) ?? previous?.nodes.get(id)
+        const result = projection.searchByID.get(id) ?? previous?.searches.get(id)
+        if (node) nodes.set(id, node)
+        if (result) searches.set(id, result)
+      }
+      returnSnapshotsRef.current.set(workspaceKey, {
+        snapshot: {
+          ...snapshot,
+          selectedIDs: [...snapshot.selectedIDs],
+          selectedItems: snapshot.selectedItems.map((item) => ({ ...item })),
+        },
+        nodes,
+        searches,
+      })
+    },
+  }), [
+    contentSignature,
+    navigation.activeHistoryEntryKey,
+    navigationSessionStorageKey,
+    projection.nodeByID,
+    projection.searchByID,
+    search.searchReady,
+    search.searchResults,
+    workspaceKey,
+  ])
 
   const explorerVirtualCollection = useMemo<XDriveFileExplorerVirtualCollection | undefined>(() => {
     const activeCollection = search.searchResults !== null
@@ -309,6 +412,16 @@ export function useXDriveFileExplorerWorkspace<
     return opened
   }
 
+  const showItemInContainingFolder = async (item: XDriveFileExplorerItem) => {
+    const result = projection.searchByID.get(Number(item.id))
+    if (!result || !searchCrumbsForResult) return
+    const parentCrumbs = xDriveFileExplorerContainingFolderCrumbs(
+      result.node,
+      searchCrumbsForResult(result),
+    )
+    if (parentCrumbs) await navigation.navigateTo(parentCrumbs)
+  }
+
 
 
   return {
@@ -319,7 +432,9 @@ export function useXDriveFileExplorerWorkspace<
     submitPath,
     openItem,
     openItemInNewTab,
+    showItemInContainingFolder,
     explorerVirtualCollection,
+    explorerViewState,
     externallySorted: search.searchResults === null || search.searchSortMatches,
     searchStatusText: search.searchResults
       ? [

@@ -129,7 +129,7 @@ test('shared FileExplorer exposes native shortcut labels in hover and context ch
 
   for (const token of [
     "fileExplorerShortcutTitle('后退', 'back', keyboardProfile)",
-    "fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)",
+    "fileExplorerShortcutTitle('搜索全部文件和文件夹', 'focus-search', keyboardProfile)",
     "fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)",
     'fileExplorerMenuShortcut(menuItem.id, keyboardProfile)',
     '双击/Enter 打开 · Space 快速预览',
