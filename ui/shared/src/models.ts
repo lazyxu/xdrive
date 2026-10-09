@@ -809,6 +809,65 @@ export interface MediaDuplicateGroupList {
   physical_reclaimable_bytes: number
 }
 
+export interface MediaDuplicateOrganizeResource {
+  kind: string
+  role: string
+  node_id: number
+  ordinal: number
+  name: string
+  media_kind: string
+  mime_type: string
+  size: number
+  sha256: string
+  byte_offset: number
+}
+
+export interface MediaDuplicateOrganizeCollection {
+  id: number
+  name: string
+  kind: string
+}
+
+export interface MediaDuplicateOrganizePerson {
+  person_key: string
+  name: string
+}
+
+export interface MediaDuplicateOrganizeMember {
+  node_id: number
+  asset_id: number
+  asset_kind: string
+  node_revision: number
+  sha256: string
+  favorite: boolean
+  description: string
+  tags: string[]
+  people_labels: string[]
+  collections: MediaDuplicateOrganizeCollection[]
+  durable_people: MediaDuplicateOrganizePerson[]
+  original_resources: MediaDuplicateOrganizeResource[]
+  edit_recipe?: MediaEditRecipe
+  has_edit_recipe: boolean
+}
+
+export interface MediaDuplicateOrganizePlan {
+  keeper_node_id: number
+  members: MediaDuplicateOrganizeMember[]
+  asset_comparison: 'identical' | 'different' | 'unverified'
+  reason: string
+  distinct_descriptions: string[]
+  combined_tags: string[]
+  combined_people_labels: string[]
+  combined_favorite: boolean
+  manual_album_count: number
+  durable_person_count: number
+  ready_for_manual_review: boolean
+  requires_manual_confirmation: boolean
+  no_mutation: boolean
+  physical_reclaimable_bytes: number
+  source_warning: string
+}
+
 export interface MediaBurstReview {
   id: string
   item_count: number

@@ -691,6 +691,32 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 P4 phase 2 — shared metadata organization review UI (2026-10-09)
+
+**Implementation pending CI:** after the successful backend dry-run #1139, the
+shared Web/Desktop Gallery verified-duplicate fold dialog exposes an **explicit
+`查看保全计划`** control for **2–32 selected real primary Nodes**. The user
+selects the intended keeper; the UI forwards that exact bounded member set
+through Web REST or Desktop Renderer → Main capability gate → Agent IPC →
+Go Client to the authoritative, owner-scoped read-only endpoint.
+
+The response is **not** automatically fetched on Gallery first paint or
+during folding: clicking the control is required. It shows independent
+per-copy favorites, tags, people labels, descriptions, manual/source/folder
+collection memberships, persistent person identities, original resource
+SHA/role and edit-recipe presence. Distinct descriptions and different/
+unverified full assets are visible, not silently combined. A stale or
+unexpected member response is rejected, with no client-side inference of
+ownership or CAS savings. The control is omitted on groups above 32 members
+with an explicit reason; Viewer still opens the genuine selected Node.
+
+No mutation is implemented in this step. The existing no-zero-benefit-Cleanup
+rule remains, all original Nodes/resources/edit recipes/source identities stay
+independent, and `ready_for_manual_review` **does not** mean eligible for
+automated deletion. Subsequent transactional consolidation and safe undo
+need separate native PostgreSQL correctness gates including concurrent sync
+and reimport. This stage is not a full metadata merge.
+
 ### G11 P4 phase 1 — read-only metadata preservation plan (2026-10-09)
 
 **In progress / CI pending:** authenticated owner-scoped

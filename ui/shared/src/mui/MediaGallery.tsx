@@ -50,6 +50,7 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  MediaDuplicateOrganizePlan,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderBreadcrumb,
@@ -100,6 +101,7 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
+import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveMediaGalleryAlbumOrganizer } from './MediaGalleryAlbumOrganizer'
@@ -183,6 +185,7 @@ export interface MediaGalleryDataSource {
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
+  getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<MediaDuplicateOrganizePlan>
   listSyncFolders?: () => Promise<MediaSyncFolder[]>
   getSyncFolder?: (sourceID: number, folderID: number) => Promise<MediaFolderView>
   listTrashItemRange?: (
@@ -2375,6 +2378,11 @@ export function XDriveMediaGalleryPage({
                   </Box>
                 </Button>
               ))}
+              <XDriveMediaGalleryDuplicateOrganizePreview
+                nodeIDs={foldDialog.nodeIDs}
+                items={foldDialog.items}
+                requestPlan={source.getDuplicateOrganizePlan}
+              />
             </Stack>
           ) : (
             <Typography variant="body2" color="text.secondary">

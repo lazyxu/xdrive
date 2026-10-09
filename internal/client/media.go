@@ -328,6 +328,65 @@ type MediaDuplicateGroupList struct {
 	PhysicalReclaimableBytes int64                 `json:"physical_reclaimable_bytes"`
 }
 
+type MediaDuplicateOrganizeCollection struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+type MediaDuplicateOrganizePerson struct {
+	PersonKey string `json:"person_key"`
+	Name      string `json:"name"`
+}
+
+type MediaDuplicateOrganizeResource struct {
+	Kind       string `json:"kind"`
+	Role       string `json:"role"`
+	NodeID     uint64 `json:"node_id"`
+	Ordinal    int    `json:"ordinal"`
+	Name       string `json:"name"`
+	MediaKind  string `json:"media_kind"`
+	MIMEType   string `json:"mime_type"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256"`
+	ByteOffset int64  `json:"byte_offset"`
+}
+
+type MediaDuplicateOrganizeMember struct {
+	NodeID        uint64                             `json:"node_id"`
+	AssetID       uint64                             `json:"asset_id"`
+	AssetKind     string                             `json:"asset_kind"`
+	NodeRevision  uint64                             `json:"node_revision"`
+	SHA256        string                             `json:"sha256"`
+	Favorite      bool                               `json:"favorite"`
+	Description   string                             `json:"description"`
+	Tags          []string                           `json:"tags"`
+	PeopleLabels  []string                           `json:"people_labels"`
+	Collections   []MediaDuplicateOrganizeCollection `json:"collections"`
+	People        []MediaDuplicateOrganizePerson     `json:"durable_people"`
+	Resources     []MediaDuplicateOrganizeResource   `json:"original_resources"`
+	EditRecipe    *MediaEditRecipe                   `json:"edit_recipe,omitempty"`
+	HasEditRecipe bool                               `json:"has_edit_recipe"`
+}
+
+type MediaDuplicateOrganizePlan struct {
+	KeeperNodeID               uint64                         `json:"keeper_node_id"`
+	Members                    []MediaDuplicateOrganizeMember `json:"members"`
+	AssetComparison            string                         `json:"asset_comparison"`
+	Reason                     string                         `json:"reason"`
+	Descriptions               []string                       `json:"distinct_descriptions"`
+	CombinedTags               []string                       `json:"combined_tags"`
+	CombinedPeopleLabels       []string                       `json:"combined_people_labels"`
+	CombinedFavorites          bool                           `json:"combined_favorite"`
+	ManualAlbumCount           int                            `json:"manual_album_count"`
+	DurablePersonCount         int                            `json:"durable_person_count"`
+	ReadyForManualReview       bool                           `json:"ready_for_manual_review"`
+	RequiresManualConfirmation bool                           `json:"requires_manual_confirmation"`
+	NoMutation                 bool                           `json:"no_mutation"`
+	PhysicalReclaimableBytes   int64                          `json:"physical_reclaimable_bytes"`
+	SourceWarning              string                         `json:"source_warning"`
+}
+
 type MediaBurstReview struct {
 	ID                       string     `json:"id"`
 	ItemCount                int64      `json:"item_count"`
@@ -744,6 +803,38 @@ func (c *Client) MediaMemoryItemsRange(
 		url.PathEscape(strings.TrimSpace(memoryID)) + "/items?" + values.Encode()
 	var out MediaItemRange
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaDuplicateOrganizePlan(
+	ctx context.Context,
+	keeperID uint64,
+	nodeIDs []uint64,
+) (MediaDuplicateOrganizePlan, error) {
+	var out MediaDuplicateOrganizePlan
+	if keeperID == 0 || len(nodeIDs) < 2 || len(nodeIDs) > 32 {
+		return out, fmt.Errorf("duplicate organization requires keeper and 2–32 members")
+	}
+	query := url.Values{}
+	query.Set("keeper_id", strconv.FormatUint(keeperID, 10))
+	seen := make(map[uint64]struct{}, len(nodeIDs))
+	includesKeeper := false
+	for _, nodeID := range nodeIDs {
+		if nodeID == 0 {
+			return out, fmt.Errorf("invalid duplicate organization member")
+		}
+		if _, exists := seen[nodeID]; exists {
+			return out, fmt.Errorf("duplicate organization members must be distinct")
+		}
+		seen[nodeID] = struct{}{}
+		includesKeeper = includesKeeper || nodeID == keeperID
+		query.Add("node_id", strconv.FormatUint(nodeID, 10))
+	}
+	if !includesKeeper {
+		return out, fmt.Errorf("keeper must belong to selected members")
+	}
+	err := c.json(ctx, http.MethodGet,
+		"/api/v1/media/duplicate-organize/plan?"+query.Encode(), nil, &out)
 	return out, err
 }
 

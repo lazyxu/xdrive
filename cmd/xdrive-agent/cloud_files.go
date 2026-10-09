@@ -2009,6 +2009,18 @@ func (c *agentController) CloudMediaFacets(
 	return cli.MediaFacets(ctx, query, albumID)
 }
 
+func (c *agentController) CloudMediaDuplicateOrganizePlan(
+	ctx context.Context,
+	keeperID uint64,
+	nodeIDs []uint64,
+) (client.MediaDuplicateOrganizePlan, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaDuplicateOrganizePlan{}, err
+	}
+	return cli.MediaDuplicateOrganizePlan(ctx, keeperID, nodeIDs)
+}
+
 func (c *agentController) CloudMediaIndexStatus(
 	ctx context.Context,
 ) (client.MediaGalleryIndexStatus, error) {

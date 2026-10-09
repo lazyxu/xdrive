@@ -102,6 +102,7 @@ var desktopIPCCapabilities = []string{
 	"server-update",
 	"media-gallery",
 	"media-index-status",
+	"media-duplicate-organize-plan",
 	"media-album-folders",
 	"external-sources",
 	"storage-intelligence",
@@ -621,6 +622,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
+	mux.HandleFunc("GET /v1/media/duplicate-organize/plan", h.mediaDuplicateOrganizePlan)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
 	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
@@ -2712,6 +2714,59 @@ func (h *desktopIPCHandler) mediaFacets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, facets)
+}
+
+func (h *desktopIPCHandler) mediaDuplicateOrganizePlan(w http.ResponseWriter, r *http.Request) {
+	keeperID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("keeper_id")), 10, 64)
+	if err != nil || keeperID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_keeper",
+			"keeper_id must be a positive node ID")
+		return
+	}
+	rawIDs := r.URL.Query()["node_id"]
+	if len(rawIDs) < 2 || len(rawIDs) > 32 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_members",
+			"node_id must include 2–32 members")
+		return
+	}
+	nodeIDs := make([]uint64, 0, len(rawIDs))
+	seen := make(map[uint64]struct{}, len(rawIDs))
+	keeperFound := false
+	for _, rawID := range rawIDs {
+		nodeID, err := strconv.ParseUint(strings.TrimSpace(rawID), 10, 64)
+		if err != nil || nodeID == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_members",
+				"node_id must be a positive node ID")
+			return
+		}
+		if _, exists := seen[nodeID]; exists {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_members",
+				"node_id values must be distinct")
+			return
+		}
+		seen[nodeID] = struct{}{}
+		nodeIDs = append(nodeIDs, nodeID)
+		keeperFound = keeperFound || nodeID == keeperID
+	}
+	if !keeperFound {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_keeper",
+			"keeper_id must be among node_id values")
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaDuplicateOrganizePlan(context.Context, uint64, []uint64) (client.MediaDuplicateOrganizePlan, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_duplicate_organize_unavailable",
+			"update Agent to review duplicate organization")
+		return
+	}
+	plan, err := provider.CloudMediaDuplicateOrganizePlan(r.Context(), keeperID, nodeIDs)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, plan)
 }
 
 func (h *desktopIPCHandler) mediaIndexStatus(w http.ResponseWriter, r *http.Request) {

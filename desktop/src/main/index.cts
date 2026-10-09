@@ -112,6 +112,7 @@ import {
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
   type AgentMediaGalleryIndexStatus,
+  type AgentMediaDuplicateOrganizePlan,
   type AgentMediaSyncFolder,
   type AgentMediaFolderView,
   type AgentMediaAlbum,
@@ -2067,6 +2068,27 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'media-index-status')
       return requireAgentClient().mediaIndexStatus()
     }, false),
+  )
+
+  ipcMain.handle(
+    'agent:get-media-duplicate-organize-plan',
+    (_event, keeperNodeID: unknown, nodeIDs: unknown) =>
+      runAgentAction<AgentMediaDuplicateOrganizePlan>(async () => {
+        if (typeof keeperNodeID !== 'number' || !Number.isSafeInteger(keeperNodeID) ||
+            keeperNodeID <= 0 || !Array.isArray(nodeIDs) ||
+            nodeIDs.length < 2 || nodeIDs.length > 32 ||
+            !nodeIDs.every((id) => typeof id === 'number' &&
+              Number.isSafeInteger(id) && id > 0) ||
+            new Set(nodeIDs).size !== nodeIDs.length ||
+            !nodeIDs.includes(keeperNodeID)) {
+          throw new AgentIPCError('invalid_input', 0, 'Select a keeper and 2–32 distinct media files.')
+        }
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-duplicate-organize-plan')
+        return requireAgentClient().mediaDuplicateOrganizePlan(
+          keeperNodeID, nodeIDs as number[],
+        )
+      }, false),
   )
 
   ipcMain.handle('agent:get-media-sync-folders', () =>
