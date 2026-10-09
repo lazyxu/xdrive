@@ -745,8 +745,8 @@ export class XDriveApi {
     return this.request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' })
   }
 
-  mediaItem(nodeID: number) {
-    return this.request<MediaItem>(`/api/v1/media/items/${nodeID}`)
+  mediaItem(nodeID: number, signal?: AbortSignal) {
+    return this.request<MediaItem>(`/api/v1/media/items/${nodeID}`, { signal })
   }
 
   mediaItems(

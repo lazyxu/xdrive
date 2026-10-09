@@ -817,3 +817,8 @@ Both Gallery and standalone Web media Viewer label the existing Info icon as **å
 Next separate step: connect FileExplorer's image/video/Live Photo Properties to the same Inspector fields via a Node/MediaItem adapter. Preserve ordinary file/folder properties and distinguish raw Node size from grouped Live Photo resource sizes.
 
 The Trash section cannot open a normal media Viewer, so a tile activation there falls back to Properties; it must not silently do nothing.
+
+
+### One media Properties surface across Gallery and FileExplorer
+
+Gallery, its Viewer, the standalone Web media Viewer and FileExplorer use the shared `XDriveMediaDetailsInspector` / `XDriveMediaDetailsContent` for single media items. FileExplorer obtains the canonical `MediaItem` lazily by Node ID (Web REST or Desktop Agent IPC) and adds only local file-context rows; unrelated file/folder properties remain unchanged. Loading is cancellable and version/session-fenced. A media lookup failure retains ordinary file information and clearly exposes the lookup error. No 10k/100k Gallery or FileExplorer list path is allowed to fetch full per-item properties for every row.

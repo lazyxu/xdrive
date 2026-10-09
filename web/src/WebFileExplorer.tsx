@@ -559,6 +559,11 @@ export default function WebFileExplorer({
     signal: AbortSignal,
   ) => api.fileMediaDetails(refs, signal), [api])
 
+  const loadMediaItem = useCallback((
+    item: XDriveFileExplorerItem,
+    signal: AbortSignal,
+  ) => api.mediaItem(Number(item.id), signal), [api])
+
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
@@ -784,6 +789,7 @@ export default function WebFileExplorer({
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={loadPropertiesStats}
         loadMediaDetails={loadMediaDetails}
+        loadMediaItem={trashActive ? undefined : loadMediaItem}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
         searchEnabled={!trashActive}

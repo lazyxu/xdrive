@@ -572,3 +572,14 @@ Web 与 Desktop 的普通“打开”语义不同，但 FileExplorer 本体仍�
 - 文件的 Ctrl/Cmd+Click 继续是多选，不能被浏览器新标签语义抢占。Web 文件右键另有“在新浏览器标签页打开”；文件夹还保留 FileExplorer 自己的“在新文件标签页中打开”。
 
 完整 Registry、typed launch contract、Hash Route、return-state 和 browse-context 规则见 `docs/web-app-runtime.md`。
+
+
+## One canonical media Properties content (Gallery / FileExplorer / Viewer)
+
+- Only a single selected image, video or `.livp` file enters the shared `XDriveMediaDetailsInspector`. Directories, other files and multi-selection keep the existing `XDriveFilePropertiesDialog` and its request-scoped recursive statistics/cancellation.
+- FileExplorer fetches **exactly one** owner-authorized `MediaItem` when Properties is requested, never from each thumbnail/visible row. Web uses the existing `/api/v1/media/items/:id`; Desktop uses an exact Agent `/v1/media/item?node_id=` endpoint backed by the same Go client's `MediaItem`, not a directory scan. The primary Node ID and revision must match the selected FileExplorer file.
+- The shared Inspector owns capture/image/video/Live Photo resource fields and their formatting. FileExplorer supplies only its additional file context (path, availability, timestamps, optional SHA-256 and revision), without duplicating Gallery's EXIF or logical-resource logic.
+- Viewer already has the media displayed, so its Properties uses `showPreview={false}` and cannot mount a second video/Live Photo player. FileExplorer also uses no redundant media preview while inspecting properties.
+- The media-property load runs under a request-scoped `AbortSignal`; replacing the target, switching lifecycle/session, closing Properties or unmounting fences previous responses. Desktop propagates cancellation through renderer -> Electron main -> Agent HTTP request context. A missing/unindexed/stale media asset falls back to the regular file Properties with a visible media lookup error rather than inventing asset data.
+- Live Photo's `node.size` remains the selected file's size; resource members are shown separately. Never add embedded resources to a container or treat logical related resources as additional physical bytes.
+- When an older Agent does not advertise the new `media-item-properties` capability, Desktop keeps the ordinary file-property dialog. The feature does not make 100k FileExplorer thumbnails eagerly query EXIF data.

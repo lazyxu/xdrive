@@ -197,6 +197,7 @@ function MediaDetailsRows({ rows }: { rows: readonly MediaDetailRow[] }) {
 export interface XDriveMediaDetailsContentProps {
   item: MediaItem | null
   showPreview?: boolean
+  extraFileRows?: Array<[label: string, value: string]>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
@@ -213,6 +214,7 @@ export interface XDriveMediaDetailsContentProps {
 export function XDriveMediaDetailsContent({
   item,
   showPreview = true,
+  extraFileRows = [],
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
@@ -582,6 +584,7 @@ export function XDriveMediaDetailsContent({
       <Box component="section" aria-label="文件与资源" data-xdrive-media-details-file-resources>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>文件与资源</Typography>
         <MediaDetailsRows rows={sectionRows.files} />
+        {extraFileRows.length > 0 ? <MediaDetailsRows rows={extraFileRows} /> : null}
         {item.resources && item.resources.length > 1 ? (
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 0.75 }}>资产资源</Typography>

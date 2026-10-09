@@ -2061,6 +2061,7 @@ export default function App({
               previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
               propertiesStatsSupported: filePropertiesStatsSupported,
               mediaDetailsSupported: fileMediaDetailsSupported,
+              mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
               fileAvailabilitySupported,
               openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,
