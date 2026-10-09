@@ -3245,7 +3245,7 @@ function registerIPCHandlers() {
     }, false),
   )
 
-  ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown) =>
+  ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {
         const hello = await requireAgentLifecycle().ensureRunning()
@@ -3257,8 +3257,13 @@ function registerIPCHandlers() {
         ) {
           throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
         }
+        if (revision !== undefined &&
+          (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0)) {
+          throw new AgentIPCError('invalid_input', 0, 'Thumbnail source revision is invalid.')
+        }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
-        return requireAgentClient().mediaThumbnail(nodeID, signal)
+        return requireAgentClient().mediaThumbnail(nodeID, signal,
+          typeof revision === 'number' && revision > 0 ? revision : undefined)
       }),
       false,
     ),

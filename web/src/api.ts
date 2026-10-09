@@ -1398,23 +1398,28 @@ export class XDriveApi {
     )
   }
 
-  async mediaThumbnail(nodeID: number, signal?: AbortSignal): Promise<Blob> {
+  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number): Promise<Blob> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()
-    const path = `/api/v1/media/items/${nodeID}/thumbnail?v=3`
-    let response = await fetch(`${API_BASE}${path}`, {
+    // Known source revisions get immutable browser-cache URL identities.
+    // Album/Memory covers without a revision must revalidate the Server
+    // ETag rather than reuse one hour of stale browser-cached pixels.
+    const sourceRevision = Number.isSafeInteger(revision) && (revision ?? 0) > 0
+      ? revision : undefined
+    const revisionQuery = sourceRevision ? `&revision=${sourceRevision}` : ''
+    const path = `/api/v1/media/items/${nodeID}/thumbnail?v=3${revisionQuery}`
+    const send = () => fetch(`${API_BASE}${path}`, {
+      cache: sourceRevision ? 'default' : 'no-cache',
       headers: this.session.accessToken
         ? { Authorization: `Bearer ${this.session.accessToken}` }
         : undefined,
       signal,
     })
+    let response = await send()
     if (response.status === 401 && this.session.refreshToken) {
       await this.refresh(true, signal)
       signal?.throwIfAborted()
-      response = await fetch(`${API_BASE}${path}`, {
-        headers: { Authorization: `Bearer ${this.session.accessToken}` },
-        signal,
-      })
+      response = await send()
     }
     if (!response.ok) {
       throw new ApiError(
@@ -1424,7 +1429,6 @@ export class XDriveApi {
     }
     return response.blob()
   }
-
   /**
    * Authenticated bounded JPEG derivative for RAW images whose canonical
    * originals cannot be safely opened through the binary preview-ticket API.

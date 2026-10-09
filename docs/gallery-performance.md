@@ -1515,3 +1515,79 @@ and cover identity need real same-Node-overwrite tests. Do not
 represent this scoped test as proving full cross-surface cache freshness.
 The current wall-clock page speed is unmeasured; this is a correctness
 and request-count baseline, not a percent speedup claim.
+
+## P1 Web + Desktop Agent revision-fresh thumbnail HTTP cache (2026-10-09)
+
+Status: **Measured HTTP source freshness before/after accepted / full evidence-amended CI pending**. After
+merged #1141, Gallery virtual memory thumbnail URLs, queued work, and
+in-flight requests are isolated by Node revision. This is not sufficient
+to prove cross-entry freshness because Web ApiClient.mediaThumbnail
+currently calls a static URL ending in ?v=3, while the Server permits
+private max-age=3600 and Desktop Agent caches by user/session/Node ID
+until that expiry (with ETag-based revalidation only after expiry).
+A Server thumbnail's ETag changes on revision; a cached client response
+never sees the new ETag until it revalidates or changes the URL.
+
+**Frozen Web native first-red:** desktop/scripts/gallery-web-thumbnail-revision-main.cjs
+runs the exact TypeScript-transpiled production Web thumbnail method
+(not a hand-written implementation) in an actual Electron/Chromium
+BrowserWindow. An on-host HTTP server serves revision-3 JPEG response
+bytes with private max-age=3600, keeps that URL fresh, then accepts a
+control-path update to revision 4 with a new ETag. Three independent
+known-revision Node IDs are loaded twice at revision 3 then at revision
+4, expecting the first two fetches to reuse **one upstream GET**, the
+revision-4 fetch to issue a second GET and return correct new bytes.
+Three independent Node IDs lacking a known revision are loaded once
+before and once after the same overwrite, and must not return stale
+bytes from Chromium's HTTP cache. Each sample logs exact source bytes,
+number of HTTP GETs, URLs, and diagnostics. Cache expiry is NOT
+manually advanced; this specifically exercises a still-fresh hour-long
+response. **6 sample series (3 + 3)**. The native test writes
+desktop/perf-results/gallery-web-thumbnail-revision.json even if a
+freshness gate fails.
+
+**Frozen Desktop Agent real HTTP first-red:** Go test
+TestAgentCloudMediaThumbnailOverwriteRevalidatesUnknownRevision uses
+actual agentController.CloudMediaThumbnail and its 256-entry/32MiB
+production cache, userconfig credential-backed Client, and a real
+httptest.Server that returns revision-dependent JPEG and ETag with
+max-age=3600. Three distinct Node IDs are requested at rev3; the mock
+source changes to rev4 while the cache has not expired; immediately
+requesting the same Node must now return revision-4 bytes and observe
+a second real HTTP request (unknown revision callers cannot claim
+a version-specific immutable cache hit). Log three individual cases.
+If the Agent lacks source revision information, correctness requires
+revalidation; a later revision-aware key may preserve current-version
+warm response hits for callers with explicit revisions.
+
+**Predeclared acceptance:** 3/3 known Web tests 1 GET for warm rev3 and
+2 GETs after revision 4; 3/3 Web unknown-version tests must not return
+old bytes; 3/3 Agent unknown-version tests must do a new conditional
+GET after overwrite and return new bytes. Retain authenticated owner
+scope, cancellation, ETag, warm persisted Server poster read, Video
+first-hold-only Live motion, and all existing cache entry/byte limits.
+Never turn on original/short hover or create a transcode path here.
+
+**BEFORE / genuine same-source HTTP first-red:** [GitHub CI 37919835052](https://github.com/lazyxu/xdrive/actions/runs/37919835052), native Web [job 113784831355](https://github.com/lazyxu/xdrive/actions/runs/37919835052/job/113784831355) and Go Agent [job 113784831233](https://github.com/lazyxu/xdrive/actions/runs/37919835052/job/113784831233) were run with unchanged production clients. Actual Chromium/production Web method: **3/3 known-revision** and **3/3 unknown-revision** cases served revision-3 bytes after the Server source advanced to revision 4. Each node had only **1 upstream thumbnail GET**, because the URL's fixed `?v=3` stayed fresh for 3600s. Actual `CloudMediaThumbnail` with userconfig session, Agent production cache and httptest.Server: **3/3** nodes also returned old revision-3 bytes and performed only **1 GET** despite the Server source changing and its ETag being different. This is **9/9 stale-after-overwrite observations**, all rooted in the missing source revision/freshness revalidation, not harness bugs. Raw source/response bytes, URLs, statuses and counters are in [first-red evidence](performance-evidence/gallery-thumbnail-http-revision/ci-run-37919835052-before.json).
+
+**AFTER / exactly the same nine first-red tests are green:** [GitHub CI 37920931039](https://github.com/lazyxu/xdrive/actions/runs/37920931039), native Chromium Web [job 113788406287](https://github.com/lazyxu/xdrive/actions/runs/37920931039/job/113788406287) and Go Agent [job 113788406104](https://github.com/lazyxu/xdrive/actions/runs/37920931039/job/113788406104). Known-revision Web source calls at rev3 twice still issue **1 GET**, and at rev4 cause a new GET for the updated bytes. Unknown-revision Web cover fetches now make a conditional server round trip at every call, returning rev4 bytes after overwrite; Agent unknown-revision cache revalidates and returns rev4 bytes too.
+
+| Fixed workload | BEFORE result | AFTER result | GETs per Node before → after |
+| --- | --- | --- | ---: |
+| Web Chromium, known revision (n=3) | 3/3 old revision 3 | 3/3 new revision 4 | 1 → 2 (same-version warm still cached) |
+| Web Chromium, unknown revision (n=3) | 3/3 old revision 3 | 3/3 new revision 4 | 1 → 3 conditional |
+| Desktop Agent real HTTP (n=3) | 3/3 old revision 3 | 3/3 new revision 4 | 1 → 2 conditional |
+
+**Raw evidence:** [BEFORE source and request rows](performance-evidence/gallery-thumbnail-http-revision/ci-run-37919835052-before.json), [AFTER identical Chromium/Agent source and request rows](performance-evidence/gallery-thumbnail-http-revision/ci-run-37920931039-after.json). The existing native method and Go controller have been tested with the same 3600s Cache-Control and source overwrite sequence. The additional conditional GETs for unknown-revision covers are an intentional cost to eliminate stale content, not a measured speed improvement. No claimed first paint, remote throughput, 100k DOM, RSS, or mobile gain.
+
+**CI formatting follow-up:** that first candidate CI reported only `go-linux`'s gofmt check failure for four Go test files: `desktop_ipc_test.go`, `media_thumbnail_revision_http_test.go`, `media_thumbnail_revision_ipc_test.go`, `media_thumbnail_cache_test.go`. The exact `gofmt -d` hunks emitted by the CI run were applied without modifying the production algorithm or rewriting the 9 original failing tests. The next full CI must pass all Go formatting and release-artifact checks before merge.
+
+**Residual production acceptance:** The isolated native test verifies Chromium's actual HTTP cache and Agent's request cache, not a real database-backed file replacement. The Server thumbnail handler presently ignores a client-provided `revision` query; an out-of-order known-revision request could cache older Server bytes under a new revision URL. That separate Server-side revision guard requires a real first-red and positive tests, and is not claimed solved by this PR.
+
+**Final gate:** the exact six native Chromium and three Go Agent original first-red tests must become green on the amended single work commit; end-to-end revision wiring contract, IPC query validation, existing Go/Node tests and full PR CI must pass. No real 100k DOM, authentic xDrive DB source-write or physical-mobile measurement is claimed; first-visible/RSS/wall-clock improvement not measured. The scoped GH/GitLab jobs are
+gallery-thumbnail-web-overwrite and gallery-thumbnail-agent-overwrite.
+Only a genuine source/actual HTTP stale-byte failure authorizes a
+production change in the same single work commit; runner/setup/test
+fixture errors do not. Store exact before/after sample evidence here.
+This is a correctness and transport-byte request-count comparison,
+not a claim of improved first paint, 100k DOM behavior or RSS.

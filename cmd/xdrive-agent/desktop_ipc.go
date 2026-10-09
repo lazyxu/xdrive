@@ -327,7 +327,7 @@ type desktopIPCController interface {
 	CloudCreateMediaCreativeGeneration(context.Context, uint64, client.MediaCreativeInput) (client.MediaCreativeGeneration, error)
 	CloudMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
 	CloudCancelMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
-	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
+	CloudMediaThumbnail(context.Context, uint64, ...uint64) (agentMediaThumbnail, error)
 	CloudMediaAnalysisPreview(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoStillTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
@@ -4146,7 +4146,16 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	thumbnail, err := h.ctrl.CloudMediaThumbnail(r.Context(), nodeID)
+	revision := uint64(0)
+	if raw := strings.TrimSpace(r.URL.Query().Get("revision")); raw != "" {
+		parsed, parseErr := strconv.ParseUint(raw, 10, 64)
+		if parseErr != nil || parsed == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_revision", "revision must be a positive integer")
+			return
+		}
+		revision = parsed
+	}
+	thumbnail, err := h.ctrl.CloudMediaThumbnail(r.Context(), nodeID, revision)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

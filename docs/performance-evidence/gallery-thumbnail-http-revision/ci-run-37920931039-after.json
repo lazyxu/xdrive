@@ -1,0 +1,278 @@
+{
+  "date": "2026-10-09",
+  "title": "P1 native Chromium Web and production Agent conditional thumbnail cache, before/after",
+  "comparisonType": "identical fixture and operation order, separate GitHub hosted CI runs; native HTTP response bytes and GET counts; not an end-to-end same-host wall-clock gain",
+  "fixture": {
+    "sourceRevisionBefore": 3,
+    "sourceRevisionAfter": 4,
+    "maxAgeSeconds": 3600,
+    "knownSamples": 3,
+    "unknownSamples": 3,
+    "agentSamples": 3
+  },
+  "before": {
+    "commit": "9024c646d1ee968e1b4061d7c3064a70c9ab885c",
+    "ci": 37919835052,
+    "webJob": 113784831355,
+    "agentJob": 113784831233,
+    "web": [
+      {
+        "mode": "known-revision",
+        "sample": 1,
+        "nodeID": 418,
+        "first": "thumbnail-418-revision-3",
+        "warm": "thumbnail-418-revision-3",
+        "changed": "thumbnail-418-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/418/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 13.492533000000094
+      },
+      {
+        "mode": "known-revision",
+        "sample": 2,
+        "nodeID": 419,
+        "first": "thumbnail-419-revision-3",
+        "warm": "thumbnail-419-revision-3",
+        "changed": "thumbnail-419-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/419/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.112030000000004
+      },
+      {
+        "mode": "known-revision",
+        "sample": 3,
+        "nodeID": 420,
+        "first": "thumbnail-420-revision-3",
+        "warm": "thumbnail-420-revision-3",
+        "changed": "thumbnail-420-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/420/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 11.74691299999995
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 1,
+        "nodeID": 518,
+        "first": "thumbnail-518-revision-3",
+        "warm": "thumbnail-518-revision-3",
+        "changed": "thumbnail-518-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/518/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 11.419357999999875
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 2,
+        "nodeID": 519,
+        "first": "thumbnail-519-revision-3",
+        "warm": "thumbnail-519-revision-3",
+        "changed": "thumbnail-519-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/519/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.462342000000035
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 3,
+        "nodeID": 520,
+        "first": "thumbnail-520-revision-3",
+        "warm": "thumbnail-520-revision-3",
+        "changed": "thumbnail-520-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/520/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.927406000000019
+      }
+    ],
+    "agent": [
+      {
+        "nodeID": 617,
+        "before": "thumb-617-revision-3",
+        "after": "thumb-617-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-617-revision-4"
+      },
+      {
+        "nodeID": 618,
+        "before": "thumb-618-revision-3",
+        "after": "thumb-618-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-618-revision-4"
+      },
+      {
+        "nodeID": 619,
+        "before": "thumb-619-revision-3",
+        "after": "thumb-619-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-619-revision-4"
+      }
+    ]
+  },
+  "after": {
+    "commit": "b20dedaf7b79ab7cce36b9038e0dfcbb2899da64",
+    "ci": 37920931039,
+    "webJob": 113788406287,
+    "agentJob": 113788406104,
+    "web": [
+      {
+        "mode": "known-revision",
+        "sample": 1,
+        "nodeID": 418,
+        "first": "thumbnail-418-revision-3",
+        "warm": "thumbnail-418-revision-3",
+        "changed": "thumbnail-418-revision-4",
+        "httpRequests": 2,
+        "requestURLs": [
+          "/api/v1/media/items/418/thumbnail?v=3&revision=3",
+          "/api/v1/media/items/418/thumbnail?v=3&revision=4"
+        ],
+        "elapsedMsDiagnostic": 11.59397399999989
+      },
+      {
+        "mode": "known-revision",
+        "sample": 2,
+        "nodeID": 419,
+        "first": "thumbnail-419-revision-3",
+        "warm": "thumbnail-419-revision-3",
+        "changed": "thumbnail-419-revision-4",
+        "httpRequests": 2,
+        "requestURLs": [
+          "/api/v1/media/items/419/thumbnail?v=3&revision=3",
+          "/api/v1/media/items/419/thumbnail?v=3&revision=4"
+        ],
+        "elapsedMsDiagnostic": 6.971466999999848
+      },
+      {
+        "mode": "known-revision",
+        "sample": 3,
+        "nodeID": 420,
+        "first": "thumbnail-420-revision-3",
+        "warm": "thumbnail-420-revision-3",
+        "changed": "thumbnail-420-revision-4",
+        "httpRequests": 2,
+        "requestURLs": [
+          "/api/v1/media/items/420/thumbnail?v=3&revision=3",
+          "/api/v1/media/items/420/thumbnail?v=3&revision=4"
+        ],
+        "elapsedMsDiagnostic": 7.242467000000033
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 1,
+        "nodeID": 518,
+        "first": "thumbnail-518-revision-3",
+        "warm": "thumbnail-518-revision-3",
+        "changed": "thumbnail-518-revision-4",
+        "httpRequests": 3,
+        "requestURLs": [
+          "/api/v1/media/items/518/thumbnail?v=3",
+          "/api/v1/media/items/518/thumbnail?v=3",
+          "/api/v1/media/items/518/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 8.349415000000135
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 2,
+        "nodeID": 519,
+        "first": "thumbnail-519-revision-3",
+        "warm": "thumbnail-519-revision-3",
+        "changed": "thumbnail-519-revision-4",
+        "httpRequests": 3,
+        "requestURLs": [
+          "/api/v1/media/items/519/thumbnail?v=3",
+          "/api/v1/media/items/519/thumbnail?v=3",
+          "/api/v1/media/items/519/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 8.260898999999881
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 3,
+        "nodeID": 520,
+        "first": "thumbnail-520-revision-3",
+        "warm": "thumbnail-520-revision-3",
+        "changed": "thumbnail-520-revision-4",
+        "httpRequests": 3,
+        "requestURLs": [
+          "/api/v1/media/items/520/thumbnail?v=3",
+          "/api/v1/media/items/520/thumbnail?v=3",
+          "/api/v1/media/items/520/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.096013000000312
+      }
+    ],
+    "agent": [
+      {
+        "nodeID": 617,
+        "before": "thumb-617-revision-3",
+        "after": "thumb-617-revision-4",
+        "httpRequests": 2,
+        "expected": "thumb-617-revision-4"
+      },
+      {
+        "nodeID": 618,
+        "before": "thumb-618-revision-3",
+        "after": "thumb-618-revision-4",
+        "httpRequests": 2,
+        "expected": "thumb-618-revision-4"
+      },
+      {
+        "nodeID": 619,
+        "before": "thumb-619-revision-3",
+        "after": "thumb-619-revision-4",
+        "httpRequests": 2,
+        "expected": "thumb-619-revision-4"
+      }
+    ],
+    "webVerdict": {
+      "verdict": {
+        "threeRunsEach": true,
+        "initialAndWarmIdentity": true,
+        "updatedRevisionNeverStale": true,
+        "upstreamRequestOccursAfterOverwrite": true,
+        "knownRevisionStillWarm": true
+      },
+      "decision": "All source freshness gates met",
+      "count": 6
+    }
+  },
+  "observed": {
+    "webKnown": {
+      "beforeStale": 3,
+      "afterStale": 0,
+      "beforeHttpGetsPerNode": 1,
+      "afterHttpGetsPerNode": 2
+    },
+    "webUnknown": {
+      "beforeStale": 3,
+      "afterStale": 0,
+      "beforeHttpGetsPerNode": 1,
+      "afterHttpGetsPerNode": 3
+    },
+    "agentUnknown": {
+      "beforeStale": 3,
+      "afterStale": 0,
+      "beforeHttpGetsPerNode": 1,
+      "afterHttpGetsPerNode": 2
+    }
+  },
+  "decision": "ACCEPT correctness/transport revalidation fix; additional conditional requests on unknown revision are an explicit cost and cache hit remains for known revision",
+  "limitations": [
+    "Only loopback HTTP + actual Chromium method + Agent production CloudMediaThumbnail, not deployed xDrive Server database overwrite.",
+    "The native test responses are textual debug payloads with image/jpeg header, validating HTTP-cache response semantics and bytes; they are not decoded image-quality comparisons.",
+    "No 100k DOM, physical mobile or Wall-clock CPU/RSS improvement claim.",
+    "Known revision must eventually be checked against Server actual source revision in true streaming acceptance to avoid stale cache poisoning across out-of-order source update."
+  ]
+}

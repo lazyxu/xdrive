@@ -2114,8 +2114,11 @@ export class AgentIPCClient {
     )
   }
 
-  mediaThumbnail(nodeID: number, signal?: AbortSignal) {
+  mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
+    if (revision !== undefined && Number.isSafeInteger(revision) && revision > 0) {
+      query.set('revision', String(revision))
+    }
     return this.requestBinary(
       `/v1/media/thumbnail?${query.toString()}`,
       45_000,

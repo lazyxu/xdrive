@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-09",
+  "title": "P1 Web Chromium and Desktop Agent thumbnail overwrite HTTP cache, before actual source changes",
+  "firstRedCommit": "9024c646d1ee968e1b4061d7c3064a70c9ab885c",
+  "ciRun": 37919835052,
+  "web": {
+    "job": 113784831355,
+    "fixture": {
+      "content": "revision 3 → 4",
+      "cacheControl": "private, max-age=3600",
+      "realChromium": true,
+      "realTranspiledWebMethod": true
+    },
+    "samples": [
+      {
+        "mode": "known-revision",
+        "sample": 1,
+        "nodeID": 418,
+        "first": "thumbnail-418-revision-3",
+        "warm": "thumbnail-418-revision-3",
+        "changed": "thumbnail-418-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/418/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 13.492533000000094
+      },
+      {
+        "mode": "known-revision",
+        "sample": 2,
+        "nodeID": 419,
+        "first": "thumbnail-419-revision-3",
+        "warm": "thumbnail-419-revision-3",
+        "changed": "thumbnail-419-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/419/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.112030000000004
+      },
+      {
+        "mode": "known-revision",
+        "sample": 3,
+        "nodeID": 420,
+        "first": "thumbnail-420-revision-3",
+        "warm": "thumbnail-420-revision-3",
+        "changed": "thumbnail-420-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/420/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 11.74691299999995
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 1,
+        "nodeID": 518,
+        "first": "thumbnail-518-revision-3",
+        "warm": "thumbnail-518-revision-3",
+        "changed": "thumbnail-518-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/518/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 11.419357999999875
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 2,
+        "nodeID": 519,
+        "first": "thumbnail-519-revision-3",
+        "warm": "thumbnail-519-revision-3",
+        "changed": "thumbnail-519-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/519/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.462342000000035
+      },
+      {
+        "mode": "unknown-revision",
+        "sample": 3,
+        "nodeID": 520,
+        "first": "thumbnail-520-revision-3",
+        "warm": "thumbnail-520-revision-3",
+        "changed": "thumbnail-520-revision-3",
+        "httpRequests": 1,
+        "requestURLs": [
+          "/api/v1/media/items/520/thumbnail?v=3"
+        ],
+        "elapsedMsDiagnostic": 10.927406000000019
+      }
+    ],
+    "summary": {
+      "verdict": {
+        "threeRunsEach": true,
+        "initialAndWarmIdentity": true,
+        "updatedRevisionNeverStale": false,
+        "upstreamRequestOccursAfterOverwrite": false,
+        "knownRevisionStillWarm": false
+      },
+      "decision": "WEB THUMBNAIL REVISION CACHE BREACH: old Server bytes survive overwrite",
+      "count": 6
+    }
+  },
+  "agent": {
+    "job": 113784831233,
+    "fixture": {
+      "content": "revision 3 → 4",
+      "cacheControl": "private, max-age=3600",
+      "realCloudMediaThumbnail": true,
+      "httptestServer": true
+    },
+    "samples": [
+      {
+        "nodeID": 617,
+        "before": "thumb-617-revision-3",
+        "after": "thumb-617-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-617-revision-4"
+      },
+      {
+        "nodeID": 618,
+        "before": "thumb-618-revision-3",
+        "after": "thumb-618-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-618-revision-4"
+      },
+      {
+        "nodeID": 619,
+        "before": "thumb-619-revision-3",
+        "after": "thumb-619-revision-3",
+        "httpRequests": 1,
+        "expected": "thumb-619-revision-4"
+      }
+    ]
+  },
+  "decision": "Confirmed real stale response from both native Web and Agent; authorize minimal revision-key/revalidation fix",
+  "limitations": [
+    "No deployed xDrive Server DB or physical mobile; loopback Server reproduces real response Cache-Control and ETag semantics.",
+    "First-red rows are logic/bytes and GET counts; do not infer wall-clock performance.",
+    "Production ordinary video hover remains OFF."
+  ]
+}

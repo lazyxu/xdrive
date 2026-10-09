@@ -1319,3 +1319,40 @@ final-gate:
     - linux
   script:
     - echo "All source, server, web, and exact-artifact tests passed."
+
+gallery-thumbnail-web-overwrite:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "test/media-thumbnail-http-revision"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-thumbnail-revision-main.cjs
+  artifacts:
+    name: gallery-thumbnail-web-overwrite-$CI_COMMIT_SHORT_SHA
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-web-thumbnail-revision.json
+
+gallery-thumbnail-agent-overwrite:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "test/media-thumbnail-http-revision"'
+  script:
+    - |
+      set -euo pipefail
+      go test -run '^TestAgentCloudMediaThumbnailOverwriteRevalidatesUnknownRevision$' -count=1 -v ./cmd/xdrive-agent

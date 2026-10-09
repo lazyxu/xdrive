@@ -157,7 +157,7 @@ import type {
   XDriveMediaThumbnailPriority,
 } from './MediaGalleryThumbnailScheduler'
 
-export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal) => Promise<string | null>
+export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
@@ -2925,9 +2925,9 @@ function MediaTile({
   const openPreview = () => onPreview(item)
 
   const effectiveThumbnailLoader = useCallback(
-    (nodeID: number) => thumbnailScheduler
+    (nodeID: number, signal?: AbortSignal) => thumbnailScheduler
       ? thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision)
-      : loadThumbnail(nodeID),
+      : loadThumbnail(nodeID, signal, item.node.revision),
     [loadThumbnail, thumbnailPriority, thumbnailScheduler, item.node.revision],
   )
 
@@ -3006,6 +3006,7 @@ function MediaTile({
       ) : (
         <XDriveMediaAsyncThumbnail
           nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+          revision={item.node.revision}
           alt={item.node.name}
           loadThumbnail={effectiveThumbnailLoader}
           fallback={xDriveMediaFallback(item.metadata.media_kind)}

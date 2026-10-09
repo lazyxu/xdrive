@@ -61,12 +61,16 @@ func newAgentMediaThumbnailCache(maxEntries int, maxBytes int64) *agentMediaThum
 	}
 }
 
-func agentMediaThumbnailCacheKey(cfg userconfig.Config, nodeID uint64) string {
-	return strings.TrimSpace(cfg.Server) + "\x00" +
+func agentMediaThumbnailCacheKey(cfg userconfig.Config, nodeID uint64, revision ...uint64) string {
+	key := strings.TrimSpace(cfg.Server) + "\x00" +
 		strings.TrimSpace(cfg.Username) + "\x00" +
 		strings.TrimSpace(cfg.SessionID) + "\x00" +
 		agentMediaThumbnailCacheVersion + "\x00" +
 		strconv.FormatUint(nodeID, 10)
+	if len(revision) > 0 && revision[0] > 0 {
+		key += "\x00" + strconv.FormatUint(revision[0], 10)
+	}
+	return key
 }
 
 func (c *agentMediaThumbnailCache) Load(
