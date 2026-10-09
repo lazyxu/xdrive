@@ -273,6 +273,9 @@ func (s *Server) Router() *gin.Engine {
 
 	authed.POST("/source-credentials/test", s.testSourceCredential)
 
+	authed.GET("/devices", s.listClientDevices)
+	authed.POST("/devices", s.registerClientDevice)
+	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
 	authed.GET("/sources", s.listSources)
 	authed.GET("/sources/overview", s.listSourceOverview)
 	authed.POST("/sources", s.createSource)
@@ -280,6 +283,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.PATCH("/sources/:id", s.updateSource)
 	authed.DELETE("/sources/:id", s.deleteSource)
 	authed.POST("/sources/:id/trigger", s.triggerSource)
+	authed.GET("/sources/:id/local-binding", s.getLocalSourceBinding)
+	authed.POST("/sources/:id/local-binding", s.bindLocalSource)
+	authed.DELETE("/sources/:id/local-binding", s.unbindLocalSource)
 	authed.GET("/sources/:id/credential", s.getSourceCredentialStatus)
 	authed.PUT("/sources/:id/credential", s.putSourceCredential)
 	authed.POST("/sources/:id/credential/test", s.testStoredSourceCredential)
