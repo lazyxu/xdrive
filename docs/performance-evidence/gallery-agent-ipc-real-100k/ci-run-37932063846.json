@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "repository": "lazyxu/xdrive",
+    "branch": "perf/gallery-agent-ipc-cold-100k",
+    "measured_source_head": "ce21f12df56a7bc7a44009ee96a17eac7c2b8ba0",
+    "github_ci_run_id": 37932063846,
+    "github_ci_job_id": 113824956936,
+    "github_ci_url": "https://github.com/lazyxu/xdrive/actions/runs/37932063846/job/113824956936",
+    "environment": "GitHub Actions Ubuntu Linux native PostgreSQL 17, real xdrive-agent, built Desktop AgentIPCClient, Gin, local CAS",
+    "independent_fixtures": 3,
+    "synthetic_payload_qualification": "Real seeded decodable JPEG derived via CAS; not actual 4K camera video decode",
+    "scope": "Agent IPC -> Go Client -> Gin -> PostgreSQL/CAS; excludes Electron Main/Renderer, DOM, decode, compositor paint, WAN, physical disk and devices",
+    "seed_excluded": true,
+    "build_excluded": true,
+    "rss": "Go Agent VmRSS initial/final snapshots, not peak",
+    "optimization": "none — benchmark-only"
+  },
+  "result": {
+    "name": "gallery-agent-ipc-real-100k",
+    "status": "measured-baseline-no-production-change",
+    "n": 3,
+    "samples": [
+      {
+        "sample": 1,
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "firstPageItems": 100,
+        "videosInPage": 19,
+        "liveInPage": 19,
+        "firstRangeMs": 995.8429529999994,
+        "firstThumbnailMs": 110.2219960000075,
+        "first12ThumbnailsMs": 246.733355999997,
+        "warm12ThumbnailsMs": 10.229939999990165,
+        "thumbnailCount": 12,
+        "thumbnailBytes": 306031,
+        "agentRssStartBytes": 14974976,
+        "agentRssEndBytes": 20385792,
+        "agentRssDeltaBytes": 5410816,
+        "storeStats": {
+          "OriginalOpenSuccess": 12,
+          "DerivativeOpenSuccess": 24,
+          "DerivativePutSuccess": 12
+        },
+        "seedMs": 40591.114,
+        "label": "Go Agent IPC/Go client/Gin/PostgreSQL/CAS; no renderer or decode"
+      },
+      {
+        "sample": 2,
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "firstPageItems": 100,
+        "videosInPage": 19,
+        "liveInPage": 19,
+        "firstRangeMs": 978.5428949999914,
+        "firstThumbnailMs": 120.18798399998923,
+        "first12ThumbnailsMs": 235.02843399999256,
+        "warm12ThumbnailsMs": 8.43693299998995,
+        "thumbnailCount": 12,
+        "thumbnailBytes": 306031,
+        "agentRssStartBytes": 17088512,
+        "agentRssEndBytes": 19337216,
+        "agentRssDeltaBytes": 2248704,
+        "storeStats": {
+          "OriginalOpenSuccess": 12,
+          "DerivativeOpenSuccess": 24,
+          "DerivativePutSuccess": 12
+        },
+        "seedMs": 39602.458,
+        "label": "Go Agent IPC/Go client/Gin/PostgreSQL/CAS; no renderer or decode"
+      },
+      {
+        "sample": 3,
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "firstPageItems": 100,
+        "videosInPage": 19,
+        "liveInPage": 19,
+        "firstRangeMs": 993.4237800000119,
+        "firstThumbnailMs": 122.60781499999575,
+        "first12ThumbnailsMs": 252.63561800000025,
+        "warm12ThumbnailsMs": 11.237546999996994,
+        "thumbnailCount": 12,
+        "thumbnailBytes": 306031,
+        "agentRssStartBytes": 14991360,
+        "agentRssEndBytes": 20295680,
+        "agentRssDeltaBytes": 5304320,
+        "storeStats": {
+          "OriginalOpenSuccess": 12,
+          "DerivativeOpenSuccess": 24,
+          "DerivativePutSuccess": 12
+        },
+        "seedMs": 40079.083,
+        "label": "Go Agent IPC/Go client/Gin/PostgreSQL/CAS; no renderer or decode"
+      }
+    ],
+    "medianFirstAgentRangeMs": 993.4237800000119,
+    "medianFirst12ThumbnailMs": 246.733355999997,
+    "medianWarm12ThumbnailMs": 10.229939999990165,
+    "integrityPassed": true,
+    "limits": "Real independent Go Agent IPC/Go client/Gin/Postgres/CAS, n=3. No Electron Renderer/Main IPC, image decode/paint, WAN, physical devices or peak RSS."
+  }
+}

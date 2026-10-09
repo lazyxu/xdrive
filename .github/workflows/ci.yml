@@ -1345,6 +1345,60 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+
+  gallery-agent-real-ipc-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-agent-ipc-cold-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-agent-ipc-bin/xdrive-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build production Go Agent and existing native Gallery fixture
+        run: |
+          set -euo pipefail
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build:main
+          mkdir -p desktop/gallery-agent-ipc-bin
+          go build -o desktop/gallery-agent-ipc-bin/xdrive-agent ./cmd/xdrive-agent
+          node --check desktop/scripts/gallery-agent-ipc-real-100k.cjs
+      - name: Measure real 100k Agent IPC to Gin, Postgres and CAS
+        run: node desktop/scripts/gallery-agent-ipc-real-100k.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-agent-real-ipc-100k
+          path: desktop/gallery-agent-ipc-100k-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   gallery-renderer-first-paint-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-media-first-paint-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest

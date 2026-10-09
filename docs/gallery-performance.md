@@ -4,6 +4,61 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## Native 100k Gallery: production Agent IPC to Gin/PostgreSQL/CAS baseline (2026-10-09)
+
+Status: **Measured baseline / no production optimization (source-exact GitHub Actions n=3)**.
+PR branch: `perf/gallery-agent-ipc-cold-100k`. Reuse the merged real 100k
+fixture from #1156 instead of inventing replayed HTTP delays. Three independent
+PostgreSQL 17 schemas hold exactly **100,000 logical assets / 115,000 physical
+nodes / 15,000 genuine Live Photo pairs**. Seed and Go build are excluded
+from request measurements. The actual production `xdrive-agent` binary
+is launched with isolated `XDG_CONFIG_HOME` and
+`XDG_CACHE_HOME`, authenticates against the fixture Gin
+server, and the real compiled `AgentIPCClient` requests a
+100-item Gallery range and 12 image/Live still thumbnails (max 6 parallel),
+then a warm pass. Collect IPC read time, first thumbnail, first-12 completion,
+bytes, real CAS operation counters, and Agent RSS *snapshots* (not peaks).
+Run three fresh Agent + Gin + PostgreSQL fixture processes; every returned
+count and nonempty image response is a hard integrity assertion.
+
+**Command:** `XD_GALLERY_AGENT_BINARY=/path/to/xdrive-agent XD_TEST_DATABASE_URL=postgres://... node desktop/scripts/gallery-agent-ipc-real-100k.cjs`
+after building Web dist, compiled desktop main client, and the production
+Agent binary. GitHub/GitLab branch-scoped CI:
+`gallery-agent-real-ipc-100k-performance`. The report lands in
+`desktop/gallery-agent-ipc-100k-results/summary.json`.
+The first measured CI n=3 values, environment and raw evidence must be
+amended into **this same one work commit** before authoritative full CI and
+merge. **No timing speedup is claimed** until a repeatable same-fixture
+BEFORE/AFTER change is demonstrated. Keep production code unchanged while
+baseline budgets are established.
+
+**Boundary:** this closes a real Agent IPC → Go client → authenticated
+Gin → PostgreSQL/CAS measurement gap, **not** the whole Desktop cold-start
+gate: Electron Renderer → Main IPC, React commit, actual
+`HTMLImageElement.decode()`, compositor paint, physical
+Windows/Desktop and cross-network time still require separate measurement.
+The native fixture's short encoded test media do not establish 4K codec or
+full-LIVP dynamic-preview performance. Do not quote renderer first paint,
+mean cancellation latency or peak RSS from this benchmark.
+
+
+
+
+### Native first baseline from GitHub Actions — source-exact 2026-10-09
+
+Status: **Measured baseline / no production optimization**. Initial scoped [CI run 37932063846](https://github.com/lazyxu/xdrive/actions/runs/37932063846), [job 113824956936](https://github.com/lazyxu/xdrive/actions/runs/37932063846/job/113824956936), head `ce21f12df56a7bc7a44009ee96a17eac7c2b8ba0`, successfully executed **3/3** fresh PostgreSQL/Go Agent fixture samples with real authenticated IPC and CAS thumbnail bodies. All count, thumbnail-byte, first-page video/Live and fixture-shutdown integrity guards passed. This result is native Linux and **not** a real Electron Desktop full page cold-start.
+
+| Metric | Samples 1 / 2 / 3 | p50 |
+| --- | --- | ---: |
+| First Agent IPC 100-item range | 995.843 / 978.543 / 993.424 | **993.424 ms** |
+| First actual thumbnail IPC complete | 110.222 / 120.188 / 122.608 | **120.188 ms** |
+| First 12 actual thumbnails IPC complete | 246.733 / 235.028 / 252.636 | **246.733 ms** |
+| Repeat 12 warm thumbnail IPC | 10.230 / 8.437 / 11.238 | **10.230 ms** |
+| Go Agent RSS start/end delta, MiB | 5.160 / 2.145 / 5.059 | **5.059 MiB** |
+
+Every sample returned **100,000 logical items / 115,000 physical media nodes**, 100 items in its first IPC range (**19 videos, 19 Live Photos** in that range), and 12 nonempty real image thumbnails totalling **306,031 B**. All three identical actual CAS counter snapshots have **12 OriginalOpenSuccess, 12 DerivativePutSuccess and 24 DerivativeOpenSuccess** across 12 cold + 12 warm reads. This supports an effective derivative cache without an extra dozen original reads but is not a decoded-paint measurement. Fixture seed **40591.114 / 39602.458 / 40079.083 ms** was excluded. Agent RSS is **only start/end snapshot delta, not peak**; CPU, renderer memory and persistent network socket telemetry were not sampled.
+
+Raw sample and exact provenance: [`ci-run-37932063846.json`](performance-evidence/gallery-agent-ipc-real-100k/ci-run-37932063846.json). All timings are from **one CI environment and one measured source commit**; do not compare against the earlier Web browser run as a paired speedup. **Decision: retain all production code unchanged**; next build an actual Electron Renderer → Main → Agent 100k end-to-end profile with React/decode/paint. Only after paired measurement and a predeclared regression threshold may a smallest targeted optimization be retained.
 
 ## Cleanup extreme group coverage at 100k — native PostgreSQL baseline (2026-10-09)
 
