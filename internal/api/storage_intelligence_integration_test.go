@@ -128,6 +128,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 	wantPhysical := int64(3 + len(large))
 	wantLogical := int64(6 + len(large))
+	if statsA.DuplicateGroupCount != 1 || statsA.DuplicateFileCount != 1 || statsA.DuplicateLogicalBytes != 3 {
+		t.Fatalf("user A duplicate accounting groups=%d extra=%d saved=%d", statsA.DuplicateGroupCount, statsA.DuplicateFileCount, statsA.DuplicateLogicalBytes)
+	}
 	if statsA.FileCount != 3 || statsA.LogicalFileBytes != wantLogical {
 		t.Fatalf("user A file stats count=%d logical=%d want count=3 logical=%d", statsA.FileCount, statsA.LogicalFileBytes, wantLogical)
 	}
@@ -147,6 +150,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 
 	statsB := requestStorageStats(t, router, "/api/v1/me/storage", tokenB, http.StatusOK)
+	if statsB.DuplicateGroupCount != 0 || statsB.DuplicateFileCount != 0 || statsB.DuplicateLogicalBytes != 0 {
+		t.Fatalf("user B duplicate accounting leaked another account: %+v", statsB)
+	}
 	if statsB.FileCount != 1 || statsB.LogicalFileBytes != 3 || statsB.CASBlobCount != 0 {
 		t.Fatalf("user B storage stats leaked cross-user/global statistics: %#v", statsB)
 	}

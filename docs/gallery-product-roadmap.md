@@ -679,9 +679,10 @@ second relationship database and no automatic permanent-delete path.
 - No fuzzy filename/time similarity is used for exact duplicates.
 - The recommended copy to keep preserves user intent first: Favorite, manual-album
   membership, description/tags/people metadata, then the earlier imported Node.
-- xDrive CAS already stores identical SHA256 content once. Therefore original-hash duplicate
-  cards report **logical duplicate bytes** separately from **physical reclaimable
-  bytes**; while one copy is kept, physical reclaimable bytes are intentionally 0.
+- xDrive CAS already stores identical SHA256 content once. Original-hash duplicate
+  groups with zero reclaimable bytes are **not** shown in Cleanup, its badges or
+  entry points. Their read-only backend endpoints remain available for later
+  verified Gallery display folding, never for automatic deletion.
 - **2026-10-09, G11 incremental safety contract:** an equal primary SHA-256 is
   only an original-file candidate, not proof that full PhotoAsset resources or
   active edit recipes match. The read-only cleanup card now labels each shown
@@ -714,7 +715,7 @@ second relationship database and no automatic permanent-delete path.
 
 ### Cleanup/storage semantics
 
-- The Cleanup Review root lives in `ui/shared` and is shared by Web/Desktop.
+- The Cleanup Review root lives in `ui/shared` and is shared by Web/Desktop. Its landing page shows Burst review only; it does not query or render zero-benefit original-file duplicate groups.
 - Opening a duplicate or Burst group creates a sparse read-only review collection;
   Viewer, Inspector, thumbnail scheduling and Selection Toolbar are reused.
 - Recommended items receive a visible **建议保留** marker. xDrive never auto-selects or

@@ -62,16 +62,16 @@ test('empty Tags exposes management without requiring a selected file', () => {
   const button = body.match(/<button\b[^>]*aria-label="管理标签"[^>]*>/)?.[0]
   assert.ok(button, 'management is a visible named action in the Tags section')
   assert.doesNotMatch(button, /\bdisabled=""/)
-  assert.ok(body.includes('暂无标签'))
+  assert.doesNotMatch(body, /暂无标签|点击标签查找文件|数量为全部文件/)
 })
 
-test('saving the current search has an explained unavailable state and a reachable ready state', () => {
+test('saving the current search has a disabled state without sidebar guidance and a reachable ready state', () => {
   const unavailable = section(render(), '智能文件夹')
   const ready = section(render({ canSaveCurrentSearch: true }), '智能文件夹')
   const button = (body) => body.match(/<button\b[^>]*aria-label="保存当前搜索"[^>]*>/)?.[0]
   assert.ok(button(unavailable))
   assert.match(button(unavailable), /\bdisabled=""/)
-  assert.ok(unavailable.includes('先搜索或设置筛选'))
+  assert.doesNotMatch(unavailable, /先搜索或设置筛选|保存搜索规则|暂无保存的搜索/)
   assert.doesNotMatch(button(ready), /\bdisabled=""/)
 })
 
@@ -103,7 +103,7 @@ test('equivalent named rules all disclose matching while retaining a single curr
 test('current search notices and empty favorite guidance explain the existing entry points', () => {
   const notice = '可用性仅在此设备生效，不包含在保存规则中。'
   const html = render({ currentSearchNotice: notice, favoritesEnabled: true, quickAccessEnabled: true })
-  assert.ok(section(html, '智能文件夹').includes(notice))
+  assert.ok(!section(html, '智能文件夹').includes(notice))
   assert.ok(section(html, '收藏').includes('添加到收藏'))
   assert.ok(section(html, '快速访问').includes('固定到快速访问'))
 })

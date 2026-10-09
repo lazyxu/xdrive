@@ -244,6 +244,9 @@ export interface StorageStats {
   inventory?: StorageInventory
   file_count?: number
   logical_file_bytes?: number
+  duplicate_group_count?: number
+  duplicate_file_count?: number
+  duplicate_logical_bytes?: number
   average_file_size_bytes?: number
   p50_file_size_bytes?: number
   p90_file_size_bytes?: number

@@ -408,16 +408,6 @@ function emptyMediaTimelineGroupSets(): MediaTimelineGroupSets {
   return { year: [], month: [], day: [] }
 }
 
-function emptyMediaDuplicateGroupList(): MediaDuplicateGroupList {
-  return {
-    groups: [],
-    total_groups: 0,
-    total_items: 0,
-    logical_duplicate_bytes: 0,
-    physical_reclaimable_bytes: 0,
-  }
-}
-
 function emptyMediaBurstReviewList(): MediaBurstReviewList {
   return {
     groups: [],
@@ -476,11 +466,9 @@ export function XDriveMediaGalleryPage({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [memories, setMemories] = useState<MediaMemory[]>([])
-  const [duplicateGroups, setDuplicateGroups] =
-    useState<MediaDuplicateGroupList | null>(null)
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
-  const [cleanupMoreLoading, setCleanupMoreLoading] = useState<'duplicate' | 'burst' | null>(null)
+  const [cleanupMoreLoading, setCleanupMoreLoading] = useState<'burst' | null>(null)
   const cleanupMoreInFlightRef = useRef(false)
   const [pets, setPets] = useState<MediaPetFacet[]>([])
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
@@ -892,8 +880,7 @@ export function XDriveMediaGalleryPage({
   }, [reportError, source, virtualCollection.reset])
 
   const loadCleanup = useCallback(async () => {
-    if (!source.listDuplicateGroups && !source.listBurstReviews) {
-      setDuplicateGroups(emptyMediaDuplicateGroupList())
+    if (!source.listBurstReviews) {
       setBurstReviews(emptyMediaBurstReviewList())
       setError('当前客户端不支持图库清理建议')
       return
@@ -914,16 +901,8 @@ export function XDriveMediaGalleryPage({
     setLoading(true)
     setError('')
     try {
-      const [nextDuplicates, nextBursts] = await Promise.all([
-        source.listDuplicateGroups
-          ? source.listDuplicateGroups(48, 0)
-          : Promise.resolve(emptyMediaDuplicateGroupList()),
-        source.listBurstReviews
-          ? source.listBurstReviews(48, 0)
-          : Promise.resolve(emptyMediaBurstReviewList()),
-      ])
+      const nextBursts = await source.listBurstReviews(48, 0)
       if (request !== requestID.current) return
-      setDuplicateGroups(nextDuplicates)
       setBurstReviews(nextBursts)
     } catch (loadError) {
       if (request !== requestID.current) return
@@ -933,19 +912,17 @@ export function XDriveMediaGalleryPage({
     }
   }, [reportError, source, virtualCollection.reset])
 
-  const loadMoreCleanupGroups = useCallback(async (kind: 'duplicate' | 'burst') => {
+  const loadMoreCleanupGroups = useCallback(async () => {
     if (cleanupMoreInFlightRef.current) return
-    const current = kind === 'duplicate' ? duplicateGroups : burstReviews
-    const list = kind === 'duplicate' ? source.listDuplicateGroups : source.listBurstReviews
+    const current = burstReviews
+    const list = source.listBurstReviews
     if (!current || !list || current.groups.length >= current.total_groups) return
     const offset = current.groups.length
     const generation = requestID.current
     cleanupMoreInFlightRef.current = true
-    setCleanupMoreLoading(kind)
+    setCleanupMoreLoading('burst')
     try {
-      const next = kind === 'duplicate'
-        ? await source.listDuplicateGroups!(48, offset)
-        : await source.listBurstReviews!(48, offset)
+      const next = await source.listBurstReviews!(48, offset)
       if (generation !== requestID.current) return
 
       // Older Servers/Agents ignore offset. Never loop over their first page.
@@ -961,21 +938,10 @@ export function XDriveMediaGalleryPage({
         await loadCleanup()
         return
       }
-      if (kind === 'duplicate') {
-        const previous = current as MediaDuplicateGroupList
-        const page = next as MediaDuplicateGroupList
-        setDuplicateGroups({
-          ...page,
-          groups: [...previous.groups, ...page.groups],
-        })
-      } else {
-        const previous = current as MediaBurstReviewList
-        const page = next as MediaBurstReviewList
-        setBurstReviews({
-          ...page,
-          groups: [...previous.groups, ...page.groups],
-        })
-      }
+      setBurstReviews({
+        ...next,
+        groups: [...current.groups, ...next.groups],
+      })
     } catch (pageError) {
       if (generation === requestID.current) {
         reportError(pageError)
@@ -986,7 +952,7 @@ export function XDriveMediaGalleryPage({
         setCleanupMoreLoading(null)
       }
     }
-  }, [burstReviews, duplicateGroups, loadCleanup, reportError, source])
+  }, [burstReviews, loadCleanup, reportError, source])
 
   const loadSyncFolders = useCallback(async () => {
     if (!source.listSyncFolders) {
@@ -1316,16 +1282,6 @@ export function XDriveMediaGalleryPage({
     setDraftFilters(emptyMediaGalleryFilterDraft)
     setQuery({})
     void loadFirstPage(null, {}, null, null, 'default', memory)
-  }, [loadFirstPage])
-
-  const openDuplicateGroup = useCallback((group: MediaDuplicateGroup) => {
-    const review: MediaCleanupReviewTarget = { kind: 'duplicate', group }
-    setCurrentCleanupReview(review)
-    setSection('cleanup')
-    setActiveMediaType('')
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    setQuery({})
-    void loadFirstPage(null, {}, null, null, 'default', null, review)
   }, [loadFirstPage])
 
   const openBurstReview = useCallback((group: MediaBurstReview) => {
@@ -2018,7 +1974,6 @@ export function XDriveMediaGalleryPage({
         syncFoldersError={syncFoldersError}
         places={places}
         memories={memories}
-        duplicateGroups={duplicateGroups}
         burstReviews={burstReviews}
         pets={pets}
         suggestedPeople={suggestedPeople}
@@ -2168,10 +2123,8 @@ export function XDriveMediaGalleryPage({
           : undefined}
         onOpenPlace={openPlace}
         onOpenMemory={openMemory}
-        onOpenDuplicateGroup={openDuplicateGroup}
         onOpenBurstReview={openBurstReview}
-        onLoadMoreDuplicate={() => void loadMoreCleanupGroups('duplicate')}
-        onLoadMoreBurst={() => void loadMoreCleanupGroups('burst')}
+        onLoadMoreBurst={() => void loadMoreCleanupGroups()}
         cleanupMoreLoading={cleanupMoreLoading}
         onOpenPet={openPet}
         onOpenSuggestedPerson={openSuggestedPerson}
@@ -2332,7 +2285,6 @@ export interface XDriveMediaGalleryProps {
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
   memories?: MediaMemory[]
-  duplicateGroups?: MediaDuplicateGroupList | null
   burstReviews?: MediaBurstReviewList | null
   pets?: MediaPetFacet[]
   suggestedPeople?: MediaSuggestedPerson[]
@@ -2422,11 +2374,9 @@ export interface XDriveMediaGalleryProps {
   onOpenFolderBreadcrumb?: (breadcrumb: MediaFolderBreadcrumb) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenMemory?: (memory: MediaMemory) => void
-  onOpenDuplicateGroup?: (group: MediaDuplicateGroup) => void
   onOpenBurstReview?: (group: MediaBurstReview) => void
-  onLoadMoreDuplicate?: () => void
   onLoadMoreBurst?: () => void
-  cleanupMoreLoading?: 'duplicate' | 'burst' | null
+  cleanupMoreLoading?: 'burst' | null
   onOpenPet?: (pet: MediaPetFacet) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
   onOpenPerson?: (person: MediaPersonIdentity) => void
@@ -3673,7 +3623,6 @@ export function XDriveMediaGallery({
   syncFoldersError = '',
   places = [],
   memories = [],
-  duplicateGroups = null,
   burstReviews = null,
   pets = [],
   suggestedPeople = [],
@@ -3746,9 +3695,7 @@ export function XDriveMediaGallery({
   onOpenFolderBreadcrumb,
   onOpenPlace,
   onOpenMemory,
-  onOpenDuplicateGroup,
   onOpenBurstReview,
-  onLoadMoreDuplicate,
   onLoadMoreBurst,
   cleanupMoreLoading,
   onOpenPet,
@@ -4832,13 +4779,10 @@ export function XDriveMediaGallery({
 
       {showCleanupIndex ? (
         <XDriveMediaGalleryCleanup
-          duplicates={duplicateGroups}
           bursts={burstReviews}
           loading={loading}
           loadThumbnail={loadThumbnail}
-          onOpenDuplicate={onOpenDuplicateGroup}
           onOpenBurst={onOpenBurstReview}
-          onLoadMoreDuplicate={onLoadMoreDuplicate}
           onLoadMoreBurst={onLoadMoreBurst}
           onRefresh={onRefresh}
           loadingMore={cleanupMoreLoading}
