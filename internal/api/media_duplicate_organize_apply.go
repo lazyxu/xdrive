@@ -226,6 +226,7 @@ func (s *Server) applyMediaDuplicateOrganizeMetadata(
 			return err
 		}
 		if plan.AssetComparison != duplicateAssetIdentical ||
+			mediaDuplicateOrganizeKeeperMirrorManaged(plan) ||
 			!strings.EqualFold(plan.PlanRevision, in.ExpectedPlanRevision) {
 			return errMediaDuplicateOrganizeConflict
 		}

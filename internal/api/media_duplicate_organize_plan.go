@@ -129,6 +129,24 @@ func distinctMediaOrganizeStrings(values map[string]struct{}) []string {
 	return out
 }
 
+// A Mirror SourceItem can later trash any bound Node resource after a
+// confirmed remote disappearance. User annotations cannot be aggregated onto
+// that volatile keeper until xDrive has a durable independent keeper policy.
+// Check *all* verified resource links, not only the primary still image.
+func mediaDuplicateOrganizeKeeperMirrorManaged(plan mediaDuplicateOrganizePlan) bool {
+	for _, member := range plan.Members {
+		if member.NodeID != plan.KeeperNodeID {
+			continue
+		}
+		for _, link := range member.SourceLinks {
+			if link.SyncMode == meta.SourceSyncModeMirror {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) queryMediaDuplicateOrganizePlan(
 	ctx context.Context, ownerID, keeperID uint64, nodeIDs []uint64,
 ) (mediaDuplicateOrganizePlan, error) {
@@ -446,6 +464,13 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 	out.ReadyForManualReview = status == duplicateAssetIdentical && len(out.Descriptions) <= 1
 	if len(out.Descriptions) > 1 && status == duplicateAssetIdentical {
 		out.Reason = "多份副本含不同描述，必须逐一保留或人工解决；不能静默覆盖"
+	}
+	if mediaDuplicateOrganizeKeeperMirrorManaged(out) {
+		out.ReadyForManualReview = false
+		if status == duplicateAssetIdentical {
+			out.Reason = "拟保留副本的原始资源绑定 Mirror 同步文件夹；远端确认删除后此 Node 可能进入回收站，请先选择独立且不受 Mirror 管理的保留文件"
+		}
+		out.SourceWarning += " 警告：当前 keeper 自身绑定 Mirror 来源，可能在远端消失后的两次完整扫描与宽限期届满后被移入回收站；为避免集中标注随后不可见，本次不能向该 keeper 保全标注。"
 	}
 	// The confirmation token binds the keeper, selected original Nodes, resource
 	// evidence, edits, user annotations and collection/person membership.

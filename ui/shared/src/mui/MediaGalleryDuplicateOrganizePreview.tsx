@@ -41,6 +41,11 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
 }) {
   const [keeperNodeID, setKeeperNodeID] = useState(nodeIDs[0] ?? 0)
   const [plan, setPlan] = useState<MediaDuplicateOrganizePlan | null>(null)
+  const plannedKeeperNodeID = plan?.keeper_node_id ?? 0
+  const keeperMirrorManaged = Boolean(plan?.members.some((member) =>
+    member.node_id === plannedKeeperNodeID &&
+    (member.source_links ?? []).some((link) => link.sync_mode === 'mirror'),
+  ))
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
@@ -105,7 +110,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
   // exact SHA-256 plan token and all backing resource revisions again in a
   // serializable PostgreSQL transaction. No file or CAS operation is sent.
   const requestConfirmedApply = () => {
-    if (!applyPlan || !plan || !confirmed ||
+    if (!applyPlan || !plan || !confirmed || keeperMirrorManaged ||
         plan.asset_comparison !== 'identical' ||
         (plan.distinct_descriptions.length > 1
           ? selectedDescription === null || !plan.distinct_descriptions.includes(selectedDescription) ||
@@ -344,7 +349,18 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
             <Typography variant="body2" color="text.secondary">
               {plan.source_warning}
             </Typography>
+            {keeperMirrorManaged ? (
+              <Typography
+                color="error"
+                variant="body2"
+                role="alert"
+                data-xdrive-gallery-organize-mirror-keeper-warning
+              >
+                当前拟保留文件存在 Mirror 同步文件夹的真实资源绑定。远端删除后，该文件可能按 Mirror 规则移入回收站；为防止保全标注随后不可见，请改选不受 Mirror 管理的独立文件后重新审核。
+              </Typography>
+            ) : null}
             {applyPlan && plan.asset_comparison === 'identical' &&
+             !keeperMirrorManaged &&
              (plan.ready_for_manual_review ||
                (plan.distinct_descriptions.length > 1 && selectedDescription !== null &&
                 descriptionChoices.includes(selectedDescription))) ? (
@@ -376,8 +392,10 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
               </Stack>
             ) : (
               <Typography variant="caption" color="text.secondary">
-                {applyPlan
-                  ? '完整资源或编辑不可验证，或存在尚未明确选择的描述冲突；不能擅自合并。'
+                {keeperMirrorManaged
+                  ? '当前 keeper 可能被 Mirror 自动回收，不能将其他副本的标注集中到这里。'
+                  : applyPlan
+                    ? '完整资源或编辑不可验证，或存在尚未明确选择的描述冲突；不能擅自合并。'
                   : '本客户端仅支持只读保全预览，升级服务端或 Desktop Agent 后才能确认标注合并。'}
               </Typography>
             )}

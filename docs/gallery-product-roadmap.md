@@ -711,6 +711,37 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 P4 phase 8 — protect annotations from a Mirror-managed keeper (2026-10-09)
+
+**Implementation candidate / CI-required safety gate.** Previous native
+PostgreSQL #1176 verifies that Mirror's completed full inventory can move
+*only* its bound source duplicate to Trash after the existing two-scan/24h
+grace, leaving an unrelated independent annotated keeper unchanged.
+It also identified the reverse risk: when a user chooses the **Mirror-owned**
+copy as keeper, collected annotations can cease to appear in active Gallery
+if the provider later removes that particular Node.
+
+The non-destructive G11 organize **plan** must fail closed for that choice,
+using the verified per-resource `PhotoResource(Node) → SourceItem → Source`
+links already audited in #1157: a selected keeper with **any currently
+linked Mirror SourceItem**, including a motion/RAW/sidecar resource, is marked
+not ready and receives a clear Mirror-loss warning. Its verified complete
+asset comparison remains factual; *identical* means content is identical,
+not that the chosen keeper is durable. The serializable `/apply` endpoint
+must refuse this volatile keeper even with `confirm:true` and a fresh
+revision token. Web/Desktop must show the risk and omit the confirmation
+action. A real PostgreSQL/Gin Mirror fixture checks rejection and verifies
+that no original annotations change, then the already-accepted independent
+keeper union and two-pass Trash behavior still succeed.
+
+Do not infer origin from a folder path or claim that an absent SourceItem
+link means no Mirror ownership. The guard deliberately does **not**
+suppress the source's normal Trash policy, delete files, alter CAS/quota,
+rewrite albums, or protect historical annotation merges already committed
+to a Mirror-linked keeper. Full resource-group Trash, original description
+and edit-version history retention, audited Undo and actual provider
+replay remain explicit release gates before destructive consolidation.
+
 ### G11 P4 phase 7 — preserve distinct descriptions by explicit keeper choice (2026-10-09)
 
 **In progress / CI pending.** The existing non-destructive annotation-only
