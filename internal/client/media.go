@@ -368,6 +368,8 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
+	SortBy         string
+	SortDir        string
 	MediaKind      string
 	Search         string
 	AssetKind      string
@@ -386,6 +388,12 @@ type MediaQuery struct {
 }
 
 func (q MediaQuery) add(values url.Values) {
+	if value := strings.TrimSpace(q.SortBy); value != "" {
+		values.Set("sort_by", value)
+	}
+	if value := strings.TrimSpace(q.SortDir); value != "" {
+		values.Set("sort_dir", value)
+	}
 	if value := strings.TrimSpace(q.MediaKind); value != "" {
 		values.Set("kind", value)
 	}

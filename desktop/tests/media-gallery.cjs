@@ -1539,7 +1539,7 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   ]) {
     assert.ok(sharedGalleryVirtualTimeline.includes(token), `Gallery Timeline helper missing: ${token}`)
   }
-  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale)'), 'standalone dense fallback remains available')
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir)'), 'standalone dense fallback uses current order without materializing the sparse collection')
   assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
   for (const token of [
     'searchActive={Boolean(query.search?.trim())}',

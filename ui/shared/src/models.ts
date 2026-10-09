@@ -628,6 +628,8 @@ export interface MediaAlbum {
 }
 
 export interface MediaGalleryQuery {
+  sort_by?: 'captured' | 'added'
+  sort_dir?: 'asc' | 'desc'
   search?: string
   asset_kind?: PhotoAssetKind
   category?: string

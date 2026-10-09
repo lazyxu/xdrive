@@ -22,6 +22,8 @@ const (
 )
 
 type mediaQueryOptions struct {
+	SortBy         string
+	SortDir        string
 	MediaKind      string
 	Search         string
 	AssetKind      string
@@ -42,6 +44,16 @@ type mediaQueryOptions struct {
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	var out mediaQueryOptions
+	out.SortBy = strings.TrimSpace(c.Query("sort_by"))
+	if out.SortBy != "" && out.SortBy != "captured" && out.SortBy != "added" {
+		fail(c, http.StatusBadRequest, "sort_by must be captured or added")
+		return mediaQueryOptions{}, false
+	}
+	out.SortDir = strings.TrimSpace(c.Query("sort_dir"))
+	if out.SortDir != "" && out.SortDir != "asc" && out.SortDir != "desc" {
+		fail(c, http.StatusBadRequest, "sort_dir must be asc or desc")
+		return mediaQueryOptions{}, false
+	}
 	out.MediaKind = strings.TrimSpace(c.Query("kind"))
 	if out.MediaKind != "" && out.MediaKind != meta.MediaKindImage && out.MediaKind != meta.MediaKindVideo {
 		fail(c, http.StatusBadRequest, "kind must be image or video")

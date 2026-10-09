@@ -784,6 +784,8 @@ export type AgentMediaItemRange = {
 }
 
 export type AgentMediaQuery = {
+  sort_by?: 'captured' | 'added'
+  sort_dir?: 'asc' | 'desc'
   search?: string
   asset_kind?: string
   category?: string
@@ -804,6 +806,8 @@ function appendAgentMediaQuery(
   query: URLSearchParams,
   filters: AgentMediaQuery = {},
 ) {
+  if (filters.sort_by) query.set('sort_by', filters.sort_by)
+  if (filters.sort_dir) query.set('sort_dir', filters.sort_dir)
   if (filters.search?.trim()) query.set('q', filters.search.trim())
   if (filters.asset_kind) query.set('asset_kind', filters.asset_kind)
   if (filters.category?.trim()) query.set('category', filters.category.trim())
