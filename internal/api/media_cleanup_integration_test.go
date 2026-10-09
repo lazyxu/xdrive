@@ -146,7 +146,7 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 
 	now := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	duplicateHash := strings.Repeat("a", 64)
-	dupA, _ := addLogicalMedia(
+	dupA, assetA := addLogicalMedia(
 		"copy-a.jpg", duplicateHash, 1000, 3000, 2000, false, now.Add(-2*time.Hour),
 	)
 	dupB, assetB := addLogicalMedia(
@@ -194,6 +194,119 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 	if duplicatePage.TotalCount != 2 || len(duplicatePage.Items) != 2 {
 		t.Fatalf("duplicate page=%+v", duplicatePage)
 	}
+	// Server-owned verified folding must apply before range pagination, counts,
+	// timeline groups and Viewer scopes; nothing is deleted or metadata-merged.
+	server := &Server{DB: db}
+	folds, err := server.buildVerifiedMediaFoldIndex(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := folds.members(dupA.ID); len(got) != 2 || got[0] != dupA.ID || got[1] != dupB.ID {
+		t.Fatalf("verified fold members=%v", got)
+	}
+	foldedPage, err := server.queryMediaItemRange(
+		context.Background(), user.ID, mediaQueryOptions{FoldDuplicates: true}, "", 100, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foldedPage.TotalCount != 1 || len(foldedPage.Items) != 1 ||
+		len(foldedPage.Items[0].FoldMemberIDs) != 2 ||
+		foldedPage.TimelineGroupSets == nil ||
+		len(foldedPage.TimelineGroupSets.Day) != 1 ||
+		foldedPage.TimelineGroupSets.Day[0].ItemCount != 1 {
+		t.Fatalf("folded range/count/timeline inconsistent: %+v", foldedPage)
+	}
+	foldedNext, err := server.queryMediaItemRange(
+		context.Background(), user.ID, mediaQueryOptions{FoldDuplicates: true}, "", 1, 1,
+	)
+	if err != nil || foldedNext.TotalCount != 1 || len(foldedNext.Items) != 0 {
+		t.Fatalf("folded offset should not leak a hidden copy: %+v err=%v", foldedNext, err)
+	}
+	ranked := []uint64{dupB.ID, dupA.ID}
+	if got := folds.foldRankedIDs(ranked); len(got) != 1 || got[0] != dupB.ID {
+		t.Fatalf("semantic relevance must retain its highest-ranked in-group copy: %v", got)
+	}
+	// Semantic rank can choose a different representative from the chronological
+	// ROW_NUMBER keeper. Explicit ranked IDs must still materialize faithfully,
+	// while retaining the group's badge and member list.
+	semanticItems, err := server.materializeMediaItemsByNodeIDs(
+		context.Background(), user.ID,
+		mediaQueryOptions{FoldDuplicates: true, foldIndex: folds},
+		"", []uint64{dupA.ID},
+	)
+	if err != nil || len(semanticItems) != 1 ||
+		semanticItems[0].Node.ID != dupA.ID ||
+		len(semanticItems[0].FoldMemberIDs) != 2 {
+		t.Fatalf("semantic rank member must survive SQL materialization: %+v err=%v", semanticItems, err)
+	}
+	unfoldedPage, err := server.queryMediaItemRange(
+		context.Background(), user.ID, mediaQueryOptions{}, "", 100, 0,
+	)
+	if err != nil || unfoldedPage.TotalCount != 2 || len(unfoldedPage.Items) != 2 {
+		t.Fatalf("default Gallery must preserve separate assets: page=%+v err=%v", unfoldedPage, err)
+	}
+	trueValue := true
+	favoriteFold, err := server.queryMediaItemRange(
+		context.Background(), user.ID,
+		mediaQueryOptions{FoldDuplicates: true, Favorite: &trueValue}, "", 100, 0,
+	)
+	if err != nil || favoriteFold.TotalCount != 1 ||
+		len(favoriteFold.Items) != 1 || favoriteFold.Items[0].Node.ID != dupB.ID {
+		t.Fatalf("favorite filtering must select an in-scope keeper: %+v err=%v", favoriteFold, err)
+	}
+	// Album membership must be scoped before selecting the representative.
+	// Files outside an album may share CAS bytes but must never replace an
+	// in-album item as the visible/Viewer-backed representative.
+	album := meta.PhotoCollection{
+		OwnerID: user.ID, ExternalKey: "manual:verified-fold-test",
+		Kind: meta.PhotoCollectionKindManual, Name: "独立副本",
+		State: meta.PhotoCollectionStateActive, Revision: 1,
+	}
+	if err := db.Create(&album).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoCollectionAsset{
+		CollectionID: album.ID, AssetID: assetA.ID, Position: 0,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	albumSingle, err := server.queryMediaItemRange(
+		context.Background(), user.ID,
+		mediaQueryOptions{FoldDuplicates: true}, album.ExternalKey, 100, 0,
+	)
+	if err != nil || albumSingle.TotalCount != 1 ||
+		len(albumSingle.Items) != 1 || albumSingle.Items[0].Node.ID != dupA.ID {
+		t.Fatalf("album-only member must remain the visible representative: %+v err=%v", albumSingle, err)
+	}
+	if err := db.Create(&meta.PhotoCollectionAsset{
+		CollectionID: album.ID, AssetID: assetB.ID, Position: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	albumFolded, err := server.queryMediaItemRange(
+		context.Background(), user.ID,
+		mediaQueryOptions{FoldDuplicates: true}, album.ExternalKey, 100, 0,
+	)
+	if err != nil || albumFolded.TotalCount != 1 || len(albumFolded.Items) != 1 {
+		t.Fatalf("two album members must fold to one visible card: %+v err=%v", albumFolded, err)
+	}
+	var independentMemberships int64
+	if err := db.Model(&meta.PhotoCollectionAsset{}).Where(
+		"collection_id = ?", album.ID,
+	).Count(&independentMemberships).Error; err != nil {
+		t.Fatal(err)
+	}
+	if independentMemberships != 2 {
+		t.Fatalf("folding must not modify original album memberships: %d", independentMemberships)
+	}
+	membersPage, err := server.queryMediaItemRange(
+		context.Background(), user.ID,
+		mediaQueryOptions{FoldMemberIDs: []uint64{dupA.ID, dupB.ID}}, "", 100, 0,
+	)
+	if err != nil || membersPage.TotalCount != 2 || len(membersPage.Items) != 2 {
+		t.Fatalf("expanded fold member range must expose both Nodes: %+v err=%v", membersPage, err)
+	}
 	if err := db.Create(&meta.PhotoEditRecipe{
 		AssetID: assetB.ID, OwnerID: user.ID, SourceNodeID: dupB.ID,
 		SourceNodeRevision: 1, SourceSHA256: duplicateHash,
@@ -208,6 +321,12 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 	if len(withEdit.Groups) != 1 || withEdit.Groups[0].AssetComparison != duplicateAssetDifferent ||
 		withEdit.Groups[0].RecommendedKeepNodeID != 0 {
 		t.Fatalf("edited content incorrectly classified as identical: %+v", withEdit)
+	}
+	withDifferentRecipe, err := server.queryMediaItemRange(
+		context.Background(), user.ID, mediaQueryOptions{FoldDuplicates: true}, "", 100, 0,
+	)
+	if err != nil || withDifferentRecipe.TotalCount != 2 {
+		t.Fatalf("different edits must not fold: %+v err=%v", withDifferentRecipe, err)
 	}
 
 	burst := meta.MediaGroup{

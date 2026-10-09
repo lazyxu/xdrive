@@ -509,6 +509,10 @@ export function XDriveMediaGalleryPage({
   }, [preferenceScope])
 
   const [query, setQuery] = useState<MediaGalleryQuery>({})
+  const [foldDuplicates, setFoldDuplicates] = useState(false)
+  const foldDuplicatesRef = useRef(false)
+  const [foldDialog, setFoldDialog] = useState<{ nodeIDs: number[]; items: MediaItem[]; loading: boolean; error: string } | null>(null)
+  const foldDialogRequest = useRef(0)
   const [recentSearches, setRecentSearches] = useState(
     () => xDriveGalleryRecentSearches(preferenceScope),
   )
@@ -718,6 +722,7 @@ export function XDriveMediaGalleryPage({
           album,
           {
             ...nextQuery,
+            fold_duplicates: foldDuplicatesRef.current && !nextQuery.fold_member_ids?.length,
             time_zone: mediaTimeZoneRef.current,
             sort_by: gallerySortRef.current.by,
             sort_dir: gallerySortRef.current.dir,
@@ -895,6 +900,90 @@ export function XDriveMediaGalleryPage({
       if (request === requestID.current) setLoading(false)
     }
   }, [reportError, source, virtualCollection.reset])
+
+  const changeFoldDuplicates = useCallback((enabled: boolean) => {
+    foldDuplicatesRef.current = enabled
+    setFoldDuplicates(enabled)
+    void loadFirstPage(
+      currentAlbum,
+      query,
+      currentSuggestedPerson,
+      currentPerson,
+      section === 'trash' ? 'trash' : 'default',
+      currentMemory,
+      currentCleanupReview,
+      currentPet,
+    )
+  }, [
+    currentAlbum, currentCleanupReview, currentMemory, currentPerson,
+    currentPet, currentSuggestedPerson, loadFirstPage, query, section,
+  ])
+
+  const closeFoldDialog = useCallback(() => {
+    foldDialogRequest.current += 1
+    setFoldDialog(null)
+  }, [])
+
+  const openFoldDialog = useCallback((item: MediaItem) => {
+    const nodeIDs = item.fold_member_ids ?? []
+    if (nodeIDs.length < 2 || nodeIDs.length > 512) return
+    const request = ++foldDialogRequest.current
+    setFoldDialog({ nodeIDs, items: [], loading: true, error: '' })
+    // The Server caps a media range at 500 rows. The verifier can approve
+    // up to 512 copies; load the final 12 on a second bounded page.
+    void (async () => {
+      const memberQuery: MediaGalleryQuery = {
+        fold_member_ids: nodeIDs,
+        sort_by: gallerySortRef.current.by,
+        sort_dir: gallerySortRef.current.dir,
+      }
+      const first = await source.listItemRange(500, 0, memberQuery)
+      if (request !== foldDialogRequest.current) return
+      if (first.total_count > nodeIDs.length || first.total_count > 512) {
+        throw new Error('副本集合已发生变化，请刷新图库')
+      }
+      let members = first.items
+      if (first.total_count > members.length) {
+        const last = await source.listItemRange(500, members.length, memberQuery)
+        if (request !== foldDialogRequest.current) return
+        if (last.total_count !== first.total_count) {
+          throw new Error('副本集合加载期间发生变化，请刷新图库')
+        }
+        members = [...members, ...last.items]
+      }
+      if (members.length !== first.total_count) {
+        throw new Error('副本集合未完整加载，请刷新图库后重试')
+      }
+      setFoldDialog({ nodeIDs, items: members, loading: false, error: '' })
+    })().catch((error) => {
+      if (request !== foldDialogRequest.current) return
+      setFoldDialog({ nodeIDs, items: [], loading: false, error: xDriveMediaGalleryErrorMessage(error) })
+    })
+  }, [source])
+
+  const openFoldMember = useCallback((item: MediaItem, index: number) => {
+    if (!foldDialog) return
+    const nodeIDs = foldDialog.nodeIDs
+    const totalCount = foldDialog.items.length
+    closeFoldDialog()
+    if (onOpenViewer) {
+      onOpenViewer(item, {
+        target: {
+          kind: 'all',
+          query: {
+            fold_member_ids: nodeIDs,
+            sort_by: gallerySortRef.current.by,
+            sort_dir: gallerySortRef.current.dir,
+          },
+        },
+        activeIndex: index,
+        totalCount,
+      })
+    } else {
+      // Standalone Gallery uses the normal Viewer in an explicitly scoped range.
+      void loadFirstPage(null, { fold_member_ids: nodeIDs })
+    }
+  }, [closeFoldDialog, foldDialog, loadFirstPage, onOpenViewer])
 
   const loadCleanup = useCallback(async () => {
     if (!source.listBurstReviews) {
@@ -2037,6 +2126,9 @@ export function XDriveMediaGalleryPage({
         onRemoveAppliedFilter={
           currentAlbum?.kind === 'smart' ? undefined : removeAppliedFilter
         }
+        foldDuplicates={foldDuplicates}
+        onToggleFoldDuplicates={changeFoldDuplicates}
+        onExpandFold={openFoldDialog}
         sortBy={gallerySort.by}
         sortDir={gallerySort.dir}
         timeZone={mediaTimeZone}
@@ -2227,6 +2319,70 @@ export function XDriveMediaGalleryPage({
           )
         }}
       />
+      <Dialog
+        open={Boolean(foldDialog)}
+        onClose={closeFoldDialog}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: xDriveDialogPaperProps }}
+        data-xdrive-gallery-verified-fold-dialog
+      >
+        <XDriveDialogTitle
+          title={`相同内容的 ${foldDialog?.nodeIDs.length ?? 0} 份文件`}
+          subtitle="原文件、所在目录、相册和个人信息均保持独立。"
+          onClose={closeFoldDialog}
+        />
+        <XDriveDialogContent dividers>
+          {foldDialog?.loading ? (
+            <Stack alignItems="center" sx={{ py: 3 }}><CircularProgress size={26} /></Stack>
+          ) : foldDialog?.error ? (
+            <XDriveStatusAlert tone="bad">{foldDialog.error}</XDriveStatusAlert>
+          ) : foldDialog?.items.length ? (
+            <Stack spacing={1}>
+              {foldDialog.items.map((member, index) => (
+                <Button
+                  key={member.node.id}
+                  variant="text"
+                  onClick={() => openFoldMember(member, index)}
+                  sx={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+                    gap: 1.5, minHeight: 64, textTransform: 'none', textAlign: 'left',
+                    color: 'text.primary',
+                  }}
+                  data-xdrive-gallery-verified-fold-member={member.node.id}
+                >
+                  <Box sx={{ width: 56, height: 56, flexShrink: 0, overflow: 'hidden' }}>
+                    <XDriveMediaAsyncThumbnail
+                      nodeID={member.metadata.has_thumbnail ? member.node.id : undefined}
+                      alt={member.node.name}
+                      loadThumbnail={source.loadThumbnail}
+                      fallback={xDriveMediaFallback(member.metadata.media_kind)}
+                    />
+                  </Box>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" noWrap>{member.node.name}</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {[
+                        `文件 #${member.node.id}`,
+                        member.favorite ? '已收藏' : '',
+                        member.tags?.length ? `标签 ${member.tags.join('、')}` : '',
+                        member.people?.length ? `人物 ${member.people.join('、')}` : '',
+                      ].filter(Boolean).join(' · ')}
+                    </Typography>
+                  </Box>
+                </Button>
+              ))}
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              这些副本可能已被移动或删除，请返回图库刷新。
+            </Typography>
+          )}
+        </XDriveDialogContent>
+        <DialogActions>
+          <Button onClick={closeFoldDialog}>关闭</Button>
+        </DialogActions>
+      </Dialog>
       {shareDialog ? (
         <XDriveShareDialog
           adapter={shareDialog.adapter}
@@ -2345,6 +2501,9 @@ export interface XDriveMediaGalleryProps {
   appliedScopeLabel?: string
   draftPending?: boolean
   searchOrder?: string
+  foldDuplicates?: boolean
+  onToggleFoldDuplicates?: (enabled: boolean) => void
+  onExpandFold?: (item: MediaItem) => void
   indexStatus?: MediaGalleryIndexStatus | null
   indexStatusLoading?: boolean
   indexStatusError?: string
@@ -2915,7 +3074,7 @@ function MediaTile({
           </IconButton>
         </Tooltip>
       ) : null}
-      {(recommendedForCleanup || mediaBadgeLabel || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
+      {(recommendedForCleanup || mediaBadgeLabel || (item.fold_member_ids?.length ?? 0) > 1 || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
         <Stack
           spacing={0.5}
           alignItems="flex-end"
@@ -2928,6 +3087,21 @@ function MediaTile({
             pointerEvents: 'none',
           }}
         >
+          {(item.fold_member_ids?.length ?? 0) > 1 ? (
+            <Chip
+              clickable
+              component="button"
+              size="small"
+              label={`${item.fold_member_ids!.length} 份`}
+              aria-label={`展开 ${item.fold_member_ids!.length} 份完整资源一致的副本`}
+              data-xdrive-media-fold-expand={item.node.id}
+              onClick={(event) => event.stopPropagation()}
+              sx={{
+                pointerEvents: 'auto', bgcolor: 'rgba(0,0,0,.75)',
+                color: '#fff', fontWeight: 700,
+              }}
+            />
+          ) : null}
           {recommendedForCleanup ? (
             <Chip
               size="small"
@@ -3687,6 +3861,9 @@ export function XDriveMediaGallery({
   appliedScopeLabel,
   draftPending = false,
   searchOrder = '',
+  foldDuplicates = false,
+  onToggleFoldDuplicates,
+  onExpandFold,
   indexStatus = null,
   indexStatusLoading = false,
   indexStatusError = '',
@@ -4092,6 +4269,22 @@ export function XDriveMediaGallery({
   }, [effectiveTimeScale, minTileWidth, viewAnchorRevision, virtualCollection])
 
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
+  const handleFoldExpandClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!onExpandFold || !(event.target instanceof Element)) return
+    const trigger = event.target.closest<HTMLElement>('[data-xdrive-media-fold-expand]')
+    if (!trigger) return
+    const tile = trigger.closest<HTMLElement>('[data-xdrive-media-tile]')
+    if (!tile) return
+    event.preventDefault()
+    event.stopPropagation()
+    const index = Number(tile.dataset.xdriveMediaIndex)
+    if (!Number.isSafeInteger(index) || index < 0) return
+    const item = virtualCollection?.itemAt(index) ?? items[index]
+    if (item?.fold_member_ids && item.fold_member_ids.length > 1) {
+      onExpandFold(item)
+    }
+  }, [items, onExpandFold, virtualCollection])
+
   const handleMediaContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     // Delegated to the Gallery root: 100k logical media never create 100k menus.
     const tile = event.target instanceof Element
@@ -4507,6 +4700,7 @@ export function XDriveMediaGallery({
       ref={galleryRootRef}
       spacing={2}
       onContextMenu={handleMediaContextMenu}
+      onClickCapture={handleFoldExpandClick}
       data-xdrive-gallery-aspect-mode={aspectMode}
       sx={{
         minWidth: 0,
@@ -4682,6 +4876,19 @@ export function XDriveMediaGallery({
             justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
             sx={{ flexShrink: 0 }}
           >
+            {onToggleFoldDuplicates && !isTrashSection &&
+             !currentFolderView && !currentCleanupReview &&
+             !currentMemory && !currentPet && !currentPerson && !currentSuggestedPerson ? (
+              <Button
+                size="small"
+                variant={foldDuplicates ? 'contained' : 'outlined'}
+                aria-pressed={foldDuplicates}
+                data-xdrive-gallery-fold-duplicates
+                onClick={() => onToggleFoldDuplicates(!foldDuplicates)}
+              >
+                {foldDuplicates ? '折叠相同副本：开' : '折叠相同副本'}
+              </Button>
+            ) : null}
             <Button
               size="small"
               variant={selectionMode ? 'contained' : 'text'}

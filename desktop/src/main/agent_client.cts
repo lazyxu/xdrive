@@ -787,6 +787,8 @@ export type AgentMediaItemRange = {
 export type AgentMediaQuery = {
   time_zone?: string
   anchor_node_id?: number
+  fold_duplicates?: boolean
+  fold_member_ids?: number[]
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'
   search?: string
@@ -811,6 +813,10 @@ function appendAgentMediaQuery(
 ) {
   if (Number.isSafeInteger(filters.anchor_node_id) && (filters.anchor_node_id ?? 0) > 0) {
     query.set('anchor_node_id', String(filters.anchor_node_id))
+  }
+  if (filters.fold_duplicates) query.set('fold_duplicates', 'true')
+  for (const id of filters.fold_member_ids ?? []) {
+    if (Number.isSafeInteger(id) && id > 0) query.append('fold_member_id', String(id))
   }
   if (filters.time_zone) query.set('time_zone', filters.time_zone)
   if (filters.sort_by) query.set('sort_by', filters.sort_by)

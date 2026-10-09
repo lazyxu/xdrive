@@ -703,8 +703,9 @@ second relationship database and no automatic permanent-delete path.
   that do not return comparison status). Existing deletion still
   moves only explicitly selected Node IDs to Trash; it does not automatically
   collect other Live/RAW resources or merge favorite, album, tag, person and edit
-  intent. Gallery folding and metadata-preserving consolidation remain future
-  separately validated features. Older clients missing the new field show an
+  intent. Verified display-only folding is now an opt-in Gallery view over complete
+  resource/recipe identities; it does not consolidate metadata or mutate files.
+  Older clients missing the new field show an
   unverified, conservative message rather than asserting full equivalence.
 
 ### Burst Best Shot
@@ -1041,3 +1042,10 @@ Gallery, its Viewer, the standalone Web media Viewer and FileExplorer use the sh
 **Candidate / CI pending:** add an explicit **导出完整实况** action, without changing the ordinary "下载" or editor recipe/export semantics, to the shared Gallery Viewer/context menu and standalone Web media Viewer. A validated `.livp` downloads its one canonical original container, containing both embedded still and motion byte ranges. A separately stored still+MOV asset uses the exact locally projected `PhotoResource` node-role pair (one original `still`, one original `motion`) and existing authenticated archive download, never filename/time proximity. Missing, ambiguous, derived-only, or stale-looking relations fail closed instead of silently exporting only the still. Server archive/download continues to enforce owner, node validity, and canonical content. Web/Desktop use one pure shared resource selector and thin platform adapters.
 
 Validation includes behavioral pure-function tests with valid `.livp`, valid exact pairs, missing, duplicate, wrong-kind, and derived resource cases; source contracts guard distinct UI affordances on both clients and normal original download behavior. The export itself is not transcoding, not edited-output export, and does not mutate existing logical album membership. Physical Web/Desktop download/ZIP inspection and updates during export require separate acceptance; do not claim media-revision atomic snapshot beyond existing Server archive semantics.
+
+### Verified Gallery duplicate folding — opt-in (2026-10-09)
+
+- When enabled in the shared Gallery toolbar, the Server constructs owner-scoped verified equivalence groups using the exact complete PhotoResource identities and current PhotoEditRecipe checks that power Cleanup's conservative classifications. Different/unverified Live Photo motion, RAW, Sidecar, burst resources, edits or stale recipe sources **never fold**; groups too large to verify safely remain separate.
+- Filtering, album membership and search choose their visible representative **after** Server filters, preserving the correct sort, sparse virtual item range, authoritative count, timeline, anchor and Viewer target. Semantic search ranks eligible matches before collapsing identical results. Ordinary FileExplorer and Gallery without the opt-in retain their original Node/page counts, including at 100k scale.
+- Clicking a verified fold badge expands an on-demand, bounded exact-Node dialog. Each copy keeps its filename, Node ID, ownership, original file path, favorite, album membership, tag, person, edit recipe and CAS references. The secondary Viewer target carries an explicit member list; no copy is removed and no user metadata is merged.
+- Album cards describe **underlying asset counts**, whereas a folded collection count describes **visible cards**; these numbers are not interchangeable. Web and Desktop accept manual/smart/source/folder album IDs for both item-range and Viewer queries; the representative always belongs to the active album scope. Group badges may include copies outside the currently filtered album/search scope; expansion clearly lists all verified files. Fold view is opt-in to avoid imposing duplicate-equivalence scans on 100k gallery defaults.

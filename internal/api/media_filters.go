@@ -24,6 +24,9 @@ const (
 type mediaQueryOptions struct {
 	TimeZone       string
 	AnchorNodeID   uint64
+	FoldDuplicates bool
+	FoldMemberIDs  []uint64
+	foldIndex      *mediaVerifiedFoldIndex
 	SortBy         string
 	SortDir        string
 	MediaKind      string
@@ -59,6 +62,33 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.AnchorNodeID = nodeID
+	}
+	if raw := strings.TrimSpace(c.Query("fold_duplicates")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "fold_duplicates must be true or false")
+			return mediaQueryOptions{}, false
+		}
+		out.FoldDuplicates = value
+	}
+	if rawIDs := c.QueryArray("fold_member_id"); len(rawIDs) > 0 {
+		if len(rawIDs) > mediaFoldMaxAssetsPerGroup {
+			fail(c, http.StatusBadRequest, "too many fold_member_id values")
+			return mediaQueryOptions{}, false
+		}
+		seen := make(map[uint64]struct{}, len(rawIDs))
+		for _, raw := range rawIDs {
+			value, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+			if err != nil || value == 0 {
+				fail(c, http.StatusBadRequest, "fold_member_id must be a positive integer")
+				return mediaQueryOptions{}, false
+			}
+			if _, exists := seen[value]; !exists {
+				seen[value] = struct{}{}
+				out.FoldMemberIDs = append(out.FoldMemberIDs, value)
+			}
+		}
+		out.FoldDuplicates = false
 	}
 	out.SortBy = strings.TrimSpace(c.Query("sort_by"))
 	if out.SortBy != "" && out.SortBy != "captured" && out.SortBy != "added" {
@@ -277,6 +307,9 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 }
 
 func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB {
+	if len(options.FoldMemberIDs) != 0 {
+		query = query.Where("n.id IN ?", options.FoldMemberIDs)
+	}
 	if options.MediaKind != "" {
 		query = query.Where("xd_media_metadata.media_kind = ?", options.MediaKind)
 	}

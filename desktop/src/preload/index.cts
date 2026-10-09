@@ -36,6 +36,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     folder_id?: number
@@ -57,6 +59,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     folder_id?: number
@@ -75,6 +79,8 @@ const agent = Object.freeze({
   getMediaFacets: (
     query: {
       search?: string
+      fold_duplicates?: boolean
+      fold_member_ids?: number[]
       asset_kind?: string
       category?: string
       cameras?: string[]
@@ -138,6 +144,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
       search?: string
+      fold_duplicates?: boolean
+      fold_member_ids?: number[]
       asset_kind?: string
     category?: string
     cameras?: string[]
@@ -164,6 +172,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     cameras?: string[]
@@ -192,6 +202,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
       search?: string
+      fold_duplicates?: boolean
+      fold_member_ids?: number[]
       asset_kind?: string
     category?: string
     cameras?: string[]
@@ -212,6 +224,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     cameras?: string[]
@@ -268,6 +282,8 @@ const agent = Object.freeze({
     name: string,
     query: {
       search?: string
+      fold_duplicates?: boolean
+      fold_member_ids?: number[]
       asset_kind?: string
     category?: string
     cameras?: string[]
@@ -289,6 +305,8 @@ const agent = Object.freeze({
       name?: string
       query?: {
         search?: string
+      fold_duplicates?: boolean
+      fold_member_ids?: number[]
         asset_kind?: string
     category?: string
     cameras?: string[]
@@ -314,6 +332,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     cameras?: string[]
@@ -334,6 +354,8 @@ const agent = Object.freeze({
     offset = 0,
     query: {
     search?: string
+    fold_duplicates?: boolean
+    fold_member_ids?: number[]
     asset_kind?: string
     category?: string
     cameras?: string[]
