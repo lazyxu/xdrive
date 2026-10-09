@@ -376,6 +376,36 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  gallery-video-poster-viewport-cancel-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-video-poster-viewport-cancel-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Desktop benchmark dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Compare stale Gallery video poster cancellation against fixed parent
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          node scripts/gallery-video-poster-viewport-cancel.cjs paired
+          cat perf-results/gallery-video-poster-cancel-paired.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-video-poster-viewport-cancel
+          path: desktop/perf-results/gallery-video-poster-cancel-*.json
+          if-no-files-found: error
+          retention-days: 7
+
   gallery-video-poster-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
     runs-on: ubuntu-latest

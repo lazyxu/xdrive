@@ -89,7 +89,8 @@ export function XDriveMediaAsyncThumbnail({
 const mediaPosterConcurrency = 3
 
 type MediaPosterQueueEntry = {
-  task: () => Promise<string | null>
+  task: (signal: AbortSignal) => Promise<string | null>
+  controller: AbortController
   resolve: (value: string | null) => void
   reject: (error: unknown) => void
   started: boolean
@@ -110,7 +111,7 @@ function pumpMediaPosterQueue() {
     if (entry.cancelled) continue
     entry.started = true
     mediaPosterActive += 1
-    void entry.task()
+    void entry.task(entry.controller.signal)
       .then((value) => {
         if (entry.cancelled) {
           if (value) revokeIfBlob(value)
@@ -128,12 +129,13 @@ function pumpMediaPosterQueue() {
 }
 
 function scheduleMediaPoster(
-  task: () => Promise<string | null>,
+  task: (signal: AbortSignal) => Promise<string | null>,
 ): ScheduledMediaPoster {
   let entry!: MediaPosterQueueEntry
   const promise = new Promise<string | null>((resolve, reject) => {
     entry = {
       task,
+      controller: new AbortController(),
       resolve,
       reject,
       started: false,
@@ -147,6 +149,7 @@ function scheduleMediaPoster(
     cancel: () => {
       if (entry.cancelled) return
       entry.cancelled = true
+      entry.controller.abort()
       if (!entry.started) {
         const index = mediaPosterQueue.indexOf(entry)
         if (index >= 0) mediaPosterQueue.splice(index, 1)
@@ -233,17 +236,19 @@ export function XDriveMediaAsyncVideoPoster({
     setSrc('')
     if (!visible) return () => { active = false }
 
-    const scheduled = scheduleMediaPoster(() => xDriveResolveMediaVideoPoster({
+    const scheduled = scheduleMediaPoster((signal) => xDriveResolveMediaVideoPoster({
       nodeID,
       revision,
       loadCached: loadThumbnail,
       save: saveVideoPoster,
-      capture: () => captureVideoPoster(
+      signal,
+      capture: (signal) => captureVideoPoster(
         nodeID,
         loadPreviewURL,
         rotationDegrees,
         sourceWidth,
         sourceHeight,
+        signal,
       ),
     }))
     void scheduled.promise
