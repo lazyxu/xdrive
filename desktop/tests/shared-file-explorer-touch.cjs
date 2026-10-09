@@ -73,7 +73,7 @@ test('compact viewports collapse search and keep low-frequency commands discover
   for (const token of [
     'compactViewport && !touchSearchOpen',
     'setTouchSearchOpen(true)',
-    "aria-label={compactViewport ? '关闭搜索' : '搜索'}",
+    "aria-label={compactViewport ? '关闭搜索框' : '搜索'}",
     'compactViewport && onPaste',
     'compactViewport && onRefresh',
     '(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder',

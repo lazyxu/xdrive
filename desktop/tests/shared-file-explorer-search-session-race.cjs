@@ -179,6 +179,8 @@ function loadWorkspaceHook(react) {
     grouping: { groupBy: 'none', foldersFirst: true },
     viewMode: 'details',
     activeTabID: 'tab-1',
+    activeHistoryEntryKey: 'entry-1',
+    retainedHistoryEntries: [{ tabID: 'tab-1', key: 'entry-1' }],
     tabs: [{ id: 'tab-1', label: '我的文件' }],
     beginNavigationIntent: () => 1,
     isNavigationIntentCurrent: () => true,

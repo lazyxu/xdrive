@@ -32,6 +32,25 @@ Reproduce the component suite with `node desktop/scripts/file-explorer-controls-
 
 Physical iOS/Android, browser/installed mode, address-bar transitions, software keyboard, safe-area and VoiceOver/TalkBack results remain **validation pending**. The [platform matrix](mobile-web-platform-matrix.md) separates code inspection, runtime feature detection, renderer checks and device outcomes; Chromium geometry is never promoted to native certification.
 
+### M04–M05 search return and ordering — 2026-10-09
+
+**Status: implementation and local acceptance verified.** The single work commit was reconstructed without conflicts onto merged M01–M03 baseline `daf35bced5f8ebb56055572c27e9ac52005f19d8`. This slice shows the actual all-files Search scope, committed query, readable conditions, authoritative count, clear and retry. Search results retain the ordinary opener and add **显示所在文件夹** using authoritative breadcrumbs.
+
+Private runtime history identities retain each Search and directory's ordering, selection metadata and logical viewport, within the existing bounded history. Back/Forward restores unchanged results through sparse range loading; user input and scrolling supersede delayed restoration. A changed result window receives an explicit nearby-position fallback without selecting replacement identities. Count/group readiness and failed-window retry are covered by composed-controller first-red regressions. The persisted navigation DTO remains folder-only.
+
+Field selection preserves sort direction; explicit direction, grouping, folders-first and effective List/Grid/Columns state remain readable. Search or mobile contexts without Columns use List without changing the stored preference. Actual built-App text rectangles reproduced the floating navigator covering count, selection and ordering: **47 passed / 1 failed**. The identical compact status strip now sits above the list; Desktop keeps the footer. The same case passes with zero text intersections, and the scroll host remains mounted. No App-global spacer or bar was added.
+
+| Final gate | Result |
+| --- | --- |
+| Real shared Workspace / Search / Navigation / VirtualCollection / FileExplorer browser suite | **104 passed, 0 failed** |
+| Existing shared controls and Files browser regressions | **174/174** and **54/54**, zero browser errors |
+| Built Web Search → media Viewer → close / browser Forward / Back → containing folder → Files Back | **48/48**, including actual status-text geometry; 1,024 results, retained index 618 and selection, bounded 128-item Viewer range |
+| Built whole-App / Viewer fullscreen regression | **901/901**, zero unexpected requests or browser errors |
+| Desktop typecheck and full main suite | **1,327 passed, 0 failed, 1 existing opt-in performance skip** |
+| Web lint and production build | Passed |
+
+Focused controller 17-case and related 88-case runs are subsets of the full suite, not additional independent counts. [The evidence ledger](validation/mobile-files-search-return-2026-10-09.json) records first-red results, final source/fixture/build hashes, exact commands, independent review and boundaries. Reproduce with `desktop/scripts/file-explorer-search-return-browser.cjs --case=all` and the built-App runner's `--scenario=search-return`; both require `--output-dir=<evidence>`. The portable Chromium runner closes each isolated owning browser directly after two redundant context-disposal stalls; user-flow assertions and transport fixtures were unchanged. Native M49 environments remain not-run.
+
 | Priority | Delivery | Acceptance focus |
 | --- | --- | --- |
 | P0 / phase 1 | Shared compact shell | Reach all permitted workspaces; stable viewport and scroll roots; no background navigation through Viewer |

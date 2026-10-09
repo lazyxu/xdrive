@@ -68,6 +68,8 @@ function compileExpression(filename, expression) {
 function workspaceDependencies(navigationSessionStorageKey) {
   return {
     navigationSessionStorageKey,
+    // Keep the entry key identical to isolate account lifecycle ownership.
+    workspaceKey: 'same-runtime-entry',
     navigation: {
       activeTabID: 'tab-1',
       grouping: { key: 'none' },

@@ -467,6 +467,39 @@ export type XDriveFileExplorerVirtualCollection = {
   groups?: readonly XDriveFileExplorerGroupIndex[]
 }
 
+export type XDriveFileExplorerReturnSnapshot = {
+  contentSignature: string
+  firstVisibleIndex: number
+  firstVisibleID: XDriveFileExplorerID | null
+  offsetWithinItem: number
+  scrollLeft: number
+  selectedIDs: readonly XDriveFileExplorerID[]
+  selectedItems: readonly XDriveFileExplorerItem[]
+  activeID: XDriveFileExplorerID | null
+  activeIndex: number | null
+  selectionAnchorID: XDriveFileExplorerID | null
+  selectionAnchorIndex: number | null
+  touchSelectionMode: boolean
+}
+
+export type XDriveFileExplorerViewStateBridge = {
+  stateKey: string
+  contentSignature: string
+  ready: boolean
+  readSnapshot: () => XDriveFileExplorerReturnSnapshot | undefined
+  writeSnapshot: (snapshot: XDriveFileExplorerReturnSnapshot) => void
+}
+
+export type XDriveFileExplorerSearchSummary = {
+  query: string
+  conditions: readonly string[]
+  resultCount: number | null
+  loading?: boolean
+  error?: string | null
+  onClear: () => void
+  onRetry?: () => void
+}
+
 export type XDriveFileExplorerSort = {
   key: XDriveFileExplorerSortKey
   direction: XDriveFileExplorerSortDirection
@@ -806,6 +839,8 @@ export function XDriveFileExplorer({
   searchValue = '',
   onSearchValueChange,
   onSearch,
+  searchSummary,
+  viewState,
   canGoBack = false,
   canGoForward = false,
   canGoUp = false,
@@ -897,6 +932,8 @@ export function XDriveFileExplorer({
   searchValue?: string
   onSearchValueChange?: (value: string) => void
   onSearch?: (value: string) => void
+  searchSummary?: XDriveFileExplorerSearchSummary
+  viewState?: XDriveFileExplorerViewStateBridge
   canGoBack?: boolean
   canGoForward?: boolean
   canGoUp?: boolean
@@ -1042,7 +1079,27 @@ export function XDriveFileExplorer({
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const pendingScrollTopRef = useRef(0)
+  const viewStateKeyRef = useRef<string | null>(null)
+  const captureStateKeyRef = useRef<string | null>(null)
+  const captureViewSnapshotRef = useRef<() => void>(() => {})
+  const restoreLayoutRef = useRef<{
+    mode: XDriveFileExplorerViewMode
+    compact: boolean
+    rowStep: number
+    itemTop: (index: number) => number
+  } | null>(null)
+  const pendingViewRestoreRef = useRef<{
+    key: string
+    snapshot: XDriveFileExplorerReturnSnapshot
+    running: boolean
+  } | null>(null)
+  const [viewRestoreVersion, setViewRestoreVersion] = useState(0)
+  const [viewRestoreFeedback, setViewRestoreFeedback] = useState('')
+  const pendingKeyboardRangeRef = useRef<{ scope: string; intent: number } | null>(null)
+  const [keyboardRangeVersion, setKeyboardRangeVersion] = useState(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const searchToggleRef = useRef<HTMLButtonElement | null>(null)
+  const previousTouchSearchOpenRef = useRef(false)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const renameSubmittingRef = useRef(false)
   const renameSubmitGenerationRef = useRef(0)
@@ -1085,7 +1142,10 @@ export function XDriveFileExplorer({
   const preferredViewMode = controlledViewMode ?? internalViewMode
   // Column View has desktop row interactions. Project it without changing the
   // saved tab preference so widening the viewport restores the original view.
-  const viewMode = compactViewport && preferredViewMode === 'columns' ? 'details' : preferredViewMode
+  const columnsAvailable = Boolean(loadColumnPage && onColumnNavigate)
+  const viewMode = preferredViewMode === 'columns' && (compactViewport || !columnsAvailable)
+    ? 'details'
+    : preferredViewMode
   const sort = controlledSort ?? internalSort
   const grouping = controlledGrouping ?? internalGrouping
   const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
@@ -1142,6 +1202,23 @@ export function XDriveFileExplorer({
     interactionLifecycleKey,
     virtualCollection?.interactionKey ?? derivedPath,
   ].join('\n')
+  const returnStateKey = viewState
+    ? JSON.stringify([viewState.stateKey, viewState.contentSignature])
+    : null
+  const returnStateKeyRef = useRef(returnStateKey)
+  returnStateKeyRef.current = returnStateKey
+  const cancelPendingViewRestore = () => {
+    if (pendingViewRestoreRef.current) {
+      pendingViewRestoreRef.current = null
+      setViewRestoreFeedback('')
+    }
+    const keyboardRange = pendingKeyboardRangeRef.current
+    if (keyboardRange && keyboardRange.intent === selectionIntentRef.current) {
+      selectionIntentRef.current += 1
+      pendingKeyboardRangeRef.current = null
+      setKeyboardRangeVersion((value) => value + 1)
+    }
+  }
   const externalDropScopeKeyRef = useRef(interactionScopeKey)
   const externalDropGenerationRef = useRef(0)
   if (externalDropScopeKeyRef.current !== interactionScopeKey) {
@@ -1252,9 +1329,13 @@ export function XDriveFileExplorer({
   }, [compactViewport])
 
   useEffect(() => {
-    if (!compactViewport || !touchSearchOpen) return
-    searchInputRef.current?.focus()
-    searchInputRef.current?.select()
+    if (compactViewport && touchSearchOpen) {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    } else if (compactViewport && previousTouchSearchOpenRef.current) {
+      searchToggleRef.current?.focus()
+    }
+    previousTouchSearchOpenRef.current = compactViewport && touchSearchOpen
   }, [compactViewport, touchSearchOpen])
 
   useEffect(() => {
@@ -2644,15 +2725,17 @@ export function XDriveFileExplorer({
   }
 
   const setSort = (next: XDriveFileExplorerSort) => {
+    setArrangeAnchor(null)
+    if (next.key === sort.key && next.direction === sort.direction) return
     if (controlledSort === undefined) setInternalSort(next)
     onSortChange?.(next)
-    setArrangeAnchor(null)
   }
 
   const setGrouping = (next: XDriveFileExplorerGrouping) => {
+    setArrangeAnchor(null)
+    if (xDriveFileExplorerGroupingSignature(next) === groupingSignature) return
     if (controlledGrouping === undefined) setInternalGrouping(next)
     onGroupingChange?.(next)
-    setArrangeAnchor(null)
   }
 
   const chooseDetailsDensity = (detailsDensity: XDriveFileExplorerDetailsDensity) => {
@@ -2955,7 +3038,12 @@ export function XDriveFileExplorer({
     event: KeyboardEvent<HTMLElement>,
     item: XDriveFileExplorerItem,
   ) => {
-    const currentIndex = logicalIndexOf(item.id) ?? -1
+    const loadedCurrentIndex = logicalIndexOf(item.id)
+    const currentIndex = loadedCurrentIndex ?? (
+      activeItemID !== null && explorerIDKey(activeItemID) === explorerIDKey(item.id)
+        ? activeLogicalIndex ?? -1
+        : -1
+    )
     if (currentIndex < 0) return false
     const columns = gridColumnCount()
     const visibleRows = Math.max(
@@ -2989,7 +3077,22 @@ export function XDriveFileExplorer({
     }
 
     const intent = beginSelectionIntent()
+    const keyboardRange = loadedCurrentIndex === undefined ? { scope: interactionScopeKey, intent } : null
+    if (keyboardRange) pendingKeyboardRangeRef.current = keyboardRange
     void (async () => {
+      if (loadedCurrentIndex === undefined) {
+        const currentRange = await resolveLogicalRange(currentIndex, currentIndex)
+        if (!currentRange || selectionIntentRef.current !== intent) {
+          releaseInteractionMetadata()
+          return
+        }
+        if (!currentRange[0] || explorerIDKey(currentRange[0].id) !== explorerIDKey(item.id)) {
+          setActiveItemID(null)
+          setActiveLogicalIndex(null)
+          setViewRestoreFeedback('原项目的位置已变化，请重新选择要操作的项目。')
+          return
+        }
+      }
       const targetRange = await resolveLogicalRange(targetIndex, targetIndex)
       if (!targetRange || selectionIntentRef.current !== intent) {
         releaseInteractionMetadata()
@@ -3004,6 +3107,13 @@ export function XDriveFileExplorer({
         const range = await resolveLogicalRange(start, end)
         if (!range || selectionIntentRef.current !== intent) {
           releaseInteractionMetadata()
+          return
+        }
+        const actualAnchor = range[anchorIndex - start]
+        if (!actualAnchor || explorerIDKey(actualAnchor.id) !== explorerIDKey(anchorID)) {
+          setSelectionAnchorID(null)
+          setSelectionAnchorIndex(null)
+          setViewRestoreFeedback('选择起点已变化，请重新选择起点。')
           return
         }
         const ids = range.map((candidate) => candidate.id)
@@ -3029,7 +3139,17 @@ export function XDriveFileExplorer({
       setActiveLogicalIndex(targetIndex)
       onItemClick?.(target)
       focusItemAtIndex(targetIndex)
-    })()
+      if (keyboardRange && scrollHostRef.current) {
+        // Release the range only after the next viewport reflects the jump.
+        pendingScrollTopRef.current = scrollHostRef.current.scrollTop
+        setScrollTop(scrollHostRef.current.scrollTop)
+      }
+    })().finally(() => {
+      if (keyboardRange && pendingKeyboardRangeRef.current === keyboardRange) {
+        pendingKeyboardRangeRef.current = null
+        setKeyboardRangeVersion((value) => value + 1)
+      }
+    })
     return true
   }
 
@@ -3733,6 +3853,15 @@ export function XDriveFileExplorer({
       : viewMode === 'columns'
         ? '分栏'
         : `图标 · ${fileExplorerGridSizeStatusLabel[viewPreferences.gridSize]}`
+  const sortFieldLabel = { name: '名称', updated: '修改时间', type: '类型', size: '大小' }[sort.key]
+  const sortDirectionLabel = sort.direction === 'asc' ? '升序' : '降序'
+  const groupingLabel = { none: '不分组', type: '按类型分组', modified: '按修改日期分组', size: '按大小分组' }[grouping.groupBy]
+  const arrangementStatusText = `${sortFieldLabel} · ${sortDirectionLabel} · ${groupingLabel} · ${grouping.foldersFirst ? '文件夹优先' : '文件与文件夹混排'}`
+  const sortDirectionHint = sort.key === 'updated'
+    ? { asc: '最早优先', desc: '最新优先' }
+    : sort.key === 'size'
+      ? { asc: '从小到大', desc: '从大到小' }
+      : { asc: 'A → Z', desc: 'Z → A' }
 
   const nativeDragOutHandle = (
     item: XDriveFileExplorerItem,
@@ -4351,6 +4480,9 @@ export function XDriveFileExplorer({
   useEffect(() => {
     const onRangeChange = virtualCollection?.onRangeChange
     if (viewMode === 'columns' || !onRangeChange || logicalItemCount <= 0) return
+    if (pendingViewRestoreRef.current?.key === returnStateKey) return
+    const keyboardRange = pendingKeyboardRangeRef.current
+    if (keyboardRange?.scope === interactionScopeKey && keyboardRange.intent === selectionIntentRef.current) return
     const groupedSegments = viewMode === 'details'
       ? groupedDetailsLayout ? groupedDetailsSegments : null
       : groupedGridLayout ? groupedGridSegments : null
@@ -4373,13 +4505,167 @@ export function XDriveFileExplorer({
     groupedGridLayout,
     groupedGridSegments,
     logicalItemCount,
+    interactionScopeKey,
+    keyboardRangeVersion,
+    returnStateKey,
     viewMode,
     virtualCollection?.onRangeChange,
   ])
 
+  const itemScrollTop = (index: number) => {
+    if (viewMode === 'details') {
+      return detailsHeaderHeight + (groupedDetailsLayout
+        ? xDriveFileExplorerGroupedItemTop(groupedDetailsLayout, index) ?? 0
+        : index * detailsRowHeight)
+    }
+    return groupedGridLayout
+      ? xDriveFileExplorerGroupedItemTop(groupedGridLayout, index) ?? gridPaddingPx
+      : gridPaddingPx + Math.floor(index / gridColumns) * gridRowStep
+  }
+  restoreLayoutRef.current = {
+    mode: viewMode,
+    compact: compactViewport,
+    rowStep: viewMode === 'grid' ? gridRowStep : detailsRowHeight,
+    itemTop: itemScrollTop,
+  }
+
+  const captureViewSnapshot = () => {
+    const host = scrollHostRef.current
+    if (
+      !host || !viewState?.ready || !returnStateKey ||
+      viewStateKeyRef.current !== returnStateKey ||
+      captureStateKeyRef.current !== returnStateKey ||
+      pendingViewRestoreRef.current || viewMode === 'columns'
+    ) return
+    const layout = viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout
+    const contentTop = viewMode === 'details'
+      ? Math.max(0, host.scrollTop - detailsHeaderHeight)
+      : host.scrollTop
+    const firstSegment = layout
+      ? xDriveFileExplorerVisibleGroupSegments(layout, contentTop, 1, 0)[0]
+      : undefined
+    const index = firstSegment?.startIndex ?? (viewMode === 'details'
+      ? Math.floor(contentTop / detailsRowHeight)
+      : Math.floor(Math.max(0, contentTop - gridPaddingPx) / gridRowStep) * gridColumns)
+    const firstVisibleIndex = Math.min(Math.max(0, logicalItemCount - 1), Math.max(0, index))
+    viewState.writeSnapshot({
+      contentSignature: viewState.contentSignature,
+      firstVisibleIndex,
+      firstVisibleID: logicalItemAt(firstVisibleIndex)?.id ?? null,
+      offsetWithinItem: host.scrollTop - itemScrollTop(firstVisibleIndex),
+      scrollLeft: host.scrollLeft,
+      selectedIDs: [...selectedIDs],
+      selectedItems: [...selectedItems],
+      activeID: activeItemID,
+      activeIndex: activeIndex >= 0 ? activeIndex : null,
+      selectionAnchorID,
+      selectionAnchorIndex,
+      touchSelectionMode,
+    })
+  }
+  captureViewSnapshotRef.current = captureViewSnapshot
+
+  useEffect(() => {
+    if (viewStateKeyRef.current === returnStateKey) return
+    viewStateKeyRef.current = returnStateKey
+    pendingViewRestoreRef.current = null
+    setViewRestoreFeedback('')
+    const snapshot = viewState?.readSnapshot()
+    if (returnStateKey && snapshot && snapshot.contentSignature === viewState?.contentSignature) {
+      pendingViewRestoreRef.current = { key: returnStateKey, snapshot, running: false }
+    }
+  }, [returnStateKey, viewState])
+
+  useEffect(() => {
+    const pending = pendingViewRestoreRef.current
+    if (!pending || pending.running || pending.key !== returnStateKey || !viewState?.ready || viewMode === 'columns') return
+    pending.running = true
+    const selectionIntent = selectionIntentRef.current
+    const snapshot = pending.snapshot
+    const start = Math.min(Math.max(0, logicalItemCount - 1), snapshot.firstVisibleIndex)
+    const columns = viewMode === 'grid' ? gridColumns : 1
+    const rowStep = viewMode === 'grid' ? gridRowStep : detailsRowHeight
+    const windowSize = Math.min(200, Math.max(1, Math.ceil(viewportHeight / rowStep) + 4) * columns)
+    const end = Math.min(logicalItemCount - 1, start + windowSize - 1)
+    const current = () => pendingViewRestoreRef.current === pending &&
+      returnStateKeyRef.current === pending.key && selectionIntentRef.current === selectionIntent
+    const restore = async () => {
+      const loaded = logicalItemCount === 0 ? [] : await resolveLogicalRange(start, end)
+      if (!current()) return
+      if (!loaded) {
+        pending.running = false
+        setViewRestoreFeedback('返回位置尚未加载，可重试恢复。')
+        return
+      }
+      const layout = restoreLayoutRef.current
+      if (!layout || layout.mode === 'columns') {
+        pendingViewRestoreRef.current = null
+        return
+      }
+      const byID = new Map(loaded.map((item, offset) => [explorerIDKey(item.id), { item, index: start + offset }]))
+      const anchor = snapshot.firstVisibleID === null ? undefined : byID.get(explorerIDKey(snapshot.firstVisibleID))
+      const changed = logicalItemCount === 0 || (snapshot.firstVisibleID !== null && !anchor)
+      const restoredItems = snapshot.selectedItems.flatMap((item) => {
+        const fresh = byID.get(explorerIDKey(item.id))?.item
+        // A changed window cannot prove that an old off-window item still matches.
+        return fresh ? [fresh] : changed ? [] : [item]
+      })
+      const restoredKeys = new Set(restoredItems.map((item) => explorerIDKey(item.id)))
+      const restoredIDs = snapshot.selectedIDs.filter((id) => restoredKeys.has(explorerIDKey(id)))
+      applySelection([...restoredIDs], restoredItems)
+      const active = snapshot.activeID === null ? undefined : byID.get(explorerIDKey(snapshot.activeID))
+      const selectionAnchor = snapshot.selectionAnchorID === null ? undefined : byID.get(explorerIDKey(snapshot.selectionAnchorID))
+      const keepSavedActive = !changed && snapshot.activeID !== null &&
+        restoredKeys.has(explorerIDKey(snapshot.activeID)) &&
+        snapshot.activeIndex !== null && snapshot.activeIndex >= 0 && snapshot.activeIndex < logicalItemCount
+      const keepSavedAnchor = !changed && snapshot.selectionAnchorID !== null &&
+        snapshot.selectionAnchorIndex !== null && snapshot.selectionAnchorIndex >= 0 && snapshot.selectionAnchorIndex < logicalItemCount
+      setActiveItemID(active?.item.id ?? (keepSavedActive ? snapshot.activeID : null))
+      setActiveLogicalIndex(active?.index ?? (keepSavedActive ? snapshot.activeIndex : null))
+      setSelectionAnchorID(selectionAnchor?.item.id ?? (keepSavedAnchor ? snapshot.selectionAnchorID : null))
+      setSelectionAnchorIndex(selectionAnchor?.index ?? (keepSavedAnchor ? snapshot.selectionAnchorIndex : null))
+      setTouchSelectionMode(layout.compact && snapshot.touchSelectionMode && restoredIDs.length > 0)
+      const host = scrollHostRef.current
+      if (host) {
+        const offset = Math.max(-layout.rowStep - 36, Math.min(layout.rowStep, snapshot.offsetWithinItem))
+        const top = logicalItemCount === 0 ? 0 : Math.max(0, layout.itemTop(anchor?.index ?? start) + offset)
+        host.scrollTop = top
+        host.scrollLeft = snapshot.scrollLeft
+        pendingScrollTopRef.current = host.scrollTop
+        setScrollTop(host.scrollTop)
+        host.focus({ preventScroll: true })
+      }
+      pendingViewRestoreRef.current = null
+      if (changed && snapshot.firstVisibleID !== null) {
+        setViewRestoreFeedback('搜索结果已变化，已返回原浏览位置附近。')
+      } else {
+        setViewRestoreFeedback('')
+      }
+    }
+    void restore().catch(() => {
+      if (!current()) return
+      pending.running = false
+      setViewRestoreFeedback('返回位置尚未加载，可重试恢复。')
+    })
+  }, [
+    returnStateKey, viewState?.ready, viewRestoreVersion, logicalItemCount,
+    viewMode, gridColumns, gridRowStep, detailsRowHeight, viewportHeight,
+    groupedDetailsLayout, groupedGridLayout,
+  ])
+
+  useEffect(() => {
+    if (captureStateKeyRef.current !== returnStateKey) {
+      // Let the normal scope reset commit before capturing this entry's selection.
+      captureStateKeyRef.current = returnStateKey
+      return
+    }
+    captureViewSnapshotRef.current()
+  })
+
   useEffect(() => {
     const host = scrollHostRef.current
     if (!host) return
+    if (pendingViewRestoreRef.current?.key === returnStateKey) return
     host.scrollTop = 0
     pendingScrollTopRef.current = 0
     setScrollTop(0)
@@ -4387,6 +4673,7 @@ export function XDriveFileExplorer({
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const host = event.currentTarget
+    captureViewSnapshotRef.current()
     xDriveFileExplorerMarkThumbnailScrollActivity(host)
     if (viewMode === 'columns') return
     if (virtualizeDetails || virtualizeGrid) {
@@ -4413,6 +4700,39 @@ export function XDriveFileExplorer({
     }
   }
 
+  const statusBar = (
+      <Stack
+        data-xdrive-file-explorer-status-bar
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={2}
+        sx={{ minHeight: 28, px: 1.25, py: compactViewport ? 0.5 : 0, flexShrink: 0, flexWrap: 'wrap', rowGap: 0.25, color: 'text.secondary', bgcolor: 'background.default' }}
+      >
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
+          <Typography variant="caption" noWrap>
+            {searchSummary?.resultCount === null ? '等待搜索结果' : `${logicalItemCount} 个项目`}
+          </Typography>
+          {selectionStatusText ? (
+            <Typography variant="caption" noWrap color="text.primary">
+              {selectionStatusText}
+            </Typography>
+          ) : null}
+        </Stack>
+        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0} sx={{ flexWrap: 'wrap' }}>
+          {statusText && !searchSummary ? (
+            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{statusText}</Box>
+          ) : null}
+          <Typography variant="caption" title={arrangementStatusText} sx={{ overflowWrap: 'anywhere' }}>
+            {arrangementStatusText}
+          </Typography>
+          <Typography variant="caption" noWrap aria-label={`当前视图：${viewStatusText}`}>
+            {viewStatusText}
+          </Typography>
+        </Stack>
+      </Stack>
+  )
+
   return (
     <XDriveFileExplorerThumbnailProvider
       lifecycleKey={interactionScopeKey}
@@ -4421,6 +4741,19 @@ export function XDriveFileExplorer({
     <Paper
       variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
       onKeyDown={handleExplorerKeyDown}
+      onPointerDownCapture={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
+        captureViewSnapshotRef.current()
+        if ((event.target as Element).closest('[data-xdrive-file-explorer-restore-control]')) return
+        cancelPendingViewRestore()
+      }}
+      onWheelCapture={cancelPendingViewRestore}
+      onKeyDownCapture={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
+        captureViewSnapshotRef.current()
+        if ((event.target as Element).closest('[data-xdrive-file-explorer-restore-control]')) return
+        cancelPendingViewRestore()
+      }}
       elevation={0}
       square={presentation === 'workspace'}
       data-xdrive-file-explorer
@@ -4593,8 +4926,9 @@ export function XDriveFileExplorer({
         {searchEnabled ? (
           compactViewport && !touchSearchOpen ? (
             <IconButton
-              aria-label="搜索文件和文件夹"
-              title="搜索文件和文件夹"
+              ref={searchToggleRef}
+              aria-label="搜索全部文件和文件夹"
+              title="搜索全部文件和文件夹"
               onClick={() => setTouchSearchOpen(true)}
             >
               <SearchRoundedIcon fontSize="small" />
@@ -4615,9 +4949,9 @@ export function XDriveFileExplorer({
                   setTouchSearchOpen(false)
                 }
               }}
-              placeholder={compactViewport ? '搜索' : `在“${crumbs.at(-1)?.name ?? '当前位置'}”中搜索`}
-              aria-label="搜索文件和文件夹"
-              title={fileExplorerShortcutTitle('搜索文件和文件夹', 'focus-search', keyboardProfile)}
+              placeholder="搜索全部文件"
+              aria-label="搜索全部文件和文件夹"
+              title={fileExplorerShortcutTitle('搜索全部文件和文件夹', 'focus-search', keyboardProfile)}
               sx={compactViewport ? {
                 flex: 1,
                 minWidth: 0,
@@ -4628,13 +4962,14 @@ export function XDriveFileExplorer({
                 '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' },
               }}
               slotProps={{
+                htmlInput: { 'aria-label': '搜索全部文件和文件夹' },
                 input: {
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         size="small"
-                        aria-label={compactViewport ? '关闭搜索' : '搜索'}
-                        title={compactViewport ? '关闭搜索' : fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
+                        aria-label={compactViewport ? '关闭搜索框' : '搜索'}
+                        title={compactViewport ? '关闭搜索框，保留当前条件' : fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
                         onClick={compactViewport ? () => setTouchSearchOpen(false) : submitSearch}
                       >
                         {compactViewport ? <CloseRoundedIcon fontSize="small" /> : <SearchRoundedIcon fontSize="small" />}
@@ -4838,10 +5173,10 @@ export function XDriveFileExplorer({
             {commandBarEnd}
         </Box>
         <Box sx={{ display: compactViewport && !touchSelectionMode ? 'contents' : 'none' }}>
-              <IconButton aria-label="视图" title="视图" onClick={(event) => setViewPreferencesAnchor(event.currentTarget)}>
+              <IconButton aria-label={`视图，当前视图：${viewStatusText}`} title={`当前视图：${viewStatusText}`} onClick={(event) => setViewPreferencesAnchor(event.currentTarget)}>
                 <GridViewRoundedIcon fontSize="small" />
               </IconButton>
-              <IconButton aria-label="排序与分组" title="排序与分组" onClick={(event) => setArrangeAnchor(event.currentTarget)}>
+              <IconButton aria-label={`排序与分组，${arrangementStatusText}`} title={arrangementStatusText} onClick={(event) => setArrangeAnchor(event.currentTarget)}>
                 <SortRoundedIcon fontSize="small" />
               </IconButton>
               <Button
@@ -5028,7 +5363,7 @@ export function XDriveFileExplorer({
 
           <XDriveFileExplorerCommandButton
             startIcon={<SortRoundedIcon />}
-            title="排序、分组与文件夹优先"
+            title={arrangementStatusText}
             onClick={(event) => setArrangeAnchor(event.currentTarget)}
             aria-haspopup="menu"
             aria-expanded={Boolean(arrangeAnchor)}
@@ -5039,6 +5374,7 @@ export function XDriveFileExplorer({
             anchorEl={arrangeAnchor}
             open={Boolean(arrangeAnchor)}
             onClose={() => setArrangeAnchor(null)}
+            slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 580px)', '& .MuiMenuItem-root': { minHeight: compactViewport ? 44 : 36 } } } }}
           >
             <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', fontWeight: 700 }}>
               排序方式
@@ -5051,16 +5387,36 @@ export function XDriveFileExplorer({
             ] as const).map(([key, label]) => (
               <MenuItem
                 key={key}
+                role="menuitemradio"
+                aria-checked={sort.key === key}
                 selected={sort.key === key}
                 onClick={() => setSort({
                   key,
-                  direction: sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc',
+                  direction: sort.direction,
                 })}
               >
                 <Box component="span" sx={{ width: 20, color: 'text.secondary' }}>
                   {sort.key === key ? (sort.direction === 'asc' ? '↑' : '↓') : ''}
                 </Box>
                 {label}
+              </MenuItem>
+            ))}
+            <Divider />
+            <MenuItem disabled sx={{ fontSize: 12, opacity: '1 !important', fontWeight: 700 }}>
+              排序方向
+            </MenuItem>
+            {(['asc', 'desc'] as const).map((direction) => (
+              <MenuItem
+                key={direction}
+                role="menuitemradio"
+                aria-checked={sort.direction === direction}
+                selected={sort.direction === direction}
+                onClick={() => setSort({ ...sort, direction })}
+              >
+                <Box component="span" aria-hidden sx={{ width: 20, color: 'text.secondary' }}>
+                  {sort.direction === direction ? '✓' : ''}
+                </Box>
+                {direction === 'asc' ? '升序' : '降序'}（{sortDirectionHint[direction]}）
               </MenuItem>
             ))}
             <Divider />
@@ -5075,6 +5431,8 @@ export function XDriveFileExplorer({
             ] as const).map(([groupBy, label]) => (
               <MenuItem
                 key={groupBy}
+                role="menuitemradio"
+                aria-checked={grouping.groupBy === groupBy}
                 disabled={!groupingEnabled}
                 selected={grouping.groupBy === groupBy}
                 onClick={() => setGrouping({ ...grouping, groupBy })}
@@ -5088,6 +5446,8 @@ export function XDriveFileExplorer({
             <Divider />
             <MenuItem
               disabled={!groupingEnabled}
+              role="menuitemcheckbox"
+              aria-checked={grouping.foldersFirst}
               onClick={() => setGrouping({
                 ...grouping,
                 foldersFirst: !grouping.foldersFirst,
@@ -5164,6 +5524,46 @@ export function XDriveFileExplorer({
 
 
       <Divider />
+
+      {searchSummary ? (
+        <Box data-xdrive-file-explorer-search-summary sx={{ flexShrink: 0, px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+            <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+              范围：全部文件
+              {' · '}{searchSummary.resultCount === null ? (searchSummary.error ? '搜索未完成' : '正在搜索…') : `${searchSummary.resultCount} 个结果`}
+            </Typography>
+            <Button onClick={searchSummary.onClear} sx={{ flexShrink: 0, minHeight: 44, minWidth: 44, whiteSpace: 'normal', lineHeight: 1.35 }}>
+              清除搜索与筛选
+            </Button>
+          </Stack>
+          <Box sx={{ maxHeight: 'min(18dvh, 96px)', overflowY: 'auto', overflowWrap: 'anywhere' }}>
+            {searchSummary.query ? <Typography variant="body2">搜索：“{searchSummary.query}”</Typography> : null}
+            {searchSummary.conditions.length > 0 ? (
+              <Typography variant="body2" color="text.secondary">{searchSummary.conditions.join(' · ')}</Typography>
+            ) : null}
+          </Box>
+          {searchSummary.error ? (
+            <Stack direction="row" alignItems="center" gap={1}>
+              <Typography role="alert" variant="body2" color="error" sx={{ flex: 1, minWidth: 0, maxHeight: 56, overflow: 'auto', overflowWrap: 'anywhere' }}>
+                {searchSummary.error}
+              </Typography>
+              {searchSummary.onRetry ? <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }} onClick={searchSummary.onRetry}>重试搜索</Button> : null}
+            </Stack>
+          ) : null}
+        </Box>
+      ) : null}
+      {compactViewport ? <><Divider />{statusBar}</> : null}
+      {viewRestoreFeedback ? (
+        <Stack direction="row" alignItems="center" gap={1} sx={{ px: 1.25, flexShrink: 0 }}>
+          <Typography role="status" variant="body2" sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{viewRestoreFeedback}</Typography>
+          {pendingViewRestoreRef.current ? (
+            <Button data-xdrive-file-explorer-restore-control sx={{ minHeight: 44 }} onClick={() => {
+              if (searchSummary?.error && searchSummary.onRetry) searchSummary.onRetry()
+              else setViewRestoreVersion((value) => value + 1)
+            }}>重试恢复位置</Button>
+          ) : null}
+        </Stack>
+      ) : null}
 
       <Drawer
         anchor="left"
@@ -5925,35 +6325,8 @@ export function XDriveFileExplorer({
         </Menu>
       )}
 
-      <Divider />
-
-      <Stack
-        data-xdrive-file-explorer-status-bar
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        spacing={2}
-        sx={{ minHeight: 28, px: 1.25, color: 'text.secondary', bgcolor: 'background.default' }}
-      >
-        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
-          <Typography variant="caption" noWrap>
-            {logicalItemCount} 个项目
-          </Typography>
-          {selectionStatusText ? (
-            <Typography variant="caption" noWrap color="text.primary">
-              {selectionStatusText}
-            </Typography>
-          ) : null}
-        </Stack>
-        <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0}>
-          {statusText ? (
-            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{statusText}</Box>
-          ) : null}
-          <Typography variant="caption" noWrap>
-            {viewStatusText}
-          </Typography>
-        </Stack>
-      </Stack>
+      {!compactViewport ? <Divider /> : null}
+      {!compactViewport ? statusBar : null}
     </Paper>
     </XDriveFileExplorerThumbnailProvider>
   )

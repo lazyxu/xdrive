@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 
 const options = {};
 for (const argument of process.argv.slice(2)) {
@@ -14,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, or fullscreen.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, or search-return.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -30,8 +31,9 @@ const rootChildren = [childFolder, ...Array.from({ length: 96 }, (_, index) =>
   makeNode(100 + index, `document-${String(index + 1).padStart(3, '0')}.txt`, 1))];
 const folderChildren = Array.from({ length: 64 }, (_, index) =>
   makeNode(300 + index, `nested-${String(index + 1).padStart(3, '0')}.txt`, 2));
-const mediaItems = Array.from({ length: 240 }, (_, index) => ({
-  node: makeNode(1000 + index, `photo-${String(index + 1).padStart(3, '0')}.png`, 1),
+const searchReturnScenario = options.scenario === 'search-return';
+const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : 240 }, (_, index) => ({
+  node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario ? 2 : 1),
   metadata: { media_kind: 'image', mime_type: 'image/png', width: 80, height: 80, captured_at: stamp,
     index_state: 'ready', has_thumbnail: true, thumbnail_mime_type: 'image/png', thumbnail_width: 80, thumbnail_height: 80 },
   favorite: false, tags: [], people: [],
@@ -39,6 +41,7 @@ const mediaItems = Array.from({ length: 240 }, (_, index) => ({
 const mediaByID = new Map(mediaItems.map((item) => [item.node.id, item]));
 // One image in the real Files API enables the actual Quick Look caller route.
 if (options.scenario === 'fullscreen') rootChildren.push(mediaItems[0].node);
+if (searchReturnScenario) folderChildren.push(...mediaItems.map((item) => item.node));
 const allNodes = new Map([rootNode, ...rootChildren, ...folderChildren, ...mediaItems.map((item) => item.node)].map((node) => [node.id, node]));
 // A small, valid 80x80 PNG exercises the real thumbnail/preview decode path.
 const imagePNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAc0lEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNew7gDdvwGf2GYUOgAAAABJRU5ErkJggg==', 'base64');
@@ -110,6 +113,25 @@ function fixtureFor(request, role) {
       integerQuery(url, 'limit', 20, 20); integerQuery(url, 'offset', 0, 0); return [];
     case 'GET /api/v1/file-recent':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50); return [];
+    case 'GET /api/v1/search': {
+      assert(searchReturnScenario, 'Search transport belongs to the explicit search-return scenario');
+      queryOnly(url, ['q', 'offset', 'limit', 'sort', 'order', 'kind', 'group', 'folders_first']);
+      assert.equal(url.searchParams.get('q'), 'photo');
+      assert.equal(url.searchParams.get('sort'), 'name');
+      assert.equal(url.searchParams.get('order'), 'asc');
+      assert.equal(url.searchParams.get('kind') || 'image', 'image');
+      assert.equal(url.searchParams.get('group') || 'none', 'none');
+      assert.equal(url.searchParams.get('folders_first') || 'true', 'true');
+      const offset = integerQuery(url, 'offset', 0, mediaItems.length);
+      const limit = integerQuery(url, 'limit', 200, 200);
+      assert(limit > 0, 'Search range must be nonempty');
+      return { items: mediaItems.slice(offset, offset + limit).map(({ node }) => ({
+        node, path: `/验收目录/${node.name}`,
+        // SearchResult uses breadcrumbs; api.searchRange converts it to crumbs.
+        // A file result ends at its authoritative parent, not at the file itself.
+        breadcrumbs: [{ id: rootNode.id, name: rootNode.name }, { id: childFolder.id, name: childFolder.name }],
+      })), total_count: mediaItems.length, offset, limit, sort: 'name', order: 'asc', groups: [] };
+    }
     case 'POST /api/v1/nodes/tags/query': {
       queryOnly(url, []);
       const body = jsonBody(request);
@@ -163,7 +185,7 @@ function fixtureFor(request, role) {
     const filtered = nodes.filter((node) => (!name || node.name === name) && (!nameCI || node.name.toLowerCase() === nameCI.toLowerCase()));
     if (!url.search) return filtered;
     const limit = integerQuery(url, 'limit', 200, 500);
-    const offset = integerQuery(url, 'offset', 0, 500);
+    const offset = integerQuery(url, 'offset', 0, searchReturnScenario ? nodes.length : 500);
     return url.searchParams.has('offset')
       ? { items: filtered.slice(offset, offset + limit), total_count: filtered.length, total_count_included: true, offset, limit, sort, order }
       : { items: filtered.slice(0, limit), has_more: false, sort, order };
@@ -196,7 +218,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && options.scenario === 'fullscreen') {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -469,6 +491,178 @@ async function filesAcceptance(role) {
     check(`${activeStage}: mounted content identity`, await page.evaluate(() => window.__mobileQaIdentity.main === document.querySelector('main') && window.__mobileQaIdentity.files === document.querySelector('[data-xdrive-file-explorer]') && window.__mobileQaIdentity.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]')));
     check(`${activeStage}: directory retained`, page.url() === directoryURL && await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'nested-001.txt' }).count() > 0);
   }
+}
+
+// Actual built WebFileExplorer -> App media-viewer route -> caller return.
+// This intentionally does not substitute an onOpenFile callback or Viewer.
+async function searchReturnAcceptance() {
+  activeStage = 'user-search-return-setup';
+  await page.getByRole('button', { name: '搜索全部文件和文件夹', exact: true }).tap();
+  const input = page.getByRole('textbox', { name: '搜索全部文件和文件夹', exact: true });
+  await input.fill('photo');
+  await input.press('Enter');
+  const summary = page.locator('[data-xdrive-file-explorer-search-summary]');
+  await page.waitForFunction((count) => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes(`${count} 个结果`), mediaItems.length);
+  const closeSearch = page.getByRole('button', { name: '关闭搜索框', exact: true });
+  // A committed new search may already collapse the compact input.
+  if (await closeSearch.isVisible()) await closeSearch.tap();
+  await page.getByRole('button', { name: '筛选文件', exact: true }).tap();
+  const filters = page.getByRole('dialog', { name: '文件筛选', exact: true });
+  await filters.getByRole('button', { name: '类型', exact: true }).tap();
+  await page.getByRole('menuitem', { name: '图片', exact: true }).tap();
+  await page.getByRole('button', { name: '关闭筛选', exact: true }).tap();
+  await filters.waitFor({ state: 'hidden' });
+  await page.waitForFunction((count) => {
+    const text = document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent || '';
+    return text.includes(`${count} 个结果`) && text.includes('类型：图片');
+  }, mediaItems.length);
+  check(`${activeStage}: committed query and condition are readable`, (await summary.innerText()).includes('搜索：“photo”') && (await summary.innerText()).includes('类型：图片'));
+  check(`${activeStage}: Search keeps the all-files scope`, (await summary.innerText()).includes('范围：全部文件'));
+
+  const scroll = page.locator('[data-xdrive-file-explorer-scroll-host]');
+  await scroll.evaluate((element) => { element.scrollTop = Math.floor((element.scrollHeight - element.clientHeight) * 0.61); });
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-xdrive-file-explorer-item]')].some((element) => {
+    const match = /photo-(\d+)\.png/.exec(element.textContent);
+    return match && Number(match[1]) > 500;
+  }));
+  await settle();
+  const name = await scroll.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const row = [...element.querySelectorAll('[data-xdrive-file-explorer-item]')].find((item) => {
+      const rect = item.getBoundingClientRect();
+      return /photo-\d+\.png/.test(item.textContent) && rect.top >= bounds.top + 32 && rect.bottom <= bounds.bottom;
+    });
+    return /photo-\d+\.png/.exec(row?.textContent || '')?.[0];
+  });
+  assert(name, 'The real search viewport must expose a loaded media result');
+  const item = page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: name });
+  // Mouse selection followed by ordinary touch activation verifies the retained
+  // single selection as well as the mobile media-open path.
+  await item.click();
+  await page.waitForFunction((name) => [...document.querySelectorAll('[data-xdrive-file-explorer-item][aria-selected="true"]')].some((element) => element.textContent.includes(name)), name);
+  const logicalIndex = mediaItems.findIndex((media) => media.node.name === name);
+  const nodeID = mediaItems[logicalIndex].node.id;
+  check(`${activeStage}: selected result is beyond the first search page`, logicalIndex > 500, { name, logicalIndex, nodeID });
+  await item.evaluate((element) => {
+    const scrollElement = document.querySelector('[data-xdrive-file-explorer-scroll-host]');
+    window.__searchReturnCaller = {
+      main: document.querySelector('main'), files: document.querySelector('[data-xdrive-file-explorer]'),
+      background: document.querySelector('[data-xdrive-workspace-background]'),
+      scrollElement, item: element, scrollTop: scrollElement.scrollTop, url: location.href,
+      selected: [...scrollElement.querySelectorAll('[data-xdrive-file-explorer-item][aria-selected="true"]')].map((row) => /photo-\d+\.png/.exec(row.textContent)?.[0]),
+      summary: document.querySelector('[data-xdrive-file-explorer-search-summary]').textContent,
+    };
+  });
+  const callerURL = page.url();
+  const callerState = () => page.evaluate(() => {
+    const saved = window.__searchReturnCaller;
+    const currentScroll = document.querySelector('[data-xdrive-file-explorer-scroll-host]');
+    const selected = [...currentScroll.querySelectorAll('[data-xdrive-file-explorer-item][aria-selected="true"]')].map((row) => /photo-\d+\.png/.exec(row.textContent)?.[0]);
+    return {
+      sameMain: saved.main === document.querySelector('main'), sameFiles: saved.files === document.querySelector('[data-xdrive-file-explorer]'),
+      sameScroll: saved.scrollElement === currentScroll, sameBackground: saved.background === document.querySelector('[data-xdrive-workspace-background]'),
+      itemConnected: saved.item.isConnected, expectedScroll: saved.scrollTop, actualScroll: currentScroll.scrollTop,
+      expectedSelected: saved.selected, selected,
+      expectedSummary: saved.summary, summary: document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent,
+      inert: saved.background.inert, ariaHidden: saved.background.getAttribute('aria-hidden'),
+    };
+  });
+  const verifyCaller = async (phase, behindViewer, requireSameRow = true) => {
+    const state = await callerState();
+    result.samples[phase] = state;
+    check(`${phase}: same mounted Files caller and scroll host`, state.sameMain && state.sameFiles && state.sameScroll && state.sameBackground && (!requireSameRow || state.itemConnected), state);
+    check(`${phase}: exact search scroll retained`, state.actualScroll === state.expectedScroll, state);
+    check(`${phase}: stable selected result retained`, JSON.stringify(state.selected) === JSON.stringify(state.expectedSelected), state);
+    check(`${phase}: query, condition and authoritative count retained`, state.summary === state.expectedSummary, state);
+    check(`${phase}: caller input ownership`, behindViewer ? state.inert && state.ariaHidden === 'true' : !state.inert && state.ariaHidden === null, state);
+  };
+  await geometry('user-search-results-390');
+
+  activeStage = 'user-search-result-media-viewer';
+  await item.tap();
+  await page.waitForURL(/\/media-viewer\?node=/);
+  await page.locator('[data-xdrive-web-viewer]').waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-xdrive-web-viewer] [data-xdrive-file-preview-kind] img')].some((image) => image.complete && image.naturalWidth === 80));
+  const viewerURL = page.url();
+  const browse = await page.evaluate(() => {
+    const params = new URLSearchParams(location.hash.split('?')[1]);
+    const session = JSON.parse(sessionStorage.getItem(`xdrive.web_app.session.v1:${params.get('context')}`));
+    return { node: Number(params.get('node')), context: session.context, version: session.version };
+  });
+  result.samples['user-search-viewer-browse-context'] = browse;
+  check(`${activeStage}: ordinary activation launches the real media Viewer`, browse.node === nodeID && page.url().includes('/media-viewer?'), browse);
+  check(`${activeStage}: Viewer carries the owner-wide Search definition`, browse.version === 1 && browse.context.kind === 'search' && browse.context.query === 'photo' && browse.context.filters.kind === 'image', browse);
+  check(`${activeStage}: Viewer carries source ordering and grouping`, browse.context.sort.key === 'name' && browse.context.sort.direction === 'asc' && browse.context.grouping.groupBy === 'none' && browse.context.grouping.foldersFirst === true, browse);
+  check(`${activeStage}: Viewer carries the exact logical search index`, browse.context.activeIndex === logicalIndex, browse);
+  await verifyCaller('user-search-behind-viewer', true);
+  await page.screenshot({ path: path.join(outputDir, 'user-search-media-viewer.png') });
+  // The real immersive frame may have hidden chrome during screenshot work.
+  // A harmless navigation key shows it through the actual frame key handler.
+  await page.locator('[data-xdrive-web-viewer]').press('ArrowUp');
+  await page.getByRole('button', { name: '返回', exact: true }).tap();
+  await page.waitForURL(callerURL);
+  await page.locator('[data-xdrive-web-viewer]').waitFor({ state: 'hidden' });
+  await settle();
+  await verifyCaller('user-search-viewer-close', false);
+
+  activeStage = 'user-search-viewer-browser-history';
+  await page.goForward();
+  await page.waitForURL(viewerURL);
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-xdrive-web-viewer] [data-xdrive-file-preview-kind] img')].some((image) => image.complete && image.naturalWidth === 80));
+  await verifyCaller('user-search-viewer-forward', true);
+  await page.goBack();
+  await page.waitForURL(callerURL);
+  await page.locator('[data-xdrive-web-viewer]').waitFor({ state: 'hidden' });
+  await settle();
+  await verifyCaller('user-search-viewer-browser-back', false);
+
+  activeStage = 'user-search-containing-folder';
+  await page.getByRole('button', { name: `更多操作：${name}`, exact: true }).tap();
+  await page.locator('[data-xdrive-file-explorer-touch-action-sheet]').waitFor();
+  await page.getByText('显示所在文件夹', { exact: true }).tap();
+  await page.waitForURL(/\/files\?dir=2$/);
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'nested-001.txt' }).waitFor();
+  check(`${activeStage}: real adapter uses authoritative search-result parent`, new URL(page.url()).hash === '#/app/files?dir=2' && await summary.count() === 0);
+  await page.getByRole('button', { name: '后退', exact: true }).tap();
+  await page.waitForURL(callerURL);
+  await page.waitForFunction((count) => document.querySelector('[data-xdrive-file-explorer-search-summary]')?.textContent.includes(`${count} 个结果`), mediaItems.length);
+  await page.waitForFunction(() => Math.abs(document.querySelector('[data-xdrive-file-explorer-scroll-host]').scrollTop - window.__searchReturnCaller.scrollTop) <= 1).catch(() => {});
+  await verifyCaller('user-search-containing-folder-back', false, false);
+  const searchRequests = Object.entries(result.requests).filter(([key]) => key.includes(' GET /api/v1/search?'));
+  result.samples['user-search-range-requests'] = searchRequests;
+  check(`${activeStage}: real Viewer resolves a bounded page in the retained Search`, searchRequests.some(([key]) => {
+    const params = new URLSearchParams(key.split('?')[1]);
+    return params.get('kind') === 'image' && params.get('limit') === '128' && Number(params.get('offset')) >= 512;
+  }), searchRequests);
+  activeStage = 'user-search-status-navigation';
+  const statusGeometry = await page.evaluate(() => {
+    const status = document.querySelector('[data-xdrive-file-explorer-status-bar]');
+    const navigation = document.querySelector('button[aria-label="打开应用导航"]');
+    const navigationRect = navigation?.getBoundingClientRect();
+    const visibleNavigation = navigationRect && navigationRect.width > 0 && navigationRect.height > 0
+      && getComputedStyle(navigation).visibility !== 'hidden' && +getComputedStyle(navigation).opacity > 0;
+    const textRects = [];
+    if (status) {
+      const walker = document.createTreeWalker(status, NodeFilter.SHOW_TEXT);
+      for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+        if (!text.textContent.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        for (const rect of range.getClientRects()) {
+          if (rect.width > 0 && rect.height > 0) textRects.push({ text: text.textContent, rect: rect.toJSON() });
+        }
+      }
+    }
+    const overlaps = visibleNavigation ? textRects.filter(({ rect }) =>
+      Math.min(rect.right, navigationRect.right) > Math.max(rect.left, navigationRect.left)
+      && Math.min(rect.bottom, navigationRect.bottom) > Math.max(rect.top, navigationRect.top)) : [];
+    return { status: status?.getBoundingClientRect().toJSON() ?? null,
+      navigation: navigationRect?.toJSON() ?? null, visibleNavigation: Boolean(visibleNavigation), textRects, overlaps };
+  });
+  result.samples[activeStage] = statusGeometry;
+  await page.screenshot({ path: path.join(outputDir, `${activeStage}.png`) });
+  check(`${activeStage}: actual Files status text does not overlap app navigation`, statusGeometry.visibleNavigation && statusGeometry.textRects.length > 0 && statusGeometry.overlaps.length === 0, statusGeometry);
+  await page.screenshot({ path: path.join(outputDir, 'user-search-return.png') });
 }
 
 async function navigateWorkspace(label, app) {
@@ -780,6 +974,16 @@ async function fullscreenAcceptance(role) {
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
+  if (searchReturnScenario) {
+    const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    result.runnerSHA256 = hash(__filename);
+    result.builtWebSHA256 = {
+      'index.html': hash(path.join(distRoot, 'index.html')),
+      ...Object.fromEntries(fs.readdirSync(path.join(distRoot, 'assets')).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => [`assets/${name}`, hash(path.join(distRoot, 'assets', name))])),
+    };
+    result.fixture.searchItems = mediaItems.length;
+    result.fixture.searchDefinition = { query: 'photo', filters: { kind: 'image' }, sort: 'name', order: 'asc', group: 'none', foldersFirst: true, parentID: 2 };
+  }
   const mimeTypes = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
   const server = http.createServer((request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -795,7 +999,7 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario ? [{ role: 'user' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
           : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
@@ -847,6 +1051,7 @@ async function main() {
         await page.locator('[data-xdrive-media-tile]').first().waitFor();
         await galleryOverlayAcceptance(role, galleryDensity);
       } else if (options.scenario === 'fullscreen') await fullscreenAcceptance(role);
+      else if (searchReturnScenario) await searchReturnAcceptance();
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);
@@ -855,7 +1060,8 @@ async function main() {
           await galleryAcceptance(role);
         }
       }
-      await context.close();
+      // Each case owns a browser. Closing it also closes the context, without
+      // the separate context-disposal stall in portable single-process Chromium.
       await browser.close();
       browser = undefined;
     }

@@ -27,6 +27,20 @@ FileExplorer uses one shared visual grammar across Details, Grid, Quick Access, 
 
 FileExplorer Search is a Server-side logical collection. Web/Desktop must never implement a structured filter by filtering only the currently retained VirtualCollection pages.
 
+Search covers all authorized files and folders in the owner's namespace. The existing range API has no current-directory scope parameter. The input and active result summary must state **全部文件**, show the committed query, readable structured conditions and authoritative count. Keep “关闭搜索框” (collapse only), “清除筛选” (filters only) and “清除搜索与筛选” (exit Search) distinct. Loading or failure has no authoritative zero-result count; a failed search keeps its conditions and exposes Retry.
+
+### Search navigation and return
+
+Each in-memory committed history entry has a stable private identity. Search definitions are keyed by session, tab and history-entry identity. A successful folder navigation leaves that definition available for Back; failed or superseded navigation cannot replace it. Back/Forward reactivates the definition and its saved sort/grouping through the existing request-generation and sparse-range controllers. The destination directory also keeps its own runtime ordering, so Forward does not inherit the Search ordering. Explicit clearing must not resurrect the prior definition on a later return.
+
+Runtime search definitions, already-selected interaction metadata and logical viewport snapshots are bounded by retained history and the 64-entry budget per tab. They are not added to the version-1 persisted navigation DTO or the Desktop reconnect snapshot. Duplicating a tab retains the existing directory-only duplication contract; in-memory close/restore preserves the original runtime entry identity.
+
+Search results keep their existing ordinary Open behavior and expose **显示所在文件夹**. Use the authoritative Search breadcrumbs: file crumbs already end at the parent, while folder crumbs include the folder and must remove that final segment. Never infer the parent from a display path or enumerate the tree to find it.
+
+Return restores a logical anchor and intra-row offset, effective-view geometry, selected identity and focus after the authoritative count/group metadata arrives. Fetch only the initial counted page and the bounded return window. New user input, selection, scrolling or navigation takes precedence over pending restoration. If the original identity is absent from that window after namespace changes, report the nearby-position fallback and never select/focus its replacement ordinal. The current range API has no stable-ID-to-new-index lookup, so exact relocation after arbitrary namespace mutation is not promised.
+
+Count failure and return-window failure retain the saved position and expose an actual retry. A neighboring successful range cannot clear another range's failure. While return or offscreen keyboard identity resolution owns a bounded range, an old viewport notification must not interrupt it; ordinary viewport loading resumes after the committed position or a newer user intent.
+
 ### Canonical filters
 
 The shared Search contract supports these Server-owned filters:
@@ -102,7 +116,7 @@ Do not insert group headers into the item array, do not renumber filesystem item
 
 ## Tabs and native tab workflows
 
-FileExplorer tabs are shared Web/Desktop navigation workspaces, not app-local visual tabs. Each tab owns its committed history, current history index, sort, grouping, and view mode. Search state is keyed by the shared tab workspace id.
+FileExplorer tabs are shared Web/Desktop navigation workspaces, not app-local visual tabs. Each tab owns its committed history, current history index, sort, grouping, and view mode. Transient Search state is keyed by session, shared tab workspace id and private history-entry identity.
 
 **Mobile single-context presentation:** below 900 CSS px, show the active workspace with **no tab bar**. Disable internal new/close/restore/cycle/index-tab commands, folder middle-click-new-tab and tab-opening menu entries in this presentation, including when a mouse or physical keyboard is attached. Keep the existing committed desktop tab array and the active workspace's history; widening the same mounted Explorer restores desktop tab chrome without reopening or resetting directories. A resize must not leave an old tab menu above the mobile workspace. The workflows below apply to the wide presentation.
 
@@ -421,10 +435,10 @@ Do not replace the internal drag lifecycle with native drag-out and do not expos
 The Web/Desktop FileExplorer shell intentionally keeps one shared Windows-like interaction hierarchy:
 
 - the address bar remains breadcrumb-first, enters a raw editable path on focus/shortcut, and keeps compact square-ish segments instead of rounded app-navigation pills;
-- Search is contextual to the current folder and receives more horizontal space than secondary command controls;
+- Search covers all authorized files and folders and receives more horizontal space than secondary command controls;
 - structured Search filters stay Server-backed but are collapsed behind one **筛选** trigger; active filter count remains visible without keeping four chips permanently on the command bar;
 - **视图** is the single layout/density control; do not add a second Details/Grid toggle beside it;
-- **排序与分组** is one menu containing Server-backed sort, Server-backed group mode, and **文件夹优先**;
+- **排序与分组** is one menu containing Server-backed sort field, explicit **升序/降序**, Server-backed group mode, and **文件夹优先**. Choosing a field preserves direction; choosing the already-active state is idempotent. The status area and trigger expose the current field, direction, group, folders-first and effective view. The compact status strip sits above the list so the application's floating navigation trigger cannot obscure its text; wide layouts keep the footer. Details header clicks retain their usual sort-direction toggle;
 - the folder tree is manually expanded by the user and does not auto-expand or highlight itself merely because navigation changed elsewhere;
 - Trash, Quick Access, Favorites, and Recent item icons reserve the same left disclosure-slot width as the root folder row, so their visual icon column lines up with **我的文件**;
 - Grid item visual boxes are square at every density and file/folder fallback icons use the same size token within each density.
@@ -521,6 +535,7 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 - `columns` is the third shared FileExplorer view mode beside `details` and `grid`; it is persisted in the same tab/session view-mode contract.
 - Compact presentation below 900 CSS px projects a saved `columns` preference into the shared Details list, independently of pointer type. Inherited or restored tabs receive the same 52 px rows, per-item More actions and explicit multi-select as other mobile lists. Actual touch events retain the compact touch open/select contract; ordinary mouse clicks retain selection/double-click semantics, including when a mouse is attached to a phone.
 - This responsive projection must not call `onViewModeChange` or rewrite the saved tab/session preference. Returning to a wide viewport restores Column View. Explicit List/Grid choices still use the existing shared preference callback. Navigation, toolbar, filter and view chrome follow the same width boundary so narrow mouse windows cannot clip the filter in a desktop command bar.
+- A context without directory column loaders, including Search, projects a saved `columns` preference to Details at every width. Rendering, range loading, keyboard geometry and status share that effective view. Clearing Search restores the saved Columns preference when its loaders become available; only an explicit view choice writes the preference.
 - Every visible column is one paged directory request. Columns must never fetch an entire large directory only to render Finder-style hierarchy.
 - Web propagates `AbortSignal` to the paged REST request. Desktop may not be able to cancel an already-issued Agent request, so the shared view still fences every completion with per-column generation state and discards stale responses.
 - When breadcrumbs shrink or switch, inactive column requests are aborted and inactive column state is pruned.

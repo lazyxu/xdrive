@@ -44,6 +44,7 @@ import {
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
+  xDriveFileExplorerSearchFilterLabels,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -189,6 +190,10 @@ export default function WebFileExplorer({
     searchValue,
     searchFilters,
     searchLoading,
+    searchReady,
+    searchError,
+    retrySearch,
+    searchVirtualCollection,
     changeSearchValue,
     changeSearchFilters,
     clearSearch,
@@ -225,6 +230,8 @@ export default function WebFileExplorer({
     submitPath,
     openItem,
     openItemInNewTab,
+    showItemInContainingFolder,
+    explorerViewState,
     explorerVirtualCollection,
     externallySorted,
     searchStatusText,
@@ -647,6 +654,9 @@ export default function WebFileExplorer({
     const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       onOpen: () => { void openItem(item, (opened) => openWebNode(opened, item)) },
+      onShowContainingFolder: searchState.results !== null
+        ? () => { void showItemInContainingFolder(item) }
+        : undefined,
       onOpenInNewTab: node.type === 'dir' && canNewTab
         ? () => { void openItemInNewTab(item) }
         : undefined,
@@ -784,7 +794,9 @@ export default function WebFileExplorer({
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
         loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
-        emptyMessage={trashActive ? '回收站为空' : undefined}
+        emptyMessage={trashActive ? '回收站为空' : searchState.results !== null
+          ? searchError ? '搜索未完成，请重试' : searchReady ? '未找到匹配的文件或文件夹' : '正在搜索…'
+          : undefined}
         loadThumbnail={loadThumbnail}
         loadTextPreview={loadTextPreview}
         loadPreviewURL={loadPreviewURL}
@@ -798,6 +810,23 @@ export default function WebFileExplorer({
         searchValue={trashActive ? '' : searchValue}
         onSearchValueChange={changeSearchValue}
         onSearch={(query) => { void submitSearch(query) }}
+        viewState={trashActive ? undefined : explorerViewState}
+        searchSummary={!trashActive && searchState.results !== null ? {
+          query: searchState.query,
+          conditions: xDriveFileExplorerSearchFilterLabels(searchFilters, {
+            sourceOptions: searchSourceOptions, tagOptions: organization.tagOptions,
+          }),
+          resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
+          loading: searchLoading,
+          error: searchError,
+          onClear: () => {
+            if (clearSearch()) {
+              setActiveSavedSearchID(null)
+              setActiveTagID(null)
+            }
+          },
+          onRetry: () => { void retrySearch() },
+        } : undefined}
         canGoBack={!trashActive && canGoBack}
         canGoForward={!trashActive && canGoForward}
         canGoUp={!trashActive && canGoUp}

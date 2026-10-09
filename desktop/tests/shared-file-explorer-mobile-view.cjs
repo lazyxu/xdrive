@@ -85,3 +85,41 @@ test('wide presentation keeps the caller tab strip', () => {
   })
   assert.ok(html.includes('role="tablist"'))
 })
+
+test('search without directory column loaders projects the saved columns preference to List', () => {
+  for (const compact of [false, true]) {
+    const html = renderView('columns', compact, {
+      loadColumnPage: undefined,
+      onColumnNavigate: undefined,
+    })
+    assert.ok(html.includes('aria-label="文件列表"'), 'a logical search collection must render and page as a List')
+    assert.ok(!html.includes('aria-label="文件图标"'), 'unsupported Columns must not fall through to Grid')
+  }
+})
+
+test('active search exposes its real scope, committed conditions, count and actual clear action', () => {
+  const html = renderView('details', true, {
+    searchValue: '未提交的草稿',
+    searchSummary: {
+      query: '已提交照片', conditions: ['类型：图片', '标签：旅行'], resultCount: 230,
+      onClear() {},
+    },
+  })
+  assert.ok(html.includes('范围：全部文件'))
+  assert.ok(html.includes('已提交照片'))
+  assert.ok(html.includes('类型：图片'))
+  assert.ok(html.includes('标签：旅行'))
+  assert.ok(html.includes('230 个结果'))
+  assert.ok(html.includes('清除搜索与筛选'))
+})
+
+test('presentation status names the sort field, direction, grouping and effective view', () => {
+  const html = renderView('columns', true, {
+    sort: { key: 'updated', direction: 'desc' },
+    grouping: { groupBy: 'type', foldersFirst: true },
+  })
+  assert.ok(html.includes('修改时间 · 降序'))
+  assert.ok(html.includes('按类型分组'))
+  assert.ok(html.includes('文件夹优先'))
+  assert.ok(html.includes('当前视图：列表'))
+})

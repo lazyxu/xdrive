@@ -55,6 +55,7 @@ type XDriveFileExplorerWorkspaceSearchEntry = {
   groups: readonly XDriveFileExplorerGroupIndex[]
   sortSignature: string
   loading: boolean
+  error: string | null
 }
 
 type XDriveFileExplorerSearchTarget = {
@@ -77,6 +78,7 @@ function idleWorkspaceSearchEntry(): XDriveFileExplorerWorkspaceSearchEntry {
     groups: [],
     sortSignature: '',
     loading: false,
+    error: null,
   }
 }
 
@@ -102,6 +104,7 @@ export function useXDriveFileExplorerSearch<
   onError,
   onSearchIntent,
   workspaceKey = 'default',
+  retainedWorkspaceKeys,
 }: {
   loadRange: XDriveFileExplorerSearchLoader<TResult>
   sort: XDriveFileExplorerSort
@@ -109,8 +112,12 @@ export function useXDriveFileExplorerSearch<
   onError: (error: unknown) => void
   onSearchIntent?: () => void
   workspaceKey?: string
+  retainedWorkspaceKeys?: readonly string[]
 }) {
   const requestRef = useRef<Record<string, number>>({})
+  const nextRequestRef = useRef(0)
+  const workspaceKeyRef = useRef(workspaceKey)
+  workspaceKeyRef.current = workspaceKey
   const targetRef = useRef<XDriveFileExplorerSearchTarget | null>(null)
   const [target, setTarget] = useState<XDriveFileExplorerSearchTarget | null>(null)
   const [entries, setEntries] = useState<Record<string, XDriveFileExplorerWorkspaceSearchEntry>>({})
@@ -148,12 +155,13 @@ export function useXDriveFileExplorerSearch<
   }, [])
 
   const nextRequestID = useCallback((key: string) => {
-    const next = (requestRef.current[key] ?? 0) + 1
+    const next = ++nextRequestRef.current
     requestRef.current[key] = next
     return next
   }, [])
 
   const targetIsCurrent = useCallback((candidate: XDriveFileExplorerSearchTarget) => (
+    workspaceKeyRef.current === candidate.workspaceKey &&
     requestRef.current[candidate.workspaceKey] === candidate.requestID &&
     targetRef.current?.workspaceKey === candidate.workspaceKey &&
     targetRef.current.requestID === candidate.requestID
@@ -171,15 +179,25 @@ export function useXDriveFileExplorerSearch<
         totalCount: 0,
       }
     }
-    return loadRange(
-      active.query,
-      active.filters,
-      active.grouping,
-      active.sort,
-      range.offset,
-      range.limit,
-    )
-  }, [loadRange])
+    try {
+      return await loadRange(
+        active.query,
+        active.filters,
+        active.grouping,
+        active.sort,
+        range.offset,
+        range.limit,
+      )
+    } catch (error) {
+      if (targetIsCurrent(active)) {
+        updateEntry(active.workspaceKey, (current) => ({
+          ...current,
+          error: error instanceof Error ? error.message : String(error),
+        }))
+      }
+      throw error
+    }
+  }, [loadRange, targetIsCurrent, updateEntry])
 
   const virtualCollection = useXDriveVirtualCollection<TResult>({
     queryKey: searchQueryKey(target),
@@ -195,7 +213,6 @@ export function useXDriveFileExplorerSearch<
     targetGrouping: XDriveFileExplorerGrouping,
     targetSort: XDriveFileExplorerSort,
   ) => {
-    onSearchIntentRef.current?.()
     const requestID = nextRequestID(key)
     const nextTarget: XDriveFileExplorerSearchTarget = {
       workspaceKey: key,
@@ -219,6 +236,7 @@ export function useXDriveFileExplorerSearch<
       groups: [],
       sortSignature: nextTarget.sortSignature,
       loading: true,
+      error: null,
     }))
 
     try {
@@ -237,7 +255,13 @@ export function useXDriveFileExplorerSearch<
         groups: page.groups ? [...page.groups] : [],
       }))
     } catch (error) {
-      if (targetIsCurrent(nextTarget)) onError(error)
+      if (targetIsCurrent(nextTarget)) {
+        updateEntry(key, (current) => ({
+          ...current,
+          error: error instanceof Error ? error.message : String(error),
+        }))
+        onError(error)
+      }
     } finally {
       if (targetIsCurrent(nextTarget)) {
         updateEntry(key, (current) => ({
@@ -361,6 +385,7 @@ export function useXDriveFileExplorerSearch<
     const trimmed = rawQuery.trim()
     if (!trimmed) {
       if (filterActive) {
+        onSearchIntentRef.current?.()
         await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
@@ -370,6 +395,7 @@ export function useXDriveFileExplorerSearch<
     const decision = xDriveFileExplorerSearchDecision(rawQuery)
     if (decision.kind === 'clear') {
       if (filterActive) {
+        onSearchIntentRef.current?.()
         await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
@@ -380,6 +406,7 @@ export function useXDriveFileExplorerSearch<
       onError(new Error(decision.message))
       return
     }
+    onSearchIntentRef.current?.()
     await executeSearch(workspaceKey, decision.query, entry.filters, grouping, sort)
   }, [
     clearSearch,
@@ -393,8 +420,32 @@ export function useXDriveFileExplorerSearch<
   ])
 
   useEffect(() => {
+    const retained = retainedWorkspaceKeys ? new Set(retainedWorkspaceKeys) : null
+    retained?.add(workspaceKey)
+    if (retained) {
+      for (const key of Object.keys(requestRef.current)) {
+        if (!retained.has(key)) delete requestRef.current[key]
+      }
+    }
+    setEntries((current) => {
+      let changed = false
+      const next: Record<string, XDriveFileExplorerWorkspaceSearchEntry> = {}
+      for (const [key, value] of Object.entries(current)) {
+        if (retained && !retained.has(key)) { changed = true; continue }
+        if (key !== workspaceKey && (value.loading || value.groups.length > 0 || value.error)) {
+          next[key] = { ...value, loading: false, groups: [], error: null }
+          changed = true
+        } else {
+          next[key] = value
+        }
+      }
+      return changed ? next : current
+    })
+  }, [retainedWorkspaceKeys, workspaceKey])
+
+  useEffect(() => {
     if (!searchActive) {
-      if (targetRef.current?.workspaceKey !== workspaceKey) {
+      if (targetRef.current && targetRef.current.workspaceKey !== workspaceKey) {
         targetRef.current = null
         setTarget(null)
         virtualCollection.reset(`file-explorer:search:idle:${workspaceKey}`)
@@ -462,7 +513,14 @@ export function useXDriveFileExplorerSearch<
     groups: entry.groups,
     results: searchResults,
     loading: entry.loading,
+    error: entry.error,
   }
+
+  const retrySearch = useCallback(async () => {
+    if (searchStateKeyRef.current !== searchStateKey || !searchActive) return
+    onSearchIntentRef.current?.()
+    await executeSearch(workspaceKey, entry.query, entry.filters, grouping, sort)
+  }, [entry.filters, entry.query, executeSearch, grouping, searchActive, searchStateKey, sort, workspaceKey])
 
   return {
     searchValue,
@@ -472,6 +530,9 @@ export function useXDriveFileExplorerSearch<
     searchVirtualItems,
     searchVirtualCollection,
     searchLoading: entry.loading,
+    searchReady: searchActive && activeTarget && virtualCollection.totalCount !== null && !entry.loading && !entry.error,
+    searchError: entry.error,
+    retrySearch,
     searchSortMatches: !searchActive || entry.sortSignature === sortSignature,
     changeSearchValue,
     changeSearchFilters,

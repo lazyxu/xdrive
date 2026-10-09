@@ -168,13 +168,15 @@ test('Desktop availability Search is an Agent range filter, never renderer filte
     "availability?: XDriveFileExplorerSearchAvailability",
     "filters?.availability",
     "filters?.availability ?? ''",
+    "可用性：",
   ]) {
     assert.ok(sharedSearch.includes(token), 'shared Search availability identity missing: ' + token)
   }
   for (const token of [
     "availabilityOptions?: readonly XDriveFileExplorerSearchAvailabilityOption[]",
     "open('availability')",
-    "可用性：",
+    "xDriveFileExplorerSearchFilterFieldLabels",
+    "label={filterLabels.availability}",
     "menu === 'availability'",
   ]) {
     assert.ok(sharedSearchFilters.includes(token), 'shared availability filter surface missing: ' + token)

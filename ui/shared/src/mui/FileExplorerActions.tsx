@@ -33,6 +33,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
   systemOpenLabel = '使用系统打开',
   onDownload,
   downloadLabel = '下载',
+  onShowContainingFolder,
   onReveal,
   revealLabel = '在文件资源管理器中显示',
   onShare,
@@ -54,6 +55,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
   systemOpenLabel?: string
   onDownload?: () => void
   downloadLabel?: string
+  onShowContainingFolder?: () => void
   onReveal?: () => void
   revealLabel?: string
   onShare?: () => void
@@ -164,6 +166,16 @@ export function xDriveFileExplorerStandardItemMenuItems({
         onSelect: onHistory,
       })
     }
+  }
+
+  if (onShowContainingFolder) {
+    items.push({
+      id: 'show-containing-folder',
+      label: '显示所在文件夹',
+      icon: <FolderOpenRoundedIcon fontSize="small" />,
+      disabled: primaryDisabled,
+      onSelect: onShowContainingFolder,
+    })
   }
 
   if (onRename) {
