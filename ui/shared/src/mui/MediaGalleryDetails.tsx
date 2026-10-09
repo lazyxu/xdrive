@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   Star as StarIcon,
   StarBorder as StarBorderIcon,
@@ -173,7 +174,7 @@ export function xDriveMediaInspectorFields(item: MediaItem) {
   return { photoInfo, organize, files }
 }
 
-function MediaDetailsRows({ rows }: { rows: readonly MediaDetailRow[] }) {
+function MediaDetailsRows({ rows }: { rows: readonly (readonly [label: string, value: ReactNode])[] }) {
   if (rows.length === 0) return null
   return (
     <Stack spacing={1.1}>
@@ -197,7 +198,7 @@ function MediaDetailsRows({ rows }: { rows: readonly MediaDetailRow[] }) {
 export interface XDriveMediaDetailsContentProps {
   item: MediaItem | null
   showPreview?: boolean
-  extraFileRows?: Array<[label: string, value: string]>
+  extraFileRows?: Array<[label: string, value: ReactNode]>
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader

@@ -814,7 +814,7 @@ Ordinary media tile single click opens Viewer immediately. Explicit selection mo
 
 Both Gallery and standalone Web media Viewer label the existing Info icon as **属性** and retain the canonical shared Inspector content. In Gallery, opening Properties does not destroy the Viewer. A modal right Drawer owns Desktop focus/Escape above the Viewer; mobile continues using the bottom Drawer. When Properties is opened from Viewer, the Inspector omits its redundant media preview so one media player/Live Photo loader remains mounted. Current properties follow Viewer next/previous navigation.
 
-Next separate step: connect FileExplorer's image/video/Live Photo Properties to the same Inspector fields via a Node/MediaItem adapter. Preserve ordinary file/folder properties and distinguish raw Node size from grouped Live Photo resource sizes.
+Completed by #1076: FileExplorer's image/video/Live Photo Properties now load the same MediaItem and reuse the shared Inspector fields. Ordinary file/folder Properties remain separate; the selected Node size is distinct from grouped Live Photo resource sizes. FileExplorer-specific Node ID, source and custom property fields remain visible within the shared Inspector.
 
 The Trash section cannot open a normal media Viewer, so a tile activation there falls back to Properties; it must not silently do nothing.
 
