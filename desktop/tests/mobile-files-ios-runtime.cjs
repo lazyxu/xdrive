@@ -670,3 +670,59 @@ test('closing system share during preparation cancels its byte-fetch request', a
     else delete global.navigator
   }
 })
+
+test('F-iOS-01A: one visible large heading collapses into the compact title while scroll owner stays mounted', async () => {
+  await withView(async h => {
+    const nav = find(h.view, 'data-mobile-files-navigation-bar', true)
+    assert.equal(nav.props.sx.minHeight, 52)
+    assert.equal(count(h.view, 'data-mobile-files-large-title'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true).props['aria-hidden'], true)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-group', 'locations').props.sx.borderRadius, '13px')
+    const scrollHost = find(h.view, 'data-xdrive-mobile-files-scroll', true)
+    await act(async () => { scrollHost.props.onScroll({ currentTarget: { scrollTop: 75 } }) })
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true).props['aria-hidden'], false)
+    assert.equal(count(h.view, 'data-mobile-files-large-title'), 1, 'scroll does not remount title or file controller')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+    await act(async () => { scrollHost.props.onScroll({ currentTarget: { scrollTop: 0 } }) })
+    assert.equal(find(h.view, 'data-mobile-files-compact-title', true).props['aria-hidden'], true)
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-group'), 1, 'one group shell for ordinary list')
+    assert.equal(find(h.view, 'data-mobile-files-group', 'directory').props.sx.overflow, 'hidden')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  })
+})
+
+test('F-iOS-01A: Mobile context menu respects shared icons, separators and destructive group', async () => {
+  const dispatched = []
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    const item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    await act(async () => { item.props.onContextMenu({
+      preventDefault() {}, clientX: 40, clientY: 90, nativeEvent: { pointerType: 'mouse' },
+    }) })
+    const open = find(h.view, 'data-mobile-files-context-action', 'open')
+    const erase = find(h.view, 'data-mobile-files-context-action', 'delete')
+    assert.equal(open.findAll(node => node.type === 'ListItemIcon').length, 1)
+    assert.equal(erase.props.sx.color, 'error.main')
+    assert.equal(count(h.view, 'data-mobile-files-context-separator'), 2,
+      'edit and destructive operations have distinct dividers')
+    const share = find(h.view, 'data-mobile-files-context-action', 'share')
+    assert.match(textOf(share.props.children), /分享链接/)
+    await act(async () => { open.props.onClick() })
+    assert.deepEqual(dispatched, ['open'])
+  }, { props: {
+    getItemMenuItems: () => [
+      { id: 'open', label: '打开', icon: React.createElement('action-icon', { name: 'open' }),
+        onSelect: () => dispatched.push('open') },
+      { id: 'share', label: '分享', icon: React.createElement('action-icon', { name: 'share' }),
+        onSelect: () => dispatched.push('share') },
+      { id: 'delete', label: '删除', danger: true, icon: React.createElement('action-icon', { name: 'delete' }),
+        onSelect: () => dispatched.push('delete') },
+    ],
+  } })
+})

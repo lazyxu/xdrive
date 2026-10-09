@@ -298,3 +298,45 @@ test('Mobile Browse editor persists only visibility locally and delegates orderi
   assert.match(adapter, /onReorderSavedSearches=\{ids => organization\.reorderSavedSearches\(ids\)\}/)
   assert.doesNotMatch(mobileSource, /props\.onViewModeChange\(next\)/)
 })
+
+test('F-iOS-01A: Mobile-only large-title chrome and grouped iOS surfaces preserve original viewport work', () => {
+  assert.match(mobileSource, /IOS_FILES_MOBILE_FONT/)
+  assert.match(mobileSource, /IOS_FILES_MOBILE_BLUE = '#007aff'/)
+  assert.match(mobileSource, /data-mobile-files-navigation-bar/)
+  assert.match(mobileSource, /data-mobile-files-compact-title/)
+  assert.match(mobileSource, /data-mobile-files-large-title/)
+  assert.match(mobileSource, /compactTitleVisible = scrollTop > 48/)
+  assert.match(mobileSource, /component="h2"/)
+  for (const group of ['locations', 'quick', 'organization', 'directory', 'collection']) {
+    assert.ok(mobileSource.includes(`data-mobile-files-group="${group}"`), 'missing Mobile-only native grouped section: ' + group)
+  }
+  assert.match(mobileSource, /borderRadius: '13px'/)
+  assert.match(mobileSource, /left: 60, right: 0/)
+  assert.match(mobileSource, /MOBILE_FILES_ROW_HEIGHT/)
+  assert.match(mobileSource, /MOBILE_FILES_GRID_ROW_HEIGHT/)
+  assert.match(mobileSource, /xDriveFileExplorerVisibleGroupSegments/)
+  assert.match(mobileSource, /data-xdrive-file-explorer-scroll-host/)
+  assert.doesNotMatch(mobileSource, /props\.onViewModeChange\(next\)/)
+})
+
+test('F-iOS-01A: context menu consumes shared action icon/divider/danger metadata', () => {
+  assert.match(mobileSource, /mobileContextAction = \(action: XDriveFileExplorerMenuItem\)/)
+  assert.match(mobileSource, /<ListItemIcon sx=\{\{ minWidth: 34/)
+  assert.match(mobileSource, /item\.dividerBefore/)
+  assert.match(mobileSource, /item\.danger/)
+  assert.match(mobileSource, /data-mobile-files-context-separator="danger"/)
+  assert.match(mobileSource, /data-mobile-files-context-action=\{action\.id\}/)
+  assert.match(mobileSource, /action\.id === 'share' \? '分享链接' : action\.label/)
+  assert.match(mobileSource, /\['open-new-tab', 'open-browser-tab'\]/)
+  assert.match(mobileSource, /data-mobile-files-native-share-entry="directory"/)
+})
+
+test('AGENTS continuation status contract is mandatory and distinguishes merged from planned', () => {
+  const agents = read('AGENTS.md')
+  assert.match(agents, /## Continuation progress reporting/)
+  assert.match(agents, /current phase/i)
+  assert.match(agents, /completed work/i)
+  assert.match(agents, /remaining gaps/i)
+  assert.match(agents, /materially related existing branches/i)
+  assert.match(agents, /End each implementation turn/)
+})
