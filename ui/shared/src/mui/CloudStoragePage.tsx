@@ -54,7 +54,7 @@ export function XDriveCloudStoragePage({
     <XDriveWorkspaceSurface
       presentation="page"
       title="云端存储"
-      subtitle="查看当前账号的容量、逻辑文件、回收站、历史版本与文件大小分布。"
+      subtitle="查看当前账号的容量、重复内容、回收站、历史版本与文件大小分布。"
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
@@ -106,6 +106,17 @@ export function XDriveCloudStoragePage({
                 <XDriveMetricCard title="回收站" value={formatBytes(quota.trash_bytes)} suffix="计入账号占用" />
                 <XDriveMetricCard title="历史版本" value={formatBytes(quota.history_bytes)} suffix="已保存的历史内容" />
                 <XDriveMetricCard title="上传预占" value={formatBytes(quota.reserved_bytes)} suffix="进行中上传预留空间" />
+              </XDriveMetricGrid>
+            </Stack>
+          ) : null}
+
+          {stats ? (
+            <Stack spacing={1.5} data-xdrive-cloud-duplicate-stats>
+              <XDriveSectionHeader level="h3" title="重复文件与 CAS 节省" subtitle="当前账号有效文件按完整 SHA-256 与大小分组；不会删除或合并文件。" />
+              <XDriveMetricGrid>
+                <XDriveMetricCard title="重复内容组" value={(stats.duplicate_group_count ?? 0).toLocaleString('zh-CN')} />
+                <XDriveMetricCard title="额外重复文件" value={(stats.duplicate_file_count ?? 0).toLocaleString('zh-CN')} suffix="每组除第一份以外的文件数" />
+                <XDriveMetricCard title="已节省原始内容" value={formatBytes(stats.duplicate_logical_bytes ?? 0)} suffix="当前有效文件的理论去重收益，非删除后可释放空间" />
               </XDriveMetricGrid>
             </Stack>
           ) : null}

@@ -80,6 +80,9 @@ type storageStatsDTO struct {
 	Inventory                 *storageInventoryDTO         `json:"inventory,omitempty"`
 	FileCount                 int64                        `json:"file_count,omitempty"`
 	LogicalFileBytes          int64                        `json:"logical_file_bytes,omitempty"`
+	DuplicateGroupCount       int64                        `json:"duplicate_group_count"`
+	DuplicateFileCount        int64                        `json:"duplicate_file_count"`
+	DuplicateLogicalBytes     int64                        `json:"duplicate_logical_bytes"`
 	AverageFileSizeBytes      float64                      `json:"average_file_size_bytes,omitempty"`
 	P50FileSizeBytes          int64                        `json:"p50_file_size_bytes,omitempty"`
 	P90FileSizeBytes          int64                        `json:"p90_file_size_bytes,omitempty"`
@@ -366,34 +369,52 @@ func (s *Server) adminStorageHealth(c *gin.Context) {
 }
 
 type userFileStorageStatsRow struct {
-	FileCount            int64
-	LogicalFileBytes     int64
-	AverageFileSizeBytes float64
-	P50FileSizeBytes     float64
-	P90FileSizeBytes     float64
-	P99FileSizeBytes     float64
-	LT16KiBCount         int64
-	LT16KiBBytes         int64
-	B16To64KiBCount      int64
-	B16To64KiBBytes      int64
-	B64To256KiBCount     int64
-	B64To256KiBBytes     int64
-	B256KiBTo1MiBCount   int64
-	B256KiBTo1MiBBytes   int64
-	B1To4MiBCount        int64
-	B1To4MiBBytes        int64
-	B4To16MiBCount       int64
-	B4To16MiBBytes       int64
-	B16To64MiBCount      int64
-	B16To64MiBBytes      int64
-	GE64MiBCount         int64
-	GE64MiBBytes         int64
+	FileCount             int64
+	LogicalFileBytes      int64
+	DuplicateGroupCount   int64
+	DuplicateFileCount    int64
+	DuplicateLogicalBytes int64
+	AverageFileSizeBytes  float64
+	P50FileSizeBytes      float64
+	P90FileSizeBytes      float64
+	P99FileSizeBytes      float64
+	LT16KiBCount          int64
+	LT16KiBBytes          int64
+	B16To64KiBCount       int64
+	B16To64KiBBytes       int64
+	B64To256KiBCount      int64
+	B64To256KiBBytes      int64
+	B256KiBTo1MiBCount    int64
+	B256KiBTo1MiBBytes    int64
+	B1To4MiBCount         int64
+	B1To4MiBBytes         int64
+	B4To16MiBCount        int64
+	B4To16MiBBytes        int64
+	B16To64MiBCount       int64
+	B16To64MiBBytes       int64
+	GE64MiBCount          int64
+	GE64MiBBytes          int64
 }
 
 func (s *Server) loadUserStorageStats(ctx context.Context, uid uint64) (storageStatsDTO, error) {
-	const query = `SELECT
+	const query = `WITH current_files AS MATERIALIZED (
+  SELECT f.size, LOWER(f.sha256) AS sha256
+  FROM xd_files f
+  JOIN xd_nodes n ON n.id = f.node_id
+  WHERE n.owner_id = ? AND n.deleted_at IS NULL
+), duplicate_groups AS (
+  SELECT COUNT(*) - 1 AS extra_copies, MAX(size) AS file_size
+  FROM current_files
+  WHERE LENGTH(sha256) = 64
+  GROUP BY sha256, size
+  HAVING COUNT(*) > 1
+)
+SELECT
   COUNT(*),
   COALESCE(SUM(f.size), 0),
+  COALESCE((SELECT COUNT(*) FROM duplicate_groups), 0),
+  COALESCE((SELECT SUM(extra_copies) FROM duplicate_groups), 0),
+  COALESCE((SELECT SUM(extra_copies * file_size) FROM duplicate_groups), 0),
   COALESCE(AVG(f.size), 0),
   COALESCE(percentile_cont(0.50) WITHIN GROUP (ORDER BY f.size), 0),
   COALESCE(percentile_cont(0.90) WITHIN GROUP (ORDER BY f.size), 0),
@@ -414,14 +435,15 @@ func (s *Server) loadUserStorageStats(ctx context.Context, uid uint64) (storageS
   COALESCE(SUM(f.size) FILTER (WHERE f.size >= 16777216 AND f.size < 67108864), 0),
   COUNT(*) FILTER (WHERE f.size >= 67108864),
   COALESCE(SUM(f.size) FILTER (WHERE f.size >= 67108864), 0)
-FROM xd_files f
-JOIN xd_nodes n ON n.id = f.node_id
-WHERE n.owner_id = ? AND n.deleted_at IS NULL`
+FROM current_files f`
 
 	var row userFileStorageStatsRow
 	err := s.DB.WithContext(ctx).Raw(query, uid).Row().Scan(
 		&row.FileCount,
 		&row.LogicalFileBytes,
+		&row.DuplicateGroupCount,
+		&row.DuplicateFileCount,
+		&row.DuplicateLogicalBytes,
 		&row.AverageFileSizeBytes,
 		&row.P50FileSizeBytes,
 		&row.P90FileSizeBytes,
@@ -443,13 +465,16 @@ WHERE n.owner_id = ? AND n.deleted_at IS NULL`
 
 func userFileStorageStatsFromRow(row userFileStorageStatsRow) storageStatsDTO {
 	return storageStatsDTO{
-		Scope:                "self",
-		FileCount:            row.FileCount,
-		LogicalFileBytes:     row.LogicalFileBytes,
-		AverageFileSizeBytes: row.AverageFileSizeBytes,
-		P50FileSizeBytes:     int64(math.Round(row.P50FileSizeBytes)),
-		P90FileSizeBytes:     int64(math.Round(row.P90FileSizeBytes)),
-		P99FileSizeBytes:     int64(math.Round(row.P99FileSizeBytes)),
+		Scope:                 "self",
+		FileCount:             row.FileCount,
+		LogicalFileBytes:      row.LogicalFileBytes,
+		DuplicateGroupCount:   row.DuplicateGroupCount,
+		DuplicateFileCount:    row.DuplicateFileCount,
+		DuplicateLogicalBytes: row.DuplicateLogicalBytes,
+		AverageFileSizeBytes:  row.AverageFileSizeBytes,
+		P50FileSizeBytes:      int64(math.Round(row.P50FileSizeBytes)),
+		P90FileSizeBytes:      int64(math.Round(row.P90FileSizeBytes)),
+		P99FileSizeBytes:      int64(math.Round(row.P99FileSizeBytes)),
 		FileBuckets: []storageSizeBucketDTO{
 			{Key: "lt_16_kib", Label: "< 16 KiB", Count: row.LT16KiBCount, Bytes: row.LT16KiBBytes},
 			{Key: "16_64_kib", Label: "16–64 KiB", Count: row.B16To64KiBCount, Bytes: row.B16To64KiBBytes},

@@ -175,7 +175,6 @@ export function XDriveFileExplorerNavigationPane({
   onSaveCurrentSearch,
   canSaveCurrentSearch = false,
   savedSearchRuleLabels,
-  currentSearchNotice = '',
   tagsEnabled = false,
   tags = [],
   activeTagID = null,
@@ -1014,21 +1013,8 @@ export function XDriveFileExplorerNavigationPane({
               </Button>
             ) : null}
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
-            保存搜索规则，动态显示符合全部条件的文件；文件保留在原位置。
-            {onSaveCurrentSearch && !canSaveCurrentSearch ? '先搜索或设置筛选，再保存为智能文件夹。' : ''}
-          </Typography>
-          {currentSearchNotice ? (
-            <Typography variant="caption" role="status" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
-              {currentSearchNotice}
-            </Typography>
-          ) : null}
           {organizationReadState('智能文件夹', savedSearches.length)}
-          {savedSearches.length === 0 && !organizationLoading && !organizationError ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无保存的搜索
-            </Typography>
-          ) : savedSearches.length > 0 ? (
+          {savedSearches.length > 0 ? (
             <Stack spacing={0.25}>
               {savedSearches.map((search) => (
                 <Box
@@ -1186,15 +1172,8 @@ export function XDriveFileExplorerNavigationPane({
               </Button>
             ) : null}
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
-            点击标签查找文件；选择文件后可通过“标签”分配或移除标签。数量为全部文件中的标签项数。
-          </Typography>
           {organizationReadState('标签', tags.length)}
-          {tags.length === 0 && !organizationLoading && !organizationError ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无标签
-            </Typography>
-          ) : tags.length > 0 ? (
+          {tags.length > 0 ? (
             <Stack spacing={0.25}>
               {tags.map((tag) => (
                 <ListItemButton

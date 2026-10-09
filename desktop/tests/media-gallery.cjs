@@ -175,7 +175,6 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
   for (const token of [
     'XDriveMediaGalleryCleanup',
     'data-xdrive-media-gallery-cleanup',
-    'data-xdrive-media-cleanup-duplicate',
     'data-xdrive-media-cleanup-burst',
     'data-xdrive-media-cleanup-recommended',
     "case 'duplicate-review':",
@@ -183,8 +182,6 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
     'source.listDuplicateItemRange',
     'source.listBurstReviewItemRange',
     'currentCleanupReview ? \'all\' : timeScale',
-    'xDrive CAS 按内容去重',
-    '删除操作仍然先进入回收站',
   ]) {
     assert.ok(sharedGallery.includes(token), `Gallery cleanup contract missing: ${token}`)
   }

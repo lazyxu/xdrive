@@ -343,8 +343,8 @@ for (const platform of ['Web', 'Desktop']) {
       const state = h.record('successful empty control')
       assert.equal(state.organizationLoading, false)
       assert.deepEqual(h.errors, [])
-      assert.match(h.section('标签'), /暂无标签/)
-      assert.match(h.section('智能文件夹'), /暂无保存的搜索/)
+      assert.doesNotMatch(h.section('标签'), /暂无标签|点击标签查找文件/)
+      assert.doesNotMatch(h.section('智能文件夹'), /暂无保存的搜索|保存搜索规则/)
     } finally { await h.dispose() }
   })
 

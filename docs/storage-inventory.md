@@ -369,3 +369,7 @@ When an account has no explicit quota and physical disk totals are available, th
 - free disk remains the track background.
 
 Other disk usage is physical disk used bytes minus the current account's xDrive physical bytes, clamped at zero. Explicit user quotas keep their existing quota-progress semantics instead of mixing quota and physical-disk accounting.
+
+## Current-account duplicate content counters (Cloud Storage)
+
+The shared Web/Desktop Cloud Storage page reads the current-account `/api/v1/me/storage` statistics. Active file Nodes are grouped by normalized full SHA-256 and file size; per group of N identical file bytes, the **extra duplicate file count** is N−1 and **logical original-byte savings** is (N−1) × size. Display duplicate-group count, extra-file count and logical bytes already shared through CAS, including non-photo files. Trashed Nodes and historical versions are deliberately excluded from this **current files** view; cross-account files remain private. These metrics measure theoretical avoided duplicate original bytes for the selected account, **not** additional disk space reclaimable by deleting them, nor a global physical CAS audit. Absent SHA-256 cannot be treated as identical. No cleanup action is exposed here. Storage snapshots and global CAS references are separate semantics.

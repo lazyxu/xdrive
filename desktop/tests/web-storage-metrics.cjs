@@ -38,11 +38,14 @@ test('Web global storage statistics use shared metric primitives', () => {
 test('Cloud storage is one shared Web/Desktop current-account workspace', () => {
   assert.ok(cloudStorage.includes('export function XDriveCloudStoragePage'))
   assert.ok(cloudStorage.includes('title="云端存储"'))
-  assert.equal((cloudStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
-  assert.equal((cloudStorage.match(/<XDriveMetricCard\b/g) || []).length, 11)
+  assert.equal((cloudStorage.match(/<XDriveMetricGrid\b/g) || []).length, 3)
+  assert.equal((cloudStorage.match(/<XDriveMetricCard\b/g) || []).length, 14)
   assert.ok(cloudStorage.includes('title="范围：当前账号"'))
   assert.ok(cloudStorage.includes('title="账号容量"'))
   assert.ok(cloudStorage.includes('title="文件大小分布"'))
+  for (const field of ['duplicate_group_count', 'duplicate_file_count', 'duplicate_logical_bytes']) {
+    assert.ok(cloudStorage.includes(field), 'missing current-account duplicate metric: ' + field)
+  }
   assert.ok(cloudStorage.includes('<XDriveStorageDistributionChart'))
   assert.equal(cloudStorage.includes('CAS 全局物理对象'), false)
   assert.equal(cloudStorage.includes('宿主机绝对路径'), false)
