@@ -8,12 +8,13 @@ import type {
   XDriveSourceTargetNode,
 } from '@xdrive/ui/mui'
 
-function desktopSourceManagerPort(): XDriveSourceManagerPort {
+function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceManagerPort {
   const agent = window.xdriveDesktop.agent
   return {
     sources: () => agent.getSources(),
     sourceCredentialStatus: (sourceID) => agent.getSourceCredential(sourceID),
     createSource: (input) => agent.createSource(input),
+    authorizeLocalFolder: localFolderSupported ? (sourceID) => window.xdriveDesktop.authorizeLocalFolder(sourceID) : undefined,
     triggerSource: (sourceID) => agent.triggerSource(sourceID),
     sourceRuns: (sourceID, limit, offset) => agent.getSourceRuns(sourceID, limit, offset),
     sourceRunFailures: (sourceID, runID, limit, offset) =>
@@ -45,9 +46,9 @@ function desktopSourceManagerPort(): XDriveSourceManagerPort {
   }
 }
 
-export function createDesktopSourceManagerAdapter(username?: string) {
+export function createDesktopSourceManagerAdapter(username?: string, localFolderSupported = false) {
   return createXDriveSourceManagerAdapter(
-    desktopSourceManagerPort(),
+    desktopSourceManagerPort(localFolderSupported),
     { username },
   )
 }

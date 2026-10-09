@@ -74,6 +74,7 @@ type SourceTargetNode = {
 export function XDriveSourceCreateDialog({
   open,
   creating,
+  allowLocalPush = false,
   values,
   nameError,
   spacesError,
@@ -102,6 +103,7 @@ export function XDriveSourceCreateDialog({
 }: {
   open: boolean
   creating: boolean
+  allowLocalPush?: boolean
   values: XDriveSourceCreateValues
   nameError: string
   spacesError: string
@@ -230,6 +232,7 @@ export function XDriveSourceCreateDialog({
         <MuiBox id="external-source-create-form" component="form" onSubmit={onSubmit}>
           <Stack spacing={2}>
             <XDriveSourcePresetField
+              allowLocalPush={allowLocalPush}
               value={values.preset}
               onChange={onPresetChange}
             />
@@ -242,6 +245,13 @@ export function XDriveSourceCreateDialog({
                 if (nameError) onClearNameError()
               }}
             />
+            {option.kind === 'local_folder' ? (
+              <XDriveStatusAlert tone="neutral">
+                本机文件夹会先在云端创建暂停的来源，随后由 Desktop 原生目录选择器完成本机 Root 授权。
+                扫描、上传与自动同步执行器尚未启用，当前不会传输或删除任何文件。
+              </XDriveStatusAlert>
+            ) : (
+              <>
             <XDriveSourceRunModeField
               label="初始运行模式"
               value={values.run_mode}
@@ -261,7 +271,9 @@ export function XDriveSourceCreateDialog({
                 ) : null}
               </XDriveStatusAlert>
             ) : null}
-            <XDriveSourceScheduleFields
+              </>
+            )}
+            {option.kind !== 'local_folder' ? <XDriveSourceScheduleFields
               wideAt="md"
               scheduleType={values.schedule_type}
               expression={values.schedule_expression}
@@ -269,7 +281,7 @@ export function XDriveSourceCreateDialog({
               onScheduleTypeChange={(value) => onChange({ schedule_type: value })}
               onExpressionChange={(value) => onChange({ schedule_expression: value })}
               onTimezoneChange={(value) => onChange({ schedule_timezone: value })}
-            />
+            /> : null}
             <XDriveSourceIgnoreRulesField
               value={values.ignore_rules ?? ''}
               onChange={(value) => onChange({ ignore_rules: value })}

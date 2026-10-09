@@ -37,5 +37,7 @@ test('Web and Desktop source cards and preset field consume the shared branded i
   assert.match(web, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
   assert.match(desktop, /icon=\{<XDriveSourceKindIcon kind=\{row\.source\.kind\}/)
   assert.match(sourceBasicFields, /<XDriveSourceKindIcon kind=\{option\.kind\} size="small"/)
-  assert.ok(sourceBasicFields.includes('externalSourceCreateOptions.map'), 'shared preset field must render the shared Source options')
+  assert.ok(sourceBasicFields.includes('externalSourceCreateOptions.filter'), 'shared preset field must render the shared Source options through capability filtering')
+  assert.ok(sourceBasicFields.includes("option.kind !== 'local_folder'"), 'local folder option must be hidden when native Agent authorization is unavailable')
+  assert.ok(sourceBasicFields.includes('allowLocalPush'), 'native capability must explicitly enable the local folder option')
 })

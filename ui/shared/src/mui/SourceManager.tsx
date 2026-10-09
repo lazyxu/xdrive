@@ -51,6 +51,7 @@ import type {
 } from '../external-sources'
 
 export interface XDriveSourceManagerAdapter {
+  authorizeLocalFolder?(sourceID: number): Promise<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>
   me?(): Promise<{ username: string }>
   sourceOverview(): Promise<ExternalSourceOverview[]>
   createSource(input: CreateExternalSourceInput): Promise<ExternalSource>
@@ -623,7 +624,26 @@ export function XDriveSourceManager({
       }
     }
 
-    setFeedback(option.kind === 'synology_files'
+    let localAuthorization: 'bound' | 'cancelled' | 'error' | null = null
+    if (option.kind === 'local_folder' && adapter.authorizeLocalFolder) {
+      try {
+        const result = await adapter.authorizeLocalFolder(created.id)
+        localAuthorization = result.cancelled ? 'cancelled' : 'bound'
+      } catch (error) {
+        localAuthorization = 'error'
+        setErrorDialog({
+          title: '本机文件夹授权未完成',
+          message: '同步文件夹已创建并保持暂停。可从详情重新选择本机目录；当前不会扫描或上传文件。',
+          detail: sourceActionErrorMessage(error, '授权失败'),
+        })
+      }
+    }
+
+    setFeedback(option.kind === 'local_folder'
+      ? localAuthorization === 'bound'
+        ? '本机目录已授权；同步执行器尚未启用，目前不会上传文件'
+        : '同步文件夹已创建并暂停；请从详情选择本机目录以完成授权'
+      : option.kind === 'synology_files'
       ? '群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹'
       : '同步文件夹已添加')
     setCreateOpen(false)
@@ -639,6 +659,18 @@ export function XDriveSourceManager({
     }
   }
 
+
+  const authorizeLocalFolder = async (row: ExternalSourceRow) => {
+    if (!adapter.authorizeLocalFolder || row.source.kind !== 'local_folder') return
+    try {
+      const result = await adapter.authorizeLocalFolder(row.source.id)
+      if (result.cancelled) return
+      setFeedback('本机目录已授权；实际同步引擎尚未启用，不会传输文件')
+      await load()
+    } catch (error) {
+      showActionError('本机目录授权失败', error, '请确认设备在线、目录可读，并检查是否已绑定其他目录。')
+    }
+  }
 
   const triggerNow = async (row: ExternalSourceRow) => {
     setTriggeringSourceID(row.source.id)
@@ -839,6 +871,7 @@ export function XDriveSourceManager({
     const normalizedName = values.name.trim()
     const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
     const isSynologyFiles = setting.source.kind === 'synology_files'
+    const isLocalFolder = setting.source.kind === 'local_folder'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
     const spacesError = setting.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
       ? '至少选择一个照片空间'
@@ -894,14 +927,16 @@ export function XDriveSourceManager({
       )
       let updatedSource = await adapter.updateSource(setting.source.id, setting.source.revision, {
         name: normalizedName,
-        sync_mode: values.sync_mode,
-        run_mode: values.run_mode,
-        status: stageFileActivation
+        sync_mode: isLocalFolder ? 'backup' : values.sync_mode,
+        run_mode: isLocalFolder ? 'sync' : values.run_mode,
+        status: isLocalFolder
           ? 'paused'
-          : (pendingCredential && !setting.credential?.configured ? 'paused' : values.status),
-        schedule_type: values.schedule_type,
-        schedule_expression: values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
-        schedule_timezone: values.schedule_type === 'cron' ? values.schedule_timezone.trim() : '',
+          : stageFileActivation
+            ? 'paused'
+            : (pendingCredential && !setting.credential?.configured ? 'paused' : values.status),
+        schedule_type: isLocalFolder ? 'manual' : values.schedule_type,
+        schedule_expression: isLocalFolder || values.schedule_type === 'manual' ? '' : values.schedule_expression.trim(),
+        schedule_timezone: isLocalFolder || values.schedule_type !== 'cron' ? '' : values.schedule_timezone.trim(),
         ignore_rules: values.ignore_rules ?? '',
       })
 
@@ -1166,6 +1201,7 @@ export function XDriveSourceManager({
         onCopyRunID={copyRunID}
         onOpenFailedItems={() => setFailedItemsOpen(true)}
         onTriggerNow={triggerNow}
+        onAuthorizeLocalFolder={adapter.authorizeLocalFolder ? authorizeLocalFolder : undefined}
       />
 
       <XDriveSourceFailedItemsDialog
@@ -1177,6 +1213,7 @@ export function XDriveSourceManager({
 
       <XDriveSourceCreateDialog
         open={createOpen}
+        allowLocalPush={Boolean(adapter.authorizeLocalFolder)}
         creating={creating}
         values={createValues}
         nameError={createNameError}

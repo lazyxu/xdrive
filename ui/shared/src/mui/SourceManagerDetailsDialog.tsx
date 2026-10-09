@@ -86,6 +86,7 @@ export function XDriveSourceDetailsDialog({
   onCopyRunID,
   onOpenFailedItems,
   onTriggerNow,
+  onAuthorizeLocalFolder,
 }: {
   row: ExternalSourceRow | null
   collections: ExternalSourceCollection[]
@@ -111,6 +112,7 @@ export function XDriveSourceDetailsDialog({
   onCopyRunID: (runID: string) => void
   onOpenFailedItems: () => void
   onTriggerNow: (row: ExternalSourceRow) => void | Promise<void>
+  onAuthorizeLocalFolder?: (row: ExternalSourceRow) => void | Promise<void>
 }) {
   const detail = row ? externalSourceDetailView(row) : null
   const card = row ? externalSourceCardView(row) : null
@@ -146,6 +148,23 @@ export function XDriveSourceDetailsDialog({
                 {row.source.run_mode === 'scan' ? (
                   <MuiTypography variant="body2" sx={{ mt: 0.5 }}>{externalSourceMirrorScanNotice}</MuiTypography>
                 ) : null}
+              </XDriveStatusAlert>
+            ) : null}
+
+            {row.source.kind === 'local_folder' ? (
+              <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
+                <Stack spacing={1}>
+                  <MuiTypography variant="body2">
+                    本机文件夹已登记，但同步执行器尚未启用。必须在拥有该目录的 Desktop 上授权；不能从 Web 指定电脑路径。
+                  </MuiTypography>
+                  {onAuthorizeLocalFolder ? (
+                    <MuiButton size="small" variant="outlined" onClick={() => void onAuthorizeLocalFolder(row)}>
+                      选择本机目录并授权
+                    </MuiButton>
+                  ) : (
+                    <MuiTypography variant="caption">请在对应的 Desktop 客户端完成本机目录授权。</MuiTypography>
+                  )}
+                </Stack>
               </XDriveStatusAlert>
             ) : null}
 
