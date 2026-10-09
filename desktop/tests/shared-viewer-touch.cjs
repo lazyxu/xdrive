@@ -35,7 +35,7 @@ test('shared image preview supports pinch, double-tap and scale-aware swipe navi
     'handleImagePointerLostCapture',
     'onPointerCancel={handleImagePointerCancel}',
     'now - previous.at <= 320',
-    'setImageZoom(imageScale > 1 ? 1 : 2)',
+    'setImageZoom(imageScale > 1 ? 1 : 2, imageAnchor(event.currentTarget, event.clientX, event.clientY))',
   ]) {
     assert.ok(preview.includes(token), 'touch image gesture contract missing: ' + token)
   }
@@ -59,7 +59,7 @@ test('shared immersive preview becomes mobile full-screen with tap chrome and sa
     "pt: compactTouch ? 'env(safe-area-inset-top)' : 0",
     'data-xdrive-preview-mobile-actions',
     "pb: 'env(safe-area-inset-bottom)'",
-    "'& .MuiIconButton-root': { width: 44, height: 44 }",
+    "'& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 }",
   ]) {
     assert.ok(openPreview.includes(token), 'shared mobile preview chrome missing: ' + token)
   }
@@ -76,11 +76,11 @@ test('Web immersive viewer uses tap chrome, safe areas and a mobile action rail'
     'onPointerMoveCapture={handleTouchPointerMove}',
     'onPointerUpCapture={handleTouchPointerRelease}',
     'onPointerCancelCapture={handleTouchPointerCancel}',
-    "height: compactImmersive ? '100dvh' : undefined",
-    "pt: compactImmersive ? 'env(safe-area-inset-top)' : 0",
+    "height: compactTouch ? '100dvh' : undefined",
+    "pt: compactTouch ? 'env(safe-area-inset-top)' : 0",
     'data-xdrive-web-viewer-mobile-actions',
     "pb: 'env(safe-area-inset-bottom)'",
-    "'& .MuiIconButton-root': { width: 44, height: 44, color: 'inherit' }",
+    "'& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0, color: 'inherit' }",
     'quickLook && !compactImmersive',
   ]) {
     assert.ok(webViewers.includes(token), 'Web mobile Viewer chrome missing: ' + token)

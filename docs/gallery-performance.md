@@ -664,3 +664,103 @@ Decision: **Accepted.** Keep the bounded per-active-item resolver and range meta
 Do not claim a user-visible latency percentage from this microbenchmark. If Viewer opening
 is still slow on a real installation, measure the actual Server endpoints and browser
 navigation trace; only then optimize a measured wall-clock stage.
+
+## Viewer context metadata reuse — 2026-10-09
+
+Status: **Accepted / integrated with #1058 freshness; structural measurements only;
+authoritative PR CI required before merge**.
+
+The preceding #1058 record remains the accepted baseline. This integration preserves
+its fresh **per-active-item** resolver contract: current/previous/next share in-flight
+and resolved pages within one step; changing active index/node or explicit refresh
+creates a new reader. No previous range pages or mutation overlays carry into that
+new step. A separately fenced API/source/context owner may hand off the selected
+candidate immediately while its fresh neighborhood loads. Reuse is bounded to
+**three 128-item pages (384 rows)**, tighter than #1058's four-page ceiling. Node,
+MediaItem, and same-source acknowledged-field-patch maps each hold at most **32
+entries** per reader. No global/sessionStorage media cache is introduced.
+
+Current Gallery metadata still needs no separate Node/MediaItem point request.
+Direct media links now derive their authoritative Node from `api.mediaItem` and do
+not make a redundant Node request. Ordinary direct Preview retains Node fallback.
+Source identity/revision fences, failed-read eviction, selection reuse, known total
+counts, explicit invalidation, and mutation patches remain behavior requirements.
+Acknowledged patches merge only changed fields into late same-source results, keeping
+independently refreshed metadata. Acknowledged same-source neighbor fields also
+survive the immediate candidate handoff; a newer revision does not inherit old patches.
+
+### Rejected unmerged prototype
+
+The earlier unmerged `24e247f` prototype retained pages across successive Viewer
+steps. Its controlled `viewer-gallery-100k-20-same-page-steps` replay reported **80
+metadata requests -> 1**, with an 8 ms artificial per-call delay and five samples:
+BEFORE **167.806 [165.556,169.114] ms**, prototype **8.389 [8.284,10.616] ms**.
+That experiment is **Rejected / superseded**, not the integrated result: it does not
+preserve the per-step freshness contract accepted in #1058. A real return-step regression reproduced a
+server revision change that the long-lived page cache hid (**revision 1 != 2**).
+The integrated reader refreshes on that return while preserving the selected candidate
+until the fresh range resolves. No cross-step 80->1 or corresponding latency benefit
+is claimed for delivery.
+
+### Integrated workload and acceptance
+
+Named workloads and method:
+
+- **`viewer-gallery-100k-20-same-page-steps`**: 100,000 logical Gallery items,
+  128-item pages, active indexes 64–83, and current/previous/next resolution at every
+  step; a fresh reader for every active item.
+- **`viewer-direct-media-20-distinct-links`**: 20 distinct media nodes without browse
+  context, each opened as a new step.
+- Node **24.19.0**, **five samples per implementation/scenario**, same fixture,
+  environment, units and explicitly artificial **8 ms transport delay**.
+- Original `3a35c385` replays independent parallel Node/MediaItem/neighbor requests;
+  upstream `30e9eb7` executes #1058's resolver per step; integrated runs execute the
+  current production reader with the same per-step lifetime.
+
+Acceptance: Gallery requires **20 range reads, zero Node reads, zero MediaItem reads**,
+matching #1058; direct links require **20 MediaItem reads and zero Node reads**, with
+no serial extra request. A single current/previous/next triplet still uses exactly
+one same-page read and only necessary boundary pages. The 5% timing noise threshold
+remains diagnostic. These are **controller request replays**, not real Server,
+network, browser/Electron rendering, decode, RSS, or end-to-end measurements.
+
+Commands from repository root:
+
+```bash
+node desktop/scripts/web-viewer-context-benchmark.cjs --baseline
+node desktop/scripts/web-viewer-context-benchmark.cjs --upstream
+node desktop/scripts/web-viewer-context-benchmark.cjs
+node desktop/scripts/web-viewer-context-benchmark.cjs --baseline --direct
+node desktop/scripts/web-viewer-context-benchmark.cjs --upstream --direct
+node desktop/scripts/web-viewer-context-benchmark.cjs --direct
+node --test desktop/tests/web-viewer-context.cjs desktop/tests/web-viewer-context-reuse.cjs
+```
+
+Request counts are identical across the five samples of each case.
+
+| Workload | Implementation | Range | Node | MediaItem | Five samples (ms) | Median [min,max] (ms) |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| Gallery 100k / 20 steps | Original `3a35c385` | 40 | 20 | 20 | 166.718, 166.127, 166.816, 165.318, 165.150 | **166.127 [165.150,166.816]** |
+| Gallery 100k / 20 steps | Upstream #1058 `30e9eb7` | 20 | 0 | 0 | 167.541, 165.016, 166.353, 165.151, 164.560 | **165.151 [164.560,167.541]** |
+| Gallery 100k / 20 steps | Integrated fresh active step | 20 | 0 | 0 | 167.831, 166.940, 164.499, 162.657, 165.476 | **165.476 [162.657,167.831]** |
+| Direct / 20 links | Original `3a35c385` | 0 | 20 | 20 | 165.965, 162.240, 163.651, 164.817, 165.014 | **164.817 [162.240,165.965]** |
+| Direct / 20 links | Upstream #1058 `30e9eb7` | 0 | 20 | 20 | 165.072, 163.476, 172.403, 170.426, 163.989 | **165.072 [163.476,172.403]** |
+| Direct / 20 links | Integrated authoritative MediaItem Node | 0 | 0 | 20 | 163.353, 163.066, 163.188, 167.928, 168.447 | **163.353 [163.066,168.447]** |
+
+Relative to #1058, Gallery request counts are unchanged; the **+0.325 ms** median
+movement is noise. Direct requests decrease **40 -> 20**; the **-1.719 ms** median
+movement is also below 5% and is not a latency improvement claim. The accepted benefit
+of this follow-up is the structural direct-link read reduction plus the verified
+ownership, mutation and presentation integration, while retaining upstream freshness.
+
+Decision: **Accepted**, with no additional Gallery timing/RSS optimization claim.
+Behavior tests cover fresh metadata on return, immediate selected-candidate presentation
+during delayed ranges, API/source-owner isolation, same-source patch reconciliation,
+explicit invalidation, and acknowledged neighbor handoff. The public
+`xDriveCreateWebViewerContextResolver` delegates to the same bounded reader; its upstream
+behavior tests remain, and the obsolete inline-hook source-token assertion is replaced
+by actual React hook Gallery/direct Media/direct Preview behavior checks.
+
+Use authoritative PR CI as the merge gate for the reconstructed single commit. The
+next measurement is real Server/browser navigation request and latency evidence where needed. Keep this replay
+and the preserved #1058 measurements separate from real mobile/browser acceptance.

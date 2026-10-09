@@ -29,6 +29,7 @@ import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
+import { xDriveMediaCaptureTimeLabel } from '../media-viewer'
 import type {
   MediaMotionLoader,
   MediaPreviewURLLoader,
@@ -237,6 +238,7 @@ export function XDriveMediaGalleryViewer({
       <XDriveOpenPreviewDialog
         open={Boolean(item)}
         title={item?.node.name ?? ''}
+        subtitle={item ? xDriveMediaCaptureTimeLabel(item.metadata.captured_at) : undefined}
         positionLabel={positionLabel}
         canPrevious={canPrevious}
         canNext={canNext}
@@ -258,8 +260,8 @@ export function XDriveMediaGalleryViewer({
             interactiveImage
             onSwipePrevious={canPrevious ? onPrevious : undefined}
             onSwipeNext={canNext ? onNext : undefined}
-            minHeight={320}
-            maxHeight={fullScreen ? 4096 : 760}
+            minHeight={0}
+            maxHeight="none"
           />
         ) : null}
       </XDriveOpenPreviewDialog>

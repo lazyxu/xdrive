@@ -129,7 +129,7 @@ test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip an
     'setPointerCapture',
     'releasePointerCapture',
     'onWheel={handleImageWheel}',
-    'setImageZoom(imageScale > 1 ? 1 : 2)',
+    'setImageZoom(imageScale > 1 ? 1 : 2, imageAnchor(event.currentTarget, event.clientX, event.clientY))',
     'imagePointersRef',
     'imagePinchRef',
     'imageSwipeRef',
@@ -297,8 +297,8 @@ test('FileExplorer Quick Look matches the shared Finder-style browsing contract'
     'immersive={fullScreen}',
     'slideshowPlaying',
     'slideshowIntervalMs = 5000',
-    'const onNextRef = useRef(onNext)',
-    'window.setTimeout(() => onNextRef.current?.(), slideshowIntervalMs)',
+    'useXDrivePreviewSlideshow({',
+    'onPresentationStateChange={presentation.onPresentationStateChange}',
     "aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}",
   ]) {
     assert.ok(quickLook.includes(token), 'Quick Look fullscreen/zoom/slideshow missing: ' + token)

@@ -144,19 +144,46 @@ test('a failed coalesced page is evicted so the Viewer can retry', async () => {
   assert.equal(current.node.id, 65)
 })
 
-test('Web Viewer consumes context Node/MediaItem before point-fetch fallback', () => {
-  const source = fs.readFileSync(path.join(repo, 'web', 'src', 'WebFileViewerApps.tsx'), 'utf8')
-  for (const token of [
-    'xDriveCreateWebViewerContextResolver',
-    'currentCandidateRef',
-    'resolver.resolveCandidateAt(activeIndex)',
-    'resolver.findNeighbor(activeIndex, -1, predicate)',
-    'setContextMediaItem(candidate.mediaItem ?? null)',
-    "viewer.contextKind === 'gallery'",
-    'viewer.contextMediaItem?.node.id === route.params.node',
-  ]) {
-    assert.ok(source.includes(token), 'Viewer context reuse contract missing: ' + token)
+test('Web Viewer hook consumes context Node/MediaItem before point-fetch fallback', async () => {
+  const React = require('react')
+  const { act, create } = require('react-test-renderer')
+  const hookFile = path.join(repo, 'web/src/useWebViewerNode.ts')
+  const output = ts.transpileModule(fs.readFileSync(hookFile, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const context = { kind: 'gallery', activeIndex: 64, totalCount: 10000, target: { kind: 'library', query: {} } }
+  const mod = { exports: {} }
+  new Function('exports', 'module', 'require', output)(mod.exports, mod, (request) => {
+    if (request === './webViewerContext') return loadViewerContext()
+    if (request === './webAppRuntime') return { xDriveReadWebAppBrowseSession: (id) => id ? context : null, xDriveWriteWebAppBrowseSession() {} }
+    return require(request)
+  })
+  let rangeCalls = 0, nodeCalls = 0, mediaCalls = 0
+  const items = Array.from({ length: 128 }, (_, index) => ({ node: node(index), metadata: { media_kind: 'image' } }))
+  const api = {
+    async node(id) { nodeCalls++; return node(id - 1) },
+    async mediaItem(id) { mediaCalls++; return { node: node(id - 1), metadata: { media_kind: 'image' } } },
   }
-  assert.ok(source.includes('api.node(nodeID)'), 'mismatched/no-context Node fallback must remain')
-  assert.ok(source.includes('api.mediaItem(route.params.node)'), 'non-Gallery metadata fallback must remain')
+  const source = { async listItemRange() { rangeCalls++; return { total_count: 10000, items } } }
+  let value, renderer
+  function Probe(props) { value = mod.exports.useViewerNode(props); return null }
+  const props = { api, gallerySource: source, nodeID: 65, contextID: 'gallery', predicate: xDriveWebViewerMediaFile, wantsMedia: true, onNavigate() {} }
+  await act(async () => { renderer = create(React.createElement(Probe, props)) })
+  try {
+    assert.equal(value.node.id, 65)
+    assert.equal(value.mediaItem, items[64])
+    assert.equal(rangeCalls, 1)
+    assert.equal(nodeCalls, 0)
+    assert.equal(mediaCalls, 0)
+    await act(async () => renderer.update(React.createElement(Probe, { ...props, nodeID: 900, contextID: undefined })))
+    assert.equal(value.node.id, 900)
+    assert.equal(value.mediaItem.node.id, 900)
+    assert.equal(mediaCalls, 1)
+    assert.equal(nodeCalls, 0, 'direct media uses its authoritative MediaItem Node')
+    await act(async () => renderer.update(React.createElement(Probe, { ...props, nodeID: 901, contextID: undefined, wantsMedia: false })))
+    assert.equal(value.node.id, 901)
+    assert.equal(nodeCalls, 1, 'ordinary direct Preview still uses Node fallback')
+  } finally { await act(async () => renderer.unmount()) }
+  const app = fs.readFileSync(path.join(repo, 'web/src/WebFileViewerApps.tsx'), 'utf8')
+  assert.ok(app.includes("import { useViewerNode } from './useWebViewerNode'"), 'Web app must consume the actual tested hook')
 })

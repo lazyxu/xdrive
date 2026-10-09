@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
@@ -13,6 +13,7 @@ import type {
   XDriveFilePreviewURLLoader,
 } from './FilePreviewSurface'
 import { XDriveOpenPreviewDialog } from './FileOpenPreviewDialog'
+import { useXDrivePreviewPresentation, useXDrivePreviewSlideshow } from './usePreviewSlideshow'
 
 export type XDriveFileQuickLookAction = {
   id: string
@@ -57,8 +58,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
 }: XDriveFileQuickLookDialogProps<T>) {
   const [fullScreen, setFullScreen] = useState(false)
   const [slideshowPlaying, setSlideshowPlaying] = useState(false)
-  const onNextRef = useRef(onNext)
-  onNextRef.current = onNext
+  const presentation = useXDrivePreviewPresentation(item)
 
   useEffect(() => {
     if (open) return
@@ -71,23 +71,16 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
     setSlideshowPlaying(false)
   }, [fullScreen])
 
-  useEffect(() => {
-    if (!open || !fullScreen || !slideshowPlaying) return
-    if (!canNext || !onNextRef.current) {
-      setSlideshowPlaying(false)
-      return
-    }
-    const timer = window.setTimeout(() => onNextRef.current?.(), slideshowIntervalMs)
-    return () => window.clearTimeout(timer)
-  }, [
+  useXDrivePreviewSlideshow({
+    enabled: open && fullScreen,
+    playing: slideshowPlaying,
+    sourceKey: presentation.sourceKey,
+    presentationState: presentation.presentationState,
     canNext,
-    fullScreen,
-    item?.id,
-    item?.revision,
-    open,
-    slideshowIntervalMs,
-    slideshowPlaying,
-  ])
+    onNext,
+    onStop: () => setSlideshowPlaying(false),
+    intervalMs: slideshowIntervalMs,
+  })
 
   const hasSlideshow = canPrevious || canNext
   const headerActions = (
@@ -147,6 +140,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
         loadImagePreview={loadImagePreview}
         loadPreviewURL={loadPreviewURL}
         loadLivePhotoMotion={loadLivePhotoMotion}
+        onPresentationStateChange={presentation.onPresentationStateChange}
         interactiveImage
         onSwipePrevious={canPrevious ? onPrevious : undefined}
         onSwipeNext={canNext ? onNext : undefined}

@@ -183,3 +183,76 @@ Both runners accept `XDRIVE_PLAYWRIGHT_MODULE`, `XDRIVE_BROWSER_EXECUTABLE` and 
 This run used Linux, Node 24.19.0 and Chromium 153.0.8010.0 supplied by `@sparticuz/chromium` 153.0.0. The standard Playwright browser download still returned an invalid archive; the separately installed portable runtime made local renderer execution possible without adding a production dependency. Web lint and production build passed; the existing Vite large-chunk warning remains. Desktop typecheck passed; `test:main` finished with **1103 passed, 0 failed, 1 existing opt-in 100k scroll CPU benchmark skipped**.
 
 Native iOS Safari/Android Chrome, WebKit, installed/standalone mode, software keyboards and safe areas, real downloads/Range/resume and background return remain unverified here. The shared FileExplorer fixture contains 73 items; the App fixture contains 97 root entries, 64 child files and 240 images. These do not constitute 100k performance acceptance.
+
+## Viewer refinement implementation — 2026-10-09
+
+**Status: implementation, local tests and Chromium mobile-emulation layout checks
+passed; authoritative PR validation remains the merge gate.** Physical iOS/Android
+acceptance is not implied by the Chromium checks below.
+
+This slice extends the existing Viewer/Quick Look/Gallery mobile baseline rather than
+creating a mobile router or altering the earlier Shell/FileExplorer plans:
+
+- Text, PDF and Audio show their available actions in the shared bottom rail with
+  **44 CSS px** targets and safe-area padding. They have no previous/next arrows or
+  directory/Gallery neighbor reads. Compact-touch text is read-only at **16 CSS px**;
+  the existing 1 MiB truncation and line/column-jump contract remain explicit.
+- Compact Viewer frames use the dynamic viewport and retain caller Files/Gallery
+  mounting and return state. Navigation arrows exist only when at least one browsing
+  direction is available; an action rail must not introduce a disabled arrow pair
+  into a standalone program.
+- Gallery content fits the available dialog height, including landscape. Its bounded
+  filmstrip keeps the active thumbnail visible in its own horizontal scroller; both
+  ends remain reachable when the strip exceeds the viewport width.
+- Shared image wheel/double-tap zoom anchors at the interaction point; pinch anchors
+  follow the two-finger midpoint. Scale remains 1×–6×. Pan bounds use decoded visible
+  image/crop/rotation dimensions, center any fitting axis, and re-clamp after viewport
+  resize/orientation changes. Approximately 1× horizontal swipe remains optional
+  media navigation; Live Photo hold/release stays separate.
+- Shared presentation state distinguishes loading, usable ready content and failure.
+  Quick Look/Web Preview slideshow counts five seconds only while ready and visible,
+  preserves remaining dwell during buffering/hidden time, and stops on failure or a
+  confirmed end. An unresolved neighbor scan is not treated as end-of-context.
+- Web Media Viewer shares bounded Gallery range metadata within each active-item
+  step instead of separately re-reading the current Node/MediaItem. Navigation keeps
+  its selected candidate visible while refreshing that step's range; API/account/
+  source/context changes isolate candidates, and mutation patches preserve latest
+  matching-source fields.
+  Web/shared Gallery display canonical capture time; missing/invalid time says
+  **拍摄时间：未记录**, without substituting file modification/import time.
+
+The normative rendering/navigation/cache/gesture contracts are in
+[Preview Engine](preview-engine.md). Exact controlled request-replay measurements
+and their limits are in [Gallery performance](gallery-performance.md#viewer-context-metadata-reuse--2026-10-09).
+This slice adds neither persistent slideshow queue/resume nor offline/Web Share Target
+support.
+
+Local browser evidence used **Chromium 153.0.8010.0**, real shared/Web React components,
+and PNG/WAV/PDF fixtures at **360×780, 390×844, 430×932 and 844×390 CSS px**. All six
+surfaces (Text, PDF, Audio, Web Media, Web Preview and shared Gallery) passed the
+24-case layout matrix with no document overflow or page errors. Active touch buttons
+were at least 44×44; standalone content cleared the bottom rail, text wrapping worked,
+and the overflowing action rail remained scrollable. At 390px, the filmstrip's first
+and last thumbnails were reachable and selected with actual touchscreen events.
+At 844×390, the Gallery image and its clipping container both measured 844×215,
+removing the reproduced 105px crop.
+
+Browser events also verified anchored wheel/double-tap/pinch zoom, 1× reset,
+portrait/panorama pan bounds and orientation reclamping without swipe navigation.
+The headless build reported `navigator.pdfViewerEnabled === false`: PDF chrome and
+bounds were checked, but native PDF document display/readiness was not certified.
+Renderer readiness/failure and Live Photo lifecycle remain covered by behavioral
+component tests. The isolated fixture harness did not certify returning to the full
+Files/Gallery workspace through browser history.
+
+After integrating the per-active-item reader from #1058, a focused browser check
+exercised **initial → next → previous** in both actual Web Media and Web Preview.
+The selected candidate remained visible and the same Viewer frame DOM stayed mounted
+while fresh range promises were held pending. Return navigation accepted changed
+filename/capture/favorite metadata. Each viewer issued exactly **three range reads**
+for the three steps and **zero Node/MediaItem point reads**, with no page errors.
+
+Real **iOS Safari and Android Chrome**, normal and installed modes, physical safe
+areas/virtual keyboard, native media/PDF behavior, Live Photo hold/release, and
+background/foreground restoration still require device acceptance. Earlier mobile
+acceptance and enhancement lists above remain applicable.

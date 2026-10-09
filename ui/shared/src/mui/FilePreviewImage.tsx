@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, CircularProgress, Typography } from '@mui/material'
-import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewTarget } from '../file-preview'
+import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
+import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type { XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveTransformedImagePreview } from './FilePreviewTransformedMedia'
 
@@ -26,6 +27,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform,
   viewportTransition,
   mediaTransform,
+  onPresentationStateChange,
+  onImageDimensionsChange,
   children,
 }: {
   target: T
@@ -38,6 +41,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform?: string
   viewportTransition?: string
   mediaTransform?: XDriveFilePreviewMediaTransform
+  onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
+  onImageDimensionsChange?: (dimensions: XDrivePreviewImageDimensions | null) => void
   children?: (still: ReactNode, ready: boolean) => ReactNode
 }) {
   const [sources, setSources] = useState<Record<ImageRole, ImageSource>>({
@@ -47,6 +52,10 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const decodingRef = useRef(new Set<string>())
   const acquireSourcesRef = useRef<(() => void) | null>(null)
   const loadersRef = useRef({ target, loadPreviewURL, loadImagePreview })
+  const presentationCallbackRef = useRef(onPresentationStateChange)
+  const dimensionsCallbackRef = useRef(onImageDimensionsChange)
+  presentationCallbackRef.current = onPresentationStateChange
+  dimensionsCallbackRef.current = onImageDimensionsChange
   loadersRef.current = { target, loadPreviewURL, loadImagePreview }
   const hasPreviewURL = Boolean(loadPreviewURL)
   const hasImagePreview = Boolean(loadImagePreview)
@@ -148,6 +157,31 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const loading = sources.original.status === 'loading' ||
     (!readySource && sources.thumbnail.status === 'loading')
   const failed = !readySource && !loading
+  const presentationState: XDriveFilePreviewPresentationState = readySource ? 'ready' : failed ? 'failed' : 'loading'
+  useEffect(() => {
+    presentationCallbackRef.current?.(presentationState)
+  }, [presentationState])
+  const decodedImage = readySource?.image
+  useEffect(() => {
+    if (!decodedImage) {
+      dimensionsCallbackRef.current?.(null)
+      return
+    }
+    let width = decodedImage.naturalWidth
+    let height = decodedImage.naturalHeight
+    if (mediaTransform) {
+      const x = Math.min(0.95, Math.max(0, mediaTransform.cropX ?? 0))
+      const y = Math.min(0.95, Math.max(0, mediaTransform.cropY ?? 0))
+      width = Math.max(1, Math.min(width - Math.round(width * x), Math.round(width * Math.min(1 - x, Math.max(0.05, mediaTransform.cropWidth ?? 1)))))
+      height = Math.max(1, Math.min(height - Math.round(height * y), Math.round(height * Math.min(1 - y, Math.max(0.05, mediaTransform.cropHeight ?? 1)))))
+      const scale = Math.min(1, 4096 / Math.max(width, height))
+      width = Math.max(1, Math.round(width * scale))
+      height = Math.max(1, Math.round(height * scale))
+      const rotation = ((mediaTransform.rotationDegrees || 0) % 360 + 360) % 360
+      if (rotation === 90 || rotation === 270) [width, height] = [height, width]
+    }
+    dimensionsCallbackRef.current?.({ width, height, noUpscale: Boolean(mediaTransform) })
+  }, [decodedImage, mediaTransform])
   const still = (
     <Box
       aria-busy={loading || undefined}

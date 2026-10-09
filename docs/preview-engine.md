@@ -220,7 +220,9 @@ the canvas; semantic memoization of recreated recipe objects remains separate wo
 Validated single-file LIVP stills use the same handoff. Its internal Live Photo wrapper
 stays mounted and receives explicit still readiness: the glyph and hold action become
 available only after a real still is decoded. Gallery-owned wrappers for paired files
-retain their separate media-semantic composition contract.
+retain their media-semantic composition and consume the same current-still readiness.
+Neither wrapper may acquire motion while its still is loading or failed; replacing
+the source revision resets readiness before another hold can acquire motion.
 
 If the browser/Electron runtime cannot decode the original image, it may fall back to
 the existing thumbnail loader. This is particularly important for formats with uneven
@@ -543,6 +545,7 @@ Viewer navigation is capability-scoped rather than a property of every file view
 - **Quick Look / Preview** may move across the current file browsing context because its purpose is rapid sequential inspection.
 - **Media Viewer** may move across the current image/video/Live Photo browsing context and may expose swipe, previous/next controls, position, filmstrip, or slideshow semantics.
 - **Text Viewer, PDF Viewer, and Audio Player** are standalone file programs. They do not inherit directory/gallery browse context and do not show previous/next navigation merely because the file was opened from a list.
+- Previous/next controls appear only when at least one direction is available. A standalone viewer must not render an otherwise disabled arrow pair; the same rule applies to the shared overlay shell, Web frame, and mobile action rail.
 - A viewer must not fetch neighboring ranges unless it actually exposes navigation.
 
 ### Shared media viewer content
@@ -559,3 +562,84 @@ For video, audio, and PDF, obtaining a signed preview URL is not the same as pre
 - PDF remains busy until the iframe load event. URL-ticket and iframe failures use the same shared fallback contract.
 - Media elements are keyed by node identity, revision, and preview URL so stale readiness events cannot promote a newer target.
 - Live Photo motion ownership is keyed by media identity/revision. Re-rendering the same media with a new loader callback must not discard an already acquired motion source; identity changes and unmounts must dispose owned sources, including late arrivals.
+
+
+### Mounted Web Viewer metadata session
+
+`useViewerNode` scopes displayed/preloaded candidates to the mounted Viewer,
+API/account instance, Gallery source, and browse-context identity. Each active item
+gets a fresh `createXDriveWebViewerSession` reader: current/previous/next share pending
+and resolved 128-item pages within that step. Retain at most **three pages (384
+items)**; selection/fallback Node and MediaItem maps each retain at most **32 entries**.
+Rejected reads are evicted for retry. Navigation reuses the selected candidate for
+immediate presentation while refreshing the new active range; range pages never
+carry across active-item steps. Closing/replacing the session releases the caches.
+URL sessionStorage remains browse-context state, not a media cache.
+
+A matching Gallery candidate supplies both its Node and MediaItem. A direct media
+link uses the authoritative Node within `api.mediaItem`, avoiding an extra Node
+request. Selection and ordinary file contexts use their existing Node contracts.
+Current metadata must match the requested node ID and any known revision/SHA;
+route/session replacement must immediately hide prior content and ignore late
+prior-session completion. The current page supplies total count even without neighbors.
+Unresolved neighbor scans are distinct from a completed end-of-context result.
+
+Mutation patches use the captured item's source identity and merge only the changed
+Favorite/Tags/People/Description/edit-recipe fields into the latest matching item.
+Independent successful patches must preserve one another. A late older-revision or
+conflicting same-revision source must not replace current metadata. Explicit
+invalidation drops affected metadata and re-reads it; no whole-collection cache is added.
+
+The canonical workload, acceptance thresholds and measured request-replay evidence
+are in [Gallery performance](gallery-performance.md#viewer-context-metadata-reuse--2026-10-09).
+Those controlled-delay numbers are not real Server/browser end-to-end timings.
+
+### Shared presentation and slideshow dwell
+
+`onPresentationStateChange` reports **loading / ready / failed** for the current
+source. Source replacement starts loading and stale callbacks cannot promote the new
+source. Images become ready only after usable original or fallback-thumbnail pixels
+are decoded; an original still loading must not hide an already usable thumbnail.
+Video/audio/PDF use the renderer readiness and failure events described above.
+Unsupported or exhausted sources report failed and retain the shared fallback.
+Live Photo still readiness does not eagerly acquire motion; hold/release and source
+cleanup keep their existing contract.
+
+Desktop fullscreen Quick Look and Web Preview use the same slideshow controller.
+Each new source receives **five seconds of effective dwell**, counted only while
+presentation is ready and the document is visible. Loading/buffering, a hidden page,
+or an unresolved Web neighbor scan suspends the timer and preserves remaining dwell.
+Once the same source is ready/visible again, resume that remainder; a new source gets
+a full interval. User pause ends that play session. Failure or a confirmed end of
+context stops playback. Callback recreation and ordinary parent rerenders must not
+restart the interval. A completed dwell dispatches Next once; visibility or buffering
+changes must not dispatch it again while asynchronous navigation is pending.
+This does not add a persistent queue/resume feature or a new
+Gallery collection.
+
+### Capture-time labeling and bounded image interaction
+
+Web Media Viewer and shared Gallery Viewer format the same canonical
+`metadata.captured_at` value as **拍摄时间**. Missing or invalid capture time shows
+**拍摄时间：未记录**; file modification/import timestamps must not impersonate capture
+time.
+
+Interactive image zoom keeps the image point under the wheel cursor or double-click/
+double-tap position anchored while scale changes. Pinch preserves its image anchor
+under the moving two-finger midpoint. Zoom remains **1×–6×**. Pan clamps against the
+fitted, decoded visible image dimensions, including crop/rotation output, rather than
+the letterboxed element rectangle. An axis whose scaled content fits the viewport
+stays centered. Fit/reset returns to 1× with zero offset; decoded dimensions and
+viewport resize/orientation changes re-clamp the current viewport. These are shared
+presentation transforms and do not change preview source identity or durable recipes.
+
+### Standalone text and compact Viewer chrome
+
+Text line/column jumps clamp to the requested line and exclude the CR in CRLF text;
+they must not select characters from the next line. Text/PDF/Audio remain standalone
+programs with their own loading/error states and no directory/Gallery neighbor reads.
+On compact coarse-pointer Web layouts, their available actions use the same bottom
+rail as media Viewer with **44 CSS px** targets and safe-area padding. Text remains
+read-only and uses **16 CSS px** on compact touch layouts; desktop keeps its existing
+text size. Compact Viewer sizing follows the dynamic viewport without replacing the
+mounted caller workspace. Native phone/browser acceptance remains a separate gate.
