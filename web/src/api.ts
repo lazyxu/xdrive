@@ -872,7 +872,7 @@ export class XDriveApi {
 
   mediaPlaces(limit = 24) {
     const query = new URLSearchParams({
-      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      limit: String(Math.min(1000, Math.max(1, Math.trunc(limit)))),
     })
     return this.request<MediaPlaceFacet[]>(`/api/v1/media/places?${query.toString()}`)
   }

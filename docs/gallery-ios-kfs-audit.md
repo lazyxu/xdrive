@@ -410,9 +410,17 @@ embedded JPEG remains an explicit compatibility limitation. Final resolution,
 resource use and real Safari/Electron decode must be measured with identical
 fixtures before claiming high-resolution parity.
 
+## M15–M16：人物与地点流程补充（2026-10-09）
+
+现有人物身份和猫／狗类型集合保留。人物确认、命名、合并、拆分使用窄屏44px和短横屏可滚动弹窗；只有新建或归入已有的人物成功且原建议卡退出时，焦点交接到持续挂载的当前标题。相同40项17/23→40/0、同70项68/2→70/0；拒绝、同参数重试和完整ID／revision均保留。
+
+地点复用共享拖动工具，延后捕获以保留单击／点按；真实主题色保证聚合数量可读，缩放／重置／返回窄屏44px。现有图库状态只保存三数地图视角；地点加载、失败和成功空GPS不混用。Web／Desktop取数上限与现有1000契约一致，概览仍为24。同38项27/11→38/0，整合返回按钮同32项30/2→32/0；最终人物70／地点40／实际构建App相册40全部通过，完整Desktop1622/0/1既有skip，typecheck/lint/build0。完整新PR CI/线性合并仍为交付门禁，M17继续按序实现。
+
+基线为已交付M12–M14合并0e90a0fd；保留后续已存在的范围取消、NodeLocation和只读副本整理计划。全部证据见[人物与地点验证](validation/mobile-gallery-people-places-2026-10-09.json)。M49.V13–V14仍将物理设备、安装模式、OS键盘／安全区和VoiceOver／TalkBack记为not-run。
+
 ## M12–M14：相册、日期与属性补充（2026-10-09）
 
-M10/M11已由PR1125完整CI37914259268合并3ad7e73a并清理。以此为固定父版本，补齐相册选择器短屏滚动与成功焦点、实际年月选择框44px，以及描述/标签/人物的保存反馈和未记录的视频旋转。复用现有选择ID/版本、日期索引、编辑目标守卫与共享属性，不改Server或算法。相册同14项12/2→14/0、实际同40项39/1→40/0；日期同45项41/4→45/0；属性同21项11/10→21/0、旋转5项3/2→5/0。整合c55d5ad1上的实际App40/37、属性28均通过，完整Desktop1613/0/1既有skip，typecheck/lint/build通过。新PR完整CI/合并待完成；真机、键盘、读屏仍not-run。详见[整合证据](validation/mobile-gallery-selection-timeline-properties-2026-10-09.json)。
+M10/M11已由PR1125完整CI37914259268合并3ad7e73a并清理。以此为固定父版本，补齐相册选择器短屏滚动与成功焦点、实际年月选择框44px，以及描述/标签/人物的保存反馈和未记录的视频旋转。复用现有选择ID/版本、日期索引、编辑目标守卫与共享属性，不改Server或算法。相册同14项12/2→14/0、实际同40项39/1→40/0；日期同45项41/4→45/0；属性同21项11/10→21/0、旋转5项3/2→5/0。整合c55d5ad1上的实际App40/37、属性28均通过，完整Desktop1613/0/1既有skip，typecheck/lint/build通过。已由PR #1143完整CI37917029455合并0e90a0fd并清理；真机、键盘、读屏仍not-run。详见[整合证据](validation/mobile-gallery-selection-timeline-properties-2026-10-09.json)。
 
 ## M11 compact panels — renderer acceptance (2026-10-09)
 

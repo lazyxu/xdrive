@@ -2201,9 +2201,9 @@ function registerIPCHandlers() {
       typeof requestedLimit !== 'number' ||
       !Number.isSafeInteger(requestedLimit) ||
       requestedLimit < 1 ||
-      requestedLimit > 100
+      requestedLimit > 1000
     ) {
-      throw new AgentIPCError('invalid_input', 0, 'Media place limit must be between 1 and 100.')
+      throw new AgentIPCError('invalid_input', 0, 'Media place limit must be between 1 and 1000.')
     }
     return requireAgentClient().mediaPlaces(requestedLimit)
   }, false))
