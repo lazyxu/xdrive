@@ -75,6 +75,10 @@ export function useXDriveServerUpdateController({
   const [error, setError] = useState('')
   const initializedRef = useRef(false)
   const stateRef = useRef<XDriveServerUpdateState | null>(null)
+  // Each poll owns only its own request generation; Start supersedes older reads.
+  const refreshRequestRef = useRef(0)
+  // A ref closes the same-render submission window before React publishes busy.
+  const startInFlightRef = useRef(false)
 
   useEffect(() => {
     stateRef.current = state
@@ -97,12 +101,16 @@ export function useXDriveServerUpdateController({
   }, [])
 
   const refresh = useCallback(async () => {
-    if (!enabled || !supported) return null
+    if (!enabled || !supported || startInFlightRef.current) return null
+    const request = ++refreshRequestRef.current
+    const current = () => request === refreshRequestRef.current && !startInFlightRef.current
     try {
       const next = await resolveXDriveTransport(port.getState())
+      if (!current()) return null
       applyState(next)
       return next
     } catch (refreshError) {
+      if (!current()) return null
       if (errorStatus(refreshError) === 403) {
         const unavailable: XDriveServerUpdateState = {
           supported: false,
@@ -171,7 +179,10 @@ export function useXDriveServerUpdateController({
   ])
 
   const start = useCallback(async () => {
-    if (!enabled || !supported || busy) return null
+    if (!enabled || !supported || busy || startInFlightRef.current) return null
+    startInFlightRef.current = true
+    // A status poll started before Start cannot overwrite the accepted task.
+    refreshRequestRef.current += 1
     setBusy(true)
     onBusyChange?.(true)
     setError('')
@@ -185,6 +196,7 @@ export function useXDriveServerUpdateController({
       setError(errorMessage(startError, '提交服务端更新失败。'))
       return null
     } finally {
+      startInFlightRef.current = false
       setBusy(false)
       onBusyChange?.(false)
     }
