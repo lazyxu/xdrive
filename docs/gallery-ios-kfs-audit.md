@@ -193,7 +193,7 @@ already accepted requirements. **P0** closes an existing interaction/integration
 | G03 | P1 / Sorting, original-item anchor and IANA timezone merged; shared Memories forwarding corrected; device and 100k acceptance pending | Capture-date/added-date sort, ascending/descending where useful; shared timeline/Memory/filter timezone; preserve an item anchor and collection context | Stable Server order plus tie-breaker, consistent range/Viewer order, midnight/DST/missing-zone cases, no full-collection load |
 | G04 | P1 / #1095 organizer, #1097 covers, #1099 uncropped wall and #1102 folder Server APIs merged; shared Web/Desktop folder navigation/mutations under PR; variable-height mosaic pending | Pin/reorder useful collections; album search, manual-album order/cover/folder organization; optional aspect-ratio wall and grid pinch density | Account-scoped preferences, return-position consistency, no copied media or second Gallery navigation model |
 | G05 | P1 / Applied-feedback stage in #1115; explicit index coverage substage in this dependent PR, integration/device verification pending | Applied filter chips, recent/suggested searches, exact scope, counts and index-readiness feedback; search within album/person/folder | Count/list/facet agreement; preserve own-filter exclusion; lexical fallback visible; no mandatory facet work on first image |
-| G06 | P1 / Proposed on existing folder browser | Authoritative file path, synchronization-folder provenance and Open in folder; optional explicit include-descendants scope; save reusable scope only after contract design | Owner-scoped path API; direct versus recursive counts explicit; scope composes with filters; no provider metadata dependency |
+| G06 | P1 / owner-scoped Node location/provenance backend candidate; Gallery/FileExplorer UI and recursive scope pending | Authoritative file path, synchronization-folder provenance and Open in folder; optional explicit include-descendants scope; save reusable scope only after contract design | Owner-scoped path API; direct versus recursive counts explicit; scope composes with filters; no provider metadata dependency |
 | G07 | P1 / Proposed on existing selection | Drag selection, select day/month, review selected set, select all query results with exclusions; batch undo/progress where meaningful | Define frozen versus live result semantics; Server/query-backed large selections, permission checks and bounded client state; partial failures visible |
 | G08 | P1 / Proposed | Single/batch capture-time and location correction, timezone/provenance details, reversible adjustments | Original metadata retained; user override survives reindex/upgrade; Gallery/Viewer/Memories agree; unknown capture time stays unknown |
 | G09 | P1 / Proposed on existing recipes | Edited thumbnails, before/after and undo/redo, chosen-adjustment copy/paste; explicit edited export and compatible output | Export pixel/trim/orientation matches saved recipe; original remains byte-identical; recipe/version keys invalidate derivatives; cancellable task for expensive renders |
@@ -329,6 +329,19 @@ repeatable material improvement with the same workload. This audit reports no ne
 timing, memory, FPS or throughput result.
 
 ## Delivery log
+
+- 2026-10-09: G06 phase 1 backend candidate (not yet merged) adds
+  authenticated `GET /api/v1/nodes/:id/location` with owner-scoped
+  current xDrive Node path, directory breadcrumbs, parent ID and path.
+  Connector provenance comes only from SourceItem->Source (including
+  original path when recorded), while current synchronization-folder
+  containment comes independently from ancestor target-node IDs.
+  Moving an xDrive file does not rewrite its SourceItem evidence.
+  This route is **on-demand**, not part of 100k Gallery range hydration,
+  and does not trigger MediaIndexer. PostgreSQL tenant-isolation and
+  move/delete tests accompany it. Web/Desktop/Viewer Properties wiring,
+  Show in Folder navigation, explicit direct/recursive scope, and
+  full CI/device acceptance remain distinct G06 follow-ups.
 
 - 2026-10-09 G05 on-demand index coverage follow-up (dependent on #1115): add an owner-scoped, read-only `GET /media/index-status`, querying active known PhotoAssets and their primary node's media-index state, not physical files, raw upload bytes or unscanned content. Web/Desktop share `getIndexStatus`; Desktop uses a distinct Agent capability and legacy Agent refusal, never a silent fake ready state. The toolbar checks this status only when explicitly requested and distinguishes ready, failed, unsupported, missing metadata, and other unready assets. The status is labeled **known_photo_assets**, not "whole library scanned". New PostgreSQL integration verifies owner separation, incomplete index evidence and trash exclusion. This candidate remains CI-pending: do not treat a green source contract as a full 100k performance, active-index scheduler or real-device acceptance.
 

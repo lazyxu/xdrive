@@ -176,6 +176,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/download/archive/progress/:id", s.getArchiveDownloadProgress)
 	authed.GET("/download/progress/:id", s.getDownloadProgress)
 	authed.POST("/download/archive", s.downloadArchive)
+	authed.GET("/nodes/:id/location", s.getNodeLocation)
 	authed.GET("/media/items", s.listMediaItems)
 	authed.GET("/media/facets", s.listMediaFacets)
 	authed.GET("/media/index-status", s.listMediaIndexStatus)

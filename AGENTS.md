@@ -89,6 +89,15 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G06 Node location/provenance must use owner-scoped live Node ancestry and
+  SourceItem->Source relations separately. A synchronization-folder target
+  ancestor is a current container, not proof of source-item origin.
+  Do not infer remote origin from file name, capture time, or a Source folder
+  label. Fetch full paths only on request; do not add N ancestor queries to
+  a 100k Gallery range. Every new API endpoint must be included in the
+  registered-route coverage manifest.
+
+
 - G05 index coverage is explicitly on-demand and owner-scoped to **known
   non-trashed logical PhotoAssets**, reporting missing/failed/unsupported
   metadata. Never claim this equals whole-file-scan completion. The first
