@@ -87,6 +87,14 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- Chronology in Gallery/Viewer/Properties/Memories/date filters must use one
+  validated IANA time-zone identity, not hardcoded UTC calendar labels, a
+  browser-local-only filter or fixed +08:00 boundaries. Compute both local
+  day boundaries independently across DST; preserve missing captured_at
+  rather than substituting upload time. The Server owns sparse sort and range
+  indexes; keep transient anchor IDs out of saved album and Viewer queries.
+  Record separately when older Agents cannot support a new query capability.
+
 - Before a Gallery, media Viewer, or media Properties change, read
   `docs/gallery-product-roadmap.md` and `docs/gallery-ios-kfs-audit.md`; also read
   `docs/preview-engine.md` for rendering/Properties and `docs/mobile-web.md` for touch

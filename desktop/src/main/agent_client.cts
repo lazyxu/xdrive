@@ -785,6 +785,7 @@ export type AgentMediaItemRange = {
 }
 
 export type AgentMediaQuery = {
+  time_zone?: string
   anchor_node_id?: number
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'
@@ -811,6 +812,7 @@ function appendAgentMediaQuery(
   if (Number.isSafeInteger(filters.anchor_node_id) && (filters.anchor_node_id ?? 0) > 0) {
     query.set('anchor_node_id', String(filters.anchor_node_id))
   }
+  if (filters.time_zone) query.set('time_zone', filters.time_zone)
   if (filters.sort_by) query.set('sort_by', filters.sort_by)
   if (filters.sort_dir) query.set('sort_dir', filters.sort_dir)
   if (filters.search?.trim()) query.set('q', filters.search.trim())
@@ -1566,8 +1568,8 @@ export class AgentIPCClient {
     return this.request<AgentMediaPlaceFacet[]>('GET', `/v1/media/places?${query.toString()}`)
   }
 
-  mediaMemories(anchorDate = '', limit = 24) {
-    const query = new URLSearchParams({ limit: String(limit) })
+  mediaMemories(anchorDate = '', limit = 24, timeZone = 'UTC') {
+    const query = new URLSearchParams({ limit: String(limit), time_zone: timeZone })
     if (anchorDate.trim()) query.set('anchor_date', anchorDate.trim())
     return this.request<AgentMediaMemory[]>(
       'GET',
@@ -1579,8 +1581,10 @@ export class AgentIPCClient {
     memoryID: string,
     limit = 200,
     offset = 0,
+    timeZone = 'UTC',
   ) {
     const query = new URLSearchParams({
+      time_zone: timeZone,
       memory_id: memoryID,
       limit: String(limit),
       offset: String(offset),

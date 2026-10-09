@@ -30,7 +30,10 @@ function loadTypeScript(filename, bindings = {}) {
   return mod.exports
 }
 
-const capture = loadTypeScript('ui/shared/src/media-viewer.ts')
+const timezone = loadTypeScript('ui/shared/src/media-timezone.ts')
+const capture = loadTypeScript('ui/shared/src/media-viewer.ts', {
+  './media-timezone': timezone,
+})
 const utils = loadTypeScript('ui/shared/src/mui/MediaGalleryUtils.ts')
 const { xDriveMediaInspectorFields } = loadTypeScript(
   'ui/shared/src/mui/MediaGalleryDetails.tsx',

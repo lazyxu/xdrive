@@ -98,10 +98,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
-  getMediaMemories: (anchorDate = '', limit = 24) =>
-    ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit),
-  getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0) =>
-    ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset),
+  getMediaMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
+    ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit, timeZone),
+  getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0, timeZone = 'UTC') =>
+    ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset, timeZone),
   getMediaDuplicateGroups: (limit = 24) =>
     ipcRenderer.invoke('agent:get-media-duplicate-groups', limit),
   getMediaDuplicateItemRange: (duplicateID: string, limit = 200, offset = 0) =>

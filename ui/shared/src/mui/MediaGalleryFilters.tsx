@@ -13,6 +13,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import {
+  xDriveMediaDayKey,
+  xDriveMediaDayStartISO,
+  xDriveMediaNextDayKey,
+  xDriveReadMediaTimeZone,
+} from '../media-timezone'
 import type {
   MediaFacetOption,
   MediaGalleryFacets,
@@ -53,10 +59,8 @@ export const emptyMediaGalleryFilterDraft: MediaGalleryFilterDraft = {
 
 function localDateBoundaryISO(value: string, exclusiveEnd = false) {
   if (!value) return undefined
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return undefined
-  if (exclusiveEnd) date.setDate(date.getDate() + 1)
-  return date.toISOString()
+  const day = exclusiveEnd ? xDriveMediaNextDayKey(value) : value
+  return xDriveMediaDayStartISO(day, xDriveReadMediaTimeZone())
 }
 
 function normalizedFacetValues(values: readonly string[]) {
@@ -113,12 +117,11 @@ export function mediaGalleryQueryFromDraft(draft: MediaGalleryFilterDraft): Medi
 function mediaGalleryDateInput(value?: string, exclusiveEnd = false) {
   if (!value) return ''
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  if (exclusiveEnd) date.setDate(date.getDate() - 1)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  if (!Number.isFinite(date.getTime())) return ''
+  return xDriveMediaDayKey(
+    exclusiveEnd ? new Date(date.getTime() - 1) : date,
+    xDriveReadMediaTimeZone(),
+  )
 }
 
 export function mediaGalleryDraftFromQuery(query: MediaGalleryQuery = {}): MediaGalleryFilterDraft {

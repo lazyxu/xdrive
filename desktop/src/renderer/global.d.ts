@@ -464,11 +464,13 @@ declare global {
         getMediaMemories: (
           anchorDate?: string,
           limit?: number,
+          timeZone?: string,
         ) => Promise<DesktopResult<MediaMemory[]>>
         getMediaMemoryItemRange: (
           memoryID: string,
           limit?: number,
           offset?: number,
+          timeZone?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaDuplicateGroups: (
           limit?: number,

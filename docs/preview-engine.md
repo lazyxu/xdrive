@@ -9,6 +9,16 @@ The Preview Engine is shared by FileExplorer and Gallery. Platform code may adap
 authentication and transport, but must not create a second ordinary-media preview
 pipeline.
 
+## Gallery capture-date timezone
+
+Gallery, FileExplorer media Properties and standalone Viewer must format
+canonical `captured_at` through one shared IANA timezone preference; never
+substitute Node creation time for an absent captured date. The Server date
+timeline, date filter UTC boundaries and Memories must use the same selected
+zone (including 23/25-hour DST days). This date presentation contract does
+not add a second media player or alter downloaded original bytes. The
+timezone delivery is pending independent CI/real-device verification.
+
 ## Gallery experience and Properties follow-up
 
 [Gallery product roadmap](gallery-product-roadmap.md) owns Gallery product behavior.

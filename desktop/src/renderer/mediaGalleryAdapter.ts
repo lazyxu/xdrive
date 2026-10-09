@@ -28,10 +28,10 @@ export function createDesktopMediaGalleryDataSource(
     },
     listAlbums: () => agent.getMediaAlbums(),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
-    listMemories: (anchorDate = '', limit = 24) =>
-      agent.getMediaMemories(anchorDate, limit),
-    listMemoryItemRange: (memoryID, limit, offset) =>
-      agent.getMediaMemoryItemRange(memoryID, limit, offset),
+    listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
+      agent.getMediaMemories(anchorDate, limit, timeZone),
+    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>
+      agent.getMediaMemoryItemRange(memoryID, limit, offset, timeZone),
     listDuplicateGroups: (limit = 24) => agent.getMediaDuplicateGroups(limit),
     listDuplicateItemRange: (duplicateID, limit, offset) =>
       agent.getMediaDuplicateItemRange(duplicateID, limit, offset),

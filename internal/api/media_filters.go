@@ -22,6 +22,7 @@ const (
 )
 
 type mediaQueryOptions struct {
+	TimeZone       string
 	AnchorNodeID   uint64
 	SortBy         string
 	SortDir        string
@@ -45,6 +46,12 @@ type mediaQueryOptions struct {
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	var out mediaQueryOptions
+	var err error
+	_, out.TimeZone, err = mediaIANAZone(c.Query("time_zone"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return mediaQueryOptions{}, false
+	}
 	if raw := strings.TrimSpace(c.Query("anchor_node_id")); raw != "" {
 		nodeID, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil || nodeID == 0 {
@@ -91,7 +98,6 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 		}
 		out.FolderID = &value
 	}
-	var err error
 	out.Cameras, err = normalizeMediaFacetValues("camera", c.QueryArray("camera"))
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())

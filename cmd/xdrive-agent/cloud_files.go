@@ -2082,6 +2082,32 @@ func (c *agentController) CloudMediaMemoryItemsRange(
 	return cli.MediaMemoryItemsRange(ctx, memoryID, limit, offset)
 }
 
+func (c *agentController) CloudMediaMemoriesInZone(
+	ctx context.Context,
+	anchorDate string,
+	limit int,
+	zone string,
+) ([]client.MediaMemory, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaMemories(ctx, anchorDate, limit, zone)
+}
+
+func (c *agentController) CloudMediaMemoryItemsRangeInZone(
+	ctx context.Context,
+	memoryID string,
+	limit, offset int,
+	zone string,
+) (client.MediaItemRange, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItemRange{}, err
+	}
+	return cli.MediaMemoryItemsRange(ctx, memoryID, limit, offset, zone)
+}
+
 func (c *agentController) CloudMediaDuplicateGroups(
 	ctx context.Context,
 	limit int,

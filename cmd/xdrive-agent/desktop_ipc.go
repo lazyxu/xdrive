@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
@@ -94,6 +95,7 @@ var desktopIPCCapabilities = []string{
 	"file-properties-stats",
 	"file-media-details",
 	"media-item-properties",
+	"media-timezone",
 	"upload-conflict-preflight",
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
@@ -2770,6 +2772,10 @@ func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *desktopIPCHandler) mediaMemories(w http.ResponseWriter, r *http.Request) {
+	zone, ok := desktopIPCMediaTimeZone(w, r)
+	if !ok {
+		return
+	}
 	limit := 24
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
@@ -2796,7 +2802,18 @@ func (h *desktopIPCHandler) mediaMemories(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	items, err := h.ctrl.CloudMediaMemories(r.Context(), anchorDate, limit)
+	var items []client.MediaMemory
+	var err error
+	if zone == "UTC" {
+		items, err = h.ctrl.CloudMediaMemories(r.Context(), anchorDate, limit)
+	} else if zoned, supported := h.ctrl.(interface {
+		CloudMediaMemoriesInZone(context.Context, string, int, string) ([]client.MediaMemory, error)
+	}); supported {
+		items, err = zoned.CloudMediaMemoriesInZone(r.Context(), anchorDate, limit, zone)
+	} else {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_timezone_unavailable", "upgrade Agent to use a custom media time zone")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -2805,6 +2822,10 @@ func (h *desktopIPCHandler) mediaMemories(w http.ResponseWriter, r *http.Request
 }
 
 func (h *desktopIPCHandler) mediaMemoryItems(w http.ResponseWriter, r *http.Request) {
+	zone, ok := desktopIPCMediaTimeZone(w, r)
+	if !ok {
+		return
+	}
 	memoryID := strings.TrimSpace(r.URL.Query().Get("memory_id"))
 	if memoryID == "" || len(memoryID) > 128 {
 		writeDesktopIPCError(
@@ -2819,12 +2840,18 @@ func (h *desktopIPCHandler) mediaMemoryItems(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	page, err := h.ctrl.CloudMediaMemoryItemsRange(
-		r.Context(),
-		memoryID,
-		limit,
-		offset,
-	)
+	var page client.MediaItemRange
+	var err error
+	if zone == "UTC" {
+		page, err = h.ctrl.CloudMediaMemoryItemsRange(r.Context(), memoryID, limit, offset)
+	} else if zoned, supported := h.ctrl.(interface {
+		CloudMediaMemoryItemsRangeInZone(context.Context, string, int, int, string) (client.MediaItemRange, error)
+	}); supported {
+		page, err = zoned.CloudMediaMemoryItemsRangeInZone(r.Context(), memoryID, limit, offset, zone)
+	} else {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_timezone_unavailable", "upgrade Agent to use a custom media time zone")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -3900,8 +3927,36 @@ func (h *desktopIPCHandler) mediaLivePhotoMotionTicket(w http.ResponseWriter, r 
 	writeDesktopIPCJSON(w, http.StatusOK, ticket)
 }
 
+func desktopIPCMediaTimeZone(w http.ResponseWriter, r *http.Request) (string, bool) {
+	zone := strings.TrimSpace(r.URL.Query().Get("time_zone"))
+	if zone == "" {
+		zone = "UTC"
+	}
+	valid := len(zone) <= 80 && (zone == "UTC" || strings.Contains(zone, "/"))
+	if valid {
+		valid = strings.IndexFunc(zone, func(ch rune) bool {
+			return !((ch >= 'A' && ch <= 'Z') ||
+				(ch >= 'a' && ch <= 'z') ||
+				(ch >= '0' && ch <= '9') || ch == '_' || ch == '+' || ch == '-' || ch == '/')
+		}) < 0
+	}
+	if valid {
+		_, err := time.LoadLocation(zone)
+		valid = err == nil
+	}
+	if !valid {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_timezone", "time_zone must be a valid IANA time zone")
+		return "", false
+	}
+	return zone, true
+}
+
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {
 	var out client.MediaQuery
+	var zoneOK bool
+	if out.TimeZone, zoneOK = desktopIPCMediaTimeZone(w, r); !zoneOK {
+		return client.MediaQuery{}, false
+	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("anchor_node_id")); raw != "" {
 		id, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil || id == 0 {
