@@ -85,6 +85,23 @@ ratio-preserving photo-wall display must keep bounded virtual range and
 thumbnail scheduling, including Live/video posters; its separate
 acceptance is pending.
 
+## G04 virtual-wall thumbnail aspect modes (candidate, 2026-10-09)
+
+The shared Gallery supports **方形裁切** by default and an opt-in
+**原比例完整显示** presentation: each decoded still/Live/video-poster
+thumbnail uses CSS object-fit: contain inside its existing square tile.
+The media geometry is never inferred from filenames or capture-date
+guesswork. The selected mode persists alongside the per-time-scale
+thumbnail density values. Both modes use the same fixed row height,
+logical index, VirtualGrid/Timeline range and thumbnail scheduler.
+This prevents a 100k-photo scroll from materializing all images.
+
+**Scope:** This is a no-crop tile mode, not a variable-height Masonry
+or Apple's irregular justified grid. True variable-ratio mosaics need
+separate bounded row-layout and scroll-anchor performance acceptance,
+so G04's broader album-folder/true full-aspect wall work remains open.
+No extra original-file reads or new renderer are permitted here.
+
 ## G04 manual album cover persistence (2026-10-09)
 
 Phase 1 was delivered through [#1095](https://github.com/lazyxu/xdrive/pull/1095).
