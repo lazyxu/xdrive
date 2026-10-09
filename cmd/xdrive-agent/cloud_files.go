@@ -2001,6 +2001,28 @@ func (c *agentController) CloudMediaFacets(
 	return cli.MediaFacets(ctx, query, albumID)
 }
 
+func (c *agentController) CloudMediaSyncFolders(
+	ctx context.Context,
+) ([]client.MediaSyncFolder, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaSyncFolders(ctx)
+}
+
+func (c *agentController) CloudMediaSyncFolder(
+	ctx context.Context,
+	sourceID uint64,
+	folderID uint64,
+) (client.MediaFolderView, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaFolderView{}, err
+	}
+	return cli.MediaSyncFolder(ctx, sourceID, folderID)
+}
+
 func (c *agentController) CloudMediaTrash(
 	ctx context.Context,
 	limit, offset int,

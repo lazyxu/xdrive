@@ -208,6 +208,42 @@ type MediaAlbum struct {
 	Query       *MediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
+type MediaSyncFolder struct {
+	SourceID         uint64  `json:"source_id"`
+	SourceName       string  `json:"source_name"`
+	SourceKind       string  `json:"source_kind"`
+	SourceStatus     string  `json:"source_status"`
+	TargetNodeID     uint64  `json:"target_node_id"`
+	TargetName       string  `json:"target_name"`
+	TargetPath       string  `json:"target_path"`
+	DirectMediaCount int64   `json:"direct_media_count"`
+	ChildFolderCount int64   `json:"child_folder_count"`
+	CoverNodeID      *uint64 `json:"cover_node_id,omitempty"`
+}
+
+type MediaFolderEntry struct {
+	ID               uint64  `json:"id"`
+	ParentID         *uint64 `json:"parent_id,omitempty"`
+	Name             string  `json:"name"`
+	Path             string  `json:"path"`
+	DirectMediaCount int64   `json:"direct_media_count"`
+	ChildFolderCount int64   `json:"child_folder_count"`
+	CoverNodeID      *uint64 `json:"cover_node_id,omitempty"`
+}
+
+type MediaFolderBreadcrumb struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type MediaFolderView struct {
+	Source      MediaSyncFolder         `json:"source"`
+	Current     MediaFolderEntry        `json:"current"`
+	Breadcrumbs []MediaFolderBreadcrumb `json:"breadcrumbs"`
+	Children    []MediaFolderEntry      `json:"children"`
+}
+
 type MediaPlaceFacet struct {
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
@@ -338,6 +374,7 @@ type MediaQuery struct {
 	Category       string
 	Cameras        []string
 	Formats        []string
+	FolderID       uint64
 	CapturedFrom   *time.Time
 	CapturedTo     *time.Time
 	HasLocation    *bool
@@ -370,6 +407,9 @@ func (q MediaQuery) add(values url.Values) {
 		if value := strings.TrimSpace(format); value != "" {
 			values.Add("format", value)
 		}
+	}
+	if q.FolderID > 0 {
+		values.Set("folder_id", strconv.FormatUint(q.FolderID, 10))
 	}
 	if q.CapturedFrom != nil {
 		values.Set("captured_from", q.CapturedFrom.UTC().Format(time.RFC3339))
@@ -469,6 +509,31 @@ func (c *Client) MediaFacets(
 	}
 	var out MediaGalleryFacets
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSyncFolders(ctx context.Context) ([]MediaSyncFolder, error) {
+	var out []MediaSyncFolder
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/sync-folders", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSyncFolder(
+	ctx context.Context,
+	sourceID uint64,
+	folderID uint64,
+) (MediaFolderView, error) {
+	if sourceID == 0 || folderID == 0 {
+		return MediaFolderView{}, fmt.Errorf("source and folder ids are required")
+	}
+	var out MediaFolderView
+	err := c.json(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/media/sync-folders/%d/folders/%d", sourceID, folderID),
+		nil,
+		&out,
+	)
 	return out, err
 }
 

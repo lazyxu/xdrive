@@ -273,6 +273,8 @@ type desktopIPCController interface {
 	CloudMediaItems(context.Context, client.MediaQuery, int, int) ([]client.MediaItem, error)
 	CloudMediaItemsRange(context.Context, client.MediaQuery, int, int) (client.MediaItemRange, error)
 	CloudMediaFacets(context.Context, client.MediaQuery, string) (client.MediaGalleryFacets, error)
+	CloudMediaSyncFolders(context.Context) ([]client.MediaSyncFolder, error)
+	CloudMediaSyncFolder(context.Context, uint64, uint64) (client.MediaFolderView, error)
 	CloudMediaTrash(context.Context, int, int) (client.MediaItemRange, error)
 	CloudMediaAlbums(context.Context) ([]client.MediaAlbum, error)
 	CloudMediaPlaces(context.Context, int) ([]client.MediaPlaceFacet, error)
@@ -611,6 +613,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
+	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
+	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
@@ -2672,6 +2676,34 @@ func (h *desktopIPCHandler) mediaFacets(w http.ResponseWriter, r *http.Request) 
 	writeDesktopIPCJSON(w, http.StatusOK, facets)
 }
 
+func (h *desktopIPCHandler) mediaSyncFolders(w http.ResponseWriter, r *http.Request) {
+	items, err := h.ctrl.CloudMediaSyncFolders(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaSyncFolder(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_source", "source_id must be a positive integer")
+		return
+	}
+	folderID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("folder_id")), 10, 64)
+	if err != nil || folderID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folder", "folder_id must be a positive integer")
+		return
+	}
+	view, err := h.ctrl.CloudMediaSyncFolder(r.Context(), sourceID, folderID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, view)
+}
+
 func (h *desktopIPCHandler) mediaTrash(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := desktopIPCMediaWindow(w, r)
 	if !ok {
@@ -3874,6 +3906,14 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 	}
 	if out.Formats, ok = desktopIPCMediaFacetValues(w, r, "format"); !ok {
 		return client.MediaQuery{}, false
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("folder_id")); raw != "" {
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || value == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folder", "folder_id must be a positive integer")
+			return client.MediaQuery{}, false
+		}
+		out.FolderID = value
 	}
 	if out.CapturedFrom, ok = desktopIPCMediaTime(w, r, "captured_from"); !ok {
 		return client.MediaQuery{}, false

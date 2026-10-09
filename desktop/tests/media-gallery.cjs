@@ -326,6 +326,82 @@ test('Gallery camera and format facets stay lazy, shared, and wired across Web/D
   assert.match(sharedGalleryMain, /facetRequestID\.current \+= 1/)
 })
 
+test('Gallery sync-folder browser stays lazy, direct-directory scoped, and shared', () => {
+  for (const token of [
+    'folder_id?: number',
+    'MediaSyncFolder',
+    'MediaFolderView',
+    'MediaFolderBreadcrumb',
+  ]) {
+    assert.ok(sharedModels.includes(token), 'Gallery folder model missing: ' + token)
+  }
+  for (const token of [
+    'listSyncFolders?:',
+    'getSyncFolder?:',
+    'const loadSyncFolders = useCallback',
+    'const openSyncFolderDirectory = useCallback',
+    "if (nextSection === 'albums') void loadSyncFolders()",
+    'folder_id: view.current.id',
+    'currentFolderView ? { folder_id: currentFolderView.current.id } : {}',
+    'data-xdrive-gallery-sync-folders',
+    'data-xdrive-gallery-folder-browser',
+    '同步文件夹',
+    '子目录',
+    '当前目录不会递归展开子目录照片',
+    '!currentAlbum && !currentFolderView && !currentSuggestedPerson',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), 'Gallery folder browser contract missing: ' + token)
+  }
+  const firstPageStart = sharedGalleryMain.indexOf('const loadFirstPage = useCallback')
+  const memoriesStart = sharedGalleryMain.indexOf('const loadMemories = useCallback', firstPageStart)
+  assert.equal(
+    sharedGalleryMain.slice(firstPageStart, memoriesStart).includes('listSyncFolders('),
+    false,
+    'Gallery first visible range must not load synchronization-folder roots',
+  )
+  assert.match(sharedGalleryMain, /target\.kind === 'all' && !target\.query\.folder_id/)
+  assert.match(webAPI, /mediaSyncFolders\(\)/)
+  assert.match(webAPI, /\/api\/v1\/media\/sync-folders/)
+  assert.match(webAPI, /values\.set\('folder_id'/)
+  assert.match(webAdapter, /listSyncFolders: \(\) => api\.mediaSyncFolders\(\)/)
+  assert.match(agentClient, /mediaSyncFolders\(\)/)
+  assert.match(agentClient, /query\.set\('folder_id'/)
+  assert.match(desktopIPC, /GET \/v1\/media\/sync-folders/)
+  assert.match(desktopIPC, /GET \/v1\/media\/sync-folder/)
+  assert.match(desktopMain, /agent:get-media-sync-folders/)
+  assert.match(preload, /getMediaSyncFolders:/)
+  assert.match(desktopAdapter, /listSyncFolders: \(\) => agent\.getMediaSyncFolders\(\)/)
+
+  const selectSectionStart = sharedGalleryMain.indexOf('const selectSection = useCallback')
+  const requestFacetsStart = sharedGalleryMain.indexOf('const requestFacets = useCallback', selectSectionStart)
+  assert.equal(
+    sharedGalleryMain.slice(selectSectionStart, requestFacetsStart).includes('folder_id'),
+    false,
+    'leaving synchronization-folder browsing via section navigation must clear folder scope',
+  )
+  assert.match(
+    sharedGalleryMain.slice(selectSectionStart, requestFacetsStart),
+    /syncFolderRequestID\.current \+= 1/,
+    'section navigation must invalidate an in-flight synchronization-folder request',
+  )
+
+  const clearFiltersStart = sharedGalleryMain.indexOf('const clearFilters = useCallback')
+  const createAlbumStart = sharedGalleryMain.indexOf('const createAlbum = useCallback', clearFiltersStart)
+  assert.match(
+    sharedGalleryMain.slice(clearFiltersStart, createAlbumStart),
+    /currentFolderView \? \{ folder_id: currentFolderView\.current\.id \} : \{\}/,
+    'clearing filters inside a synchronization folder must retain the directory scope',
+  )
+
+  const openAlbumStart = sharedGalleryMain.indexOf('const openAlbum = useCallback')
+  const openPlaceStart = sharedGalleryMain.indexOf('const openPlace = useCallback', openAlbumStart)
+  assert.match(
+    sharedGalleryMain.slice(openAlbumStart, openPlaceStart),
+    /syncFolderRequestID\.current \+= 1/,
+    'opening a normal album must invalidate an in-flight synchronization-folder request',
+  )
+})
+
 test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => {
   for (const token of [
     '<XDriveMediaGalleryViewer',
@@ -911,7 +987,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedGallery, /personIdentity: query\.person_identity/)
   assert.match(sharedGallery, /人物 ·/)
   assert.match(sharedGallery, /personIdentityLocked/)
-  assert.match(sharedGallery, /!currentAlbum && !currentSuggestedPerson && source\.createSmartAlbum/)
+  assert.match(sharedGallery, /!currentAlbum && !currentFolderView && !currentSuggestedPerson && source\.createSmartAlbum/)
   assert.match(sharedModels, /kind: 'folder' \| 'imported' \| 'manual' \| 'smart' \| string/)
   assert.match(sharedModels, /query\?: MediaGalleryQuery/)
   assert.match(sharedModels, /live_photo\?: boolean/)

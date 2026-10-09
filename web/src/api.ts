@@ -23,6 +23,8 @@ import type {
   MediaAlbum,
   MediaGalleryFacets,
   MediaGalleryQuery,
+  MediaSyncFolder,
+  MediaFolderView,
   MediaItem,
   MediaItemRange,
   MediaMemory,
@@ -268,6 +270,9 @@ function appendMediaGalleryQuery(
   }
   for (const format of query.formats ?? []) {
     if (format.trim()) values.append('format', format.trim())
+  }
+  if (query.folder_id && Number.isSafeInteger(query.folder_id) && query.folder_id > 0) {
+    values.set('folder_id', String(query.folder_id))
   }
   if (query.captured_from) values.set('captured_from', query.captured_from)
   if (query.captured_to) values.set('captured_to', query.captured_to)
@@ -783,6 +788,16 @@ export class XDriveApi {
     const encoded = query.toString()
     return this.request<MediaGalleryFacets>(
       `/api/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
+
+  mediaSyncFolders() {
+    return this.request<MediaSyncFolder[]>('/api/v1/media/sync-folders')
+  }
+
+  mediaSyncFolder(sourceID: number, folderID: number) {
+    return this.request<MediaFolderView>(
+      `/api/v1/media/sync-folders/${sourceID}/folders/${folderID}`,
     )
   }
 
