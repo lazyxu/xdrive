@@ -1331,6 +1331,7 @@ function FileManager({
           </Box>
         ) : appView === 'gallery' ? (
           <XDriveMediaGalleryPage
+            mobileWebChrome
             source={gallerySource}
             fileOperations={fileOperations}
             onFileOperationQueued={() => { void refreshFileOperations() }}

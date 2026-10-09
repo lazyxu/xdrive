@@ -33,20 +33,23 @@ const gallerySections: GallerySectionOption[] = [
 export function XDriveMediaGalleryNavigation({
   value,
   onChange,
+  layout = 'horizontal',
 }: {
   value: MediaGallerySection
   onChange: (value: MediaGallerySection) => void
+  layout?: 'horizontal' | 'drawer'
 }) {
   return (
     <Stack
-      direction="row"
-      spacing={0.5}
+      direction={layout === 'drawer' ? 'column' : 'row'}
+      spacing={layout === 'drawer' ? 0.5 : 0.5}
       role="navigation"
       aria-label="图库导航"
       sx={{
         minWidth: 0,
-        overflowX: 'auto',
+        overflowX: layout === 'drawer' ? 'hidden' : 'auto',
         pb: 0.25,
+        px: layout === 'drawer' ? 1.5 : undefined,
         scrollbarWidth: 'thin',
       }}
     >
@@ -61,7 +64,11 @@ export function XDriveMediaGalleryNavigation({
             data-xdrive-gallery-section={section.value}
             onClick={() => onChange(section.value)}
             sx={{
-              flexShrink: 0, borderRadius: 999, px: 1.5,
+              flexShrink: 0,
+              borderRadius: layout === 'drawer' ? 2 : 999,
+              px: 1.5,
+              justifyContent: layout === 'drawer' ? 'flex-start' : undefined,
+              minHeight: layout === 'drawer' ? 48 : undefined,
               '@media (max-width:899.95px)': { minHeight: 44 },
             }}
           >

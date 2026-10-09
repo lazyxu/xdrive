@@ -235,6 +235,7 @@ export function XDriveMediaGalleryFilterBar({
             size="small"
             label="搜索"
             placeholder="文件名、对象、场景、文字或相机"
+            slotProps={{ htmlInput: { 'aria-label': '搜索' } }}
             value={draft.search}
             onChange={(event) => onChange({ ...draft, search: event.target.value })}
             onKeyDown={(event) => {
@@ -509,6 +510,7 @@ export function XDriveMediaGalleryFilterToolbar({
   onApply,
   onClear,
   onSaveSmart,
+  mobileEmbedded = false,
 }: {
   draft: MediaGalleryFilterDraft
   recentSearches?: string[]
@@ -529,6 +531,7 @@ export function XDriveMediaGalleryFilterToolbar({
   onApply: () => void
   onClear: () => void
   onSaveSmart?: () => void
+  mobileEmbedded?: boolean
 }) {
   const compactViewport = useMediaQuery('(max-width:899.95px)')
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -554,7 +557,7 @@ export function XDriveMediaGalleryFilterToolbar({
       placeLabel={placeLabel}
       personIdentityLabel={personIdentityLabel}
       personIdentityLocked={personIdentityLocked}
-      showSearch={false}
+      showSearch={mobileEmbedded && mobile}
       compactScrollable={mobile}
       lockedAssetKind={lockedAssetKind}
       lockedFavorite={lockedFavorite}
@@ -572,6 +575,8 @@ export function XDriveMediaGalleryFilterToolbar({
       onSaveSmart={onSaveSmart}
     />
   )
+
+  if (mobileEmbedded && compactViewport) return filterContent(true)
 
   return (
     <>
