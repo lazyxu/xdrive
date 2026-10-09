@@ -447,6 +447,7 @@ declare global {
           limit?: number,
           offset?: number,
           query?: MediaGalleryQuery,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaFacets: (
           query?: MediaGalleryQuery,

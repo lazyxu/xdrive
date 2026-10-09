@@ -12,7 +12,10 @@ export function createDesktopMediaGalleryDataSource(
     loadMusicRoot: () => agent.cloudRoot(),
     listMusicChildren: (parentID) => agent.cloudChildren(parentID),
     listItems: (limit, offset, query) => agent.getMediaItems('', limit, offset, query),
-    listItemRange: (limit, offset, query) => agent.getMediaItemRange('', limit, offset, query),
+    listItemRange: (limit, offset, query, signal) => xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => agent.getMediaItemRange('', limit, offset, query, requestID),
+    ),
     listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
     getIndexStatus: () => agent.getMediaIndexStatus(),
     listSyncFolders: () => agent.getMediaSyncFolders(),

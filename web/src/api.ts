@@ -780,6 +780,7 @@ export class XDriveApi {
     limit = 200,
     offset = 0,
     filters: MediaGalleryQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -788,7 +789,7 @@ export class XDriveApi {
     })
     if (kind) query.set('kind', kind)
     appendMediaGalleryQuery(query, filters)
-    return this.request<MediaItemRange>(`/api/v1/media/items?${query.toString()}`)
+    return this.request<MediaItemRange>(`/api/v1/media/items?${query.toString()}`, { signal })
   }
 
 

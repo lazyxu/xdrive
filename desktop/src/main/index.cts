@@ -2000,32 +2000,37 @@ function registerIPCHandlers() {
   }, false))
 
   ipcMain.handle('agent:get-media-item-range', (
-    _event,
+    event,
     kind: unknown = '',
     limit: unknown = 200,
     offset: unknown = 0,
     query: unknown = undefined,
-  ) => runAgentAction<AgentMediaItemRange>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'media-gallery')
-    if (
-      typeof kind !== 'string' ||
-      (kind.trim() && !['image', 'video'].includes(kind.trim()))
-    ) {
-      throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
-    }
-    const window = normalizeMediaRangeWindow(limit, offset)
-    const mediaQuery = normalizeMediaGalleryQuery(query)
-    if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
-      requireAgentCapability(hello, 'media-timezone')
-    }
-    return requireAgentClient().mediaItemRange(
-      kind.trim(),
-      window.limit,
-      window.offset,
-      mediaQuery,
-    )
-  }, false))
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof kind !== 'string' ||
+        (kind.trim() && !['image', 'video'].includes(kind.trim()))
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      const mediaQuery = normalizeMediaGalleryQuery(query)
+      if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
+        requireAgentCapability(hello, 'media-timezone')
+      }
+      return requireAgentClient().mediaItemRange(
+        kind.trim(),
+        window.limit,
+        window.offset,
+        mediaQuery,
+        signal,
+      )
+    }),
+    false,
+  ))
 
   ipcMain.handle('agent:get-media-facets', (
     _event,

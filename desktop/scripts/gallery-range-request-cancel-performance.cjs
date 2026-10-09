@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const http = require('node:http')
 const { performance } = require('node:perf_hooks')
+const { execFileSync } = require('node:child_process')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
@@ -13,10 +14,12 @@ const serverDelayMs = 500
 const observationMs = 160
 const bytesPerResponse = 8192
 
-function compileGalleryRangeLoader(send) {
+function compileGalleryRangeLoader(send, mode) {
   // Extract the production Gallery hook callback instead of testing a
   // hand-written approximation of how the AbortSignal flows into loading.
-  const source = fs.readFileSync(path.join(root, sourceName), 'utf8')
+  const source = mode === 'parent'
+    ? execFileSync('git', ['show', 'HEAD^:' + sourceName], { cwd: root, encoding: 'utf8' })
+    : fs.readFileSync(path.join(root, sourceName), 'utf8')
   const first = source.indexOf('const loadVirtualRange = useCallback(async (')
   const close = '}, [loadTargetRange])'
   const end = source.indexOf(close, first)
@@ -60,7 +63,7 @@ async function until(predicate, timeout, reason) {
   }
 }
 
-async function measure(sample) {
+async function measure(sample, mode) {
   const event = sample === 3 ? 'view-unmount' : 'viewport-scroll'
   const active = new Set()
   let opened = 0
@@ -103,7 +106,7 @@ async function measure(sample) {
       return fetch('http://127.0.0.1:' + server.address().port + '/media/items?range=true', signal ? { signal } : {})
         .then((response) => response.arrayBuffer())
     }
-    const loader = compileGalleryRangeLoader(send)
+    const loader = compileGalleryRangeLoader(send, mode)
     const controllers = Array.from({ length: concurrentRequests }, () => new AbortController())
     const pending = controllers.map((controller, i) =>
       loader({ offset: 5000 + i * 200, limit: 200 }, controller.signal))
@@ -127,6 +130,7 @@ async function measure(sample) {
     ])
     await until(() => active.size === 0, 3000, 'HTTP connections did not close')
     return {
+      mode,
       sample,
       event,
       logicalNamespaceItems: 100000,
@@ -144,37 +148,79 @@ async function measure(sample) {
 }
 
 async function main() {
+  const mode = process.argv[2] || 'paired'
+  if (!['paired', 'current', 'parent'].includes(mode)) {
+    throw new Error('Usage: gallery-range-request-cancel-performance.cjs [paired|current|parent]')
+  }
   const samples = []
   for (let i = 1; i <= sampleCount; i++) {
-    const sample = await measure(i)
-    samples.push(sample)
-    console.log('GALLERY_RANGE_CANCEL_100K_SAMPLE ' + JSON.stringify(sample))
-  }
-  const errors = []
-  for (const sample of samples) {
-    if (sample.opened !== concurrentRequests ||
-        sample.httpStillActiveAt160ms !== concurrentRequests ||
-        sample.httpAbortedAt160ms !== 0 ||
-        sample.signalsReceived !== 0 ||
-        sample.finalHttpCancelled !== 0 ||
-        sample.finalDeliveredBytes !== concurrentRequests * bytesPerResponse) {
-      errors.push('expected original unpropagated AbortSignal breach: ' + JSON.stringify(sample))
+    const phases = mode === 'paired'
+      ? (i % 2 ? ['parent', 'current'] : ['current', 'parent'])
+      : [mode]
+    for (const phase of phases) {
+      const sample = await measure(i, phase)
+      samples.push(sample)
+      console.log('GALLERY_RANGE_CANCEL_100K_SAMPLE ' + JSON.stringify(sample))
     }
   }
+  const beforeRed = (x) => (
+    x.opened === concurrentRequests &&
+    x.httpStillActiveAt160ms === concurrentRequests &&
+    x.httpAbortedAt160ms === 0 &&
+    x.signalsReceived === 0 &&
+    x.finalHttpCancelled === 0 &&
+    x.finalDeliveredBytes === concurrentRequests * bytesPerResponse &&
+    x.finalHttpActive === 0
+  )
+  const afterGreen = (x) => (
+    x.opened === concurrentRequests &&
+    x.httpStillActiveAt160ms === 0 &&
+    x.httpAbortedAt160ms === concurrentRequests &&
+    x.bytesDeliveredAt160ms === 0 &&
+    x.signalsReceived === concurrentRequests &&
+    x.finalHttpCancelled === concurrentRequests &&
+    x.finalDeliveredBytes === 0 &&
+    x.finalHttpActive === 0 &&
+    typeof x.lastServerAbortMs === 'number' &&
+    x.lastServerAbortMs <= observationMs
+  )
+  const before = samples.filter((x) => x.mode === 'parent')
+  const after = samples.filter((x) => x.mode === 'current')
+  const errors = []
+  if (mode === 'paired' && (before.length !== sampleCount || after.length !== sampleCount)) {
+    errors.push('paired sample cardinality is not three per version')
+  }
+  for (const item of before) {
+    if (!beforeRed(item)) errors.push('original first-red changed: ' + JSON.stringify(item))
+  }
+  for (const item of after) {
+    if (!afterGreen(item)) errors.push('candidate did not abort real HTTP: ' + JSON.stringify(item))
+  }
   const report = {
-    status: errors.length === 0 ? 'reproduced-red-baseline' : 'unexpected-result',
+    status: errors.length === 0
+      ? (mode === 'paired' ? 'accepted-cancellation-ab' : mode === 'parent' ? 'reproduced-red-baseline' : 'accepted-candidate')
+      : 'rejected-or-unexpected',
     workload: 'production-MediaGallery.loadVirtualRange-100k-logical',
     source: sourceName,
-    samples,
-    sample_count: sampleCount,
+    mode,
+    provenance: mode === 'paired' ? {
+      before: execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: root, encoding: 'utf8' }).trim(),
+      after: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+    } : null,
+    samples, sample_count_per_phase: sampleCount,
     max_in_flight_requests: concurrentRequests,
-    server_delay_ms: serverDelayMs,
-    observed_after_ms: observationMs,
+    server_delay_ms: serverDelayMs, observed_after_ms: observationMs,
     bytes_per_response: bytesPerResponse,
+    acceptance: {
+      passed: errors.length === 0,
+      before_red: before.filter(beforeRed).length,
+      after_green: after.filter(afterGreen).length,
+      required_per_phase: sampleCount,
+    },
     errors,
-    scope: 'production Gallery hook loader extracted/transpiled + real localhost Node HTTP; NOT authenticated Web fetch, Electron Agent IPC, actual Go ctx.Done, full 100k network fanout or browser rendering',
+    scope: 'Production Gallery virtual-range loader extracted/transpiled + real Node localhost HTTP; actual authenticated Web, Electron Agent IPC, Go ctx.Done and full browser rendering separately require verification',
   }
-  const file = path.resolve(__dirname, '..', 'perf-results', 'gallery-range-cancel-100k-baseline.json')
+  const file = path.resolve(__dirname, '..', 'perf-results', 'gallery-range-cancel-100k-' + mode + '.json')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, JSON.stringify(report, null, 2) + '\n')
   console.log('GALLERY_RANGE_CANCEL_100K_REPORT ' + JSON.stringify(report))

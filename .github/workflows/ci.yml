@@ -856,6 +856,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -866,13 +867,13 @@ jobs:
         working-directory: desktop
         run: |
           set -euo pipefail
-          node scripts/gallery-range-request-cancel-performance.cjs
-          cat perf-results/gallery-range-cancel-100k-baseline.json
+          node scripts/gallery-range-request-cancel-performance.cjs paired
+          cat perf-results/gallery-range-cancel-100k-paired.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: gallery-range-cancel-100k-baseline
-          path: desktop/perf-results/gallery-range-cancel-100k-baseline.json
+          path: desktop/perf-results/gallery-range-cancel-100k-paired.json
           if-no-files-found: warn
           retention-days: 7
 

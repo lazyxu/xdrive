@@ -1535,6 +1535,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     filters: AgentMediaQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -1543,7 +1544,7 @@ export class AgentIPCClient {
     })
     if (kind) query.set('kind', kind)
     appendAgentMediaQuery(query, filters)
-    return this.request<AgentMediaItemRange>('GET', `/v1/media/items?${query.toString()}`)
+    return this.request<AgentMediaItemRange>('GET', `/v1/media/items?${query.toString()}`, undefined, 10_000, signal)
   }
 
 

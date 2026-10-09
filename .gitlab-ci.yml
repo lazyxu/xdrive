@@ -713,14 +713,14 @@ gallery-range-cancel-100k-performance:
       set -euo pipefail
       cd desktop
       npm install --no-audit --no-fund
-      node scripts/gallery-range-request-cancel-performance.cjs
-      cat perf-results/gallery-range-cancel-100k-baseline.json
+      node scripts/gallery-range-request-cancel-performance.cjs paired
+      cat perf-results/gallery-range-cancel-100k-paired.json
   artifacts:
     name: "gallery-range-cancel-100k-$CI_COMMIT_SHORT_SHA"
     expire_in: 7 days
     when: always
     paths:
-      - desktop/perf-results/gallery-range-cancel-100k-baseline.json
+      - desktop/perf-results/gallery-range-cancel-100k-paired.json
 
 file-explorer-viewport-cancel-performance:
   image: $XDRIVE_CI_NODE_IMAGE

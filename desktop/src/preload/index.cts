@@ -75,7 +75,8 @@ const agent = Object.freeze({
     person_identity?: string
     place?: string
   } = {},
-  ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query),
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-item-range', kind, limit, offset, query, requestID),
   getMediaFacets: (
     query: {
       search?: string
