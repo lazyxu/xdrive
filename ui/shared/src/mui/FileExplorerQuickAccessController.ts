@@ -211,6 +211,10 @@ export function useXDriveFileExplorerQuickAccess<
           generation !== lifecycleGenerationRef.current ||
           !enabledRef.current
         ) return true
+        // A lookup started during the mutation may return an older server
+        // snapshot after this write succeeds. Give the write ownership.
+        loadRequestRef.current += 1
+        setLoading(false)
         setItems((current) => (
           current.some((item) => item.id === pinned.id)
             ? current.map((item) => item.id === pinned.id ? pinned : item)
@@ -236,6 +240,8 @@ export function useXDriveFileExplorerQuickAccess<
           generation !== lifecycleGenerationRef.current ||
           !enabledRef.current
         ) return true
+        loadRequestRef.current += 1
+        setLoading(false)
         setItems((current) => current.filter((item) => item.id !== nodeID))
         return true
       } catch (error) {

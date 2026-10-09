@@ -179,6 +179,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
       try {
         const next = projectFavoriteItem(await favoriteItemRef.current(nodeID))
         if (generation !== lifecycleGenerationRef.current || !enabledRef.current) return true
+        // A lookup started during the mutation may return an older server
+        // snapshot after this write succeeds. Give the write ownership.
+        loadRequestRef.current += 1
+        setLoading(false)
         setItems((current) => (
           current.some((item) => item.id === next.id)
             ? current.map((item) => item.id === next.id ? next : item)
@@ -198,6 +202,8 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
       try {
         await unfavoriteItemRef.current(nodeID)
         if (generation !== lifecycleGenerationRef.current || !enabledRef.current) return true
+        loadRequestRef.current += 1
+        setLoading(false)
         setItems((current) => current.filter((item) => item.id !== nodeID))
         return true
       } catch (error) {
