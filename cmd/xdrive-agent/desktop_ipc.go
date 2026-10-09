@@ -101,6 +101,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-policy",
 	"server-update",
 	"media-gallery",
+	"media-album-folders",
 	"external-sources",
 	"storage-intelligence",
 	"storage-cache-cleanup",
@@ -622,6 +623,11 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
 	mux.HandleFunc("GET /v1/media/albums", h.mediaAlbums)
+	mux.HandleFunc("GET /v1/media/album-folders", h.mediaAlbumFolders)
+	mux.HandleFunc("POST /v1/media/album-folder", h.createMediaAlbumFolder)
+	mux.HandleFunc("PATCH /v1/media/album-folder", h.updateMediaAlbumFolder)
+	mux.HandleFunc("DELETE /v1/media/album-folder", h.deleteMediaAlbumFolder)
+	mux.HandleFunc("PATCH /v1/media/album/folder", h.moveMediaAlbumToFolder)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
 	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
 	mux.HandleFunc("GET /v1/media/memory-items", h.mediaMemoryItems)
@@ -2754,6 +2760,144 @@ func (h *desktopIPCHandler) mediaAlbums(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+// Album-folder operations are optional on the generic desktopIPCController
+// interface so existing test agents retain their previous capability contract.
+type desktopIPCMediaAlbumFolderController interface {
+	CloudMediaAlbumFolders(context.Context) ([]client.MediaAlbumFolder, error)
+	CloudCreateMediaAlbumFolder(context.Context, string, uint64) (client.MediaAlbumFolder, error)
+	CloudUpdateMediaAlbumFolder(context.Context, uint64, uint64, *string, *uint64) (client.MediaAlbumFolder, error)
+	CloudDeleteMediaAlbumFolder(context.Context, uint64, uint64) error
+	CloudMoveMediaAlbumToFolder(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
+}
+
+func (h *desktopIPCHandler) mediaAlbumFolderController(w http.ResponseWriter) (desktopIPCMediaAlbumFolderController, bool) {
+	controller, ok := h.ctrl.(desktopIPCMediaAlbumFolderController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_album_folders_unavailable", "upgrade Agent to manage album folders")
+	}
+	return controller, ok
+}
+
+func desktopIPCValidAlbumFolderID(value uint64, allowRoot bool) bool {
+	return value <= (1<<53)-1 && (allowRoot || value > 0)
+}
+
+func (h *desktopIPCHandler) mediaAlbumFolders(w http.ResponseWriter, r *http.Request) {
+	controller, ok := h.mediaAlbumFolderController(w)
+	if !ok {
+		return
+	}
+	folders, err := controller.CloudMediaAlbumFolders(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, folders)
+}
+
+func (h *desktopIPCHandler) createMediaAlbumFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name     string `json:"name"`
+		ParentID uint64 `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" || !desktopIPCValidAlbumFolderID(input.ParentID, true) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_folder", "name and safe parent_id are required")
+		return
+	}
+	controller, ok := h.mediaAlbumFolderController(w)
+	if !ok {
+		return
+	}
+	folder, err := controller.CloudCreateMediaAlbumFolder(r.Context(), input.Name, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, folder)
+}
+
+func (h *desktopIPCHandler) updateMediaAlbumFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		FolderID uint64  `json:"folder_id"`
+		Revision uint64  `json:"revision"`
+		Name     *string `json:"name"`
+		ParentID *uint64 `json:"parent_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidAlbumFolderID(input.FolderID, false) || input.Revision == 0 ||
+		(input.Name == nil && input.ParentID == nil) ||
+		(input.ParentID != nil && !desktopIPCValidAlbumFolderID(*input.ParentID, true)) ||
+		(input.Name != nil && strings.TrimSpace(*input.Name) == "") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_folder", "folder id, revision and valid changes are required")
+		return
+	}
+	controller, ok := h.mediaAlbumFolderController(w)
+	if !ok {
+		return
+	}
+	folder, err := controller.CloudUpdateMediaAlbumFolder(r.Context(), input.FolderID, input.Revision, input.Name, input.ParentID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, folder)
+}
+
+func (h *desktopIPCHandler) deleteMediaAlbumFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		FolderID uint64 `json:"folder_id"`
+		Revision uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidAlbumFolderID(input.FolderID, false) || input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_folder", "folder id and revision are required")
+		return
+	}
+	controller, ok := h.mediaAlbumFolderController(w)
+	if !ok {
+		return
+	}
+	if err := controller.CloudDeleteMediaAlbumFolder(r.Context(), input.FolderID, input.Revision); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *desktopIPCHandler) moveMediaAlbumToFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string  `json:"album_id"`
+		Revision uint64  `json:"revision"`
+		FolderID *uint64 `json:"folder_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !(strings.HasPrefix(input.AlbumID, "manual:") || strings.HasPrefix(input.AlbumID, "smart:")) ||
+		input.Revision == 0 || input.FolderID == nil ||
+		!desktopIPCValidAlbumFolderID(*input.FolderID, true) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_folder", "local album, revision and safe folder_id are required")
+		return
+	}
+	controller, ok := h.mediaAlbumFolderController(w)
+	if !ok {
+		return
+	}
+	album, err := controller.CloudMoveMediaAlbumToFolder(r.Context(), input.AlbumID, input.Revision, *input.FolderID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
 }
 
 func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) {

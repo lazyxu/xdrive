@@ -114,6 +114,7 @@ import {
   type AgentMediaSyncFolder,
   type AgentMediaFolderView,
   type AgentMediaAlbum,
+  type AgentMediaAlbumFolder,
   type AgentMediaPlaceFacet,
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
@@ -2084,6 +2085,84 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'media-gallery')
     return requireAgentClient().mediaAlbums()
   }, false))
+
+  const validAlbumFolderID = (value: unknown, allowRoot = false): value is number => (
+    typeof value === 'number' && Number.isSafeInteger(value) &&
+    (allowRoot ? value >= 0 : value > 0)
+  )
+  const requireAlbumFolderCapability = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-album-folders')
+  }
+
+  ipcMain.handle('agent:get-media-album-folders', () =>
+    runAgentAction<AgentMediaAlbumFolder[]>(async () => {
+      await requireAlbumFolderCapability()
+      return requireAgentClient().mediaAlbumFolders()
+    }, false))
+
+  ipcMain.handle('agent:create-media-album-folder',
+    (_event, name: unknown, parentID: unknown) =>
+      runAgentAction<AgentMediaAlbumFolder>(async () => {
+        await requireAlbumFolderCapability()
+        if (typeof name !== 'string' || !name.trim() ||
+          [...name.trim()].length > 200 || !validAlbumFolderID(parentID, true)) {
+          throw new AgentIPCError('invalid_input', 0, 'Album folder name and parent are invalid.')
+        }
+        return requireAgentClient().createMediaAlbumFolder(name.trim(), parentID)
+      }, false))
+
+  ipcMain.handle('agent:update-media-album-folder',
+    (_event, folderID: unknown, revision: unknown, change: unknown) =>
+      runAgentAction<AgentMediaAlbumFolder>(async () => {
+        await requireAlbumFolderCapability()
+        if (!validAlbumFolderID(folderID) || !validAlbumFolderID(revision) ||
+          typeof change !== 'object' || change === null || Array.isArray(change)) {
+          throw new AgentIPCError('invalid_input', 0, 'Album folder update is invalid.')
+        }
+        const data = change as Record<string, unknown>
+        const next: { name?: string; parent_id?: number } = {}
+        if (data.name !== undefined) {
+          if (typeof data.name !== 'string' || !data.name.trim() ||
+            [...data.name.trim()].length > 200) {
+            throw new AgentIPCError('invalid_input', 0, 'Album folder name is invalid.')
+          }
+          next.name = data.name.trim()
+        }
+        if (data.parent_id !== undefined) {
+          if (!validAlbumFolderID(data.parent_id, true)) {
+            throw new AgentIPCError('invalid_input', 0, 'Album folder parent is invalid.')
+          }
+          next.parent_id = data.parent_id
+        }
+        if (next.name === undefined && next.parent_id === undefined) {
+          throw new AgentIPCError('invalid_input', 0, 'Album folder update requires a change.')
+        }
+        return requireAgentClient().updateMediaAlbumFolder(folderID, revision, next)
+      }, false))
+
+  ipcMain.handle('agent:delete-media-album-folder',
+    (_event, folderID: unknown, revision: unknown) =>
+      runAgentAction<{ ok: boolean }>(async () => {
+        await requireAlbumFolderCapability()
+        if (!validAlbumFolderID(folderID) || !validAlbumFolderID(revision)) {
+          throw new AgentIPCError('invalid_input', 0, 'Album folder id and revision are invalid.')
+        }
+        await requireAgentClient().deleteMediaAlbumFolder(folderID, revision)
+        return { ok: true }
+      }, false))
+
+  ipcMain.handle('agent:move-media-album-to-folder',
+    (_event, albumID: unknown, revision: unknown, folderID: unknown) =>
+      runAgentAction<AgentMediaAlbum>(async () => {
+        await requireAlbumFolderCapability()
+        if (typeof albumID !== 'string' ||
+          !['manual:', 'smart:'].some(prefix => albumID.startsWith(prefix) && albumID.length > prefix.length) ||
+          !validAlbumFolderID(revision) || !validAlbumFolderID(folderID, true)) {
+          throw new AgentIPCError('invalid_input', 0, 'Album folder move is invalid.')
+        }
+        return requireAgentClient().moveMediaAlbumToFolder(albumID, revision, folderID)
+      }, false))
 
   ipcMain.handle('agent:get-media-places', (_event, limit: unknown = 24) => runAgentAction<AgentMediaPlaceFacet[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

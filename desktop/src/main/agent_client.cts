@@ -890,7 +890,16 @@ export type AgentMediaFolderView = {
   }>
 }
 
+export type AgentMediaAlbumFolder = {
+  id: number
+  parent_id: number
+  name: string
+  revision: number
+  updated_at: string
+}
+
 export type AgentMediaAlbum = {
+  album_folder_id?: number
   id: string
   kind: string
   name: string
@@ -1561,6 +1570,37 @@ export class AgentIPCClient {
 
   mediaAlbums() {
     return this.request<AgentMediaAlbum[]>('GET', '/v1/media/albums')
+  }
+
+  mediaAlbumFolders() {
+    return this.request<AgentMediaAlbumFolder[]>('GET', '/v1/media/album-folders')
+  }
+
+  createMediaAlbumFolder(name: string, parentID: number) {
+    return this.request<AgentMediaAlbumFolder>('POST', '/v1/media/album-folder', {
+      name, parent_id: parentID,
+    })
+  }
+
+  updateMediaAlbumFolder(folderID: number, revision: number, change: {
+    name?: string
+    parent_id?: number
+  }) {
+    return this.request<AgentMediaAlbumFolder>('PATCH', '/v1/media/album-folder', {
+      folder_id: folderID, revision, ...change,
+    })
+  }
+
+  deleteMediaAlbumFolder(folderID: number, revision: number) {
+    return this.request<null>('DELETE', '/v1/media/album-folder', {
+      folder_id: folderID, revision,
+    })
+  }
+
+  moveMediaAlbumToFolder(albumID: string, revision: number, folderID: number) {
+    return this.request<AgentMediaAlbum>('PATCH', '/v1/media/album/folder', {
+      album_id: albumID, revision, folder_id: folderID,
+    })
   }
 
   mediaPlaces(limit = 24) {

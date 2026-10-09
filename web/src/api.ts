@@ -21,6 +21,7 @@ import type {
   FileVersion,
   MeResult,
   MediaAlbum,
+  MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -817,6 +818,46 @@ export class XDriveApi {
 
   mediaAlbums() {
     return this.request<MediaAlbum[]>('/api/v1/media/albums')
+  }
+
+  mediaAlbumFolders() {
+    return this.request<MediaAlbumFolder[]>('/api/v1/media/album-folders')
+  }
+
+  createMediaAlbumFolder(name: string, parentID: number) {
+    return this.request<MediaAlbumFolder>('/api/v1/media/album-folders', {
+      method: 'POST',
+      body: JSON.stringify({ name, parent_id: parentID }),
+    })
+  }
+
+  updateMediaAlbumFolder(
+    folderID: number,
+    revision: number,
+    change: { name?: string; parent_id?: number },
+  ) {
+    return this.request<MediaAlbumFolder>(`/api/v1/media/album-folders/${folderID}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': `"${revision}"` },
+      body: JSON.stringify(change),
+    })
+  }
+
+  deleteMediaAlbumFolder(folderID: number, revision: number) {
+    return this.request<void>(`/api/v1/media/album-folders/${folderID}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': `"${revision}"` },
+    })
+  }
+
+  moveMediaAlbumToFolder(albumID: string, revision: number, folderID: number) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/folder`, {
+        method: 'PATCH',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ folder_id: folderID }),
+      },
+    )
   }
 
   mediaPlaces(limit = 24) {

@@ -28,6 +28,14 @@ export function createDesktopMediaGalleryDataSource(
       }
     },
     listAlbums: () => agent.getMediaAlbums(),
+    listAlbumFolders: () => agent.getMediaAlbumFolders(),
+    createAlbumFolder: (name, parentID) => agent.createMediaAlbumFolder(name, parentID),
+    updateAlbumFolder: (folderID, revision, change) =>
+      agent.updateMediaAlbumFolder(folderID, revision, change),
+    deleteAlbumFolder: (folderID, revision) =>
+      agent.deleteMediaAlbumFolder(folderID, revision),
+    moveAlbumToFolder: (albumID, revision, folderID) =>
+      agent.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       agent.getMediaMemories(anchorDate, limit, timeZone),
