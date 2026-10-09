@@ -31,6 +31,7 @@ import type {
   MediaItemRange,
   MediaMemory,
   MediaDuplicateGroupList,
+  MediaDuplicateOrganizePlan,
   MediaBurstReviewList,
   MediaEditRecipe,
   MediaEditRecipeInput,
@@ -902,6 +903,14 @@ export class XDriveApi {
     })
     return this.request<MediaItemRange>(
       `/api/v1/media/memories/${encodeURIComponent(memoryID)}/items?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateOrganizePlan(keeperNodeID: number, nodeIDs: number[]) {
+    const query = new URLSearchParams({ keeper_id: String(keeperNodeID) })
+    for (const nodeID of nodeIDs) query.append('node_id', String(nodeID))
+    return this.request<MediaDuplicateOrganizePlan>(
+      `/api/v1/media/duplicate-organize/plan?${query.toString()}`,
     )
   }
 

@@ -860,6 +860,9 @@ export type AgentMediaGalleryFacets = {
   formats: AgentMediaFacetOption[]
 }
 
+// Transport the verified plan as an unchanged JSON payload.
+export type AgentMediaDuplicateOrganizePlan = Record<string, unknown>
+
 export type AgentMediaGalleryIndexStatus = {
   known_assets: number
   ready_assets: number
@@ -1562,6 +1565,15 @@ export class AgentIPCClient {
 
   mediaIndexStatus() {
     return this.request<AgentMediaGalleryIndexStatus>('GET', '/v1/media/index-status')
+  }
+
+  mediaDuplicateOrganizePlan(keeperNodeID: number, nodeIDs: number[]) {
+    const query = new URLSearchParams({ keeper_id: String(keeperNodeID) })
+    for (const nodeID of nodeIDs) query.append('node_id', String(nodeID))
+    return this.request<AgentMediaDuplicateOrganizePlan>(
+      'GET',
+      `/v1/media/duplicate-organize/plan?${query.toString()}`,
+    )
   }
 
   mediaSyncFolders() {

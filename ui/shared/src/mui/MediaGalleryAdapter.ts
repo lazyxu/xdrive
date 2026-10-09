@@ -3,6 +3,7 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  MediaDuplicateOrganizePlan,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderView,
@@ -76,6 +77,7 @@ export interface XDriveMediaGalleryPort {
     albumID?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaGalleryFacets>>
   getIndexStatus?: () => Promise<XDriveMediaGalleryTransportResult<MediaGalleryIndexStatus>>
+  getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizePlan>>
   listSyncFolders?: () => Promise<XDriveMediaGalleryTransportResult<MediaSyncFolder[]>>
   getSyncFolder?: (
     sourceID: number,
@@ -386,6 +388,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     getIndexStatus: port.getIndexStatus
       ? () => resolveXDriveTransport(port.getIndexStatus!())
+      : undefined,
+    getDuplicateOrganizePlan: port.getDuplicateOrganizePlan
+      ? (keeperNodeID, nodeIDs) => resolveXDriveTransport(port.getDuplicateOrganizePlan!(keeperNodeID, nodeIDs))
       : undefined,
     listSyncFolders: port.listSyncFolders
       ? () => resolveXDriveTransport(port.listSyncFolders!())
