@@ -58,13 +58,13 @@ async function serveSample(sample, ready) {
   return { child, exited, config, serverLog }
 }
 
-async function browserSample(sample, url) {
+async function browserSample(sample, url, mode) {
   const win = new BrowserWindow({
     show: true,
     width: 1440,
     height: 900,
     webPreferences: {
-      partition: 'gallery-real-cold-sample-' + sample,
+      partition: 'gallery-real-cold-sample-' + sample + '-' + mode,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -79,7 +79,7 @@ async function browserSample(sample, url) {
     failure = 'renderer exited: ' + JSON.stringify(details)
   })
   try {
-    await win.loadURL(url + '/?xdriveGalleryRealCold=1')
+    await win.loadURL(url + '/?xdriveGalleryRealCold=1&xdriveMediaProgress=' + mode)
     const result = await until(async () => {
       if (failure) throw new Error(failure)
       const status = await win.webContents.executeJavaScript(
@@ -92,6 +92,7 @@ async function browserSample(sample, url) {
     const tab = electron.find(entry => entry.type === 'Tab')
     return {
       sample,
+      progressMode: mode,
       ...result,
       rendererWorkingSetKib: tab?.memory?.workingSetSize || null,
       browserSource: 'Electron Chromium Web bundle against localhost real Gin/PostgreSQL/CAS',
@@ -114,10 +115,12 @@ async function main() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-web-cold-'))
   try {
     for (let sample = 1; sample <= samples; sample++) {
-      const ready = path.join(tempDir, 'ready-' + sample + '.json')
-      const server = await serveSample(sample, ready)
+      // Alternate paired ON/OFF order for every 100k cold fixture.
+      for (const mode of sample % 2 === 0 ? ['on', 'off'] : ['off', 'on']) {
+      const ready = path.join(tempDir, 'ready-' + sample + '-' + mode + '.json')
+      const server = await serveSample(sample + '-' + mode, ready)
       try {
-        const result = await browserSample(sample, server.config.url)
+        const result = await browserSample(sample, server.config.url, mode)
         const statsResponse = await fetch(server.config.url + '/__perf/stats')
         result.storeStats = await statsResponse.json()
         result.seedMs = server.config.seed_ms
@@ -125,7 +128,14 @@ async function main() {
         result.firstLiveAssets = server.config.first_live_assets
         if (result.logicalItems !== 100000 || result.physicalNodes !== 115000 ||
             result.mountedTiles >= 1000 || result.imagesDecodedAtCompletion < 12 ||
-            !Number.isFinite(result.navigationToFirstImagePaintMs)) {
+            !Number.isFinite(result.navigationToFirstImagePaintMs) ||
+            result.progressMode !== mode || result.thumbnailProgressErrors !== 0 ||
+            (mode === 'on' && (result.thumbnailProgressRequests < 1 ||
+              result.thumbnailProgressEvents < 1 || result.thumbnailProgressCompleted < 1 ||
+              result.thumbnailProgressReportedBytes <= 0)) ||
+            (mode === 'off' && (result.thumbnailProgressRequests !== 0 ||
+              result.thumbnailProgressEvents !== 0 || result.thumbnailProgressCompleted !== 0 ||
+              result.thumbnailProgressReportedBytes !== 0))) {
           throw new Error('real 100k browser integrity guard failed: ' + JSON.stringify(result))
         }
         results.push(result)
@@ -142,20 +152,77 @@ async function main() {
         }
         server.serverLog.end()
       }
+      }
     }
-    const ordered = results.map(x => x.navigationToFirstImagePaintMs).sort((a,b)=>a-b)
+    const modes = ['off', 'on']
+    const grouped = Object.fromEntries(modes.map(mode => [mode, results.filter(row => row.progressMode === mode)]))
+    if (grouped.off.length !== samples || grouped.on.length !== samples || results.length !== samples * 2) {
+      throw new Error('paired 100k progress modes were not both executed three times')
+    }
+    const median = values => {
+      if (!values.length) throw new Error('missing paired metric samples')
+      const nums = [...values].sort((a, b) => a - b)
+      return nums[Math.floor(nums.length / 2)]
+    }
+    const fields = [
+      'navigationToFirstImagePaintMs', 'navigationToFirst12DecodedMs',
+      'firstRangeHttpMs', 'thumbnailRequests', 'thumbnailResponseBytes',
+      'rendererWorkingSetKib', 'longestLongTaskMs',
+    ]
+    const medians = Object.fromEntries(modes.map(mode => [mode, Object.fromEntries(
+      fields.map(field => [field, median(grouped[mode].map(row => row[field]).filter(Number.isFinite))]),
+    )]))
+    const pairs = Array.from({ length: samples }, (_, index) => {
+      const sample = index + 1
+      const off = grouped.off.find(row => row.sample === sample)
+      const on = grouped.on.find(row => row.sample === sample)
+      if (!off || !on) throw new Error('sample missing A/B mode: ' + sample)
+      return {
+        sample, offFirstPaintMs: off.navigationToFirstImagePaintMs,
+        onFirstPaintMs: on.navigationToFirstImagePaintMs,
+        firstPaintDeltaMs: on.navigationToFirstImagePaintMs - off.navigationToFirstImagePaintMs,
+        offRendererWorkingSetKib: off.rendererWorkingSetKib,
+        onRendererWorkingSetKib: on.rendererWorkingSetKib,
+        offThumbRequests: off.thumbnailRequests, onThumbRequests: on.thumbnailRequests,
+        offThumbResponseBytes: off.thumbnailResponseBytes,
+        onThumbResponseBytes: on.thumbnailResponseBytes,
+      }
+    })
+    const firstPaintDeltaMs = median(pairs.map(row => row.firstPaintDeltaMs))
+    const offFirstPaintMs = medians.off.navigationToFirstImagePaintMs
+    const onFirstPaintMs = medians.on.navigationToFirstImagePaintMs
+    const firstPaintRegression = firstPaintDeltaMs > 100 && firstPaintDeltaMs > offFirstPaintMs * 0.10
+    const rssDeltaKib = medians.on.rendererWorkingSetKib - medians.off.rendererWorkingSetKib
+    const rssRegression = Number.isFinite(rssDeltaKib) && rssDeltaKib > 32 * 1024 &&
+      rssDeltaKib > medians.off.rendererWorkingSetKib * 0.25
+    if (!Number.isFinite(medians.off.rendererWorkingSetKib) ||
+        !Number.isFinite(medians.on.rendererWorkingSetKib)) {
+      throw new Error('missing Chromium renderer working-set metric')
+    }
+    const firstPaint2sBudgetMet = onFirstPaintMs <= 2000
+    const noExcessRequests = medians.on.thumbnailRequests <= medians.off.thumbnailRequests * 1.25 + 2
+    const noExcessBytes = medians.on.thumbnailResponseBytes <= medians.off.thumbnailResponseBytes * 1.3 + 65536
     const report = {
       name: 'web-gallery-real-cold-first-visible-100k',
-      status: 'measured-baseline-no-production-change',
-      samples: results,
-      n: results.length,
-      medianNavigationToFirstPaintMs: ordered[1],
-      provisional2sBudgetMet: ordered[1] <= 2000,
-      acceptance: 'all 3 full real HTTP 100k fixtures and decoded first 12 image elements; no false pass on missing data',
-      limitations: 'Web only; local native PostgreSQL and Local CAS; Electron Chromium with fresh browser partitions; one fixture per sample; no Desktop Agent IPC, WAN, physical mobile, duplicate fold mode or real 4K video codec decode',
+      status: 'measured-opt-in-progress-on-off-paired',
+      baseline: 'progress OFF: same production Web collector native Blob fast path',
+      samples: results, pairs, groupedMedians: medians,
+      nPerMode: samples, n: results.length,
+      medianNavigationToFirstPaintMs: onFirstPaintMs,
+      medianFirstPaintDeltaMs: firstPaintDeltaMs, medianRssDeltaKib: rssDeltaKib,
+      firstPaint2sBudgetMet,
+      noRepeatableFirstPaintRegression: !firstPaintRegression,
+      noRepeatableRssRegression: !rssRegression,
+      noExcessRequests, noExcessBytes,
+      acceptance: 'three real authenticated 100k Go/Gin/PostgreSQL/local CAS + Chromium pairs, first-12 JPEG decode, actual byte progress ON, zero invented progress OFF, sparse DOM and no material first-paint/RSS regression',
+      limitations: 'Each ON/OFF mode reseeds independent Gin/PostgreSQL/CAS fixture processes on the same Actions runner; order alternated. No Desktop Agent IPC, WAN, physical mobile, duplicate fold mode or true 4K decode.',
     }
     fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(report, null, 2) + '\n')
     console.log('GALLERY_REAL_WEB_COLD_REPORT ' + JSON.stringify(report))
+    if (!firstPaint2sBudgetMet || firstPaintRegression || rssRegression ||
+        !noExcessRequests || !noExcessBytes) {
+      throw new Error('100k progress A/B exceeded frozen first-paint/RSS budget; raw report preserved: ' + JSON.stringify({ medians, pairs }))
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true })
     app.quit()
