@@ -81,6 +81,7 @@ import {
   type AgentCloudFileMediaDetails,
   type AgentBackgroundTask,
   type AgentBackgroundTaskPage,
+  type AgentServiceDependenciesSnapshot,
   type AgentBackgroundTaskActiveSummary,
   type AgentBackgroundTaskControlResult,
   type AgentCloudFileOperation,
@@ -4210,6 +4211,11 @@ function registerIPCHandlers() {
       refs,
       typeof targetParent === 'number' ? targetParent : 0,
     )
+  }, false))
+  ipcMain.handle('agent:cloud-admin-services', () => runAgentAction<AgentServiceDependenciesSnapshot>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminServices()
   }, false))
   ipcMain.handle(
     'agent:cloud-background-task-summary',

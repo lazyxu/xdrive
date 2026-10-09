@@ -297,6 +297,27 @@ type BackgroundTaskPage struct {
 	NextCursor   string           `json:"next_cursor,omitempty"`
 }
 
+type ServiceDependency struct {
+	ID      string `json:"id"`
+	Group   string `json:"group"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail"`
+	Version string `json:"version,omitempty"`
+	Model   string `json:"model,omitempty"`
+}
+
+type ServiceDependenciesSnapshot struct {
+	CheckedAt string              `json:"checked_at"`
+	Services  []ServiceDependency `json:"services"`
+}
+
+func (c *Client) AdminServices(ctx context.Context) (ServiceDependenciesSnapshot, error) {
+	var out ServiceDependenciesSnapshot
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services", nil, &out)
+	return out, err
+}
+
 type BackgroundTaskActiveSummary struct {
 	ActiveTotal    int `json:"active_total"`
 	FileOperation  int `json:"file_operation"`

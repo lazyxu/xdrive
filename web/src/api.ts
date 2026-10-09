@@ -1,3 +1,4 @@
+import type { XDriveServiceDependenciesSnapshot } from '../../ui/shared/src'
 import type {
   AdminUser,
   AuditEvent,
@@ -618,6 +619,10 @@ export class XDriveApi {
       method: 'POST',
       body: JSON.stringify({ kind }),
     })
+  }
+
+  adminServices() {
+    return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
   }
 
   adminServerUpdate() {

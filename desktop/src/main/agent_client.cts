@@ -476,6 +476,19 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentServiceDependenciesSnapshot = {
+  checked_at: string
+  services: Array<{
+    id: string
+    group: 'core' | 'media' | 'intelligence' | 'location'
+    label: string
+    status: 'ready' | 'unavailable' | 'disabled' | 'unknown' | 'planned'
+    detail: string
+    version?: string
+    model?: string
+  }>
+}
+
 export type AgentBackgroundTaskPage = {
   current_items: AgentBackgroundTask[]
   history_items: AgentBackgroundTask[]
@@ -2669,6 +2682,10 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
+  }
+
+  cloudAdminServices() {
+    return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
   }
 
   cloudBackgroundTaskActiveSummary() {

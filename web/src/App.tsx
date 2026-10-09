@@ -4,6 +4,7 @@ import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import {
   AppBar,
   Box,
@@ -31,6 +32,7 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
+  XDriveServiceDependenciesPage,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
@@ -119,7 +121,7 @@ type ConfirmAction = {
 }
 
 type AppView = XDriveWorkspaceViewKey<
-  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage'
+  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services'
 >
 
 function initialSession(): AuthSession {
@@ -816,6 +818,10 @@ function FileManager({
     }
   }, [appView, profile])
 
+  const serviceDependenciesPort = useMemo(() => ({
+    load: () => api.adminServices(),
+  }), [api])
+
   const executeConfirm = async () => {
     if (!confirmAction) return
     const action = confirmAction
@@ -1084,6 +1090,11 @@ function FileManager({
               label: '全局存储',
               icon: <StorageRoundedIcon fontSize="small" />,
             },
+            {
+              key: 'admin-services',
+              label: '服务与依赖',
+              icon: <DnsRoundedIcon fontSize="small" />,
+            },
           ],
         }]
       : []),
@@ -1122,7 +1133,7 @@ function FileManager({
     overview: '主页', files: '文件', gallery: '图库', sources: '同步文件夹',
     transfers: '任务', 'global-tasks': '全局任务', 'local-storage': '本地存储',
     'cloud-storage': '云端存储', 'admin-users': '用户管理',
-    'admin-audit': '审计日志', 'admin-storage': '全局存储',
+    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '服务与依赖',
   }
 
   return (
@@ -1399,6 +1410,8 @@ function FileManager({
           />
         ) : appView === 'admin-audit' && profile?.role === 'admin' ? (
           <AdminAuditPanel api={api} />
+        ) : appView === 'admin-services' && profile?.role === 'admin' ? (
+          <XDriveServiceDependenciesPage source={serviceDependenciesPort} />
         ) : appView === 'admin-storage' && profile?.role === 'admin' ? (
           <StorageStatsPanel
             api={api}
