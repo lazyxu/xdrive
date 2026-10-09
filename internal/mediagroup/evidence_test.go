@@ -1,6 +1,7 @@
 package mediagroup
 
 import (
+	"strings"
 	"testing"
 
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
@@ -141,5 +142,62 @@ func TestBuildRelationSnapshotsDoesNotPairByNameOrTime(t *testing.T) {
 	}
 	if got := buildRelationSnapshots(candidates, nil); len(got) != 0 {
 		t.Fatalf("name-only pair projected: %+v", got)
+	}
+}
+
+func TestBuildRAWPairsKeepsSidecarWithByteIdenticalCopies(t *testing.T) {
+	rawSHA := strings.Repeat("a", 64)
+	jpegSHA := strings.Repeat("b", 64)
+	imageID := "source-image-id"
+	evidence := mediapkg.RelationEvidence{ImageUniqueID: imageID}
+	renderedEvidence := mediapkg.RelationEvidence{
+		ImageUniqueID: imageID, XMPDocumentID: "xmp.did:original",
+	}
+	rows := []relationCandidate{
+		{
+			NodeID: 1, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/x-adobe-dng", IndexState: meta.MediaIndexStateReady,
+			SHA256: rawSHA, NodeRevision: 1, IndexedRevision: 1,
+			Evidence: evidence,
+		},
+		{
+			NodeID: 2, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", IndexState: meta.MediaIndexStateReady,
+			SHA256: jpegSHA, NodeRevision: 1, IndexedRevision: 1,
+			Evidence: renderedEvidence,
+		},
+		{
+			NodeID: 3, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/x-adobe-dng", IndexState: meta.MediaIndexStateReady,
+			SHA256: rawSHA, NodeRevision: 1, IndexedRevision: 1,
+			Evidence: evidence,
+		},
+		{
+			NodeID: 4, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", IndexState: meta.MediaIndexStateReady,
+			SHA256: jpegSHA, NodeRevision: 1, IndexedRevision: 1,
+			Evidence: renderedEvidence,
+		},
+		{
+			NodeID: 5, Name: "recipe.xmp", MediaKind: meta.MediaKindOther,
+			IndexState: meta.MediaIndexStateUnsupported,
+			Evidence: mediapkg.RelationEvidence{
+				XMPDerivedFromDocumentID: "xmp.did:original",
+			},
+		},
+	}
+	got := buildRelationSnapshots(rows, nil)
+	if len(got) != 1 || got[0].Kind != meta.MediaGroupKindRAWPair ||
+		len(got[0].Members) != 3 {
+		t.Fatalf("RAW duplicate sidecar relationship=%+v", got)
+	}
+	for index, id := range []uint64{2, 1, 5} {
+		if got[0].Members[index].NodeID != id {
+			t.Fatalf("member %d=%d expected %d", index, got[0].Members[index].NodeID, id)
+		}
+	}
+	rows[2].SHA256 = strings.Repeat("c", 64)
+	if got := buildRelationSnapshots(rows, nil); len(got) != 0 {
+		t.Fatalf("distinct RAW bytes must remain ambiguous: %+v", got)
 	}
 }

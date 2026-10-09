@@ -74,6 +74,34 @@ The following foundations already exist and should be extended rather than repla
 
 Legacy Source-side media-semantic columns (`CapturedAt`, `ThumbnailURL`, `PairGroupID`, `PairRole`) are removed during migration. `SourceItemMetadata` is provenance-only, so new connector code cannot persist provider media semantics there.
 
+## Byte-identical re-imports and deterministic media relations (2026-10-09)
+
+Local grouping still requires validated embedded Apple content identifiers
+(Live Photo) or embedded image-unique/XMP evidence (RAW/rendered). These
+identifiers are not replaced by Source/provider IDs or guessed filenames.
+
+When a later upload or a second 同步文件夹 brings in **byte-identical**
+copies of one or both relation roles, the current local relation reconciler
+may choose one deterministic representative Node per required role. It
+requires equal verified SHA-256 digests *within each duplicated role* and
+media index revisions matching current Nodes. A sole candidate remains
+compatible with existing legacy metadata without a recorded digest.
+The original relation evidence key and existing representative Node IDs
+stay stable when newer duplicate Nodes are added.
+
+The group still describes **one canonical pair**, not all duplicate files:
+all Node/File/CAS and Source bindings remain intact. Extra copies are not
+silently deleted, turned into additional group members, or inferred to be
+paired by path, filename, time, or a provider attribute. Their presentation
+and optional folding belong to the separate Gallery duplicate-review
+contract. If same-role candidates have different content digests, stale
+index revisions, or missing hashes, ambiguity remains fail-closed.
+
+This is not an automatic metadata merge, full-resource delete, or physical
+space reclaim operation. Keep user album, people, labels, edits and
+synchronization provenance until an explicitly confirmed safe consolidation
+workflow exists.
+
 ## Design invariants
 
 1. A synchronization folder succeeds or fails based on file synchronization, not on media enrichment.

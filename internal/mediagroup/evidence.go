@@ -22,13 +22,16 @@ const (
 )
 
 type relationCandidate struct {
-	NodeID       uint64
-	Name         string
-	MediaKind    string
-	MIMEType     string
-	IndexState   string
-	RelationJSON string
-	Evidence     mediapkg.RelationEvidence `gorm:"-"`
+	NodeID          uint64
+	SHA256          string
+	NodeRevision    uint64
+	IndexedRevision uint64
+	Name            string
+	MediaKind       string
+	MIMEType        string
+	IndexState      string
+	RelationJSON    string
+	Evidence        mediapkg.RelationEvidence `gorm:"-"`
 }
 
 type relationSnapshot struct {
@@ -105,7 +108,9 @@ func loadRelationCandidates(tx *gorm.DB, ownerID uint64) ([]relationCandidate, e
 	var rows []relationCandidate
 	if err := tx.Table("xd_media_metadata AS mm").
 		Select(
-			"mm.node_id, n.name, mm.media_kind, mm.mime_type, mm.index_state, mm.relation_json",
+			"mm.node_id, n.name, mm.media_kind, mm.mime_type, mm.index_state, mm.relation_json, "+
+				"mm.sha256 AS sha256, n.revision AS node_revision, "+
+				"mm.node_revision AS indexed_revision",
 		).
 		Joins("JOIN xd_nodes AS n ON n.id = mm.node_id AND n.deleted_at IS NULL").
 		Where(
@@ -205,7 +210,23 @@ func buildRAWPairs(
 				rendered = append(rendered, candidate)
 			}
 		}
-		if len(raws) != 1 || len(rendered) != 1 {
+		rawCopies := make([]contentCopyCandidate, 0, len(raws))
+		renderedCopies := make([]contentCopyCandidate, 0, len(rendered))
+		for _, raw := range raws {
+			rawCopies = append(rawCopies, contentCopyCandidate{
+				NodeID: raw.NodeID, SHA256: raw.SHA256,
+				NodeRevision: raw.NodeRevision, IndexedRevision: raw.IndexedRevision,
+			})
+		}
+		for _, image := range rendered {
+			renderedCopies = append(renderedCopies, contentCopyCandidate{
+				NodeID: image.NodeID, SHA256: image.SHA256,
+				NodeRevision: image.NodeRevision, IndexedRevision: image.IndexedRevision,
+			})
+		}
+		rawID, rawOK := contentCopyRepresentative(rawCopies, 0)
+		renderedID, renderedOK := contentCopyRepresentative(renderedCopies, 0)
+		if !rawOK || !renderedOK {
 			continue
 		}
 		relation := relationSnapshot{
@@ -213,19 +234,28 @@ func buildRAWPairs(
 				Kind:        meta.MediaGroupKindRAWPair,
 				EvidenceKey: relationEvidenceKey(exifImageUniqueEvidencePrefix, key),
 				Members: []MemberSnapshot{
-					{NodeID: rendered[0].NodeID, Role: meta.MediaGroupRoleRendered, Ordinal: 0},
-					{NodeID: raws[0].NodeID, Role: meta.MediaGroupRoleRAW, Ordinal: 1},
+					{NodeID: renderedID, Role: meta.MediaGroupRoleRendered, Ordinal: 0},
+					{NodeID: rawID, Role: meta.MediaGroupRoleRAW, Ordinal: 1},
 				},
 			},
 			usedNodes: map[uint64]struct{}{
-				rendered[0].NodeID: {},
-				raws[0].NodeID:     {},
+				renderedID: {},
+				rawID:      {},
 			},
 		}
 		index := len(out)
 		out = append(out, relation)
-		nodeToPair[rendered[0].NodeID] = index
-		nodeToPair[raws[0].NodeID] = index
+		// An additional identical file is not a new RAW relationship, but its
+		// embedded XMP identity can still refer to this one logical pair.
+		for _, image := range rendered {
+			nodeToPair[image.NodeID] = index
+			relation.usedNodes[image.NodeID] = struct{}{}
+		}
+		for _, raw := range raws {
+			nodeToPair[raw.NodeID] = index
+			relation.usedNodes[raw.NodeID] = struct{}{}
+		}
+		out[index] = relation
 	}
 	return out, nodeToPair
 }

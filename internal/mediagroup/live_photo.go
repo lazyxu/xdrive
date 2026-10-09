@@ -18,9 +18,9 @@ const (
 )
 
 // ReconcileAppleLivePhoto projects one Live Photo relationship entirely from
-// local MediaMetadata. Exactly one active image and one active video must share
-// the same embedded Apple content identifier; ambiguity fails closed by
-// removing the derived group.
+// local MediaMetadata. A proven set of byte-identical original copies may
+// retain one canonical still/motion pair per embedded Apple identifier;
+// different-content ambiguity remains fail-closed.
 func ReconcileAppleLivePhoto(
 	ctx context.Context,
 	db *gorm.DB,
@@ -39,13 +39,17 @@ func ReconcileAppleLivePhoto(
 
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		type candidate struct {
-			NodeID    uint64
-			MediaKind string
+			NodeID          uint64
+			MediaKind       string
+			SHA256          string
+			NodeRevision    uint64
+			IndexedRevision uint64
 		}
 		var candidates []candidate
 		if err := tx.
 			Table("xd_media_metadata AS mm").
-			Select("mm.node_id, mm.media_kind").
+			Select("mm.node_id, mm.media_kind, mm.sha256 AS sha256, "+
+				"n.revision AS node_revision, mm.node_revision AS indexed_revision").
 			Joins("JOIN xd_nodes AS n ON n.id = mm.node_id AND n.deleted_at IS NULL").
 			Where(
 				"mm.owner_id = ? AND n.owner_id = ? AND n.type = ? AND mm.container_kind = '' AND mm.live_photo_asset_identifier = ? AND mm.index_state = ? AND mm.media_kind IN ?",
@@ -61,17 +65,24 @@ func ReconcileAppleLivePhoto(
 			return err
 		}
 
-		var stills, motions []uint64
+		var stills, motions []contentCopyCandidate
 		for _, candidate := range candidates {
+			copy := contentCopyCandidate{
+				NodeID: candidate.NodeID, SHA256: candidate.SHA256,
+				NodeRevision:    candidate.NodeRevision,
+				IndexedRevision: candidate.IndexedRevision,
+			}
 			switch candidate.MediaKind {
 			case meta.MediaKindImage:
-				stills = append(stills, candidate.NodeID)
+				stills = append(stills, copy)
 			case meta.MediaKindVideo:
-				motions = append(motions, candidate.NodeID)
+				motions = append(motions, copy)
 			}
 		}
 
-		if len(stills) != 1 || len(motions) != 1 {
+		stillID, stillOK := contentCopyRepresentative(stills, 0)
+		motionID, motionOK := contentCopyRepresentative(motions, 0)
+		if !stillOK || !motionOK {
 			return tx.
 				Where(
 					"owner_id = ? AND kind = ? AND evidence_key = ?",
@@ -86,8 +97,8 @@ func ReconcileAppleLivePhoto(
 			Kind:        meta.MediaGroupKindLivePhoto,
 			EvidenceKey: evidenceKey,
 			Members: []MemberSnapshot{
-				{NodeID: stills[0], Role: meta.MediaGroupRoleStill, Ordinal: 0},
-				{NodeID: motions[0], Role: meta.MediaGroupRoleMotion, Ordinal: 1},
+				{NodeID: stillID, Role: meta.MediaGroupRoleStill, Ordinal: 0},
+				{NodeID: motionID, Role: meta.MediaGroupRoleMotion, Ordinal: 1},
 			},
 		}
 		if err := normalizeAndValidate(&snapshot); err != nil {
