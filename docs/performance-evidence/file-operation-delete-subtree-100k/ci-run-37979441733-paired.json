@@ -1,0 +1,136 @@
+{
+  "status": "accepted_paired_native_postgresql17_mutation_stage_3_of_3",
+  "original_first_red_ci": {
+    "workflow_run": 37978549397,
+    "job_id": 113982910988,
+    "source_head": "22a60debb2851f42f148db60fe29b9b7d3d98f44"
+  },
+  "paired_ci": {
+    "workflow_run": 37979441733,
+    "job_id": 113986460189,
+    "source_candidate": "c38591a9d6661c738b4cd04ba354e9daaa489e7c",
+    "source_before": "163376baaf9b330863c84c67351378c79ffcf232",
+    "url": "https://github.com/lazyxu/xdrive/actions/runs/37979441733/job/113986460189"
+  },
+  "workload": {
+    "owner_count": 1,
+    "directory_count": 1,
+    "child_file_node_count": 100000,
+    "total_subtree_ids": 100001,
+    "native_postgresql": "17-alpine",
+    "production_primitive": "markFileOperationDeleteSubtreeTx",
+    "samples_per_arm": 3,
+    "alternating_order": true,
+    "exclusions": [
+      "full background FileOperation worker",
+      "Share revocation",
+      "100k File/CAS objects",
+      "Trash restore",
+      "physical storage delete",
+      "real browsers/IPC",
+      "race testing"
+    ]
+  },
+  "criteria": {
+    "after_successful_trashed_nodes": 100001,
+    "after_mutation_ms_max": 10000,
+    "after_unchanged_unselected_nodes": true,
+    "after_root_revision_increment": true,
+    "after_child_revision_unchanged": true,
+    "allow_failed_before": true,
+    "not_valid_speedup_percentage": true
+  },
+  "medians": {
+    "before_failed_mutation_ms": 106.766,
+    "after_success_mutation_ms": 1137.638,
+    "before_total_alloc_bytes": 58318672,
+    "after_total_alloc_bytes": 4804120
+  },
+  "original_rows": [
+    {
+      "arm": "before",
+      "sample": 1,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 107.88,
+      "root_updated": false,
+      "seed_ms": 946.194,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58312640,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 1,
+      "error": "<nil>",
+      "expect_fixed": true,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 1196.839,
+      "root_updated": true,
+      "seed_ms": 838.055,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 4804056,
+      "trashed_count": 100001,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 2,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 105.837,
+      "root_updated": false,
+      "seed_ms": 902.494,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58318672,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 2,
+      "error": "<nil>",
+      "expect_fixed": true,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 1137.638,
+      "root_updated": true,
+      "seed_ms": 888.824,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 4804264,
+      "trashed_count": 100001,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 3,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 106.766,
+      "root_updated": false,
+      "seed_ms": 914.806,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58318736,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 3,
+      "error": "<nil>",
+      "expect_fixed": true,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 1068.664,
+      "root_updated": true,
+      "seed_ms": 911.115,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 4804120,
+      "trashed_count": 100001,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    }
+  ],
+  "note": "BEFORE is an unsuccessful SQL attempt, not a completed delete; AFTER mutation time is successful throughput, so no causal percentage elapsed speedup can be claimed. Guard assertions for sibling/children Trash, revisions, and root were strengthened in the subsequent evidence-amendment head and must rerun."
+}
