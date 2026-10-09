@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import {
@@ -83,15 +82,7 @@ export function XDriveWorkspaceCompactNavigation({
       aria-label={ariaLabel}
       className={className}
       data-xdrive-compact-navigation={fullscreen ? 'fullscreen' : 'bar'}
-      sx={fullscreen ? {
-        position: 'fixed',
-        // Clear Files' right-edge More actions and Gallery's left-edge Info
-        // targets, including the final row where users cannot scroll farther.
-        left: 'max(56px, env(safe-area-inset-left))',
-        bottom: 'max(12px, env(safe-area-inset-bottom))',
-        zIndex: 1100,
-        display: disabled ? 'none' : undefined,
-      } : {
+      sx={fullscreen ? { display: 'contents' } : {
         order: 1,
         flexShrink: 0,
         minWidth: 0,
@@ -101,28 +92,7 @@ export function XDriveWorkspaceCompactNavigation({
         pb: 'env(safe-area-inset-bottom)',
       }}
     >
-      {fullscreen ? (
-        <IconButton
-          aria-label="打开应用导航"
-          aria-haspopup="dialog"
-          aria-expanded={moreOpen && !disabled}
-          aria-controls={moreOpen && !disabled ? drawerID : undefined}
-          disabled={disabled}
-          onClick={() => setMoreOpen(true)}
-          sx={{
-            width: 44,
-            height: 44,
-            bgcolor: 'background.paper',
-            color: 'text.primary',
-            border: 1,
-            borderColor: 'divider',
-            boxShadow: 3,
-            '&:hover': { bgcolor: 'background.paper' },
-          }}
-        >
-          <AppsRoundedIcon />
-        </IconButton>
-      ) : <BottomNavigation
+      {fullscreen ? null : <BottomNavigation
         component="nav"
         aria-label={navAriaLabel}
         showLabels

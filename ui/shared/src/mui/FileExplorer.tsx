@@ -68,13 +68,14 @@ import {
 import type { ButtonProps } from '@mui/material'
 import type { MediaItem, NodeLocation } from '../models'
 import { formatBytes } from '../format'
+import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
 import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
 import type {
   XDriveByteProgressHandler,
   XDriveFileTextPreview,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTouchItemIntent, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TYPE_SELECT_TIMEOUT_MS, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardTargetIndex, xDriveFileExplorerRenameSelectionEnd, xDriveFileExplorerTouchItemIntent, xDriveFileExplorerTypeSelectTargetIndex } from '../file-explorer-controller'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
   xDriveFileExplorerEncodeDragItems,
@@ -1122,6 +1123,8 @@ export function XDriveFileExplorer({
     startX: number
     startY: number
     timer: number
+    item: XDriveFileExplorerItem
+    held: boolean
   } | null>(null)
   const commandBarRef = useRef<HTMLDivElement | null>(null)
   const explorerElementRef = useRef<HTMLDivElement | null>(null)
@@ -2346,46 +2349,88 @@ export function XDriveFileExplorer({
     renaming: boolean,
   ) => {
     lastPointerTypeRef.current = event.pointerType
+    if (event.pointerType === 'touch' && !event.isPrimary) {
+      // Multi-touch/pinch cancels a pending hold; it must never open a menu.
+      cancelTouchItemPress()
+      touchDrag.cancel()
+      return
+    }
     if (!compactTouch || event.pointerType !== 'touch' || renaming || typeof window === 'undefined') return
     cancelTouchItemPress()
+    suppressTouchClickRef.current = false
     const itemKey = explorerIDKey(item.id)
     const pointerId = event.pointerId
+    const originX = event.clientX
+    const originY = event.clientY
+    // Until the threshold expires the browser owns ordinary scrolling.
+    // A stationary release opens the menu; post-hold movement belongs to the
+    // bounded drag controller, never to a Drawer beneath the held pointer.
     const timer = window.setTimeout(() => {
       const press = touchPressRef.current
       if (!press || press.pointerId !== pointerId || press.itemKey !== itemKey) return
-      touchPressRef.current = null
+      press.held = true
       suppressTouchClickRef.current = true
       completedTouchPressRef.current = pointerId
-      setTouchSelectionMode(true)
-      setActiveItemID(item.id)
       setActiveLogicalIndex(index)
-      if (!selectedKeySet.has(itemKey)) {
-        commitSelection(touchSelectionMode ? [...selectedIDs, item.id] : [item.id], [item])
+      const source = selectedKeySet.has(itemKey) && selectedItems.length > 0
+        ? selectedItems : [item]
+      if (!selectionActionDisabledReason('move-to', source, source.length)) {
+        touchDrag.begin(event, source.map((candidate) => ({ ...candidate })))
       }
-      anchorSelectionAt(item, index)
-      onItemClick?.(item)
-    }, XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS)
+    }, XDRIVE_MOBILE_ITEM_HOLD_MS)
     touchPressRef.current = {
       pointerId,
       itemKey,
-      startX: event.clientX,
-      startY: event.clientY,
+      startX: originX,
+      startY: originY,
       timer,
+      item,
+      held: false,
     }
   }
 
   const moveTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
     const press = touchPressRef.current
     if (!press || press.pointerId !== event.pointerId) return
-    if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 10) {
+    if (xDriveMobileItemMoved({ x: press.startX, y: press.startY }, { x: event.clientX, y: event.clientY })) {
+      // This handler only wins before hold/drag capture; treat it as scroll.
       suppressTouchClickRef.current = true
       cancelTouchItemPress(event.pointerId)
     }
   }
 
   const finishTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
+    const press = touchPressRef.current
     cancelTouchItemPress(event.pointerId)
     if (!compactTouch || event.pointerType !== 'touch' || typeof window === 'undefined') return
+    if (press?.held && press.pointerId === event.pointerId) {
+      // MUI's Context Menu is a Portal. Catch the release compatibility click
+      // even when it targets a newly mounted menu action instead of the tile.
+      const document = explorerElementRef.current?.ownerDocument
+      if (document) {
+        const blockHeldClick = (click: MouseEvent) => {
+          const clickPointer = (click as MouseEvent & { pointerId?: number }).pointerId
+          if (click.detail === 0 || (clickPointer !== undefined && clickPointer > 0 && clickPointer !== press.pointerId)) return
+          click.preventDefault()
+          click.stopImmediatePropagation()
+          document.removeEventListener('click', blockHeldClick, true)
+        }
+        document.addEventListener('click', blockHeldClick, true)
+        window.setTimeout(() => document.removeEventListener('click', blockHeldClick, true), 350)
+      }
+      openItemContextMenuAt(press.item, press.startX + 2, press.startY - 6)
+    }
+    window.setTimeout(() => {
+      if (lastPointerTypeRef.current === 'touch') lastPointerTypeRef.current = null
+      suppressTouchClickRef.current = false
+    }, 0)
+  }
+
+  const abortTouchItemPress = (event: ReactPointerEvent<HTMLElement>) => {
+    cancelTouchItemPress(event.pointerId)
+    completedTouchPressRef.current = null
+    suppressTouchClickRef.current = true
+    // Native scroll/pointercancel must not consume the next intentional tap.
     window.setTimeout(() => {
       if (lastPointerTypeRef.current === 'touch') lastPointerTypeRef.current = null
       suppressTouchClickRef.current = false
@@ -2898,9 +2943,15 @@ export function XDriveFileExplorer({
     : renamingID !== null
       ? '请先完成重命名'
       : selectionActionDisabledReason('move-to')
-  const touchDragEnabled = compactViewport && selectedCount > 0 &&
-    Boolean(onDropItemsToFolder || onDropItemsToCrumb) && !touchDragDisabledReason
-  const touchDragScopeKey = touchDragEnabled
+  // Direct item holds can start a single-file drag without entering selection.
+  // The explicit selection handle is retained for accessible multi-file moves.
+  const touchDragEnabled = compactViewport &&
+    Boolean(onDropItemsToFolder || onDropItemsToCrumb) && !selectionLoad &&
+    renamingID === null && (selectedCount === 0 || !touchDragDisabledReason)
+  // Explicit multi-selection must still cancel when its actual identity set
+  // changes; a direct, non-selection hold can create its menu selection without
+  // aborting the pending single-item drag.
+  const touchDragScopeKey = touchSelectionMode && selectedCount > 0
     ? JSON.stringify([interactionScopeKey, selectedItems.map((item) => [explorerIDKey(item.id), item.revision])])
     : interactionScopeKey
   const touchDropTarget = (source: readonly XDriveFileExplorerItem[], point: XDrivePointerDragPoint) => {
@@ -2934,18 +2985,25 @@ export function XDriveFileExplorer({
     scopeKey: touchDragScopeKey,
     autoScrollDelta: xDriveFileExplorerDragAutoScrollDelta,
     onMove: (source, point) => {
+      setContextMenu(null)
       const target = touchDropTarget(source, point)
       setDropTargetID(target?.kind === 'folder' ? target.value.id : null)
       setDropTargetCrumbID(target?.kind === 'crumb' ? target.value.id : null)
     },
     onDrop: (source, point) => {
+      cancelTouchItemPress()
+      suppressTouchClickRef.current = false
       const target = touchDropTarget(source, point)
       clearTouchDropTarget()
-      if (!target || selectionActionDisabledReason('move-to', source, selectedCount)) return
+      if (!target || selectionActionDisabledReason('move-to', source, source.length)) return
       if (target.kind === 'folder') onDropItemsToFolder?.([...source], target.value, 'move')
       else onDropItemsToCrumb?.([...source], target.value, 'move')
     },
-    onCancel: clearTouchDropTarget,
+    onCancel: () => {
+      cancelTouchItemPress()
+      suppressTouchClickRef.current = false
+      clearTouchDropTarget()
+    },
   })
   const refreshTouchDragTarget = touchDrag.refreshTarget
   useEffect(() => {
@@ -4161,40 +4219,6 @@ export function XDriveFileExplorer({
     </Box>
   ) : null
 
-  const touchItemActionButton = (
-    item: XDriveFileExplorerItem,
-    placement: 'details' | 'grid',
-  ) => compactViewport ? (
-    <IconButton
-      data-xdrive-file-explorer-item-more
-      aria-label={`更多操作：${item.name}`}
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        cancelTouchItemPress()
-      }}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        lastPointerTypeRef.current = null
-        const rect = event.currentTarget.getBoundingClientRect()
-        openItemContextMenuAt(item, rect.left, rect.bottom + 4)
-      }}
-      sx={placement === 'grid'
-        ? {
-            position: 'absolute',
-            top: 2,
-            right: 2,
-            zIndex: 4,
-            width: 44,
-            height: 44,
-            bgcolor: 'background.paper',
-            boxShadow: 1,
-          }
-        : { width: 44, height: 44, flex: '0 0 44px', ml: 0.25 }}
-    >
-      <MoreHorizRoundedIcon fontSize="small" />
-    </IconButton>
-  ) : null
 
   const renderDetailsLogicalItem = (
     item: XDriveFileExplorerItem | undefined,
@@ -4255,7 +4279,7 @@ export function XDriveFileExplorer({
         onPointerDown={(event) => startTouchItemPress(event, item, index, renaming)}
         onPointerMove={moveTouchItemPress}
         onPointerUp={finishTouchItemPress}
-        onPointerCancel={finishTouchItemPress}
+        onPointerCancel={abortTouchItemPress}
         onMouseDown={(event) => {
           if (!compactViewport && event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
             event.preventDefault()
@@ -4337,7 +4361,6 @@ export function XDriveFileExplorer({
                     {renderItemName(item, false)}
                   </Box>
                   {availabilityIndicator(item)}
-                  {!renaming ? touchItemActionButton(item, 'details') : null}
                 </Stack>
                 {!compactTouch && !renaming ? nativeDragOutHandle(item, 'details') : null}
               </>
@@ -4419,7 +4442,7 @@ export function XDriveFileExplorer({
         onPointerDown={(event) => startTouchItemPress(event, item, index, renaming)}
         onPointerMove={moveTouchItemPress}
         onPointerUp={finishTouchItemPress}
-        onPointerCancel={finishTouchItemPress}
+        onPointerCancel={abortTouchItemPress}
         onMouseDown={(event) => {
           if (!compactViewport && event.button === 1 && item.kind === 'dir' && onOpenItemInNewTab) {
             event.preventDefault()
@@ -4480,7 +4503,6 @@ export function XDriveFileExplorer({
             {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
           </Box>
         ) : null}
-        {!renaming ? touchItemActionButton(item, 'grid') : null}
         <Box
           sx={{
             width: gridMetrics.thumbnailWidth,

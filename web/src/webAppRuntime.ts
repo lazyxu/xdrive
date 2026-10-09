@@ -6,6 +6,7 @@ import type {
 import {
   xDriveParseWebAppHash,
   xDriveWebAppHash,
+  xDriveWebAppViewer,
 } from '../../ui/shared/src'
 
 const WEB_APP_SESSION_PREFIX = 'xdrive.web_app.session.v1:'
@@ -13,6 +14,7 @@ const WEB_APP_SESSION_PREFIX = 'xdrive.web_app.session.v1:'
 type XDriveWebAppHistoryState = {
   xdriveWebApp?: true
   viewerReturn?: true
+  appReturn?: string
 }
 
 function currentRoute(): XDriveWebAppRoute {
@@ -76,8 +78,15 @@ export function useXDriveWebAppRuntime() {
       return
     }
     const currentState = window.history.state as XDriveWebAppHistoryState | null
+    const from = currentRoute()
+    const appReturn = options.replace
+      ? currentState?.appReturn
+      : (!xDriveWebAppViewer(next.app) && from.app !== next.app)
+        ? xDriveWebAppHash(from)
+        : currentState?.appReturn
     const state: XDriveWebAppHistoryState = {
       xdriveWebApp: true,
+      ...(appReturn ? { appReturn } : {}),
       ...((options.viewerReturn || (options.replace && currentState?.viewerReturn))
         ? { viewerReturn: true }
         : {}),
@@ -98,5 +107,23 @@ export function useXDriveWebAppRuntime() {
     setRoute(fallback)
   }, [])
 
-  return { route, launch, closeViewer }
+  const parentHash = (window.history.state as XDriveWebAppHistoryState | null)?.appReturn
+  const parentRoute = parentHash ? xDriveParseWebAppHash(parentHash) : null
+  const canExitApp = Boolean(parentRoute && parentRoute.app !== route.app) || route.app !== 'overview'
+
+  const exitApp = useCallback(() => {
+    const active = currentRoute()
+    const state = window.history.state as XDriveWebAppHistoryState | null
+    const parent = state?.appReturn ? xDriveParseWebAppHash(state.appReturn) : null
+    if (parent && parent.app !== active.app) {
+      window.history.back()
+      return
+    }
+    if (active.app === 'overview') return
+    const fallback: XDriveWebAppRoute = { app: 'overview', params: {} }
+    window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash(fallback))
+    setRoute(fallback)
+  }, [])
+
+  return { route, launch, closeViewer, exitApp, canExitApp }
 }

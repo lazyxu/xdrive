@@ -20,7 +20,9 @@ test('Selection modifiers and Space remain selection rather than preview', () =>
   assert.match(tile, /selectionMode \|\| event\.ctrlKey \|\| event\.metaKey \|\| event\.shiftKey/)
   assert.match(tile, /event\.key === ' ' \|\| \(selectionMode && event\.key === 'Enter'\)/)
   assert.match(tile, /keyboardActivate\(event, \(\) => onPreview\(item\)\)/)
-  assert.match(tile, /onClick=\{\(event\) => \{\s*event\.preventDefault\(\)\s*event\.stopPropagation\(\)\s*onOpen\(item\)/)
+  assert.doesNotMatch(tile, /data-xdrive-gallery-touch-info|onOpen\(item\)/, 'mobile tiles have no overlay Info action')
+  assert.match(gallery, /onPointerDownCapture=\{handleGalleryPointerDown\}/, 'stationary hold resolves the tile context')
+  assert.match(gallery, /openMediaItem\(mediaContextMenu.item\)/, 'Properties remains available from Context Menu')
 })
 
 test('One context menu handles virtual and ordinary Gallery tiles', () => {

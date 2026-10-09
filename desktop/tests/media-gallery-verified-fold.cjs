@@ -32,7 +32,9 @@ test('Gallery verified duplicate folding is opt-in and scoped by authoritative S
   assert.match(media, /queryOptions\.foldIndex = nil/)
   assert.match(ui, /activeIndex: index/)
   assert.match(ui, /totalCount,/)
-  assert.match(ui, /onClickCapture={handleFoldExpandClick}/)
+  assert.match(ui, /onClickCapture=\{\(event\) => \{/)
+  assert.match(ui, /if \(!event.isPropagationStopped\(\)\) handleFoldExpandClick\(event\)/)
+  assert.match(ui, /onExpandFold\(mediaContextMenu.item\)/, 'mobile duplicate badge expands through Context Menu')
   const desktopMain = read('desktop/src/main/index.cts')
   const galleryAlbumIDChecks = [...desktopMain.matchAll(/!\(\['folder:', 'source:', 'manual:', 'smart:'\]/g)]
   assert.equal(galleryAlbumIDChecks.length, 2, 'Desktop must load manual/smart album items and ranges')

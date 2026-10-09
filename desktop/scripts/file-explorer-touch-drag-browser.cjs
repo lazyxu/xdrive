@@ -285,12 +285,15 @@ async function main() {
           await touch(cdp, 'touchEnd'); await settle(page);
           await page.waitForFunction(() => window.touchDragHarness.selectedIDs.length === 1);
           const afterLongPress = await state(page);
-          check('Real long press enters selection without opening a file', afterLongPress.events.every((event) => !['open-item', 'file-open'].includes(event.type)));
+          check('Real long press opens the context menu without opening a file', afterLongPress.events.every((event) => !['open-item', 'file-open'].includes(event.type)) && await page.locator('[data-xdrive-file-explorer-touch-action-sheet]').isVisible());
           check('Long press release does not activate a newly shifted action control', afterLongPress.destination === null);
           await capture(page, 'touch-long-press-after-release');
           // Recover explicitly from an observed unintended dialog so the independent
           // missing-handle and direct-alternative probes can still run.
           if (afterLongPress.destination) { await page.getByRole('button', { name: '取消', exact: true }).tap(); await page.locator('[data-xdrive-file-explorer-destination-dialog]').waitFor({ state: 'hidden' }); await settle(page); }
+          await page.getByRole('button', { name: '关闭文件操作', exact: true }).tap();
+          await page.getByRole('button', { name: '选择', exact: true }).tap();
+          await first.tap({ position: { x: 100, y: 24 } });
           await row(page, '001-源二.txt').tap({ position: { x: 100, y: 24 } }); await settle(page);
           const selected = await state(page);
           check('Touch selection contains both complete source IDs', selected.selectedIDs.map(Number).sort((a, b) => a - b), [201, 202]);

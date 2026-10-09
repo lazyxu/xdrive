@@ -20,13 +20,15 @@ test('shared FileExplorer keeps compact touch input separate from desktop mouse 
   }
 })
 
-test('compact touch provides direct open and explicit multi-select without touch drag', () => {
+test('compact touch opens, holds for Context Menu, drags to valid folders, and offers explicit Select', () => {
   for (const token of [
-    'XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRESS_MS = 450',
+    'XDRIVE_MOBILE_ITEM_HOLD_MS',
+    'openItemContextMenuAt(press.item, press.startX + 2, press.startY - 6)',
+    'touchDrag.begin(event, source.map',
     'setTouchSelectionMode(true)',
     'toggleTouchSelection(item, index)',
     'onOpenItem?.(item)',
-    "Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > 10) {\n      suppressTouchClickRef.current = true",
+    'xDriveMobileItemMoved({ x: press.startX, y: press.startY }',
     'draggable={!compactTouch && Boolean(onDropItemsToFolder) && !renaming}',
     '已选择 {selectedCount} 项',
     'setTouchSelectionMode(false)',
@@ -36,11 +38,25 @@ test('compact touch provides direct open and explicit multi-select without touch
   }
 })
 
-test('compact touch uses touch-size commands, explicit More buttons and mobile overlays', () => {
+test('held item gesture arms drag before a menu and releases stationery into Context Menu only', () => {
+  const start = explorer.slice(explorer.indexOf('const startTouchItemPress = ('), explorer.indexOf('const finishTouchItemPress = ('))
+  const finish = explorer.slice(explorer.indexOf('const finishTouchItemPress = ('), explorer.indexOf('const activateItem = ('))
+  assert.match(start, /press\.held = true/)
+  assert.match(start, /touchDrag\.begin\(event, source\.map/)
+  assert.doesNotMatch(start, /openItemContextMenuAt\(/, 'opening a Drawer during the held contact intercepts drag and scroll')
+  assert.match(finish, /if \(press\?\.held && press\.pointerId === event\.pointerId\)/)
+  assert.match(finish, /openItemContextMenuAt\(press\.item,/)
+  assert.match(finish, /blockHeldClick/, 'compatibility click must not activate a menu row underneath the finger')
+  assert.match(finish, /const abortTouchItemPress =/)
+  assert.match(explorer, /onPointerCancel=\{abortTouchItemPress\}/)
+  assert.match(explorer, /onDrop: \(source, point\) => \{\s*cancelTouchItemPress\(\)/)
+})
+
+test('compact touch uses touch-size commands and one on-demand Context Menu without per-item More buttons', () => {
   for (const token of [
     'data-xdrive-file-explorer-touch-command-bar',
     "'& .MuiIconButton-root': { width: 44, height: 44",
-    'data-xdrive-file-explorer-item-more',
+    'onContextMenu={(event) => openItemContextMenu(event, item)}',
     'data-xdrive-file-explorer-touch-navigation-drawer',
     'data-xdrive-file-explorer-touch-action-sheet',
     "anchor=\"bottom\"",
@@ -48,6 +64,7 @@ test('compact touch uses touch-size commands, explicit More buttons and mobile o
   ]) {
     assert.ok(explorer.includes(token), 'missing compact-touch UI affordance: ' + token)
   }
+  assert.doesNotMatch(explorer, /data-xdrive-file-explorer-item-more/, 'the old per-file button must not regress')
 })
 
 test('compact viewports project mobile geometry without overwriting desktop pane/column preferences', () => {

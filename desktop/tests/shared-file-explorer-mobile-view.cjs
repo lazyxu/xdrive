@@ -51,12 +51,13 @@ function renderView(viewMode, compactTouch, extraProps = {}) {
     })))
 }
 
-test('an inherited columns preference still exposes the touch file list and item actions', () => {
+test('an inherited columns preference keeps the touch file list without per-item More buttons', () => {
   const html = renderView('columns', true)
   assert.ok(html.includes('aria-label="文件列表"'), 'compact touch must project columns into the usable file list')
   assert.ok(!html.includes('data-xdrive-file-explorer-column-view'), 'desktop columns must not consume the touch workspace')
-  assert.equal((html.match(/data-xdrive-file-explorer-item-more=/g) || []).length, 2,
-    'both files must expose their touch action entry')
+  assert.equal((html.match(/data-xdrive-file-explorer-item-more=/g) || []).length, 0,
+    'no file tile may overlay a More action; Context Menu remains on the row')
+  assert.ok(html.includes('data-xdrive-file-explorer-item-id='), 'file rows remain interactive')
 })
 
 test('a non-touch presentation keeps the caller columns preference', () => {

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
   FolderOutlined as FolderOutlinedIcon,
   Image as ImageIcon,
-  InfoOutlined as InfoOutlinedIcon,
   Movie as MovieIcon,
   PersonOutline as PersonOutlineIcon,
   Refresh as RefreshIcon,
@@ -79,6 +78,7 @@ import type {
   Node,
   UpdateMediaPersonIdentityInput,
 } from '../models'
+import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
 import { XDriveDialogContent } from './DialogContent'
 import {
   XDriveMediaGalleryFilterToolbar,
@@ -2914,7 +2914,6 @@ function MediaTile({
   saveVideoPoster,
   onSetFavorite,
   onSetCover,
-  onOpen,
   onPreview,
   onToggleFavorite,
 }: MediaTileProps) {
@@ -3042,36 +3041,7 @@ function MediaTile({
           }}
         />
       ) : null}
-      {compactTouch && !selectionMode ? (
-        <Tooltip title="属性">
-          <IconButton
-            data-xdrive-gallery-touch-info
-            aria-label="查看属性"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onOpen(item)
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            sx={{
-              position: 'absolute',
-              left: 8,
-              bottom: 8,
-              zIndex: 4,
-              width: 44,
-              height: 44,
-              bgcolor: 'rgba(0,0,0,.66)',
-              color: '#fff',
-              '&:hover': { bgcolor: 'rgba(0,0,0,.78)' },
-            }}
-          >
-            <InfoOutlinedIcon />
-          </IconButton>
-        </Tooltip>
-      ) : null}
-      {onSetFavorite ? (
+      {!compactTouch && onSetFavorite ? (
         <Tooltip title={item.favorite ? '取消收藏' : '收藏'}>
           <IconButton
             className="media-favorite"
@@ -3116,15 +3086,15 @@ function MediaTile({
         >
           {(item.fold_member_ids?.length ?? 0) > 1 ? (
             <Chip
-              clickable
-              component="button"
+              clickable={!compactTouch}
+              component={compactTouch ? 'span' : 'button'}
               size="small"
               label={`${item.fold_member_ids!.length} 份`}
               aria-label={`展开 ${item.fold_member_ids!.length} 份完整资源一致的副本`}
               data-xdrive-media-fold-expand={item.node.id}
-              onClick={(event) => event.stopPropagation()}
+              onClick={(event: ReactMouseEvent<HTMLElement>) => event.stopPropagation()}
               sx={{
-                pointerEvents: 'auto', bgcolor: 'rgba(0,0,0,.75)',
+                pointerEvents: compactTouch ? 'none' : 'auto', bgcolor: 'rgba(0,0,0,.75)',
                 color: '#fff', fontWeight: 700,
               }}
             />
@@ -4375,7 +4345,113 @@ export function XDriveMediaGallery({
     }
   }, [items, onExpandFold, virtualCollection])
 
+  // Root-level gesture owner: one listener set for a 100k-item virtual grid.
+  // The time-based hold arms context intent, but creates no Portal until
+  // pointerup, so movement can still scroll or reach an eligible drag target.
+  const galleryTouchPressRef = useRef<{
+    pointerId: number
+    start: { x: number; y: number }
+    item: MediaItem
+    index: number
+    timer: number
+    held: boolean
+  } | null>(null)
+  const galleryHoldClickRef = useRef<number | null>(null)
+
+  const clearGalleryTouchPress = useCallback((pointerId?: number) => {
+    const press = galleryTouchPressRef.current
+    if (!press || (pointerId !== undefined && press.pointerId !== pointerId)) return
+    window.clearTimeout(press.timer)
+    galleryTouchPressRef.current = null
+  }, [])
+
+  useEffect(() => () => clearGalleryTouchPress(), [clearGalleryTouchPress, section])
+
+  const handleGalleryPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch' && !event.isPrimary) {
+      clearGalleryTouchPress()
+      galleryHoldClickRef.current = null
+      return
+    }
+    if (event.pointerType !== 'touch') galleryHoldClickRef.current = null
+    if (event.pointerType !== 'touch' || selectionMode || typeof window === 'undefined') return
+    const target = event.target
+    if (!(target instanceof Element) || target.closest('button, input, [role="checkbox"], [data-xdrive-media-fold-expand]')) return
+    const tile = target.closest<HTMLElement>('[data-xdrive-media-tile]')
+    if (!tile) return
+    const index = Number(tile.dataset.xdriveMediaIndex)
+    if (!Number.isSafeInteger(index) || index < 0) return
+    const item = virtualCollection?.itemAt(index) ?? items[index]
+    if (!item) return
+    clearGalleryTouchPress()
+    galleryHoldClickRef.current = null
+    const pointerId = event.pointerId
+    const start = { x: event.clientX, y: event.clientY }
+    const timer = window.setTimeout(() => {
+      const press = galleryTouchPressRef.current
+      if (!press || press.pointerId !== pointerId || press.held) return
+      press.held = true
+      galleryHoldClickRef.current = pointerId
+    }, XDRIVE_MOBILE_ITEM_HOLD_MS)
+    galleryTouchPressRef.current = { pointerId, start, item, index, timer, held: false }
+  }
+
+  const handleGalleryPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const press = galleryTouchPressRef.current
+    if (!press || press.pointerId !== event.pointerId) return
+    if (!xDriveMobileItemMoved(press.start, { x: event.clientX, y: event.clientY })) return
+    // The timeline has no eligible folder/album reorder target. Movement
+    // cancels the menu intent instead of arbitrarily reordering photos.
+    clearGalleryTouchPress(event.pointerId)
+  }
+
+  const handleGalleryPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const press = galleryTouchPressRef.current
+    clearGalleryTouchPress(event.pointerId)
+    if (!press?.held || press.pointerId !== event.pointerId) {
+      if (galleryHoldClickRef.current === event.pointerId) galleryHoldClickRef.current = null
+      return
+    }
+    const document = galleryRootRef.current?.ownerDocument
+    if (document) {
+      const blockHeldClick = (click: MouseEvent) => {
+        const clickPointer = (click as MouseEvent & { pointerId?: number }).pointerId
+        if (click.detail === 0 || (clickPointer !== undefined && clickPointer > 0 && clickPointer !== press.pointerId)) return
+        click.preventDefault()
+        click.stopImmediatePropagation()
+        if (galleryHoldClickRef.current === press.pointerId) galleryHoldClickRef.current = null
+        document.removeEventListener('click', blockHeldClick, true)
+      }
+      document.addEventListener('click', blockHeldClick, true)
+      window.setTimeout(() => {
+        document.removeEventListener('click', blockHeldClick, true)
+        if (galleryHoldClickRef.current === press.pointerId) galleryHoldClickRef.current = null
+      }, 350)
+    }
+    setMediaContextMenu({ item: press.item, index: press.index, top: press.start.y, left: press.start.x })
+  }
+
+  const handleGalleryPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    clearGalleryTouchPress(event.pointerId)
+    if (galleryHoldClickRef.current === event.pointerId) galleryHoldClickRef.current = null
+    // A cancelled hold is never an activation or a menu action.
+  }
+
+  const consumeGalleryHoldClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (galleryHoldClickRef.current === null || event.detail === 0) return
+    const pointerId = (event.nativeEvent as MouseEvent & { pointerId?: number }).pointerId
+    if (pointerId !== undefined && pointerId > 0 && pointerId !== galleryHoldClickRef.current) return
+    galleryHoldClickRef.current = null
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
   const handleMediaContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    // Prevent native touch ContextMenu from preempting the held contact.
+    if (galleryTouchPressRef.current || galleryHoldClickRef.current !== null) {
+      event.preventDefault()
+      return
+    }
     // Delegated to the Gallery root: 100k logical media never create 100k menus.
     const tile = event.target instanceof Element
       ? event.target.closest<HTMLElement>('[data-xdrive-media-tile]')
@@ -4802,7 +4878,14 @@ export function XDriveMediaGallery({
       ref={galleryRootRef}
       spacing={2}
       onContextMenu={handleMediaContextMenu}
-      onClickCapture={handleFoldExpandClick}
+      onPointerDownCapture={handleGalleryPointerDown}
+      onPointerMoveCapture={handleGalleryPointerMove}
+      onPointerUpCapture={handleGalleryPointerUp}
+      onPointerCancelCapture={handleGalleryPointerCancel}
+      onClickCapture={(event) => {
+        consumeGalleryHoldClick(event)
+        if (!event.isPropagationStopped()) handleFoldExpandClick(event)
+      }}
       data-xdrive-gallery-aspect-mode={aspectMode}
       sx={{
         minWidth: 0,
@@ -6212,6 +6295,24 @@ export function XDriveMediaGallery({
           }}>
             导出完整实况
           </MenuItem>
+        ) : null}
+        {!isTrashSection && onSetFavorite && mediaContextMenu ? (
+          <MenuItem onClick={() => {
+            toggleMediaFavorite(mediaContextMenu.item)
+            setMediaContextMenu(null)
+          }}>{mediaContextMenu.item.favorite ? '取消收藏' : '收藏'}</MenuItem>
+        ) : null}
+        {mediaContextMenu ? (
+          <MenuItem onClick={() => {
+            handleMediaSelect(mediaContextMenu.item, mediaContextMenu.index, { ctrlKey: false, metaKey: false, shiftKey: false })
+            setMediaContextMenu(null)
+          }}>选择</MenuItem>
+        ) : null}
+        {onExpandFold && mediaContextMenu?.item.fold_member_ids && mediaContextMenu.item.fold_member_ids.length > 1 ? (
+          <MenuItem onClick={() => {
+            onExpandFold(mediaContextMenu.item)
+            setMediaContextMenu(null)
+          }}>展开副本</MenuItem>
         ) : null}
         <MenuItem onClick={() => {
           if (mediaContextMenu) openMediaItem(mediaContextMenu.item)
