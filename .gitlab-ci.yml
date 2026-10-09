@@ -762,6 +762,7 @@ photo-face-image:
     paths:
       - .cache/ci-tools/
       - .cache/photo-face-runtime/
+      - .cache/photo-face-models/
     policy: pull-push
     when: always
   before_script:

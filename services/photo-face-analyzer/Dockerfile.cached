@@ -1,0 +1,23 @@
+# CI supplies a verified dependencies image and a completed model-cache context.
+ARG XDRIVE_RUNTIME_DEPENDENCIES_IMAGE
+FROM ${XDRIVE_RUNTIME_DEPENDENCIES_IMAGE} AS verified-assets
+
+COPY models/ /models/
+COPY licenses/ /licenses/
+COPY fetch_models.py ./fetch_models.py
+RUN python fetch_models.py /models /licenses --verify-only \
+    && chmod -R a=rX /models /licenses
+
+FROM ${XDRIVE_RUNTIME_DEPENDENCIES_IMAGE} AS runtime
+
+ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown
+
+LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
+      org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies" \
+      io.github.lazyxu.xdrive.photo-face.runtime-contract="$XDRIVE_RUNTIME_CONTRACT_HASH"
+
+COPY --from=verified-assets /models/ /models/
+COPY --from=verified-assets /licenses/ /licenses/
+RUN rm -rf /opt/xdrive-photo-face-runtime
+
+WORKDIR /workspace
