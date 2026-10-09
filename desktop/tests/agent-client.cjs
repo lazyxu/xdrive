@@ -308,6 +308,44 @@ test('cloud File Properties preserves source-binding metadata', async (t) => {
   ])
 })
 
+test('canonical media item cancellation aborts the Agent HTTP request', { timeout: 5000 }, async (t) => {
+  let resolveStarted
+  let resolveClosed
+  const started = new Promise((resolve) => { resolveStarted = resolve })
+  const closed = new Promise((resolve) => { resolveClosed = resolve })
+  const { client, token } = await fixture(t, (req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    assert.equal(req.method, 'GET')
+    assert.equal(url.pathname, '/v1/media/item')
+    assert.equal(url.searchParams.get('node_id'), '101')
+    assert.equal(req.headers.authorization, `Bearer ${token}`)
+    res.once('close', resolveClosed)
+    resolveStarted()
+  })
+  const controller = new AbortController()
+  const pending = client.mediaItem(101, controller.signal)
+  await started
+  controller.abort()
+  await assert.rejects(pending, (error) => error instanceof AgentIPCError && error.code === 'aborted')
+  let timer
+  try {
+    await Promise.race([
+      closed,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Agent media-item HTTP request did not close after abort')), 1000) }),
+    ])
+  } finally { clearTimeout(timer) }
+})
+
+test('canonical media item preserves the selected Node and independent resource metadata', { timeout: 5000 }, async (t) => {
+  const { items: { live } } = require('../scripts/media-properties-fixtures.cjs')
+  const { client } = await fixture(t, (req, res) => {
+    assert.equal(req.method, 'GET')
+    assert.equal(req.url, `/v1/media/item?node_id=${live.node.id}`)
+    json(res, 200, live)
+  })
+  assert.deepEqual(await client.mediaItem(live.node.id), live)
+})
+
 test('cloud search forwards server sort and cursor options', async (t) => {
   const { client } = await fixture(t, (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
