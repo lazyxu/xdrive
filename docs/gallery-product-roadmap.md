@@ -673,6 +673,38 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 P4 phase 1 — read-only metadata preservation plan (2026-10-09)
+
+**In progress / CI pending:** authenticated owner-scoped
+`GET /api/v1/media/duplicate-organize/plan?keeper_id=...&node_id=...&node_id=...`
+provides an explicit, bounded **2–32**-asset dry run before any consolidation.
+The server verifies ready media revisions, owner of every active primary Node,
+full PhotoAsset original-resource equivalence and current edit recipe evidence;
+if any selected item is unavailable, stale or belongs to another account, no
+cross-owner data is disclosed and the request fails closed.
+
+The plan preserves the separate rows for **each** source copy: favorite,
+descriptions, tags, people labels, manual/source/folder album memberships,
+persistent person identities, current edit-recipe presence and original Node
+identities. It also returns the possible union, counts, unverified/different
+status and explicit description conflicts. Multiple distinct non-empty
+descriptions remain visible **as alternatives**, never silently overwritten;
+current edit/resource mismatches block safe review. The endpoint is strictly
+read-only: `no_mutation=true`, `physical_reclaimable_bytes=0`,
+`requires_manual_confirmation=true`. It does **not** merge metadata, delete,
+trash, detach resources, migrate source identities, change CAS reference counts
+or assume user quota will fall. It does not create a new cleanup recommendation
+entry for zero-reclaimable duplicates.
+
+**Remaining before any write path:** human review UI; transactionally safe
+manual-album/durable-person union; explicit behavior for conflicting free-text
+descriptions and edit history; possible rollback/audit and folder/source
+collection provenance retention; index freshness and revision checks under
+concurrent sync; durable deletion / undo; repeat-import idempotence; same-owner
+and cross-account blob isolation. A source-managed duplicate may reappear on
+the next synchronization, so deleting a source copy does not count as
+permanent merge. Never treat this P4 phase 1 as completed metadata merging.
+
 ## Phase 10 — duplicate review, Burst Best Shot, and safe cleanup
 
 Phase 10 is a local review workflow, not a destructive background cleaner. It adds no
