@@ -330,6 +330,15 @@ timing, memory, FPS or throughput result.
 
 ## Delivery log
 
+- 2026-10-09: G06 phase 2a Web shared Properties candidate (not yet merged):
+  one lazily mounted Location section shows the current owner-authorized xDrive
+  Node path and parent, separately from recorded synchronization provenance and
+  current sync-root containment. Web Gallery, Files media Properties and the
+  routed Viewer use the same section; navigation uses parent Node ID and preserves
+  the existing media player. AbortSignal cleanup/revision fencing and an explicit
+  retry prevent stale location responses. CI pending; native iOS/Android and
+  Desktop transport are **not** verified by this phase.
+
 - 2026-10-09: G06 phase 1 backend candidate (not yet merged) adds
   authenticated `GET /api/v1/nodes/:id/location` with owner-scoped
   current xDrive Node path, directory breadcrumbs, parent ID and path.

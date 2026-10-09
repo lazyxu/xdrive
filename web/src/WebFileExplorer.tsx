@@ -622,6 +622,11 @@ export default function WebFileExplorer({
     signal: AbortSignal,
   ) => api.mediaItem(Number(item.id), signal), [api])
 
+  const loadNodeLocation = useCallback((
+    nodeID: number,
+    signal?: AbortSignal,
+  ) => api.nodeLocation(nodeID, signal), [api])
+
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
@@ -859,6 +864,16 @@ export default function WebFileExplorer({
         loadPropertiesStats={loadPropertiesStats}
         loadMediaDetails={loadMediaDetails}
         loadMediaItem={trashActive ? undefined : loadMediaItem}
+        loadNodeLocation={trashActive ? undefined : loadNodeLocation}
+        onShowInFolder={trashActive ? undefined : (location) => {
+          if (!location.parent_id) return
+          const ancestry = location.breadcrumbs
+            .filter((crumb) => crumb.id !== location.node_id)
+            .map((crumb) => ({ id: crumb.id, name: crumb.name }))
+          if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
+          onCloseTrash()
+          void navigateTo(ancestry).catch(onError)
+        }}
         pathValue={trashActive ? '回收站' : pathValue}
         onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
         searchEnabled={!trashActive}

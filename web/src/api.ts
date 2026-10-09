@@ -24,6 +24,7 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  NodeLocation,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderView,
@@ -760,6 +761,13 @@ export class XDriveApi {
 
   mediaItem(nodeID: number, signal?: AbortSignal) {
     return this.request<MediaItem>(`/api/v1/media/items/${nodeID}`, { signal })
+  }
+
+  nodeLocation(nodeID: number, signal?: AbortSignal) {
+    if (!Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      return Promise.reject(new Error('Invalid Node ID'))
+    }
+    return this.request<NodeLocation>(`/api/v1/nodes/${nodeID}/location`, { signal })
   }
 
   mediaItems(

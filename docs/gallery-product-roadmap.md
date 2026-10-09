@@ -200,6 +200,26 @@ The next G06 steps are shared Properties UI, Web/Desktop FileExplorer
 current-folder versus descendant scope. Do not mark G06 complete until
 all of those and device tests are actually verified.
 
+### G06 phase 2a — shared on-demand media location, Web candidate (2026-10-09)
+
+**In progress / PR CI pending:** Shared media Properties now accepts the G06
+NodeLocation loader without adding a new player or changing 100k sparse Gallery
+ranges. Its Location section distinguishes current xDrive ancestry, current
+synchronization-folder target containment, and historical SourceItem provenance.
+The request begins only when Properties mounts, is AbortSignal-scoped to the
+selected Node/revision, and offers explicit error/retry and Show in Folder by
+authoritative parent ID. Ordinary Gallery, FileExplorer media Properties and the
+routed Web media Viewer use the same content. Neither Viewer playback nor the
+underlying file bytes are reloaded just to show this location section.
+
+Web transport and router accept owner-authorized Node IDs and navigate using
+the returned directory IDs, not an inferred connector path. The Server phase 1
+endpoint is a dependency and must pass its own CI before this Web layer merges.
+Desktop Agent capability/IPC/Main/Preload parity and physical device acceptance
+remain separate follow-ups; this Web candidate **does not complete G06**.
+The dedicated Node component test reproduces stale location completion across
+node switches, AbortSignal cleanup, and verified source/location display.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |
