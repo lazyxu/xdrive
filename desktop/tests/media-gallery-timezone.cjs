@@ -72,3 +72,16 @@ test('Gallery timezone contract reaches the Server, Agent, Web, Desktop and View
   assert.match(code.agent, /desktopIPCMediaTimeZone/)
   assert.match(code.desktop, /requireAgentCapability\(hello, 'media-timezone'\)/)
 })
+
+
+test('Gallery shared adapter forwards selected IANA timezone through Memories ports', () => {
+  const adapter = read('ui/shared/src/mui/MediaGalleryAdapter.ts')
+  assert.match(adapter, /port\.listMemories!\(anchorDate, limit, timeZone\)/)
+  assert.match(adapter, /port\.listMemoryItemRange!\(memoryID, limit, offset, timeZone\)/)
+  const web = read('web/src/mediaGalleryAdapter.ts')
+  const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
+  assert.match(web, /api\.mediaMemories\(anchorDate, limit, timeZone\)/)
+  assert.match(web, /api\.mediaMemoryItemRange\(memoryID, limit, offset, timeZone\)/)
+  assert.match(desktop, /agent\.getMediaMemories\(anchorDate, limit, timeZone\)/)
+  assert.match(desktop, /agent\.getMediaMemoryItemRange\(memoryID, limit, offset, timeZone\)/)
+})
