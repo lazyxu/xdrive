@@ -19,7 +19,7 @@ import (
 const (
 	photoAssetNodePerfPhotos  = 100_000
 	photoAssetNodePerfMotion  = 15_000
-	photoAssetNodePerfBatch   = 4096
+	photoAssetNodePerfBatch   = photoAssetNodeBatchSize
 	photoAssetNodePerfSamples = 3
 )
 
@@ -162,27 +162,25 @@ WHERE n.parent_id = ? AND n.owner_id = ? AND n.type = 'file'
 	var results []photoAssetNodePerfSample
 	for sample := 1; sample <= photoAssetNodePerfSamples; sample++ {
 		started := time.Now()
-		nodeCount, fileCount, batches := 0, 0, 0
-		for offset := 0; offset < len(nodeIDs); offset += photoAssetNodePerfBatch {
-			end := min(offset+photoAssetNodePerfBatch, len(nodeIDs))
-			ids := nodeIDs[offset:end]
-			var nodes []meta.Node
-			if err := db.Preload("File").Where("id IN ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				ids, owner.ID, meta.NodeTypeFile,
-			).Find(&nodes).Error; err != nil {
-				t.Fatal(err)
+		nodes, err := preloadPhotoAssetNodes(db, owner.ID, nodeIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodeCount, fileCount := len(nodes), 0
+		batches := (len(nodeIDs) + photoAssetNodePerfBatch - 1) / photoAssetNodePerfBatch
+		seen := make(map[uint64]struct{}, len(nodes))
+		for _, node := range nodes {
+			if node.OwnerID != owner.ID {
+				t.Fatalf("sample=%d node=%d wrong owner=%d", sample, node.ID, node.OwnerID)
 			}
-			if len(nodes) != len(ids) {
-				t.Fatalf("sample=%d batch=%d nodes=%d want=%d", sample, batches, len(nodes), len(ids))
+			if _, duplicate := seen[node.ID]; duplicate {
+				t.Fatalf("sample=%d duplicate node=%d", sample, node.ID)
 			}
-			nodeCount += len(nodes)
-			for _, node := range nodes {
-				if node.File == nil || node.File.NodeID != node.ID {
-					t.Fatalf("sample=%d node=%d File preloading missing", sample, node.ID)
-				}
-				fileCount++
+			seen[node.ID] = struct{}{}
+			if node.File == nil || node.File.NodeID != node.ID {
+				t.Fatalf("sample=%d node=%d File preloading missing", sample, node.ID)
 			}
-			batches++
+			fileCount++
 		}
 		if nodeCount != physicalMediaNodeCount || fileCount != physicalMediaNodeCount {
 			t.Fatalf("sample=%d nodes=%d files=%d want=%d", sample, nodeCount, fileCount, physicalMediaNodeCount)
