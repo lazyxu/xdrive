@@ -360,3 +360,13 @@ timing, memory, FPS or throughput result.
   future wording and conflicting Gallery click/Info guidance reconciled in related
   documents. This entry records documentation work only; all product proposals above
   retain their explicit status.
+
+### RAW compatible high-resolution preview — implementation follow-up (2026-10-09)
+
+**In progress / CI pending:** connect existing 1280px analysis JPEG derivative
+to shared FileExplorer/Gallery/Viewer for DNG/NEF/ARW/CR3 with embedded JPEG.
+These files are not original-image preview ticket formats; raw download remains
+unchanged. Web/Desktop use the same classifier/Preview Engine, and missing RAW
+embedded JPEG remains an explicit compatibility limitation. Final resolution,
+resource use and real Safari/Electron decode must be measured with identical
+fixtures before claiming high-resolution parity.

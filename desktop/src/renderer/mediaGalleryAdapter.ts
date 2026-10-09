@@ -1,5 +1,5 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
-import { xDriveCompleteLivePhotoOriginalNodeIDs } from '@xdrive/shared'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -94,9 +94,29 @@ export function createDesktopMediaGalleryDataSource(
         },
       }
     },
-    loadPreviewURL: (nodeID, kind) => kind === 'live_photo'
-      ? agent.getMediaLivePhotoStill(nodeID)
-      : agent.cloudFilePreviewURL(nodeID),
+    loadPreviewURL: async (nodeID, kind, signal, fileName) => {
+      if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(fileName ?? '')) {
+        const result = await xDriveDesktopViewportRequest(
+          signal,
+          (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID),
+        )
+        if (!result.ok) return result
+        signal?.throwIfAborted()
+        return {
+          ok: true as const,
+          data: URL.createObjectURL(new Blob(
+            [result.data.data],
+            { type: result.data.content_type || 'image/jpeg' },
+          )),
+        }
+      }
+      signal?.throwIfAborted()
+      const result = kind === 'live_photo'
+        ? await agent.getMediaLivePhotoStill(nodeID)
+        : await agent.cloudFilePreviewURL(nodeID)
+      signal?.throwIfAborted()
+      return result
+    },
     setFavorite: (nodeID, favorite) => agent.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => agent.setMediaFavoriteBatch(nodeIDs, favorite),
     addTagsBatch: (nodeIDs, tags) => agent.addMediaTagsBatch(nodeIDs, tags),

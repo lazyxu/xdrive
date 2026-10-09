@@ -37,6 +37,7 @@ function loadPreviewModel() {
 const {
   xDriveClassifyFilePreview,
   xDriveFileSupportsTextPreview,
+  xDriveFileUsesRawCompatibilityPreview,
 } = loadPreviewModel()
 
 test('binary preview classification is extension-allowlist based', () => {
@@ -104,4 +105,17 @@ test('bounded text preview classification covers common source and config files'
     assert.equal(xDriveClassifyFilePreview({ name, kind: 'file' }), 'text', name)
   }
   assert.equal(xDriveFileSupportsTextPreview('README', 'dir'), false)
+})
+
+
+test('RAW embedded JPEG compatibility previews are extension-scoped, never MIME-guessable', () => {
+  for (const name of ['photo.DNG', 'clip.nef', 'frame.ARW', 'canvas.Cr3']) {
+    assert.equal(xDriveFileUsesRawCompatibilityPreview(name), true, name)
+    assert.equal(xDriveClassifyFilePreview({ name, kind: 'file' }), 'image')
+  }
+  for (const name of ['photo.jpg', 'photo.heic', 'movie.mp4', 'payload.bin', 'photo.cr2', 'photo.raf']) {
+    assert.equal(xDriveFileUsesRawCompatibilityPreview(name), false, name)
+  }
+  assert.equal(xDriveClassifyFilePreview({ name: 'payload.bin', kind: 'file', mimeType: 'image/x-adobe-dng' }), 'none')
+  assert.equal(xDriveClassifyFilePreview({ name: 'photo.dng', kind: 'dir' }), 'none')
 })

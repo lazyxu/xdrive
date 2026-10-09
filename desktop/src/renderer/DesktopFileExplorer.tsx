@@ -29,6 +29,7 @@ import {
   xDriveFileExplorerSavedSearchRuleLabels,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
+  xDriveFileUsesRawCompatibilityPreview,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -946,8 +947,24 @@ export default function DesktopFileExplorer({
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
+    signal?: AbortSignal,
   ) => {
     if (!previewStreamSupported || item.kind !== 'file') return null
+    if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
+      try {
+        const result = await xDriveDesktopViewportRequest(
+          signal,
+          (requestID) => window.xdriveDesktop.agent.getMediaAnalysisPreview(Number(item.id), requestID),
+        )
+        if (!result.ok || signal?.aborted) return null
+        return URL.createObjectURL(new Blob(
+          [result.data.data],
+          { type: result.data.content_type || 'image/jpeg' },
+        ))
+      } catch {
+        return null
+      }
+    }
     if (kind === 'live_photo') {
       const result = await window.xdriveDesktop.agent.getMediaLivePhotoStill(Number(item.id))
       return result.ok ? result.data : null

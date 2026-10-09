@@ -23,7 +23,7 @@ test('Web and Gallery use one semantic media content layer', () => {
     'xDriveMediaEditPreviewTransform(item.edit_recipe)',
     'loadLivePhotoMotion(item.node.id, onProgress)',
     'loadThumbnail(item.node.id)',
-    'loadPreviewURL(item.node.id, kind)',
+    'loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision)',
   ]) {
     assert.ok(content.includes(token), 'shared media content contract missing: ' + token)
   }

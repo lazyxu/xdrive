@@ -232,6 +232,8 @@ type fakeDesktopIPCController struct {
 	cloudDeleteSourceID  uint64
 	cloudDeleteSourceRev uint64
 	cloudTriggerID       uint64
+
+	cloudMediaAnalysisPreviewID uint64
 }
 
 func (f *fakeDesktopIPCController) SnapshotWithRevision() (agentSnapshot, uint64) {
@@ -1420,6 +1422,11 @@ func (f *fakeDesktopIPCController) CloudCancelMediaCreativeGeneration(
 
 func (f *fakeDesktopIPCController) CloudMediaThumbnail(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	f.cloudMediaThumbnailID = nodeID
+	return f.cloudMediaThumbnail, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaAnalysisPreview(_ context.Context, nodeID uint64) (agentMediaThumbnail, error) {
+	f.cloudMediaAnalysisPreviewID = nodeID
 	return f.cloudMediaThumbnail, f.err
 }
 
@@ -3113,6 +3120,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	}
 	if ctrl.cloudMediaThumbnailID != 31 {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/analysis-preview?node_id=31", "")
+	if res.Code != http.StatusOK ||
+		res.Header().Get("Content-Type") != "image/jpeg" ||
+		res.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		res.Body.String() != "fake-jpeg" ||
+		ctrl.cloudMediaAnalysisPreviewID != 31 {
+		t.Fatalf("media analysis preview status=%d id=%d body=%q", res.Code, ctrl.cloudMediaAnalysisPreviewID, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/analysis-preview?node_id=0", "")
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("invalid RAW preview ID returned status=%d", res.Code)
 	}
 
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/live-photo-still-ticket?node_id=31", "")

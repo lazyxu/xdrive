@@ -1355,6 +1355,49 @@ export class XDriveApi {
     return response.blob()
   }
 
+  /**
+   * Authenticated bounded JPEG derivative for RAW images whose canonical
+   * originals cannot be safely opened through the binary preview-ticket API.
+   */
+  async mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, revision?: number): Promise<Blob> {
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
+    // Cache identity includes the current source revision. The Server derivative
+    // is revision/SHA fenced, while a browser may cache the authenticated GET.
+    const revisionQuery = Number.isSafeInteger(revision) && (revision ?? 0) > 0
+      ? `?revision=${revision}`
+      : ''
+    const path = `/api/v1/media/items/${nodeID}/analysis-preview${revisionQuery}`
+    const send = () => fetch(`${API_BASE}${path}`, {
+      cache: revisionQuery ? 'default' : 'no-store',
+      headers: this.session.accessToken
+        ? { Authorization: `Bearer ${this.session.accessToken}` }
+        : undefined,
+      signal,
+    })
+    let response = await send()
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true, signal)
+      signal?.throwIfAborted()
+      response = await send()
+    }
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText || 'RAW compatibility preview unavailable')
+    }
+    if (!response.headers.get('Content-Type')?.toLowerCase().startsWith('image/jpeg')) {
+      throw new ApiError(502, 'RAW preview response is not JPEG')
+    }
+    const blob = await response.blob()
+    signal?.throwIfAborted()
+    return blob
+  }
+
+  async mediaAnalysisPreviewURL(nodeID: number, signal?: AbortSignal, revision?: number): Promise<string> {
+    const blob = await this.mediaAnalysisPreview(nodeID, signal, revision)
+    signal?.throwIfAborted()
+    return URL.createObjectURL(blob)
+  }
+
   async mediaVideoPoster(nodeID: number, revision: number, poster: Blob, signal?: AbortSignal): Promise<void> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()

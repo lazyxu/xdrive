@@ -533,7 +533,7 @@ export type XDriveFileExplorerMenuItem = {
   onSelect: () => void
 }
 
-const imageExtensions = new Set(['avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'livp', 'png', 'tif', 'tiff', 'webp'])
+const imageExtensions = new Set(['arw', 'avif', 'bmp', 'cr3', 'dng', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'livp', 'nef', 'png', 'tif', 'tiff', 'webp'])
 const videoExtensions = new Set(['3g2', '3gp', 'avi', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm'])
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
 const documentExtensions = new Set(['doc', 'docx', 'odt', 'rtf'])

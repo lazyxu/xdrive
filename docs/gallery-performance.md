@@ -986,3 +986,19 @@ by actual React hook Gallery/direct Media/direct Preview behavior checks.
 Use authoritative PR CI as the merge gate for the reconstructed single commit. The
 next measurement is real Server/browser navigation request and latency evidence where needed. Keep this replay
 and the preserved #1058 measurements separate from real mobile/browser acceptance.
+
+## RAW embedded-JPEG compatibility preview delivery (2026-10-09)
+
+Status: **In progress / structural validation pending**. Fixed baseline: the Server already
+persists 1280px analysis JPEGs and can safely extract embedded JPEGs for DNG,
+NEF, ARW and CR3, but FileExplorer/Viewer requests signed original-file preview
+tickets, which do not allow RAW. BEFORE: at most a 512px thumbnail; full-view
+high-resolution request fails or is not available. Candidate AFTER: reuse the
+existing authenticated 1280px analysis preview endpoint, separately from the
+canonical original download. The corresponding Web/Agent path uses a bounded
+binary response, the shared decoded-image source and request-scoped cancellation.
+No new image worker, persistent cache category, original RAW transcoding or
+parallel React viewer is introduced. Paired runtime timings (TTFI, 1280px
+final decode, loaded bytes, CPU, RSS, abort/disconnects) for JPEG/HEIC/DNG/
+NEF/ARW/CR3 and missing embedded JPEG are **not yet measured**. This is
+a correctness/transport delivery only; no speedup claim or 2048px Viewer support.

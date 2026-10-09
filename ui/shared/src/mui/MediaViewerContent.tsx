@@ -53,13 +53,13 @@ export function XDriveMediaViewerContent({
   ])
   const presentation = useXDrivePreviewPresentation(target)
 
-  const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
+  const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind, signal) => {
     if (
       !loadPreviewURL ||
       (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')
     ) return null
-    return loadPreviewURL(item.node.id, kind)
-  }, [item.node.id, loadPreviewURL])
+    return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision)
+  }, [item.node.id, item.node.name, loadPreviewURL])
 
   const loadOpenThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
     if (!item.metadata.has_thumbnail) return null

@@ -2,7 +2,7 @@ import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
 } from '@xdrive/ui/mui'
-import { xDriveCompleteLivePhotoOriginalNodeIDs } from '../../ui/shared/src'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileUsesRawCompatibilityPreview } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
 export function createWebMediaGalleryDataSource(api: XDriveApi) {
@@ -75,9 +75,11 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     loadThumbnail: (nodeID, signal) => api.mediaThumbnail(nodeID, signal),
     saveVideoPoster: (nodeID, revision, poster, signal) => api.mediaVideoPoster(nodeID, revision, poster, signal),
     loadLivePhotoMotion: (nodeID, _onProgress) => api.mediaLivePhotoMotionURL(nodeID),
-    loadPreviewURL: (nodeID, kind, signal) => kind === 'live_photo'
+    loadPreviewURL: (nodeID, kind, signal, fileName, revision) => kind === 'live_photo'
       ? api.mediaLivePhotoStillURL(nodeID)
-      : api.filePreviewURL(nodeID, signal),
+      : kind === 'image' && xDriveFileUsesRawCompatibilityPreview(fileName ?? '')
+        ? api.mediaAnalysisPreviewURL(nodeID, signal, revision)
+        : api.filePreviewURL(nodeID, signal),
     setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => api.setMediaFavoriteBatch(nodeIDs, favorite),
     addTagsBatch: (nodeIDs, tags) => api.addMediaTagsBatch(nodeIDs, tags),

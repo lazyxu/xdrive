@@ -62,6 +62,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
 
   useEffect(() => {
     const generation = ++generationRef.current
+    const requestController = new AbortController()
     const ownedURLs = new Set<string>()
     const releasedURLs = new Set<string>()
     const startedRoles = new Set<ImageRole>()
@@ -105,7 +106,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       }
       // A slow ticket/original must not delay the low-resolution first frame.
       start('original', currentLoaders.loadPreviewURL
-        ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind) : undefined)
+        ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind, requestController.signal) : undefined)
       start('thumbnail', currentLoaders.loadImagePreview
         ? () => currentLoaders.loadImagePreview!(currentLoaders.target) : undefined)
     }
@@ -113,6 +114,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     acquireAvailableSources()
     return () => {
       generationRef.current += 1
+      requestController.abort()
       if (acquireSourcesRef.current === acquireAvailableSources) acquireSourcesRef.current = null
       for (const url of ownedURLs) release(url)
     }

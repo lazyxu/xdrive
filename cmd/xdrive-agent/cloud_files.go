@@ -2659,6 +2659,18 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 	})
 }
 
+func (c *agentController) CloudMediaAnalysisPreview(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	data, contentType, err := cli.MediaAnalysisPreview(ctx, nodeID)
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	return agentMediaThumbnail{ContentType: contentType, Data: data}, nil
+}
+
 func (c *agentController) CloudPutMediaVideoPoster(
 	ctx context.Context,
 	nodeID, revision uint64,

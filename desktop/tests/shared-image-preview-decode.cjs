@@ -354,3 +354,41 @@ test('a thumbnail loader supplied later for the same identity shows the first fr
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('closing or changing the RAW preview source aborts its pending high-resolution request', async () => {
+  const first = deferred()
+  const second = deferred()
+  const requestedSignals = []
+  const loadPreviewURL = (_target, _kind, signal) => {
+    requestedSignals.push(signal)
+    return requestedSignals.length === 1 ? first.promise : second.promise
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: { ...target, name: 'a.dng', revision: 1 },
+        loadPreviewURL,
+      }))
+    })
+    assert.equal(requestedSignals.length, 1)
+    assert.equal(requestedSignals[0].aborted, false)
+    await act(async () => {
+      renderer.update(React.createElement(XDriveFilePreviewSurface, {
+        target: { ...target, id: 8, name: 'b.nef', revision: 2 },
+        loadPreviewURL,
+      }))
+    })
+    assert.equal(requestedSignals[0].aborted, true, 'switching RAW source must cancel discarded GET')
+    assert.equal(requestedSignals.length, 2)
+    assert.equal(requestedSignals[1].aborted, false)
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.equal(requestedSignals[1].aborted, true, 'closing must cancel the active RAW GET')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    first.resolve(null)
+    second.resolve(null)
+  }
+})

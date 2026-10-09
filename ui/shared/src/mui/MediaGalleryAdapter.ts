@@ -208,6 +208,8 @@ export interface XDriveMediaGalleryPort {
     nodeID: number,
     kind: 'image' | 'video' | 'live_photo',
     signal?: AbortSignal,
+    fileName?: string,
+    revision?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<string>>
   saveVideoPoster?: (
     nodeID: number,
@@ -505,7 +507,7 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     loadPreviewURL: port.loadPreviewURL
-      ? (nodeID, kind, signal) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind, signal))
+      ? (nodeID, kind, signal, fileName, revision) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind, signal, fileName, revision))
       : undefined,
     saveVideoPoster: port.saveVideoPoster
       ? async (nodeID, revision, poster, signal) => {
