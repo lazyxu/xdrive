@@ -476,6 +476,29 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminBaiduMapConfig = {
+  enabled: boolean
+  configured: boolean
+  source: 'environment' | 'saved'
+  editable: boolean
+  requires_restart: boolean
+  revision: number
+  updated_at?: string
+}
+
+export type AgentAdminBaiduMapAKReveal = {
+  field: 'ak'
+  value: string
+  expires_in_seconds: number
+}
+
+export type AgentAdminBaiduMapUpdate = {
+  enabled: boolean
+  revision: number
+  ak?: string
+  clear_ak?: boolean
+}
+
 export type AgentServiceDependenciesSnapshot = {
   checked_at: string
   services: Array<{
@@ -1159,6 +1182,13 @@ export type AgentMediaDescription = {
   description: string
 }
 
+export type AgentBaiduMapProvider = {
+  provider: 'baidu-server-static'
+  enabled: boolean
+  attribution: string
+  privacy: string
+}
+
 export type AgentMediaThumbnail = {
   content_type: string
   data: ArrayBuffer
@@ -1811,6 +1841,18 @@ export class AgentIPCClient {
     return this.request<AgentMediaAlbum>('PATCH', '/v1/media/album/folder', {
       album_id: albumID, revision, folder_id: folderID,
     })
+  }
+
+  mediaBaiduMapProvider() {
+    return this.request<AgentBaiduMapProvider>('GET', '/v1/media/map-provider')
+  }
+
+  mediaBaiduStaticMap(latitude: number, longitude: number, zoom: number, width: number, height: number, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      lat: String(latitude), lng: String(longitude), zoom: String(zoom),
+      width: String(width), height: String(height),
+    })
+    return this.requestBinary(`/v1/media/baidu-static?${query.toString()}`, 12_000, signal)
   }
 
   mediaPlaces(limit = 24) {
@@ -2682,6 +2724,18 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
+  }
+
+  cloudRevealAdminBaiduMapAK(revision: number) {
+    return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminBaiduMapConfig() {
+    return this.request<AgentAdminBaiduMapConfig>('GET', '/v1/cloud/admin-baidu-map')
+  }
+
+  cloudSetAdminBaiduMapConfig(input: AgentAdminBaiduMapUpdate) {
+    return this.request<AgentAdminBaiduMapConfig>('PUT', '/v1/cloud/admin-baidu-map', input)
   }
 
   cloudAdminServices() {

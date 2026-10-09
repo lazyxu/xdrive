@@ -567,6 +567,30 @@ func (c *agentController) CloudBackgroundTaskActiveSummary(
 	return cli.BackgroundTaskActiveSummary(ctx)
 }
 
+func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revision uint64) (client.AdminBaiduMapAKReveal, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduMapAKReveal{}, err
+	}
+	return cli.RevealAdminBaiduMapAK(ctx, revision)
+}
+
+func (c *agentController) CloudAdminBaiduMapConfig(ctx context.Context) (client.AdminBaiduMapConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduMapConfig{}, err
+	}
+	return cli.AdminBaiduMapConfig(ctx)
+}
+
+func (c *agentController) CloudSetAdminBaiduMapConfig(ctx context.Context, input client.AdminBaiduMapUpdate) (client.AdminBaiduMapConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduMapConfig{}, err
+	}
+	return cli.UpdateAdminBaiduMapConfig(ctx, input)
+}
+
 func (c *agentController) CloudAdminServices(ctx context.Context) (client.ServiceDependenciesSnapshot, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
@@ -2224,6 +2248,28 @@ func (c *agentController) CloudMoveMediaAlbumToFolder(
 		return client.MediaAlbum{}, err
 	}
 	return cli.MoveMediaAlbumToFolder(ctx, albumID, revision, folderID)
+}
+
+func (c *agentController) CloudBaiduMapProvider(ctx context.Context) (client.BaiduMapProvider, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.BaiduMapProvider{}, err
+	}
+	return cli.MediaBaiduMapProvider(ctx)
+}
+
+func (c *agentController) CloudBaiduStaticMap(
+	ctx context.Context, lat, lng float64, zoom, width, height int,
+) (agentMediaThumbnail, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	bytes, err := cli.MediaBaiduStaticMap(ctx, lat, lng, zoom, width, height)
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	return agentMediaThumbnail{ContentType: "image/png", Data: bytes}, nil
 }
 
 func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]client.MediaPlaceFacet, error) {

@@ -19,7 +19,7 @@ const sharedGalleryMemories = read('ui', 'shared', 'src', 'mui', 'MediaGalleryMe
 const sharedGalleryCleanup = read('ui', 'shared', 'src', 'mui', 'MediaGalleryCleanup.tsx')
 const sharedGalleryPets = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPets.tsx')
 const sharedGalleryPlacesMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMap.tsx')
-const sharedGalleryPlacesMapModel = read('ui', 'shared', 'src', 'mui', 'MediaGalleryPlacesMapModel.ts')
+const sharedGalleryBaiduMap = read('ui', 'shared', 'src', 'mui', 'MediaGalleryBaiduStaticMap.tsx')
 const sharedGallerySelectionToolbar = read('ui', 'shared', 'src', 'mui', 'MediaGallerySelectionToolbar.tsx')
 const sharedGalleryFilmstrip = read('ui', 'shared', 'src', 'mui', 'MediaGalleryFilmstrip.tsx')
 const sharedGalleryViewer = read('ui', 'shared', 'src', 'mui', 'MediaGalleryViewer.tsx')
@@ -50,7 +50,7 @@ const sharedGallery = [
   sharedGalleryCleanup,
   sharedGalleryPets,
   sharedGalleryPlacesMap,
-  sharedGalleryPlacesMapModel,
+  sharedGalleryBaiduMap,
   sharedGallerySelectionToolbar,
   sharedGalleryFilmstrip,
   sharedGalleryViewer,
@@ -551,45 +551,49 @@ test('Gallery Trash and reliable media collections stay shared and evidence-base
   }
 })
 
-test('Gallery Places map is shared, local-first, and bounded to compact facets', () => {
+test('Gallery Places renders only Baidu Server map with no offline fallback', () => {
   for (const token of [
     '<XDriveMediaGalleryPlacesMap',
     'placesExpandedRef',
     'source.listPlaces(placesExpandedRef.current ? 1000 : 24)',
     'places.slice(0, 24)',
     '地点列表',
+    '地图仅使用百度地图 Server API',
   ]) {
     assert.ok(sharedGalleryMain.includes(token), `Gallery map wiring missing: ${token}`)
   }
-
   for (const token of [
     'data-xdrive-gallery-places-map',
+    '仅使用百度地图 Server API',
+    '<XDriveMediaGalleryBaiduStaticMap',
+    'getBaiduMapProvider',
+    'loadBaiduStaticMap',
+    '选择地图地点',
+    '查看此地点照片',
+  ]) {
+    assert.ok(sharedGalleryPlacesMap.includes(token), `Baidu-only Places missing: ${token}`)
+  }
+  for (const obsolete of [
+    'WORLD_OUTLINES',
+    'xDriveMediaPlacesCluster',
+    'xDriveMediaPlacesProject',
+    'xDriveMediaPlacesPanViewport',
+    'component="svg"',
+    '内置简化地理底图',
     '本地 GPS 聚合',
     '不请求在线地图瓦片',
-    'xDriveMediaPlacesCluster',
-    'xDriveMediaPlacesFitViewport',
-    'xDriveMediaPlacesPanViewport',
-    'ResizeObserver',
-    'onPointerDown',
-    'onWheel',
   ]) {
-    assert.ok(sharedGalleryPlacesMap.includes(token), `shared Places map missing: ${token}`)
+    assert.equal(sharedGalleryPlacesMap.includes(obsolete), false, `obsolete offline map: ${obsolete}`)
   }
-
-  for (const token of [
-    'xDriveMediaPlacesProject',
-    'xDriveMediaPlacesCluster',
-    'xDriveMediaPlacesFitViewport',
-    'xDriveMediaPlacesNormalizeLongitude',
-  ]) {
-    assert.ok(sharedGalleryPlacesMapModel.includes(token), `Places map model missing: ${token}`)
-  }
-
-  assert.equal(sharedGalleryPlacesMap.includes('tile.openstreetmap'), false)
-  assert.equal(sharedGalleryPlacesMap.includes('maps.google'), false)
-  assert.equal(sharedGalleryPlacesMap.includes('mapbox'), false)
-  assert.equal(sharedGalleryPlacesMap.includes('https://'), false)
+  assert.ok(sharedGalleryBaiduMap.includes('百度地图未启用'))
+  assert.ok(sharedGalleryBaiduMap.includes('百度地图加载失败'))
+  assert.ok(sharedGalleryBaiduMap.includes('ProviderResult'))
+  assert.ok(sharedGalleryBaiduMap.includes('AbortController'))
+  assert.ok(sharedGalleryBaiduMap.includes('URL.revokeObjectURL'))
+  assert.equal(sharedGalleryBaiduMap.includes('return null'), false)
+  assert.equal(sharedGalleryBaiduMap.includes('本地地图'), false)
   assert.equal(sharedGalleryPlacesMap.includes('http://'), false)
+  assert.equal(sharedGalleryPlacesMap.includes('https://'), false)
 })
 
 test('Live Photo is one press-and-hold Gallery surface', () => {
@@ -998,8 +1002,7 @@ test('Gallery contracts are node-level and connector-neutral', () => {
   assert.match(sharedModels, /face_count: number/)
   assert.match(sharedModels, /attribution\?: string/)
   assert.match(sharedModels, /attribution_url\?: string/)
-  assert.match(sharedGallery, /按本地 GPS 坐标近似聚合，不使用在线地理服务/)
-  assert.match(sharedGallery, /地点名称来自本地 GeoNames 数据/)
+  assert.match(sharedGallery, /地图仅使用百度地图 Server API/)
   assert.match(sharedGallery, /待确认建议/)
   assert.match(sharedGallery, /本地人脸聚类快照；确认后成为长期人物/)
   assert.match(sharedGallery, /暂不处理/)

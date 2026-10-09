@@ -65,6 +65,15 @@ export function createDesktopMediaGalleryDataSource(
     moveAlbumToFolder: (albumID, revision, folderID) =>
       agent.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
+    getBaiduMapProvider: () => agent.getBaiduMapProvider(),
+    loadBaiduStaticMap: async (input, signal) => {
+      const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
+        agent.getBaiduStaticMap(input.latitude, input.longitude, input.zoom,
+          input.width, input.height, requestID),
+      )
+      if (!result.ok) return result
+      return { ok: true as const, data: new Blob([result.data.data], { type: 'image/png' }) }
+    },
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       agent.getMediaMemories(anchorDate, limit, timeZone),
     listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>

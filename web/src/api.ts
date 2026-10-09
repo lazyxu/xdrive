@@ -1,3 +1,4 @@
+import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot } from '../../ui/shared/src'
 import type {
   AdminUser,
@@ -628,6 +629,25 @@ export class XDriveApi {
     return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
   }
 
+  adminBaiduMapConfig() {
+    return this.request<XDriveBaiduMapAdminConfig>('/api/v1/admin/services/baidu-map')
+  }
+
+  adminRevealBaiduMapAK(revision: number) {
+    return this.request<XDriveBaiduMapAKReveal>('/api/v1/admin/services/baidu-map/reveal', {
+      method: 'POST',
+      body: JSON.stringify({ revision }),
+      cache: 'no-store',
+    })
+  }
+
+  adminSaveBaiduMapConfig(input: XDriveBaiduMapAdminUpdate) {
+    return this.request<XDriveBaiduMapAdminConfig>('/api/v1/admin/services/baidu-map', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    })
+  }
+
   adminServerUpdate() {
     return this.request<XDriveServerUpdateState>('/api/v1/admin/update')
   }
@@ -971,6 +991,36 @@ export class XDriveApi {
         body: JSON.stringify({ folder_id: folderID }),
       },
     )
+  }
+
+  mediaBaiduMapProvider() {
+    return this.request<XDriveBaiduMapProviderInfo>('/api/v1/media/places/map-provider')
+  }
+
+  async mediaBaiduStaticMap(input: XDriveBaiduStaticMapRequest, signal?: AbortSignal): Promise<Blob> {
+    const query = new URLSearchParams({
+      lat: String(input.latitude), lng: String(input.longitude),
+      zoom: String(input.zoom), width: String(input.width), height: String(input.height),
+    })
+    const path = `/api/v1/media/places/baidu-static?${query.toString()}`
+    await this.ensureFresh(signal)
+    const requestImage = () => fetch(`${API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${this.session.accessToken}` },
+      cache: 'no-store',
+      signal,
+    })
+    let response = await requestImage()
+    if (response.status === 401 && this.session.refreshToken && !signal?.aborted) {
+      await this.refresh(true, signal)
+      response = await requestImage()
+    }
+    if (!response.ok) throw new ApiError(response.status, '百度地图加载失败')
+    if ((response.headers.get('Content-Type') || '').split(';', 1)[0].trim() !== 'image/png') {
+      throw new Error('百度地图返回了无效的图片格式')
+    }
+    const blob = await response.blob()
+    if (blob.size > 3 * 1024 * 1024 || !blob.size) throw new Error('百度地图图片大小无效')
+    return blob
   }
 
   mediaPlaces(limit = 24) {

@@ -613,36 +613,18 @@ Gallery Trash keeps its Phase-4 capability boundary in the new Inspector. Delete
 may show thumbnails and indexed metadata, but Favorite/tag/people/description/album
 mutations and original Preview remain unavailable.
 
-Places is already implemented on the local GPS/GeoNames projection as described in
-Phase 7 below. Further map usability and scale work is a follow-up, not a new Places
-implementation.
+Places metadata (GPS faceting and optional GeoNames location labels) remains local and is separate from **map rendering**. The map provider is exclusively Baidu Server API. See `docs/baidu-map-server-api.md` for operational and failure contracts.
 
+## Phase 7 — Map Places: Baidu Server API only (2026-10-10 decision)
 
-## Phase 7 — privacy-safe Map Places
+Gallery Places on Web/Desktop/Mobile Web uses one shared map component backed solely by Baidu's static map Server API, proxied by the authenticated xDrive Server. There is **no** local SVG world outline/graticule renderer, fallback tile service, or automatic fallback on network errors. With no valid Server AK, disabled provider, old Agent, upstream failure or quota exhaustion, the map region explicitly reports unavailability; the nearby plain-text location list and existing photo filtering remain usable.
 
-Places now has one shared Web/Desktop map surface over the existing local GPS/GeoNames
-facet projection. Entering **地点** expands only the compact place-facet query from the
-normal 24-card preview to at most 1000 facets; it does not fetch or materialize photo
-rows. The card list remains capped to the first 24 entries for a compact, accessible
-list alongside the spatial view.
-
-Map interaction and clustering live entirely in `ui/shared`:
-
-- longitude wrapping and fit-to-data handle collections around the ±180° dateline;
-- zoom-level grid clustering operates on compact `MediaPlaceFacet` values;
-- pointer drag, wheel/button zoom, reset-to-fit, keyboard cluster activation, and
-  direct opening of a single Place reuse the existing Place filter contract;
-- clicking a multi-place cluster zooms the map instead of issuing a media query.
-
-The initial basemap is an embedded simplified geographic layer with graticules. It does
-not request Google Maps, Mapbox, OpenStreetMap, or another online tile service, so
-opening a user's GPS photo library does not disclose the viewed photo locations to an
-external map provider. A future self-hosted/local tile provider may be added behind a
-shared provider adapter without changing Gallery Place identity or platform adapters.
-
-Server and Desktop Agent accept up to 1000 compact Place facets for this surface while
-keeping the ordinary default at 24. Web/Desktop transport code remains otherwise
-unchanged.
+- A Places visit expands only the compact facet query from the normal 24-card preview to at most 1000 facets; it does not fetch every photo row. The separate location-card list remains limited to 24.
+- A searchable MUI location selector chooses a single latitude/longitude and loads one Baidu server-side static image; zoom and refresh are bounded user actions. View-location-photos opens the existing Place filter.
+- Original EXIF GPS remains WGS84; the server proxy sends `coordtype=wgs84ll` and supplies a secret Server AK. No token or Baidu upstream URL is sent into Web/Desktop.
+- **No offline map rendering:** the former `MediaGalleryPlacesMapModel` local projection/cluster helpers and SVG basemap are retired. Do not reintroduce them as a failure path, or swap to other map providers.
+- GeoNames is optional for place *names only*, not a map renderer. It cannot substitute for a failed Baidu map call.
+- Baidu Static Map supports snapshots and button zoom, not true interactive tiled drag/tilt; further map interaction requires official Baidu API design and separate acceptance.
 
 
 ## Phase 8 — Smart Search: visual labels + OCR foundation

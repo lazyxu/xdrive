@@ -20,6 +20,8 @@ type Config struct {
 	MaxUploadBytes               int64
 	SourceRunFailureRetention    time.Duration
 	PhotoPlaceGeoNamesDir        string
+	BaiduMapAK                   string
+	BaiduMapEnabled              bool
 	PhotoPlaceMaxDistanceKM      float64
 	PhotoFaceAnalyzerSocket      string
 	PhotoFaceAnalyzerToken       string
@@ -49,6 +51,7 @@ func Load() (Config, error) {
 		MaxUploadBytes:               20 << 30,
 		SourceRunFailureRetention:    180 * 24 * time.Hour,
 		PhotoPlaceGeoNamesDir:        strings.TrimSpace(os.Getenv("XD_PHOTO_PLACE_GEONAMES_DIR")),
+		BaiduMapAK:                   strings.TrimSpace(os.Getenv("XD_BAIDU_MAP_AK")),
 		PhotoPlaceMaxDistanceKM:      100,
 		PhotoFaceAnalyzerSocket:      strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_SOCKET")),
 		PhotoFaceAnalyzerToken:       strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_TOKEN")),
@@ -94,6 +97,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid XD_PHOTO_PLACE_MAX_DISTANCE_KM %q; expected >0 and <=500", v)
 		}
 		cfg.PhotoPlaceMaxDistanceKM = distance
+	}
+	if raw := strings.TrimSpace(os.Getenv("XD_BAIDU_MAP_ENABLED")); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid XD_BAIDU_MAP_ENABLED; use true or false")
+		}
+		cfg.BaiduMapEnabled = enabled
 	}
 	if cfg.PhotoFacePreviewBaseURL != "" {
 		baseURL, err := normalizeInternalHTTPBaseURL(cfg.PhotoFacePreviewBaseURL)

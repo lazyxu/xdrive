@@ -37,7 +37,7 @@ func TestAdminServiceDependenciesFailClosed(t *testing.T) {
 		"photo-smart":    "disabled",
 		"photo-semantic": "disabled",
 		"geonames":       "disabled",
-		"map-tiles":      "planned",
+		"baidu-map":      "disabled",
 	}
 	for _, item := range response.Services {
 		if want, ok := expected[item.ID]; !ok || item.Status != want {

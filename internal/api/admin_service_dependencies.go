@@ -39,9 +39,25 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		{ID: "photo-smart", Group: "intelligence", Label: "动物／物体识别与 OCR", Status: "disabled", Detail: "未配置本地智能识别分析器"},
 		{ID: "photo-semantic", Group: "intelligence", Label: "图片语义搜索", Status: "disabled", Detail: "未配置本地语义分析器"},
 		{ID: "geonames", Group: "location", Label: "GeoNames 离线地名", Status: "disabled", Detail: "未配置离线地名数据"},
-		{ID: "map-tiles", Group: "location", Label: "地图瓦片 Provider", Status: "planned", Detail: "在线／自托管瓦片尚未接入；现有 Places 本地地图不受影响"},
+		{ID: "baidu-map", Group: "location", Label: "百度地图 Server API", Status: "disabled", Detail: "尚未启用百度地图；不使用其他地图底图"},
 	}
 
+	cfg, configErr := s.effectiveBaiduMapConfig(ctx)
+	switch {
+	case configErr != nil:
+		services[7].Status = "unavailable"
+		services[7].Detail = "百度地图配置无法读取，请检查加密密钥或数据库"
+	case cfg.Enabled && cfg.Configured:
+		services[7].Status = "unknown"
+		services[7].Detail = "百度地图 AK 已配置且启用，按需取图验证，不消耗额外 API 配额"
+		services[7].Version = "Static Map v2 · WGS84"
+	case cfg.Enabled && !cfg.Configured:
+		services[7].Status = "disabled"
+		services[7].Detail = "尚未填写百度地图 Server AK"
+	default:
+		services[7].Status = "disabled"
+		services[7].Detail = "百度地图未启用；不会回退到其他地图"
+	}
 	if s.PhotoPlaceResolver != nil {
 		services[6].Status = "ready"
 		services[6].Detail = "离线地名索引已加载"

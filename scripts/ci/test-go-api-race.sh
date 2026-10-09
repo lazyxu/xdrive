@@ -1,12 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[ci] internal/api race suite: timeout=30m count=1 json=enabled"
+# Integration tests open independent PostgreSQL pools; the original single
+# long-lived Go test process reproducibly exhausted PostgreSQL connections
+# (SQLSTATE 53300). Keep every test and full race instrumentation, but launch
+# four sequential test processes to release old SQL pools at each boundary.
+# Concurrency INSIDE each test is unchanged.
+shards=(
+  '^(Test[A-F]|Example|Fuzz)'
+  '^Test[G-M]'
+  '^Test[N-S]'
+  '^Test[T-Z]'
+)
+mapfile -t listed < <(go test -race -mod=readonly -list '^(Test|Example|Fuzz)' ./internal/api |
+  grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' || true)
+if (( ${#listed[@]} == 0 )); then
+  echo "[ci] ERROR: no internal/api tests were discovered" >&2
+  exit 1
+fi
+for name in "${listed[@]}"; do
+  matched=0
+  for selector in "${shards[@]}"; do
+    if [[ "$name" =~ $selector ]]; then
+      ((matched+=1))
+    fi
+  done
+  if (( matched != 1 )); then
+    echo "[ci] ERROR: $name matched $matched shards, expected exactly one" >&2
+    exit 1
+  fi
+done
 
-set +e
-go test -race -timeout=30m -count=1 -json ./internal/api
-status=$?
-set -e
+echo "[ci] internal/api race: ${#listed[@]} tests; four sequential processes; timeout=30m each"
+status=0
+for i in "${!shards[@]}"; do
+  echo "[ci] start shard $((i + 1))/${#shards[@]}: ${shards[i]}"
+  set +e
+  go test -race -timeout=30m -count=1 -json -run "${shards[i]}" ./internal/api
+  status=$?
+  set -e
+  if (( status != 0 )); then
+    echo "[ci] race test shard $((i + 1)) failed" >&2
+    break
+  fi
+done
 
 if [[ "$status" -ne 0 ]]; then
   echo "[ci] internal/api failed; collecting runner and PostgreSQL diagnostics" >&2

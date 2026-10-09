@@ -81,6 +81,9 @@ import {
   type AgentCloudFileMediaDetails,
   type AgentBackgroundTask,
   type AgentBackgroundTaskPage,
+  type AgentAdminBaiduMapAKReveal,
+  type AgentAdminBaiduMapConfig,
+  type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
   type AgentBackgroundTaskActiveSummary,
   type AgentBackgroundTaskControlResult,
@@ -144,6 +147,7 @@ import {
   type AgentMediaEditRecipeInput,
   type AgentMediaCreativeGeneration,
   type AgentMediaCreativeInput,
+  type AgentBaiduMapProvider,
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentCreateSourceInput,
@@ -3432,6 +3436,30 @@ function registerIPCHandlers() {
     }, false),
   )
 
+  ipcMain.handle('agent:get-baidu-map-provider', () =>
+    runAgentAction<AgentBaiduMapProvider>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'baidu-static-map')
+      return requireAgentClient().mediaBaiduMapProvider()
+    }, false),
+  )
+  ipcMain.handle('agent:get-baidu-static-map', (
+    event, lat: unknown, lng: unknown, zoom: unknown, width: unknown, height: unknown, requestID: unknown,
+  ) => runAgentAction<AgentMediaThumbnail>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'baidu-static-map')
+    if (typeof lat !== 'number' || !Number.isFinite(lat) ||
+        typeof lng !== 'number' || !Number.isFinite(lng) ||
+        typeof zoom !== 'number' || !Number.isSafeInteger(zoom) ||
+        typeof width !== 'number' || !Number.isSafeInteger(width) ||
+        typeof height !== 'number' || !Number.isSafeInteger(height) ||
+        lat < -85 || lat > 85 || lng < -180 || lng > 180 ||
+        zoom < 3 || zoom > 18 || width < 128 || width > 512 ||
+        height < 128 || height > 512) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid map parameters.')
+    }
+    return requireAgentClient().mediaBaiduStaticMap(lat, lng, zoom, width, height, signal)
+  }), false))
   ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown, reportProgress: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {
@@ -4211,6 +4239,40 @@ function registerIPCHandlers() {
       refs,
       typeof targetParent === 'number' ? targetParent : 0,
     )
+  }, false))
+  ipcMain.handle('agent:cloud-reveal-admin-baidu-map-ak', (_event, revision: unknown) => runAgentAction<AgentAdminBaiduMapAKReveal>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map configuration revision.')
+    }
+    return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
+  }, false))
+  ipcMain.handle('agent:cloud-admin-baidu-map', () => runAgentAction<AgentAdminBaiduMapConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminBaiduMapConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-baidu-map', (_event, data: unknown) => runAgentAction<AgentAdminBaiduMapConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map settings.')
+    }
+    const input = data as Partial<AgentAdminBaiduMapUpdate>
+    if (typeof input.enabled !== 'boolean' ||
+        typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+        (input.ak !== undefined && (typeof input.ak !== 'string' || input.ak.length > 256)) ||
+        (input.clear_ak !== undefined && typeof input.clear_ak !== 'boolean') ||
+        (input.clear_ak === true && Boolean(input.ak))) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map settings.')
+    }
+    return requireAgentClient().cloudSetAdminBaiduMapConfig({
+      enabled: input.enabled,
+      revision: input.revision,
+      ...(input.ak ? { ak: input.ak } : {}),
+      ...(input.clear_ak === true ? { clear_ak: true } : {}),
+    })
   }, false))
   ipcMain.handle('agent:cloud-admin-services', () => runAgentAction<AgentServiceDependenciesSnapshot>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

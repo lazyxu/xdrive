@@ -28,6 +28,10 @@ type Server struct {
 	SourceRunFailureRetention      time.Duration
 	ConnectorSecrets               *connectorsecret.Keyring
 	PhotoPlaceResolver             photointelligence.PlaceResolver
+	BaiduMapAK                     string
+	BaiduMapEnabled                bool
+	BaiduMapHTTPClient             *http.Client
+	baiduMapLimiter                baiduMapLimiter
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
@@ -217,6 +221,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)
+	authed.GET("/media/places/map-provider", s.mediaMapProviderStatus)
+	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
@@ -313,6 +319,9 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
+	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
+	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/background-tasks", s.adminListBackgroundTasks)
 	admin.GET("/background-tasks/page", s.adminListBackgroundTaskPage)

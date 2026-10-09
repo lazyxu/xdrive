@@ -942,6 +942,54 @@ func (c *Client) MoveMediaAlbumToFolder(
 	return out, err
 }
 
+type BaiduMapProvider struct {
+	Provider    string `json:"provider"`
+	Enabled     bool   `json:"enabled"`
+	Attribution string `json:"attribution"`
+	Privacy     string `json:"privacy"`
+}
+
+func (c *Client) MediaBaiduMapProvider(ctx context.Context) (BaiduMapProvider, error) {
+	var out BaiduMapProvider
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/map-provider", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaBaiduStaticMap(
+	ctx context.Context, lat, lng float64, zoom, width, height int,
+) ([]byte, error) {
+	values := url.Values{}
+	values.Set("lat", strconv.FormatFloat(lat, 'f', 6, 64))
+	values.Set("lng", strconv.FormatFloat(lng, 'f', 6, 64))
+	values.Set("zoom", strconv.Itoa(zoom))
+	values.Set("width", strconv.Itoa(width))
+	values.Set("height", strconv.Itoa(height))
+	req, err := c.request(ctx, http.MethodGet,
+		"/api/v1/media/places/baidu-static?"+values.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, responseError(resp)
+	}
+	if strings.TrimSpace(resp.Header.Get("Content-Type")) != "image/png" {
+		return nil, fmt.Errorf("unexpected static map content type")
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (3<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 8 || len(data) > 3<<20 {
+		return nil, fmt.Errorf("invalid static map size")
+	}
+	return data, nil
+}
+
 func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet, error) {
 	values := url.Values{}
 	if limit > 0 {
