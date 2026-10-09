@@ -81,7 +81,7 @@ test('media presentation uses the canonical field builder and resource membershi
   assert.match(details, /\['大小', formatMediaBytes\(item\.node\.size\)\]/)
   assert.match(details, /item\.resources && item\.resources\.length > 1/)
   assert.match(details, /asset_kind === 'live_photo'/)
-  assert.match(explorer, /mediaFileRows: Array<\[string, string\]>/)
+  assert.match(explorer, /mediaFileRows: Array<\[string, ReactNode\]>/)
   assert.match(explorer, /\['位置', propertiesDialogItem\.path/)
   assert.match(explorer, /\['Revision', String\(propertiesDialogItem\.revision/)
   assert.doesNotMatch(explorer.slice(explorer.indexOf('const mediaPropertiesEnabled'), explorer.indexOf('const mediaPropertiesKey')), /fetch\(|listItems\(/)

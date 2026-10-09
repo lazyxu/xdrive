@@ -74,9 +74,15 @@ It delivers ordinary mouse single click to Viewer for active, permitted media, a
 Open/Properties context menu, the **属性** label, and Properties that keeps Viewer mounted.
 Touch single-tap was already delivered. Trash keeps its restricted Properties behavior.
 
-The PR explicitly leaves FileExplorer's image/video/Live Photo Node/MediaItem adapter
-for a separate step. Do not mark cross-entry media Properties complete merely because
-Gallery and Web Viewer use the same label.
+The dependent [PR #1076](https://github.com/lazyxu/xdrive/pull/1076) was subsequently
+merged on 2026-10-09 at 03:09:26 UTC as
+[b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68](https://github.com/lazyxu/xdrive/commit/b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68).
+It provides the FileExplorer image/video/Live Photo MediaItem adapter and reuses
+the same Gallery Inspector on Web/Desktop, with version/session fencing and
+cancellable Desktop lookup. The shared media fields and implementation are
+verified by CI; physical-device acceptance is still a separate requirement.
+FileExplorer-specific Node ID, provenance and custom attributes are preserved
+as additional rows rather than duplicating the Gallery media-field formatter.
 
 [#1061](https://github.com/lazyxu/xdrive/pull/1061) was superseded by merged #1059;
 [#1062](https://github.com/lazyxu/xdrive/pull/1062) was covered by merged #1065.

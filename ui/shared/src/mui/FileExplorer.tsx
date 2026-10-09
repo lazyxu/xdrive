@@ -3669,13 +3669,18 @@ export function XDriveFileExplorer({
   const mediaPropertiesError = mediaPropertiesCurrent ? mediaPropertiesState.error : ''
   const mediaPropertiesItem = mediaPropertiesCurrent ? mediaPropertiesState.item : null
   const showMediaProperties = mediaPropertiesEnabled && !mediaPropertiesError
-  const mediaFileRows: Array<[string, string]> = propertiesDialogItem ? [
+  const mediaFileRows: Array<[string, ReactNode]> = propertiesDialogItem ? [
     ['位置', propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath],
     ['创建时间', propertiesDialogItem.createdAt ? new Date(propertiesDialogItem.createdAt).toLocaleString() : '—'],
     ['修改时间', propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—'],
     ...(propertiesDialogAvailability ? [['可用性', propertiesDialogAvailability.label] as [string, string]] : []),
     ...(propertiesDialogItem.sha256 ? [['SHA-256', propertiesDialogItem.sha256] as [string, string]] : []),
+    ...(propertiesDialogItem.properties ?? []).map((property): [string, ReactNode] => [
+      property.label, property.value,
+    ]),
     ['Revision', String(propertiesDialogItem.revision ?? '—')],
+    ['ID', String(propertiesDialogItem.id)],
+    ['来源', propertiesDialogSource],
   ] : []
 
   const selectedSize = useMemo(
