@@ -105,7 +105,13 @@ export function useXDriveFileExplorerOrganization({
     const operation = Promise.resolve()
       .then(action)
       .then((value) => {
-        if (lifecycleGenerationRef.current === lifecycleGeneration) after?.(value)
+        if (lifecycleGenerationRef.current === lifecycleGeneration) {
+          // The write has committed. A list request started while it was
+          // pending may still hold a pre-write snapshot.
+          refreshGenerationRef.current += 1
+          setLoading(false)
+          after?.(value)
+        }
         return value
       })
       .catch((error) => {
@@ -161,6 +167,10 @@ export function useXDriveFileExplorerOrganization({
         lifecycleGenerationRef.current !== lifecycleGeneration ||
         tagNodeRefreshGenerationRef.current !== refreshGeneration
       ) return
+      // The node-count query can itself overlap a general sidebar refresh.
+      // Once these newer counts are accepted, its older result must not win.
+      refreshGenerationRef.current += 1
+      setLoading(false)
       setTags(nextTags)
     } catch (error) {
       if (
@@ -195,6 +205,9 @@ export function useXDriveFileExplorerOrganization({
     const lifecycleGeneration = lifecycleGenerationRef.current
     const reorderGeneration = reorderGenerationRef.current + 1
     reorderGenerationRef.current = reorderGeneration
+    // Optimistic order is newer than any refresh already in flight.
+    refreshGenerationRef.current += 1
+    setLoading(false)
     const index = new Map(ids.map((id, position) => [id, position]))
     setSavedSearches((current) => [...current].sort(
       (a, b) => (index.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (index.get(b.id) ?? Number.MAX_SAFE_INTEGER),
@@ -206,6 +219,15 @@ export function useXDriveFileExplorerOrganization({
         if (lifecycleGenerationRef.current !== lifecycleGeneration) return
         try {
           await adapter.reorderSavedSearches(ids)
+          if (
+            lifecycleGenerationRef.current === lifecycleGeneration &&
+            reorderGenerationRef.current === reorderGeneration
+          ) {
+            // A refresh may have started while the reorder was being sent.
+            // Its snapshot cannot override the confirmed order either.
+            refreshGenerationRef.current += 1
+            setLoading(false)
+          }
         } catch (error) {
           if (
             lifecycleGenerationRef.current !== lifecycleGeneration ||

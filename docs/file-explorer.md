@@ -512,6 +512,7 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 - Smart Folders appear as a first-class Sidebar section and support activate, rename, replace with the current Search, delete and drag reorder.
 - Activating a Smart Folder calls the existing shared Search controller (`applySearch`) and keeps range loading, sort/group identity and stale-request fencing unchanged.
 - Smart Folders never copy nodes and never materialize a directory tree.
+- The shared Tags / Smart Folder Organization controller treats a successful create, update, delete, tag assignment or saved-search reorder as a newer state revision than any overlapping list refresh started before the write commits. A late older refresh must not erase newly created rows, resurrect deleted rows, revert accepted order, or regress tag membership counts. The optimistic saved-search order also invalidates a preexisting refresh, and a refresh started after a confirmed mutation remains free to update the list. Failed mutations must not invalidate a legitimate pending refresh; lifecycle/session reset continues to invalidate both mutations and refreshes.
 
 ### Column View
 
