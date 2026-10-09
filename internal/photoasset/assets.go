@@ -193,35 +193,13 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 	}
 	sort.Slice(desired, func(i, j int) bool { return desired[i].primaryID < desired[j].primaryID })
 
-	desiredPrimary := make([]uint64, 0, len(desired))
+	desiredPrimary := make(map[uint64]struct{}, len(desired))
 	for _, asset := range desired {
-		desiredPrimary = append(desiredPrimary, asset.primaryID)
+		desiredPrimary[asset.primaryID] = struct{}{}
 	}
-	// Soft-deleted nodes stay as frozen PhotoAsset/PhotoMetadata snapshots until
-	// permanent Node deletion cascades them away. Only stale assets whose
-	// primary node is still active are pruned here.
-	activePrimaryNodeIDs := tx.Model(&meta.Node{}).
-		Select("id").
-		Where("owner_id = ? AND deleted_at IS NULL", ownerID)
-	staleActive := tx.Where(
-		"owner_id = ? AND primary_node_id IN (?)",
-		ownerID,
-		activePrimaryNodeIDs,
-	)
-	if len(desiredPrimary) != 0 {
-		staleActive = staleActive.Where("primary_node_id NOT IN ?", desiredPrimary)
-	}
-	if err := staleActive.Delete(&meta.PhotoAsset{}).Error; err != nil {
+	byPrimary, err := loadAndPruneStalePhotoAssets(tx, ownerID, desiredPrimary)
+	if err != nil {
 		return nil, nil, err
-	}
-
-	var existing []meta.PhotoAsset
-	if err := tx.Where("owner_id = ?", ownerID).Find(&existing).Error; err != nil {
-		return nil, nil, err
-	}
-	byPrimary := make(map[uint64]meta.PhotoAsset, len(existing))
-	for _, row := range existing {
-		byPrimary[row.PrimaryNodeID] = row
 	}
 
 	nodeToAsset := make(map[uint64]uint64)
@@ -302,6 +280,52 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 		}
 	}
 	return desired, nodeToAsset, nil
+}
+
+// loadAndPruneStalePhotoAssets reuses the owner-scoped existing asset read,
+// replacing the unbounded primary_node_id NOT IN expansion with a bounded
+// in-memory membership check and 4,096-ID delete batches. A soft-deleted
+// primary Node is deliberately absent from the active set: its PhotoAsset,
+// PhotoMetadata, edits and user annotations remain frozen until hard deletion.
+func loadAndPruneStalePhotoAssets(
+	tx *gorm.DB,
+	ownerID uint64,
+	desiredPrimary map[uint64]struct{},
+) (map[uint64]meta.PhotoAsset, error) {
+	var existing []meta.PhotoAsset
+	if err := tx.Where("owner_id = ?", ownerID).Find(&existing).Error; err != nil {
+		return nil, err
+	}
+	var activePrimaryIDs []uint64
+	if err := tx.Table("xd_photo_assets AS a").
+		Joins("JOIN xd_nodes AS n ON n.id = a.primary_node_id").
+		Where("a.owner_id = ? AND n.owner_id = ? AND n.deleted_at IS NULL", ownerID, ownerID).
+		Pluck("n.id", &activePrimaryIDs).Error; err != nil {
+		return nil, err
+	}
+	active := make(map[uint64]struct{}, len(activePrimaryIDs))
+	for _, id := range activePrimaryIDs {
+		active[id] = struct{}{}
+	}
+	byPrimary := make(map[uint64]meta.PhotoAsset, len(existing))
+	staleIDs := make([]uint64, 0)
+	for _, asset := range existing {
+		_, activePrimary := active[asset.PrimaryNodeID]
+		_, desired := desiredPrimary[asset.PrimaryNodeID]
+		if activePrimary && !desired {
+			staleIDs = append(staleIDs, asset.ID)
+			continue
+		}
+		byPrimary[asset.PrimaryNodeID] = asset
+	}
+	for start := 0; start < len(staleIDs); start += photoAssetNodeBatchSize {
+		end := min(start+photoAssetNodeBatchSize, len(staleIDs))
+		if err := tx.Where("owner_id = ? AND id IN ?", ownerID, staleIDs[start:end]).
+			Delete(&meta.PhotoAsset{}).Error; err != nil {
+			return nil, err
+		}
+	}
+	return byPrimary, nil
 }
 
 func loadGroups(tx *gorm.DB, ownerID uint64) ([]meta.MediaGroup, map[uint64][]meta.MediaGroupItem, error) {
