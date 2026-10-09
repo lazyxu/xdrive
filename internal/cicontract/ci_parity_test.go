@@ -115,8 +115,15 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
 	)
+	photoFaceJob, ok := gitlab["photo-face-image"].(map[string]any)
+	if !ok {
+		t.Fatal("GitLab photo-face-image job is missing or malformed")
+	}
+	if got := photoFaceJob["timeout"]; got != "2h" {
+		t.Errorf("GitLab Photo Face job timeout=%v, want 2h", got)
+	}
 	requireRaw(t, "GitLab model prefetch soft timeout", gitlabRaw,
-		"timeout --signal=TERM --kill-after=30s 45m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
+		"timeout --signal=TERM --kill-after=30s 105m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))

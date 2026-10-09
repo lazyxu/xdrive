@@ -855,6 +855,7 @@ server-image:
 photo-face-image:
   image: $XDRIVE_CI_GO_IMAGE
   stage: test
+  timeout: 2h
   needs: []
   resource_group: xdrive-photo-face-image
   tags:
@@ -871,9 +872,9 @@ photo-face-image:
     - *ensure_linux_fetch_tools
     - *install_docker_cli_only
   script:
-    # Exit before the runner's 1h hard cutoff so cache:when:always can save
-    # compatible model .part files even if every download source is too slow.
-    - timeout --signal=TERM --kill-after=30s 45m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+    # Leave time below the 2h job limit for cache:when:always to save
+    # compatible model .part files even if every source is too slow.
+    - timeout --signal=TERM --kill-after=30s 105m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
   artifacts:
     name: "xdrive-photo-face-image-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days
