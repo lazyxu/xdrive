@@ -4,6 +4,22 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## Rejected 100k fold-only member-column projection (2026-10-10)
+
+**Status: Rejected / candidate fully reverted / documentation-only merge.** After merged #1191 proved fold-index build **588.936ms / 78.281MiB Go TotalAlloc** and the actual Web warm fold-ON gate remained red, a narrowly scoped candidate stripped cleanup-only favorite/tag/people/album columns from fold member queries. It still validated **all primary SHA-256, original PhotoResource and edit recipes**, and preserved user album membership semantics. The test compared three alternating legacy-vs-candidate full index builds on the **same** native PostgreSQL17 100k/115k/15k-Live and 2k-five-copy metadata-SHA fixture. Both produced **exactly identical sorted 10k-Node mapping JSON and full member index** in all 3 samples.
+
+**First invalid run** [37961556873](https://github.com/lazyxu/xdrive/actions/runs/37961556873) failed before any Go test because CI passed single-quoted health-check arguments to Docker. **Valid paired run** [37962084152](https://github.com/lazyxu/xdrive/actions/runs/37962084152) / [job 113927857331](https://github.com/lazyxu/xdrive/actions/runs/37962084152/job/113927857331) measured the actual experiment at source `33a3e7f156784a627cc032f6e1d9c3192642f1a2`:
+
+| Sample | Ordering | BEFORE index ms | AFTER candidate index ms | BEFORE alloc MiB | AFTER alloc MiB | Exact index/map? |
+|---|---|---:|---:|---:|---:|---|
+| 1 | legacy-then-candidate | 587.655 | 511.840 | 78.384 | 76.789 | Yes |
+| 2 | candidate-then-legacy | 558.298 | 524.006 | 77.939 | 76.887 | Yes |
+| 3 | legacy-then-candidate | 579.974 | 521.032 | 78.186 | 76.715 | Yes |
+
+**Same-run p50** BEFORE **579.974 ms**, candidate **521.032 ms**: saved only **58.942 ms / 10.163%**. Median Go TotalAlloc **78.186 → 76.789 MiB**; improvement in allocations is real but modest. Frozen acceptance required **≥30% AND ≥100 ms** elapsed reduction plus memory nonregression and exact indexes. **Rejected** because BOTH speedup conditions failed; no claim that backend browser cold/warm first paint improved.
+
+**Production rollback:** revert `media_folding.go` to fixed baseline without adding any fold-only query or test hook. Remove experiment-only Go test and branch-scoped GitHub/GitLab benchmark jobs in the final commit; keep **only** this rejection entry plus [raw n=3 source-exact evidence](performance-evidence/gallery-fold-member-projection-100k/ci-run-37962084152.json). The normal duplicate Cleanup member query, UI, HTTP, cache, DB, copy metadata and Go ctx cancellation remain byte-for-byte unchanged on `master`. This prevents repetition of a small-impact idea. Next optimization candidate should isolate index-heavy GORM resource/recipe identity construction or costly **408.233ms** timeline grouping, with a fresh same-run paired gate. Actual 100k Web ON time remains ~3s+, unoptimized.
+
 ## P0 100k verified Gallery duplicate-fold stage attribution (2026-10-10)
 
 **Status: Measured native 100k SQL stage baseline / no production optimization.** Actual 100k Web browser #1178 independently reproduced real warm fold-ON first-12 paint proxy **2,949.35ms / 3,177.45ms** in two exact-source CI runs (3/6 and 4/6 individual ON transitions breached provisional **3,000ms**). Fold-OFF warm p50 was **1,623.85 / 1,647.15ms**. Existing #1140 native SQL improved fold-ON first-range 2,772.366→1,480.912ms but the real UI path remains at risk.
