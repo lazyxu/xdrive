@@ -45,10 +45,19 @@ the default). It does **not** perform client-side reordering of the retained vie
 or add another renderer. Timeline group-index order must match item-range ordering;
 missing capture dates sort last. A semantic search remains relevance-ranked.
 
+**Original photo anchoring on resort** uses a transient optional
+`anchor_node_id` in the first Server range query. The Server computes the
+logical index from the same owner/album/filter conditions and stable timestamp
+plus Node ID tie breakers; it never loads the complete media set to locate the
+photo. Shared Web/Desktop virtual Grid/Timeline controllers then restore that
+logical index through their existing layout anchors. It is not a new pagination
+service or a permanent smart-album/Viewer query field. Missing, deleted or
+newly filtered-away originals fall back to the new collection beginning.
+
 **G03 is not complete** until one user-selected IANA timezone governs
 Timeline, captured-date filter boundaries, Memories and Viewer labels, and sort
-changes can restore the original media-item anchor rather than merely preserving
-the previous scroll offset. The remaining work is tracked in the
+the anchor behavior above is verified together with the selected timezone,
+including actual account scope and 10k/100k sparse-range acceptance. The remaining work is tracked in the
 [Gallery audit](gallery-ios-kfs-audit.md). Web/Desktop continue to share
 the same query model and platform adapters.
 

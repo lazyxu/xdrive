@@ -3902,6 +3902,14 @@ func (h *desktopIPCHandler) mediaLivePhotoMotionTicket(w http.ResponseWriter, r 
 
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {
 	var out client.MediaQuery
+	if raw := strings.TrimSpace(r.URL.Query().Get("anchor_node_id")); raw != "" {
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || id == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_anchor", "anchor_node_id must be a positive integer")
+			return client.MediaQuery{}, false
+		}
+		out.AnchorNodeID = id
+	}
 	out.SortBy = strings.TrimSpace(r.URL.Query().Get("sort_by"))
 	if out.SortBy != "" && out.SortBy != "captured" && out.SortBy != "added" {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_sort", "sort_by must be captured or added")

@@ -130,6 +130,7 @@ type mediaTimelineGroupSetsDTO struct {
 }
 
 type mediaItemRangeDTO struct {
+	AnchorIndex       *int64                     `json:"anchor_index,omitempty"`
 	Items             []mediaItemDTO             `json:"items"`
 	TotalCount        int64                      `json:"total_count"`
 	Offset            int                        `json:"offset"`
@@ -847,7 +848,18 @@ func (s *Server) queryMediaItemRange(
 		if itemErr != nil {
 			return mediaItemRangeDTO{}, itemErr
 		}
+		var anchorIndex *int64
+		if options.AnchorNodeID > 0 && offset == 0 {
+			for i, nodeID := range ranked {
+				if nodeID == options.AnchorNodeID {
+					position := int64(i)
+					anchorIndex = &position
+					break
+				}
+			}
+		}
 		return mediaItemRangeDTO{
+			AnchorIndex: anchorIndex,
 			Items:       items,
 			TotalCount:  int64(len(ranked)),
 			Offset:      offset,
@@ -870,7 +882,13 @@ func (s *Server) queryMediaItemRange(
 
 	var timelineGroups []mediaTimelineGroupDTO
 	var timelineGroupSets *mediaTimelineGroupSetsDTO
+	var anchorIndex *int64
 	if offset == 0 {
+		var anchorErr error
+		anchorIndex, anchorErr = mediaItemAnchorIndex(query, options)
+		if anchorErr != nil {
+			return mediaItemRangeDTO{}, anchorErr
+		}
 		sets, groupErr := queryMediaTimelineGroupSets(query, options)
 		if groupErr != nil {
 			return mediaItemRangeDTO{}, groupErr
@@ -884,6 +902,7 @@ func (s *Server) queryMediaItemRange(
 		return mediaItemRangeDTO{}, err
 	}
 	return mediaItemRangeDTO{
+		AnchorIndex:       anchorIndex,
 		Items:             items,
 		TotalCount:        totalCount,
 		Offset:            offset,
