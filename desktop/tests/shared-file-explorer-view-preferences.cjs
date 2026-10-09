@@ -38,7 +38,7 @@ test('shared FileExplorer uses dynamic Details and Grid metrics', () => {
     'const detailsNormalRowHeight = 36',
     'const detailsCompactRowHeight = 28',
     "viewPreferences.detailsDensity === 'compact'",
-    "const effectiveGridSize: XDriveFileExplorerGridSize = compactTouch ? 'medium' : viewPreferences.gridSize",
+    "const effectiveGridSize: XDriveFileExplorerGridSize = compactViewport ? 'medium' : viewPreferences.gridSize",
     'fileExplorerGridMetrics[effectiveGridSize]',
     'gridMetrics.minColumnWidth',
     'gridMetrics.minItemHeight',

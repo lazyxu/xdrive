@@ -1,0 +1,6335 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-09",
+  "scope": [
+    "M01",
+    "M02",
+    "M03",
+    "M49-maintenance"
+  ],
+  "implementationBase": "6d48604dd9948cd7d14ceb00a4921d282155a247",
+  "identityNote": "The initial work commit was amended for delivery. Dirty runs are identified by exact source hashes; the initial HEAD alone is not the tested source. Each suite retains its own source identity.",
+  "environment": {
+    "kind": "renderer-emulation",
+    "os": "Linux",
+    "browser": "Chromium 153.0.8010.0",
+    "node": "v24.19.0",
+    "browserArguments": [
+      "--no-sandbox",
+      "--single-process",
+      "--no-zygote"
+    ],
+    "data": "bounded fixtures, real shared components; full App served from actual Web build"
+  },
+  "before": {
+    "sourceCommit": "6d48604dd9948cd7d14ceb00a4921d282155a247",
+    "sourceDirty": false,
+    "sourceHashes": {
+      "FileExplorer.tsx": "64812d600352603a2d50e6deee509cbd4fbb8b995ea2cdf9bf25eac16170c99d",
+      "FileExplorerNavigationPane.tsx": "1378b365956e3fde9558ac51470f8e248b8f3677c8a762cdc6b2975b0e94ed2c",
+      "FileExplorerSearchFilters.tsx": "c7008c8b7ad5adc0c8d59c47f57dc9bd6cc48e90205511c919536dbeeb4e0911",
+      "FileExplorerTabs.tsx": "3bf4f35e1bfcbaff3c68983fdd4ff50e12ee5a1a3da81588988dc7d67d91919a",
+      "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b"
+    },
+    "browserVersion": "153.0.8010.0",
+    "passed": 52,
+    "failed": 48,
+    "checkCount": 100,
+    "failures": [
+      {
+        "name": "touch-360: no visible file tab strip",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "touch-360: internal tab shortcuts never call adapters",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-new"
+          },
+          {
+            "type": "tab-restore"
+          },
+          {
+            "type": "tab-next"
+          },
+          {
+            "type": "tab-previous"
+          },
+          {
+            "type": "tab-index",
+            "value": 0
+          },
+          {
+            "type": "tab-close"
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "touch-360: middle click never opens an internal tab",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-middle",
+            "value": 2
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "touch-360: item actions omit internal new-tab command",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "touch-360-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "touch-360: narrow return hides the tab strip again",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "touch-899: no visible file tab strip",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "touch-899: internal tab shortcuts never call adapters",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-new"
+          },
+          {
+            "type": "tab-restore"
+          },
+          {
+            "type": "tab-next"
+          },
+          {
+            "type": "tab-previous"
+          },
+          {
+            "type": "tab-index",
+            "value": 0
+          },
+          {
+            "type": "tab-close"
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "touch-899: middle click never opens an internal tab",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-middle",
+            "value": 2
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "touch-899: item actions omit internal new-tab command",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "touch-899-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "touch-899: narrow return hides the tab strip again",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-360: no visible file tab strip",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-360: internal tab shortcuts never call adapters",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-new"
+          },
+          {
+            "type": "tab-restore"
+          },
+          {
+            "type": "tab-next"
+          },
+          {
+            "type": "tab-previous"
+          },
+          {
+            "type": "tab-index",
+            "value": 0
+          },
+          {
+            "type": "tab-close"
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "mouse-360: middle click never opens an internal tab",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-middle",
+            "value": 2
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "mouse-360: item actions omit internal new-tab command",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-360-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "mouse-360: narrow return hides the tab strip again",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-899: no visible file tab strip",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-899: internal tab shortcuts never call adapters",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-new"
+          },
+          {
+            "type": "tab-restore"
+          },
+          {
+            "type": "tab-next"
+          },
+          {
+            "type": "tab-previous"
+          },
+          {
+            "type": "tab-index",
+            "value": 0
+          },
+          {
+            "type": "tab-close"
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "mouse-899: middle click never opens an internal tab",
+        "passed": false,
+        "actual": [
+          {
+            "type": "tab-middle",
+            "value": 2
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "mouse-899: item actions omit internal new-tab command",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "mouse-899-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "mouse-899: narrow return hides the tab strip again",
+        "passed": false,
+        "actual": true,
+        "expected": false
+      },
+      {
+        "name": "location-390x844: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: enabled location controls have actual 44px targets",
+        "passed": false,
+        "actual": [
+          {
+            "label": "排序和自定义侧边栏",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "回收站",
+            "width": 308,
+            "height": 32
+          },
+          {
+            "label": "折叠快速访问",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "固定工作目录",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "取消固定 固定工作目录",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠智能文件夹",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "工作图片",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "智能文件夹 工作图片 选项",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "项目文档",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "智能文件夹 项目文档 选项",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠标签",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "工作2",
+            "width": 308,
+            "height": 30
+          },
+          {
+            "label": "折叠收藏",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "收藏报告.txt",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "取消收藏 收藏报告.txt",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠最近使用",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "清空最近使用",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "最近报告.txt",
+            "width": 308,
+            "height": 30
+          },
+          {
+            "label": "折叠文件夹树",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "展开 我的文件",
+            "width": 26,
+            "height": 28
+          },
+          {
+            "label": "我的文件",
+            "width": 274,
+            "height": 30
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "location-390x844: level 1 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 2 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 3 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 4 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 5 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 6 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-390x844: level 7 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: enabled location controls have actual 44px targets",
+        "passed": false,
+        "actual": [
+          {
+            "label": "排序和自定义侧边栏",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "回收站",
+            "width": 308,
+            "height": 32
+          },
+          {
+            "label": "折叠快速访问",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "固定工作目录",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "取消固定 固定工作目录",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠智能文件夹",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "工作图片",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "智能文件夹 工作图片 选项",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "项目文档",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "智能文件夹 项目文档 选项",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠标签",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "工作2",
+            "width": 308,
+            "height": 30
+          },
+          {
+            "label": "折叠收藏",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "收藏报告.txt",
+            "width": 280,
+            "height": 30
+          },
+          {
+            "label": "取消收藏 收藏报告.txt",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "折叠最近使用",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "清空最近使用",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "最近报告.txt",
+            "width": 308,
+            "height": 30
+          },
+          {
+            "label": "折叠文件夹树",
+            "width": 26,
+            "height": 26
+          },
+          {
+            "label": "展开 我的文件",
+            "width": 26,
+            "height": 28
+          },
+          {
+            "label": "我的文件",
+            "width": 274,
+            "height": 30
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "location-844x390: level 1 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 2 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 3 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 4 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 5 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 6 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "location-844x390: level 7 distinct touch targets",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "filters-touch-360x780: filter trigger is visible and reachable",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "filters-touch-844x390: filter trigger is visible and reachable",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "filters-mouse-899x700: filter trigger has 44px actual target",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "filters-mouse-899x700: mobile filter is an accessible dialog",
+        "passed": false,
+        "actual": 0,
+        "expected": 1
+      },
+      {
+        "name": "filters-mouse-899x700: filter controls have 44px touch targets",
+        "passed": false,
+        "actual": [
+          {
+            "label": "保存搜索",
+            "width": 86,
+            "height": 30.75
+          },
+          {
+            "label": "清除全部",
+            "width": 64,
+            "height": 30.75
+          },
+          {
+            "label": "类型：图片",
+            "width": 97,
+            "height": 24
+          },
+          {
+            "label": "修改时间",
+            "width": 68,
+            "height": 24
+          },
+          {
+            "label": "大小",
+            "width": 42,
+            "height": 24
+          },
+          {
+            "label": "同步文件夹",
+            "width": 81,
+            "height": 24
+          },
+          {
+            "label": "标签",
+            "width": 42,
+            "height": 24
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "filters-mouse-899x700",
+        "passed": false,
+        "error": "locator.click: Timeout 4500ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '关闭筛选', exact: true })\u001b[22m\n"
+      }
+    ],
+    "errors": [],
+    "samples": {
+      "touch-360-toolbar-targets": [
+        {
+          "label": "位置",
+          "x": 8,
+          "right": 52,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "上传文件",
+          "x": 56,
+          "right": 100,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "视图",
+          "x": 144,
+          "right": 188,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序与分组",
+          "x": 192,
+          "right": 236,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "选择",
+          "x": 240,
+          "right": 304,
+          "width": 64,
+          "height": 44
+        },
+        {
+          "label": "更多文件操作",
+          "x": 308,
+          "right": 352,
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "touch-360-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "touch-899-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "mouse-360-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "mouse-899-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "location-390x844-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "location-390x844-control-targets": [
+        {
+          "label": "关闭位置",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序和自定义侧边栏",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "回收站",
+          "width": 308,
+          "height": 32
+        },
+        {
+          "label": "折叠快速访问",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "固定工作目录",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "取消固定 固定工作目录",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠智能文件夹",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "工作图片",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "智能文件夹 工作图片 选项",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "项目文档",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "智能文件夹 项目文档 选项",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠标签",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "工作2",
+          "width": 308,
+          "height": 30
+        },
+        {
+          "label": "折叠收藏",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "收藏报告.txt",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "取消收藏 收藏报告.txt",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠最近使用",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "清空最近使用",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "最近报告.txt",
+          "width": 308,
+          "height": 30
+        },
+        {
+          "label": "折叠文件夹树",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "展开 我的文件",
+          "width": 26,
+          "height": 28
+        },
+        {
+          "label": "我的文件",
+          "width": 274,
+          "height": 30
+        }
+      ],
+      "location-844x390-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 36
+        },
+        {
+          "label": "回收站",
+          "x": 36
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 36
+        }
+      ],
+      "location-844x390-control-targets": [
+        {
+          "label": "关闭位置",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序和自定义侧边栏",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "回收站",
+          "width": 308,
+          "height": 32
+        },
+        {
+          "label": "折叠快速访问",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "固定工作目录",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "取消固定 固定工作目录",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠智能文件夹",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "工作图片",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "智能文件夹 工作图片 选项",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "项目文档",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "智能文件夹 项目文档 选项",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠标签",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "工作2",
+          "width": 308,
+          "height": 30
+        },
+        {
+          "label": "折叠收藏",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "收藏报告.txt",
+          "width": 280,
+          "height": 30
+        },
+        {
+          "label": "取消收藏 收藏报告.txt",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "折叠最近使用",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "清空最近使用",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "最近报告.txt",
+          "width": 308,
+          "height": 30
+        },
+        {
+          "label": "折叠文件夹树",
+          "width": 26,
+          "height": 26
+        },
+        {
+          "label": "展开 我的文件",
+          "width": 26,
+          "height": 28
+        },
+        {
+          "label": "我的文件",
+          "width": 274,
+          "height": 30
+        }
+      ]
+    }
+  },
+  "reviewedBefore": {
+    "sourceCommit": "4c28a9ffb6af908893785ea4c5aaafe0528200e9",
+    "sourceDirty": true,
+    "sourceHashes": {
+      "FileExplorer.tsx": "e365c3f64908cdd28fd7ef7c8f07eea1f1031b3075109f62475daef8559b0cfd",
+      "FileExplorerNavigationPane.tsx": "a36f0b32365afa60b24f4e0d91ee7c97170ba1e45da416b9e3f3ce84268bcf76",
+      "FileExplorerSearchFilters.tsx": "c59f5a9babef48efe36e384d24dbc48ed09c69dcc6e4317bf97b9d96d82d4fbc",
+      "FileExplorerTabs.tsx": "3bf4f35e1bfcbaff3c68983fdd4ff50e12ee5a1a3da81588988dc7d67d91919a",
+      "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b"
+    },
+    "browserVersion": "153.0.8010.0",
+    "passed": 11,
+    "failed": 11,
+    "checkCount": 22,
+    "failures": [
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: inline button key never opens the background file or Quick Look",
+        "passed": false,
+        "actual": [
+          {
+            "type": "open",
+            "value": 1000
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: native trigger keyboard activation opens its filter",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: inline button key never opens the background file or Quick Look",
+        "passed": false,
+        "actual": [
+          {
+            "type": "quick-look",
+            "value": 1000
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: native trigger keyboard activation opens its filter",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: modal key never opens the background file or Quick Look",
+        "passed": false,
+        "actual": [
+          {
+            "type": "open",
+            "value": 1000
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: native field keyboard activation opens its menu",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: modal key never opens the background file or Quick Look",
+        "passed": false,
+        "actual": [
+          {
+            "type": "quick-look",
+            "value": 1000
+          }
+        ],
+        "expected": []
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: native field keyboard activation opens its menu",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-responsive-focus: new visible trigger receives focus after slot remount",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-narrow-mouse-reachability: complete 44px filter target fits viewport and clipping ancestors",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-filter-narrow-mouse-reachability: native pointer hit resolves to the filter before any auto-scroll",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      }
+    ],
+    "errors": [],
+    "samples": {
+      "reviewed-filter-responsive-focus-active-element": {
+        "tag": "BODY",
+        "label": null,
+        "text": ""
+      },
+      "reviewed-filter-narrow-mouse-reachability": {
+        "rect": {
+          "x": 366,
+          "y": 49,
+          "width": 44,
+          "height": 44,
+          "right": 410,
+          "bottom": 93
+        },
+        "clip": {
+          "left": 0,
+          "top": 45,
+          "right": 360,
+          "bottom": 97
+        },
+        "fullTargetVisible": false,
+        "centerReceivesPointer": false
+      },
+      "reviewed-filter-narrow-mouse-reachability-initial": {
+        "viewport": {
+          "width": 360,
+          "height": 780
+        },
+        "documentWidth": 360,
+        "state": {
+          "crumbs": [
+            1
+          ],
+          "activeTabID": "one",
+          "filters": {},
+          "searchValue": ""
+        }
+      }
+    }
+  },
+  "searchShortcutBefore": {
+    "sourceCommit": "4c28a9ffb6af908893785ea4c5aaafe0528200e9",
+    "sourceDirty": true,
+    "sourceHashes": {
+      "FileExplorer.tsx": "9e091767e73cf44210c1c10c62670e88b275a4bc803fd866aba01a2dce5ef472",
+      "FileExplorerNavigationPane.tsx": "d6ba353912af4a33730bf7622cb16e4ac08ffacd8ea333e213e030275be376c9",
+      "FileExplorerSearchFilters.tsx": "c59f5a9babef48efe36e384d24dbc48ed09c69dcc6e4317bf97b9d96d82d4fbc",
+      "FileExplorerTabs.tsx": "3bf4f35e1bfcbaff3c68983fdd4ff50e12ee5a1a3da81588988dc7d67d91919a",
+      "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b"
+    },
+    "browserVersion": "153.0.8010.0",
+    "passed": 24,
+    "failed": 2,
+    "checkCount": 26,
+    "failures": [
+      {
+        "name": "reviewed-search-focus-touch: compact shortcut reveals and focuses search",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      },
+      {
+        "name": "reviewed-search-focus-mouse: compact shortcut reveals and focuses search",
+        "passed": false,
+        "actual": false,
+        "expected": true
+      }
+    ],
+    "errors": []
+  },
+  "reviewedFinal": {
+    "sourceCommit": "4c28a9ffb6af908893785ea4c5aaafe0528200e9",
+    "sourceDirty": true,
+    "sourceHashes": {
+      "FileExplorer.tsx": "773a404409c631f0fb981f2dba3935a1dff21f4a990d690c6f9efe287100bb8b",
+      "FileExplorerNavigationPane.tsx": "d6ba353912af4a33730bf7622cb16e4ac08ffacd8ea333e213e030275be376c9",
+      "FileExplorerSearchFilters.tsx": "c59f5a9babef48efe36e384d24dbc48ed09c69dcc6e4317bf97b9d96d82d4fbc",
+      "FileExplorerTabs.tsx": "3bf4f35e1bfcbaff3c68983fdd4ff50e12ee5a1a3da81588988dc7d67d91919a",
+      "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b"
+    },
+    "browserVersion": "153.0.8010.0",
+    "passed": 28,
+    "failed": 0,
+    "checkCount": 28,
+    "failures": [],
+    "errors": []
+  },
+  "controlsFinal": {
+    "sourceCommit": "4c28a9ffb6af908893785ea4c5aaafe0528200e9",
+    "sourceDirty": true,
+    "sourceHashes": {
+      "FileExplorer.tsx": "773a404409c631f0fb981f2dba3935a1dff21f4a990d690c6f9efe287100bb8b",
+      "FileExplorerNavigationPane.tsx": "d6ba353912af4a33730bf7622cb16e4ac08ffacd8ea333e213e030275be376c9",
+      "FileExplorerSearchFilters.tsx": "c59f5a9babef48efe36e384d24dbc48ed09c69dcc6e4317bf97b9d96d82d4fbc",
+      "FileExplorerTabs.tsx": "3bf4f35e1bfcbaff3c68983fdd4ff50e12ee5a1a3da81588988dc7d67d91919a",
+      "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b"
+    },
+    "browserVersion": "153.0.8010.0",
+    "passed": 174,
+    "failed": 0,
+    "checkCount": 174,
+    "failures": [],
+    "errors": [],
+    "samples": {
+      "touch-360-toolbar-targets": [
+        {
+          "label": "位置",
+          "x": 8,
+          "right": 52,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "上传文件",
+          "x": 56,
+          "right": 100,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "筛选文件",
+          "x": 116,
+          "right": 160,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "视图",
+          "x": 164,
+          "right": 208,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序与分组",
+          "x": 212,
+          "right": 256,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "选择",
+          "x": 260,
+          "right": 304,
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "更多文件操作",
+          "x": 308,
+          "right": 352,
+          "width": 44,
+          "height": 44
+        }
+      ],
+      "touch-360-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 42
+        },
+        {
+          "label": "回收站",
+          "x": 42
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 42
+        }
+      ],
+      "touch-899-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 42
+        },
+        {
+          "label": "回收站",
+          "x": 42
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 42
+        }
+      ],
+      "mouse-360-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 42
+        },
+        {
+          "label": "回收站",
+          "x": 42
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 42
+        }
+      ],
+      "mouse-899-wide-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 42
+        },
+        {
+          "label": "固定工作目录",
+          "x": 42
+        },
+        {
+          "label": "回收站",
+          "x": 42
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 42
+        }
+      ],
+      "location-390x844-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 60
+        },
+        {
+          "label": "固定工作目录",
+          "x": 60
+        },
+        {
+          "label": "回收站",
+          "x": 60
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 60
+        }
+      ],
+      "location-390x844-control-targets": [
+        {
+          "label": "关闭位置",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序和自定义侧边栏",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "回收站",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠快速访问",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "固定工作目录",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "取消固定 固定工作目录",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠智能文件夹",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "工作图片",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "智能文件夹 工作图片 选项",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "项目文档",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "智能文件夹 项目文档 选项",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠标签",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "工作2",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠收藏",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "收藏报告.txt",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "取消收藏 收藏报告.txt",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠最近使用",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "清空最近使用",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "最近报告.txt",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠文件夹树",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "展开 我的文件",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "我的文件",
+          "width": 256,
+          "height": 44
+        }
+      ],
+      "location-844x390-icon-alignment": [
+        {
+          "label": "我的文件",
+          "x": 60
+        },
+        {
+          "label": "固定工作目录",
+          "x": 60
+        },
+        {
+          "label": "回收站",
+          "x": 60
+        },
+        {
+          "label": "收藏报告.txt",
+          "x": 60
+        }
+      ],
+      "location-844x390-control-targets": [
+        {
+          "label": "关闭位置",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "排序和自定义侧边栏",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "回收站",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠快速访问",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "固定工作目录",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "取消固定 固定工作目录",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠智能文件夹",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "工作图片",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "智能文件夹 工作图片 选项",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "项目文档",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "智能文件夹 项目文档 选项",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠标签",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "工作2",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠收藏",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "收藏报告.txt",
+          "width": 264,
+          "height": 44
+        },
+        {
+          "label": "取消收藏 收藏报告.txt",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "折叠最近使用",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "清空最近使用",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "最近报告.txt",
+          "width": 308,
+          "height": 44
+        },
+        {
+          "label": "折叠文件夹树",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "展开 我的文件",
+          "width": 44,
+          "height": 44
+        },
+        {
+          "label": "我的文件",
+          "width": 256,
+          "height": 44
+        }
+      ],
+      "filters-touch-844x390-long-tag": {
+        "viewport": {
+          "width": 844,
+          "height": 390
+        },
+        "documentWidth": 844,
+        "state": {
+          "crumbs": [
+            1
+          ],
+          "activeTabID": "one",
+          "filters": {
+            "kind": "image",
+            "tagID": 32
+          },
+          "searchValue": ""
+        }
+      },
+      "reviewed-filter-responsive-focus-active-element": {
+        "tag": "BUTTON",
+        "label": "筛选文件",
+        "text": "筛选"
+      },
+      "reviewed-filter-narrow-mouse-reachability": {
+        "rect": {
+          "x": 116,
+          "y": 57,
+          "width": 44,
+          "height": 44,
+          "right": 160,
+          "bottom": 101
+        },
+        "clip": {
+          "left": 0,
+          "top": 53,
+          "right": 360,
+          "bottom": 105
+        },
+        "fullTargetVisible": true,
+        "centerReceivesPointer": true
+      },
+      "reviewed-filter-narrow-mouse-reachability-initial": {
+        "viewport": {
+          "width": 360,
+          "height": 780
+        },
+        "documentWidth": 360,
+        "state": {
+          "crumbs": [
+            1
+          ],
+          "activeTabID": "one",
+          "filters": {},
+          "searchValue": ""
+        }
+      }
+    },
+    "checks": [
+      {
+        "name": "touch-360: no visible file tab strip",
+        "passed": true
+      },
+      {
+        "name": "touch-360: compact toolbar targets are 44px and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "touch-360: internal tab shortcuts never call adapters",
+        "passed": true
+      },
+      {
+        "name": "touch-360: middle click never opens an internal tab",
+        "passed": true
+      },
+      {
+        "name": "touch-360: item actions omit internal new-tab command",
+        "passed": true
+      },
+      {
+        "name": "touch-360: wide tab strip returns",
+        "passed": true
+      },
+      {
+        "name": "touch-360-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "touch-360: desktop tab activation works",
+        "passed": true
+      },
+      {
+        "name": "touch-360: wide return retains active committed tab",
+        "passed": true
+      },
+      {
+        "name": "touch-360: narrow return hides the tab strip again",
+        "passed": true
+      },
+      {
+        "name": "touch-360: resize retains scroll host and current crumbs",
+        "passed": true
+      },
+      {
+        "name": "touch-899: no visible file tab strip",
+        "passed": true
+      },
+      {
+        "name": "touch-899: internal tab shortcuts never call adapters",
+        "passed": true
+      },
+      {
+        "name": "touch-899: middle click never opens an internal tab",
+        "passed": true
+      },
+      {
+        "name": "touch-899: item actions omit internal new-tab command",
+        "passed": true
+      },
+      {
+        "name": "touch-899: wide tab strip returns",
+        "passed": true
+      },
+      {
+        "name": "touch-899-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "touch-899: desktop tab activation works",
+        "passed": true
+      },
+      {
+        "name": "touch-899: wide return retains active committed tab",
+        "passed": true
+      },
+      {
+        "name": "touch-899: narrow return hides the tab strip again",
+        "passed": true
+      },
+      {
+        "name": "touch-899: resize retains scroll host and current crumbs",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: no visible file tab strip",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: internal tab shortcuts never call adapters",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: middle click never opens an internal tab",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: item actions omit internal new-tab command",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: wide tab strip returns",
+        "passed": true
+      },
+      {
+        "name": "mouse-360-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: desktop tab activation works",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: wide return retains active committed tab",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: narrow return hides the tab strip again",
+        "passed": true
+      },
+      {
+        "name": "mouse-360: resize retains scroll host and current crumbs",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: no visible file tab strip",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: internal tab shortcuts never call adapters",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: middle click never opens an internal tab",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: item actions omit internal new-tab command",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: wide tab strip returns",
+        "passed": true
+      },
+      {
+        "name": "mouse-899-wide: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: desktop tab activation works",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: wide return retains active committed tab",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: narrow return hides the tab strip again",
+        "passed": true
+      },
+      {
+        "name": "mouse-899: resize retains scroll host and current crumbs",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: 快速访问 is present",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: 智能文件夹 is present",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: 标签 is present",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: 收藏 is present",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: 最近使用 is present",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: enabled location controls have actual 44px targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: expanding root does not navigate",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 1 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 2 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 3 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 4 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 5 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 6 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: level 7 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: deep expansion still does not navigate",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: navigation chooses the deep directory once",
+        "passed": true
+      },
+      {
+        "name": "location-390x844: close returns keyboard focus to location trigger",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: tree, Quick Access, Trash and Favorite icon starts align",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: 快速访问 is present",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: 智能文件夹 is present",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: 标签 is present",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: 收藏 is present",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: 最近使用 is present",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: enabled location controls have actual 44px targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: expanding root does not navigate",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 1 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 2 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 3 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 4 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 5 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 6 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: level 7 distinct touch targets",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: deep expansion still does not navigate",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: navigation chooses the deep directory once",
+        "passed": true
+      },
+      {
+        "name": "location-844x390: close returns keyboard focus to location trigger",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: filter trigger is visible and reachable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: filter trigger has 44px actual target",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: mobile filter is an accessible dialog",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: choosing image changes shared filters",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: selected condition remains visible",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: nested Escape returns focus inside filter panel",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: remove individual condition clears kind",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: Clear All clears shared conditions",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: save delegates the active conditions once",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: current filter count remains visible on trigger",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 同步文件夹 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 同步文件夹 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 同步文件夹 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 标签 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 标签 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: long 标签 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: filter controls have 44px touch targets",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: save and clear stay inside the short viewport",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: close restores filter trigger focus",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-360x780: wide return retains current filter",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: filter trigger is visible and reachable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: filter trigger has 44px actual target",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: mobile filter is an accessible dialog",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: choosing image changes shared filters",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: selected condition remains visible",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: nested Escape returns focus inside filter panel",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: remove individual condition clears kind",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: Clear All clears shared conditions",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: save delegates the active conditions once",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: current filter count remains visible on trigger",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 同步文件夹 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 同步文件夹 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 同步文件夹 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 标签 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 标签 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: short-height field body scrolls independently",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: long 标签 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: filter controls have 44px touch targets",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: save and clear stay inside the short viewport",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: close restores filter trigger focus",
+        "passed": true
+      },
+      {
+        "name": "filters-touch-844x390: wide return retains current filter",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: filter trigger is visible and reachable",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: filter trigger has 44px actual target",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: mobile filter is an accessible dialog",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: choosing image changes shared filters",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: selected condition remains visible",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: nested Escape returns focus inside filter panel",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: remove individual condition clears kind",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: Clear All clears shared conditions",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: save delegates the active conditions once",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: current filter count remains visible on trigger",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 同步文件夹 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 同步文件夹 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 同步文件夹 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 标签 option updates its filter",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 标签 value wraps within available width",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: long 标签 remains individually clearable",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: filter controls have 44px touch targets",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: save and clear stay inside the short viewport",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: close restores filter trigger focus",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-899x700: wide return retains current filter",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: filter trigger is visible and reachable",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: choosing image changes shared filters",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: selected condition remains visible",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: nested Escape returns focus inside filter panel",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: remove individual condition clears kind",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: Clear All clears shared conditions",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: save delegates the active conditions once",
+        "passed": true
+      },
+      {
+        "name": "filters-mouse-900x700: current filter count remains visible on trigger",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: setup selects file 1000",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: inline button key never opens the background file or Quick Look",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: native trigger keyboard activation opens its filter",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Enter: trigger keyboard preserves caller selection",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: setup selects file 1000",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: inline button key never opens the background file or Quick Look",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: native trigger keyboard activation opens its filter",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-trigger-keyboard-Space: trigger keyboard preserves caller selection",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: setup selects file 1000",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: modal key never opens the background file or Quick Look",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: native field keyboard activation opens its menu",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Enter: modal keyboard preserves caller selection",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: setup selects file 1000",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: modal key never opens the background file or Quick Look",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: native field keyboard activation opens its menu",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-keyboard-Space: modal keyboard preserves caller selection",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-responsive-focus: responsive change dismisses the filter and nested menu",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-responsive-focus: new visible trigger receives focus after slot remount",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-responsive-focus: responsive dismissal preserves selected file",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-narrow-mouse-reachability: complete 44px filter target fits viewport and clipping ancestors",
+        "passed": true
+      },
+      {
+        "name": "reviewed-filter-narrow-mouse-reachability: native pointer hit resolves to the filter before any auto-scroll",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-touch: compact shortcut reveals and focuses search",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-touch: reopening selects the retained query",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-touch: focusing search preserves caller selection and never opens a file",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-mouse: compact shortcut reveals and focuses search",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-mouse: reopening selects the retained query",
+        "passed": true
+      },
+      {
+        "name": "reviewed-search-focus-mouse: focusing search preserves caller selection and never opens a file",
+        "passed": true
+      },
+      {
+        "name": "no unexpected browser/page/request errors",
+        "passed": true
+      }
+    ]
+  },
+  "existingFilesRegression": {
+    "sourceCommit": "4c28a9ffb6af908893785ea4c5aaafe0528200e9",
+    "sourceDirty": true,
+    "fileExplorerSha256": "9e091767e73cf44210c1c10c62670e88b275a4bc803fd866aba01a2dce5ef472",
+    "browserVersion": "153.0.8010.0",
+    "passed": true,
+    "checkCount": 54,
+    "failures": [],
+    "errors": [],
+    "checks": [
+      {
+        "name": "390px browser uses a coarse primary pointer",
+        "passed": true
+      },
+      {
+        "name": "inherited columns project to a compact List or Grid",
+        "passed": true
+      },
+      {
+        "name": "compact inherited items expose 44px More controls",
+        "passed": true
+      },
+      {
+        "name": "compact inherited item targets are at least 44px high",
+        "passed": true
+      },
+      {
+        "name": "single touch opens a file inherited from columns",
+        "passed": true
+      },
+      {
+        "name": "compact inherited selection mode toggles multiple files",
+        "passed": true
+      },
+      {
+        "name": "selection mode does not open files",
+        "passed": true
+      },
+      {
+        "name": "900px restores the persisted desktop columns view",
+        "passed": true
+      },
+      {
+        "name": "compact projection leaves the persisted view mode intact",
+        "passed": true
+      },
+      {
+        "name": "returning to compact reprojects inherited columns",
+        "passed": true
+      },
+      {
+        "name": "responsive projection never invokes onViewModeChange",
+        "passed": true
+      },
+      {
+        "name": "360px inherited columns follow the 900px boundary",
+        "passed": true
+      },
+      {
+        "name": "360px shell has no horizontal document overflow",
+        "passed": true
+      },
+      {
+        "name": "360px resize preserves stored desktop columns",
+        "passed": true
+      },
+      {
+        "name": "430px inherited columns follow the 900px boundary",
+        "passed": true
+      },
+      {
+        "name": "430px shell has no horizontal document overflow",
+        "passed": true
+      },
+      {
+        "name": "430px resize preserves stored desktop columns",
+        "passed": true
+      },
+      {
+        "name": "899px inherited columns follow the 900px boundary",
+        "passed": true
+      },
+      {
+        "name": "899px shell has no horizontal document overflow",
+        "passed": true
+      },
+      {
+        "name": "899px resize preserves stored desktop columns",
+        "passed": true
+      },
+      {
+        "name": "900px inherited columns follow the 900px boundary",
+        "passed": true
+      },
+      {
+        "name": "900px shell has no horizontal document overflow",
+        "passed": true
+      },
+      {
+        "name": "900px resize preserves stored desktop columns",
+        "passed": true
+      },
+      {
+        "name": "390px inherited columns follow the 900px boundary",
+        "passed": true
+      },
+      {
+        "name": "390px shell has no horizontal document overflow",
+        "passed": true
+      },
+      {
+        "name": "390px resize preserves stored desktop columns",
+        "passed": true
+      },
+      {
+        "name": "details: one touch opens exactly one file",
+        "passed": true
+      },
+      {
+        "name": "details: selection mode toggles multiple items",
+        "passed": true
+      },
+      {
+        "name": "details: selection taps never open a file",
+        "passed": true
+      },
+      {
+        "name": "details: copy receives the complete selection",
+        "passed": true
+      },
+      {
+        "name": "details: Done leaves selection empty",
+        "passed": true
+      },
+      {
+        "name": "grid: one touch opens exactly one file",
+        "passed": true
+      },
+      {
+        "name": "grid: selection mode toggles multiple items",
+        "passed": true
+      },
+      {
+        "name": "grid: selection taps never open a file",
+        "passed": true
+      },
+      {
+        "name": "grid: copy receives the complete selection",
+        "passed": true
+      },
+      {
+        "name": "grid: Done leaves selection empty",
+        "passed": true
+      },
+      {
+        "name": "touch More opens the real action sheet without opening a file",
+        "passed": true
+      },
+      {
+        "name": "action sheet traps keyboard focus inside its paper",
+        "passed": true
+      },
+      {
+        "name": "Escape restores focus to the item More button",
+        "passed": true
+      },
+      {
+        "name": "backdrop touch dismisses the action sheet",
+        "passed": true
+      },
+      {
+        "name": "choosing a navigation location closes the Drawer",
+        "passed": true
+      },
+      {
+        "name": "450ms hold enters selection with the held item",
+        "passed": true
+      },
+      {
+        "name": "long-press release does not also open the item",
+        "passed": true
+      },
+      {
+        "name": "long press exposes Done for explicit selection mode",
+        "passed": true
+      },
+      {
+        "name": "vertical touch motion scrolls the actual FileExplorer host",
+        "passed": true
+      },
+      {
+        "name": "scroll motion does not trigger tap-open",
+        "passed": true
+      },
+      {
+        "name": "scroll motion cancels pending long-press selection",
+        "passed": true
+      },
+      {
+        "name": "mouse single click in compact layout selects only",
+        "passed": true
+      },
+      {
+        "name": "mouse single click in compact layout does not open",
+        "passed": true
+      },
+      {
+        "name": "attached mouse retains Ctrl multi-selection",
+        "passed": true
+      },
+      {
+        "name": "attached mouse double click opens exactly once",
+        "passed": true
+      },
+      {
+        "name": "900px touch retains desktop single-click selection semantics",
+        "passed": true
+      },
+      {
+        "name": "900px touch does not direct-open a file",
+        "passed": true
+      },
+      {
+        "name": "900px desktop items retain native drag capability",
+        "passed": true
+      }
+    ],
+    "scopeNote": "Run after the toolbar/portal/width fixes and before the final search-opening effect. The effect and retained query are covered by controlsFinal and reviewedFinal."
+  },
+  "fullWeb": {
+    "scenario": "fullscreen",
+    "fixture": {
+      "rootItems": 98,
+      "nestedItems": 64,
+      "galleryItems": 240,
+      "network": "local bounded fixtures only"
+    },
+    "browserVersion": "153.0.8010.0",
+    "startedAt": "2026-10-09T05:07:48.241Z",
+    "finishedAt": "2026-10-09T05:08:47.180Z",
+    "passed": true,
+    "checkCount": 901,
+    "checks": [
+      {
+        "name": "user-fullscreen-files-360x780: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360x780: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-360: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-390: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430x932: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-430: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-899: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900x700: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-900: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280x800: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-1280: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844x390: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-files-844: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360x780: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-360: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390x844: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430x932: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-430: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899x700: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280x800: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-1280: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844x390: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-gallery-844: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-overview-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-sync-folders-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-tasks-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-local-storage-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "user-fullscreen-cloud-storage-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen: caller DOM and scroll retained behind viewer",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen: caller is inert",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen-390: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-390x844: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen: fixed viewport return preserves exact caller scroll",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen-844: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-844x390: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen: return restores caller DOM and scroll",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-fullscreen: return restores caller input",
+        "passed": true
+      },
+      {
+        "name": "user-files-floating-entry: last row More center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-files-floating-entry: physical tap opens last row actions",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen: caller DOM and scroll retained behind viewer",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen: caller is inert",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen-390: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-390x844: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen: fixed viewport return preserves exact caller scroll",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen-844: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "user-preview-844x390: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen: return restores caller DOM and scroll",
+        "passed": true
+      },
+      {
+        "name": "user-preview-fullscreen: return restores caller input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-loading: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-loading: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-loading: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata: loading is held at the real metadata API",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-error: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-error: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata-error: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-preview-metadata: error return restores mounted Files",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-loading: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-loading: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-loading: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata: loading is held at the real metadata API",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-error: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-error: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata-error: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-media-viewer-metadata: error return restores mounted Files",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-loading: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-loading: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-loading: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata: loading is held at the real metadata API",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-error: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-error: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata-error: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-text-viewer-metadata: error return restores mounted Files",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-loading: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-loading: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-loading: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata: loading is held at the real metadata API",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-error: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-error: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata-error: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-pdf-viewer-metadata: error return restores mounted Files",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-loading: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-loading: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-loading: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata: loading is held at the real metadata API",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-error: frame fills viewport",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-error: return remains visible and receives input",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata-error: status message is below overlay header and inside viewport",
+        "passed": true
+      },
+      {
+        "name": "user-audio-player-metadata: error return restores mounted Files",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-144: last Gallery Info center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-144: last Gallery Info 44px target does not overlap application navigation",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360x780: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-360: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-390: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430x932: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-430: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-899: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900x700: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-900: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280x800: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-1280: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: Files fills available main",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: Files scroll viewport remains visible",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844x390: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-files-844: Files owns internal scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360x780: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-360: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390x844: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430x932: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-430: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899x700: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280x800: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-1280: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844x390: Gallery title does not reserve a 320px column",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-gallery-844: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-overview-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-sync-folders-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-local-storage-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-cloud-storage-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks?scope=global-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks?scope=global-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks-scope=global-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-tasks?scope=global-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-users-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-audit-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390x844: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-390: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: mobile main fills the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: global chrome does not reserve viewport space",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: mobile workspace has no outer padding",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899x700: workspace page meets available edges",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-899: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: requested CSS viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: workspace within viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: desktop header and sidebar are retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900x700: desktop page padding is retained",
+        "passed": true
+      },
+      {
+        "name": "admin-fullscreen-admin-storage-900: one mounted main across apps and breakpoints",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen: caller DOM and scroll retained behind viewer",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen: caller is inert",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen-390: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-390x844: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen: fixed viewport return preserves exact caller scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen-844: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-844x390: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen: return restores caller DOM and scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-media-viewer-fullscreen: return restores caller input",
+        "passed": true
+      },
+      {
+        "name": "admin-files-floating-entry: last row More center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "admin-files-floating-entry: physical tap opens last row actions",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen: caller DOM and scroll retained behind viewer",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen: caller is inert",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen-390: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-390x844: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen: fixed viewport return preserves exact caller scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen-844: caller remains mounted during resize",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-visible: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-hidden: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390: hidden chrome releases pointer input",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390: viewer geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390: content geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390: zoom geometry stable after chrome hides",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: viewer uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: content uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: zoom uses the entire viewport",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: chrome overlays the media",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: real image decoded",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390-reshown: no document overflow",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-844x390: overlay return button receives input",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen: return restores caller DOM and scroll",
+        "passed": true
+      },
+      {
+        "name": "admin-preview-fullscreen: return restores caller input",
+        "passed": true
+      },
+      {
+        "name": "admin-gallery-floating-entry-144: last Gallery Info center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "admin-gallery-floating-entry-144: last Gallery Info 44px target does not overlap application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-96: last Gallery Info center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-96: last Gallery Info 44px target does not overlap application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-240: last Gallery Info center is not covered by application navigation",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-floating-entry-240: last Gallery Info 44px target does not overlap application navigation",
+        "passed": true
+      },
+      {
+        "name": "no unknown API or external requests",
+        "passed": true
+      },
+      {
+        "name": "no application page errors",
+        "passed": true
+      },
+      {
+        "name": "no browser console errors",
+        "passed": true
+      }
+    ],
+    "unknownRequests": [],
+    "pageErrors": [],
+    "consoleErrors": [],
+    "expectedApiErrors": [
+      {
+        "request": "user GET /api/v1/nodes/1000",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      },
+      {
+        "request": "user GET /api/v1/media/items/1000",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      },
+      {
+        "request": "user GET /api/v1/nodes/1000",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      },
+      {
+        "request": "user GET /api/v1/files/1000/preview/text",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      },
+      {
+        "request": "user GET /api/v1/nodes/1000",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      },
+      {
+        "request": "user GET /api/v1/nodes/1000",
+        "status": 404,
+        "purpose": "viewer metadata loading/error layout"
+      }
+    ],
+    "bundleSha256": {
+      "index-LoU5gBqT.js": "dfe7d171687240f2f83562542754748632bc5941f341a9413515c9d4d3fde8e6"
+    }
+  },
+  "localValidation": {
+    "desktopTypecheck": "pass",
+    "desktopMain": {
+      "tests": 1284,
+      "passed": 1283,
+      "failed": 0,
+      "skipped": 1
+    },
+    "webLint": "pass",
+    "webBuild": "pass",
+    "diffCheck": "pass"
+  },
+  "review": {
+    "status": "approved after four reproduced findings resolved",
+    "findings": [
+      "Native and portaled button Enter/Space dispatched background file actions",
+      "Responsive filter remount lost focus",
+      "Narrow fine-pointer Web toolbar clipped the filter before auto-scroll",
+      "Compact Ctrl+F consumed the shortcut without mounting the input"
+    ],
+    "finalIndependentSearchChecks": 12,
+    "independentShortLandscape200Percent": "pass, filter body scroll and footer bounds only; not physical system text scaling",
+    "fileExplorerSha256": "773a404409c631f0fb981f2dba3935a1dff21f4a990d690c6f9efe287100bb8b"
+  },
+  "nativeEnvironments": [
+    {
+      "id": "IOS-TAB",
+      "acceptance": "not-run",
+      "reason": "Physical device evidence not collected"
+    },
+    {
+      "id": "IOS-INSTALLED",
+      "acceptance": "not-run",
+      "reason": "Physical device evidence not collected"
+    },
+    {
+      "id": "ANDROID-TAB",
+      "acceptance": "not-run",
+      "reason": "Physical device evidence not collected"
+    },
+    {
+      "id": "ANDROID-INSTALLED",
+      "acceptance": "not-run",
+      "reason": "Physical device evidence not collected"
+    }
+  ]
+}

@@ -126,7 +126,11 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin');
       return plain({ supported: true, state: 'idle', source: 'github', channel: 'master', backup_file_data: false });
     case 'GET /api/v1/media/items': {
-      queryOnly(url, ['range', 'limit', 'offset']);
+      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir']);
+      // The shared Gallery already sends its persisted chronological sort.
+      // This viewport fixture exercises the default captured/descending state.
+      assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
+      assert.equal(url.searchParams.get('sort_dir') || 'desc', 'desc');
       const offset = integerQuery(url, 'offset', 0, mediaItems.length);
       const limit = integerQuery(url, 'limit', 200, 500);
       const items = mediaItems.slice(offset, offset + limit);

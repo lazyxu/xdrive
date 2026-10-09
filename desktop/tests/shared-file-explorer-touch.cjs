@@ -50,16 +50,16 @@ test('compact touch uses touch-size commands, explicit More buttons and mobile o
   }
 })
 
-test('compact touch projects mobile geometry without overwriting desktop pane/column preferences', () => {
+test('compact viewports project mobile geometry without overwriting desktop pane/column preferences', () => {
   for (const token of [
-    'const detailsRowHeight = compactTouch',
+    'const detailsRowHeight = compactViewport',
     '? 52',
     "? ['name' as XDriveFileExplorerDetailsColumnKey]",
     "? 'minmax(0, 1fr)'",
-    'viewPreferences.navigationPaneVisible && !compactTouch',
-    'inspectorOpen && !compactTouch',
-    "const effectiveGridSize: XDriveFileExplorerGridSize = compactTouch ? 'medium' : viewPreferences.gridSize",
-    "{compactTouch ? (",
+    'viewPreferences.navigationPaneVisible && !compactViewport',
+    'inspectorOpen && !compactViewport',
+    "const effectiveGridSize: XDriveFileExplorerGridSize = compactViewport ? 'medium' : viewPreferences.gridSize",
+    "{compactViewport ? (",
     "setViewMode('details')",
     "setViewMode('grid')",
     'window.localStorage.setItem(detailsPreferencesKey, JSON.stringify(detailsLayout))',
@@ -69,16 +69,16 @@ test('compact touch projects mobile geometry without overwriting desktop pane/co
   }
 })
 
-test('compact touch collapses search and keeps low-frequency commands discoverable', () => {
+test('compact viewports collapse search and keep low-frequency commands discoverable', () => {
   for (const token of [
-    'compactTouch && !touchSearchOpen',
+    'compactViewport && !touchSearchOpen',
     'setTouchSearchOpen(true)',
-    "aria-label={compactTouch ? '关闭搜索' : '搜索'}",
-    'compactTouch && onPaste',
-    'compactTouch && onRefresh',
-    '(compactTouch || commandBarOverflowLevel >= 2) && onCreateFolder',
-    '(compactTouch || commandBarOverflowLevel >= 1) && onUploadFolder',
+    "aria-label={compactViewport ? '关闭搜索' : '搜索'}",
+    'compactViewport && onPaste',
+    'compactViewport && onRefresh',
+    '(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder',
+    '(compactViewport || commandBarOverflowLevel >= 1) && onUploadFolder',
   ]) {
-    assert.ok(explorer.includes(token), 'missing compact-touch search/overflow behavior: ' + token)
+    assert.ok(explorer.includes(token), 'missing compact-viewport search/overflow behavior: ' + token)
   }
 })

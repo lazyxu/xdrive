@@ -75,9 +75,9 @@ test('shared navigation pane owns a manual lazy tree without following the activ
     assert.equal(pane.includes(legacy), false, 'tree must not auto-follow/highlight the active folder: ' + legacy)
   }
   assert.equal(
-    (pane.match(/pl: 3\.75, pr: 0\.75/g) || []).length,
+    (pane.match(/pl: compactViewport \? 6\.75 : 4\.5, pr: 0\.75/g) || []).length,
     6,
-    'Trash, Quick Access, Smart Folders, Tags, Favorites and Recent should align their item icons with the root disclosure column',
+    'navigation sections must preserve the wide disclosure alignment and expand it with the mobile disclosure target',
   )
   assert.equal(pane.includes('data-xdrive-file-explorer-tree-load-more'), false, 'tree must not expose a manual load-more row')
 })
