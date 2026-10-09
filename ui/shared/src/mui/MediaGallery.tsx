@@ -86,6 +86,9 @@ import type {
   UpdateMediaPersonIdentityInput,
 } from '../models'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
+import { xDriveFileOperationActive } from '../file-operations'
+import type { MediaGalleryDeleteOperation } from './MediaGalleryCleanupTask'
+import { xDriveMediaGallerySettledDeleteIDs } from './MediaGalleryCleanupTask'
 import { XDriveDialogContent } from './DialogContent'
 import {
   XDriveMediaGalleryFilterToolbar,
@@ -344,7 +347,7 @@ export interface MediaGalleryDataSource {
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   setFavoriteBatch?: (nodeIDs: number[], favorite: boolean) => Promise<void>
   addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
-  deleteItems?: (items: MediaItem[]) => Promise<void>
+  deleteItems?: (items: MediaItem[]) => Promise<MediaGalleryDeleteOperation | void>
   downloadItems?: (items: MediaItem[]) => Promise<void>
   exportLivePhoto?: (item: MediaItem) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
@@ -480,6 +483,8 @@ export type XDriveMediaGalleryShareDialogOptions = {
 
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
+  fileOperations?: readonly MediaGalleryDeleteOperation[]
+  onFileOperationQueued?: (operation: MediaGalleryDeleteOperation) => void
   preferenceScope?: string
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
@@ -492,6 +497,8 @@ export interface XDriveMediaGalleryPageProps {
 
 export function XDriveMediaGalleryPage({
   source,
+  fileOperations,
+  onFileOperationQueued,
   preferenceScope = '',
   pageSize = 100,
   shareDialog,
@@ -522,6 +529,15 @@ export function XDriveMediaGalleryPage({
     useState<MediaBurstReviewList | null>(null)
   const [cleanupMoreLoading, setCleanupMoreLoading] = useState<'burst' | null>(null)
   const cleanupMoreInFlightRef = useRef(false)
+  const [pendingCleanupDeleteIDs, setPendingCleanupDeleteIDs] = useState<string[]>([])
+  const pendingCleanupReviewByTaskRef = useRef(new Map<string, string>())
+  const deletePreferenceScopeRef = useRef(preferenceScope)
+  deletePreferenceScopeRef.current = preferenceScope
+  const trackDeleteCompletion = fileOperations !== undefined && Boolean(onFileOperationQueued)
+  useEffect(() => {
+    setPendingCleanupDeleteIDs([])
+    pendingCleanupReviewByTaskRef.current.clear()
+  }, [preferenceScope])
   const [pets, setPets] = useState<MediaPetFacet[]>([])
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
@@ -2012,7 +2028,25 @@ export function XDriveMediaGalleryPage({
     if (!source.deleteItems || selectedItems.length === 0) return
     setError('')
     try {
-      await source.deleteItems(selectedItems)
+      const submittedScope = deletePreferenceScopeRef.current
+      const operation = await source.deleteItems(selectedItems)
+      if (submittedScope !== deletePreferenceScopeRef.current) return
+      if (operation) onFileOperationQueued?.(operation)
+      // Submitting a durable file operation is not a completed delete. Seed
+      // the existing Task Center lifecycle and wait for the matching terminal
+      // state before querying the Cleanup group count and member projection.
+      if (
+        currentCleanupReview && operation && trackDeleteCompletion &&
+        xDriveFileOperationActive(operation.status)
+      ) {
+        pendingCleanupReviewByTaskRef.current.set(operation.id, currentCleanupReview.group.id)
+        setPendingCleanupDeleteIDs((current) => (
+          current.includes(operation.id) ? current : [...current, operation.id]
+        ))
+        return
+      }
+      // Legacy adapters without an operation receipt preserve the previous
+      // immediate refresh; an already-terminal response can refresh now.
       if (currentCleanupReview) {
         await loadCleanup()
         return
@@ -2030,7 +2064,35 @@ export function XDriveMediaGalleryPage({
     }
   }, [
     currentAlbum, currentCleanupReview, currentPerson, currentSuggestedPerson,
-    loadCleanup, loadFirstPage, onError, query, source,
+    loadCleanup, loadFirstPage, onError, onFileOperationQueued, query,
+    source, trackDeleteCompletion,
+  ])
+
+  useEffect(() => {
+    if (!pendingCleanupDeleteIDs.length || !fileOperations) return
+    const settled = xDriveMediaGallerySettledDeleteIDs(
+      pendingCleanupDeleteIDs, fileOperations,
+    )
+    if (!settled.length) return
+    const finishedIDs = new Set(settled)
+    let shouldRefreshCurrentReview = false
+    for (const id of settled) {
+      const originalReviewID = pendingCleanupReviewByTaskRef.current.get(id)
+      pendingCleanupReviewByTaskRef.current.delete(id)
+      // Consume every settled ID, even if one task already requires refresh.
+      // A different open Burst group must not lose its scroll/selection.
+      if (!currentCleanupReview || currentCleanupReview.group.id === originalReviewID) {
+        shouldRefreshCurrentReview = true
+      }
+    }
+    setPendingCleanupDeleteIDs((current) => (
+      current.filter((id) => !finishedIDs.has(id))
+    ))
+    // Returning to Cleanup through navigation always loads authoritative data.
+    if (section === 'cleanup' && shouldRefreshCurrentReview) void loadCleanup()
+  }, [
+    currentCleanupReview, fileOperations, loadCleanup,
+    pendingCleanupDeleteIDs, section,
   ])
 
   const exportLivePhoto = useCallback(async (item: MediaItem) => {

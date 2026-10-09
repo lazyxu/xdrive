@@ -299,6 +299,20 @@ description-history archive and cannot justify deleting another source file.
 No first-render or scroll-triggered request is introduced. Native PostgreSQL
 and shared Web/Desktop contract tests are required before merge.
 
+### G11 queued deletion versus terminal Cleanup refresh (2026-10-10)
+
+**In progress / full PR CI pending.** Gallery delete in Burst review now
+accepts only the actual Web REST or Desktop Agent file-operation ID, refreshes
+it using the existing Task Center lifecycle, and waits until that exact task is
+completed/failed/cancelled to requery Cleanup. Submission alone no longer
+claims final group counts; unrelated file operations cannot trigger this
+refresh. Navigating to another section or opening a different Burst review does not
+forcibly reopen the former review. Account changes discard pending task IDs. Existing
+collection refresh remains the fallback for legacy adapters with no receipt.
+This stage is not permanent duplicate consolidation or a CAS space-saving
+claim; pending live provider, PostgreSQL, task terminal, and device testing
+must be reported separately.
+
 ### G11 Cleanup deletion-view refresh acceptance (2026-10-09)
 
 A proposed shared Gallery fix tracks the active Burst review in the memoized

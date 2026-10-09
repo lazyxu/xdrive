@@ -1332,6 +1332,8 @@ function FileManager({
         ) : appView === 'gallery' ? (
           <XDriveMediaGalleryPage
             source={gallerySource}
+            fileOperations={fileOperations}
+            onFileOperationQueued={() => { void refreshFileOperations() }}
             onShowInFolder={(location) => {
               if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
             }}

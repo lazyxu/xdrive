@@ -66,6 +66,11 @@ test('G11 deletion refresh follows current Burst review scope across rerenders',
     currentAlbum: null, currentPerson: null, currentSuggestedPerson: null,
     query, onError,
     xDriveMediaGalleryErrorMessage: (error) => error.message,
+    onFileOperationQueued: undefined, trackDeleteCompletion: false,
+    xDriveFileOperationActive: () => false,
+    setPendingCleanupDeleteIDs: () => {},
+    pendingCleanupReviewByTaskRef: { current: new Map() },
+    deletePreferenceScopeRef: { current: '' },
   })
 
   const ordinaryDelete = render(null)
