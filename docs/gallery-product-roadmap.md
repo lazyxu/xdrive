@@ -1601,6 +1601,29 @@ loading 100k MediaItems. Closing the view does not cancel a durable job.
 A persistent Task Center listing and Desktop Agent job protocol are further
 delivery stages; this branch alone does not claim those capabilities.
 
+### G07 async request ownership / duplicate-submit race (2026-10-10; PR #1218)
+
+Shared Web/Desktop query-wide selection must synchronously own exactly one
+in-flight UI request across snapshot Create, page reads, exclusion/revision
+updates, durable Favorite submission, job cancellation/retry and bounded
+failure-page reads. React Busy state is presentation, not the same-tick
+single-flight barrier. Closing a review while an operation is pending must
+not release a token being consumed by a durable Server job; once the operation
+finishes, ordinary closing still releases an unconsumed snapshot. No existing
+durable Server job is cancelled when the component unmounts, and query-wide
+selection must not hydrate a 100k client-side MediaItem array.
+
+Deterministic first-red is recorded in GitHub Actions run 37982739358,
+`desktop-tests` assertions 539–543: actual shared React component and
+original MUI handlers yielded **five product failures** (2 instead of 1
+snapshot Create, durable Favorite submission, Exclude and page requests, plus
+premature release from a stale close callback). The exact source-backed
+tests in `desktop/tests/media-gallery-query-selection-async-race.cjs`
+are retained for post-fix validation alongside the existing G07 query,
+transport, owner-scope, Task Center and ordinary Gallery regressions.
+Require exact-head CI, Go race and the final gate before merging; physical
+Web/Desktop/device acceptance remains separate.
+
 ### G07 Phase 3c — Web Task Center persistence visibility (candidate)
 
 Web Task Center now loads the authenticated durable media-selection job
