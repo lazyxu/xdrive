@@ -82,11 +82,19 @@ export function XDriveMediaGalleryQuerySelection({
       ['completed', 'partial', 'cancelled'].includes(job.status)) return
     let alive = true
     const id = job.id
+    // Independent 1700ms polls may overlap. Only the newest issued poll may
+    // publish state/errors for this mounted job; older success/failure is stale.
+    let latestPoll = 0
     const refresh = () => {
+      const request = ++latestPoll
       void actionsRef.current.getJob?.(id).then((latest) => {
-        if (alive) setJob((current) => current?.id === id ? latest : current)
+        if (alive && request === latestPoll) {
+          setJob((current) => current?.id === id ? latest : current)
+        }
       }).catch((reason) => {
-        if (alive) setError(xDriveMediaGalleryErrorMessage(reason))
+        if (alive && request === latestPoll) {
+          setError(xDriveMediaGalleryErrorMessage(reason))
+        }
       })
     }
     const timer = setInterval(refresh, 1700)
