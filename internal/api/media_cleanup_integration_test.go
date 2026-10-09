@@ -149,7 +149,7 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 	dupA, _ := addLogicalMedia(
 		"copy-a.jpg", duplicateHash, 1000, 3000, 2000, false, now.Add(-2*time.Hour),
 	)
-	dupB, _ := addLogicalMedia(
+	dupB, assetB := addLogicalMedia(
 		"copy-b.jpg", duplicateHash, 1000, 3000, 2000, true, now.Add(-time.Hour),
 	)
 	if err := db.Create(&meta.ContentBlob{
@@ -176,7 +176,9 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 	group := duplicates.Groups[0]
 	if group.RecommendedKeepNodeID != dupB.ID ||
 		group.PhysicalReclaimableBytes != 0 ||
-		group.LogicalDuplicateBytes != 1000 {
+		group.LogicalDuplicateBytes != 1000 ||
+		group.AssetComparison != duplicateAssetIdentical ||
+		group.AssetComparisonReason == "" || group.RecommendedKeepNodeID == 0 {
 		t.Fatalf("duplicate group=%+v dupA=%d dupB=%d", group, dupA.ID, dupB.ID)
 	}
 	sha, ok := parseMediaDuplicateID(group.ID)
@@ -191,6 +193,21 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 	}
 	if duplicatePage.TotalCount != 2 || len(duplicatePage.Items) != 2 {
 		t.Fatalf("duplicate page=%+v", duplicatePage)
+	}
+	if err := db.Create(&meta.PhotoEditRecipe{
+		AssetID: assetB.ID, OwnerID: user.ID, SourceNodeID: dupB.ID,
+		SourceNodeRevision: 1, SourceSHA256: duplicateHash,
+		CropWidth: 0.75, CropHeight: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	withEdit, err := (&Server{DB: db}).queryDuplicateGroups(context.Background(), user.ID, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withEdit.Groups) != 1 || withEdit.Groups[0].AssetComparison != duplicateAssetDifferent ||
+		withEdit.Groups[0].RecommendedKeepNodeID != 0 {
+		t.Fatalf("edited content incorrectly classified as identical: %+v", withEdit)
 	}
 
 	burst := meta.MediaGroup{

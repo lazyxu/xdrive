@@ -65,6 +65,13 @@ function DuplicateCard({
   loadThumbnail: MediaThumbnailLoader
   onOpen?: (group: MediaDuplicateGroup) => void
 }) {
+  const comparisonLabel = group.asset_comparison === 'identical'
+    ? '完整资源已核对'
+    : group.asset_comparison === 'different'
+      ? '资源或编辑有差异'
+      : '完整资产待核对'
+  const comparisonDescription = group.asset_comparison_reason
+    ?? '仅确认主原文件 SHA-256 相同；不能据此自动合并实况、RAW 或编辑版本'
   return (
     <Paper
       variant="outlined"
@@ -91,19 +98,23 @@ function DuplicateCard({
     >
       <CleanupThumbnail
         nodeID={group.cover_node_id}
-        label="完全重复项"
+        label="主原文件重复"
         loadThumbnail={loadThumbnail}
       />
       <Stack spacing={0.75} sx={{ px: 1.5, py: 1.25 }}>
-        <Stack direction="row" spacing={0.75} alignItems="center">
+        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
           <DuplicateIcon fontSize="small" color="action" />
           <Typography variant="body2" fontWeight={700} sx={{ flex: 1 }}>
-            {group.item_count.toLocaleString('zh-CN')} 个完全相同副本
+            {group.item_count.toLocaleString('zh-CN')} 个主原文件相同的副本
           </Typography>
           <Chip size="small" variant="outlined" label="CAS 已去重" />
+          <Chip size="small" variant="outlined" label={comparisonLabel} />
         </Stack>
         <Typography variant="caption" color="text.secondary">
           {group.recommendation_reason}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {comparisonDescription}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           逻辑重复 {formatBytes(group.logical_duplicate_bytes)}
@@ -210,7 +221,7 @@ export function XDriveMediaGalleryCleanup({
           <SuggestionIcon color="disabled" sx={{ fontSize: 42 }} />
           <Typography color="text.secondary">暂时没有清理建议</Typography>
           <Typography variant="caption" color="text.secondary" align="center">
-            完全重复项按 SHA256 识别；连拍精选仅使用本地确定性 Burst 关系
+            主原文件重复按 SHA-256 识别；完整资源与编辑状态必须单独核对
           </Typography>
         </Stack>
       </Paper>
@@ -223,15 +234,16 @@ export function XDriveMediaGalleryCleanup({
         <Stack spacing={0.5}>
           <Typography variant="subtitle2" fontWeight={700}>空间说明</Typography>
           <Typography variant="caption" color="text.secondary">
-            完全重复文件已经由 xDrive CAS 按内容去重，因此删除重复引用通常不会释放共享 blob；
-            这里会分别显示逻辑重复体积与真实物理可释放空间。删除操作仍然先进入回收站。
+            相同主文件已经由 xDrive CAS 按内容去重，因此删除重复引用通常不会释放共享 blob；
+            这里分别显示逻辑重复体积与物理可释放空间。完整实况、RAW 和编辑配方需要单独核对。
+            删除操作仍然先进入回收站，只会处理选中的真实文件，不会自动删除关联资源或合并相册、人物等信息。
           </Typography>
         </Stack>
       </Paper>
 
       <Box>
         <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1.25 }}>
-          <Typography variant="subtitle1" fontWeight={700}>完全重复项</Typography>
+          <Typography variant="subtitle1" fontWeight={700}>主原文件重复</Typography>
           <Typography variant="caption" color="text.secondary">
             {(duplicates?.total_groups ?? 0).toLocaleString('zh-CN')} 组
             {' · '}逻辑重复 {formatBytes(duplicates?.logical_duplicate_bytes ?? 0)}

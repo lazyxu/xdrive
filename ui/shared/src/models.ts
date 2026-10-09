@@ -731,6 +731,8 @@ export interface MediaDuplicateGroup {
   physical_reclaimable_bytes: number
   recommended_keep_node_id: number
   recommendation_reason: string
+  asset_comparison?: 'identical' | 'different' | 'unverified'
+  asset_comparison_reason?: string
   cover_node_id?: number
   updated_at?: string
 }

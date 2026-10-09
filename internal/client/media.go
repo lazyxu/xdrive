@@ -291,6 +291,8 @@ type MediaDuplicateGroup struct {
 	PhysicalReclaimableBytes int64      `json:"physical_reclaimable_bytes"`
 	RecommendedKeepNodeID    uint64     `json:"recommended_keep_node_id"`
 	RecommendationReason     string     `json:"recommendation_reason"`
+	AssetComparison          string     `json:"asset_comparison"`
+	AssetComparisonReason    string     `json:"asset_comparison_reason"`
 	CoverNodeID              *uint64    `json:"cover_node_id,omitempty"`
 	UpdatedAt                *time.Time `json:"updated_at,omitempty"`
 }

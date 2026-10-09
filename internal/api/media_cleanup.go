@@ -27,6 +27,8 @@ type mediaDuplicateGroupDTO struct {
 	PhysicalReclaimableBytes int64      `json:"physical_reclaimable_bytes"`
 	RecommendedKeepNodeID    uint64     `json:"recommended_keep_node_id"`
 	RecommendationReason     string     `json:"recommendation_reason"`
+	AssetComparison          string     `json:"asset_comparison"`
+	AssetComparisonReason    string     `json:"asset_comparison_reason"`
 	CoverNodeID              *uint64    `json:"cover_node_id,omitempty"`
 	UpdatedAt                *time.Time `json:"updated_at,omitempty"`
 }
@@ -68,7 +70,10 @@ type mediaDuplicateAggregateRow struct {
 
 type mediaDuplicateMemberRow struct {
 	SHA256           string
+	AssetID          uint64
+	AssetKind        string
 	NodeID           uint64
+	NodeRevision     uint64
 	Favorite         bool
 	TagsJSON         string
 	PeopleJSON       string
@@ -241,7 +246,9 @@ func (s *Server) duplicateMembers(
 	err := s.DB.WithContext(ctx).
 		Table("xd_photo_assets AS cleanup_pa").
 		Select(
-			"cleanup_f.sha256 AS sha256, cleanup_pa.primary_node_id AS node_id, "+
+			"cleanup_f.sha256 AS sha256, cleanup_pa.id AS asset_id, "+
+				"cleanup_pa.kind AS asset_kind, cleanup_pa.primary_node_id AS node_id, "+
+				"cleanup_n.revision AS node_revision, "+
 				"cleanup_pm.favorite, cleanup_pm.tags_json, cleanup_pm.people_json, "+
 				"cleanup_pm.description, cleanup_n.created_at, "+
 				"COUNT(DISTINCT CASE WHEN cleanup_pc.kind = ? AND cleanup_pc.state = ? "+
@@ -275,7 +282,8 @@ func (s *Server) duplicateMembers(
 			hashes,
 		).
 		Group(
-			"cleanup_f.sha256, cleanup_pa.primary_node_id, cleanup_pm.favorite, " +
+			"cleanup_f.sha256, cleanup_pa.id, cleanup_pa.kind, cleanup_pa.primary_node_id, " +
+				"cleanup_n.revision, cleanup_pm.favorite, " +
 				"cleanup_pm.tags_json, cleanup_pm.people_json, cleanup_pm.description, " +
 				"cleanup_n.created_at",
 		).
@@ -334,11 +342,28 @@ func (s *Server) queryDuplicateGroups(
 	for _, row := range members {
 		byHash[row.SHA256] = append(byHash[row.SHA256], row)
 	}
+	comparisons, err := s.duplicateAssetComparisons(ctx, ownerID, aggregates, byHash)
+	if err != nil {
+		return out, err
+	}
 	out.Groups = make([]mediaDuplicateGroupDTO, 0, len(aggregates))
 	for _, row := range aggregates {
 		best, ok := chooseDuplicateKeep(byHash[row.SHA256])
 		if !ok {
 			continue
+		}
+		comparison, exists := comparisons[row.SHA256]
+		if !exists {
+			comparison = mediaDuplicateAssetComparison{
+				Status: duplicateAssetUnverified,
+				Reason: "完整资源或编辑来源尚未验证；仅能确定主文件 SHA-256 相同",
+			}
+		}
+		keepID := uint64(0)
+		keepReason := "仅确认主原文件相同；请核对全部资源和编辑状态，暂不推荐删除任何副本"
+		if comparison.Status == duplicateAssetIdentical {
+			keepID = best.NodeID
+			keepReason = duplicateRecommendationReason(best)
 		}
 		cover := best.NodeID
 		out.Groups = append(out.Groups, mediaDuplicateGroupDTO{
@@ -347,8 +372,10 @@ func (s *Server) queryDuplicateGroups(
 			FileSizeBytes:            row.FileSizeBytes,
 			LogicalDuplicateBytes:    (row.ItemCount - 1) * row.FileSizeBytes,
 			PhysicalReclaimableBytes: 0,
-			RecommendedKeepNodeID:    best.NodeID,
-			RecommendationReason:     duplicateRecommendationReason(best),
+			RecommendedKeepNodeID:    keepID,
+			RecommendationReason:     keepReason,
+			AssetComparison:          comparison.Status,
+			AssetComparisonReason:    comparison.Reason,
 			CoverNodeID:              &cover,
 			UpdatedAt:                row.UpdatedAt,
 		})
