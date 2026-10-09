@@ -722,6 +722,18 @@ second relationship database and no automatic permanent-delete path.
 ### Cleanup/storage semantics
 
 - The Cleanup Review root lives in `ui/shared` and is shared by Web/Desktop. Its landing page shows Burst review only; it does not query or render zero-benefit original-file duplicate groups.
+- **G11, 2026-10-09 — Cleanup index visibility:** the shared cleanup surface
+  reuses the existing opt-in owner-scoped `MediaGalleryIndexStatus` query from
+  G05. It exposes ready, failed, unsupported and missing-metadata counts
+  plus the server check timestamp even when there are no Burst suggestions.
+  The status card is rendered without any automatic status request on first
+  Gallery/Cleanup open; a user must explicitly select `查看索引状态` or
+  `刷新索引状态`. Only **known active PhotoAssets** are counted. Never-present
+  files, unsynchronized remote entries and any files not yet reconciled to
+  a PhotoAsset are outside this denominator, so 100% known-asset readiness
+  does **not** certify a duplicate-free complete library. Scope and errors
+  are kept explicit on Web and Desktop. This adds no synchronous PostgreSQL
+  work to the Gallery first-paint or Cleanup group-list routes.
 - Opening a duplicate or Burst group creates a sparse read-only review collection;
   Viewer, Inspector, thumbnail scheduling and Selection Toolbar are reused.
 - Recommended items receive a visible **建议保留** marker. xDrive never auto-selects or

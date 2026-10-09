@@ -375,6 +375,18 @@ timing, memory, FPS or throughput result.
   documents. This entry records documentation work only; all product proposals above
   retain their explicit status.
 
+### G11 Cleanup index coverage — shared visibility (2026-10-09)
+
+The Cleanup root remains Burst-review only while zero-reclaimable original-hash
+duplicate cards remain hidden (the read-only duplicate backend remains for
+future Gallery folding). The existing G05 known-asset index-status DTO is now
+shown directly on that root via an explicit user action, including errors
+and a check timestamp. An empty Burst list says only that *ready indexed media*
+currently yields no suggested cleanup. Known PhotoAssets do not cover
+undiscovered/unindexed files or unsynchronized provider items; this must not
+be treated as complete inventory certification. UI display does not add a
+new first-open SQL scan or a new mutation path.
+
 ### RAW compatible high-resolution preview — implementation follow-up (2026-10-09)
 
 **In progress / CI pending:** connect existing 1280px analysis JPEG derivative
