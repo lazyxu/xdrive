@@ -1127,9 +1127,16 @@ gallery-desktop-real-first-paint-100k-performance:
     POSTGRES_DB: "xdrive_test"
     XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
     XD_GALLERY_AGENT_BINARY: "desktop/gallery-desktop-agent-bin/xdrive-agent"
+    XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "0"
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-real-first-paint-100k"'
     - if: '$CI_COMMIT_BRANCH == "perf/gallery-desktop-real-first-paint-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-media-progress-100k"'
+      variables:
+        XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "1"
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-desktop-media-progress-100k"'
+      variables:
+        XD_GALLERY_DESKTOP_MEDIA_PROGRESS_PROBE: "1"
   before_script:
     - *ensure_linux_fetch_tools
     - *install_postgres_client
