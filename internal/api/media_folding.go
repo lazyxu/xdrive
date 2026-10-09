@@ -209,17 +209,24 @@ func (s *Server) applyVerifiedMediaFolding(
 		len(options.FoldMemberIDs) != 0 {
 		return query
 	}
-	const join = "LEFT JOIN jsonb_to_recordset(?::jsonb) " +
+	// Only verified duplicate candidates need a window rank. The previous
+	// LEFT JOIN ranked every otherwise unique PhotoAsset (100k rows per page)
+	// and kept all their IDs. Here the INNER JOIN sees only the much smaller
+	// verified map and excludes excess copies after the user's filters.
+	// Ordinary assets never enter the window, and are retained by NOT IN.
+	// No results are cached: changes to edits/resources/album membership
+	// are re-verified for each opt-in request.
+	const join = "JOIN jsonb_to_recordset(?::jsonb) " +
 		"AS gallery_fold(node_id bigint, group_id bigint) ON gallery_fold.node_id = n.id"
 	order := strings.Join(mediaGallerySortClauses(options), ", ")
 	candidateRanks := query.Session(&gorm.Session{}).
 		Joins(join, options.foldIndex.MappingJSON).
 		Select("n.id AS node_id, ROW_NUMBER() OVER (" +
-			"PARTITION BY COALESCE(gallery_fold.group_id, n.id) ORDER BY " +
+			"PARTITION BY gallery_fold.group_id ORDER BY " +
 			order + ") AS fold_rank")
-	keepers := s.DB.WithContext(ctx).
+	losers := s.DB.WithContext(ctx).
 		Table("(?) AS gallery_ranked", candidateRanks).
 		Select("gallery_ranked.node_id").
-		Where("gallery_ranked.fold_rank = 1")
-	return query.Where("n.id IN (?)", keepers)
+		Where("gallery_ranked.fold_rank > 1")
+	return query.Where("n.id NOT IN (?)", losers)
 }

@@ -517,6 +517,68 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  gallery-fold-10k-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-fold-10k-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_FOLD_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure actual Gallery duplicate folding at 10k and 100k
+        shell: bash
+        run: |
+          set -euo pipefail
+          results="$GITHUB_WORKSPACE/gallery-fold-perf-results"
+          mkdir -p "$results"
+          before="$RUNNER_TEMP/gallery-fold-before"
+          git worktree add --detach "$before" HEAD^
+          cp internal/api/gallery_verified_fold_performance_integration_test.go "$before/internal/api/"
+          cp internal/api/media_gallery_first_open_performance_integration_test.go "$before/internal/api/"
+          for variant in before after; do
+            echo "=== $variant: 10k/100k production folding ==="
+            status=0
+            if [[ "$variant" == before ]]; then
+              (cd "$before" && go test -run '^TestGalleryVerifiedFoldPerformance10K100K$' -count=1 -timeout=12m -v ./internal/api) > "$results/$variant.log" 2>&1 || status=$?
+            else
+              go test -run '^TestGalleryVerifiedFoldPerformance10K100K$' -count=1 -timeout=12m -v ./internal/api > "$results/$variant.log" 2>&1 || status=$?
+            fi
+            grep 'GALLERY_VERIFIED_FOLD_PERF {' "$results/$variant.log" | sed 's/^.*GALLERY_VERIFIED_FOLD_PERF //' > "$results/$variant.jsonl" || true
+            grep 'GALLERY_FOLD_SAMPLE\|GALLERY_VERIFIED_FOLD_PERF\|FAIL\|PASS' "$results/$variant.log" | tail -n 45
+            if [[ "$status" -ne 0 ]]; then exit "$status"; fi
+          done
+          node scripts/ci/validate-gallery-fold-paired.mjs "$results/before.jsonl" "$results/after.jsonl" "$results/acceptance.json"
+          cat "$results/acceptance.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-fold-10k-100k-performance
+          path: gallery-fold-perf-results/*
+          if-no-files-found: warn
+          retention-days: 14
+
   gallery-first-visible-server-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-first-visible-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest

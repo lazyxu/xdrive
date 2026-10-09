@@ -1,0 +1,566 @@
+{
+  "workload": "gallery-fold-mixed-v1",
+  "source": {
+    "repository": "lazyxu/xdrive",
+    "pull_request": 1140,
+    "baseline_commit": "4d5d1ba23c0a287fb16fe6e9ed6c7041d27ff5f7",
+    "candidate_commit": "932960d867ab507b604111963e9f78d9d42e3557",
+    "actions_run": 37917773635,
+    "job_id": 113778629575,
+    "job_url": "https://github.com/lazyxu/xdrive/actions/runs/37917773635/job/113778629575"
+  },
+  "environment": "GitHub Actions ubuntu-latest, native PostgreSQL 17 with real GORM owner-scoped queries; same CI runner; n=3 per stage and scale",
+  "status": "accepted",
+  "validation": {
+    "same_shape": true,
+    "all_phases_three_samples": true,
+    "matching_page_counts": true,
+    "expected_10k_visible": 9200,
+    "expected_100k_visible": 92000,
+    "first_page_100k_improvement_ge_30pct_and_100ms": true
+  },
+  "before": [
+    {
+      "workload": "gallery-fold-mixed-v1",
+      "logical_assets": 10000,
+      "physical_media_nodes": 11500,
+      "identical_groups": 200,
+      "identical_assets": 1000,
+      "expected_visible": 9200,
+      "samples_per_phase": 3,
+      "seed_ms": 3865.827,
+      "phases": [
+        {
+          "name": "fold_off_first",
+          "samples_ms": [
+            81.58,
+            84.868,
+            98.52
+          ],
+          "median_ms": 84.868,
+          "rows": 100,
+          "visible_count": 10000,
+          "has_error": false
+        },
+        {
+          "name": "fold_index",
+          "samples_ms": [
+            75.117,
+            76.435,
+            82.22
+          ],
+          "median_ms": 76.435,
+          "rows": 1000,
+          "visible_count": 30367,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_first",
+          "samples_ms": [
+            291.929,
+            293.885,
+            298.282
+          ],
+          "median_ms": 293.885,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_mid",
+          "samples_ms": [
+            228.837,
+            231.503,
+            232.311
+          ],
+          "median_ms": 231.503,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_album",
+          "samples_ms": [
+            418.288,
+            423.362,
+            425.309
+          ],
+          "median_ms": 423.362,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_favorite",
+          "samples_ms": [
+            99.859,
+            100.392,
+            104.626
+          ],
+          "median_ms": 100.392,
+          "rows": 100,
+          "visible_count": 200,
+          "has_error": false
+        }
+      ],
+      "scope": "native PostgreSQL 17 + Go production queries; no HTTP, browser, transport or thumbnails"
+    },
+    {
+      "workload": "gallery-fold-mixed-v1",
+      "logical_assets": 100000,
+      "physical_media_nodes": 115000,
+      "identical_groups": 2000,
+      "identical_assets": 10000,
+      "expected_visible": 92000,
+      "samples_per_phase": 3,
+      "seed_ms": 38700.06,
+      "phases": [
+        {
+          "name": "fold_off_first",
+          "samples_ms": [
+            561.471,
+            562.61,
+            569.161
+          ],
+          "median_ms": 562.61,
+          "rows": 100,
+          "visible_count": 100000,
+          "has_error": false
+        },
+        {
+          "name": "fold_index",
+          "samples_ms": [
+            573.731,
+            574.307,
+            607.482
+          ],
+          "median_ms": 574.307,
+          "rows": 10000,
+          "visible_count": 323379,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_first",
+          "samples_ms": [
+            2751.922,
+            2772.366,
+            2792.989
+          ],
+          "median_ms": 2772.366,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_mid",
+          "samples_ms": [
+            2300.449,
+            2370.952,
+            2381.448
+          ],
+          "median_ms": 2370.952,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_album",
+          "samples_ms": [
+            3918.757,
+            3936.129,
+            4140.9
+          ],
+          "median_ms": 3936.129,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_favorite",
+          "samples_ms": [
+            820.929,
+            821.164,
+            824.091
+          ],
+          "median_ms": 821.164,
+          "rows": 100,
+          "visible_count": 2000,
+          "has_error": false
+        }
+      ],
+      "scope": "native PostgreSQL 17 + Go production queries; no HTTP, browser, transport or thumbnails"
+    }
+  ],
+  "after": [
+    {
+      "workload": "gallery-fold-mixed-v1",
+      "logical_assets": 10000,
+      "physical_media_nodes": 11500,
+      "identical_groups": 200,
+      "identical_assets": 1000,
+      "expected_visible": 9200,
+      "samples_per_phase": 3,
+      "seed_ms": 3849.575,
+      "phases": [
+        {
+          "name": "fold_off_first",
+          "samples_ms": [
+            84.01,
+            93.666,
+            99.151
+          ],
+          "median_ms": 93.666,
+          "rows": 100,
+          "visible_count": 10000,
+          "has_error": false
+        },
+        {
+          "name": "fold_index",
+          "samples_ms": [
+            76.309,
+            76.461,
+            101.548
+          ],
+          "median_ms": 76.461,
+          "rows": 1000,
+          "visible_count": 30367,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_first",
+          "samples_ms": [
+            181.217,
+            187.012,
+            187.257
+          ],
+          "median_ms": 187.012,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_mid",
+          "samples_ms": [
+            160.961,
+            162.265,
+            167.886
+          ],
+          "median_ms": 162.265,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_album",
+          "samples_ms": [
+            216.133,
+            216.446,
+            218.213
+          ],
+          "median_ms": 216.446,
+          "rows": 100,
+          "visible_count": 9200,
+          "has_error": false
+        },
+        {
+          "name": "fold_favorite",
+          "samples_ms": [
+            106.001,
+            107.571,
+            108.223
+          ],
+          "median_ms": 107.571,
+          "rows": 100,
+          "visible_count": 200,
+          "has_error": false
+        }
+      ],
+      "scope": "native PostgreSQL 17 + Go production queries; no HTTP, browser, transport or thumbnails"
+    },
+    {
+      "workload": "gallery-fold-mixed-v1",
+      "logical_assets": 100000,
+      "physical_media_nodes": 115000,
+      "identical_groups": 2000,
+      "identical_assets": 10000,
+      "expected_visible": 92000,
+      "samples_per_phase": 3,
+      "seed_ms": 39199.409,
+      "phases": [
+        {
+          "name": "fold_off_first",
+          "samples_ms": [
+            583.6,
+            588.758,
+            600.369
+          ],
+          "median_ms": 588.758,
+          "rows": 100,
+          "visible_count": 100000,
+          "has_error": false
+        },
+        {
+          "name": "fold_index",
+          "samples_ms": [
+            582.167,
+            583.718,
+            622.708
+          ],
+          "median_ms": 583.718,
+          "rows": 10000,
+          "visible_count": 323379,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_first",
+          "samples_ms": [
+            1468.908,
+            1480.912,
+            1486.817
+          ],
+          "median_ms": 1480.912,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_on_mid",
+          "samples_ms": [
+            1413.682,
+            1430.838,
+            1434.557
+          ],
+          "median_ms": 1430.838,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_album",
+          "samples_ms": [
+            1779.692,
+            1780.661,
+            1784.604
+          ],
+          "median_ms": 1780.661,
+          "rows": 100,
+          "visible_count": 92000,
+          "has_error": false
+        },
+        {
+          "name": "fold_favorite",
+          "samples_ms": [
+            838.484,
+            846.817,
+            858.102
+          ],
+          "median_ms": 846.817,
+          "rows": 100,
+          "visible_count": 2000,
+          "has_error": false
+        }
+      ],
+      "scope": "native PostgreSQL 17 + Go production queries; no HTTP, browser, transport or thumbnails"
+    }
+  ],
+  "calculated": [
+    {
+      "assets": 10000,
+      "visible": 9200,
+      "groups": 200,
+      "seed_before_ms": 3865.827,
+      "seed_after_ms": 3849.575,
+      "phases": {
+        "fold_off_first": {
+          "before_ms": 84.868,
+          "after_ms": 93.666,
+          "reduction_pct": -10.37,
+          "before_samples_ms": [
+            81.58,
+            84.868,
+            98.52
+          ],
+          "after_samples_ms": [
+            84.01,
+            93.666,
+            99.151
+          ]
+        },
+        "fold_index": {
+          "before_ms": 76.435,
+          "after_ms": 76.461,
+          "reduction_pct": -0.03,
+          "before_samples_ms": [
+            75.117,
+            76.435,
+            82.22
+          ],
+          "after_samples_ms": [
+            76.309,
+            76.461,
+            101.548
+          ]
+        },
+        "fold_on_first": {
+          "before_ms": 293.885,
+          "after_ms": 187.012,
+          "reduction_pct": 36.37,
+          "before_samples_ms": [
+            291.929,
+            293.885,
+            298.282
+          ],
+          "after_samples_ms": [
+            181.217,
+            187.012,
+            187.257
+          ]
+        },
+        "fold_on_mid": {
+          "before_ms": 231.503,
+          "after_ms": 162.265,
+          "reduction_pct": 29.91,
+          "before_samples_ms": [
+            228.837,
+            231.503,
+            232.311
+          ],
+          "after_samples_ms": [
+            160.961,
+            162.265,
+            167.886
+          ]
+        },
+        "fold_album": {
+          "before_ms": 423.362,
+          "after_ms": 216.446,
+          "reduction_pct": 48.87,
+          "before_samples_ms": [
+            418.288,
+            423.362,
+            425.309
+          ],
+          "after_samples_ms": [
+            216.133,
+            216.446,
+            218.213
+          ]
+        },
+        "fold_favorite": {
+          "before_ms": 100.392,
+          "after_ms": 107.571,
+          "reduction_pct": -7.15,
+          "before_samples_ms": [
+            99.859,
+            100.392,
+            104.626
+          ],
+          "after_samples_ms": [
+            106.001,
+            107.571,
+            108.223
+          ]
+        }
+      }
+    },
+    {
+      "assets": 100000,
+      "visible": 92000,
+      "groups": 2000,
+      "seed_before_ms": 38700.06,
+      "seed_after_ms": 39199.409,
+      "phases": {
+        "fold_off_first": {
+          "before_ms": 562.61,
+          "after_ms": 588.758,
+          "reduction_pct": -4.65,
+          "before_samples_ms": [
+            561.471,
+            562.61,
+            569.161
+          ],
+          "after_samples_ms": [
+            583.6,
+            588.758,
+            600.369
+          ]
+        },
+        "fold_index": {
+          "before_ms": 574.307,
+          "after_ms": 583.718,
+          "reduction_pct": -1.64,
+          "before_samples_ms": [
+            573.731,
+            574.307,
+            607.482
+          ],
+          "after_samples_ms": [
+            582.167,
+            583.718,
+            622.708
+          ]
+        },
+        "fold_on_first": {
+          "before_ms": 2772.366,
+          "after_ms": 1480.912,
+          "reduction_pct": 46.58,
+          "before_samples_ms": [
+            2751.922,
+            2772.366,
+            2792.989
+          ],
+          "after_samples_ms": [
+            1468.908,
+            1480.912,
+            1486.817
+          ]
+        },
+        "fold_on_mid": {
+          "before_ms": 2370.952,
+          "after_ms": 1430.838,
+          "reduction_pct": 39.65,
+          "before_samples_ms": [
+            2300.449,
+            2370.952,
+            2381.448
+          ],
+          "after_samples_ms": [
+            1413.682,
+            1430.838,
+            1434.557
+          ]
+        },
+        "fold_album": {
+          "before_ms": 3936.129,
+          "after_ms": 1780.661,
+          "reduction_pct": 54.76,
+          "before_samples_ms": [
+            3918.757,
+            3936.129,
+            4140.9
+          ],
+          "after_samples_ms": [
+            1779.692,
+            1780.661,
+            1784.604
+          ]
+        },
+        "fold_favorite": {
+          "before_ms": 821.164,
+          "after_ms": 846.817,
+          "reduction_pct": -3.12,
+          "before_samples_ms": [
+            820.929,
+            821.164,
+            824.091
+          ],
+          "after_samples_ms": [
+            838.484,
+            846.817,
+            858.102
+          ]
+        }
+      }
+    }
+  ]
+}
