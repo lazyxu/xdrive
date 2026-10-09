@@ -56,6 +56,7 @@ import {
   XDriveVersionHistoryDialog,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
+  XDriveMobileAppHeader,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
   XDriveStatusAlert,
@@ -476,10 +477,11 @@ function FileManager({
   onLogout: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const compactChromeOverflow = useMediaQuery('(max-width:349.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
-  const { route, launch: launchWebApp, closeViewer } = useXDriveWebAppRuntime()
+  const { route, launch: launchWebApp, closeViewer, exitApp, canExitApp } = useXDriveWebAppRuntime()
   const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app, route.params)
   const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
@@ -514,8 +516,10 @@ function FileManager({
   }, [compactWorkspace, viewerActive])
 
   useEffect(() => {
-    if (compactWorkspace && !compactNavigationOpen) setTransferPopoverOpen(false)
-  }, [compactWorkspace, compactNavigationOpen])
+    // Only the extra-narrow transfer trigger belongs to the Drawer.
+    // At other phone widths transfer progress is anchored in the App title bar.
+    if (compactWorkspace && compactChromeOverflow && !compactNavigationOpen) setTransferPopoverOpen(false)
+  }, [compactWorkspace, compactChromeOverflow, compactNavigationOpen])
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -1077,28 +1081,41 @@ function FileManager({
       : []),
   ]
 
+  const transferAction = (
+    <XDriveTransferPopover
+      transfers={transfers}
+      sessionKey={`${window.location.origin}:${username}`}
+      disabled={viewerActive}
+      compactTrigger={compactWorkspace}
+      open={transferPopoverOpen}
+      onOpenChange={setTransferPopoverOpen}
+      onClearHistory={() => { api.clearTransferHistory('network') }}
+    />
+  )
+  const accountAction = (
+    <WebAccountMenu
+      disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
+      username={username}
+      api={api}
+      serverBuild={serverBuild}
+      canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
+      appearance={appearance}
+      onAppearanceChange={onAppearanceChange}
+      onLogout={onLogout}
+    />
+  )
   const workspaceActions = (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={{ xs: 0.5, sm: 1 }}>
-      <XDriveTransferPopover
-        transfers={transfers}
-        sessionKey={`${window.location.origin}:${username}`}
-        disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
-        open={transferPopoverOpen}
-        onOpenChange={setTransferPopoverOpen}
-        onClearHistory={() => { api.clearTransferHistory('network') }}
-      />
-      <WebAccountMenu
-        disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
-        username={username}
-        api={api}
-        serverBuild={serverBuild}
-        canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
-        appearance={appearance}
-        onAppearanceChange={onAppearanceChange}
-        onLogout={onLogout}
-      />
+      {transferAction}
+      {accountAction}
     </Stack>
   )
+  const mobileAppTitles: Record<string, string> = {
+    overview: '主页', files: '文件', gallery: '图库', sources: '同步文件夹',
+    transfers: '任务', 'global-tasks': '全局任务', 'local-storage': '本地存储',
+    'cloud-storage': '云端存储', 'admin-users': '用户管理',
+    'admin-audit': '审计日志', 'admin-storage': '全局存储',
+  }
 
   return (
     <Box
@@ -1160,7 +1177,7 @@ function FileManager({
           compactFullscreen
           compactOpen={compactNavigationOpen}
           onCompactOpenChange={setCompactNavigationOpen}
-          compactActions={compactWorkspace ? workspaceActions : undefined}
+          compactActions={compactWorkspace ? (compactChromeOverflow ? workspaceActions : accountAction) : undefined}
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
@@ -1179,6 +1196,17 @@ function FileManager({
           }}
         />
 
+        <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {compactWorkspace ? (
+            <XDriveMobileAppHeader
+              title={mobileAppTitles[appView] ?? 'xDrive'}
+              canGoBack={canExitApp}
+              disabled={viewerActive}
+              onBack={exitApp}
+              onOpenApps={() => setCompactNavigationOpen(true)}
+              transferAction={compactChromeOverflow ? undefined : transferAction}
+            />
+          ) : null}
         <XDriveWorkspaceContent
           responsive
           presentation={xDriveWorkspacePresentation(appView)}
@@ -1215,7 +1243,7 @@ function FileManager({
             }}
             onOpenGallery={() => setAppView('gallery')}
             onOpenTransfers={() => {
-              if (compactWorkspace) setCompactNavigationOpen(true)
+              if (compactWorkspace && compactChromeOverflow) setCompactNavigationOpen(true)
               setTransferPopoverOpen(true)
             }}
           />
@@ -1376,6 +1404,7 @@ function FileManager({
           </Box>
         )}
         </XDriveWorkspaceContent>
+        </Box>
       </XDriveWorkspaceShell>
       </Box>
 

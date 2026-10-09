@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
 import {
   Badge,
   Box,
@@ -31,6 +32,7 @@ import { XDriveTransferTreeItem } from './TransferCenter'
 
 export type XDriveTransferPopoverProps = {
   transfers: readonly XDriveTransferTask[]
+  compactTrigger?: boolean
   loading?: boolean
   disabled?: boolean
   sessionKey?: string
@@ -72,6 +74,7 @@ function DirectionMetric({
 
 function TransferPopoverSession({
   transfers,
+  compactTrigger = false,
   loading = false,
   disabled = false,
   clearHistoryLoading = false,
@@ -146,8 +149,8 @@ function TransferPopoverSession({
               setOpen(!isOpen)
             }}
             sx={{
-              minWidth: 100,
-              maxWidth: 164,
+              minWidth: compactTrigger ? 44 : 100,
+              maxWidth: compactTrigger ? 44 : 164,
               minHeight: 36,
               px: 0.75,
               py: 0.25,
@@ -159,7 +162,7 @@ function TransferPopoverSession({
               '@media (pointer: coarse)': { minHeight: 44 },
             }}
           >
-            <Stack spacing={0} aria-hidden="true" sx={{ minWidth: 0, width: '100%' }}>
+            {compactTrigger ? <SyncAltRoundedIcon aria-hidden="true" fontSize="small" /> : <Stack spacing={0} aria-hidden="true" sx={{ minWidth: 0, width: '100%' }}>
               {(['upload', 'download'] as const).map((direction) => (
                 <Stack key={direction} direction="row" spacing={0.5} alignItems="center">
                   {direction === 'upload'
@@ -173,7 +176,7 @@ function TransferPopoverSession({
                   ) : null}
                 </Stack>
               ))}
-            </Stack>
+            </Stack>}
           </ButtonBase>
         </Badge>
       </Tooltip>

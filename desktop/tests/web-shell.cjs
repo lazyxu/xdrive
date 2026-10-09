@@ -26,7 +26,7 @@ const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
-test('wide Web keeps compact chrome while mobile moves global controls into fullscreen app navigation', () => {
+test('wide Web keeps compact chrome while mobile owns the full-screen title and global controls', () => {
   const backgroundStart = webApp.indexOf('data-xdrive-workspace-background')
   assert.notEqual(backgroundStart, -1, 'missing authenticated workspace background')
   const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', backgroundStart)
@@ -35,7 +35,7 @@ test('wide Web keeps compact chrome while mobile moves global controls into full
   assert.notEqual(appEnd, -1, 'missing Web AppBar end')
   const appBar = webApp.slice(appStart, appEnd)
 
-  const actionsStart = webApp.indexOf('const workspaceActions = (')
+  const actionsStart = webApp.indexOf('const transferAction = (')
   const actionsEnd = webApp.indexOf('\n  return (', actionsStart)
   assert.notEqual(actionsStart, -1, 'global actions must have one shared Web owner')
   const actions = webApp.slice(actionsStart, actionsEnd)
@@ -45,7 +45,11 @@ test('wide Web keeps compact chrome while mobile moves global controls into full
   assert.ok(appBar.includes("display: { xs: 'none', md: 'flex' }"), 'mobile AppBar must reserve no viewport height')
   assert.ok(appBar.includes('{!compactWorkspace ? workspaceActions : null}'), 'wide Web AppBar must retain global actions without mounting a hidden second mobile copy')
   assert.ok(webApp.includes('compactFullscreen'), 'mobile Web must use the fullscreen app-navigation overlay')
-  assert.ok(webApp.includes('compactActions={compactWorkspace ? workspaceActions : undefined}'), 'mobile global controls must be reachable inside app navigation')
+  assert.ok(webApp.includes('compactActions={compactWorkspace ? (compactChromeOverflow ? workspaceActions : accountAction) : undefined}'), 'account/settings and overflow transfers stay reachable in the app Drawer')
+  assert.ok(webApp.includes('transferAction={compactChromeOverflow ? undefined : transferAction}'), 'extra-narrow chrome routes transfers into Drawer rather than compressing title')
+  assert.ok(webApp.includes('transferAction={compactChromeOverflow ? undefined : transferAction}'), 'mobile title keeps transfers when space permits')
+  assert.ok(webApp.includes('onOpenApps={() => setCompactNavigationOpen(true)}'), 'mobile title opens application navigation without floating chrome')
+  assert.ok(webApp.includes('onBack={exitApp}'), 'App title back exits the app, not the FileExplorer directory')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')

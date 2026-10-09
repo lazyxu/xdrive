@@ -157,7 +157,7 @@ async function main() {
     ? page.getByRole('dialog', { name: /重命名/ }).getByRole('textbox')
     : page.locator('[aria-label^="重命名"] input')
   const beginRename = async (page, compact) => {
-    if (compact) await page.getByRole('button', { name: '更多操作：报告.txt' }).click()
+    if (compact) await byName(page, '报告.txt').click({ button: 'right' })
     else await byName(page, '报告.txt').click({ button: 'right' })
     await page.getByText('重命名', { exact: true }).click()
     await (await renameInput(page)).waitFor()

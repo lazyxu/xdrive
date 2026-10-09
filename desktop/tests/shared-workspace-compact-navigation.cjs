@@ -332,37 +332,45 @@ test('More opens and closes a drawer without changing the selected route or invo
   assert.deepEqual(harness.calls, [])
 })
 
-test('full-screen navigation keeps every application in an overlay without reserving a bottom bar', () => {
-  const harness = componentHarness({ fullscreen: true, actions: '账户与上传下载' })
+test('full-screen navigation lives only in the title-bar-controlled Drawer with no global floating control', () => {
+  const openChanges = []
+  const harness = componentHarness({
+    fullscreen: true,
+    open: false,
+    actions: '账户',
+    onOpenChange: value => openChanges.push(value),
+  })
   let tree = harness.render()
-  assert.equal(nodes(tree).filter((node) => node.type === 'BottomNavigation').length, 0)
-  const trigger = only(tree, 'IconButton', (node) => node.props['aria-label'] === '打开应用导航')
-  assert.equal(trigger.props.sx.width, 44)
-  assert.equal(trigger.props.sx.height, 44)
-  trigger.props.onClick(clickEvent())
-  tree = harness.render()
-  assert.equal(drawerOpen(tree), true)
-  assert.ok(textOf(tree).includes('账户与上传下载'))
+  assert.equal(nodes(tree).filter(node => node.type === 'BottomNavigation').length, 0)
+  assert.equal(nodes(tree).filter(node => node.type === 'IconButton' && node.props['aria-label'] === '打开应用导航').length, 0,
+    'App title owns the only app-navigation trigger')
+  const aside = only(tree, 'Box', node => node.props.component === 'aside')
+  assert.deepEqual(aside.props.sx, { display: 'contents' }, 'the Drawer host must reserve no size or intercept Files status')
+  assert.equal(drawerOpen(tree), false)
+  tree = harness.render({ open: true })
+  assert.equal(drawerOpen(tree), true, 'the App title externally controls Drawer state')
+  assert.ok(textOf(tree).includes('账户'))
   for (const label of ['主页', '文件', '图库', '传输', '同步文件夹', '用户管理']) {
-    only(tree, 'ListItemButton', (node) => textOf(node) === label)
+    only(tree, 'ListItemButton', node => textOf(node) === label)
   }
-  assert.deepEqual(harness.calls, [], 'opening application navigation must not launch an app')
+  assert.deepEqual(harness.calls, [], 'opening the Drawer is not route navigation')
   const event = clickEvent({ ctrlKey: true })
-  only(tree, 'ListItemButton', (node) => textOf(node) === '图库').props.onClick(event)
+  only(tree, 'ListItemButton', node => textOf(node) === '图库').props.onClick(event)
   assert.deepEqual(harness.calls, [{ key: 'gallery', event }])
-  assert.equal(drawerOpen(harness.render()), false)
+  assert.equal(openChanges.at(-1), false, 'choosing an App closes the title-owned Drawer')
+  assert.equal(drawerOpen(harness.render({ open: false })), false)
 })
 
-test('full-screen navigation closes and hides its trigger while a Viewer owns the screen', () => {
-  const harness = componentHarness({ fullscreen: true })
-  only(harness.render(), 'IconButton', (node) => node.props['aria-label'] === '打开应用导航').props.onClick(clickEvent())
+test('Viewer closes mobile navigation and cannot expose global floating chrome', () => {
+  const harness = componentHarness({ fullscreen: true, open: true })
   assert.equal(drawerOpen(harness.render()), true)
-  const disabled = harness.render({ disabled: true })
-  assert.equal(drawerOpen(disabled), false)
-  const aside = only(disabled, 'Box', (node) => node.props.component === 'aside')
-  assert.equal(aside.props.sx.position, 'fixed')
-  assert.equal(aside.props.sx.display, 'none')
-  assert.equal(drawerOpen(harness.render({ disabled: false })), false)
+  const disabled = harness.render({ disabled: true, open: false })
+  assert.equal(drawerOpen(disabled), false, 'Viewer owns its full screen and disables background navigation')
+  const aside = only(disabled, 'Box', node => node.props.component === 'aside')
+  assert.deepEqual(aside.props.sx, { display: 'contents' })
+  assert.equal(nodes(disabled).filter(node => node.type === 'IconButton' && node.props['aria-label'] === '打开应用导航').length, 0)
+  assert.equal(drawerOpen(harness.render({ disabled: false, open: false })), false,
+    'returning from Viewer never resurrects an old Drawer')
 })
 
 test('selecting a More destination forwards the original event once and closes the drawer', () => {
