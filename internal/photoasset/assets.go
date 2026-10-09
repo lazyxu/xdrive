@@ -66,6 +66,26 @@ func ReconcileOwner(ctx context.Context, db *gorm.DB, ownerID uint64) (Report, e
 	return report, err
 }
 
+// photoAssetNodeBatchSize bounds both the Node query and GORM's File preload
+// below PostgreSQL's 65,535-parameter extended-protocol limit.
+const photoAssetNodeBatchSize = 4096
+
+func preloadPhotoAssetNodes(tx *gorm.DB, ownerID uint64, nodeIDs []uint64) ([]meta.Node, error) {
+	nodes := make([]meta.Node, 0, len(nodeIDs))
+	for offset := 0; offset < len(nodeIDs); offset += photoAssetNodeBatchSize {
+		end := min(offset+photoAssetNodeBatchSize, len(nodeIDs))
+		var batch []meta.Node
+		if err := tx.Preload("File").
+			Where("id IN ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
+				nodeIDs[offset:end], ownerID, meta.NodeTypeFile).
+			Find(&batch).Error; err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, batch...)
+	}
+	return nodes, nil
+}
+
 func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]uint64, error) {
 	var metadata []meta.MediaMetadata
 	if err := tx.
@@ -94,11 +114,8 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 		nodeIDs = append(nodeIDs, row.NodeID)
 		metadataByNode[row.NodeID] = row
 	}
-	var nodes []meta.Node
-	if err := tx.Preload("File").
-		Where("id IN ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-			nodeIDs, ownerID, meta.NodeTypeFile).
-		Find(&nodes).Error; err != nil {
+	nodes, err := preloadPhotoAssetNodes(tx, ownerID, nodeIDs)
+	if err != nil {
 		return nil, nil, err
 	}
 	nodeByID := make(map[uint64]meta.Node, len(nodes))
@@ -121,15 +138,8 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 		}
 	}
 	if len(groupNodeIDs) != 0 {
-		var extraNodes []meta.Node
-		if err := tx.Preload("File").
-			Where(
-				"id IN ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				groupNodeIDs,
-				ownerID,
-				meta.NodeTypeFile,
-			).
-			Find(&extraNodes).Error; err != nil {
+		extraNodes, err := preloadPhotoAssetNodes(tx, ownerID, groupNodeIDs)
+		if err != nil {
 			return nil, nil, err
 		}
 		for _, node := range extraNodes {

@@ -1,0 +1,46 @@
+{
+  "source": "GitHub Actions photoasset-owner-node-preload-performance",
+  "run_id": 37904228707,
+  "job_id": 113734085950,
+  "measured_commit": "0bf4001cafbb5fd02ce92b28bfe66676d6912677",
+  "extracted_from": "PHOTOASSET_NODE_PRELOAD_100K fixture JSON in GitHub Actions log",
+  "baseline_error": "extended protocol limited to 65535 parameters",
+  "baseline_failed_ms": 175.755,
+  "candidate_median_ms": 790.676,
+  "logical_photo_filenames": 100000,
+  "max_bound_ids_per_query": 4096,
+  "max_node_query_bind_parameters": 4099,
+  "metadata_fetch_ms": 831.318,
+  "node_query_statements_per_sample": 29,
+  "physical_media_nodes": 115000,
+  "preload_file_statements_per_sample": 29,
+  "samples": [
+    {
+      "sample": 1,
+      "elapsed_ms": 917.961,
+      "nodes": 115000,
+      "files": 115000,
+      "batches": 29,
+      "max_parameters": 4099
+    },
+    {
+      "sample": 2,
+      "elapsed_ms": 790.676,
+      "nodes": 115000,
+      "files": 115000,
+      "batches": 29,
+      "max_parameters": 4099
+    },
+    {
+      "sample": 3,
+      "elapsed_ms": 788.586,
+      "nodes": 115000,
+      "files": 115000,
+      "batches": 29,
+      "max_parameters": 4099
+    }
+  ],
+  "scope": "real PostgreSQL Node/File preload stage only; 15k motion filenames are not paired/grouped here; not full ReconcileOwner, no HTTP or UI",
+  "seed_ms": 9479.711,
+  "workload": "photoasset-node-file-preload-100k"
+}

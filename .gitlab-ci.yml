@@ -284,8 +284,8 @@ photoasset-owner-node-preload-performance:
     - *ensure_linux_fetch_tools
     - *install_postgres_client
   rules:
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/photoasset-owner-node-preload-100k"'
-    - if: '$CI_COMMIT_BRANCH == "perf/photoasset-owner-node-preload-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/photoasset-owner-node-preload-100k/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/photoasset-owner-node-preload-100k/'
   script:
     - go test -run '^TestPhotoAssetOwnerNodePreload100K$' -count=1 -timeout=12m -v ./internal/photoasset
 

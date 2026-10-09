@@ -294,7 +294,7 @@ jobs:
         run: go test -run '^TestMediaGalleryFirstOpenPerformance100K$' -count=1 -v ./internal/api
 
   photoasset-owner-node-preload-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/photoasset-owner-node-preload-100k'
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/photoasset-owner-node-preload-100k')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
