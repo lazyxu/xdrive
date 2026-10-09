@@ -929,3 +929,55 @@ test('F-PARITY-03: an organization read failure is retryable, not a fake empty l
     onRetryOrganization: () => { retries += 1 },
   } })
 })
+
+test('F-PARITY-04: Space and context Quick Look use Web route callback, Enter keeps Open', async () => {
+  const quick = []
+  const opened = []
+  await withView(async h => {
+    const home = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(home)
+    await act(async () => { home.props.onClick() })
+    const file = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      .find(node => node.props['aria-label'] === '说明.txt')
+    assert.ok(file)
+    await act(async () => { file.props.onKeyDown({ key: ' ', preventDefault() {} }) })
+    assert.deepEqual(quick, [3], 'Space must launch the already routed Preview')
+    assert.deepEqual(opened, [], 'Space must not invoke ordinary Open')
+    await act(async () => { file.props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
+    assert.deepEqual(opened, [3], 'Enter keeps regular Web file Open')
+    await act(async () => { file.props.onContextMenu({
+      preventDefault() {}, clientX: 35, clientY: 80, nativeEvent: { pointerType: 'mouse' },
+    }) })
+    const preview = find(h.view, 'data-mobile-files-quick-look', true)
+    await act(async () => { preview.props.onClick() })
+    assert.deepEqual(quick, [3, 3])
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onOpenItem: async item => { opened.push(item.id) },
+    onQuickLookItem: item => { quick.push(item.id) },
+  } })
+})
+
+test('F-PARITY-04: browser-tab action survives Mobile menu but internal file tabs do not', async () => {
+  const calls = []
+  await withView(async h => {
+    const home = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { home.props.onClick() })
+    const file = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      .find(node => node.props['aria-label'] === '说明.txt')
+    assert.ok(file)
+    await act(async () => { file.props.onContextMenu({
+      preventDefault() {}, clientX: 35, clientY: 80, nativeEvent: { pointerType: 'mouse' },
+    }) })
+    assert.equal(count(h.view, 'data-mobile-files-context-action') > 0, true)
+    assert.equal(h.view.root.findAll(node => node.props?.['data-mobile-files-context-action'] === 'open-new-tab').length, 0)
+    const browserAction = find(h.view, 'data-mobile-files-context-action', 'open-browser-tab')
+    await act(async () => { browserAction.props.onClick() })
+    assert.deepEqual(calls, ['browser'])
+  }, { props: { getItemMenuItems: () => [
+    { id: 'open-new-tab', label: '在新文件标签页打开', onSelect: () => calls.push('internal') },
+    { id: 'open-browser-tab', label: '在新浏览器标签页打开', onSelect: () => calls.push('browser') },
+  ] } })
+})

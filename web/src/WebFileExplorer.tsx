@@ -931,6 +931,10 @@ export default function WebFileExplorer({
             if (trashActive) return false
             return openItem(item, node => openWebNode(node, item))
           }}
+          onQuickLookItem={trashActive ? undefined : item => {
+            void recent.record(Number(item.id))
+            openWebQuickLook({ item, logicalIndex: logicalIndexForItem(item) })
+          }}
           onOpenError={onError}
           recentItems={recent.items.map(item => ({
             id: item.id, name: item.name, kind: item.kind, subtitle: item.path,

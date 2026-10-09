@@ -354,7 +354,8 @@ test('F-iOS-01A: context menu consumes shared action icon/divider/danger metadat
   assert.match(mobileSource, /data-mobile-files-context-separator="danger"/)
   assert.match(mobileSource, /data-mobile-files-context-action=\{action\.id\}/)
   assert.match(mobileSource, /action\.id === 'share' \? '分享链接' : action\.label/)
-  assert.match(mobileSource, /\['open-new-tab', 'open-browser-tab'\]/)
+  assert.match(mobileSource, /action\.id !== 'open-new-tab'/)
+  assert.doesNotMatch(mobileSource, /\['open-new-tab', 'open-browser-tab'\]/)
   assert.match(mobileSource, /data-mobile-files-native-share-entry="directory"/)
 })
 
@@ -456,4 +457,24 @@ test('F-PARITY-03: saved rule destructive action never deletes files or pretends
   assert.match(mobileSource, /props\.searchActive && props\.canReplaceSavedSearch/)
   assert.match(mobileSource, /deleteSavedSearchBusyRef\.current/)
   assert.match(mobileSource, /setDeleteSavedSearchError/)
+})
+
+test('F-PARITY-04: Mobile Space and context preview invoke the exact wide Web Preview route', () => {
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  assert.match(adapter, /onQuickLookItem=\{trashActive \? undefined : item => \{/)
+  assert.match(adapter, /openWebQuickLook\(\{ item, logicalIndex: logicalIndexForItem\(item\) \}\)/)
+  assert.match(mobileSource, /props\.onQuickLookItem\(item\)/)
+  assert.match(mobileSource, /data-mobile-files-quick-look/)
+  assert.match(mobileSource, /event\.key === ' ' && !selectionMode && !props\.trashActive/)
+  assert.match(adapter, /const openWebQuickLook = \(request: XDriveFileExplorerQuickLookRequest\)/)
+  assert.doesNotMatch(mobileSource, /<XDriveFileQuickLookDialog|filePreviewURL\(/)
+})
+
+test('F-PARITY-04: Browser tab remains available; internal file tab still absent on Mobile', () => {
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  assert.match(adapter, /id: 'open-browser-tab'/)
+  assert.match(adapter, /onSelect: \(\) => onOpenNodeInBrowserTab\(node\)/)
+  assert.match(mobileSource, /action\.id !== 'open-new-tab'/)
+  assert.match(mobileSource, /data-mobile-files-context-action=\{action\.id\}/)
+  assert.doesNotMatch(mobileSource, /props\.onNewTab\(/)
 })
