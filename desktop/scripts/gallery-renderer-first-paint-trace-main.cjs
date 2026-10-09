@@ -114,6 +114,17 @@ app.whenReady().then(async () => {
       surface,
       sample,
       rendererWorkingSetKB: rendererMetric?.memory?.workingSetSize ?? null,
+      rendererMemorySampling: 'single post-result working-set snapshot',
+      runtime: {
+        kind: 'electron-renderer-benchmark',
+        platform: process.platform,
+        arch: process.arch,
+        electron: process.versions.electron,
+        chromium: process.versions.chrome,
+        node: process.versions.node,
+        disableGPU: app.commandLine.hasSwitch('disable-gpu'),
+        gpuFeatureStatus: app.getGPUFeatureStatus(),
+      },
     }
 
     if (

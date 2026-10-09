@@ -7,6 +7,11 @@ import {
   type MediaGalleryDataSource,
 } from './MediaGallery'
 import { xDriveCaptureVideoPosterBlob } from './MediaGalleryVideoPoster'
+import {
+  xDriveGalleryPerformanceLongTaskAttribution,
+  type XDriveGalleryPerformanceLongTask,
+  type XDriveGalleryPerformanceLongTaskMetrics,
+} from './GalleryPerformanceMetrics'
 
 export type XDriveGalleryRendererTraceScenario =
   | 'image-cold'
@@ -16,7 +21,7 @@ export type XDriveGalleryRendererTraceScenario =
   | 'live-cold'
   | 'live-warm'
 
-export type XDriveGalleryRendererTraceResult = {
+export type XDriveGalleryRendererTraceResult = XDriveGalleryPerformanceLongTaskMetrics & {
   synthetic: true
   scenario: XDriveGalleryRendererTraceScenario
   logicalItems: number
@@ -46,12 +51,26 @@ export type XDriveGalleryRendererTraceResult = {
   decodedToPaintMs: number
   rangeToFirstPaintMs: number
   routeToFirstPaintMs: number
+  presentationProxy: 'two-rAF'
+  longTaskObservationSupported: boolean
+  rangeToFirstImageDecodeMs: number
+  routeToFirstImageDecodeMs: number
+  fixturePreparationMs: number
+  jpegFixtureMs: number
+  videoFixtureMs: number
+  warmMediaPreparationMs: number
+  preparationToActivationMs: number
   mountedImages: number
   placeholders: number
-  longTaskCount: number
-  longTaskDurationMs: number
-  longestLongTaskMs: number
   usedJSHeapSize: number | null
+}
+
+type GalleryTracePreparation = {
+  startedAt: number
+  readyAt: number
+  jpegFixtureMs: number
+  videoFixtureMs: number
+  warmMediaPreparationMs: number
 }
 
 declare global {
@@ -242,11 +261,13 @@ function GalleryRendererTrace({
   imageFixture,
   videoFixture,
   warmURL,
+  preparation,
 }: {
   scenario: XDriveGalleryRendererTraceScenario
   imageFixture: Blob
   videoFixture: Blob
   warmURL: string | null
+  preparation: GalleryTracePreparation
 }) {
   const startedAtRef = useRef(performance.now())
   const markersRef = useRef({
@@ -263,9 +284,7 @@ function GalleryRendererTrace({
   })
   const completedRef = useRef(false)
   const firstRangeRef = useRef(true)
-  const longTaskCountRef = useRef(0)
-  const longTaskDurationRef = useRef(0)
-  const longestLongTaskRef = useRef(0)
+  const longTaskEntriesRef = useRef<XDriveGalleryPerformanceLongTask[]>([])
   const cold = scenario.endsWith('-cold')
   const videoScenario = scenario.startsWith('video-')
   const thumbnailDelay = cold ? coldThumbnailDelayMs : warmThumbnailDelayMs
@@ -339,15 +358,19 @@ function GalleryRendererTrace({
     let observer: MutationObserver | null = null
     let longTaskObserver: PerformanceObserver | null = null
 
+    const recordLongTasks = (entries: PerformanceEntry[]) => {
+      for (const entry of entries) {
+        longTaskEntriesRef.current.push({ startTime: entry.startTime, duration: entry.duration })
+      }
+    }
+
     try {
-      longTaskObserver = new PerformanceObserver((entries) => {
-        for (const entry of entries.getEntries()) {
-          longTaskCountRef.current += 1
-          longTaskDurationRef.current += entry.duration
-          longestLongTaskRef.current = Math.max(longestLongTaskRef.current, entry.duration)
-        }
-      })
-      longTaskObserver.observe({ type: 'longtask', buffered: true } as PerformanceObserverInit)
+      if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+        longTaskObserver = new PerformanceObserver((entries) => {
+          recordLongTasks(entries.getEntries())
+        })
+        longTaskObserver.observe({ type: 'longtask', buffered: true } as PerformanceObserverInit)
+      }
     } catch {
       longTaskObserver = null
     }
@@ -381,6 +404,7 @@ function GalleryRendererTrace({
         }
         markersRef.current.imagePainted = elapsed()
         completedRef.current = true
+        recordLongTasks(longTaskObserver?.takeRecords() ?? [])
 
         const markers = markersRef.current
         const memory = (performance as Performance & {
@@ -416,11 +440,22 @@ function GalleryRendererTrace({
           decodedToPaintMs: markers.imagePainted - markers.imageDecoded,
           rangeToFirstPaintMs: markers.imagePainted - markers.rangeResolved,
           routeToFirstPaintMs: markers.imagePainted,
+          presentationProxy: 'two-rAF',
+          longTaskObservationSupported: Boolean(longTaskObserver),
+          rangeToFirstImageDecodeMs: markers.imageDecoded - markers.rangeResolved,
+          routeToFirstImageDecodeMs: markers.imageDecoded,
+          fixturePreparationMs: preparation.readyAt - preparation.startedAt,
+          jpegFixtureMs: preparation.jpegFixtureMs,
+          videoFixtureMs: preparation.videoFixtureMs,
+          warmMediaPreparationMs: preparation.warmMediaPreparationMs,
+          preparationToActivationMs: startedAtRef.current - preparation.readyAt,
           mountedImages: grid?.querySelectorAll('img').length ?? 0,
           placeholders: grid?.querySelectorAll('[data-xdrive-media-gallery-placeholder]').length ?? 0,
-          longTaskCount: longTaskCountRef.current,
-          longTaskDurationMs: longTaskDurationRef.current,
-          longestLongTaskMs: longestLongTaskRef.current,
+          ...xDriveGalleryPerformanceLongTaskAttribution(
+            longTaskEntriesRef.current,
+            startedAtRef.current,
+            startedAtRef.current + markers.imagePainted,
+          ),
           usedJSHeapSize: memory?.usedJSHeapSize ?? null,
         }
         window.__xdriveGalleryPerfResult = result
@@ -462,13 +497,32 @@ export function XDriveGalleryPerformanceHarness({
     image: Blob
     video: Blob
     warmURL: string | null
+    preparation: GalleryTracePreparation
   } | null>(null)
 
   useEffect(() => {
     let active = true
     let warmURL: string | null = null
-    void Promise.all([createFixtureJPEG(), createFixtureVideo()])
+    const preparation: GalleryTracePreparation = {
+      startedAt: performance.now(),
+      readyAt: Number.NaN,
+      jpegFixtureMs: Number.NaN,
+      videoFixtureMs: Number.NaN,
+      warmMediaPreparationMs: 0,
+    }
+    const jpegStartedAt = performance.now()
+    const imagePromise = createFixtureJPEG().then((image) => {
+      preparation.jpegFixtureMs = performance.now() - jpegStartedAt
+      return image
+    })
+    const videoStartedAt = performance.now()
+    const videoPromise = createFixtureVideo().then((video) => {
+      preparation.videoFixtureMs = performance.now() - videoStartedAt
+      return video
+    })
+    void Promise.all([imagePromise, videoPromise])
       .then(async ([image, video]) => {
+        const warmStartedAt = performance.now()
         if (scenario === 'image-warm' || scenario === 'live-warm') {
           warmURL = URL.createObjectURL(image)
           await decodeURL(warmURL)
@@ -481,7 +535,11 @@ export function XDriveGalleryPerformanceHarness({
             URL.revokeObjectURL(source)
           }
         }
-        if (active) setFixture({ image, video, warmURL })
+        preparation.warmMediaPreparationMs = scenario.endsWith('-warm')
+          ? performance.now() - warmStartedAt
+          : 0
+        preparation.readyAt = performance.now()
+        if (active) setFixture({ image, video, warmURL, preparation })
         else if (warmURL) URL.revokeObjectURL(warmURL)
       })
       .catch((error) => {
@@ -501,6 +559,7 @@ export function XDriveGalleryPerformanceHarness({
       imageFixture={fixture.image}
       videoFixture={fixture.video}
       warmURL={fixture.warmURL}
+      preparation={fixture.preparation}
     />
   )
 }
