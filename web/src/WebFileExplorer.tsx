@@ -1027,6 +1027,15 @@ export default function WebFileExplorer({
           onRefreshFavorites={() => { void favorites.refresh() }}
           canPaste={!trashActive && fileOperationCanPaste}
           onPaste={() => { void pasteClipboard() }}
+          canUndo={!trashActive && canUndo}
+          onUndo={trashActive ? undefined : onUndo}
+          canRedo={!trashActive && canRedo}
+          onRedo={trashActive ? undefined : onRedo}
+          canHistoryBack={!trashActive && canGoBack}
+          onHistoryBack={() => { void goBack() }}
+          canHistoryForward={!trashActive && canGoForward}
+          onHistoryForward={() => { void goForward() }}
+          onCopyPaths={selected => { void copyItemPaths(selected) }}
           onRename={renameItem}
           onCopy={copyItems}
           onCut={cutItems}

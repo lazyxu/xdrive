@@ -116,6 +116,15 @@ type Props = {
   onRefreshFavorites: () => void
   canPaste: boolean
   onPaste: () => void
+  canUndo?: boolean
+  onUndo?: () => void
+  canRedo?: boolean
+  onRedo?: () => void
+  canHistoryBack?: boolean
+  onHistoryBack?: () => void
+  canHistoryForward?: boolean
+  onHistoryForward?: () => void
+  onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
   onRename: (item: XDriveFileExplorerItem, name: string) => Promise<void>
   onCopy: (items: XDriveFileExplorerItem[]) => void
   onCut: (items: XDriveFileExplorerItem[]) => void
@@ -1395,8 +1404,13 @@ export default function MobileFiles(props: Props) {
           </Stack>
         ) : (
           <Stack component="nav" direction="row" justifyContent="space-around" sx={{
-            flexShrink: 0, borderTop: 1, borderColor: 'divider', py: 0.25,
-            pb: 'max(env(safe-area-inset-bottom), 4px)', bgcolor: 'background.paper',
+            flexShrink: 0, mx: 1.5, mt: 0.75,
+            mb: 'max(env(safe-area-inset-bottom), 6px)',
+            px: 0.5, py: 0.35, borderRadius: '999px',
+            border: '1px solid', borderColor: 'divider',
+            bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(42,42,45,0.92)' : 'rgba(249,249,253,0.94)',
+            backdropFilter: 'blur(18px) saturate(160%)',
+            boxShadow: '0 3px 16px rgba(0,0,0,0.10)',
           }} aria-label="文件分类">
             {([
               ['recent', <HistoryRoundedIcon/>, '最近'],
@@ -1419,6 +1433,9 @@ export default function MobileFiles(props: Props) {
           <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
           <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('copy-to') }}>复制到…</MenuItem>
           <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('download') }}>下载所选</MenuItem>
+          {props.onCopyPaths ? <MenuItem disabled={!selection.length} onClick={() => {
+            setSelectionMoreAnchor(null); props.onCopyPaths?.(selection)
+          }}>复制所选路径</MenuItem> : null}
           <MenuItem onClick={() => { setSelectionMoreAnchor(null); props.onManageTags(selection) }}>添加/管理标签</MenuItem>
         </Menu>
         <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
@@ -1429,6 +1446,11 @@ export default function MobileFiles(props: Props) {
           {showDirectory && !props.trashActive ? overflowAction('上传文件', props.onUpload) : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件夹', props.onUploadFolder) : null}
           {showDirectory && !props.trashActive ? overflowAction('粘贴', props.onPaste, !props.canPaste) : null}
+          {!props.trashActive ? <Divider sx={{ my: 0.5 }} /> : null}
+          {!props.trashActive ? overflowAction('撤销', () => props.onUndo?.(), !props.canUndo || !props.onUndo) : null}
+          {!props.trashActive ? overflowAction('重做', () => props.onRedo?.(), !props.canRedo || !props.onRedo) : null}
+          {showDirectory && !props.trashActive ? overflowAction('后退（浏览历史）', () => props.onHistoryBack?.(), !props.canHistoryBack || !props.onHistoryBack) : null}
+          {showDirectory && !props.trashActive ? overflowAction('前进（浏览历史）', () => props.onHistoryForward?.(), !props.canHistoryForward || !props.onHistoryForward) : null}
           {showDirectory ? overflowAction('排序与分组', () => {
             setArrangeAnchor(moreAnchor)
           }) : null}
@@ -1486,6 +1508,13 @@ export default function MobileFiles(props: Props) {
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><DriveFileMoveOutlinedIcon fontSize="small"/></ListItemIcon>移动到…</MenuItem> : null}
           {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onCopyTo([itemMenu.item]); setItemMenu(null) }}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><ContentCopyOutlinedIcon fontSize="small"/></ListItemIcon>复制到…</MenuItem> : null}
+          {itemMenu && !props.trashActive && props.onCopyPaths ? (
+            <MenuItem data-mobile-files-copy-path onClick={() => {
+              props.onCopyPaths?.([itemMenu.item]); setItemMenu(null)
+            }} sx={{ minHeight: MIN_TOUCH }}>
+              <ListItemIcon><ContentCopyOutlinedIcon fontSize="small"/></ListItemIcon>复制路径
+            </MenuItem>
+          ) : null}
           {itemMenu?.item.kind === 'file' && !props.trashActive && canNativeShareFile ? (
             <MenuItem data-mobile-files-native-share-entry="directory"
               onClick={() => prepareNativeShare(itemMenu.item)} sx={{ minHeight: MIN_TOUCH }}>

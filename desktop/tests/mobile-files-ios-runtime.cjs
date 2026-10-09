@@ -19,8 +19,17 @@ function compile(relative, jsx = false) {
   }).outputText
 }
 function loadState() {
+  const virtual = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/mui/FileExplorerVirtualSurface.ts'))(
+    virtual, virtual.exports,
+  )
   const mod = { exports: {} }
-  new Function('module', 'exports', compile('web/src/mobileFilesState.ts'))(mod, mod.exports)
+  new Function('module', 'exports', 'require', compile('web/src/mobileFilesState.ts'))(
+    mod, mod.exports, name => {
+      if (name === '../../ui/shared/src/mui/FileExplorerVirtualSurface') return virtual.exports
+      throw Error('Unexpected Mobile window dependency: ' + name)
+    },
+  )
   return mod.exports
 }
 const state = loadState()
@@ -770,4 +779,62 @@ test('F-PARITY-01A: Mobile folder Properties show Server-recursive counts and pr
         file_count: 2, folder_count: 1, sources: [{ id: 7, name: '照片来源', kind: 'yike' }] }
     },
   } })
+})
+
+test('F-iOS27-02: rounded Files-internal bottom navigator retains same scroll owner and safe-area protection', async () => {
+  await withView(async h => {
+    const bars = h.view.root.findAll(node => node.props?.component === 'nav' && node.props?.['aria-label'] === '文件分类')
+    assert.equal(bars.length, 1)
+    assert.equal(bars[0].props.sx.borderRadius, '999px')
+    assert.match(bars[0].props.sx.backdropFilter, /blur/)
+    assert.match(bars[0].props.sx.mb, /safe-area-inset-bottom/)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  })
+})
+
+test('F-PARITY-02: mobile More uses shared undo/redo and workspace history callbacks', async () => {
+  const calls = []
+  await withView(async h => {
+    const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(root)
+    await act(async () => { root.props.onClick() })
+    for (const [label, value] of [
+      ['撤销', 'undo'], ['重做', 'redo'],
+      ['后退（浏览历史）', 'back'], ['前进（浏览历史）', 'forward'],
+    ]) {
+      const more = h.view.root.findAll(node => node.props?.['aria-label'] === '文件操作菜单')[0]
+      assert.ok(more)
+      await act(async () => { more.props.onClick({ currentTarget: {} }) })
+      const menu = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === label)[0]
+      assert.ok(menu, 'missing Mobile action: ' + label)
+      assert.equal(menu.props.disabled, false)
+      await act(async () => { menu.props.onClick() })
+      assert.equal(calls.at(-1), value)
+    }
+    assert.deepEqual(calls, ['undo', 'redo', 'back', 'forward'])
+  }, { props: {
+    canUndo: true, onUndo: () => calls.push('undo'),
+    canRedo: true, onRedo: () => calls.push('redo'),
+    canHistoryBack: true, onHistoryBack: () => calls.push('back'),
+    canHistoryForward: true, onHistoryForward: () => calls.push('forward'),
+  } })
+})
+
+test('F-PARITY-02: Mobile file context invokes the existing Copy Paths adapter on immutable IDs', async () => {
+  const ids = []
+  await withView(async h => {
+    const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(root)
+    await act(async () => { root.props.onClick() })
+    const item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    assert.ok(item)
+    await act(async () => { item.props.onContextMenu({
+      preventDefault() {}, clientX: 40, clientY: 90, nativeEvent: { pointerType: 'mouse' },
+    }) })
+    const path = find(h.view, 'data-mobile-files-copy-path', true)
+    await act(async () => { path.props.onClick() })
+    assert.deepEqual(ids, [[2]])
+  }, { props: { onCopyPaths: items => ids.push(items.map(item => item.id)) } })
 })

@@ -1,3 +1,5 @@
+import { xDriveFileExplorerDetailsVirtualWindow } from '../../ui/shared/src/mui/FileExplorerVirtualSurface'
+
 export type MobileFilesSection = 'recent' | 'browse' | 'favorites'
 export type MobileFilesSavedState = {
   section: MobileFilesSection
@@ -41,10 +43,10 @@ export function mobileFilesIsMoved(start: { x: number; y: number }, current: { x
 export function mobileFilesWindow(
   total: number, scrollTop: number, viewportHeight: number, rowHeight: number, overscan = 5,
 ) {
-  const count = Math.max(0, Math.floor(total))
-  const row = Math.max(1, rowHeight)
-  const first = Math.min(Math.max(0, count - 1), Math.max(0, Math.floor(scrollTop / row)))
-  const start = count ? Math.max(0, first - overscan) : 0
-  const end = count ? Math.min(count, first + Math.ceil(Math.max(300, viewportHeight) / row) + overscan) : 0
-  return { start, end, before: start * row, after: Math.max(0, count - end) * row }
+  // Desktop Details and Mobile List/Grid share one bounded window calculation.
+  // Mobile retains its previous 300 CSS px minimum instead of desktop's eight-row floor.
+  return xDriveFileExplorerDetailsVirtualWindow({
+    itemCount: total, scrollTop, viewportHeight, rowHeight,
+    headerHeight: 0, overscan, minViewportHeight: 300,
+  })
 }
