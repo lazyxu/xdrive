@@ -23,9 +23,13 @@ export function useXDriveFileExplorerOrganization({
   const reorderTailRef = useRef<Promise<void>>(Promise.resolve())
   const mutationRef = useRef<{
     key: string
+    intent: string
     lifecycleGeneration: number
     promise: Promise<unknown>
   } | null>(null)
+  // Different intents for the same resource key are serialized; exact
+  // duplicate intents remain single-flight and unrelated keys stay parallel.
+  const mutationTailsRef = useRef(new Map<string, Promise<unknown>>())
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
   const [tags, setTags] = useState<XDriveFileTag[]>([])
@@ -67,6 +71,7 @@ export function useXDriveFileExplorerOrganization({
     reorderGenerationRef.current += 1
     tagNodeRefreshGenerationRef.current += 1
     reorderTailRef.current = Promise.resolve()
+    mutationTailsRef.current.clear()
     mutationRef.current = null
     setTags([])
     setSavedSearches([])
@@ -77,6 +82,7 @@ export function useXDriveFileExplorerOrganization({
       reorderGenerationRef.current += 1
       tagNodeRefreshGenerationRef.current += 1
       reorderTailRef.current = Promise.resolve()
+      mutationTailsRef.current.clear()
       mutationRef.current = null
     }
   }, [lifecycleKey])
@@ -92,13 +98,15 @@ export function useXDriveFileExplorerOrganization({
     key: string,
     action: () => Promise<T>,
     after?: (value: T) => void,
+    intent = key,
   ): Promise<T> => {
     const lifecycleGeneration = lifecycleGenerationRef.current
     const active = mutationRef.current
     if (
       active &&
       active.lifecycleGeneration === lifecycleGeneration &&
-      active.key === key
+      active.key === key &&
+      active.intent === intent
     ) {
       return active.promise as Promise<T>
     }
@@ -106,15 +114,22 @@ export function useXDriveFileExplorerOrganization({
     setBusyKey(key)
     const holder = {
       key,
+      intent,
       lifecycleGeneration,
       promise: Promise.resolve(undefined) as Promise<unknown>,
     }
-    const operation = Promise.resolve()
-      .then(action)
+    const previous = mutationTailsRef.current.get(key)
+    const operation = (previous ? previous.catch(() => undefined) : Promise.resolve())
+      .then(() => {
+        // A queued operation from an expired account must never run on the
+        // next session's transport, even if the earlier request completes.
+        if (lifecycleGenerationRef.current !== lifecycleGeneration) return undefined as T
+        return action()
+      })
       .then((value) => {
         if (lifecycleGenerationRef.current === lifecycleGeneration) {
-          // The write has committed. A list request started while it was
-          // pending may still hold a pre-write snapshot.
+          // A list refresh started before the write's commit may hold an
+          // older snapshot and must not overwrite the confirmed result.
           refreshGenerationRef.current += 1
           setLoading(false)
           after?.(value)
@@ -133,10 +148,14 @@ export function useXDriveFileExplorerOrganization({
           mutationRef.current = null
           setBusyKey((current) => current === key ? '' : current)
         }
+        if (mutationTailsRef.current.get(key) === operation) {
+          mutationTailsRef.current.delete(key)
+        }
       })
 
     holder.promise = operation
     mutationRef.current = holder
+    mutationTailsRef.current.set(key, operation)
     return operation
   }, [])
 
@@ -144,6 +163,7 @@ export function useXDriveFileExplorerOrganization({
     'tag:create',
     () => adapter.createTag(name, color),
     (tag) => setTags((current) => [...current, tag].sort((a, b) => a.name.localeCompare(b.name))),
+    JSON.stringify([name, color]),
   ), [adapter, run])
 
   const updateTag = useCallback((id: number, input: { name?: string; color?: string }) => run(
@@ -151,6 +171,7 @@ export function useXDriveFileExplorerOrganization({
     () => adapter.updateTag(id, input),
     (tag) => setTags((current) => current.map((item) => item.id === id ? { ...item, ...tag } : item)
       .sort((a, b) => a.name.localeCompare(b.name))),
+    JSON.stringify([input.name ?? null, input.color ?? null]),
   ), [adapter, run])
 
   const deleteTag = useCallback((id: number) => run(
@@ -164,6 +185,8 @@ export function useXDriveFileExplorerOrganization({
     await run(
       `tag:nodes:${tagID}`,
       () => assigned ? adapter.addTagNodes(tagID, nodeIDs) : adapter.removeTagNodes(tagID, nodeIDs),
+      undefined,
+      JSON.stringify([assigned, [...new Set(nodeIDs)].sort((a, b) => a - b)]),
     )
     if (lifecycleGenerationRef.current !== lifecycleGeneration) return
     const refreshGeneration = tagNodeRefreshGenerationRef.current + 1
@@ -194,12 +217,14 @@ export function useXDriveFileExplorerOrganization({
     () => adapter.createSavedSearch(input),
     (item) => setSavedSearches((current) => [...current, item]
       .sort((a, b) => a.position - b.position || a.id - b.id)),
+    JSON.stringify([input.name, input.query, input.filters]),
   ), [adapter, run])
 
   const updateSavedSearch = useCallback((id: number, input: XDriveFileSavedSearchInput) => run(
     `saved-search:update:${id}`,
     () => adapter.updateSavedSearch(id, input),
     (item) => setSavedSearches((current) => current.map((candidate) => candidate.id === id ? item : candidate)),
+    JSON.stringify([input.name, input.query, input.filters]),
   ), [adapter, run])
 
   const deleteSavedSearch = useCallback((id: number) => run(
