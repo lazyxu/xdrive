@@ -197,6 +197,16 @@ let sourceRunMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
 const filePropertiesRequests = new Map<string, AbortController>()
 const cancelledFilePropertiesRequests = new Set<string>()
+const mediaItemRequests = new Map<string, AbortController>()
+const cancelledMediaItemRequests = new Set<string>()
+
+function rememberCancelledMediaItemRequest(requestID: string) {
+  cancelledMediaItemRequests.add(requestID)
+  const timer = setTimeout(() => {
+    cancelledMediaItemRequests.delete(requestID)
+  }, 5_000)
+  timer.unref()
+}
 
 function rememberCancelledFilePropertiesRequest(requestID: string) {
   cancelledFilePropertiesRequests.add(requestID)
@@ -1872,6 +1882,46 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cancelSourceRun(sourceID, runID.trim())
   }, false))
+  ipcMain.handle('agent:get-media-item', (event, nodeID: unknown, requestIDValue: unknown) =>
+    runAgentAction<AgentMediaItem>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      requireAgentCapability(hello, 'media-item-properties')
+      if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Media node id must be a positive integer.')
+      }
+      const requestID = normalizeFilePropertiesRequestID(requestIDValue)
+      if (mediaItemRequests.has(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Duplicate media property request id.')
+      }
+      if (cancelledMediaItemRequests.delete(requestID)) {
+        throw new AgentIPCError('aborted', 0, 'Media property request was cancelled.')
+      }
+      const controller = new AbortController()
+      mediaItemRequests.set(requestID, controller)
+      const onDestroyed = () => controller.abort()
+      event.sender.once('destroyed', onDestroyed)
+      try {
+        return await requireAgentClient().mediaItem(nodeID, controller.signal)
+      } finally {
+        event.sender.removeListener('destroyed', onDestroyed)
+        if (mediaItemRequests.get(requestID) === controller) {
+          mediaItemRequests.delete(requestID)
+        }
+      }
+    }, false))
+  ipcMain.handle('agent:cancel-media-item', (_event, requestIDValue: unknown) =>
+    runAgentAction(async () => {
+      const requestID = normalizeFilePropertiesRequestID(requestIDValue)
+      const controller = mediaItemRequests.get(requestID)
+      if (controller) {
+        controller.abort()
+      } else {
+        rememberCancelledMediaItemRequest(requestID)
+      }
+      return { cancelled: true }
+    }, false))
+
   ipcMain.handle('agent:get-media-items', (_event, kind: unknown = '', limit: unknown = 100, offset: unknown = 0, query: unknown = undefined) => runAgentAction<AgentMediaItem[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')

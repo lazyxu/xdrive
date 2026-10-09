@@ -66,6 +66,7 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
+import type { MediaItem } from '../models'
 import { formatBytes } from '../format'
 import type {
   XDriveByteProgressHandler,
@@ -114,6 +115,7 @@ import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { XDriveFilePropertiesDialog } from './FilePropertiesDialog'
+import { XDriveMediaDetailsInspector } from './MediaGalleryInspector'
 import { XDriveFileExplorerColumnView } from './FileExplorerColumnView'
 import type { XDriveFileExplorerColumnPage } from './FileExplorerColumnView'
 import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
@@ -869,6 +871,7 @@ export function XDriveFileExplorer({
   loadLivePhotoMotion,
   loadPropertiesStats,
   loadMediaDetails,
+  loadMediaItem,
   getItemStatus,
   getItemAvailability,
   externallySorted = false,
@@ -972,6 +975,10 @@ export function XDriveFileExplorer({
     items: readonly XDriveFileExplorerMediaDetailsRef[],
     signal: AbortSignal,
   ) => Promise<readonly XDriveFileExplorerMediaDetails[]>
+  loadMediaItem?: (
+    item: XDriveFileExplorerItem,
+    signal: AbortSignal,
+  ) => Promise<MediaItem | null>
   getItemStatus?: (
     item: XDriveFileExplorerItem,
   ) => string | undefined
@@ -3474,6 +3481,60 @@ export function XDriveFileExplorer({
     .filter((section) => section.properties.length > 0)
 
   const propertiesDialogItem = propertiesItems.length === 1 ? propertiesItems[0] : null
+  const mediaFileKind = propertiesDialogItem
+    ? propertiesDialogItem.fileKind ?? xDriveFileKind(propertiesDialogItem.name, propertiesDialogItem.kind)
+    : 'file'
+  const mediaPropertiesEnabled = Boolean(
+    loadMediaItem && propertiesDialogItem &&
+    propertiesDialogItem.kind === 'file' &&
+    (mediaFileKind === 'image' || mediaFileKind === 'video' || propertiesDialogItem.name.toLowerCase().endsWith('.livp')),
+  )
+  const mediaPropertiesKey = mediaPropertiesEnabled && propertiesDialogItem
+    ? [interactionScopeKey, propertiesDialogItem.id, propertiesDialogItem.revision ?? ''].join(':')
+    : ''
+  const [mediaPropertiesState, setMediaPropertiesState] = useState<{
+    key: string
+    item: MediaItem | null
+    error: string
+  }>({ key: '', item: null, error: '' })
+  const mediaPropertiesRequestRef = useRef(0)
+
+  useEffect(() => {
+    const request = ++mediaPropertiesRequestRef.current
+    if (!mediaPropertiesEnabled || !propertiesDialogItem || !loadMediaItem) return
+    const currentItem = propertiesDialogItem
+    const controller = new AbortController()
+    setMediaPropertiesState({ key: mediaPropertiesKey, item: null, error: '' })
+    void Promise.resolve()
+      .then(() => loadMediaItem(currentItem, controller.signal))
+      .then((value) => {
+        if (controller.signal.aborted || request !== mediaPropertiesRequestRef.current) return
+        if (!value || value.node.id !== Number(currentItem.id)) {
+          throw new Error('未找到当前文件的媒体信息')
+        }
+        const expectedRevision = Number(currentItem.revision)
+        if (Number.isSafeInteger(expectedRevision) && expectedRevision > 0 &&
+            value.node.revision !== expectedRevision) {
+          throw new Error('文件版本已改变，请刷新后重新查看属性')
+        }
+        setMediaPropertiesState({ key: mediaPropertiesKey, item: value, error: '' })
+      })
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted || request !== mediaPropertiesRequestRef.current) return
+        setMediaPropertiesState({
+          key: mediaPropertiesKey,
+          item: null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        })
+      })
+    return () => controller.abort()
+  }, [
+    mediaPropertiesKey,
+    mediaPropertiesEnabled,
+    propertiesDialogItem?.id,
+    propertiesDialogItem?.revision,
+    loadMediaItem,
+  ])
 
   useEffect(() => {
     const requestID = ++propertiesMediaDetailsRequestRef.current
@@ -3604,6 +3665,18 @@ export function XDriveFileExplorer({
     : propertiesItems.length > 1
       ? <InsertDriveFileRoundedIcon color="action" sx={{ fontSize: 64 }} />
       : undefined
+  const mediaPropertiesCurrent = mediaPropertiesState.key === mediaPropertiesKey
+  const mediaPropertiesError = mediaPropertiesCurrent ? mediaPropertiesState.error : ''
+  const mediaPropertiesItem = mediaPropertiesCurrent ? mediaPropertiesState.item : null
+  const showMediaProperties = mediaPropertiesEnabled && !mediaPropertiesError
+  const mediaFileRows: Array<[string, string]> = propertiesDialogItem ? [
+    ['位置', propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath],
+    ['创建时间', propertiesDialogItem.createdAt ? new Date(propertiesDialogItem.createdAt).toLocaleString() : '—'],
+    ['修改时间', propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—'],
+    ...(propertiesDialogAvailability ? [['可用性', propertiesDialogAvailability.label] as [string, string]] : []),
+    ...(propertiesDialogItem.sha256 ? [['SHA-256', propertiesDialogItem.sha256] as [string, string]] : []),
+    ['Revision', String(propertiesDialogItem.revision ?? '—')],
+  ] : []
 
   const selectedSize = useMemo(
     () => selectedItems.reduce((total, item) => (
@@ -5682,10 +5755,23 @@ export function XDriveFileExplorer({
       </Box>
 
       <XDriveFilePropertiesDialog
-        open={propertiesItems.length > 0}
+        open={propertiesItems.length > 0 && !showMediaProperties}
         title={propertiesDialogTitle}
         preview={propertiesDialogPreview}
-        properties={propertiesDialogProperties}
+        properties={mediaPropertiesError
+          ? [...propertiesDialogProperties, { label: '媒体属性', value: mediaPropertiesError, section: 'technical' as const }]
+          : propertiesDialogProperties}
+        onClose={() => setPropertiesItems([])}
+      />
+      <XDriveMediaDetailsInspector
+        open={showMediaProperties}
+        item={showMediaProperties ? mediaPropertiesItem : null}
+        fallbackName={propertiesDialogItem?.name}
+        overlayZIndex={1400}
+        showPreview={false}
+        loadThumbnail={async () => null}
+        albums={[]}
+        extraFileRows={mediaFileRows}
         onClose={() => setPropertiesItems([])}
       />
 

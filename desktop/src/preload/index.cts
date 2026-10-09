@@ -26,6 +26,10 @@ const agent = Object.freeze({
   getCache: () => ipcRenderer.invoke('agent:get-cache'),
   getLocalDiskSpace: () => ipcRenderer.invoke('agent:get-local-disk-space'),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
+  getMediaItem: (nodeID: number, requestID: string) =>
+    ipcRenderer.invoke('agent:get-media-item', nodeID, requestID),
+  cancelMediaItem: (requestID: string) =>
+    ipcRenderer.invoke('agent:cancel-media-item', requestID),
   getMediaItems: (
     kind = '',
     limit = 100,

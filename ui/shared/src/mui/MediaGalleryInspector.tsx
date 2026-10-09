@@ -20,6 +20,8 @@ export type XDriveMediaDetailsInspectorProps =
   XDriveMediaDetailsContentProps & {
     onClose: () => void
     overlayZIndex?: number
+    open?: boolean
+    fallbackName?: string
   }
 
 function MediaInspectorHeader({
@@ -59,17 +61,22 @@ function MediaInspectorHeader({
 
 export function XDriveMediaDetailsInspector({
   item,
+  open = false,
+  fallbackName,
   onClose,
   overlayZIndex,
   ...contentProps
 }: XDriveMediaDetailsInspectorProps) {
   const theme = useTheme()
   const desktop = useMediaQuery(theme.breakpoints.up('lg'), { noSsr: true })
-  if (!item) return null
+  if (!item && !open) return null
+  const name = item?.node.name ?? fallbackName ?? '媒体属性'
 
   const content = (
     <Box sx={{ minHeight: 0, flex: 1, overflowY: 'auto' }}>
-      <XDriveMediaDetailsContent item={item} {...contentProps} />
+      {item
+        ? <XDriveMediaDetailsContent item={item} {...contentProps} />
+        : <Typography sx={{ p: 2 }} color="text.secondary" role="status">正在加载媒体属性…</Typography>}
     </Box>
   )
 
@@ -91,7 +98,7 @@ export function XDriveMediaDetailsInspector({
         } } }}
         data-xdrive-media-details-viewer-drawer
       >
-        <MediaInspectorHeader name={item.node.name} onClose={onClose} />
+        <MediaInspectorHeader name={name} onClose={onClose} />
         {content}
       </Drawer>
     )
@@ -120,7 +127,7 @@ export function XDriveMediaDetailsInspector({
           backgroundImage: 'none',
         }}
       >
-        <MediaInspectorHeader name={item.node.name} onClose={onClose} />
+        <MediaInspectorHeader name={name} onClose={onClose} />
         {content}
       </Paper>
     )
@@ -145,7 +152,7 @@ export function XDriveMediaDetailsInspector({
         },
       }}
     >
-      <MediaInspectorHeader name={item.node.name} onClose={onClose} />
+      <MediaInspectorHeader name={name} onClose={onClose} />
       {content}
     </Drawer>
   )

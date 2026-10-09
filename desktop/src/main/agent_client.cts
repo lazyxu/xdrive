@@ -1469,6 +1469,16 @@ export class AgentIPCClient {
     return this.request<AgentCacheReleaseResult>('POST', '/v1/cache/release', undefined, 130_000)
   }
 
+  mediaItem(nodeID: number, signal?: AbortSignal) {
+    return this.request<AgentMediaItem>(
+      'GET',
+      `/v1/media/item?node_id=${encodeURIComponent(String(nodeID))}`,
+      undefined,
+      10_000,
+      signal,
+    )
+  }
+
   mediaItems(
     kind = '',
     limit = 100,

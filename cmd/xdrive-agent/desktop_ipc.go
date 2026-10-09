@@ -93,6 +93,7 @@ var desktopIPCCapabilities = []string{
 	"file-recent",
 	"file-properties-stats",
 	"file-media-details",
+	"media-item-properties",
 	"upload-conflict-preflight",
 	"upload-conflict-preflight-batch",
 	"upload-conflict-policy",
@@ -612,6 +613,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
+	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
 	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
@@ -2626,6 +2628,29 @@ func (h *desktopIPCHandler) cloudRevokeShare(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+type desktopIPCMediaItemController interface {
+	CloudMediaItem(context.Context, uint64) (client.MediaItem, error)
+}
+
+func (h *desktopIPCHandler) mediaItem(w http.ResponseWriter, r *http.Request) {
+	nodeID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("node_id")), 10, 64)
+	if err != nil || nodeID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_node", "node_id must be a positive integer")
+		return
+	}
+	controller, ok := h.ctrl.(desktopIPCMediaItemController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_item_unavailable", "single-media lookup is unavailable")
+		return
+	}
+	item, err := controller.CloudMediaItem(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, item)
 }
 
 func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {

@@ -168,6 +168,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported = false,
   propertiesStatsSupported = false,
   mediaDetailsSupported = false,
+  mediaPropertiesSupported = false,
   fileAvailabilitySupported = false,
   openWithSupported = false,
   quickAccessSupported = false,
@@ -224,6 +225,7 @@ export default function DesktopFileExplorer({
   previewStreamSupported?: boolean
   propertiesStatsSupported?: boolean
   mediaDetailsSupported?: boolean
+  mediaPropertiesSupported?: boolean
   fileAvailabilitySupported?: boolean
   openWithSupported?: boolean
   quickAccessSupported?: boolean
@@ -849,6 +851,27 @@ export default function DesktopFileExplorer({
     if (!result.ok) throw new Error(result.error.message)
     return result.data
   }, [mediaDetailsSupported])
+
+  const loadMediaItem = useCallback(async (
+    item: XDriveFileExplorerItem,
+    signal: AbortSignal,
+  ) => {
+    if (!mediaPropertiesSupported || item.kind !== 'file') return null
+    const requestID = nextDesktopFilePropertiesRequestID()
+    const cancel = () => {
+      void window.xdriveDesktop.agent.cancelMediaItem(requestID)
+    }
+    if (signal.aborted) return null
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      const result = await window.xdriveDesktop.agent.getMediaItem(Number(item.id), requestID)
+      if (signal.aborted) return null
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    } finally {
+      signal.removeEventListener('abort', cancel)
+    }
+  }, [mediaPropertiesSupported])
 
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
@@ -1758,6 +1781,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
         loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}
+        loadMediaItem={!trashActive && mediaPropertiesSupported ? loadMediaItem : undefined}
         getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}

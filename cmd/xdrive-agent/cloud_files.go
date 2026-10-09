@@ -1965,6 +1965,14 @@ func (c *agentController) CloudCancelSourceRun(ctx context.Context, sourceID uin
 	return cli.CancelSourceRun(ctx, sourceID, runID)
 }
 
+func (c *agentController) CloudMediaItem(ctx context.Context, nodeID uint64) (client.MediaItem, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaItem{}, err
+	}
+	return cli.MediaItem(ctx, nodeID)
+}
+
 func (c *agentController) CloudMediaItems(
 	ctx context.Context,
 	query client.MediaQuery,
