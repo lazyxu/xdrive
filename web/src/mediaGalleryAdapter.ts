@@ -2,6 +2,7 @@ import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
 } from '@xdrive/ui/mui'
+import { xDriveCompleteLivePhotoOriginalNodeIDs } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 
 export function createWebMediaGalleryDataSource(api: XDriveApi) {
@@ -87,6 +88,12 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     downloadItems: (items) => items.length === 1
       ? api.download(items[0].node)
       : api.downloadArchive(items.map((item) => item.node.id), 'xdrive-photos.zip'),
+    exportLivePhoto: (item) => {
+      const ids = xDriveCompleteLivePhotoOriginalNodeIDs(item)
+      return ids.length === 1
+        ? api.download(item.node)
+        : api.downloadArchive(ids, 'xdrive-live-photo.zip')
+    },
     setTags: (nodeID, tags) => api.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => api.setMediaPeople(nodeID, people),
     setDescription: (nodeID, description) => api.setMediaDescription(nodeID, description),

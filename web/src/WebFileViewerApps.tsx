@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
@@ -721,6 +722,20 @@ function WebMediaViewerApp({
         <Tooltip title="属性">
           <IconButton size="small" aria-label="查看属性" onClick={openInfo}>
             <InfoOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {gallerySource.exportLivePhoto &&
+      (mediaItem.live_photo || mediaItem.asset_kind === 'live_photo') ? (
+        <Tooltip title="导出完整实况（照片与动态原件）">
+          <IconButton
+            size="small"
+            aria-label="导出完整实况"
+            onClick={() => {
+              void gallerySource.exportLivePhoto!(mediaItem).catch(onError)
+            }}
+          >
+            <ArchiveRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
