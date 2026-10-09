@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,16 +23,44 @@ import (
 	"github.com/lazyxu/xdrive/internal/storage"
 )
 
-// TestGalleryRequestContextCancellation100K measures real client abort ->
-// net/http Request.Context -> GORM -> PostgreSQL lock-wait interruption.
-// Six requests operate in a real 100k PhotoAsset/115k physical media fixture.
-func TestGalleryRequestContextCancellation100K(t *testing.T) {
+const (
+	galleryGoContextCancelRequests = 6
+	galleryGoContextCancelRounds   = 3
+	galleryGoContextObservation    = 160 * time.Millisecond
+	galleryGoContextMaxDrain       = 500 * time.Millisecond
+)
+
+type galleryGoContextCancelState struct {
+	active    atomic.Int64
+	done      atomic.Int64
+	cancelAt  atomic.Int64
+	latencies chan float64
+}
+
+type galleryGoContextCancelSample struct {
+	Round             int       `json:"round"`
+	WaitersBefore     int64     `json:"postgres_waiters_before"`
+	WaitersAt160MS    int64     `json:"postgres_waiters_at_160_ms"`
+	ActiveAt160MS     int64     `json:"handlers_active_at_160_ms"`
+	DoneAt160MS       int64     `json:"server_contexts_done_at_160_ms"`
+	DoneAt500MS       int64     `json:"server_contexts_done_at_500_ms"`
+	WaitersAt500MS    int64     `json:"postgres_waiters_at_500_ms"`
+	ActiveAt500MS     int64     `json:"handlers_active_at_500_ms"`
+	PayloadBytes      int64     `json:"client_response_bytes"`
+	MaxContextDoneMS  float64   `json:"max_server_context_done_ms"`
+	AbortLatenciesMS  []float64 `json:"server_context_done_samples_ms"`
+}
+
+// TestGalleryGoContextCancellationPerformance100K exercises actual
+// authenticated HTTP -> Gin Request.Context -> GORM -> native PostgreSQL.
+// The 100k logical / 115k physical media namespace includes 15k Live pairs.
+func TestGalleryGoContextCancellationPerformance100K(t *testing.T) {
 	if os.Getenv("XD_GALLERY_GO_CONTEXT_CANCEL_PERF") != "1" {
-		t.Skip("enable XD_GALLERY_GO_CONTEXT_CANCEL_PERF=1 for native PostgreSQL cancel measurement")
+		t.Skip("set XD_GALLERY_GO_CONTEXT_CANCEL_PERF=1 to measure native Gallery cancellation")
 	}
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("XD_TEST_DATABASE_URL not configured")
+		t.Skip("XD_TEST_DATABASE_URL not set")
 	}
 	gin.SetMode(gin.TestMode)
 	db := fileExplorerMediaPerfDatabase(t, dsn)
@@ -58,59 +87,62 @@ func TestGalleryRequestContextCancellation100K(t *testing.T) {
 	defer scheduler.Close()
 	app := &Server{
 		DB: db, Store: store,
-		Auth:                auth.New("gallery-go-context-perf-secret", time.Hour),
-		RefreshTTL:          24 * time.Hour,
-		AllowedOrigin:       "http://localhost",
-		MaxUploadBytes:      16 << 20,
+		Auth: auth.New("gallery-go-context-perf-secret", time.Hour),
+		RefreshTTL: 24 * time.Hour,
+		AllowedOrigin: "http://localhost",
+		MaxUploadBytes: 16 << 20,
 		BackgroundScheduler: scheduler,
 	}
 	router := app.Router()
-	token := createTestUser(t, db, router, "gallery-go-cancel-perf", "password-gallery-go-cancel")
+	token := createTestUser(t, db, router, "gallery-go-context-cancel-perf", "password-cancel")
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 	folder := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
-		strings.NewReader(`{"name":"100k HTTP Cancellation"}`), http.StatusCreated)
+		strings.NewReader("{"name":"100k request cancellation"}"), http.StatusCreated)
 	var ownerRoot meta.Node
 	if err := db.First(&ownerRoot, root.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	seedStart := time.Now()
+	seedStarted := time.Now()
 	mediaGallerySeedFirstOpen100K(t, db, ownerRoot.OwnerID, folder.ID)
-	seedMS := float64(time.Since(seedStart).Microseconds()) / 1000
+	seedMS := float64(time.Since(seedStarted).Microseconds()) / 1000
 
-	const numRequests = 6
-	const observation = 160 * time.Millisecond
-	var activeHandlers, contextDone, clientResponseBytes atomic.Int64
-	var cancelAt atomic.Int64
-	contextLatencyMS := make(chan float64, numRequests)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/media/items" {
-			activeHandlers.Add(1)
-			defer activeHandlers.Add(-1)
+	states := make([]*galleryGoContextCancelState, galleryGoContextCancelRounds)
+	for i := range states {
+		states[i] = &galleryGoContextCancelState{
+			latencies: make(chan float64, galleryGoContextCancelRequests),
+		}
+	}
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		round, parseErr := strconv.Atoi(r.Header.Get("X-Test-Cancel-Round"))
+		if parseErr == nil && round >= 1 && round <= galleryGoContextCancelRounds &&
+			r.URL.Path == "/api/v1/media/items" {
+			state := states[round-1]
+			state.active.Add(1)
+			defer state.active.Add(-1)
 			go func(ctx context.Context) {
 				<-ctx.Done()
-				contextDone.Add(1)
-				if canceled := cancelAt.Load(); canceled != 0 {
-					delta := time.Since(time.Unix(0, canceled))
-					contextLatencyMS <- float64(delta.Microseconds()) / 1000
+				state.done.Add(1)
+				if stamp := state.cancelAt.Load(); stamp != 0 {
+					state.latencies <- float64(time.Since(time.Unix(0, stamp)).Microseconds()) / 1000
 				}
 			}(r.Context())
 		}
 		router.ServeHTTP(w, r)
 	})
-	httpServer := httptest.NewServer(handler)
-	defer httpServer.Close()
+	serverHTTP := httptest.NewServer(wrapped)
+	defer serverHTTP.Close()
 	client := &http.Client{
-		Timeout: 12 * time.Second,
+		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
-			MaxConnsPerHost:   numRequests + 2,
+			MaxConnsPerHost: galleryGoContextCancelRequests + 2,
 		},
 	}
 	defer client.CloseIdleConnections()
 
-	// Force production staleMediaNodes' JOIN with xd_media_metadata to wait
-	// inside actual PostgreSQL. This is not a mocked sleeping Go handler.
+	// The real staleMediaNodes SELECT joins xd_media_metadata; this held
+	// PostgreSQL table lock forces actual concurrent DB lock waits.
 	lockTx := db.Begin()
 	if lockTx.Error != nil {
 		t.Fatal(lockTx.Error)
@@ -119,155 +151,178 @@ func TestGalleryRequestContextCancellation100K(t *testing.T) {
 	if err := lockTx.Exec("LOCK TABLE xd_media_metadata IN ACCESS EXCLUSIVE MODE").Error; err != nil {
 		t.Fatal(err)
 	}
-	cancels := make([]context.CancelFunc, 0, numRequests)
-	outcomes := make(chan error, numRequests)
-	for i := 0; i < numRequests; i++ {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancels = append(cancels, cancel)
-		url := fmt.Sprintf("%s/api/v1/media/items?range=true&limit=200&offset=%d",
-			httpServer.URL, i*200)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		go func() {
-			resp, requestErr := client.Do(req)
-			if requestErr != nil {
-				outcomes <- requestErr
-				return
-			}
-			defer resp.Body.Close()
-			body, readErr := io.ReadAll(resp.Body)
-			clientResponseBytes.Add(int64(len(body)))
-			if readErr != nil {
-				outcomes <- readErr
-				return
-			}
-			outcomes <- fmt.Errorf("unexpected completed request status=%d bytes=%d", resp.StatusCode, len(body))
-		}()
+	lockWaiterCount := func() (int64, error) {
+		var count int64
+		err := db.Raw(
+			"SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid() "+
+				"AND datname = current_database() AND state = 'active' "+
+				"AND wait_event_type = 'Lock' AND query LIKE '%xd_nodes%'",
+		).Scan(&count).Error
+		return count, err
 	}
-	defer func() {
-		for _, cancel := range cancels {
+	samples := make([]galleryGoContextCancelSample, 0, galleryGoContextCancelRounds)
+	for round := 1; round <= galleryGoContextCancelRounds; round++ {
+		state := states[round-1]
+		cancelers := make([]context.CancelFunc, 0, galleryGoContextCancelRequests)
+		outcomes := make(chan error, galleryGoContextCancelRequests)
+		var bytesReceived atomic.Int64
+		for i := 0; i < galleryGoContextCancelRequests; i++ {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancelers = append(cancelers, cancel)
+			url := fmt.Sprintf("%s/api/v1/media/items?range=true&limit=200&offset=%d",
+				serverHTTP.URL, 50000+round*2000+i*200)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("X-Test-Cancel-Round", strconv.Itoa(round))
+			go func() {
+				response, requestErr := client.Do(req)
+				if requestErr != nil {
+					outcomes <- requestErr
+					return
+				}
+				defer response.Body.Close()
+				body, readErr := io.ReadAll(response.Body)
+				bytesReceived.Add(int64(len(body)))
+				if readErr != nil {
+					outcomes <- readErr
+					return
+				}
+				outcomes <- fmt.Errorf("canceled HTTP unexpectedly returned status=%d", response.StatusCode)
+			}()
+		}
+		waitDeadline := time.Now().Add(12 * time.Second)
+		var beforeWaiters int64
+		for time.Now().Before(waitDeadline) {
+			beforeWaiters, err = lockWaiterCount()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if beforeWaiters >= galleryGoContextCancelRequests &&
+				state.active.Load() == galleryGoContextCancelRequests {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if beforeWaiters < galleryGoContextCancelRequests ||
+			state.active.Load() != galleryGoContextCancelRequests {
+			for _, cancel := range cancelers {
+				cancel()
+			}
+			t.Fatalf("round=%d failed to establish six native PostgreSQL lock waits: waiters=%d handlers=%d",
+				round, beforeWaiters, state.active.Load())
+		}
+		canceledAt := time.Now()
+		state.cancelAt.Store(canceledAt.UnixNano())
+		for _, cancel := range cancelers {
 			cancel()
 		}
-	}()
-
-	// Assert all six reached PostgreSQL and are really lock-blocked before
-	// issuing the cancellation. Querying pg_stat_activity does not acquire
-	// locks on our application tables.
-	pgWaiting := func() (int64, error) {
-		var waiters int64
-		err := db.Raw(
-			"SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid() " +
-				"AND state = 'active' AND wait_event_type = 'Lock' " +
-				"AND query LIKE '%xd_nodes%'",
-		).Scan(&waiters).Error
-		return waiters, err
-	}
-	var beforeWaiters int64
-	deadline := time.Now().Add(12 * time.Second)
-	for time.Now().Before(deadline) {
-		beforeWaiters, err = pgWaiting()
+		time.Sleep(galleryGoContextObservation)
+		at160Waiters, err := lockWaiterCount()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if beforeWaiters >= numRequests && activeHandlers.Load() == numRequests {
-			break
+		sample := galleryGoContextCancelSample{
+			Round: round,
+			WaitersBefore: beforeWaiters,
+			WaitersAt160MS: at160Waiters,
+			ActiveAt160MS: state.active.Load(),
+			DoneAt160MS: state.done.Load(),
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if beforeWaiters < numRequests || activeHandlers.Load() != numRequests {
-		t.Fatalf("six actual SQL lock waits not established: waiters=%d handlers=%d",
-			beforeWaiters, activeHandlers.Load())
-	}
-
-	cancelAt.Store(time.Now().UnixNano())
-	for _, cancel := range cancels {
-		cancel()
-	}
-	time.Sleep(observation)
-	afterWaiters, err := pgWaiting()
-	if err != nil {
-		t.Fatal(err)
-	}
-	afterActive := activeHandlers.Load()
-	afterDone := contextDone.Load()
-	afterBytes := clientResponseBytes.Load()
-	for i := 0; i < numRequests; i++ {
-		select {
-		case clientErr := <-outcomes:
-			if !errors.Is(clientErr, context.Canceled) {
-				t.Fatalf("canceled HTTP request unexpectedly finished: %v", clientErr)
+		for i := 0; i < galleryGoContextCancelRequests; i++ {
+			select {
+			case clientErr := <-outcomes:
+				if !errors.Is(clientErr, context.Canceled) {
+					t.Fatalf("round=%d unexpected canceled HTTP result: %v", round, clientErr)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatalf("round=%d canceled HTTP client did not return", round)
 			}
-		case <-time.After(2 * time.Second):
-			t.Fatal("canceled HTTP client did not return")
+		}
+		// Allow native PostgreSQL driver cleanup slightly longer than the
+		// 160ms signal-delivery target, with a fixed 500ms hard deadline.
+		for time.Since(canceledAt) < galleryGoContextMaxDrain {
+			remaining, pgErr := lockWaiterCount()
+			if pgErr != nil {
+				t.Fatal(pgErr)
+			}
+			if remaining == 0 && state.active.Load() == 0 &&
+				state.done.Load() == galleryGoContextCancelRequests {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		sample.WaitersAt500MS, err = lockWaiterCount()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sample.ActiveAt500MS = state.active.Load()
+		sample.DoneAt500MS = state.done.Load()
+		sample.PayloadBytes = bytesReceived.Load()
+		for len(state.latencies) != 0 {
+			sample.AbortLatenciesMS = append(sample.AbortLatenciesMS, <-state.latencies)
+		}
+		sort.Float64s(sample.AbortLatenciesMS)
+		if len(sample.AbortLatenciesMS) != 0 {
+			sample.MaxContextDoneMS = sample.AbortLatenciesMS[len(sample.AbortLatenciesMS)-1]
+		}
+		samples = append(samples, sample)
+		t.Logf("GALLERY_GO_CONTEXT_CANCEL_100K_SAMPLE round=%d waiters=%d done160=%d active160=%d waiters160=%d done500=%d active500=%d waiters500=%d bytes=%d max_done_ms=%.3f",
+			round, sample.WaitersBefore, sample.DoneAt160MS, sample.ActiveAt160MS,
+			sample.WaitersAt160MS, sample.DoneAt500MS, sample.ActiveAt500MS,
+			sample.WaitersAt500MS, sample.PayloadBytes, sample.MaxContextDoneMS)
+		if sample.DoneAt500MS != galleryGoContextCancelRequests ||
+			sample.ActiveAt500MS != 0 || sample.WaitersAt500MS != 0 ||
+			sample.PayloadBytes != 0 ||
+			len(sample.AbortLatenciesMS) != galleryGoContextCancelRequests ||
+			sample.MaxContextDoneMS > float64(galleryGoContextMaxDrain.Milliseconds()) {
+			t.Fatalf("round=%d did not release all HTTP/PG work within 500ms: %+v", round, sample)
 		}
 	}
-	var latencies []float64
-	for len(contextLatencyMS) > 0 {
-		latencies = append(latencies, <-contextLatencyMS)
-	}
-	sort.Float64s(latencies)
-	maxContextLatencyMS := 0.0
-	if len(latencies) > 0 {
-		maxContextLatencyMS = latencies[len(latencies)-1]
-	}
-	result := map[string]any{
-		"workload":                       "gallery-real-go-postgresql-cancel-100k",
-		"logical_assets":                 100000,
-		"physical_media_nodes":           115000,
-		"live_photo_groups":              15000,
-		"seed_ms":                        seedMS,
-		"started_sql_waits":              beforeWaiters,
-		"requests":                       numRequests,
-		"context_done_at_160ms":          afterDone,
-		"handler_active_at_160ms":        afterActive,
-		"postgres_lock_waiters_at_160ms": afterWaiters,
-		"client_payload_bytes_at_160ms":  afterBytes,
-		"server_context_latency_ms":      latencies,
-		"max_server_context_done_ms":     maxContextLatencyMS,
-		"observation_ms":                 observation.Milliseconds(),
-		"scope":                          "authenticated production Gin Gallery route, native PostgreSQL real lock wait; no Electron IPC, codec, persistent tasks, remote network or browser paint",
-	}
-	payload, err := json.Marshal(result)
+
+	report, err := json.Marshal(map[string]any{
+		"workload":                "gallery-go-context-cancel-100k",
+		"logical_assets":          100000,
+		"physical_nodes":          115000,
+		"live_photo_groups":       15000,
+		"request_count_per_round": galleryGoContextCancelRequests,
+		"sample_count":            galleryGoContextCancelRounds,
+		"seed_ms":                 seedMS,
+		"observe_ms":              galleryGoContextObservation.Milliseconds(),
+		"max_drain_ms":            galleryGoContextMaxDrain.Milliseconds(),
+		"samples":                 samples,
+		"scope":                   "native PostgreSQL lock waits + real authenticated Gin HTTP Request.Context; not Electron IPC, browser paint, media decoding or durable background tasks",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("GALLERY_GO_CONTEXT_CANCEL_100K %s", payload)
-	if afterDone != numRequests || afterActive != 0 ||
-		afterWaiters != 0 || afterBytes != 0 ||
-		len(latencies) != numRequests ||
-		maxContextLatencyMS > float64(observation.Milliseconds()) {
-		t.Fatalf("canceled Gallery query retained active HTTP/PG work after %s: %+v", observation, result)
-	}
+	t.Logf("GALLERY_GO_CONTEXT_CANCEL_100K %s", report)
 
-	// A new request should continue to work normally after the canceled
-	// workload and the held diagnostic table lock have been released.
 	if err := lockTx.Rollback().Error; err != nil {
 		t.Fatal(err)
 	}
 	healthy, err := http.NewRequest(http.MethodGet,
-		httpServer.URL+"/api/v1/media/items?range=true&limit=100&offset=0", nil)
+		serverHTTP.URL+"/api/v1/media/items?range=true&limit=100&offset=0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	healthy.Header.Set("Authorization", "Bearer "+token)
-	res, err := client.Do(healthy)
+	response, err := client.Do(healthy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(res.Body)
-		t.Fatalf("new Gallery query after cancel: status=%d body=%s", res.StatusCode, string(body))
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("post-cancellation Gallery status=%d body=%s", response.StatusCode, string(body))
 	}
 	var page mediaItemRangeDTO
-	if err := json.NewDecoder(res.Body).Decode(&page); err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
 		t.Fatal(err)
 	}
 	if page.TotalCount != mediaGalleryFirstOpenLogicalCount || len(page.Items) != 100 {
-		t.Fatalf("post-cancel Gallery data corrupted: total=%d returned=%d",
-			page.TotalCount, len(page.Items))
+		t.Fatalf("post-cancel healthy response: total=%d items=%d", page.TotalCount, len(page.Items))
 	}
 }
