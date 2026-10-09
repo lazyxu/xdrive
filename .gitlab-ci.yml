@@ -698,6 +698,30 @@ file-explorer-range-count-performance:
   script:
     - go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+gallery-range-cancel-100k-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^perf\/gallery-range-cancel-100k-/'
+    - if: '$CI_COMMIT_BRANCH =~ /^perf\/gallery-range-cancel-100k-/'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      node scripts/gallery-range-request-cancel-performance.cjs
+      cat perf-results/gallery-range-cancel-100k-baseline.json
+  artifacts:
+    name: "gallery-range-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-range-cancel-100k-baseline.json
+
 file-explorer-viewport-cancel-performance:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache
