@@ -84,6 +84,9 @@ This table is the durable status index for the FileExplorer performance track. A
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
 | 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
+| Current 100k local baseline (2026-10-09) | **Measured baseline / no production change** | Fresh controller, real image HTTP/store, PGlite metadata and 24 synthetic renderer samples | Bounded work: 800 controller peak retained, 110 renderer max mounted, 1200 renderer retained, <=6 thumbnail in-flight. Real video cold decode/backfill and LIVP HTTP coverage remain the next measurement-only gap. |
+| Current 4 GiB Agent transfer baseline | **Measured baseline / memory budget passed** | Three fresh Linux processes per direction; exact payload/chunk validation | Upload **11.466 s / +22.48 MiB RSS**, download **2.638 s / +2.469 MiB RSS**; local zero-filled overlayfs/loopback only. No Agent production change. |
+| Current native image/store + 4 GiB Agent qualification | **Measured baseline / budgets passed** | PR #1067 initial native CI, actual merge checkout `86cf14e1` | Image cold/warm batches **737.958 / 36.167 ms**, expected store bounds; Agent upload/download **10.987 / 11.414 s**, RSS deltas **23.523 / 3.414 MiB**. No production change or cross-environment speedup. |
 
 ## Current performance contract
 
@@ -2760,3 +2763,108 @@ Decision:
 - **Do not run 4 GiB yet.** The 1 GiB Web renderer is not memory-bounded enough to justify scaling the workload.
 
 Branch-scoped commands are implemented by the GitHub/GitLab `large-transfer-web-performance` and `large-transfer-agent-performance` jobs on `perf/large-transfer-1gib-baseline`.
+
+
+## Current 100k local baseline — 2026-10-09
+
+Status: **Measured baseline / no production experiment selected**. Exact measured source: `3a35c385ecc953d31a9ca2b81b75e9be4f569ea2`; the relevant measured FileExplorer sources are unchanged at this follow-up's selected base `d45a894ef19e03b3cdc90dcfde2cd91fef002bbf`. Measurements ran in an isolated detached worktree with unchanged production source, no race flags/suites, and a shared `flock` to serialize benchmark/build loads. This section is freshly measured local evidence, separate from historical CI tables above. No comparable production BEFORE/AFTER speedup is claimed.
+
+### Controller and SQL
+
+| Named workload | Exact scale / sampling | Fresh result | Included layers / budget |
+| --- | --- | --- | --- |
+| VirtualCollection sweep | 100,000 logical items, viewport 40, pages 200, 2,500 viewport updates; warmup then 5 samples x 10 sweeps | CPU median **110.692 ms/sweep / 44.277 us per viewport**; wall 109.526 ms; **500 page loads / 800 peak / 600 final retained** | Node/V8 controller only; stable structural budget passed, no React/browser/transport/decode. |
+| Directory simple-name fixture | 100,000 child Nodes, first/middle 200-row page; warmup + 3 samples | **160.203 / 196.046 ms** medians | Real Gin handler via in-process request helper + PGlite SQL. Existing 500/750 ms gates passed; no browser. |
+| Search counted range | 100,000 matching file Nodes, 200 rows; warmup + 3 samples | First/middle **716.662 / 944.693 ms** | Direct production Go helpers + PGlite SQL, no HTTP/browser. Both harness ranges request `includeCount=true`; this is not later count-free viewport coverage. No timing gate in this test. |
+| Search cursor | Same 100k namespace / 3 samples | First/middle **629.640 / 559.398 ms** | Direct production Go helpers + PGlite SQL; diagnostic timing. |
+
+The available database was **PGlite 0.5.8**, socket adapter **0.2.11**, PostgreSQL compiled to WASM on isolated loopback port 55439. It is not native PostgreSQL: do not compare these absolute timings to native-PG CI or infer an index/SQL regression. Native-PG count-once and expression-sort A/B histories remain the qualification evidence for those optimizations.
+
+### Synthetic production-bundle Grid replay
+
+Chromium **153.0.8010.0 headless**, original full Web/Desktop renderer bundles, 1280 x 800, 100,000 logical items, 200-row sparse pages. Three fresh browser-context samples per case; 36 paced scroll steps plus midpoint/end/top jumps, native mouse marquee, thumbnail settle. React/ReactDOM 18.3.1 and MUI 7.3.11; reused available dependency installs with own-worktree `@xdrive/ui`, Web Vite 6.4.3 / Desktop Vite 6.1.0.
+
+| Scenario | Web first-grid median [min,max], ms | Desktop renderer first-grid median [min,max], ms | Web / Desktop scripted duration medians, ms |
+| --- | ---: | ---: | ---: |
+| Image cold | 216.8 [187.6,526.9] | 227.9 [194.0,257.5] | 3271.1 / 3824.4 |
+| Image warm | 201.7 [188.2,245.9] | 258.9 [198.8,269.6] | 3203.2 / 3356.1 |
+| Video poster cold | 233.1 [189.7,285.9] | 185.0 [181.6,261.9] | 3945.1 / 3148.9 |
+| Video poster warm | 246.1 [226.6,258.6] | 242.3 [215.0,444.5] | 3717.5 / 3029.7 |
+
+All **24 samples passed** original structural guards: max mounted **110 (<1000)**, peak retained **1200 (<=1200)**, thumbnail in-flight **6 cold / 1 warm (<=6)**, warm requests **<=230 (<=600)**. Every sample had 14 range changes, 80 initial mounted items, 13 selection commits, and 18 selected. These measurements include real React layout/scroll/selection, scheduler admission, Blob URLs and SVG decode; callbacks replay **12 ms cold / zero warm**. They exclude real JPEG/MP4 generation, Server/DB, Electron IPC and Agent. First-grid clock begins inside the mounted harness and excludes route/bundle startup. Script duration includes intentional pacing and is not a complete 100k traversal/decode time. No fresh Electron RSS/FPS trace was collected. Timing is diagnostic and not comparable with historical Electron/Xvfb samples; no repeatable threshold breach justifies a product change.
+
+### Real image HTTP/store cold and warm
+
+Original `TestFileExplorerMediaServerObjectStorePerformance100K`: **100k image Nodes + 100k metadata-only video Nodes**, **128 physical 800 x 600 JPEG CAS originals**, **102 distinct originals** sampled across three ranges, concurrency **6**. Range offsets 0/50,000/99,800 each use three samples. Includes real Gin/loopback HTTP, production Go JPEG decode/generation and derivative scheduler, `storage.Local`, and PGlite DB; excludes renderer/Agent.
+
+| Scenario | Counted range top/middle/end medians, ms | Thumbnail batch / p50 / p95, ms | Response bytes | Store work |
+| --- | ---: | ---: | ---: | --- |
+| Image cold | 299.749 / 374.172 / 376.343 | **765.719 / 43.350 / 68.519** | 2,610,039 | 102 original opens / 204 derivative opens / 102 puts |
+| Image warm | Same previously measured ranges | **100.413 / 5.200 / 9.185** | 2,610,039 | 0 original opens / 102 derivative opens / 0 puts |
+| Legacy video metadata fixture | 279.463 / 362.078 / 370.245 | No media GET | None | 0 opens / 0 puts |
+
+The image cache assertions passed; cold/warm difference describes cache state, not an optimization. The existing `video-icons` case uses fake storage key `perf-video-icon-fallback` and metadata listing only. It does **not** validate current cold preview/codec/poster-backfill or warm persistent-poster behavior.
+
+### Commands, evidence and next action
+
+The scratch root was `/workspace/scratch/4fa175e5d1c9`; commands ran under `flock <scratch-root>/perf-bench.lock`:
+
+- Controller: `XD_FILEEXPLORER_VIRTUAL_COLLECTION_PERF=1 node --expose-gc --test desktop/tests/file-explorer-virtual-collection-performance.cjs`.
+- Renderer build per app: `VITE_XDRIVE_FILE_EXPLORER_PERF=1 node node_modules/vite/bin/vite.js build --config vite.config.ts`; explicit Web TS config avoids stale generated `vite.config.js`. Driver: `node <scratch-root>/100k-renderer.cjs`.
+- API binary: `go test -p 1 -c -o <scratch-root>/api-100k.test ./internal/api`; isolated adapter: `node <scratch-root>/100k-pglite.mjs <test>` for `TestFileExplorerDirectoryPerformanceBaseline100K`, `TestFileExplorerSearchPerformanceBaseline100K`, `TestFileExplorerMediaServerObjectStorePerformance100K`. Adapter supplies test DB simple protocol and opt-in variables.
+- FileExplorer source guards: `node --test desktop/tests/file-explorer-performance.cjs`, **22/22 passed**.
+
+Raw evidence: `100k-renderer-all.json` (24 rows), `100k-renderer-results/*.json`, `100k-controller.log`, `100k-directory-pglite.log`, `100k-search-pglite.log`, `100k-media-server-pglite.log`, `100k-renderer.log`, `100k-structural.log`, with `file-explorer-100k-baseline.md` and reproducible scratch drivers. Optional count-once repeat was interrupted at the parent's request and produced no accepted metric.
+
+Decision: keep controller, Grid, scheduler/cache and image Server production code unchanged. Fresh Windows/CfAPI 100k runtime, Details 100k browser, real browser-to-Server video/LIVP, and end-to-end 100k sync/delete remain unmeasured here; existing smaller structural contracts are not relabeled as fresh 100k wall-time coverage.
+
+The next **measurement-only** extension should reuse `FileExplorerPerformanceHarness.tsx` and `file_explorer_media_performance_integration_test.go` with actual children/media HTTP adapters, not introduce another production optimization. Seed 100k file metadata per dataset with **128 distinct physical CAS fixtures** and sample a bounded working set; do not download 100k originals. Reuse real H.264 MP4 `galleryFirstVisibleVideoMP4Base64` (96 x 64, not a high-resolution codec claim), `fileExplorerMediaPerfJPEG` (800 x 600), existing LIVP archive builders and production `InspectLIVP` validation. Distinct legal MP4 `free`-box variants must be decode-validated to prevent cold requests collapsing into one SHA/cache key.
+
+Cold video must measure actual missing-poster GET -> authenticated preview ticket/stream -> production poster capture -> revision-fenced PUT -> decoded image. Warm uses persisted Server poster with fresh renderer cache and proves zero preview/PUT. LIVP measures real still extraction/derivative-cache -> decoded still and `.livp` glyph, with zero HTTP motion requests during ordinary Grid (not a claim of zero container storage reads). Record first/first12 decode, preview/poster bytes, request/store counters, long tasks, cache state and existing <=6 in-flight / 96 cache / <=1200 retained / <1000 mounted bounds. Web real HTTP first; only actual Electron/preload/Agent ArrayBuffer/poster plumbing can qualify Desktop end-to-end. Declare timing gates before experiments, after runtime variance is understood.
+
+## Current 4 GiB Agent baseline — 2026-10-09
+
+Full local sample values, environment, source revisions and qualification notes are retained in [the baseline evidence record](performance/2026-10-09-local-baselines.json). Current native CI results are recorded separately below.
+
+Status: **Measured baseline / memory budget passed / no production change**. Exact Agent source `62e399f4fd257a49f318e6c223cd697339ca2a27`; only the performance harness was parameterized for size/throughput, fresh sample label and 10 ms RSS sampler. Each direction ran **three fresh test-binary processes**, serialized by the same lock, Go 1.25.0/linux-amd64, Linux 6.18.44, 8 GiB cgroup limit, local overlayfs and loopback HTTP. Source is sparse zero-filled **4,294,967,296 B**. Downloads use the production temporary-file write/fsync/close/final replace. These are not physical-disk, Internet, Server/CAS, Electron IPC or Windows CfAPI results and are not paired with the historical 1 GiB CI environment.
+
+| Direction | Elapsed median [min,max] | Throughput median | Process RSS delta median [min,max] | Additional validation |
+| --- | ---: | ---: | ---: | --- |
+| Upload | **11.466 s [10.898,11.606]** | **357.2 MiB/s** | **22.48 MiB [21.95,22.49]** | 512 x 8 MiB chunks; pre-hash median 5.908 s; exact payload each sample |
+| Download | **2.638 s [2.504,3.098]** | **1552.9 MiB/s** | **2.469 MiB [2.281,3.070]** | Exact payload each sample; one temporary download at a time |
+
+RSS comes from `/proc/self/status` `VmRSS` every 10 ms with ready/join synchronization, initial forced GC, no forced GC during measurement, and final RSS included. Existing **<=128 MiB RSS delta** acceptance passes in all six samples; keep Agent production unchanged. This Agent-only scale-up does not authorize scaling the still-red Web renderer to 4 GiB.
+
+Command per direction/sample: `XD_LARGE_TRANSFER_PERF=1 XD_LARGE_TRANSFER_SIZE_GIB=4 XD_LARGE_TRANSFER_SCENARIO=<upload|download> XD_LARGE_TRANSFER_SAMPLE=sample-<1|2|3> XD_LARGE_TRANSFER_PERF_OUTPUT=<results> <agent-perf.test> -test.run '^TestLargeTransferPerformanceBaselineLargeFile$' -test.count=1 -test.v`, under the shared `flock`. The committed baseline evidence record includes all six rows, source/binary/harness hashes and the benchmark-only harness delta; original scratch artifacts were `agent-4gib/results/summary-provenance.json` and `agent-4gib/harness.patch`. The completed branch-scoped native CI rerun uses the same 4 GiB parameter; its separate authoritative result is recorded below, without substituting it for or claiming a speedup against the local baseline.
+
+
+## Native CI baselines — PR #1067 (2026-10-09)
+
+Status: **Measured native baseline / structural and memory budgets passed / no production change**. Initial [run 37869011944](https://github.com/lazyxu/xdrive/actions/runs/37869011944) succeeded for both workloads below. The fixed branch base is `d45a894ef19e03b3cdc90dcfde2cd91fef002bbf`, PR head **`95258eb5cc71214536b7a3b491ffaa5174abfa1d`**. Both job checkout logs prove actual tested SHA **`86cf14e1724c1f2bdced4d34be04ec60cea75ed8`**, GitHub's synthetic merge into then-current master **`23b3f216b7e9b37222cbfeb7ff9be2812cad2f87`**. These are integration-tree results, not measurements of the fixed branch head alone. [The committed native evidence record](performance/2026-10-09-native-baselines.json) retains exact sample rows, commands, job/runtime/artifact provenance and checkout evidence. No headless-to-native, PGlite-to-PostgreSQL, 1-to-4-GiB or historical speedup is claimed.
+
+### Real FileExplorer image HTTP/object-store: native PostgreSQL
+
+Job **113622479830**, Ubuntu **24.04.5** runner image **20261004.327.1**, Go **1.25.14 linux/amd64**, native PostgreSQL **17.11** (`postgres:17-alpine`). Original `TestFileExplorerMediaServerObjectStorePerformance100K`, real Gin/loopback HTTP, production derivative scheduling/JPEG decode, `storage.Local`. **100k image Nodes + 100k legacy metadata-only video Nodes**, **128 physical 800 x 600 JPEG CAS originals**, **102 distinct originals** requested across offsets 0/50,000/99,800. One test process; three samples per counted metadata range, one cold and one warm batch; observed peak HTTP concurrency **6** in each batch.
+
+| Scenario | Counted first/middle/end range medians, ms | Thumbnail batch / p50 / p95, ms | Response bytes | Store counters |
+| --- | ---: | ---: | ---: | --- |
+| Image cold | 137.973 / 125.127 / 207.005 | **737.958 / 39.121 / 65.610** | 2,610,039 | 102 original opens / 204 derivative opens / 102 puts |
+| Image warm | Same already-measured image ranges | **36.167 / 1.866 / 4.374** | 2,610,039 | 0 original opens / 102 derivative opens / 0 puts |
+| Legacy video metadata | 136.871 / 185.323 / 192.700 | No thumbnail/media requests | None | 0 object-store opens / 0 puts |
+
+Decision: **keep Server image generation/cache production unchanged**. Exact request/response counts, **<=6** concurrency, and cold generation/warm-cache assertions pass. This fixture has no hard numeric latency gate; wall times remain measured diagnostics. Cold/warm differences are cache-state measurements, not a production optimization. The `video-icons` dataset still uses fake storage key `perf-video-icon-fallback` and does not validate the current video preview/decode/backfill path. No browser render or Agent IPC is included. The documented real FileExplorer video/LIVP HTTP benchmark remains the next measurement-only extension.
+
+Command: `XD_FILEEXPLORER_MEDIA_SERVER_PERF=1 go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api`, with the native CI PostgreSQL service. This job's separate Gallery first-56 mixed-media qualification is recorded in [Gallery performance](gallery-performance.md#native-ci-baseline--pr-1067-2026-10-09).
+
+### Agent 4 GiB: six fresh native processes
+
+Job **113622480003**, same Ubuntu runner image, Go **1.25.14 linux/amd64**; **three fresh processes per direction**, no test cache. Payload **4,294,967,296 bytes** in every sample; upload exactly **512 x 8 MiB chunks**. Native Go Agent core and loopback mock HTTP, sparse zero-filled source file, production download temporary-file write/fsync/close/final replace. No real Server/CAS, Electron IPC, Windows CfAPI or external network; underlying runner filesystem characteristics were not collected and these are not dedicated physical-disk bandwidth measurements.
+
+| Direction | Elapsed median [min,max] | Throughput median | Process RSS peak median | RSS delta median [min,max] | Integrity/phase evidence |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Upload | **10.987 s [10.897,11.073]** | **372.8 MiB/s** | 37.699 MiB | **23.523 MiB [23.469,23.563]** | Exact 4 GiB / 512 chunks; pre-hash **6.054 s [6.041,6.088]** |
+| Download | **11.414 s [11.411,11.437]** | **358.9 MiB/s** | 17.648 MiB | **3.414 MiB [3.406,3.504]** | Exact 4 GiB each; one temporary download at a time |
+
+RSS is a **10 ms `/proc/self/status` process sampler**, synchronized at start/end, including final RSS. Initial GC occurs before timing; no forced GC occurs during timing. The existing **<=128 MiB process RSS delta** budget passes in **all six samples**. Byte/chunk correctness is enforced by the test; the memory budget is independently evaluated from emitted rows rather than inferred from a green job. **Decision: keep Agent production unchanged.** Different runtime/filesystem conditions prevent a paired timing comparison against the local 4 GiB or historical 1 GiB results. This does not qualify the separately red Web baseline or authorize a Web 4 GiB run.
+
+Command per scenario/sample: `XD_LARGE_TRANSFER_PERF=1 XD_LARGE_TRANSFER_SIZE_GIB=4 XD_LARGE_TRANSFER_SCENARIO=<upload|download> XD_LARGE_TRANSFER_SAMPLE=sample-<1|2|3> XD_LARGE_TRANSFER_PERF_OUTPUT=<results> go test -run '^TestLargeTransferPerformanceBaselineLargeFile$' -count=1 -v ./cmd/xdrive-agent`. Artifact **11589288631**, SHA-256 `07a42da57edf57d080ba4b5ec14bb4ff4947f31e8f3b48663c8672140fbc918c`, expires 2026-10-16; all six raw rows and provenance remain committed after artifact expiry. The updated evidence must be amended into the same measurement commit and pass the resulting full PR CI before merge.

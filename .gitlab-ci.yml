@@ -286,8 +286,14 @@ gallery-first-visible-server-performance:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-first-visible-100k"'
     - if: '$CI_COMMIT_BRANCH == "perf/gallery-first-visible-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
   script:
     - go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api
+    - |
+      if [[ "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_BRANCH:-}}" == "perf/gallery-renderer-first-paint-100k" ]]; then
+        XD_FILEEXPLORER_MEDIA_SERVER_PERF=1 go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
+      fi
 
 gallery-video-poster-performance:
   image: $XDRIVE_CI_NODE_IMAGE
@@ -534,6 +540,12 @@ large-transfer-agent-performance:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
     - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+      variables:
+        XD_LARGE_TRANSFER_SIZE_GIB: "4"
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
+      variables:
+        XD_LARGE_TRANSFER_SIZE_GIB: "4"
   script:
     - |
       set -euo pipefail
@@ -546,12 +558,12 @@ large-transfer-agent-performance:
           XD_LARGE_TRANSFER_SCENARIO="$scenario" \
           XD_LARGE_TRANSFER_SAMPLE="sample-$sample" \
           XD_LARGE_TRANSFER_PERF_OUTPUT="$out" \
-            go test -run '^TestLargeTransferPerformanceBaseline1GiB$' -count=1 -v ./cmd/xdrive-agent
+            go test -run '^TestLargeTransferPerformanceBaselineLargeFile$' -count=1 -v ./cmd/xdrive-agent
         done
       done
       test "$(find "$out" -maxdepth 1 -type f -name 'agent-*.json' | wc -l)" -eq 6
   artifacts:
-    name: "agent-large-transfer-1gib-$CI_COMMIT_SHORT_SHA"
+    name: "agent-large-transfer-$CI_COMMIT_SHORT_SHA"
     expire_in: 7 days
     when: always
     paths:
@@ -567,6 +579,8 @@ gallery-renderer-first-paint-performance:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-media-first-paint-100k"'
     - if: '$CI_COMMIT_BRANCH == "perf/gallery-media-first-paint-100k"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-renderer-first-paint-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-renderer-first-paint-100k"'
   before_script:
     - |
       set -euo pipefail
@@ -586,19 +600,19 @@ gallery-renderer-first-paint-performance:
       (cd desktop && npm install --no-audit --no-fund)
       (cd web && npm install --no-audit --no-fund)
       VITE_XDRIVE_GALLERY_PERF=1 npm --prefix desktop run build:renderer
-      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix web run build
+      VITE_XDRIVE_GALLERY_PERF=1 npm --prefix web run build -- --config vite.config.ts
       cd desktop
       rm -rf gallery-perf-results
       mkdir -p gallery-perf-results
       for surface in desktop web; do
-        for scenario in video-cold video-warm live-cold live-warm; do
+        for scenario in image-cold image-warm video-cold video-warm live-cold live-warm; do
           for sample in 1 2 3; do
             xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
           done
         done
       done
-      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 24
-      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 24
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 36
+      test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 36
       gzip -f gallery-perf-results/*-trace.json
   artifacts:
     name: "gallery-renderer-first-paint-traces-$CI_COMMIT_SHORT_SHA"

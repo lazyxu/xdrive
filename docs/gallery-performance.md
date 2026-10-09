@@ -11,6 +11,117 @@ Only comparable measurements should be presented as timing improvements. Structu
 | Timeline viewport group lookup | **Accepted / structural contract** | 100,000 synthetic date groups; a viewport near group 90,000 uses fewer than 64 indexed group reads instead of scanning from group 0. No wall-clock speedup claimed. |
 | 100k thumbnail fast-scroll retention | **Accepted / measured structural** | Image/Live Photo stays unchanged at peak queue **180**, active/in-flight **6/6**. Video poster peak queue **99,997 -> 90 (-99.91%, ~1,111x smaller)** and final queue **99,997 -> 10** while real active work remains capped at **3**. Hosted-runner CPU timings are diagnostic only. |
 | 100k mixed-media first open | **Accepted / measured + structural** | 70k photos + 15k videos + 15k Live Photos (115k physical media nodes / 100k logical items). Warm first range **409.147 ms median**, zero-stale refresh **212.556 ms**, UI timeline layout **2.507 ms median**; first range now commits before secondary facets. |
+| 100k renderer measurement attribution | **Accepted measurement / native baseline healthy** | PR #1067 initial CI: all 36 renderer samples pass applicable timing/CPU budgets; full activation-overlapping maximum task 60 ms. Buffered totals, preparation, decode and two-rAF proxy remain distinct. No production optimization. |
+
+## 100k renderer measurement attribution
+
+Full local sample values, environment, source revisions and qualification notes are retained in [the baseline evidence record](performance/2026-10-09-local-baselines.json). Current native CI results are recorded separately below.
+
+Status: **Accepted measurement / no production change; documentation validation pending**.
+
+The existing `perf/gallery-renderer-first-paint-100k` work is already contained in `master`. This follow-up reuses that branch for a measured harness correction and the current 100k coverage record. The selected delivery base is `d45a894ef19e03b3cdc90dcfde2cd91fef002bbf`; at that base the Gallery harness and measured renderer sources matched the initial `3a35c385ecc953d31a9ca2b81b75e9be4f569ea2` measurement snapshot. This follow-up changes measurement attribution only; the native CI integration tree is identified separately below.
+
+BEFORE workload: 100,000 logical items, 1440 x 900 viewport, first 100-item range, Web and Desktop production renderer bundles, mixed first-image or homogeneous video/Live Photo scenarios, cold/warm transport replay, three fresh headless Chromium 153 processes for each of the twelve cases. This is renderer/decode measurement with synthetic transport, not a native Desktop IPC or real Server throughput result.
+
+The initial local trace is unsuitable as evidence of a new production bottleneck: `buffered: true` long-task observation includes fixture work before Gallery activation; some replay timers and two-frame presentation waits are substantially delayed by the local software rendering environment. No production speedup is claimed and no production change is justified by those samples.
+
+### Fresh local diagnosis (2026-10-09)
+
+The unmodified 36-sample replay measured range request **50.8 ms median [42.3,109.2]**, followed by range resolution at approximately 400 ms including the intentional **350 ms** delay. Most range-to-grid commits were **40–76 ms**; three samples were **116–152 ms**. Warm image/Live media resolution-to-DOM/decode was typically **2–5 ms**. Web warm image decode-to-two-frame waits reached **591–655 ms** and warm Live reached **1184 ms**. These are delayed presentation-proxy values, not measured compositor first-pixel timestamps.
+
+Three scratch-instrumented cases used the unchanged built bundles, Chromium **153.0.8010.0** headless, real Open Sans fontconfig, SwiftShader/ANGLE software graphics, and the same delays. A single-variable `--disable-gpu` control changed only the runtime, not xDrive source:
+
+| Probe | Default software graphics | With `--disable-gpu` | Attribution |
+| --- | ---: | ---: | --- |
+| Web image cold range-to-paint proxy | 737.8 ms | 213.6 ms | The requested 112 ms replay timer took 641–643 ms by default and 112.1 ms in the control, without a post-activation JavaScript Long Task spanning the gap. |
+| Web image warm range-to-paint proxy | 120.8 ms | 81.8 ms | Default actual image decode was 0.7 ms; decode-to-two-rAF fell from 58.5 to 6.2 ms. |
+| Desktop renderer video warm range-to-paint proxy | 481.7 ms | 334.2 ms | Full post-activation maximum task fell from 296 to 199 ms; the remaining capture/render boundary is a real local diagnostic red signal, without a proven production cause. |
+
+The default warm-image reported 126 ms maximum task started **346.7 ms before activation** and no task overlapped activation. Standalone controls reused the exact JPEG/WebM fixtures and production poster helper without Gallery: steady captures **5.1/10.4 ms**, three concurrent captures **11.5–12.6 ms**, idle 112 ms timers **112.1–112.3 ms**, and two-rAF **4.3–17 ms**. An earlier capture retry was 85.4 ms, showing initialization variance. In the video runtime control the 199 ms task preceded the recorded `toBlob` calls; do not attribute it specifically to JPEG encoding. No shader/runtime flag is proposed for shipping.
+
+Commands were serialized with `flock /workspace/scratch/4fa175e5d1c9/perf-bench.lock node <runner>`. Scratch drivers: `gallery-current-baseline.cjs`, `gallery-runtime-probe.cjs`, `gallery-runtime-probe-no-gpu.cjs`, and `gallery-standalone-control.cjs`; raw JSON and the analysis are retained under `/workspace/scratch/4fa175e5d1c9/`. No full 36-case diagnostic repeat was needed. These headless measurements are not comparable with the historical Electron/Xvfb tables below.
+
+### Additional current backend qualification
+
+An unchanged-production `TestMediaGalleryFirstVisiblePerformance100K` PGlite run on 2026-10-09 passed (**n=1**, diagnostic, not a paired optimization). Dataset: **100k logical / 115k physical nodes**; first viewport **56 items = 38 photos + 9 videos + 9 Live Photos**. Real image/Live still HTTP cold first thumbnail **48.922 ms**, warm **3.839 ms**. Each phase requested 47 still thumbnails: cold **47 original opens / 47 puts**, warm **0 original opens / 0 puts**. First range **826.226 ms** is PGlite/WASM timing and must not be compared to native PostgreSQL. This is backend still-thumbnail qualification; the nine video entries do not prove browser poster decode. Raw command/provenance and results: `/workspace/scratch/4fa175e5d1c9/gallery-server-100k/results/summary.md`. The current branch also re-enables the existing native-PostgreSQL first-visible Server and FileExplorer media Server benchmarks; their completed results are recorded in the native CI section below.
+
+### Measurement-only correction and acceptance
+
+The harness keeps every existing marker and both animation-frame waits. It flushes pending observer records before reporting. The result adds the following attribution without replacing legacy data:
+
+| Result fields | Meaning / assessment |
+| --- | --- |
+| `longTaskCount`, `longTaskDurationMs`, `longestLongTaskMs` | Legacy totals over all buffered records, including startup/fixture work; their definitions are preserved. |
+| `activationLongTaskCount`, `activationLongTaskDurationMs`, `activationLongestLongTaskMs` | Tasks with positive overlap between Gallery activation and the existing paint proxy; durations remain **full task durations**. Compare `activationLongestLongTaskMs` to the existing **>100 ms** critical-path CPU red signal. A task beginning before activation is included if it overlaps activation. |
+| `activationLongTaskOverlapDurationMs`, `activationLongestLongTaskOverlapMs` | Elapsed overlap clipped at both activation and proxy boundaries, for attribution only. These values must not silently replace the full-duration CPU budget. |
+| `preActivationLongTaskCount`, `preActivationLongTaskDurationMs`, `preActivationLongestLongTaskMs` | Buffered work before activation, with duration clipped to that earlier interval. This can include page startup as well as fixture preparation. |
+| `longTaskObservationSupported` | Whether Long Task observation was successfully enabled; unsupported observation cannot be interpreted as proof of zero tasks. |
+| `fixturePreparationMs`, `jpegFixtureMs`, `videoFixtureMs`, `warmMediaPreparationMs`, `preparationToActivationMs` | Separate wrapper preparation and ready-to-activation clocks. JPEG/video creation runs concurrently, so their durations are not additive. Cold warm-media preparation is zero. |
+| `rangeToFirstImageDecodeMs`, `routeToFirstImageDecodeMs` | Useful first mounted grid-image decode timing, computed from existing markers. The route clock starts at `GalleryRendererTrace` mount and excludes page/bundle/fixture startup. Visibility bounds remain validated at the existing later proxy boundary. Decode is not a compositor presentation timestamp. |
+| `presentationProxy: 'two-rAF'` | Explicitly identifies the unchanged presentation proxy. Existing `decodedToPaintMs`, `rangeToFirstPaintMs`, and `routeToFirstPaintMs` and their budgets remain intact. |
+
+Meaningful regression command: `node --test desktop/tests/gallery-performance-metrics.cjs`. The test first failed when attribution was absent, then passed for a wholly pre-activation 140 ms task, tasks overlapping either window edge, and exact non-overlapping boundary timestamps; legacy totals remain unchanged. The existing `desktop/tests/media-gallery-100k-performance.cjs` contract now checks all six image/video/Live cold/warm scenarios and **36 metrics plus 36 traces** in both provider jobs.
+
+Decision: **measurement correction accepted locally; no production optimization selected**. The local renderer proxy is runtime-sensitive; retain failed raw values and mark presentation-based production assessment inconclusive rather than moving budgets. The video capture/render boundary remains a candidate for a native-runtime microtrace if it repeats; no list, scheduler, cache, codec, or Gallery production change is warranted yet. The authoritative initial Electron/Xvfb six-scenario matrix is recorded below; the amended documentation must pass the resulting full PR CI before merge. The runner's RSS field is a single post-result renderer snapshot, not a peak or delta; null is unavailable evidence, not a memory pass.
+
+## Native CI baseline — PR #1067 (2026-10-09)
+
+Status: **Measured native baseline / budgets passed / no production change**. Initial [run 37869011944](https://github.com/lazyxu/xdrive/actions/runs/37869011944) completed the renderer and native PostgreSQL jobs successfully. The selected branch base is `d45a894ef19e03b3cdc90dcfde2cd91fef002bbf` and PR head is `95258eb5cc71214536b7a3b491ffaa5174abfa1d`. All three performance job checkout logs report **`86cf14e1724c1f2bdced4d34be04ec60cea75ed8`**, the synthetic merge of that head into then-current master **`23b3f216b7e9b37222cbfeb7ff9be2812cad2f87`**. This is the actual tested integration tree, including later master Gallery features; it is not reported as a measurement of the fixed branch head alone. Exact rows, runtime, commands, job/artifact IDs and checkout evidence are committed in [the native evidence record](performance/2026-10-09-native-baselines.json).
+
+### Electron renderer: 36 samples
+
+Runtime: Ubuntu **24.04.5**, runner image **20261004.327.1**, Electron **44.4.5**, Chromium **152.0.7977.130**, Node **24.21.0**; visible BrowserWindow under Xvfb, **1440 x 900**, no `--disable-gpu`, reported software canvas/compositing/video decode. Each of twelve Web/Desktop scenario cases uses **three fresh Electron processes**, **100,000 logical items** and a **100-item first range**. Image scenarios retain the 70k-photo/15k-video/15k-Live mix with an image first; video and Live scenarios are homogeneous 100k collections. The real shared Gallery renderer, JPEG decode and WebM poster helper execute, but transport is synthetic: unchanged **350 ms** range replay, **112/6 ms** cold/warm image or Live thumbnail replay, **5/3 ms** video preview replay. This is not actual Web browser networking or Desktop Agent IPC. The job produced **36 metric files and 36 traces**.
+
+All timings below are milliseconds; medians are from n=3. Only range-to-proxy carries [min,max]. The task column is the **maximum full overlapping task**, and working set is the median **single post-result snapshot**, MiB.
+
+| Surface | Scenario | Range -> grid | Range -> decode | Decode -> two-rAF | Range -> two-rAF [min,max] | Activation -> two-rAF | Max task | WS snapshot, MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Desktop | image-cold | 50.1 | 195.1 | 19.7 | **214.8 [213.8,217.6]** | 619.0 | 59 | 212.8 |
+| Desktop | image-warm | 51.0 | 70.0 | 22.1 | **92.1 [87.8,98.2]** | 495.3 | 57 | 178.7 |
+| Desktop | video-cold | 62.1 | 101.5 | 29.3 | **128.6 [125.4,130.9]** | 531.0 | 60 | 175.0 |
+| Desktop | video-warm | 65.8 | 98.7 | 22.1 | **119.4 [119.2,125.7]** | 519.9 | 54 | 174.4 |
+| Desktop | live-cold | 58.4 | 210.3 | 18.3 | **229.2 [225.9,232.9]** | 632.6 | 58 | 216.3 |
+| Desktop | live-warm | 59.7 | 80.6 | 21.1 | **102.5 [101.2,104.1]** | 504.1 | 57 | 181.7 |
+| Web | image-cold | 51.3 | 199.3 | 18.7 | **218.3 [214.0,221.4]** | 624.2 | 59 | 216.6 |
+| Web | image-warm | 49.2 | 67.8 | 25.9 | **93.7 [90.9,95.6]** | 496.4 | 55 | 177.9 |
+| Web | video-cold | 60.8 | 98.2 | 24.5 | **122.7 [119.8,125.4]** | 526.1 | 56 | 175.0 |
+| Web | video-warm | 61.6 | 95.8 | 26.5 | **118.8 [115.7,134.0]** | 518.4 | 51 | 174.3 |
+| Web | live-cold | 56.0 | 208.0 | 18.2 | **226.2 [219.1,230.2]** | 626.4 | 53 | 216.5 |
+| Web | live-warm | 55.3 | 76.4 | 19.7 | **96.1 [94.8,103.8]** | 495.2 | 54 | 181.3 |
+
+Budget decisions are evaluated from every raw sample, not inferred from the job's green status: the launcher checks valid output/viewport but does **not** enforce these numeric thresholds.
+
+| Existing budget | Largest applicable sample | Decision |
+| --- | ---: | --- |
+| Range -> virtual grid <=100 ms | 68.9 ms | Pass, 36/36 |
+| Grid -> first media request <=50 ms | 19.0 ms | Pass, 36/36 |
+| Image/Live media resolved -> DOM <=50 ms / decode <=100 ms | 3.5 / 32.2 ms | Pass, all applicable samples |
+| Image decode -> two-rAF <=50 ms | 30.0 ms | Pass, all image samples |
+| Image/Live range -> two-rAF <=400 ms cold / <=250 ms warm | 232.9 / 104.1 ms | Pass, all applicable samples |
+| Warm video range -> poster proxy <=300 ms / resolved -> decode <=200 ms | 134.0 / 16.8 ms | Pass, all warm-video samples |
+| Full activation-overlapping task >100 ms red signal | 60 ms | No CPU red signal, 36/36 observations supported |
+| Renderer working-set snapshot >300 MiB red signal | 217.918 MiB maximum | Snapshot below red signal; no peak/delta memory claim |
+
+Legacy buffered maximum tasks also peak at **60 ms**. Preparation remains separately measured (**231.8–250.7 ms**); it is excluded from the existing activation clock. Two-rAF waits range **16.2–30.0 ms** in this native run, without the hundreds-of-ms delays in the earlier headless diagnostics. This is runtime-qualified evidence, **not a headless-to-native speedup claim**. The two-rAF boundary remains a presentation proxy. Cold-video one-time initialization remains diagnostic, and this tiny 96 x 64 WebM fixture does not establish H.264/4K or real preview throughput.
+
+Decision: **keep Gallery production renderer, scheduler, cache and poster helper unchanged**. The native workload is within the existing budgets; the local capture/render diagnostic does not justify another optimization. Original timing fields and budgets are preserved. Amend this same measurement commit with the evidence, then pass full PR CI before merging. Trace artifact ID **11589043537**, SHA-256 `60342354c7679dbcfa98780eaa4cd4c301b83daa2d348119ece9a5454e487333`, expires 2026-10-16; metric rows and provenance remain in the repository after artifact expiry.
+
+Command: `cd desktop && xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs <desktop|web> <image-cold|image-warm|video-cold|video-warm|live-cold|live-warm> sample-<1|2|3>`, after the opt-in full Web/Desktop builds shown in the historical workload sections.
+
+### Native PostgreSQL Server: first 56 mixed items
+
+Job **113622479830**, Go **1.25.14 linux/amd64**, native PostgreSQL **17.11** (`postgres:17-alpine`), loopback Gin HTTP and real `storage.Local`. One unchanged test invocation seeds **100k logical assets / 115k physical nodes**; only the first **56 = 38 photos + 9 videos + 9 Live Photos** have payload fixtures. The first counted range took **336.404 ms**. HTTP clocks start after range lookup and visible-fixture setup, so these are not route-to-visible-image or client decode times.
+
+| Complete HTTP response metric | Cold thumbnails, ms | Warm thumbnails, ms |
+| --- | ---: | ---: |
+| First | **60.892** | **2.334** |
+| First 12 | **133.731** | **5.837** |
+| All 47 image/Live stills | 365.219 | 17.992 |
+| Request p50 / p95 | 40.144 / 64.405 | 2.015 / 3.603 |
+
+Video ticket/preview response first/all nine: cold **2.423 / 6.100 ms**, warm **1.247 / 3.817 ms**. This measures small H.264 preview response bytes, not browser decode/poster generation or full video bandwidth. Passing production store assertions establish **47 cold original opens and derivative puts**, warm **zero originals/puts and >=47 derivative opens**, and **nine original video opens per phase**. No observed concurrency peak is emitted by this Gallery test; configured limits are six thumbnails/three previews.
+
+All four existing gates pass: cold first thumbnail **<=750 ms**, cold first 12 **<=1500 ms**, warm first **<=250 ms**, cold first preview **<=500 ms**. **Decision: no Server image/Live thumbnail or preview production change.** n=1 is current qualification, not a paired optimization or a timing comparison with historical CI/PGlite. Command: `XD_GALLERY_FIRST_VISIBLE_PERF=1 go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api` with the CI PostgreSQL service. The same job's FileExplorer 100k JPEG/store results are recorded in [FileExplorer performance](file-explorer-performance.md#native-ci-baselines--pr-1067-2026-10-09).
 
 ## Timeline viewport group lookup
 
@@ -448,7 +559,7 @@ metadata range reuse and Gallery-specific Live Photo composition are separate fo
 
 ## 100k renderer route-to-first-paint trace
 
-Status: **Benchmarking / latest-master rerun pending**.
+Status: **Accepted / native rerun measured; no production change**. The current PR #1067 native rerun is recorded above; the historical table below remains unchanged.
 
 This follows the accepted 100k first-open and first-visible-media work. Those measurements already show that Server first-range, thumbnail transport, preview transport, timeline CPU, and steady video-poster decode are not multi-second bottlenecks. This trace isolates the remaining Web/Desktop renderer integration path.
 

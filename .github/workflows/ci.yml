@@ -292,7 +292,7 @@ jobs:
         run: go test -run '^TestMediaGalleryFirstOpenPerformance100K$' -count=1 -v ./internal/api
 
   gallery-first-visible-server-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-first-visible-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -320,6 +320,11 @@ jobs:
           cache: true
       - name: Measure Gallery 100k first-visible media transport
         run: go test -run '^TestMediaGalleryFirstVisiblePerformance100K$' -count=1 -v ./internal/api
+      - name: Measure FileExplorer 100k media object-store transport
+        if: github.head_ref == 'perf/gallery-renderer-first-paint-100k'
+        env:
+          XD_FILEEXPLORER_MEDIA_SERVER_PERF: "1"
+        run: go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
 
   gallery-video-poster-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
@@ -560,7 +565,7 @@ jobs:
           retention-days: 7
 
   large-transfer-agent-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/large-transfer-1gib-baseline'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'perf/large-transfer-1gib-baseline' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -569,7 +574,9 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Measure Desktop/Agent-core 1 GiB upload/download throughput and RSS
+      - name: Measure Desktop/Agent-core large-file upload/download throughput and RSS
+        env:
+          XD_LARGE_TRANSFER_SIZE_GIB: ${{ github.head_ref == 'perf/gallery-renderer-first-paint-100k' && '4' || '1' }}
         run: |
           set -euo pipefail
           out="$GITHUB_WORKSPACE/large-transfer-agent-results"
@@ -581,22 +588,21 @@ jobs:
               XD_LARGE_TRANSFER_SCENARIO="$scenario" \
               XD_LARGE_TRANSFER_SAMPLE="sample-$sample" \
               XD_LARGE_TRANSFER_PERF_OUTPUT="$out" \
-                go test -run '^TestLargeTransferPerformanceBaseline1GiB$' -count=1 -v ./cmd/xdrive-agent
+                go test -run '^TestLargeTransferPerformanceBaselineLargeFile$' -count=1 -v ./cmd/xdrive-agent
             done
           done
           test "$(find "$out" -maxdepth 1 -type f -name 'agent-*.json' | wc -l)" -eq 6
-          echo "=== Desktop/Agent-core 1 GiB transfer metrics ==="
           cat "$out"/agent-*.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: agent-large-transfer-1gib
+          name: agent-large-transfer
           path: large-transfer-agent-results
           if-no-files-found: error
           retention-days: 7
 
   gallery-renderer-first-paint-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-media-first-paint-100k'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-media-first-paint-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -613,7 +619,7 @@ jobs:
           VITE_XDRIVE_GALLERY_PERF: "1"
         run: |
           (cd desktop && npm run build:renderer)
-          (cd web && npm run build)
+          (cd web && npm run build -- --config vite.config.ts)
       - name: Trace Gallery route to first decoded image paint
         working-directory: desktop
         run: |
@@ -621,14 +627,14 @@ jobs:
           rm -rf gallery-perf-results
           mkdir -p gallery-perf-results
           for surface in desktop web; do
-            for scenario in video-cold video-warm live-cold live-warm; do
+            for scenario in image-cold image-warm video-cold video-warm live-cold live-warm; do
               for sample in 1 2 3; do
                 xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-renderer-first-paint-trace-main.cjs "$surface" "$scenario" "sample-$sample"
               done
             done
           done
-          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 24
-          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 24
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 36
+          test "$(find gallery-perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 36
           echo "=== Gallery renderer first-paint metrics ==="
           for file in gallery-perf-results/*.json; do
             case "$file" in

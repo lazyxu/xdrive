@@ -23,8 +23,6 @@ import (
 	"github.com/lazyxu/xdrive/internal/transfer"
 )
 
-const largeTransferPerformanceBytes int64 = 1 << 30
-
 type largeTransferPerformanceServerStats struct {
 	mu            sync.Mutex
 	uploadBytes   int64
@@ -71,7 +69,8 @@ func largeTransferCurrentRSSKiB() int64 {
 	return 0
 }
 
-func largeTransferSampleRSS(stop <-chan struct{}, peak *atomic.Int64) {
+func largeTransferSampleRSS(stop <-chan struct{}, ready chan<- struct{}, done chan<- struct{}, peak *atomic.Int64) {
+	defer close(done)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -81,6 +80,10 @@ func largeTransferSampleRSS(stop <-chan struct{}, peak *atomic.Int64) {
 			if current <= old || peak.CompareAndSwap(old, current) {
 				break
 			}
+		}
+		if ready != nil {
+			close(ready)
+			ready = nil
 		}
 		select {
 		case <-stop:
@@ -113,7 +116,7 @@ func largeTransferUint64Ptr(value uint64) *uint64 {
 	return &value
 }
 
-func newLargeTransferPerformanceServer(t *testing.T, stats *largeTransferPerformanceServerStats) *httptest.Server {
+func newLargeTransferPerformanceServer(t *testing.T, stats *largeTransferPerformanceServerStats, largeTransferPerformanceBytes int64) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -210,10 +213,20 @@ func writeLargeTransferPerformanceMetric(t *testing.T, metric largeTransferPerfo
 	}
 }
 
-func TestLargeTransferPerformanceBaseline1GiB(t *testing.T) {
+func TestLargeTransferPerformanceBaselineLargeFile(t *testing.T) {
 	if os.Getenv("XD_LARGE_TRANSFER_PERF") != "1" {
-		t.Skip("set XD_LARGE_TRANSFER_PERF=1 to run the 1 GiB transfer baseline")
+		t.Skip("set XD_LARGE_TRANSFER_PERF=1 to run the large-file transfer baseline")
 	}
+	sizeText := strings.TrimSpace(os.Getenv("XD_LARGE_TRANSFER_SIZE_GIB"))
+	if sizeText == "" {
+		sizeText = "1"
+	}
+	sizeGiB, sizeErr := strconv.ParseInt(sizeText, 10, 64)
+	if sizeErr != nil || (sizeGiB != 1 && sizeGiB != 4) {
+		t.Fatalf("XD_LARGE_TRANSFER_SIZE_GIB=%q want 1 or 4", sizeText)
+	}
+	largeTransferPerformanceBytes := sizeGiB << 30
+
 	scenario := strings.TrimSpace(os.Getenv("XD_LARGE_TRANSFER_SCENARIO"))
 	if scenario != "upload" && scenario != "download" {
 		t.Fatalf("XD_LARGE_TRANSFER_SCENARIO=%q want upload or download", scenario)
@@ -238,17 +251,23 @@ func TestLargeTransferPerformanceBaseline1GiB(t *testing.T) {
 	}
 
 	stats := &largeTransferPerformanceServerStats{}
-	server := newLargeTransferPerformanceServer(t, stats)
+	server := newLargeTransferPerformanceServer(t, stats, largeTransferPerformanceBytes)
 	defer server.Close()
 	cli := client.New(server.URL, "token")
 	manager := transfer.NewManager(transfer.DefaultHistoryLimit)
 
 	runtime.GC()
 	startRSS := largeTransferCurrentRSSKiB()
+	if startRSS <= 0 {
+		t.Fatal("process RSS memory metrics are unavailable")
+	}
 	var peak atomic.Int64
 	peak.Store(startRSS)
 	stopRSS := make(chan struct{})
-	go largeTransferSampleRSS(stopRSS, &peak)
+	readyRSS := make(chan struct{})
+	doneRSS := make(chan struct{})
+	go largeTransferSampleRSS(stopRSS, readyRSS, doneRSS, &peak)
+	<-readyRSS
 
 	startedAt := time.Now()
 	switch scenario {
@@ -297,7 +316,7 @@ func TestLargeTransferPerformanceBaseline1GiB(t *testing.T) {
 	}
 	elapsed := time.Since(startedAt)
 	close(stopRSS)
-	time.Sleep(20 * time.Millisecond)
+	<-doneRSS
 	finalRSS := largeTransferCurrentRSSKiB()
 	if finalRSS > peak.Load() {
 		peak.Store(finalRSS)
@@ -327,7 +346,7 @@ func TestLargeTransferPerformanceBaseline1GiB(t *testing.T) {
 		Sample:        sample,
 		SizeBytes:     largeTransferPerformanceBytes,
 		ElapsedMS:     float64(elapsed) / float64(time.Millisecond),
-		ThroughputMiB: 1024 / elapsed.Seconds(),
+		ThroughputMiB: (float64(largeTransferPerformanceBytes) / (1024 * 1024)) / elapsed.Seconds(),
 		RSSStartKiB:   startRSS,
 		RSSPeakKiB:    peak.Load(),
 		RSSDeltaKiB:   max(int64(0), peak.Load()-startRSS),

@@ -359,7 +359,7 @@ test('Gallery renderer first-paint benchmark isolates transport from renderer mo
   assert.ok(gitlabCI.includes("-name '*-trace.json'"))
 })
 
-test('Gallery 100k homogeneous video and Live Photo renderer benchmark is measurement-only', () => {
+test('Gallery 100k homogeneous image, video and Live Photo renderer benchmark is measurement-only', () => {
   const harness = fs.readFileSync(
     path.join(repo, 'ui', 'shared', 'src', 'mui', 'GalleryPerformanceHarness.tsx'),
     'utf8',
@@ -369,7 +369,8 @@ test('Gallery 100k homogeneous video and Live Photo renderer benchmark is measur
     'utf8',
   )
   const githubCI = fs.readFileSync(path.join(repo, '.github', 'workflows', 'ci.yml'), 'utf8')
-  for (const scenarioName of ['video-cold', 'video-warm', 'live-cold', 'live-warm']) {
+  const gitlabCI = fs.readFileSync(path.join(repo, '.gitlab-ci.yml'), 'utf8')
+  for (const scenarioName of ['image-cold', 'image-warm', 'video-cold', 'video-warm', 'live-cold', 'live-warm']) {
     assert.ok(harness.includes("'" + scenarioName + "'"), 'missing harness scenario: ' + scenarioName)
     assert.ok(traceMain.includes("'" + scenarioName + "'"), 'missing trace scenario: ' + scenarioName)
   }
@@ -380,7 +381,9 @@ test('Gallery 100k homogeneous video and Live Photo renderer benchmark is measur
   assert.ok(harness.includes('gridCommitToMediaRequestMs'))
   assert.ok(harness.includes('mediaResolvedToDecodeMs'))
   assert.ok(githubCI.includes("github.head_ref == 'perf/gallery-media-first-paint-100k'"))
-  assert.ok(githubCI.includes('for scenario in video-cold video-warm live-cold live-warm; do'))
-  assert.ok(githubCI.includes('wc -l)" -eq 24'))
+  for (const ci of [githubCI, gitlabCI]) {
+    assert.ok(ci.includes('for scenario in image-cold image-warm video-cold video-warm live-cold live-warm; do'))
+    assert.equal((ci.match(/wc -l\)" -eq 36/g) ?? []).length, 2, 'expect 36 results and 36 traces')
+  }
 })
 
