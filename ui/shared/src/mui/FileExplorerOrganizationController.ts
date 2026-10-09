@@ -72,6 +72,9 @@ export function useXDriveFileExplorerOrganization({
     }
   }, [adapter, enabled])
 
+  // A temporary Agent capability loss/reconnect can toggle "enabled" without
+  // changing account identity. Detach every in-flight mutation and pending
+  // refresh in that case, just as a change of account detaches them.
   useEffect(() => {
     visibleScopeRef.current = { lifecycleKey, enabled }
     lifecycleGenerationRef.current += 1
@@ -94,7 +97,7 @@ export function useXDriveFileExplorerOrganization({
       mutationTailsRef.current.clear()
       mutationByKeyRef.current.clear()
     }
-  }, [lifecycleKey])
+  }, [lifecycleKey, enabled])
 
   useEffect(() => {
     // This effect also runs when the same account's capabilities toggle.
