@@ -79,7 +79,7 @@ test('Web and Desktop use shared FileExplorer navigation instead of duplicating 
     assert.equal(source.includes('const goBack = async'), false, `${label} must not duplicate Explorer back navigation`)
     assert.equal(source.includes('const goForward = async'), false, `${label} must not duplicate Explorer forward navigation`)
     assert.equal(source.includes('const goUp = async'), false, `${label} must not duplicate Explorer up navigation`)
-    assert.equal((source.match(/onRefresh=\{trashActive \? \(\) => \{ void trash\.refresh\(\) \} : refresh\}/g) || []).length, 1, `${label} Explorer toolbar must use shared refresh outside Trash and Trash refresh inside Trash`)
+    assert.equal((source.match(/onRefresh=\{trashActive \? \(\) => \{ void trash\.refresh\(\) \} : refresh\}/g) || []).length, label === 'Web' ? 2 : 1, `${label} must delegate both iOS Mobile and Desktop-class refresh to the same workspace/Trash controller`)
     assert.ok(source.includes('onRefresh: refresh'), `${label} background menu must use shared refresh`)
     assert.equal(source.includes('if (current) void onLoadDirectory(current.id, crumbs, sort)'), false, `${label} must not duplicate current-directory refresh`)
     assert.ok(source.includes("pathValue={trashActive ? '回收站' : pathValue}"), `${label} must use shared navigation path display outside Trash`)

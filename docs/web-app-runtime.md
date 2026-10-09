@@ -1,5 +1,7 @@
 # xDrive Web App Runtime
 
+Mobile Web Files 的展示层独立于 Desktop FileExplorer；在同一个 `files` App ID 和 Web REST/controller 契约上运行。首次进入浏览首页，之后恢复账号自己的文件夹与滚动位置；显式 `dir` 深链接优先，不新增 Mobile 文件 API 或新的 App 注册项。见 [Mobile Files iOS 合同](mobile-files-ios.md)。
+
 ## 目标
 
 Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而是把可独立启动、可深链接、可由其他工作区调用的能力注册为 Web 程序。Web 程序使用统一的 App Registry、类型化 launch contract、Hash Route 和 session browse context。设置、属性、分享、历史版本、标签、重命名和冲突确认仍是程序内部 Dialog / Inspector，不升级成独立程序。

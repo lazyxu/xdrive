@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
-import { Box, LinearProgress } from '@mui/material'
+import { Box, LinearProgress, useMediaQuery } from '@mui/material'
+import MobileFiles from './MobileFiles'
 import {
   XDriveFileExplorer,
   XDriveFileExplorerNavigationPane,
@@ -163,6 +164,7 @@ export default function WebFileExplorer({
   onDirectoryChange?: (nodeID: number) => void
   onError: (error: unknown) => void
 }) {
+  const compactMobile = useMediaQuery('(max-width:899.95px)')
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
@@ -807,6 +809,24 @@ export default function WebFileExplorer({
     onRefresh: refresh,
   })
 
+  // The Mobile Files surface owns only presentation. REST, Server ranges,
+  // operations, favorites, recent, search and Viewer remain this Web adapter's.
+  const restoreMobileDirectory = useCallback(async (directoryID: number) => {
+    const navigationIntentID = beginNavigationIntent()
+    const chain: Crumb[] = []
+    let nodeID = directoryID
+    for (let depth = 0; depth < 256; depth += 1) {
+      const node = await api.node(nodeID)
+      if (node.type !== 'dir') throw new Error('目标不是文件夹。')
+      chain.push({ id: node.id, name: node.name })
+      if (!node.parent_id) break
+      nodeID = node.parent_id
+    }
+    if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return
+    chain.reverse()
+    await navigateTo(chain, true, navigationIntentID)
+  }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
+
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <input
@@ -846,6 +866,151 @@ export default function WebFileExplorer({
           sx={{ position: 'absolute', inset: '0 0 auto', zIndex: 3 }}
         />
       ) : null}
+
+      {compactMobile ? (
+        <MobileFiles
+          key={navigationSessionStorageKey ?? ''}
+          lifecycleKey={navigationSessionStorageKey ?? ''}
+          requestedDirectoryID={initialDirectoryID}
+          items={trashActive ? trash.items : explorerItems}
+          virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+          crumbs={trashActive ? trash.crumbs : explorerCrumbs}
+          loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
+          trashActive={trashActive}
+          onOpenTrash={() => { beginNavigationIntent(); onOpenTrash() }}
+          onCloseTrash={onCloseTrash}
+          onBrowseRoot={() => {
+            onCloseTrash()
+            void navigateTo(explorerCrumbs.slice(0, 1).map(crumb => ({ id: Number(crumb.id), name: crumb.name })))
+          }}
+          onGoUp={() => { void goUp() }}
+          onCrumbClick={index => { void navigateToCrumb(index) }}
+          onRestoreFolder={restoreMobileDirectory}
+          onOpenItem={item => {
+            if (trashActive) return false
+            return openItem(item, node => openWebNode(node, item))
+          }}
+          onOpenError={onError}
+          recentItems={recent.items.map(item => ({
+            id: item.id, name: item.name, kind: item.kind, subtitle: item.path,
+            size: item.size, revision: typeof item.revision === 'number' ? item.revision : undefined,
+          }))}
+          favorites={favorites.items.map(item => ({
+            id: item.id, name: item.name, kind: 'file' as const,
+            subtitle: item.path, size: item.size, revision: item.revision,
+          }))}
+          quickAccess={quickAccess.items.map(item => ({ id: item.id, name: item.name, kind: 'dir' as const, subtitle: item.path }))}
+          savedSearches={organization.savedSearches.map(item => ({ id: item.id, name: item.name }))}
+          tags={organization.tags.map(item => ({ id: item.id, name: item.name }))}
+          onOpenRecent={id => {
+            onCloseTrash()
+            const intent = beginNavigationIntent()
+            return recent.activate(id, {
+              onDirectory: next => navigateTo(next, true, intent),
+              onFile: item => {
+                if (!isNavigationIntentCurrent(intent)) return false
+                openWebNode(item.node)
+                return true
+              },
+            })
+          }}
+          onOpenFavorite={id => {
+            onCloseTrash()
+            const intent = beginNavigationIntent()
+            return favorites.activate(id, node => {
+              if (isNavigationIntentCurrent(intent)) openWebNode(node)
+            })
+          }}
+          onOpenQuickAccess={id => {
+            onCloseTrash()
+            const intent = beginNavigationIntent()
+            return quickAccess.navigate(id, next => navigateTo(next, true, intent))
+          }}
+          onClearRecent={() => recent.clear()}
+          onUnfavorite={id => favorites.unfavorite(id)}
+          onOpenSavedSearch={id => {
+            onCloseTrash()
+            const saved = organization.savedSearches.find(item => item.id === id)
+            if (saved) void applySearch(saved.query, saved.filters)
+          }}
+          onOpenTag={id => { onCloseTrash(); void applySearch('', { tagID: id }) }}
+          onManageTags={(selected = []) => {
+            if (selected.length > 0 && !allowSelectionAction('manage-tags', selected)) return
+            setTagDialogItems(selected)
+            setTagDialogMode(selected.length > 0 ? 'assign' : 'manage')
+          }}
+          searchValue={searchValue}
+          onSearchValueChange={changeSearchValue}
+          onSearch={query => { if (trashActive) onCloseTrash(); void submitSearch(query) }}
+          onClearSearch={() => { clearSearch() }}
+          searchActive={!trashActive && searchState.results !== null}
+          searchSummary={!trashActive && searchState.results !== null ? {
+            query: searchState.query,
+            conditions: xDriveFileExplorerSearchFilterLabels(searchFilters, {
+              sourceOptions: searchSourceOptions, tagOptions: organization.tagOptions,
+            }),
+            resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
+            loading: searchLoading,
+            error: searchError,
+            onClear: () => clearSearch(),
+            onRetry: () => { void retrySearch() },
+          } : undefined}
+          filtersControl={!trashActive ? (
+            <XDriveFileExplorerSearchFilters
+              filters={searchFilters}
+              sourceOptions={searchSourceOptions}
+              tagOptions={organization.tagOptions}
+              canSaveSearch={canSaveSmartFolder}
+              onSaveSearch={() => setSaveSearchOpen(true)}
+              onChange={changeSearchFilters}
+            />
+          ) : undefined}
+          sort={trashActive ? trashSort : sort}
+          onSortChange={trashActive ? setTrashSort : changeSort}
+          grouping={trashActive ? undefined : grouping}
+          onGroupingChange={trashActive ? undefined : changeGrouping}
+          actionFeedback={actionFeedback}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onCreateFolder={onCreateFolder}
+          onUpload={openUploadPicker}
+          onUploadFolder={openFolderUploadPicker}
+          onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
+          onRefreshRecent={() => { void recent.refresh() }}
+          onRefreshFavorites={() => { void favorites.refresh() }}
+          canPaste={!trashActive && fileOperationCanPaste}
+          onPaste={() => { void pasteClipboard() }}
+          onRename={renameItem}
+          onCopy={copyItems}
+          onCut={cutItems}
+          onMove={selected => openDestination('move', selected, crumbs)}
+          onCopyTo={selected => openDestination('copy', selected, crumbs)}
+          onDownload={selected => { void downloadSelected(selected) }}
+          onDelete={selected => {
+            if (!allowSelectionAction('delete', selected)) return
+            const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+            if (nodes?.length) onRemoveMany(nodes)
+          }}
+          onDropToFolder={(selected, target) => { void dropItemsToFolder(selected, target, 'move') }}
+          onDropToCrumb={(selected, target) => { void dropItemsToCrumb(selected, target, 'move') }}
+          getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}
+          loadThumbnail={loadThumbnail}
+          loadMediaItem={loadMediaItem}
+          loadNodeLocation={loadNodeLocation}
+          onShowInFolder={location => {
+            if (!location.parent_id) return false
+            const chain = location.breadcrumbs
+              .filter(crumb => crumb.id !== location.node_id)
+              .map(crumb => ({ id: crumb.id, name: crumb.name }))
+            if (!chain.length || chain.at(-1)?.id !== location.parent_id) return false
+            onCloseTrash()
+            return navigateTo(chain).then(() => true).catch(error => {
+              onError(error)
+              return false
+            })
+          }}
+        />
+      ) : (
       <XDriveFileExplorer
         interactionLifecycleKey={navigationSessionStorageKey ?? ''}
         presentation="workspace"
@@ -1132,6 +1297,7 @@ export default function WebFileExplorer({
                 : undefined
             )}
       />
+      )}
       {destinationRequest && (
         <XDriveFileExplorerDestinationDialog
           open
