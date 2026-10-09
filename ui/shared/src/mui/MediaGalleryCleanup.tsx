@@ -15,7 +15,9 @@ import { formatBytes } from '../format'
 import type {
   MediaBurstReview,
   MediaBurstReviewList,
+  MediaGalleryIndexStatus,
 } from '../models'
+import { XDriveMediaGalleryCleanupIndexStatus } from './MediaGalleryCleanupIndexStatus'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
@@ -120,6 +122,10 @@ export function XDriveMediaGalleryCleanup({
   onLoadMoreBurst,
   onRefresh,
   loadingMore,
+  indexStatus,
+  indexStatusLoading,
+  indexStatusError,
+  onRequestIndexStatus,
 }: {
   bursts: MediaBurstReviewList | null
   loading?: boolean
@@ -128,6 +134,10 @@ export function XDriveMediaGalleryCleanup({
   onLoadMoreBurst?: () => void
   onRefresh?: () => void
   loadingMore?: 'burst' | null
+  indexStatus?: MediaGalleryIndexStatus | null
+  indexStatusLoading?: boolean
+  indexStatusError?: string
+  onRequestIndexStatus?: () => void
 }) {
   if (loading && !bursts) {
     return (
@@ -141,26 +151,38 @@ export function XDriveMediaGalleryCleanup({
   }
 
   const burstGroups = bursts?.groups ?? []
+  const indexCoverage = (
+    <XDriveMediaGalleryCleanupIndexStatus
+      status={indexStatus}
+      loading={indexStatusLoading}
+      error={indexStatusError}
+      onRequest={onRequestIndexStatus}
+    />
+  )
   if (burstGroups.length === 0) {
     return (
-      <Paper
-        variant="outlined"
-        sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
-      >
-        <Stack spacing={0.75} alignItems="center">
-          <SuggestionIcon color="disabled" sx={{ fontSize: 42 }} />
-          <Typography color="text.secondary">当前已索引素材暂时没有连拍清理建议</Typography>
-          <Typography variant="caption" color="text.secondary" align="center">
-            结果仅覆盖已就绪的媒体索引。
-          </Typography>
-          {onRefresh ? <Button onClick={onRefresh} sx={{ minHeight: 44 }}>重新检查</Button> : null}
-        </Stack>
-      </Paper>
+      <Stack spacing={2} data-xdrive-media-gallery-cleanup>
+        {indexCoverage}
+        <Paper
+          variant="outlined"
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
+        >
+          <Stack spacing={0.75} alignItems="center">
+            <SuggestionIcon color="disabled" sx={{ fontSize: 42 }} />
+            <Typography color="text.secondary">当前已索引素材暂时没有连拍清理建议</Typography>
+            <Typography variant="caption" color="text.secondary" align="center">
+              结果仅覆盖已就绪的媒体索引。
+            </Typography>
+            {onRefresh ? <Button onClick={onRefresh} sx={{ minHeight: 44 }}>重新检查</Button> : null}
+          </Stack>
+        </Paper>
+      </Stack>
     )
   }
 
   return (
     <Stack spacing={3} data-xdrive-media-gallery-cleanup>
+      {indexCoverage}
       <Box>
         <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1.25 }}>
           <Typography variant="subtitle1" fontWeight={700}>连拍精选</Typography>

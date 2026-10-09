@@ -4860,6 +4860,10 @@ export function XDriveMediaGallery({
           onLoadMoreBurst={onLoadMoreBurst}
           onRefresh={onRefresh}
           loadingMore={cleanupMoreLoading}
+          indexStatus={indexStatus}
+          indexStatusLoading={indexStatusLoading}
+          indexStatusError={indexStatusError}
+          onRequestIndexStatus={onRequestIndexStatus}
         />
       ) : null}
 
