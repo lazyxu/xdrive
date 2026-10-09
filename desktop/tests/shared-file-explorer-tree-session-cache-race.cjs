@@ -109,6 +109,7 @@ function loadNavigationPane(runtime) {
     Fragment: Symbol('Fragment'),
   }
   const mui = {
+    useMediaQuery: () => false,
     Box: 'Box',
     Checkbox: 'Checkbox',
     CircularProgress: 'CircularProgress',

@@ -47,13 +47,13 @@ test('shared FileExplorer provides command bar, details/grid/column views, and s
 test('shared FileExplorer uses configurable system-style density without breaking virtualization math', () => {
   assert.ok(explorer.includes('const detailsNormalRowHeight = 36'), 'normal details density token is missing')
   assert.ok(explorer.includes('const detailsCompactRowHeight = 28'), 'compact details density token is missing')
-  assert.ok(explorer.includes('const detailsRowHeight = compactTouch'), 'details virtualization row height must include the compact-touch projection')
+  assert.ok(explorer.includes('const detailsRowHeight = compactViewport'), 'details virtualization row height must include the compact-viewport projection')
   assert.ok(explorer.includes("viewPreferences.detailsDensity === 'compact'"), 'desktop details virtualization row height must still follow the persisted density')
   assert.ok(explorer.includes('const detailsHeaderHeight = 32'), 'details virtualization header height should remain compact')
   assert.ok(explorer.includes('minHeight: detailsHeaderHeight'), 'details header should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: detailsRowHeight'), 'details rows should consume the virtualization height token')
   assert.ok(explorer.includes('minHeight: 44'), 'navigation/address row should use compact system height')
-  assert.ok(explorer.includes("'& .MuiIconButton-root': { width: compactTouch ? 44 : 32, height: compactTouch ? 44 : 32"), 'navigation buttons should use 44px touch targets while preserving 32px desktop controls')
+  assert.ok(explorer.includes("'& .MuiIconButton-root': { width: compactViewport ? 44 : 32, height: compactViewport ? 44 : 32"), 'navigation buttons should use 44px touch targets while preserving 32px desktop controls')
   assert.ok(explorer.includes("height: 36, borderRadius: '4px'"), 'address/search inputs should use compact 36px controls')
   assert.ok(explorer.includes('minHeight: 40'), 'command bar should use compact 40px height')
   assert.equal(explorer.includes('MuiToggleButton-root'), false, 'duplicate Details/Grid toggle chrome should be removed')
@@ -400,8 +400,8 @@ test('shared FileExplorer moves lower-priority Toolbar actions into responsive o
     '<MoreHorizRoundedIcon',
     'anchorEl={commandBarOverflowAnchor}',
     'runCommandBarOverflowAction',
-    '(compactTouch || commandBarOverflowLevel >= 2) && onCreateFolder',
-    '(compactTouch || commandBarOverflowLevel >= 1) && onUploadFolder',
+    '(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder',
+    '(compactViewport || commandBarOverflowLevel >= 1) && onUploadFolder',
     'commandBarOverflowLevel >= 1 && navigationPane',
   ]) {
     assert.ok(explorer.includes(token), 'responsive Toolbar overflow missing: ' + token)

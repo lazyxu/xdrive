@@ -104,6 +104,8 @@ Do not insert group headers into the item array, do not renumber filesystem item
 
 FileExplorer tabs are shared Web/Desktop navigation workspaces, not app-local visual tabs. Each tab owns its committed history, current history index, sort, grouping, and view mode. Search state is keyed by the shared tab workspace id.
 
+**Mobile single-context presentation:** below 900 CSS px, show the active workspace with **no tab bar**. Disable internal new/close/restore/cycle/index-tab commands, folder middle-click-new-tab and tab-opening menu entries in this presentation, including when a mouse or physical keyboard is attached. Keep the existing committed desktop tab array and the active workspace's history; widening the same mounted Explorer restores desktop tab chrome without reopening or resetting directories. A resize must not leave an old tab menu above the mobile workspace. The workflows below apply to the wide presentation.
+
 Native tab workflows use the same shared navigation state machine:
 
 - middle-clicking a folder opens it in a new tab through the existing shared `openItemInNewTab` path;
@@ -517,8 +519,8 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 ### Column View
 
 - `columns` is the third shared FileExplorer view mode beside `details` and `grid`; it is persisted in the same tab/session view-mode contract.
-- Compact touch presentation (below 900 CSS px with a coarse primary pointer) projects a saved `columns` preference into the shared touch Details list. This gives inherited or restored tabs the same single-tap open, explicit multi-select, 52 px rows and per-item More actions as other mobile lists.
-- This responsive projection must not call `onViewModeChange` or rewrite the saved tab/session preference. Returning to a wide viewport restores Column View; mouse-only narrow windows retain their existing desktop view semantics.
+- Compact presentation below 900 CSS px projects a saved `columns` preference into the shared Details list, independently of pointer type. Inherited or restored tabs receive the same 52 px rows, per-item More actions and explicit multi-select as other mobile lists. Actual touch events retain the compact touch open/select contract; ordinary mouse clicks retain selection/double-click semantics, including when a mouse is attached to a phone.
+- This responsive projection must not call `onViewModeChange` or rewrite the saved tab/session preference. Returning to a wide viewport restores Column View. Explicit List/Grid choices still use the existing shared preference callback. Navigation, toolbar, filter and view chrome follow the same width boundary so narrow mouse windows cannot clip the filter in a desktop command bar.
 - Every visible column is one paged directory request. Columns must never fetch an entire large directory only to render Finder-style hierarchy.
 - Web propagates `AbortSignal` to the paged REST request. Desktop may not be able to cancel an already-issued Agent request, so the shared view still fences every completion with per-column generation state and discards stale responses.
 - When breadcrumbs shrink or switch, inactive column requests are aborted and inactive column state is pruned.

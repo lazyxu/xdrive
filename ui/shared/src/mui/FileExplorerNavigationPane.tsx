@@ -24,6 +24,7 @@ import {
   Stack,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
@@ -331,6 +332,9 @@ export function XDriveFileExplorerNavigationPane({
       currentCrumbs.slice(0, index + 1).map((candidate) => ({ ...candidate })),
     ]),
   )
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
+  const actionEdge = compactViewport ? 44 : 26
+  const secondaryTrack = compactViewport ? 44 : 28
   const currentID = currentCrumbs.at(-1)?.id
 
   const navigationAvailabilityItems = useMemo(() => {
@@ -595,15 +599,16 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: '26px minmax(0, 1fr)',
+            gridTemplateColumns: `${actionEdge}px minmax(${compactViewport ? 44 : 0}px, 1fr)`,
             alignItems: 'center',
-            pl: 0.5 + depth * 1.75,
+            // Deep mobile paths must leave separate, usable expand/open targets.
+            pl: 0.5 + (compactViewport ? Math.min(depth, 6) * 1.25 : depth * 1.75),
             pr: 0.5,
-            minHeight: 32,
+            minHeight: compactViewport ? 44 : 32,
           }}
         >
           {loading && !loaded ? (
-            <Box sx={{ width: 26, height: 30, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ width: actionEdge, height: compactViewport ? 44 : 30, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={13} />
             </Box>
           ) : expandable ? (
@@ -614,18 +619,19 @@ export function XDriveFileExplorerNavigationPane({
                 event.stopPropagation()
                 toggleExpanded(node)
               }}
-              sx={{ width: 26, height: 28, borderRadius: 0.5 }}
+              sx={{ width: actionEdge, height: compactViewport ? 44 : 28, flexShrink: 0, borderRadius: 0.5 }}
             >
               {expanded
                 ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />
                 : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
             </IconButton>
           ) : (
-            <Box sx={{ width: 26, height: 28 }} />
+            <Box sx={{ width: actionEdge, height: compactViewport ? 44 : 28 }} />
           )}
 
           <ListItemButton
             aria-label={node.name}
+            title={node.crumbs.map((crumb) => crumb.name).join('/')}
             onDragOver={(event) => dragOverNode(event, node)}
             onDragLeave={(event) => leaveDropTarget(event, node.id)}
             onDrop={(event) => { void dropOnNode(event, node) }}
@@ -634,7 +640,7 @@ export function XDriveFileExplorerNavigationPane({
             }}
             sx={{
               minWidth: 0,
-              minHeight: 30,
+              minHeight: compactViewport ? 44 : 30,
               py: 0.25,
               px: 0.75,
               borderRadius: 0.5,
@@ -659,7 +665,7 @@ export function XDriveFileExplorerNavigationPane({
               <Box
                 data-xdrive-file-explorer-tree-auto-load
                 sx={{
-                  ml: 0.5 + (depth + 1) * 1.75,
+                  ml: 0.5 + (compactViewport ? Math.min(depth + 1, 6) * 1.25 : (depth + 1) * 1.75),
                   mr: 0.5,
                 }}
               >
@@ -711,18 +717,19 @@ export function XDriveFileExplorerNavigationPane({
         height: '100%',
         minHeight: 0,
         overflow: 'auto',
+        overflowX: compactViewport ? 'hidden' : undefined,
         py: 0.75,
         bgcolor: 'background.paper',
       }}
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1, minHeight: 28 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1, minHeight: compactViewport ? 44 : 28 }}>
         <Typography variant="caption" color="text.secondary" fontWeight={700}>侧边栏</Typography>
         <Tooltip title="排序和自定义侧边栏">
           <IconButton
             size="small"
             aria-label="排序和自定义侧边栏"
             onClick={(event) => setCustomizeAnchor(event.currentTarget)}
-            sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+            sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
           >
             <TuneRoundedIcon sx={{ fontSize: 16 }} />
           </IconButton>
@@ -773,7 +780,7 @@ export function XDriveFileExplorerNavigationPane({
               selected={trashActive}
               aria-current={trashActive ? 'page' : undefined}
               onClick={() => { void onNavigateTrash() }}
-              sx={{ minWidth: 0, minHeight: 32, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+              sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 32, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
             >
               <DeleteOutlineRoundedIcon sx={{ fontSize: 19, color: trashActive ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
               <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: trashActive ? 600 : 400 }}>
@@ -795,14 +802,14 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: compactViewport ? 44 : 30 }}>
             <Stack direction="row" alignItems="center" spacing={0.25}>
               <IconButton
                 size="small"
                 aria-label={expandedSections.quickAccess ? '折叠快速访问' : '展开快速访问'}
                 aria-expanded={expandedSections.quickAccess}
                 onClick={() => toggleSection('quickAccess')}
-                sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
               >
                 {expandedSections.quickAccess
                   ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
@@ -820,7 +827,7 @@ export function XDriveFileExplorerNavigationPane({
                     aria-label={currentQuickAccessPinned ? '取消固定当前文件夹' : '固定当前文件夹'}
                     disabled={quickAccessBusyID !== null}
                     onClick={() => { void onToggleCurrentQuickAccess?.() }}
-                    sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                    sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
                   >
                     <PushPinRoundedIcon
                       sx={{
@@ -836,7 +843,7 @@ export function XDriveFileExplorerNavigationPane({
           </Stack>
 
           {quickAccessLoading && quickAccessItems.length === 0 ? (
-            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={14} />
             </Box>
           ) : quickAccessItems.length === 0 ? (
@@ -850,7 +857,7 @@ export function XDriveFileExplorerNavigationPane({
                   key={item.id}
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) 28px',
+                    gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`,
                     alignItems: 'center',
                   }}
                 >
@@ -880,7 +887,7 @@ export function XDriveFileExplorerNavigationPane({
                       void onReorderQuickAccess(ids)
                     }}
                     onClick={() => { void onNavigateQuickAccess?.(item.id) }}
-                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                    sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
                     {renderItemVisual({ id: item.id, name: item.name, kind: 'dir', path: item.path }, 20)}
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
@@ -894,7 +901,7 @@ export function XDriveFileExplorerNavigationPane({
                         aria-label={`取消固定 ${item.name}`}
                         disabled={quickAccessBusyID !== null}
                         onClick={() => { void onUnpinQuickAccess?.(item.id) }}
-                        sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                        sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
                       >
                         <CloseRoundedIcon sx={{ fontSize: 15 }} />
                       </IconButton>
@@ -919,13 +926,13 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
             <IconButton
               size="small"
               aria-label={expandedSections.savedSearches ? '折叠智能文件夹' : '展开智能文件夹'}
               aria-expanded={expandedSections.savedSearches}
               onClick={() => toggleSection('savedSearches')}
-              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+              sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
             >
               {expandedSections.savedSearches
                 ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
@@ -943,7 +950,7 @@ export function XDriveFileExplorerNavigationPane({
               {savedSearches.map((search) => (
                 <Box
                   key={search.id}
-                  sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 28px', alignItems: 'center' }}
+                  sx={{ display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`, alignItems: 'center' }}
                 >
                   <ListItemButton
                     selected={activeSavedSearchID === search.id}
@@ -970,7 +977,7 @@ export function XDriveFileExplorerNavigationPane({
                       void onReorderSavedSearches(ids)
                     }}
                     onClick={() => { void onActivateSavedSearch?.(search) }}
-                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                    sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
                     <SearchRoundedIcon sx={{ fontSize: 18, color: activeSavedSearchID === search.id ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>{search.name}</Typography>
@@ -982,7 +989,7 @@ export function XDriveFileExplorerNavigationPane({
                           size="small"
                           aria-label={`智能文件夹 ${search.name} 选项`}
                           onClick={(event) => setSavedSearchMenu({ anchor: event.currentTarget, search })}
-                          sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                          sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
                         >
                           <MoreHorizRoundedIcon sx={{ fontSize: 16 }} />
                         </IconButton>
@@ -1048,13 +1055,13 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
             <IconButton
               size="small"
               aria-label={expandedSections.tags ? '折叠标签' : '展开标签'}
               aria-expanded={expandedSections.tags}
               onClick={() => toggleSection('tags')}
-              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+              sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
             >
               {expandedSections.tags
                 ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
@@ -1074,7 +1081,7 @@ export function XDriveFileExplorerNavigationPane({
                   key={tag.id}
                   selected={activeTagID === tag.id}
                   onClick={() => { void onActivateTag?.(tag) }}
-                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                  sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                 >
                   <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: tag.color || 'text.disabled', flexShrink: 0 }} />
                   <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1 }}>{tag.name}</Typography>
@@ -1100,13 +1107,13 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
             <IconButton
               size="small"
               aria-label={expandedSections.favorites ? '折叠收藏' : '展开收藏'}
               aria-expanded={expandedSections.favorites}
               onClick={() => toggleSection('favorites')}
-              sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+              sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
             >
               {expandedSections.favorites
                 ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
@@ -1118,7 +1125,7 @@ export function XDriveFileExplorerNavigationPane({
             </Typography>
           </Stack>
           {favoritesLoading && favoriteItems.length === 0 ? (
-            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={14} />
             </Box>
           ) : favoriteItems.length === 0 ? (
@@ -1132,14 +1139,14 @@ export function XDriveFileExplorerNavigationPane({
                   key={item.id}
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) 28px',
+                    gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`,
                     alignItems: 'center',
                   }}
                 >
                   <ListItemButton
                     title={item.path || item.name}
                     onClick={() => { void onActivateFavorite?.(item.id) }}
-                    sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                    sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
                     {renderItemVisual({
                       id: item.id,
@@ -1161,7 +1168,7 @@ export function XDriveFileExplorerNavigationPane({
                         aria-label={`取消收藏 ${item.name}`}
                         disabled={favoriteBusyID !== null}
                         onClick={() => { void onUnfavorite?.(item.id) }}
-                        sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                        sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
                       >
                         <StarRoundedIcon sx={{ fontSize: 15 }} />
                       </IconButton>
@@ -1186,14 +1193,14 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: 30 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ minHeight: compactViewport ? 44 : 30 }}>
             <Stack direction="row" alignItems="center" spacing={0.25}>
               <IconButton
                 size="small"
                 aria-label={expandedSections.recent ? '折叠最近使用' : '展开最近使用'}
                 aria-expanded={expandedSections.recent}
                 onClick={() => toggleSection('recent')}
-                sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
               >
                 {expandedSections.recent
                   ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
@@ -1212,7 +1219,7 @@ export function XDriveFileExplorerNavigationPane({
                     aria-label="清空最近使用"
                     disabled={recentLoading}
                     onClick={() => { void onClearRecent() }}
-                    sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+                    sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
                   >
                     <CloseRoundedIcon sx={{ fontSize: 15 }} />
                   </IconButton>
@@ -1222,7 +1229,7 @@ export function XDriveFileExplorerNavigationPane({
           </Stack>
 
           {recentLoading && recentItems.length === 0 ? (
-            <Box sx={{ minHeight: 32, display: 'grid', placeItems: 'center' }}>
+            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={14} />
             </Box>
           ) : recentItems.length === 0 ? (
@@ -1237,7 +1244,7 @@ export function XDriveFileExplorerNavigationPane({
                   selected={!trashActive && item.kind === 'dir' && currentID === item.id}
                   title={item.path || item.name}
                   onClick={() => { void onActivateRecent?.(item.id) }}
-                  sx={{ minWidth: 0, minHeight: 30, py: 0.25, pl: 3.75, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
+                  sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                 >
                   {renderItemVisual({
                     id: item.id,
@@ -1260,13 +1267,13 @@ export function XDriveFileExplorerNavigationPane({
 
       {sidebarPreferences.visible.tree ? (
       <Box component="nav" aria-label="文件夹" sx={{ px: 0.75, py: 0.5 }}>
-        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: 30 }}>
+        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
           <IconButton
             size="small"
             aria-label={expandedSections.tree ? '折叠文件夹树' : '展开文件夹树'}
             aria-expanded={expandedSections.tree}
             onClick={() => toggleSection('tree')}
-            sx={{ width: 26, height: 26, borderRadius: 0.5 }}
+            sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
           >
             {expandedSections.tree
               ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />

@@ -31,7 +31,7 @@ const items = [
   { id: 3, name: '第二张照片.jpg', kind: 'file', size: 2048 },
 ]
 
-function renderView(viewMode, compactTouch) {
+function renderView(viewMode, compactTouch, extraProps = {}) {
   const theme = createTheme({
     components: {
       MuiUseMediaQuery: {
@@ -47,6 +47,7 @@ function renderView(viewMode, compactTouch) {
       loadColumnPage: async () => ({ items, nextCursor: '' }),
       onColumnNavigate() {},
       onOpenItem() {},
+      ...extraProps,
     })))
 }
 
@@ -67,4 +68,20 @@ test('a non-touch presentation keeps the caller columns preference', () => {
 test('compact touch retains supported list and grid choices', () => {
   assert.ok(renderView('details', true).includes('aria-label="文件列表"'))
   assert.ok(renderView('grid', true).includes('aria-label="文件图标"'))
+})
+
+test('mobile presents the active file workspace without a tab strip', () => {
+  const html = renderView('details', true, {
+    tabBar: React.createElement('div', { role: 'tablist' }, '已保存的桌面标签'),
+  })
+  assert.ok(!html.includes('data-xdrive-file-explorer-tab-bar'), 'mobile must reclaim the complete tab strip height')
+  assert.ok(!html.includes('role="tablist"'), 'hidden mobile tabs must not remain in the accessibility tree')
+  assert.ok(html.includes('aria-label="文件列表"'), 'the current workspace stays available')
+})
+
+test('wide presentation keeps the caller tab strip', () => {
+  const html = renderView('details', false, {
+    tabBar: React.createElement('div', { role: 'tablist' }, '已保存的桌面标签'),
+  })
+  assert.ok(html.includes('role="tablist"'))
 })
