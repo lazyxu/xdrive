@@ -127,6 +127,7 @@ export function useXDriveCloudFilesController<
 
   const loadVirtualRange = useCallback(async (
     range: { offset: number; limit: number },
+    signal: AbortSignal,
   ) => {
     const target = virtualTarget
     if (!target) {
@@ -144,6 +145,7 @@ export function useXDriveCloudFilesController<
       target.sort,
       false,
       target.grouping,
+      signal,
     )
     return {
       items: page.items,

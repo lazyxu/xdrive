@@ -192,9 +192,9 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
   }
   assert.ok(webApi.includes('listRange('), 'Web API must expose children range transport')
   assert.ok(webApi.includes('nodeChanges(after = 0, limit = 200)'), 'Web API must expose durable node-change transport')
-  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping) => api.listRange('), 'Web shared port must wire count reuse and grouping')
+  assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping, signal) => api.listRange('), 'Web shared port must wire count reuse and grouping')
   assert.ok(webApp.includes('getChanges: (after, limit) => api.nodeChanges(after, limit)'), 'Web shared port must wire the node-change feed')
-  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping) =>'), 'Desktop shared port must wire count reuse and grouping')
+  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) =>'), 'Desktop shared port must wire count reuse and grouping')
   assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
   assert.ok(desktopApp.includes("capabilities.includes('cloud-change-feed')"), 'Desktop must capability-gate the change feed')
   assert.ok(desktopApp.includes('cloudChanges(after, limit)'), 'Desktop shared port must use Agent change transport')

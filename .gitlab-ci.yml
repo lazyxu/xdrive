@@ -475,6 +475,8 @@ file-explorer-viewport-cancel-performance:
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/viewport-cancel-request-baseline"'
     - if: '$CI_COMMIT_BRANCH == "perf/viewport-cancel-request-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/viewport-request-cancel-transport"'
+    - if: '$CI_COMMIT_BRANCH == "perf/viewport-request-cancel-transport"'
   script:
     - |
       set -euo pipefail

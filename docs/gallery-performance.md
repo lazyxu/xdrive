@@ -8,11 +8,18 @@ Only comparable measurements should be presented as timing improvements. Structu
 
 | Area | Status | Evidence |
 | --- | --- | --- |
+| Gallery viewport HTTP abort optimization | **Paired HTTP A/B passed / full regression pending (#1083)** | BEFORE: 0/6 abort; AFTER: 6/6 abort and zero stale payload at +160 ms, n=3; abort latency 1.638–3.863 ms. Real Gin/derivative and Gallery video poster require independent coverage. |
 | Gallery stale thumbnail transport cancellation | **Measured baseline / structural breach (#1077)** | Three 6-request parent/current HTTP tests: **6/6 still active at +160 ms, 0/6 transport aborted, 6/6 late responses** after viewport eviction or view unmount. Logical Promise cancel is not transport cancel; production fix warranted separately. |
 | Timeline viewport group lookup | **Accepted / structural contract** | 100,000 synthetic date groups; a viewport near group 90,000 uses fewer than 64 indexed group reads instead of scanning from group 0. No wall-clock speedup claimed. |
 | 100k thumbnail fast-scroll retention | **Accepted / measured structural** | Image/Live Photo stays unchanged at peak queue **180**, active/in-flight **6/6**. Video poster peak queue **99,997 -> 90 (-99.91%, ~1,111x smaller)** and final queue **99,997 -> 10** while real active work remains capped at **3**. Hosted-runner CPU timings are diagnostic only. |
 | 100k mixed-media first open | **Accepted / measured + structural** | 70k photos + 15k videos + 15k Live Photos (115k physical media nodes / 100k logical items). Warm first range **409.147 ms median**, zero-stale refresh **212.556 ms**, UI timeline layout **2.507 ms median**; first range now commits before secondary facets. |
 | 100k renderer measurement attribution | **Accepted measurement / native baseline healthy** | PR #1067 initial CI: all 36 renderer samples pass applicable timing/CPU budgets; full activation-overlapping maximum task 60 ms. Buffered totals, preparation, decode and two-rAF proxy remain distinct. No production optimization. |
+
+## Gallery viewport cancellation optimization (2026-10-09)
+
+Status: **In progress**, paired measurement pending. Shared `XDriveMediaThumbnailScheduler` now accepts a request-level AbortSignal; removing a tile from the current viewport or unmounting its Gallery instance must abort in-flight thumbnail HTTP instead of only resolving a stale UI Promise. Web REST and Desktop request-bound IPC/Agent must propagate the same cancellation. The reference workload is documented in [FileExplorer performance](file-explorer-performance.md#request-scoped-transport-abort-optimization--follow-up); source code changes are not accepted until 6/6 actual server disconnects and zero leftover bytes are demonstrated within 160 ms on all three repeated samples. Durable media indexing/generation, file operations, sync and transfer tasks are not view-owned.
+
+**BEFORE:** 6/6 active and 0/6 aborted at +160 ms in PR #1077. **AFTER initial paired CI 37880698868:** 6/6 HTTP requests aborted, 0 still active and 0 late 8 KiB responses at +160 ms in all 3 Gallery samples; observed last-abort latency **3.863 / 1.638 / 2.060 ms**. Raw data in [transport evidence](performance-evidence/viewport-cancel-transport/ci-run-37880698868.json). Structural A/B accepted, but the production PR must still pass full Desktop/Web/Go tests after updating the five old assertions. Gallery's separate video poster preview queue remains a distinct follow-up requiring its own initial transport cancellation baseline; do not report first-frame cancellation from thumbnail results.
 
 ## Gallery stale-request cancellation workload (2026-10-09)
 

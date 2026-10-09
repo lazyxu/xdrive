@@ -49,7 +49,7 @@ test('Web and Desktop delegate directory range rules while keeping transport ada
   assert.equal(cloudController.includes('loadMoreDirectory'), false, 'range-driven directory browsing must not expose a no-op load-more callback')
   assert.equal(cloudController.includes('directoryItemIDsRef'), false, 'directory browsing must not retain a whole-directory ID cache')
 
-  assert.ok(web.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping) => api.listRange('), 'Web must keep REST range transport local behind the shared port')
+  assert.ok(web.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping, signal) => api.listRange('), 'Web must keep REST range transport local behind the shared port')
   assert.ok(desktop.includes('cloudChildrenRange('), 'Desktop must keep Agent range transport local behind the shared port')
   assert.equal(web.includes('loadMoreDirectory'), false, 'Web App must not retain directory load-more compatibility')
   assert.equal(desktop.includes('loadMoreCloudDirectory'), false, 'Desktop App must not retain directory load-more compatibility')

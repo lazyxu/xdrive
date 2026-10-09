@@ -72,7 +72,9 @@ test('Gallery thumbnail scheduler cancels stale retention work and discards stal
   const calls = []
   const pending = new Map()
   const revoked = []
-  const scheduler = new XDriveMediaThumbnailScheduler((nodeID) => {
+  const signals = new Map()
+  const scheduler = new XDriveMediaThumbnailScheduler((nodeID, signal) => {
+    signals.set(nodeID, signal)
     calls.push(nodeID)
     const request = deferred()
     pending.set(nodeID, request)
@@ -86,6 +88,7 @@ test('Gallery thumbnail scheduler cancels stale retention work and discards stal
   await flush()
   const retained = scheduler.load(20, 1)
   scheduler.setRetention([20])
+  assert.equal(signals.get(10)?.aborted, true, 'abandoning the viewport must abort the started HTTP request')
 
   assert.equal(await stale, null, 'stale in-flight request must be logically cancelled')
   pending.get(10).resolve('blob:stale')

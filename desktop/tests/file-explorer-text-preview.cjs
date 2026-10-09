@@ -146,7 +146,7 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
     assert.equal(previewServer.includes(forbidden), false, 'active content must not be preview-ticket allowlisted: ' + forbidden)
   }
 
-  assert.ok(webApi.includes('filePreviewURL(nodeID: number)'), 'Web preview ticket adapter is missing')
+  assert.ok(webApi.includes('filePreviewURL(nodeID: number, signal?: AbortSignal)'), 'Web preview ticket adapter is missing')
   assert.ok(webExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Web should enable PDF, Video, Audio, and Image through the generic preview URL')
   assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -887,14 +888,17 @@ export default function DesktopFileExplorer({
     return result.ok ? result.data : null
   }, [previewStreamSupported])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (item.kind !== 'file') return null
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (item.kind !== 'file' || signal?.aborted) return null
     const lifecycleGeneration = actionGenerationRef.current
     const isCurrentLifecycle = () => (
-      lifecycleGeneration === actionGenerationRef.current
+      lifecycleGeneration === actionGenerationRef.current && !signal?.aborted
     )
 
-    const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
+    const result = await xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id), requestID),
+    )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
       const contentType = result.data.content_type || 'image/jpeg'
@@ -905,7 +909,7 @@ export default function DesktopFileExplorer({
 
     const preview = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
     if (!isCurrentLifecycle() || !preview.ok) return null
-    const poster = await xDriveCaptureVideoPosterBlob(preview.data)
+    const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
     if (!poster || !isCurrentLifecycle()) return null
     const revision = Number(item.revision)
     if (Number.isSafeInteger(revision) && revision > 0) {
@@ -919,8 +923,7 @@ export default function DesktopFileExplorer({
         )
         if (!isCurrentLifecycle()) return null
       } catch {
-        // Keep the locally decoded poster even when the shared Server cache
-        // loses a revision race or is temporarily unavailable.
+        // Preserve the local poster when the shared Server cache is unavailable.
       }
     }
     if (!isCurrentLifecycle()) return null

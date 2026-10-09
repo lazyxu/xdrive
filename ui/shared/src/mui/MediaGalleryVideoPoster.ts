@@ -101,24 +101,32 @@ export function xDriveCaptureVideoPosterBlob(
   sourceWidth = 0,
   sourceHeight = 0,
   maxEdge = 512,
+  signal?: AbortSignal,
 ): Promise<Blob | null> {
   return new Promise<Blob | null>((resolve) => {
-    if (typeof document === 'undefined' || typeof window === 'undefined') {
+    if (signal?.aborted || typeof document === 'undefined' || typeof window === 'undefined') {
       resolve(null)
       return
     }
 
     const video = document.createElement('video')
     let settled = false
+    const abort = () => finish(null)
     const finish = (value: Blob | null) => {
       if (settled) return
       settled = true
+      signal?.removeEventListener('abort', abort)
       window.clearTimeout(timer)
       video.removeAttribute('src')
       video.load()
       resolve(value)
     }
     const timer = window.setTimeout(() => finish(null), 15_000)
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) {
+      finish(null)
+      return
+    }
 
     video.crossOrigin = 'anonymous'
     video.muted = true

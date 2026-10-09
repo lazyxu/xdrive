@@ -123,7 +123,7 @@ test('navigation thumbnail projections do not restart work on fresh item object 
   assert.ok(thumbnail.includes('const itemRef = useRef(item)'))
   assert.ok(thumbnail.includes('itemRef.current = item'))
   assert.ok(thumbnail.includes('const requestedItem = itemRef.current'))
-  assert.ok(thumbnail.includes('loadThumbnail(requestedItem)'))
+  assert.ok(thumbnail.includes('loadThumbnail(requestedItem, signal)'))
   assert.equal(
     thumbnail.includes('\n    item,\n    item.thumbnail,'),
     false,

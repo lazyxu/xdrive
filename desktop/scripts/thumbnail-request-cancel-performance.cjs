@@ -223,15 +223,67 @@ async function main() {
       }
     }
   }
+  const paired = MODE === 'paired'
+  const expected = workload.samples * 3 // three separately instrumented request paths
+  const current = results.filter((x) => x.mode === 'current')
+  const parent = results.filter((x) => x.mode === 'parent')
+  const errors = []
+  const currentPass = (x) => (
+    x.openedRequests === workload.requests &&
+    x.httpStillActive === 0 &&
+    x.httpCancelled === workload.requests &&
+    x.httpCompletedBytes === 0 &&
+    x.signalsReceived === workload.requests &&
+    x.totalCancelledRequests === workload.requests &&
+    x.totalFinishedResponses === 0 &&
+    x.finalHTTPActive === 0 &&
+    typeof x.cancellationDeliveredAtMs === 'number' &&
+    x.cancellationDeliveredAtMs <= workload.observationMs &&
+    (x.surface !== 'file-explorer' || x.schedulerStillActive === 0)
+  )
+  const parentRed = (x) => (
+    x.openedRequests === workload.requests &&
+    x.httpStillActive === workload.requests &&
+    x.httpCancelled === 0 &&
+    x.signalsReceived === 0 &&
+    x.totalFinishedResponses === workload.requests
+  )
+  if (paired) {
+    if (current.length !== expected || parent.length !== expected) {
+      errors.push('unexpected paired sample cardinality')
+    }
+    for (const x of current) {
+      if (!currentPass(x)) errors.push('failed cancellation: ' + JSON.stringify(x))
+    }
+    for (const x of parent) {
+      if (!parentRed(x)) errors.push('before sample no longer matches frozen workload: ' + JSON.stringify(x))
+    }
+  }
+  const provenance = paired ? {
+    before: execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
+    after: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
+  } : null
   const report = {
     workload, mode: MODE,
+    provenance,
+    acceptance: paired ? {
+      passed: errors.length === 0,
+      currentPassed: current.filter(currentPass).length,
+      parentFailedAsBaseline: parent.filter(parentRed).length,
+      requiredPerSide: expected,
+      errors,
+    } : null,
     result: results,
-    note: 'Current/parent source schedulers, real Node loopback HTTP; tests transport abort timing, not Gin media handler or durable derivative worker',
+    note: 'Production scheduler/controller source; real Node loopback HTTP transport abort. Native Electron/Agent/Go context are separately tested and not implied by this report.',
   }
   fs.mkdirSync(resultsDir, { recursive: true })
   const out = path.join(resultsDir, 'thumbnail-request-cancel-' + MODE + '.json')
   fs.writeFileSync(out, JSON.stringify(report, null, 2) + '\n')
   console.log('THUMBNAIL_CANCEL_REQUEST_REPORT ' + out)
+  if (errors.length) {
+    for (const error of errors) console.error('THUMBNAIL_CANCEL_REGRESSION ' + error)
+    process.exitCode = 1
+  }
 }
 
 main().catch((error) => {

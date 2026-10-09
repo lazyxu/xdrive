@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Autocomplete,
@@ -358,8 +359,8 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    getRange: async (parentID, offset, limit, sort, includeCount, grouping) => {
-      const result = await window.xdriveDesktop.agent.cloudChildrenRange(
+    getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) => {
+      const result = await xDriveDesktopViewportRequest(signal, (requestID) => window.xdriveDesktop.agent.cloudChildrenRange(
         parentID,
         offset,
         limit,
@@ -367,7 +368,8 @@ export default function App({
         sort.direction,
         includeCount,
         grouping,
-      )
+        requestID,
+      ))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

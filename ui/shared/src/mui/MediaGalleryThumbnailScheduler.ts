@@ -5,6 +5,7 @@ export type XDriveMediaThumbnailPriority = 0 | 1 | 2
 
 export type XDriveMediaThumbnailSourceLoader = (
   nodeID: number,
+  signal?: AbortSignal,
 ) => Promise<string | null>
 
 type ThumbnailTask = {
@@ -15,6 +16,7 @@ type ThumbnailTask = {
   resolve: (value: string | null) => void
   reject: (error: unknown) => void
   cancelled: boolean
+  controller: AbortController
 }
 
 function revokeThumbnailURL(url: string) {
@@ -96,6 +98,7 @@ export class XDriveMediaThumbnailScheduler {
       resolve,
       reject,
       cancelled: false,
+      controller: new AbortController(),
     }
     this.queued.set(nodeID, task)
     this.queue.push(task)
@@ -131,6 +134,7 @@ export class XDriveMediaThumbnailScheduler {
   private cancelTask(task: ThumbnailTask) {
     if (task.cancelled) return
     task.cancelled = true
+    task.controller.abort()
     if (this.queued.get(task.nodeID) === task) this.queued.delete(task.nodeID)
     if (this.inFlight.get(task.nodeID) === task) this.inFlight.delete(task.nodeID)
     task.resolve(null)
@@ -171,7 +175,7 @@ export class XDriveMediaThumbnailScheduler {
       if (task.cancelled) continue
       this.active += 1
       this.inFlight.set(task.nodeID, task)
-      void this.loader(task.nodeID)
+      void this.loader(task.nodeID, task.controller.signal)
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)

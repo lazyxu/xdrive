@@ -14,6 +14,7 @@ import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 
 export type XDriveFileExplorerThumbnailLoader = (
   item: XDriveFileExplorerItem,
+  signal?: AbortSignal,
 ) => Promise<string | null | undefined>
 
 type FileThumbnailCache = {
@@ -29,7 +30,8 @@ type FileThumbnailLease = {
 }
 
 type FileThumbnailQueueEntry = {
-  task: () => Promise<string | null | undefined>
+  task: (signal: AbortSignal) => Promise<string | null | undefined>
+  controller: AbortController
   resolve: (value: string | null | undefined) => void
   reject: (reason?: unknown) => void
   started: boolean
@@ -154,8 +156,16 @@ function pumpFileThumbnailQueue() {
     if (entry.cancelled) continue
     entry.started = true
     fileThumbnailActive += 1
-    void entry.task()
-      .then(entry.resolve, entry.reject)
+    void entry.task(entry.controller.signal)
+      .then((value) => {
+        if (entry.cancelled) {
+          revokeFileThumbnailSource(value)
+          return
+        }
+        entry.resolve(value)
+      }, (error) => {
+        if (!entry.cancelled) entry.reject(error)
+      })
       .finally(() => {
         fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
         pumpFileThumbnailQueue()
@@ -163,20 +173,23 @@ function pumpFileThumbnailQueue() {
   }
 }
 
-function scheduleFileThumbnail(task: () => Promise<string | null | undefined>) {
+function scheduleFileThumbnail(task: (signal: AbortSignal) => Promise<string | null | undefined>) {
   let entry!: FileThumbnailQueueEntry
   const promise = new Promise<string | null | undefined>((resolve, reject) => {
-    entry = { task, resolve, reject, started: false, cancelled: false }
+    entry = { task, controller: new AbortController(), resolve, reject, started: false, cancelled: false }
     fileThumbnailQueue.push(entry)
     pumpFileThumbnailQueue()
   })
   return {
     promise,
     cancel: () => {
-      if (entry.started || entry.cancelled) return
+      if (entry.cancelled) return
       entry.cancelled = true
-      const index = fileThumbnailQueue.indexOf(entry)
-      if (index >= 0) fileThumbnailQueue.splice(index, 1)
+      entry.controller.abort()
+      if (!entry.started) {
+        const index = fileThumbnailQueue.indexOf(entry)
+        if (index >= 0) fileThumbnailQueue.splice(index, 1)
+      }
       entry.resolve(undefined)
     },
   }
@@ -379,7 +392,7 @@ export function XDriveFileExplorerThumbnail({
     }
     let active = true
     const requestedItem = itemRef.current
-    const scheduled = scheduleFileThumbnail(() => loadThumbnail(requestedItem))
+    const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(requestedItem, signal))
     void scheduled.promise
       .then((value) => {
         if (!value) {
