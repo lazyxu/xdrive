@@ -7,6 +7,7 @@ import {
 
 export function createDesktopMediaGalleryDataSource(
   agent: Window['xdriveDesktop']['agent'],
+  durableJobsSupported = false,
 ) {
   return createXDriveMediaGalleryDataSource({
     loadMusicRoot: () => agent.cloudRoot(),
@@ -25,6 +26,16 @@ export function createDesktopMediaGalleryDataSource(
     setSelectionExcluded: (token, nodeID, excluded, version) =>
       agent.setMediaSelectionExcluded(token, nodeID, excluded, version),
     deleteSelectionSnapshot: (token) => agent.deleteMediaSelectionSnapshot(token),
+    ...(durableJobsSupported ? {
+      submitSelectionFavoriteJob: (token: string, version: number, favorite: boolean) =>
+        agent.submitMediaSelectionFavoriteJob(token, version, favorite),
+      getSelectionJob: (id: string) => agent.getMediaSelectionJob(id),
+      listSelectionJobs: () => agent.listMediaSelectionJobs(),
+      cancelSelectionJob: (id: string) => agent.cancelMediaSelectionJob(id),
+      retrySelectionJob: (id: string) => agent.retryMediaSelectionJob(id),
+      getSelectionJobFailures: (id: string, offset: number, limit: number) =>
+        agent.mediaSelectionJobFailures(id, offset, limit),
+    } : {}),
     getNodeLocation: (nodeID, signal) => xDriveDesktopViewportRequest(
       signal,
       (requestID) => agent.getNodeLocation(nodeID, requestID),

@@ -114,6 +114,8 @@ import {
   type AgentMediaGalleryIndexStatus,
   type AgentMediaSelectionSnapshot,
   type AgentMediaSelectionSnapshotPage,
+  type AgentMediaSelectionJob,
+  type AgentMediaSelectionJobFailurePage,
   type AgentNodeLocation,
   type AgentMediaDuplicateOrganizePlan,
   type AgentMediaDuplicateOrganizeApplyResult,
@@ -2136,6 +2138,68 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Invalid Gallery selection token.')
       }
       return requireAgentClient().deleteMediaSelectionSnapshot(token)
+    }, false),
+  )
+
+  ipcMain.handle('agent:submit-media-selection-favorite-job', (_event, token: unknown, version: unknown, favorite: unknown) =>
+    runAgentAction<AgentMediaSelectionJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      if (typeof token !== 'string' || !/^[0-9a-f-]{36}$/i.test(token) ||
+        typeof version !== 'number' || !Number.isSafeInteger(version) || version <= 0 ||
+        typeof favorite !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'Selection token, version and favorite are required.')
+      }
+      return requireAgentClient().submitMediaSelectionFavoriteJob(token, version, favorite)
+    }, false),
+  )
+  ipcMain.handle('agent:get-media-selection-job', (_event, id: unknown) =>
+    runAgentAction<AgentMediaSelectionJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) {
+        throw new AgentIPCError('invalid_input', 0, 'Media selection job id is invalid.')
+      }
+      return requireAgentClient().getMediaSelectionJob(id)
+    }, false),
+  )
+  ipcMain.handle('agent:list-media-selection-jobs', () =>
+    runAgentAction<AgentMediaSelectionJob[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      return requireAgentClient().listMediaSelectionJobs()
+    }, false),
+  )
+  ipcMain.handle('agent:cancel-media-selection-job', (_event, id: unknown) =>
+    runAgentAction<void>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) {
+        throw new AgentIPCError('invalid_input', 0, 'Media selection job id is invalid.')
+      }
+      return requireAgentClient().cancelMediaSelectionJob(id)
+    }, false),
+  )
+  ipcMain.handle('agent:retry-media-selection-job', (_event, id: unknown) =>
+    runAgentAction<AgentMediaSelectionJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) {
+        throw new AgentIPCError('invalid_input', 0, 'Media selection job id is invalid.')
+      }
+      return requireAgentClient().retryMediaSelectionJob(id)
+    }, false),
+  )
+  ipcMain.handle('agent:media-selection-job-failures', (_event, id: unknown, offset: unknown, limit: unknown) =>
+    runAgentAction<AgentMediaSelectionJobFailurePage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-jobs')
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id) ||
+        typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 ||
+        typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+        throw new AgentIPCError('invalid_input', 0, 'Media selection job page is invalid.')
+      }
+      return requireAgentClient().mediaSelectionJobFailures(id, offset, limit)
     }, false),
   )
 

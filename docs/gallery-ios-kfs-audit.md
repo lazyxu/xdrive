@@ -518,3 +518,10 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   retry and paged partial failures remain owner-bound. Task list polling
   mounts only when entering the Tasks app; no Gallery-first-open 100k scan.
   Desktop requires the pending Agent job-protocol extension.
+
+- 2026-10-09: G07 Phase 3d Desktop durable selection transport candidate.
+  Go Client → Agent loopback → Electron Main/Preload → shared Gallery/Task
+  Center uses the same immutable Node revisions and owner-scoped server
+  counters as Web. Cancelling does not claim successful rollback of committed
+  chunks; partial failures remain reviewable, and retries preserve revisions.
+  New Go and Desktop contract tests included; real 100k/device QA outstanding.

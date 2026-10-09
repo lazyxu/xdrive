@@ -1505,3 +1505,18 @@ supports explicit cancel and immutable-revision retry, and does not poll or
 hydrate 100k MediaItems on Gallery first paint. The shared component uses an
 optional Port; Desktop needs the Agent job-protocol extension before showing
 the same section. Physical device and end-to-end timing remain outstanding.
+
+### G07 Phase 3d — Desktop durable favorite job transport and Task Center (candidate, 2026-10-09)
+
+Extends merged Phase 3a and Web Phase 3b/3c with the **same shared
+query-wide favorite task UX** on Desktop, through Go Client, Agent loopback
+HTTP IPC, Electron Main/Preload, and shared Gallery/Task Center adapters.
+A dedicated Agent capability guards the six authenticated durable-job endpoints.
+Old Agents do not expose these operations. Job list/failure paging are fetched
+only while the Tasks page is visible; Gallery does not hydrate 100k MediaItem
+objects. Both platforms show authoritative counts, partial failures, cancel
+and immutable-revision retry. New Go HTTP/IPC and Desktop transport contracts
+exercise confirmation/version validation, malformed identifiers, paging and
+legacy capability fallback. This is **not G07 final acceptance**: all-query
+deletion/download/album/tag operations, PostgreSQL 10k/100k runtime metrics,
+physical iOS/Android acceptance, and full CI remain separate gates.

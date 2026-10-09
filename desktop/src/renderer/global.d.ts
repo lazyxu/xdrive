@@ -20,6 +20,8 @@ import type {
   MediaGalleryIndexStatus,
   MediaSelectionSnapshot,
   MediaSelectionSnapshotPage,
+  MediaSelectionJob,
+  MediaSelectionJobFailurePage,
   NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaDuplicateOrganizeApplyInput,
@@ -470,6 +472,16 @@ declare global {
           token: string, nodeID: number, excluded: boolean, version: number,
         ) => Promise<DesktopResult<MediaSelectionSnapshot>>
         deleteMediaSelectionSnapshot: (token: string) => Promise<DesktopResult<void>>
+        submitMediaSelectionFavoriteJob: (
+          token: string, version: number, favorite: boolean,
+        ) => Promise<DesktopResult<MediaSelectionJob>>
+        getMediaSelectionJob: (id: string) => Promise<DesktopResult<MediaSelectionJob>>
+        listMediaSelectionJobs: () => Promise<DesktopResult<MediaSelectionJob[]>>
+        cancelMediaSelectionJob: (id: string) => Promise<DesktopResult<void>>
+        retryMediaSelectionJob: (id: string) => Promise<DesktopResult<MediaSelectionJob>>
+        mediaSelectionJobFailures: (
+          id: string, offset: number, limit: number,
+        ) => Promise<DesktopResult<MediaSelectionJobFailurePage>>
         getNodeLocation: (nodeID: number, requestID?: string) => Promise<DesktopResult<NodeLocation>>
         getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) => Promise<DesktopResult<MediaDuplicateOrganizePlan>>
         applyMediaDuplicateOrganize: (input: MediaDuplicateOrganizeApplyInput) => Promise<DesktopResult<MediaDuplicateOrganizeApplyResult>>

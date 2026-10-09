@@ -1038,7 +1038,15 @@ test('shared Gallery adapter factory normalizes Web and Desktop transports', () 
   assert.ok(webAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Web must consume the shared Gallery adapter factory')
   assert.ok(desktopAdapter.includes('createXDriveMediaGalleryDataSource({'), 'Desktop must consume the shared Gallery adapter factory')
   assert.ok(webApp.includes('createWebMediaGalleryDataSource(api)'), 'Web App must consume its thin Gallery transport adapter')
-  assert.ok(desktopApp.includes('createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent)'), 'Desktop App must consume its thin Gallery transport adapter')
+  assert.match(
+    desktopApp,
+    /createDesktopMediaGalleryDataSource\(\s*window\.xdriveDesktop\.agent,\s*mediaSelectionJobsSupported,\s*\)/,
+    'Desktop App must consume its thin Gallery transport adapter with explicit Agent capability',
+  )
+  assert.ok(
+    desktopApp.includes("capabilities.includes('media-selection-jobs')"),
+    'Desktop must not expose durable job mutations on older Agents',
+  )
   assert.equal(webApp.includes('listItems: (limit, offset, query)'), false, 'Web App must not compose Gallery data source methods inline')
   assert.equal(desktopApp.includes('listItems: async (limit, offset, query)'), false, 'Desktop App must not compose Gallery data source methods inline')
   for (const token of [

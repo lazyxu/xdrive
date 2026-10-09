@@ -2083,6 +2083,54 @@ func (c *agentController) CloudMediaDeleteSelectionSnapshot(ctx context.Context,
 	return cli.MediaDeleteSelectionSnapshot(ctx, token)
 }
 
+func (c *agentController) CloudMediaSubmitSelectionFavoriteJob(ctx context.Context, token string, version uint64, favorite bool) (client.MediaSelectionJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionJob{}, err
+	}
+	return cli.MediaSubmitSelectionFavoriteJob(ctx, token, version, favorite)
+}
+
+func (c *agentController) CloudMediaGetSelectionJob(ctx context.Context, id string) (client.MediaSelectionJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionJob{}, err
+	}
+	return cli.MediaGetSelectionJob(ctx, id)
+}
+
+func (c *agentController) CloudMediaListSelectionJobs(ctx context.Context) ([]client.MediaSelectionJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaListSelectionJobs(ctx)
+}
+
+func (c *agentController) CloudMediaCancelSelectionJob(ctx context.Context, id string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.MediaCancelSelectionJob(ctx, id)
+}
+
+func (c *agentController) CloudMediaRetrySelectionJob(ctx context.Context, id string) (client.MediaSelectionJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionJob{}, err
+	}
+	return cli.MediaRetrySelectionJob(ctx, id)
+}
+
+func (c *agentController) CloudMediaSelectionJobFailures(ctx context.Context, id string, offset, limit int) (client.MediaSelectionJobFailurePage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionJobFailurePage{}, err
+	}
+	return cli.MediaSelectionJobFailures(ctx, id, offset, limit)
+}
+
 func (c *agentController) CloudMediaSyncFolders(
 	ctx context.Context,
 ) ([]client.MediaSyncFolder, error) {
