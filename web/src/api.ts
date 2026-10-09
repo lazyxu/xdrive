@@ -24,6 +24,8 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  MediaSelectionSnapshot,
+  MediaSelectionSnapshotPage,
   NodeLocation,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -818,6 +820,44 @@ export class XDriveApi {
 
   mediaIndexStatus() {
     return this.request<MediaGalleryIndexStatus>('/api/v1/media/index-status')
+  }
+
+  /** G07: read-only frozen query selection, not a file-operation endpoint. */
+  createMediaSelectionSnapshot(filters: MediaGalleryQuery, albumID = '', day = '') {
+    const params = new URLSearchParams()
+    appendMediaGalleryQuery(params, filters)
+    if (albumID) params.set('album_id', albumID)
+    if (day) params.set('day', day)
+    return this.request<MediaSelectionSnapshot>(
+      `/api/v1/media/selection-snapshots?${params.toString()}`,
+      { method: 'POST' },
+    )
+  }
+
+  getMediaSelectionSnapshot(token: string, offset = 0, limit = 100) {
+    const params = new URLSearchParams({
+      offset: String(Math.max(0, Math.trunc(offset))),
+      limit: String(Math.max(1, Math.min(200, Math.trunc(limit)))),
+    })
+    return this.request<MediaSelectionSnapshotPage>(
+      `/api/v1/media/selection-snapshots/${encodeURIComponent(token)}?${params}`,
+    )
+  }
+
+  setMediaSelectionExcluded(token: string, nodeID: number, excluded: boolean, version: number) {
+    return this.request<MediaSelectionSnapshot>(
+      `/api/v1/media/selection-snapshots/${encodeURIComponent(token)}/exclusion`,
+      { method: 'PATCH', body: JSON.stringify({
+        node_id: nodeID, excluded, version,
+      }) },
+    )
+  }
+
+  deleteMediaSelectionSnapshot(token: string) {
+    return this.request<void>(
+      `/api/v1/media/selection-snapshots/${encodeURIComponent(token)}`,
+      { method: 'DELETE' },
+    )
   }
 
   mediaSyncFolders() {
