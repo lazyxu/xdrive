@@ -125,6 +125,14 @@ The path bridge is deterministic provider-path resolution (Photos folder graph +
 
 Push never downloads original bytes through `SYNO.Foto.Download`; it continues to read the local file directly. Photos EXIF/GPS/people/tag/Live Photo fields remain outside the Source contract. Media processing happens in the common xDrive pipeline after original bytes are stored.
 
+### Ordinary local folder push — staged L01-A contract (not yet operational)
+
+The planned universal client-side source uses `kind=local_folder` and `direction=push`. It represents an explicitly selected ordinary directory on a user's device; it is **not** a CfAPI/FUSE mount, a Synology Photos push, or a request for the Server to read the client's absolute path. Its target is an owner-authorized xDrive directory identified by `target_node_id`.
+
+L01-A adds Server-side creation/validation only, deliberately with `status=paused`. The Source must not be activated or begin a run until later phases implement server-verified device enrollment and Root binding, platform-appropriate local filesystem identity and permission checks, and a dedicated `xdrive-agent` local push executor. Even an erroneously persisted `active` status cannot bypass the run gate. **Do not expose this source as a working UI preset until the Agent protocol and end-to-end tests are complete.**
+
+Planned phases: L01-B authenticated device/Root binding and executor authorization; L02 Windows/Linux streaming scanner and identity; L03 resumable transfer and Source commit/recovery; L04 shared Desktop UI; L05 watcher/scheduler; L06 remote trigger and read-only draft preview; L07 10k/100k, large-file, cancellation and crash E2E. Backup remains the default, Mirror is opt-in and obeys the existing two-full-inventories/24-hour/trash-only rules. The local path is authorized and held by the local Agent, not supplied remotely by a Web client. Do not reinterpret the existing formal scan run as a side-effect-free draft preview.
+
 ## File identity and aliases
 
 Current Pull connectors have explicit provider-native canonical identities:

@@ -1,5 +1,17 @@
 # AGENTS.md
 
+## Continuation progress reporting
+
+For every follow-up request to "continue" an ongoing development, audit, or CI/PR cleanup initiative, **begin the user-visible response with a concise state report before changing code or PRs**:
+
+1. State the exact repository/provider, fixed master or work-branch baseline, and **current phase** (for example L01-A).
+2. List **completed work** with concrete commit/PR/CI/merge evidence; distinguish implementation, test execution, green CI, and merged delivery. Never label planned or merely reviewed code as complete.
+3. List **remaining gaps**, blockers, and the next bounded, testable step. Preserve named constraints from previous turns.
+4. Inspect only materially related existing branches and PRs first. Prefer a viable unfinished branch; close superseded/abandoned related PRs and delete merged or proven-obsolete related branches only after checking their diffs and merge state. Do not clean unrelated work.
+5. End each implementation turn with the updated phase, evidence-based done/not-done summary, test/CI status, and branch/PR disposition. Repeat this handoff at the beginning of the next continuation.
+
+The progress report is required even when no code changes are possible. Follow the provider-specific GitHub/GitLab delivery and single-work-commit rules below; do not claim a GitLab push or cleanup if it was not actually performed.
+
 ## Repository workflow
 
 For every code change in this repository, use this workflow by default:

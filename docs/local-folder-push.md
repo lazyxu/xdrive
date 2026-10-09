@@ -1,0 +1,45 @@
+# Local folder push — staged delivery contract
+
+## Objective and status
+
+An ordinary **local folder** selected by the user on Windows or Linux should push original files to an owner-authorized xDrive Source target. Existing xDrive CfAPI/FUSE two-way mount synchronization, Synology NAS Push, and Pull connectors are separate products and remain unchanged.
+
+The currently implemented L01-A is **Server-only, fail-closed**: the kind `local_folder` is recognized only in the push direction; a new Source always starts paused; activation and starting any run are denied until future device-bound authorization and native executor support exist. No user-facing operational preset is exposed. Source/CAS/upload code is not duplicated.
+
+| Phase | Deliverable | Status |
+| --- | --- | --- |
+| L01-A | local_folder push/paused activation gate; integration regression; AGENTS progress rule | implemented in this change; CI/merge separate |
+| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | not implemented |
+| L02 | Windows/Linux streaming scan, stable local identity, per-root journal/state | not implemented |
+| L03 | Planner + resumable upload + SourceItem commit, crash/idempotency recovery | not implemented |
+| L04 | Desktop native root selection and shared Source Manager UI | not implemented |
+| L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
+| L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
+| L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
+
+## Non-negotiable invariants
+
+- The Device binds one explicitly authorized local Root to one Source ID for a specific Server and owner. Never let Web specify arbitrary paths to read on the client.
+- Preserve Node identity on provable rename/move; never infer same-file identity from name and timestamp alone; handle hard links as distinct paths.
+- A local-folder Source must never become active before authenticated binding and execution capabilities are available. Stale manually altered data must not be executable.
+- The Agent executes in a separate lifecycle from the Desktop window. Persistent sync is cancelled only by explicit user control; viewer/browser aborts cannot cancel it.
+- Full inventory is required for missing inference. Unmounted drives, unreadable directories, cancelled runs, partial scans and lost watcher events must not count as deletions.
+- Backup never deletes xDrive content when local files disappear. Mirror only uses the existing 2 complete scans + 24-hour grace + trash-only policy.
+- Use existing `Source / SourceItem / SyncRun`, `internal/client` resumable upload, CAS and Task Center; no parallel media parser, transport or business store.
+- Draft rule preview is not a formal `run_mode=scan`: the formal mode mutates synchronization records. Implement a separate no-business-writes preview in L06.
+- Server identity, owner authorization, revisions and target Node binding are authoritative. No cross-account source access or data leakage.
+- Before performance work, record baseline, optimize only where necessary, rerun identical 1k/10k/100k and large-file workloads, keep only meaningful improvements.
+
+## Release and verification gates
+
+L01-A: reject pull; create push paused; reject premature activation and trigger; refuse run even if a database row is incorrectly set to active; keep Synology/Yike behavior unchanged. Requires PostgreSQL integration tests.
+
+L01-B/L03: prove device credential possession for the *entire* source run lifecycle, not only initial enrollment; owner-bound binding with a locally approved Root; reject stale device/root/config versions, revoked devices and replay.
+
+L02/L05: prove at least 100k inventory without loading the entire tree into the renderer, successful rename/modify/identity preservation, filesystem-event overflow fallback, root replacement safety, restart resume and no false mirror deletions.
+
+L04/L06: shared MUI Source Manager, Desktop native folder picker, honest online/offline/queued/claimed states, agent-version capability gating, no remote arbitrary path execution.
+
+L07: measurable SQL P50/P95, Agent RSS/CPU, bytes transferred vs CAS reuse, 4 GiB stream/resume, explicit cancel propagation and power/network interruption tests. Native-device and simulated tests have separate verdicts.
+
+Related GitHub PR/branch cleanup must be evidence-based and scoped to this work; never disturb unrelated active work.
