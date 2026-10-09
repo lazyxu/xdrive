@@ -43,6 +43,7 @@ import type {
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
+  XDriveBaiduMapProviderInfo,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -65,6 +66,9 @@ import type {
   XDriveByteProgressHandler,
   XDriveBackgroundTaskActiveSummary,
   XDriveServiceDependenciesSnapshot,
+  XDriveBaiduMapAdminConfig,
+  XDriveBaiduMapAKReveal,
+  XDriveBaiduMapAdminUpdate,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
@@ -656,6 +660,8 @@ declare global {
         cancelMediaCreativeGeneration: (
           generationID: string,
         ) => Promise<DesktopResult<MediaCreativeGeneration>>
+        getBaiduMapProvider: () => Promise<DesktopResult<XDriveBaiduMapProviderInfo>>
+        getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
@@ -749,6 +755,9 @@ declare global {
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
+        cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
+        cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (
           global?: boolean,

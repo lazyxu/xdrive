@@ -72,3 +72,27 @@ func TestLoadRejectsUnsafePhotoFacePreviewBaseURL(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadBaiduMapRequiresOptInWithoutBreakingCoreWhenAKMissing(t *testing.T) {
+	t.Setenv("XD_JWT_SECRET", "test-secret")
+	t.Setenv("XD_BAIDU_MAP_ENABLED", "")
+	t.Setenv("XD_BAIDU_MAP_AK", "test-key")
+	cfg, err := Load()
+	if err != nil || cfg.BaiduMapEnabled {
+		t.Fatalf("map must be disabled by default: cfg=%+v err=%v", cfg.BaiduMapEnabled, err)
+	}
+	t.Setenv("XD_BAIDU_MAP_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil || !cfg.BaiduMapEnabled || cfg.BaiduMapAK != "test-key" {
+		t.Fatalf("configured server AK should enable map: err=%v", err)
+	}
+	t.Setenv("XD_BAIDU_MAP_AK", "")
+	cfg, err = Load()
+	if err != nil || !cfg.BaiduMapEnabled || cfg.BaiduMapAK != "" {
+		t.Fatalf("missing optional map AK must not disable Server startup: err=%v", err)
+	}
+	t.Setenv("XD_BAIDU_MAP_ENABLED", "nonsense")
+	if _, err := Load(); err == nil {
+		t.Fatal("invalid map opt-in flag was accepted")
+	}
+}

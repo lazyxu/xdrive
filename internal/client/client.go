@@ -307,6 +307,48 @@ type ServiceDependency struct {
 	Model   string `json:"model,omitempty"`
 }
 
+type AdminBaiduMapConfig struct {
+	Enabled         bool       `json:"enabled"`
+	Configured      bool       `json:"configured"`
+	Source          string     `json:"source"`
+	Editable        bool       `json:"editable"`
+	RequiresRestart bool       `json:"requires_restart"`
+	Revision        uint64     `json:"revision"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+}
+
+type AdminBaiduMapUpdate struct {
+	Enabled  bool   `json:"enabled"`
+	Revision uint64 `json:"revision"`
+	AK       string `json:"ak,omitempty"`
+	ClearAK  bool   `json:"clear_ak,omitempty"`
+}
+
+type AdminBaiduMapAKReveal struct {
+	Field            string `json:"field"`
+	Value            string `json:"value"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+}
+
+func (c *Client) RevealAdminBaiduMapAK(ctx context.Context, revision uint64) (AdminBaiduMapAKReveal, error) {
+	var out AdminBaiduMapAKReveal
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/baidu-map/reveal",
+		map[string]uint64{"revision": revision}, &out)
+	return out, err
+}
+
+func (c *Client) AdminBaiduMapConfig(ctx context.Context) (AdminBaiduMapConfig, error) {
+	var result AdminBaiduMapConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/baidu-map", nil, &result)
+	return result, err
+}
+
+func (c *Client) UpdateAdminBaiduMapConfig(ctx context.Context, input AdminBaiduMapUpdate) (AdminBaiduMapConfig, error) {
+	var result AdminBaiduMapConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/baidu-map", input, &result)
+	return result, err
+}
+
 type ServiceDependenciesSnapshot struct {
 	CheckedAt string              `json:"checked_at"`
 	Services  []ServiceDependency `json:"services"`

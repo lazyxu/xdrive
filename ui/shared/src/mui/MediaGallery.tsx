@@ -1,3 +1,4 @@
+import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
@@ -112,7 +113,6 @@ import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
-import type { XDriveMediaPlacesMapViewport } from './MediaGalleryPlacesMapModel'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
@@ -243,6 +243,8 @@ export interface MediaGalleryDataSource {
   deleteAlbumFolder?: (folderID: number, revision: number) => Promise<void>
   moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
+  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
+  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
     memoryID: string,
@@ -2425,6 +2427,8 @@ export function XDriveMediaGalleryPage({
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
+        getBaiduMapProvider={source.getBaiduMapProvider}
+        loadBaiduStaticMap={source.loadBaiduStaticMap}
         placesStatus={placesStatus}
         memories={memories}
         burstReviews={burstReviews}
@@ -2829,6 +2833,8 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
+  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   placesStatus?: 'loading' | 'ready' | 'error'
   memories?: MediaMemory[]
   burstReviews?: MediaBurstReviewList | null
@@ -4212,6 +4218,8 @@ export function XDriveMediaGallery({
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
+  getBaiduMapProvider,
+  loadBaiduStaticMap,
   placesStatus = 'ready',
   memories = [],
   burstReviews = null,
@@ -4346,7 +4354,6 @@ export function XDriveMediaGallery({
   const viewAnchorIndexRef = useRef(0)
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
   const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
-  const [placesMapViewport, setPlacesMapViewport] = useState<XDriveMediaPlacesMapViewport | null>(null)
   const [dayJumpInput, setDayJumpInput] = useState('')
   const [dayJumpFeedback, setDayJumpFeedback] = useState('')
   const galleryRootRef = useRef<HTMLDivElement | null>(null)
@@ -6055,17 +6062,15 @@ export function XDriveMediaGallery({
               地点
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {places.some((place) => place.attribution)
-                ? '按本地 GPS 聚合；地点名称来自本地 GeoNames 数据'
-                : '按本地 GPS 坐标近似聚合，不使用在线地理服务'}
+              按照片 GPS 坐标组织地点；地图仅使用百度地图 Server API
             </Typography>
           </Stack>
 
           <XDriveMediaGalleryPlacesMap
             places={places}
+            getBaiduMapProvider={getBaiduMapProvider}
+            loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}
-            initialViewport={placesMapViewport ?? undefined}
-            onViewportChange={setPlacesMapViewport}
             onOpenPlace={onOpenPlace}
           />
 

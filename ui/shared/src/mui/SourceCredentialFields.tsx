@@ -137,6 +137,7 @@ export function XDriveStoredCredentialField({
   loading = false,
   expiresInSeconds = 30,
   updatedAtLabel,
+  configuredDescription = '凭据已加密保存；点击“显示”后仅在当前界面内存中临时展示。',
   onReveal,
   onHide,
   sx,
@@ -147,6 +148,7 @@ export function XDriveStoredCredentialField({
   loading?: boolean
   expiresInSeconds?: number
   updatedAtLabel?: string
+  configuredDescription?: string
   onReveal: () => void
   onHide: () => void
   sx?: SxProps<Theme>
@@ -160,7 +162,7 @@ export function XDriveStoredCredentialField({
   const helper = configured
     ? revealedValue
       ? `已临时显示，将在 ${Math.max(1, expiresInSeconds)} 秒后自动隐藏。`
-      : '凭据已加密保存；点击“显示”后仅在当前界面内存中临时展示。'
+      : configuredDescription
     : '尚未配置凭据。'
   const helperText = updatedAtLabel ? `${helper} 最后更新：${updatedAtLabel}` : helper
 

@@ -284,8 +284,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		}
 	}
 
+	// Race-instrumented API tests use sequential Go processes to release per-test
+	// DB pools, and the discovery guard must keep every test in exactly one shard.
 	requireRaw(t, "API race test contract", apiRaceTest,
-		"go test -race -timeout=30m -count=1 -json ./internal/api",
+		"shards=(",
+		"'^(Test[A-F]|Example|Fuzz)'",
+		"'^Test[G-M]'",
+		"'^Test[N-S]'",
+		"'^Test[T-Z]'",
+		"go test -race -mod=readonly -list",
+		"if (( matched != 1 )); then",
+		"go test -race -timeout=30m -count=1 -json -run",
 		"collecting runner and PostgreSQL diagnostics",
 		"/proc/diskstats",
 		"pg_stat_activity",

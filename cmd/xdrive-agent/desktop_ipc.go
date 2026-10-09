@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -103,6 +104,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-policy",
 	"server-update",
 	"media-gallery",
+	"baidu-static-map",
 	"media-index-status",
 	"media-selection-snapshot",
 	"media-selection-jobs",
@@ -590,6 +592,9 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
 	mux.HandleFunc("GET /v1/cloud/admin-services", h.cloudAdminServices)
+	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
+	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
+	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
@@ -652,6 +657,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("DELETE /v1/media/album-folder", h.deleteMediaAlbumFolder)
 	mux.HandleFunc("PATCH /v1/media/album/folder", h.moveMediaAlbumToFolder)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
+	mux.HandleFunc("GET /v1/media/map-provider", h.mediaBaiduMapProvider)
+	mux.HandleFunc("GET /v1/media/baidu-static", h.mediaBaiduStaticMap)
 	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
 	mux.HandleFunc("GET /v1/media/memory-items", h.mediaMemoryItems)
 	mux.HandleFunc("GET /v1/media/duplicates", h.mediaDuplicateGroups)
@@ -1786,6 +1793,84 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+type desktopIPCAdminBaiduMapController interface {
+	CloudAdminBaiduMapConfig(context.Context) (client.AdminBaiduMapConfig, error)
+	CloudSetAdminBaiduMapConfig(context.Context, client.AdminBaiduMapUpdate) (client.AdminBaiduMapConfig, error)
+	CloudRevealAdminBaiduMapAK(context.Context, uint64) (client.AdminBaiduMapAKReveal, error)
+}
+
+func (h *desktopIPCHandler) cloudRevealAdminBaiduMapAK(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminBaiduMapController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_baidu_map_unavailable", "baidu map configuration is not supported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_baidu_map_revision", "revision is required")
+		return
+	}
+	result, err := provider.CloudRevealAdminBaiduMapAK(r.Context(), *input.Revision)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudAdminBaiduMap(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminBaiduMapController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_baidu_map_unavailable", "baidu map configuration is not supported")
+		return
+	}
+	result, err := provider.CloudAdminBaiduMapConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudSetAdminBaiduMap(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminBaiduMapController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_baidu_map_unavailable", "baidu map configuration is not supported")
+		return
+	}
+	var input struct {
+		Enabled  *bool   `json:"enabled"`
+		Revision *uint64 `json:"revision"`
+		AK       string  `json:"ak,omitempty"`
+		ClearAK  bool    `json:"clear_ak,omitempty"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Enabled == nil || input.Revision == nil || len(input.AK) > 256 || (input.ClearAK && input.AK != "") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_baidu_map_config", "invalid map configuration")
+		return
+	}
+	result, err := provider.CloudSetAdminBaiduMapConfig(r.Context(), client.AdminBaiduMapUpdate{
+		Enabled:  *input.Enabled,
+		Revision: *input.Revision,
+		AK:       input.AK,
+		ClearAK:  input.ClearAK,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudAdminServices(w http.ResponseWriter, r *http.Request) {
@@ -3374,6 +3459,58 @@ func (h *desktopIPCHandler) moveMediaAlbumToFolder(w http.ResponseWriter, r *htt
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
+type desktopIPCBaiduMapController interface {
+	CloudBaiduMapProvider(context.Context) (client.BaiduMapProvider, error)
+	CloudBaiduStaticMap(context.Context, float64, float64, int, int, int) (agentMediaThumbnail, error)
+}
+
+func (h *desktopIPCHandler) mediaBaiduMapProvider(w http.ResponseWriter, r *http.Request) {
+	controller, ok := h.ctrl.(desktopIPCBaiduMapController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "map_unavailable", "map service is not supported")
+		return
+	}
+	provider, err := controller.CloudBaiduMapProvider(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, provider)
+}
+
+func (h *desktopIPCHandler) mediaBaiduStaticMap(w http.ResponseWriter, r *http.Request) {
+	controller, ok := h.ctrl.(desktopIPCBaiduMapController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "map_unavailable", "map service is not supported")
+		return
+	}
+	q := r.URL.Query()
+	latitude, errLat := strconv.ParseFloat(q.Get("lat"), 64)
+	longitude, errLng := strconv.ParseFloat(q.Get("lng"), 64)
+	zoom, errZoom := strconv.Atoi(q.Get("zoom"))
+	width, errWidth := strconv.Atoi(q.Get("width"))
+	height, errHeight := strconv.Atoi(q.Get("height"))
+	if errLat != nil || errLng != nil || errZoom != nil || errWidth != nil ||
+		errHeight != nil || math.IsNaN(latitude) || math.IsInf(latitude, 0) ||
+		math.IsNaN(longitude) || math.IsInf(longitude, 0) ||
+		latitude < -85 || latitude > 85 || longitude < -180 || longitude > 180 ||
+		zoom < 3 || zoom > 18 || width < 128 || width > 512 ||
+		height < 128 || height > 512 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_map_parameters", "invalid map parameters")
+		return
+	}
+	result, err := controller.CloudBaiduStaticMap(r.Context(), latitude, longitude, zoom, width, height)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.Itoa(len(result.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(result.Data)
 }
 
 func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) {

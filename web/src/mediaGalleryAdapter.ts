@@ -54,6 +54,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     moveAlbumToFolder: (albumID, revision, folderID) =>
       api.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
+    getBaiduMapProvider: () => api.mediaBaiduMapProvider(),
+    loadBaiduStaticMap: (input, signal) => api.mediaBaiduStaticMap(input, signal),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       api.mediaMemories(anchorDate, limit, timeZone),
     listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>

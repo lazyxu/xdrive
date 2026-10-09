@@ -446,6 +446,9 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-creative', generationID),
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
+  getBaiduMapProvider: () => ipcRenderer.invoke('agent:get-baidu-map-provider'),
+  getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-baidu-static-map', lat, lng, zoom, width, height, requestID),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
@@ -611,6 +614,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-file-media-details', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
+  cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudRevealAdminBaiduMapAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-map-ak', revision),
+  cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-baidu-map', input),
   cloudBackgroundTaskActiveSummary: () =>
     ipcRenderer.invoke('agent:cloud-background-task-summary'),
   cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '') =>

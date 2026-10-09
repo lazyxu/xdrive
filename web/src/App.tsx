@@ -1,3 +1,4 @@
+import type { XDriveBaiduMapAdminUpdate } from '../../ui/shared/src'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
@@ -814,6 +815,9 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
+    loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
+    saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),
+    revealBaiduMapAK: (revision: number) => api.adminRevealBaiduMapAK(revision),
   }), [api])
 
   const executeConfirm = async () => {

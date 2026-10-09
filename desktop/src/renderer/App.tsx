@@ -1,3 +1,4 @@
+import type { XDriveBaiduMapAdminUpdate } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
@@ -1369,6 +1370,21 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    revealBaiduMapAK: async (revision: number) => {
+      const result = await window.xdriveDesktop.agent.cloudRevealAdminBaiduMapAK(revision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadBaiduMapConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBaiduMapConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveBaiduMapConfig: async (input: XDriveBaiduMapAdminUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminBaiduMapConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     load: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminServices()
       if (!result.ok) throw new Error(result.error.message)

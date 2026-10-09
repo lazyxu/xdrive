@@ -1,3 +1,4 @@
+import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import type {
   MediaAlbum,
   MediaAlbumFolder,
@@ -136,6 +137,8 @@ export interface XDriveMediaGalleryPort {
   listPlaces?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
+  getBaiduMapProvider?: () => Promise<XDriveMediaGalleryTransportResult<XDriveBaiduMapProviderInfo>>
+  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<Blob>>
   listMemories?: (
     anchorDate?: string,
     limit?: number,
@@ -516,6 +519,12 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
+      : undefined,
+    getBaiduMapProvider: port.getBaiduMapProvider
+      ? () => resolveXDriveTransport(port.getBaiduMapProvider!())
+      : undefined,
+    loadBaiduStaticMap: port.loadBaiduStaticMap
+      ? (input, signal) => resolveXDriveTransport(port.loadBaiduStaticMap!(input, signal))
       : undefined,
     listMemories: port.listMemories
       ? (anchorDate, limit, timeZone) => resolveXDriveTransport(

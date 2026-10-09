@@ -827,6 +827,21 @@ export interface NodeLocation {
   sync_folders: NodeLocationSyncFolder[]
 }
 
+export type XDriveBaiduMapProviderInfo = {
+  provider: 'baidu-server-static'
+  enabled: boolean
+  attribution: string
+  privacy: string
+}
+
+export type XDriveBaiduStaticMapRequest = {
+  latitude: number
+  longitude: number
+  zoom: number
+  width: number
+  height: number
+}
+
 export interface MediaPlaceFacet {
   id: string
   name: string
