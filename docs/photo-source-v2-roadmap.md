@@ -427,6 +427,27 @@ Deletion inferred from full inventories is accepted only when all safety conditi
 - reappearance clears accumulated missing evidence immediately;
 - the result is xDrive trash only, never direct permanent deletion.
 
+
+**G11 Mirror/duplicate annotation regression (2026-10-09; CI pending):**
+An identical CAS digest does not make two distinct PhotoAssets one source
+identity. Following a confirmed **metadata-only** keeper annotation union,
+a Mirror source losing its provider-side duplicate still observes its normal
+two-completed-full-inventory + at-least-24-hour grace period. Only the
+originally bound SourceItem Node may enter xDrive Trash, and the unrelated
+local keeper must retain its merged favorite, tags and description.
+Both original PhotoAsset and PhotoResource rows remain independently
+recoverable after the Mirror Trash transition. A separate native
+PostgreSQL/Gin integration fixture exercises the real SourceRun begin/finish
+and duplicate annotation-union functions; it does **not** remove CAS blobs,
+permanently delete media or call Synology/Yike.
+
+This evidence does **not** authorize physical duplicate consolidation:
+a keeper that is itself bound to a Mirror source can also be moved to Trash
+upon genuine remote disappearance. Durable user-selected keeper protection,
+archive of original descriptions/edit history, full grouped Live Photo/RAW
+Trash, audited undo, and actual provider/device replay are still release
+gates before any source-owned original may be removed by one-click cleanup.
+
 Web/Desktop expose one shared opt-in selector with Backup as the default and explicit warning text for the confirmation/grace behavior.
 
 ### Source-side writes
