@@ -1390,3 +1390,15 @@ control until the authorized Agent/IPC transport is implemented. Phase 3
 remains durable, bounded Task Center operations with per-item fresh ACL and
 revision validation, progress, cancellation, retries and partial-failure audit.
 Live Web/desktop and physical device evidence is still pending.
+
+### G07 phase 2c — Desktop Agent/IPC query selection transport (candidate, 2026-10-09)
+
+**Stacked on Phase 2b; full CI not yet verified.** Desktop Gallery now uses
+exactly the same shared read-only selection/review UI via authenticated
+Go Client, Desktop Agent's versioned loopback IPC, Electron Main/Preload,
+and the shared adapter. Agent advertises `media-selection-snapshot`;
+older Agents are rejected explicitly. Requests validate album, calendar day,
+token, page size, Node ID, exclusion Boolean, optimistic version, and
+query scope. No direct Desktop renderer authentication or duplicate player
+was introduced. This does not enable durable query-wide batch edits.
+Go/Windows, Desktop, 10k/100k and real-device tests remain acceptance gates.

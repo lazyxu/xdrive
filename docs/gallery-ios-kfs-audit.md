@@ -484,3 +484,9 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   expired snapshots are never converted into MediaItem[] batch operations.
   This does not claim Desktop support, durable jobs or final 100k/real-device
   acceptance. Existing explicit multi-selection behavior is preserved.
+
+- 2026-10-09: G07 phase 2c Desktop transport candidate. Routed the same
+  read-only query selection and date-selection contract through Go Client,
+  Agent loopback IPC, Electron Main/Preload and shared Gallery. Agent
+  capability and boundary validation are explicit; bulk mutations remain
+  disabled. Full CI and real Windows/macOS/Android/iOS evidence pending.

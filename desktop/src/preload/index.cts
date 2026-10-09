@@ -102,6 +102,14 @@ const agent = Object.freeze({
     albumID = '',
   ) => ipcRenderer.invoke('agent:get-media-facets', query, albumID),
   getMediaIndexStatus: () => ipcRenderer.invoke('agent:get-media-index-status'),
+  createMediaSelectionSnapshot: (query: object, albumID = '', day = '') =>
+    ipcRenderer.invoke('agent:create-media-selection-snapshot', query, albumID, day),
+  getMediaSelectionSnapshot: (token: string, offset: number, limit: number) =>
+    ipcRenderer.invoke('agent:get-media-selection-snapshot', token, offset, limit),
+  setMediaSelectionExcluded: (token: string, nodeID: number, excluded: boolean, version: number) =>
+    ipcRenderer.invoke('agent:set-media-selection-excluded', token, nodeID, excluded, version),
+  deleteMediaSelectionSnapshot: (token: string) =>
+    ipcRenderer.invoke('agent:delete-media-selection-snapshot', token),
   getNodeLocation: (nodeID: number, requestID?: string) =>
     ipcRenderer.invoke('agent:get-node-location', nodeID, requestID),
   getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) =>

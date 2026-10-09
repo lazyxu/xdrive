@@ -112,6 +112,8 @@ import {
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
   type AgentMediaGalleryIndexStatus,
+  type AgentMediaSelectionSnapshot,
+  type AgentMediaSelectionSnapshotPage,
   type AgentNodeLocation,
   type AgentMediaDuplicateOrganizePlan,
   type AgentMediaDuplicateOrganizeApplyResult,
@@ -2080,6 +2082,60 @@ function registerIPCHandlers() {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-index-status')
       return requireAgentClient().mediaIndexStatus()
+    }, false),
+  )
+
+  ipcMain.handle('agent:create-media-selection-snapshot', (_event, query: unknown, albumID: unknown = '', day: unknown = '') =>
+    runAgentAction<AgentMediaSelectionSnapshot>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-snapshot')
+      if (typeof albumID !== 'string' || typeof day !== 'string' ||
+        (day !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(day)) ||
+        (albumID !== '' && !['folder:', 'source:', 'manual:', 'smart:'].some(
+          (prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length,
+        ))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Gallery album or date selection.')
+      }
+      const normalized = normalizeMediaGalleryQueryForAgent(hello, query)
+      if (normalized.fold_duplicates || normalized.fold_member_ids?.length) {
+        throw new AgentIPCError('invalid_input', 0, 'Turn off duplicate folding to select an entire query.')
+      }
+      return requireAgentClient().createMediaSelectionSnapshot(normalized, albumID, day)
+    }, false),
+  )
+  ipcMain.handle('agent:get-media-selection-snapshot', (_event, token: unknown, offset: unknown, limit: unknown) =>
+    runAgentAction<AgentMediaSelectionSnapshotPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-snapshot')
+      if (typeof token !== 'string' || !/^[0-9a-f-]{36}$/i.test(token) ||
+        typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 ||
+        typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Gallery selection token or page.')
+      }
+      return requireAgentClient().getMediaSelectionSnapshot(token, offset, limit)
+    }, false),
+  )
+  ipcMain.handle('agent:set-media-selection-excluded', (_event, token: unknown, nodeID: unknown, excluded: unknown, version: unknown) =>
+    runAgentAction<AgentMediaSelectionSnapshot>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-snapshot')
+      if (typeof token !== 'string' || !/^[0-9a-f-]{36}$/i.test(token) ||
+        typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0 ||
+        typeof excluded !== 'boolean' ||
+        typeof version !== 'number' || !Number.isSafeInteger(version) || version <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Gallery selection exclusion.')
+      }
+      return requireAgentClient().setMediaSelectionExcluded(token, nodeID, excluded, version)
+    }, false),
+  )
+  ipcMain.handle('agent:delete-media-selection-snapshot', (_event, token: unknown) =>
+    runAgentAction<void>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-selection-snapshot')
+      if (typeof token !== 'string' || !/^[0-9a-f-]{36}$/i.test(token)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid Gallery selection token.')
+      }
+      return requireAgentClient().deleteMediaSelectionSnapshot(token)
     }, false),
   )
 
