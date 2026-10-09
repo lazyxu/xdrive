@@ -21,8 +21,11 @@ import { xDriveMediaEditPreviewTransform } from '../media-edit'
 import { formatBytes } from '../format'
 import { xDriveMediaCaptureTimeValue } from '../media-viewer'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
+import { useXDrivePreviewPresentation } from './usePreviewSlideshow'
+import { xDriveClassifyFilePreview } from '../file-preview'
 import type {
   XDriveFilePreviewImageLoader,
+  XDriveFilePreviewMotionLoader,
   XDriveFilePreviewURLLoader,
 } from './FilePreviewSurface'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
@@ -43,7 +46,7 @@ type MediaMotionLoader = (
 ) => Promise<XDriveLivePhotoMotionSource | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
-  kind: 'image' | 'video',
+  kind: 'image' | 'video' | 'live_photo',
 ) => Promise<string | null>
 
 function formatMediaBytes(bytes?: number) {
@@ -266,8 +269,10 @@ export function XDriveMediaDetailsContent({
     livePhoto,
     ordinaryPreview,
   ])
+  const previewKind = previewTarget ? xDriveClassifyFilePreview(previewTarget) : 'none'
+  const presentation = useXDrivePreviewPresentation(previewTarget)
   const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
-    if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video')) return null
+    if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')) return null
     return loadPreviewURL(item.node.id, kind)
   }, [item?.node.id, loadPreviewURL])
   const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
@@ -281,6 +286,10 @@ export function XDriveMediaDetailsContent({
     if (!item || !loadLivePhotoMotion) return null
     return loadLivePhotoMotion(item.node.id, onProgress)
   }, [item?.node.id, loadLivePhotoMotion])
+  const loadSurfaceLivePhotoMotion = useCallback<XDriveFilePreviewMotionLoader>(
+    (_target, onProgress) => loadSelectedLivePhotoMotion(onProgress),
+    [loadSelectedLivePhotoMotion],
+  )
 
   useEffect(() => {
     setTagsInput((item?.tags || []).join(', '))
@@ -319,10 +328,22 @@ export function XDriveMediaDetailsContent({
           overflow: 'hidden',
         }}
       >
-        {livePhoto && loadLivePhotoMotion ? (
+        {previewKind === 'live_photo' && loadPreviewURL ? (
+          <XDriveFilePreviewSurface
+            target={previewTarget}
+            loadPreviewURL={loadSelectedPreview}
+            loadImagePreview={loadSelectedThumbnail}
+            loadLivePhotoMotion={loadLivePhotoMotion ? loadSurfaceLivePhotoMotion : undefined}
+            fallback={xDriveMediaFallback(item.metadata.media_kind)}
+            minHeight={160}
+            maxHeight={240}
+            mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
+          />
+        ) : livePhoto && loadLivePhotoMotion ? (
           <XDriveLivePhotoSurface
             key={item.node.id}
             label={item.node.name}
+            stillReady={presentation.presentationState === 'ready'}
             loadMotion={loadSelectedLivePhotoMotion}
             sourceKey={`${item.node.id}:${item.node.revision}`}
             still={(
@@ -334,6 +355,7 @@ export function XDriveMediaDetailsContent({
                 minHeight={160}
                 maxHeight={240}
                 mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
+                onPresentationStateChange={presentation.onPresentationStateChange}
               />
             )}
           />

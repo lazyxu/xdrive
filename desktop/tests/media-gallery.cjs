@@ -1641,3 +1641,13 @@ test('Desktop Live Photo motion streams through the protected Range proxy instea
   assert.equal(agentClient.includes('Promise<AgentMediaMotion>'), false)
   assert.equal(desktopMain.includes('runAgentAction<AgentMediaMotion>'), false)
 })
+
+test('Gallery LIVP Properties reuses Preview Engine without nested Live Photo player', () => {
+  assert.ok(sharedGalleryDetails.includes("kind !== 'live_photo'"), 'Properties must allow the signed LIVP still source')
+  assert.ok(sharedGalleryDetails.includes("previewKind === 'live_photo' && loadPreviewURL"))
+  assert.ok(sharedGalleryDetails.includes('loadLivePhotoMotion={loadLivePhotoMotion ? loadSurfaceLivePhotoMotion : undefined}'))
+  assert.ok(sharedGalleryDetails.includes("stillReady={presentation.presentationState === 'ready'}"))
+  assert.ok(sharedGalleryDetails.includes('onPresentationStateChange={presentation.onPresentationStateChange}'))
+  assert.ok(sharedFilePreviewSurface.includes("previewKind === 'live_photo'"))
+  assert.ok(sharedMediaViewerContent.includes("previewKind === 'live_photo'"))
+})

@@ -872,6 +872,11 @@ The Trash section cannot open a normal media Viewer, so a tile activation there 
 Gallery, its Viewer, the standalone Web media Viewer and FileExplorer use the shared `XDriveMediaDetailsInspector` / `XDriveMediaDetailsContent` for single media items. FileExplorer obtains the canonical `MediaItem` lazily by Node ID (Web REST or Desktop Agent IPC) and adds only local file-context rows; unrelated file/folder properties remain unchanged. Loading is cancellable and version/session-fenced. A media lookup failure retains ordinary file information and clearly exposes the lookup error. No 10k/100k Gallery or FileExplorer list path is allowed to fetch full per-item properties for every row.
 
 
+## Gallery Live Photo Properties parity (2026-10-09)
+
+**Candidate / CI pending:** A standalone `.livp` asset in direct Gallery Properties now delegates still+motion to the same native `XDriveFilePreviewSurface` used by Viewer, admits the `live_photo` signed still resource, and avoids nesting another Live Photo player. For a semantic still+MOV pair, the existing outer `XDriveLivePhotoSurface` remains but only admits first-hold after the still's presentation readiness callback. Viewer-opened Properties still suppresses the redundant preview. No media transport changes or measured performance claim.
+
+
 ## Media poster consistency follow-up (2026-10-09)
 
 **In progress / dependent PR validation pending:** Ordinary Gallery video tiles switch from unconditional original-video frame capture to persisted-first Server poster lookup, with bounded fallback capture and revision-checked poster backfill through shared Web/Desktop adapters. Existing filmstrip thumbnail selection accepts a persisted video poster even when the thumbnail metadata flag is absent. The existing Server poster file class is reused; this does not introduce a new video encoding service or enable automatic Live Photo motion requests. The Home, FileExplorer, secondary Gallery cover and Viewer surface contracts must remain consistent; any remaining cold-fallback or cancellation differences require explicit validation. Existing PR #1088 owns the separate measured poster-queue transport-cancellation follow-up; this poster-reuse PR intentionally leaves the old queue scheduler unchanged. The canonical evidence and outstanding end-to-end measurements are in `docs/gallery-performance.md`.
