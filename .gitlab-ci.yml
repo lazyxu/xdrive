@@ -490,11 +490,15 @@ large-transfer-web-performance:
   extends: .electron-linux-cache
   stage: test
   needs: []
+  variables:
+    GIT_DEPTH: "4"
   tags:
     - linux
   rules:
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
     - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-web-memory-1gib"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-web-memory-1gib"'
   before_script:
     - |
       set -euo pipefail
@@ -511,9 +515,14 @@ large-transfer-web-performance:
   script:
     - |
       set -euo pipefail
+      git checkout --detach "${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
       (cd desktop && npm install --no-audit --no-fund)
       (cd web && npm install --no-audit --no-fund)
-      VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build
+      VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      if [[ "${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_BRANCH:-}}" == "perf/large-transfer-web-memory-1gib" ]]; then
+        bash scripts/ci/test-large-transfer-performance-paired.sh HEAD^
+        exit 0
+      fi
       cd desktop
       rm -rf large-transfer-perf-results
       mkdir -p large-transfer-perf-results
@@ -524,7 +533,7 @@ large-transfer-web-performance:
       done
       test "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9
   artifacts:
-    name: "web-large-transfer-1gib-$CI_COMMIT_SHORT_SHA"
+    name: "web-large-transfer-1gib-4gib-$CI_COMMIT_SHORT_SHA"
     expire_in: 7 days
     when: always
     paths:

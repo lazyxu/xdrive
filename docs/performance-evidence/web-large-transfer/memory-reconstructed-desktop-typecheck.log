@@ -1,0 +1,5 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> xdrive-desktop@0.1.0 typecheck
+> tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit
+

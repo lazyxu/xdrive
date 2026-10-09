@@ -1,0 +1,64 @@
+{
+  "workload": "current bounded Web 4 GiB upload baseline",
+  "samples": 3,
+  "original_4gib_measured": false,
+  "comparison_limit": "No original 4 GiB Web measurement; no before/after percentage claim",
+  "metrics": {
+    "elapsedMs": {
+      "median": 25946,
+      "min": 25738.70000000298,
+      "max": 25970.20000000298
+    },
+    "throughputMiBps": {
+      "median": 157.86633777846296,
+      "min": 157.71923204286182,
+      "max": 159.13779639218475
+    },
+    "rendererRSSPeakKiB": {
+      "median": 204648,
+      "min": 203916,
+      "max": 205156
+    },
+    "rendererRSSDeltaKiB": {
+      "median": 82328,
+      "min": 81516,
+      "max": 83720
+    },
+    "heapDeltaBytes": {
+      "median": 31433487,
+      "min": 23230774,
+      "max": 32159809
+    },
+    "prehashMs": {
+      "median": 8394.5,
+      "min": 8038.89999999851,
+      "max": 10098.39999999851
+    },
+    "uploadChunksMs": {
+      "median": 17337.10000000149,
+      "min": 15839.20000000298,
+      "max": 17918.09999999404
+    }
+  },
+  "runtimeVersions": {
+    "chromium": "153.0.8010.0",
+    "node": "24.19.0"
+  },
+  "measurementSourceHashes": {
+    "web/src/api.ts": "795155b2c048a9b015c43c9855a2e73a54053fca096e32f532dc8e54151c5bfa",
+    "web/src/transferTransport.ts": "ead8220081b35d770b0b637e3b880debd27ea54b68e24b3608295a43364a0154",
+    "web/src/downloadSink.ts": "c82adaa33e8f83504d40c0af0698428e1f0ffc83fe318b71b46e2682c0a9c245",
+    "web/src/LargeTransferPerformanceHarness.tsx": "51f7df133324eed62e78b5b067b6d90c72c25f7e430c59f8f1fac6a268844577",
+    "desktop/scripts/large-transfer-performance-main.cjs": "edb3918065e74627c477d88f82e58672e8cc27768c9a331e677f786aaac508bd"
+  },
+  "distAssetHashes": {
+    "LargeTransferPerformanceHarness-DRbJ1GDh.js": "f320f40e2a8d577706e19819798f43ae0d8d5ed554742336601bf2a0b6df564a",
+    "index-n42-_xr2.js": "359e0ede120daa116ec0ab62f7006fc09754add6450c9863ee0d41fd1186c181"
+  },
+  "source_limit": "distAssetHashes identify the executed build; concurrent download-only source changes may differ from that build but do not affect upload API/transport",
+  "raw": [
+    "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-1.json",
+    "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-2.json",
+    "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-3.json"
+  ]
+}

@@ -1,0 +1,34 @@
+✔ Web archive download creates one download group and one child per prepared leaf file (1.234716ms)
+✔ archive progress is server-side entry progress rather than synthetic child interpolation (0.223662ms)
+✔ archive prepare/progress routes are optional and legacy archive downloads remain compatible (0.146268ms)
+✔ archive transport does not create a second leaf transfer when externally managed by the group (0.27553ms)
+✔ Web archive download batches prepared child registration (0.22868ms)
+✔ Web archive progress and terminal lifecycle updates use one TransferStore batch (0.204133ms)
+✔ Web files workspace consumes the shared FileExplorer instead of a bespoke table (1.023572ms)
+✔ Web FileExplorer navigation matches system explorer behavior (0.25555ms)
+✔ Web FileExplorer uses real file operations and server search (0.24241ms)
+✔ Web FileExplorer Search preserves paths and breadcrumbs across sparse ranges (1.19728ms)
+✔ Web FileExplorer queues copy/cut/paste through the shared operation controller (0.253977ms)
+✔ Web FileExplorer supports file, folder, and mixed-selection download (0.539272ms)
+✔ Web single-item and bulk delete share one delete-to-trash controller (0.20889ms)
+✔ Web FileExplorer uses shared internal drag operations and local external uploads (0.17548ms)
+✔ Web uses a dedicated persistent FileExplorer details-column layout (0.172506ms)
+✔ Web FileExplorer supplies preview/properties metadata without a new plaintext preview channel (0.253117ms)
+✔ Web FileExplorer uses the shared Cloud Files controller for range-backed server sorting (0.30889ms)
+✔ Web multi-select mutations use persistent operations while retaining legacy atomic batch APIs (0.366054ms)
+✔ Web upload API exposes conflict-aware skip/keep-both without changing legacy upload return type (0.353666ms)
+✔ Web skipped uploads finish without pretending bytes were transferred (0.242711ms)
+✔ Web upload batches use the shared upload controller before transferring bytes (0.355379ms)
+✔ Web FileExplorer uploads selected folders with preserved relative paths (0.304493ms)
+✔ Web FileExplorer recursively uploads dropped folders and empty directories (0.162902ms)
+✔ Web Search range normalizes server breadcrumbs into the shared crumbs contract (0.137445ms)
+✔ Web FileExplorer persists tab sessions in an account-scoped shared navigation key (0.087941ms)
+✔ Web media Details columns use the bounded batch endpoint only through the shared loader (0.114901ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 103.615729

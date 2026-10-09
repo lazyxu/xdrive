@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
-const { webcrypto } = require('node:crypto')
+const { createHash, webcrypto } = require('node:crypto')
 const { File } = require('node:buffer')
 
 const repo = path.join(__dirname, '..', '..')
@@ -610,6 +610,185 @@ test('upload auth retry sends the raw chunk with the renewed token and counts bo
   const result = await completion
   assert.equal(result.transferred_bytes, 1000, 'logical upload result keeps its successful-chunk semantics')
   assert.equal(browser.store.snapshot()[0].state, 'completed')
+})
+
+test('Blob upload hashes partial BYOB reads with one bounded scratch buffer and preserves fallback', async (t) => {
+  for (const supportsBYOB of [true, false]) {
+    await t.test(supportsBYOB ? 'partial reads and tail' : 'unsupported byte-reader fallback', async () => {
+      let arrayReads = 0
+      let cancels = 0
+      let releases = 0
+      const allocations = []
+      const size = 8 * 1024 * 1024 + 17
+      class StreamFile extends File {
+        slice(...args) {
+          const blob = super.slice(...args)
+          const originalRead = blob.arrayBuffer.bind(blob)
+          blob.arrayBuffer = async () => { arrayReads++; return originalRead() }
+          blob.stream = () => {
+            if (!supportsBYOB) return new ReadableStream()
+            let offset = 0
+            const stream = new ReadableStream({
+              type: 'bytes',
+              pull(controller) {
+                const request = controller.byobRequest
+                const count = Math.min(4093, request.view.byteLength, blob.size - offset)
+                request.view.fill(7, 0, count)
+                offset += count
+                request.respond(count)
+                if (offset === blob.size) controller.close()
+              },
+            })
+            const originalReader = stream.getReader.bind(stream)
+            stream.getReader = (options) => {
+              const reader = originalReader(options)
+              return {
+                // Deliberately ignore min to model engines returning partial data.
+                read: (view) => reader.read(view),
+                async cancel() { cancels++; return reader.cancel() },
+                releaseLock() { releases++; reader.releaseLock() },
+              }
+            }
+            return stream
+          }
+          return blob
+        }
+      }
+      const browser = createBrowser((url, init) => {
+        if (url === '/api/v1/uploads') {
+          const input = JSON.parse(init.body)
+          return json({ ...input, id: 'upload-1', status: 'uploading', chunk_count: 2, received_chunks: [] })
+        }
+        if (url.endsWith('/finalize')) return json({ status: 'finalized', result: { id: 9 } })
+        throw new Error(`Unexpected request: ${url}`)
+      })
+      browser.context.ArrayBuffer = class extends ArrayBuffer {
+        constructor(length) { super(length); allocations.push(length) }
+      }
+      const completion = browser.makeApi().uploadWithConflictPolicy(1, new StreamFile([new Uint8Array(size).fill(7)], 'stream.bin'), 'fail')
+      const first = await waitForUpload(browser)
+      assert.ok(first.body instanceof Blob)
+      first.finish()
+      const second = await waitForUpload(browser, 2)
+      assert.equal(second.body.size, 17)
+      second.finish()
+      assert.equal((await completion).transferred_bytes, size)
+      if (supportsBYOB) {
+        assert.equal(arrayReads, 0, 'byte-reader path must avoid repeated Blob.arrayBuffer payload allocation')
+        assert.deepEqual(allocations, [8 * 1024 * 1024], 'one <=8 MiB scratch allocation is reused across both hash passes')
+        assert.equal(cancels, 4)
+        assert.equal(releases, 4)
+      } else {
+        assert.equal(arrayReads, 4, 'unsupported byte readers retain both legacy hash passes')
+        assert.equal(allocations.length, 0)
+      }
+    })
+  }
+})
+
+test('Blob upload preserves independently verified chunk hashes and varied payload bytes with native and partial BYOB readers', async (t) => {
+  const chunkSize = 8 * 1024 * 1024
+  const payload = Uint8Array.from({ length: chunkSize + 17 }, (_, index) => (index * 37 + (index >>> 13)) & 255)
+  const expectedChunks = [payload.subarray(0, chunkSize), payload.subarray(chunkSize)]
+  const expectedHashes = expectedChunks.map((bytes) => createHash('sha256').update(bytes).digest('hex'))
+  for (const partial of [false, true]) {
+    await t.test(partial ? 'forced partial reads and reused tail buffer' : 'native Blob byte reader and reused tail buffer', async () => {
+      class VariedFile extends File {
+        slice(start, end, contentType) {
+          const blob = super.slice(start, end, contentType)
+          if (!partial) return blob
+          blob.stream = () => {
+            let offset = 0
+            const stream = new ReadableStream({
+              type: 'bytes',
+              pull(controller) {
+                const request = controller.byobRequest
+                const count = Math.min(4093, request.view.byteLength, blob.size - offset)
+                request.view.set(payload.subarray(start + offset, start + offset + count))
+                offset += count
+                request.respond(count)
+                if (offset === blob.size) controller.close()
+              },
+            })
+            const getReader = stream.getReader.bind(stream)
+            stream.getReader = (options) => {
+              const reader = getReader(options)
+              return {
+                read: (view) => reader.read(view),
+                cancel: () => reader.cancel(),
+                releaseLock: () => reader.releaseLock(),
+              }
+            }
+            return stream
+          }
+          return blob
+        }
+      }
+      let initialized = false
+      const browser = createBrowser((url, init) => {
+        if (url === '/api/v1/uploads') {
+          const input = JSON.parse(init.body)
+          assert.deepEqual(input.chunk_sha256, expectedHashes, 'prehash must match independent Node SHA-256 for both chunks')
+          initialized = true
+          return json({ ...input, id: 'upload-1', status: 'uploading', chunk_count: 2, received_chunks: [] })
+        }
+        if (url.endsWith('/finalize')) return json({ status: 'finalized', result: { id: 9 } })
+        throw new Error(`Unexpected request: ${url}`)
+      })
+      const completion = browser.makeApi().uploadWithConflictPolicy(1, new VariedFile([payload], 'varied.bin'), 'fail')
+      for (let index = 0; index < expectedChunks.length; index++) {
+        const request = await waitForUpload(browser, index + 1)
+        assert.equal(initialized, true)
+        assert.equal(request.headers['X-Chunk-SHA256'], expectedHashes[index], 'rehash header must match independent Node SHA-256')
+        assert.ok(request.body instanceof Blob, 'transport must send the immutable chunk Blob')
+        assert.deepEqual(new Uint8Array(await request.body.arrayBuffer()), expectedChunks[index], 'XHR payload must preserve every original byte, including the reused-buffer tail')
+        request.finish()
+      }
+      assert.equal((await completion).transferred_bytes, payload.length)
+    })
+  }
+})
+
+test('Blob upload rejects short hash streams and changed bytes while releasing its reader', async (t) => {
+  for (const mode of ['short stream', 'changed bytes']) {
+    await t.test(mode, async () => {
+      let reads = 0
+      let cancels = 0
+      let releases = 0
+      class InvalidStreamFile extends File {
+        slice(...args) {
+          const blob = super.slice(...args)
+          const sequence = ++reads
+          blob.stream = () => {
+            const stream = new ReadableStream({ type: 'bytes', start(controller) {
+              controller.enqueue(new Uint8Array(blob.size - (mode === 'short stream' ? 1 : 0)).fill(sequence === 1 ? 7 : 8))
+              controller.close()
+            } })
+            const getReader = stream.getReader.bind(stream)
+            stream.getReader = (options) => {
+              const reader = getReader(options)
+              return {
+                read: (view, options) => reader.read(view, options),
+                async cancel() { cancels++; return reader.cancel() },
+                releaseLock() { releases++; reader.releaseLock() },
+              }
+            }
+            return stream
+          }
+          return blob
+        }
+      }
+      const browser = createBrowser((url, init) => {
+        if (url === '/api/v1/uploads') return json({ ...JSON.parse(init.body), id: 'upload-1', status: 'uploading', chunk_count: 1, received_chunks: [] })
+        throw new Error(`Unexpected request: ${url}`)
+      })
+      await assert.rejects(browser.makeApi().uploadWithConflictPolicy(1, new InvalidStreamFile([new Uint8Array(17).fill(7)], 'invalid.bin'), 'fail'),
+        mode === 'short stream' ? /ended at 16 of 17 bytes|ReadableStream closed/ : /File changed while uploading chunk 0/)
+      assert.equal(browser.uploads.length, 0, 'unverified bytes must never reach the upload transport')
+      assert.equal(cancels, reads)
+      assert.equal(releases, reads)
+    })
+  }
 })
 
 test('identity disposal aborts an in-flight upload and suppresses its late response', async () => {

@@ -1,0 +1,41 @@
+{
+  "scenario": "download-discard",
+  "sample": "sample-1",
+  "sizeBytes": 1073741824,
+  "elapsedMs": 1230.5,
+  "throughputMiBps": 832.182039821211,
+  "heapStartBytes": 5409492,
+  "heapPeakBytes": 473054112,
+  "heapDeltaBytes": 467644620,
+  "downloadHeadersMs": 2.5,
+  "downloadStreamWriteMs": 1227,
+  "context": "off-record",
+  "environment": "local Chromium 153 headless, multiprocess, Linux overlayfs; same production API and 1 GiB sparse fixture; separate from Electron CI",
+  "rendererRSSStartKiB": 120140,
+  "rendererRSSPeakKiB": 680520,
+  "rendererRSSDeltaKiB": 560380,
+  "heapBefore": {
+    "usedSize": 3918724,
+    "totalSize": 6348800,
+    "embedderHeapUsedSize": 1505488,
+    "backingStorageSize": 1475901
+  },
+  "heapAfter": {
+    "usedSize": 3328948,
+    "totalSize": 6610944,
+    "embedderHeapUsedSize": 74315792,
+    "backingStorageSize": 162956502
+  },
+  "heapAfterGC": {
+    "usedSize": 3050492,
+    "totalSize": 3727360,
+    "embedderHeapUsedSize": 360728,
+    "backingStorageSize": 1475774
+  },
+  "server": {
+    "uploadBytes": 0,
+    "uploadChunks": 0,
+    "uploadInitSize": 0,
+    "downloadBytes": 1073741824
+  }
+}

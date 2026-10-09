@@ -1,0 +1,9 @@
+{
+  "all24PayloadsAndRuntimeVerified": true,
+  "recordedComparisonMatchesIndependentRecompute": true,
+  "recorded4GiBBaselineMatchesIndependentRecompute": true,
+  "immutableSourceHeadAndParentVerified": true,
+  "strictPrimaryGatesPassed": true,
+  "all6Current4GiBAbsoluteCapsPassed": true,
+  "discardDiagnosticAlsoPassed": true
+}

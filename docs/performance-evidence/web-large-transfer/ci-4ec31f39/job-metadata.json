@@ -1,0 +1,108 @@
+{
+  "id": 113627600871,
+  "run_id": 37870615110,
+  "workflow_name": "CI",
+  "head_branch": "perf/large-transfer-web-memory-1gib",
+  "run_url": "https://api.github.com/repos/lazyxu/xdrive/actions/runs/37870615110",
+  "run_attempt": 1,
+  "node_id": "CR_kwDOUmnfnM8AAAAadLuX5w",
+  "head_sha": "4ec31f39ec151cd45642ba2c9603d2f78cf82899",
+  "url": "https://api.github.com/repos/lazyxu/xdrive/actions/jobs/113627600871",
+  "html_url": "https://github.com/lazyxu/xdrive/actions/runs/37870615110/job/113627600871",
+  "status": "completed",
+  "conclusion": "success",
+  "created_at": "2026-10-09T01:36:46Z",
+  "started_at": "2026-10-09T01:37:15Z",
+  "completed_at": "2026-10-09T01:41:28Z",
+  "name": "large-transfer-web-performance",
+  "steps": [
+    {
+      "name": "Set up job",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 1,
+      "started_at": "2026-10-09T01:37:16Z",
+      "completed_at": "2026-10-09T01:37:16Z"
+    },
+    {
+      "name": "Run actions/checkout@v4",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 2,
+      "started_at": "2026-10-09T01:37:16Z",
+      "completed_at": "2026-10-09T01:37:18Z"
+    },
+    {
+      "name": "Run actions/setup-node@v4",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 3,
+      "started_at": "2026-10-09T01:37:18Z",
+      "completed_at": "2026-10-09T01:37:18Z"
+    },
+    {
+      "name": "Install Web/Desktop performance dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 4,
+      "started_at": "2026-10-09T01:37:18Z",
+      "completed_at": "2026-10-09T01:37:47Z"
+    },
+    {
+      "name": "Build Web large-transfer performance bundle",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 5,
+      "started_at": "2026-10-09T01:37:47Z",
+      "completed_at": "2026-10-09T01:38:01Z"
+    },
+    {
+      "name": "Measure paired Web 1 GiB and bounded 4 GiB transfers",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 6,
+      "started_at": "2026-10-09T01:38:01Z",
+      "completed_at": "2026-10-09T01:41:25Z"
+    },
+    {
+      "name": "Run actions/upload-artifact@v4",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 7,
+      "started_at": "2026-10-09T01:41:25Z",
+      "completed_at": "2026-10-09T01:41:26Z"
+    },
+    {
+      "name": "Post Run actions/setup-node@v4",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 13,
+      "started_at": "2026-10-09T01:41:26Z",
+      "completed_at": "2026-10-09T01:41:26Z"
+    },
+    {
+      "name": "Post Run actions/checkout@v4",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 14,
+      "started_at": "2026-10-09T01:41:26Z",
+      "completed_at": "2026-10-09T01:41:26Z"
+    },
+    {
+      "name": "Complete job",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 15,
+      "started_at": "2026-10-09T01:41:26Z",
+      "completed_at": "2026-10-09T01:41:26Z"
+    }
+  ],
+  "check_run_url": "https://api.github.com/repos/lazyxu/xdrive/check-runs/113627600871",
+  "labels": [
+    "ubuntu-latest"
+  ],
+  "runner_id": 1000078206,
+  "runner_name": "GitHub Actions 1000078206",
+  "runner_group_id": 0,
+  "runner_group_name": "GitHub Actions"
+}

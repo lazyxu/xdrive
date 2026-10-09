@@ -50,6 +50,8 @@ type LargeTransferPerfWindow = Window & {
   __xdriveLargeTransferPerfResult?: LargeTransferPerfResult
   __xdriveLargeTransferPerfError?: string
   __xdriveLargeTransferPerfRunning?: boolean
+  __xdriveLargeTransferPerfReady?: boolean
+  __xdriveLargeTransferPerfStart?: boolean
 }
 
 type FetchMarkers = {
@@ -60,7 +62,6 @@ type FetchMarkers = {
   downloadResponseAt?: number
 }
 
-const sizeBytes = 1 << 30
 const mib = 1024 * 1024
 
 function currentHeapBytes() {
@@ -111,7 +112,7 @@ function installFetchMarkers(markers: FetchMarkers) {
   }
 }
 
-async function waitForUploadFile() {
+async function waitForUploadFile(sizeBytes: number) {
   const deadline = performance.now() + 30_000
   while (performance.now() < deadline) {
     const input = document.querySelector<HTMLInputElement>('[data-xdrive-large-transfer-upload-file]')
@@ -140,6 +141,7 @@ export function XDriveLargeTransferPerformanceHarness({
   scenario: XDriveLargeTransferPerformanceScenario
   sample: string
 }) {
+  const requestedSizeGiB = new URLSearchParams(window.location.search).get('xdriveLargeTransferSizeGiB') ?? '1'
   useEffect(() => {
     const perfWindow = window as LargeTransferPerfWindow
     let cancelled = false
@@ -148,6 +150,10 @@ export function XDriveLargeTransferPerformanceHarness({
       if (scenario !== 'upload' && scenario !== 'download' && scenario !== 'download-discard') {
         throw new Error(`unsupported large-transfer scenario: ${scenario}`)
       }
+      if (requestedSizeGiB !== '1' && requestedSizeGiB !== '4') {
+        throw new Error(`unsupported large-transfer size GiB: ${requestedSizeGiB}`)
+      }
+      const sizeBytes = Number(requestedSizeGiB) * 2 ** 30
       const storage = navigator.storage as unknown as {
         getDirectory?: () => Promise<PerfOPFSDirectoryHandle>
       }
@@ -175,7 +181,7 @@ export function XDriveLargeTransferPerformanceHarness({
 
         let uploadFile: File | null = null
         if (scenario === 'upload') {
-          uploadFile = await waitForUploadFile()
+          uploadFile = await waitForUploadFile(sizeBytes)
         } else if (scenario === 'download') {
           const targetHandle = await root.getFileHandle(downloadName, { create: true })
           pickerGlobal.showSaveFilePicker = async () => targetHandle
@@ -198,7 +204,19 @@ export function XDriveLargeTransferPerformanceHarness({
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
         if (cancelled) return
 
+        // The launcher samples the idle renderer before releasing this gate.
+        // Observing `running` after an asynchronous IPC poll is already too late
+        // to establish a memory baseline for a fast loopback transfer.
+        perfWindow.__xdriveLargeTransferPerfReady = true
+        const startDeadline = performance.now() + 30_000
+        while (!perfWindow.__xdriveLargeTransferPerfStart) {
+          if (cancelled) return
+          if (performance.now() >= startDeadline) throw new Error('timed out waiting for launcher start gate')
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+
         const heapStart = currentHeapBytes()
+        if (heapStart === null) throw new Error('precise JS heap memory metrics are unavailable')
         heapPeak = heapStart
         heapTimer = window.setInterval(() => {
           const value = currentHeapBytes()
@@ -274,6 +292,7 @@ export function XDriveLargeTransferPerformanceHarness({
         perfWindow.__xdriveLargeTransferPerfResult = result
         console.log('__XDRIVE_LARGE_TRANSFER_PERF_METRICS__' + JSON.stringify(result))
       } finally {
+        perfWindow.__xdriveLargeTransferPerfReady = false
         perfWindow.__xdriveLargeTransferPerfRunning = false
         if (heapTimer) window.clearInterval(heapTimer)
         restoreFetch()
@@ -291,12 +310,12 @@ export function XDriveLargeTransferPerformanceHarness({
     return () => {
       cancelled = true
     }
-  }, [sample, scenario])
+  }, [sample, scenario, requestedSizeGiB])
 
   return (
     <>
       <input data-xdrive-large-transfer-upload-file type="file" hidden />
-      <div data-xdrive-large-transfer-performance>Measuring 1 GiB {scenario}…</div>
+      <div data-xdrive-large-transfer-performance>Measuring {requestedSizeGiB} GiB {scenario}…</div>
     </>
   )
 }

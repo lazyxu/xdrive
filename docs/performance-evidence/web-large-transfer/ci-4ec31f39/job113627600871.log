@@ -1,0 +1,459 @@
+﻿2026-10-09T01:37:16.1286230Z Current runner version: '2.337.0'
+2026-10-09T01:37:16.1304145Z ##[group]Runner Image Provisioner
+2026-10-09T01:37:16.1304804Z Hosted Compute Agent
+2026-10-09T01:37:16.1305558Z Version: 20261002.596
+2026-10-09T01:37:16.1306004Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-09T01:37:16.1306504Z Build Date: 2026-10-02T22:28:27Z
+2026-10-09T01:37:16.1307004Z Worker ID: {e2a27fbf-bdc7-4d68-9622-c048c4eec206}
+2026-10-09T01:37:16.1307538Z Region: centralus
+2026-10-09T01:37:16.1307910Z Cloud: Azure
+2026-10-09T01:37:16.1308305Z ##[endgroup]
+2026-10-09T01:37:16.1309261Z ##[group]Operating System
+2026-10-09T01:37:16.1309683Z Ubuntu
+2026-10-09T01:37:16.1310062Z 24.04.5
+2026-10-09T01:37:16.1310406Z LTS
+2026-10-09T01:37:16.1310797Z ##[endgroup]
+2026-10-09T01:37:16.1311171Z ##[group]Runner Image
+2026-10-09T01:37:16.1311573Z Image: ubuntu-24.04
+2026-10-09T01:37:16.1311987Z Version: 20261004.327.1
+2026-10-09T01:37:16.1312871Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-09T01:37:16.1313916Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+2026-10-09T01:37:16.1314586Z ##[endgroup]
+2026-10-09T01:37:16.1315564Z ##[group]GITHUB_TOKEN Permissions
+2026-10-09T01:37:16.1317209Z Contents: read
+2026-10-09T01:37:16.1317682Z Metadata: read
+2026-10-09T01:37:16.1318057Z ##[endgroup]
+2026-10-09T01:37:16.1319594Z Secret source: Actions
+2026-10-09T01:37:16.1320223Z Cache mode: write
+2026-10-09T01:37:16.1320711Z Prepare workflow directory
+2026-10-09T01:37:16.1579653Z Prepare all required actions
+2026-10-09T01:37:16.1615623Z Getting action download info
+2026-10-09T01:37:16.4089140Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-09T01:37:16.5012055Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-10-09T01:37:16.5892243Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-09T01:37:16.7713737Z Complete job name: large-transfer-web-performance
+2026-10-09T01:37:16.8226636Z ##[group]Run actions/checkout@v4
+2026-10-09T01:37:16.8227209Z with:
+2026-10-09T01:37:16.8227656Z   ref: 4ec31f39ec151cd45642ba2c9603d2f78cf82899
+2026-10-09T01:37:16.8228159Z   fetch-depth: 2
+2026-10-09T01:37:16.8228520Z   repository: lazyxu/xdrive
+2026-10-09T01:37:16.8231294Z   token: ***
+2026-10-09T01:37:16.8231634Z   ssh-strict: true
+2026-10-09T01:37:16.8232016Z   ssh-user: git
+2026-10-09T01:37:16.8232371Z   persist-credentials: true
+2026-10-09T01:37:16.8232766Z   clean: true
+2026-10-09T01:37:16.8233132Z   sparse-checkout-cone-mode: true
+2026-10-09T01:37:16.8233533Z   fetch-tags: false
+2026-10-09T01:37:16.8233894Z   show-progress: true
+2026-10-09T01:37:16.8234240Z   lfs: false
+2026-10-09T01:37:16.8234555Z   submodules: false
+2026-10-09T01:37:16.8234947Z   set-safe-directory: true
+2026-10-09T01:37:16.8235504Z   allow-unsafe-pr-checkout: false
+2026-10-09T01:37:16.8236069Z ##[endgroup]
+2026-10-09T01:37:16.9007500Z Syncing repository: lazyxu/xdrive
+2026-10-09T01:37:16.9009661Z ##[group]Getting Git version info
+2026-10-09T01:37:16.9010488Z Working directory is '/home/runner/work/xdrive/xdrive'
+2026-10-09T01:37:16.9011517Z [command]/usr/bin/git version
+2026-10-09T01:37:16.9042879Z git version 2.55.0
+2026-10-09T01:37:16.9058039Z ##[endgroup]
+2026-10-09T01:37:16.9079040Z Temporarily overriding HOME='/home/runner/work/_temp/9f642411-7389-43c4-a54e-589da1890e1a' before making global git config changes
+2026-10-09T01:37:16.9080682Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-09T01:37:16.9085295Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-09T01:37:16.9128532Z Deleting the contents of '/home/runner/work/xdrive/xdrive'
+2026-10-09T01:37:16.9133644Z ##[group]Initializing the repository
+2026-10-09T01:37:16.9136787Z [command]/usr/bin/git init /home/runner/work/xdrive/xdrive
+2026-10-09T01:37:16.9227210Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-09T01:37:16.9228827Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-09T01:37:16.9230200Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-09T01:37:16.9231157Z hint: call:
+2026-10-09T01:37:16.9231946Z hint:
+2026-10-09T01:37:16.9232763Z hint: 	git config --global init.defaultBranch <name>
+2026-10-09T01:37:16.9233630Z hint:
+2026-10-09T01:37:16.9234599Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-09T01:37:16.9236298Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-09T01:37:16.9237617Z hint:
+2026-10-09T01:37:16.9238365Z hint: 	git branch -m <name>
+2026-10-09T01:37:16.9239296Z hint:
+2026-10-09T01:37:16.9240535Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-09T01:37:16.9241991Z Initialized empty Git repository in /home/runner/work/xdrive/xdrive/.git/
+2026-10-09T01:37:16.9243315Z [command]/usr/bin/git remote add origin https://github.com/lazyxu/xdrive
+2026-10-09T01:37:16.9286825Z ##[endgroup]
+2026-10-09T01:37:16.9287646Z ##[group]Disabling automatic garbage collection
+2026-10-09T01:37:16.9290306Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-09T01:37:16.9312785Z ##[endgroup]
+2026-10-09T01:37:16.9313655Z ##[group]Setting up auth
+2026-10-09T01:37:16.9316478Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-09T01:37:16.9345204Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-09T01:37:16.9628805Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-09T01:37:16.9652457Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-09T01:37:16.9795261Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-09T01:37:16.9818049Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-09T01:37:16.9955327Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-09T01:37:16.9983019Z ##[endgroup]
+2026-10-09T01:37:16.9984064Z ##[group]Fetching the repository
+2026-10-09T01:37:16.9991111Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=2 origin 4ec31f39ec151cd45642ba2c9603d2f78cf82899
+2026-10-09T01:37:17.9900344Z From https://github.com/lazyxu/xdrive
+2026-10-09T01:37:17.9908228Z  * branch            4ec31f39ec151cd45642ba2c9603d2f78cf82899 -> FETCH_HEAD
+2026-10-09T01:37:17.9927053Z ##[endgroup]
+2026-10-09T01:37:17.9928368Z ##[group]Determining the checkout info
+2026-10-09T01:37:17.9929586Z ##[endgroup]
+2026-10-09T01:37:17.9930285Z [command]/usr/bin/git sparse-checkout disable
+2026-10-09T01:37:17.9958966Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-09T01:37:17.9981620Z ##[group]Checking out the ref
+2026-10-09T01:37:17.9986270Z [command]/usr/bin/git checkout --progress --force 4ec31f39ec151cd45642ba2c9603d2f78cf82899
+2026-10-09T01:37:18.0575766Z Note: switching to '4ec31f39ec151cd45642ba2c9603d2f78cf82899'.
+2026-10-09T01:37:18.0576956Z 
+2026-10-09T01:37:18.0577611Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-09T01:37:18.0579238Z changes and commit them, and you can discard any commits you make in this
+2026-10-09T01:37:18.0580825Z state without impacting any branches by switching back to a branch.
+2026-10-09T01:37:18.0581694Z 
+2026-10-09T01:37:18.0582345Z If you want to create a new branch to retain commits you create, you may
+2026-10-09T01:37:18.0583852Z do so (now or later) by using -c with the switch command. Example:
+2026-10-09T01:37:18.0585322Z 
+2026-10-09T01:37:18.0585797Z   git switch -c <new-branch-name>
+2026-10-09T01:37:18.0586397Z 
+2026-10-09T01:37:18.0586963Z Or undo this operation with:
+2026-10-09T01:37:18.0587546Z 
+2026-10-09T01:37:18.0587908Z   git switch -
+2026-10-09T01:37:18.0588411Z 
+2026-10-09T01:37:18.0589228Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-09T01:37:18.0590367Z 
+2026-10-09T01:37:18.0591029Z HEAD is now at 4ec31f3 perf: bound Web large-transfer renderer memory
+2026-10-09T01:37:18.0594385Z ##[endgroup]
+2026-10-09T01:37:18.0618368Z [command]/usr/bin/git log -1 --format=%H
+2026-10-09T01:37:18.0636779Z 4ec31f39ec151cd45642ba2c9603d2f78cf82899
+2026-10-09T01:37:18.0920863Z ##[group]Run actions/setup-node@v4
+2026-10-09T01:37:18.0921750Z with:
+2026-10-09T01:37:18.0922428Z   node-version: 22
+2026-10-09T01:37:18.0923123Z   always-auth: false
+2026-10-09T01:37:18.0923897Z   check-latest: false
+2026-10-09T01:37:18.0929981Z   token: ***
+2026-10-09T01:37:18.0930752Z ##[endgroup]
+2026-10-09T01:37:18.1947531Z Found in cache @ /opt/hostedtoolcache/node/22.23.3/x64
+2026-10-09T01:37:18.1949751Z (node:2087) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T01:37:18.1951787Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T01:37:18.1953496Z ##[group]Environment details
+2026-10-09T01:37:18.5196056Z node: v22.23.3
+2026-10-09T01:37:18.5196477Z npm: 10.9.9
+2026-10-09T01:37:18.5196721Z yarn: 1.22.22
+2026-10-09T01:37:18.5197521Z ##[endgroup]
+2026-10-09T01:37:18.5346675Z ##[group]Run (cd desktop && npm install --no-audit --no-fund)
+2026-10-09T01:37:18.5347226Z [36;1m(cd desktop && npm install --no-audit --no-fund)[0m
+2026-10-09T01:37:18.5347666Z [36;1m(cd web && npm install --no-audit --no-fund)[0m
+2026-10-09T01:37:18.5519396Z shell: /usr/bin/bash -e {0}
+2026-10-09T01:37:18.5519828Z ##[endgroup]
+2026-10-09T01:37:33.1438385Z npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-09T01:37:33.3020107Z npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+2026-10-09T01:37:33.4992127Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-09T01:37:33.6869121Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-09T01:37:40.2129505Z 
+2026-10-09T01:37:47.1303704Z added 415 packages in 22s
+2026-10-09T01:37:47.1304390Z 
+2026-10-09T01:37:47.1304574Z added 139 packages in 7s
+2026-10-09T01:37:47.1567479Z ##[group]Run npm --prefix web run build -- --config vite.config.ts
+2026-10-09T01:37:47.1567953Z [36;1mnpm --prefix web run build -- --config vite.config.ts[0m
+2026-10-09T01:37:47.1606351Z shell: /usr/bin/bash -e {0}
+2026-10-09T01:37:47.1606714Z env:
+2026-10-09T01:37:47.1606988Z   VITE_XDRIVE_LARGE_TRANSFER_PERF: 1
+2026-10-09T01:37:47.1607242Z ##[endgroup]
+2026-10-09T01:37:47.2285379Z 
+2026-10-09T01:37:47.2286133Z > xdrive-web@0.1.0 build
+2026-10-09T01:37:47.2288361Z > tsc -b && vite build --config vite.config.ts
+2026-10-09T01:37:55.1625889Z 
+2026-10-09T01:37:55.1627480Z [36mvite v6.4.3 [32mbuilding for production...[36m[39m
+2026-10-09T01:37:55.2176566Z transforming...
+2026-10-09T01:38:01.1290402Z [32m✓[39m 11916 modules transformed.
+2026-10-09T01:38:01.3863314Z rendering chunks...
+2026-10-09T01:38:01.7123654Z computing gzip size...
+2026-10-09T01:38:01.7424938Z [2mdist/[22m[32mindex.html                                          [39m[1m[2m    0.79 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-10-09T01:38:01.7427267Z [33m
+2026-10-09T01:38:01.7428121Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-10-09T01:38:01.7428822Z - Using dynamic import() to code-split the application
+2026-10-09T01:38:01.7429897Z - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-10-09T01:38:01.7431910Z [2mdist/[22m[2massets/[22m[32myike-photos-BAVDOHgk.png                     [39m[1m[2m    5.46 kB[22m[1m[22m
+2026-10-09T01:38:01.7433475Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-10-09T01:38:01.7434542Z [2mdist/[22m[2massets/[22m[32msynology-photos-BbjN8h_5.png                 [39m[1m[2m   27.73 kB[22m[1m[22m
+2026-10-09T01:38:01.7435814Z [2mdist/[22m[2massets/[22m[32msynology-file-station-Cy2dVLMI.png           [39m[1m[2m   42.19 kB[22m[1m[22m
+2026-10-09T01:38:01.7437096Z [2mdist/[22m[2massets/[22m[35mindex-BAElkkhY.css                           [39m[1m[2m    0.10 kB[22m[1m[22m[2m │ gzip:   0.09 kB[22m
+2026-10-09T01:38:01.7438326Z [2mdist/[22m[2massets/[22m[36mLargeTransferPerformanceHarness-BGdPih6j.js  [39m[1m[2m    5.25 kB[22m[1m[22m[2m │ gzip:   2.14 kB[22m
+2026-10-09T01:38:01.7439543Z [2mdist/[22m[2massets/[22m[36mindex-CXDFXMOp.js                            [39m[1m[33m1,496.58 kB[39m[22m[2m │ gzip: 448.21 kB[22m
+2026-10-09T01:38:01.7440378Z [32m✓ built in 6.56s[39m
+2026-10-09T01:38:01.8131748Z ##[group]Run set -euo pipefail
+2026-10-09T01:38:01.8132088Z [36;1mset -euo pipefail[0m
+2026-10-09T01:38:01.8132490Z [36;1mif [[ "$GITHUB_HEAD_REF" == "perf/large-transfer-web-memory-1gib" ]]; then[0m
+2026-10-09T01:38:01.8132940Z [36;1m  bash ../scripts/ci/test-large-transfer-performance-paired.sh HEAD^[0m
+2026-10-09T01:38:01.8133326Z [36;1m  exit 0[0m
+2026-10-09T01:38:01.8133532Z [36;1mfi[0m
+2026-10-09T01:38:01.8133751Z [36;1mrm -rf large-transfer-perf-results[0m
+2026-10-09T01:38:01.8134073Z [36;1mmkdir -p large-transfer-perf-results[0m
+2026-10-09T01:38:01.8134413Z [36;1mfor scenario in upload download download-discard; do[0m
+2026-10-09T01:38:01.8134732Z [36;1m  for sample in 1 2 3; do[0m
+2026-10-09T01:38:01.8135508Z [36;1m    xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/large-transfer-performance-main.cjs "$scenario" "sample-$sample"[0m
+2026-10-09T01:38:01.8136077Z [36;1m  done[0m
+2026-10-09T01:38:01.8136367Z [36;1mdone[0m
+2026-10-09T01:38:01.8136757Z [36;1mtest "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9[0m
+2026-10-09T01:38:01.8137198Z [36;1mecho "=== Web 1 GiB transfer metrics ==="[0m
+2026-10-09T01:38:01.8137505Z [36;1mcat large-transfer-perf-results/web-*.json[0m
+2026-10-09T01:38:01.8173128Z shell: /usr/bin/bash -e {0}
+2026-10-09T01:38:01.8173442Z ##[endgroup]
+2026-10-09T01:38:01.9682968Z 
+2026-10-09T01:38:01.9683529Z > xdrive-web@0.1.0 build
+2026-10-09T01:38:01.9684020Z > tsc -b && vite build --config vite.config.ts
+2026-10-09T01:38:01.9684295Z 
+2026-10-09T01:38:10.2874163Z [36mvite v6.4.3 [32mbuilding for production...[36m[39m
+2026-10-09T01:38:10.3251963Z transforming...
+2026-10-09T01:38:17.4758967Z [32m✓[39m 12832 modules transformed.
+2026-10-09T01:38:17.8049940Z rendering chunks...
+2026-10-09T01:38:18.1550815Z computing gzip size...
+2026-10-09T01:38:18.1902310Z [2mdist/[22m[32mindex.html                                          [39m[1m[2m    0.79 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-10-09T01:38:18.1903860Z [33m
+2026-10-09T01:38:18.1904364Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-10-09T01:38:18.1905764Z - Using dynamic import() to code-split the application
+2026-10-09T01:38:18.1906660Z - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-10-09T01:38:18.1907631Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-10-09T01:38:18.1908809Z [2mdist/[22m[2massets/[22m[32myike-photos-BAVDOHgk.png                     [39m[1m[2m    5.46 kB[22m[1m[22m
+2026-10-09T01:38:18.1909674Z [2mdist/[22m[2massets/[22m[32msynology-photos-BbjN8h_5.png                 [39m[1m[2m   27.73 kB[22m[1m[22m
+2026-10-09T01:38:18.1910610Z [2mdist/[22m[2massets/[22m[32msynology-file-station-Cy2dVLMI.png           [39m[1m[2m   42.19 kB[22m[1m[22m
+2026-10-09T01:38:18.1911596Z [2mdist/[22m[2massets/[22m[35mindex-BAElkkhY.css                           [39m[1m[2m    0.10 kB[22m[1m[22m[2m │ gzip:   0.09 kB[22m
+2026-10-09T01:38:18.1912617Z [2mdist/[22m[2massets/[22m[36mLargeTransferPerformanceHarness-CaOB-t6d.js  [39m[1m[2m    5.25 kB[22m[1m[22m[2m │ gzip:   2.14 kB[22m
+2026-10-09T01:38:18.1913593Z [2mdist/[22m[2massets/[22m[36mindex-BZRbyiKi.js                            [39m[1m[33m1,810.53 kB[39m[22m[2m │ gzip: 546.18 kB[22m
+2026-10-09T01:38:18.1914233Z [32m✓ built in 7.89s[39m
+2026-10-09T01:38:18.4967894Z Downloading Electron binary...
+2026-10-09T01:38:20.4346277Z [2335:1009/013820.433796:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:20.4742198Z [2335:1009/013820.455814:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:20.4902053Z [2335:1009/013820.489952:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:20.4903537Z [2335:1009/013820.490081:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:20.4951743Z [2335:1009/013820.494973:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:20.6053212Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:38:28.2156143Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":7312.700000000012,"throughputMiBps":140.03035814405052,"heapStartBytes":6093516,"heapPeakBytes":450261884,"heapDeltaBytes":444168368,"prehashMs":2053.100000000006,"uploadSessionMs":3.3000000000174623,"uploadChunksMs":5254,"uploadFinalizeMs":2.2999999999883585}
+2026-10-09T01:38:28.2288900Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":7312.700000000012,"throughputMiBps":140.03035814405052,"heapStartBytes":6093516,"heapPeakBytes":450261884,"heapDeltaBytes":444168368,"prehashMs":2053.100000000006,"uploadSessionMs":3.3000000000174623,"uploadChunksMs":5254,"uploadFinalizeMs":2.2999999999883585,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":116080,"rendererWorkingSetPeakKB":984036,"rendererWorkingSetDeltaKB":867956,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:38:28.4477936Z [2434:1009/013828.446422:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:28.4724113Z [2434:1009/013828.467267:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:28.5073719Z [2434:1009/013828.506301:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:28.5075548Z [2434:1009/013828.506543:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:28.5141831Z [2434:1009/013828.513734:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:28.5941912Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:38:34.7347099Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":6055.899999999994,"throughputMiBps":169.0912993939796,"heapStartBytes":4910222,"heapPeakBytes":26388014,"heapDeltaBytes":21477792,"prehashMs":1956.5,"uploadSessionMs":3.3999999999941792,"uploadChunksMs":4092.9000000000233,"uploadFinalizeMs":3.099999999976717}
+2026-10-09T01:38:34.7452356Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":6055.899999999994,"throughputMiBps":169.0912993939796,"heapStartBytes":4910222,"heapPeakBytes":26388014,"heapDeltaBytes":21477792,"prehashMs":1956.5,"uploadSessionMs":3.3999999999941792,"uploadChunksMs":4092.9000000000233,"uploadFinalizeMs":3.099999999976717,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":116448,"rendererWorkingSetPeakKB":164512,"rendererWorkingSetDeltaKB":48064,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:38:34.9434871Z [2535:1009/013834.942930:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:34.9645791Z [2535:1009/013834.964330:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:34.9974091Z [2535:1009/013834.996815:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:35.0008762Z [2535:1009/013834.996951:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:35.0056934Z [2535:1009/013835.002818:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:35.0956312Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:38:40.5311938Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":5353.3000000000175,"throughputMiBps":191.28388097061563,"heapStartBytes":4913447,"heapPeakBytes":26220665,"heapDeltaBytes":21307218,"prehashMs":2015.7000000000116,"uploadSessionMs":3.2999999999883585,"uploadChunksMs":3332.5,"uploadFinalizeMs":1.8000000000174623}
+2026-10-09T01:38:40.5482336Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":5353.3000000000175,"throughputMiBps":191.28388097061563,"heapStartBytes":4913447,"heapPeakBytes":26220665,"heapDeltaBytes":21307218,"prehashMs":2015.7000000000116,"uploadSessionMs":3.2999999999883585,"uploadChunksMs":3332.5,"uploadFinalizeMs":1.8000000000174623,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":113852,"rendererWorkingSetPeakKB":161376,"rendererWorkingSetDeltaKB":47524,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:38:40.7460659Z [2635:1009/013840.745071:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:40.7703651Z [2635:1009/013840.764231:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:40.7935219Z [2635:1009/013840.792979:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:40.7937532Z [2635:1009/013840.793095:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:40.7963584Z [2635:1009/013840.796158:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:40.9655446Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:38:48.2059451Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":7150.900000000023,"throughputMiBps":143.19875819826828,"heapStartBytes":6069396,"heapPeakBytes":492802152,"heapDeltaBytes":486732756,"prehashMs":1948,"uploadSessionMs":3.400000000023283,"uploadChunksMs":5193.399999999994,"uploadFinalizeMs":6.100000000005821}
+2026-10-09T01:38:48.2123350Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":7150.900000000023,"throughputMiBps":143.19875819826828,"heapStartBytes":6069396,"heapPeakBytes":492802152,"heapDeltaBytes":486732756,"prehashMs":1948,"uploadSessionMs":3.400000000023283,"uploadChunksMs":5193.399999999994,"uploadFinalizeMs":6.100000000005821,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":116596,"rendererWorkingSetPeakKB":1066876,"rendererWorkingSetDeltaKB":950280,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:38:48.3368930Z [2743:1009/013848.335808:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:48.4147232Z [2743:1009/013848.414409:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:48.4381591Z [2743:1009/013848.436096:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:48.4386972Z [2743:1009/013848.437905:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:48.4697284Z [2743:1009/013848.467302:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:48.5721553Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:38:55.7774157Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":7116,"throughputMiBps":143.90106801573918,"heapStartBytes":6090581,"heapPeakBytes":492812687,"heapDeltaBytes":486722106,"prehashMs":1946.9000000000233,"uploadSessionMs":3.2999999999883585,"uploadChunksMs":5163.799999999988,"uploadFinalizeMs":2}
+2026-10-09T01:38:55.7914138Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":7116,"throughputMiBps":143.90106801573918,"heapStartBytes":6090581,"heapPeakBytes":492812687,"heapDeltaBytes":486722106,"prehashMs":1946.9000000000233,"uploadSessionMs":3.2999999999883585,"uploadChunksMs":5163.799999999988,"uploadFinalizeMs":2,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":115512,"rendererWorkingSetPeakKB":1065856,"rendererWorkingSetDeltaKB":950344,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:38:55.9781014Z [2844:1009/013855.977767:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:56.0001953Z [2844:1009/013855.998580:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:56.0347271Z [2844:1009/013856.033349:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:56.0367703Z [2844:1009/013856.033441:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:38:56.0417922Z [2844:1009/013856.041619:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:38:56.1247955Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:01.7937161Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":5582.600000000006,"throughputMiBps":183.42707698921632,"heapStartBytes":4875018,"heapPeakBytes":26129316,"heapDeltaBytes":21254298,"prehashMs":1988.5,"uploadSessionMs":3.2000000000116415,"uploadChunksMs":3589,"uploadFinalizeMs":1.8999999999941792}
+2026-10-09T01:39:01.8135447Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":5582.600000000006,"throughputMiBps":183.42707698921632,"heapStartBytes":4875018,"heapPeakBytes":26129316,"heapDeltaBytes":21254298,"prehashMs":1988.5,"uploadSessionMs":3.2000000000116415,"uploadChunksMs":3589,"uploadFinalizeMs":1.8999999999941792,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":115644,"rendererWorkingSetPeakKB":162776,"rendererWorkingSetDeltaKB":47132,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T01:39:02.0681636Z [2974:1009/013902.067613:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:02.0987411Z [2974:1009/013902.095262:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:02.1317204Z [2974:1009/013902.129656:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:02.1323415Z [2974:1009/013902.129721:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:02.1355991Z [2974:1009/013902.135348:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:02.2661882Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:06.0728084Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3745.8000000000175,"throughputMiBps":273.3728442522279,"heapStartBytes":6050857,"heapPeakBytes":366914324,"heapDeltaBytes":360863467,"downloadHeadersMs":2,"downloadStreamWriteMs":3742.5}
+2026-10-09T01:39:06.0788869Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3745.8000000000175,"throughputMiBps":273.3728442522279,"heapStartBytes":6050857,"heapPeakBytes":366914324,"heapDeltaBytes":360863467,"downloadHeadersMs":2,"downloadStreamWriteMs":3742.5,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109512,"rendererWorkingSetPeakKB":532364,"rendererWorkingSetDeltaKB":422852,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:06.2855578Z [3107:1009/013906.285232:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:06.3077472Z [3107:1009/013906.306291:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:06.3579638Z [3107:1009/013906.357642:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:06.3582551Z [3107:1009/013906.357866:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:06.3614903Z [3107:1009/013906.361070:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:06.4498956Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:10.0200880Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3509.7000000000116,"throughputMiBps":291.76282873179946,"heapStartBytes":4884865,"heapPeakBytes":7714911,"heapDeltaBytes":2830046,"downloadHeadersMs":2,"downloadStreamWriteMs":3506.5}
+2026-10-09T01:39:10.0212066Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3509.7000000000116,"throughputMiBps":291.76282873179946,"heapStartBytes":4884865,"heapPeakBytes":7714911,"heapDeltaBytes":2830046,"downloadHeadersMs":2,"downloadStreamWriteMs":3506.5,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":108656,"rendererWorkingSetPeakKB":188108,"rendererWorkingSetDeltaKB":79452,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:10.2402478Z [3207:1009/013910.239956:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:10.2652060Z [3207:1009/013910.262781:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:10.2958491Z [3207:1009/013910.294722:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:10.2981122Z [3207:1009/013910.294832:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:10.3036548Z [3207:1009/013910.302333:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:10.3830033Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:13.8924353Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3449.2999999999884,"throughputMiBps":296.87182906676816,"heapStartBytes":4853585,"heapPeakBytes":7653357,"heapDeltaBytes":2799772,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":3446}
+2026-10-09T01:39:13.9050506Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3449.2999999999884,"throughputMiBps":296.87182906676816,"heapStartBytes":4853585,"heapPeakBytes":7653357,"heapDeltaBytes":2799772,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":3446,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":111248,"rendererWorkingSetPeakKB":184944,"rendererWorkingSetDeltaKB":73696,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:14.1176385Z [3309:1009/013914.117048:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:14.1454107Z [3309:1009/013914.142208:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:14.1907683Z [3309:1009/013914.188741:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:14.1909793Z [3309:1009/013914.189547:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:14.1947835Z [3309:1009/013914.192578:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:14.3078457Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:17.9972322Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3636.8000000000175,"throughputMiBps":281.5662120545521,"heapStartBytes":6058582,"heapPeakBytes":390030895,"heapDeltaBytes":383972313,"downloadHeadersMs":2,"downloadStreamWriteMs":3633.3000000000175}
+2026-10-09T01:39:18.0003647Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3636.8000000000175,"throughputMiBps":281.5662120545521,"heapStartBytes":6058582,"heapPeakBytes":390030895,"heapDeltaBytes":383972313,"downloadHeadersMs":2,"downloadStreamWriteMs":3633.3000000000175,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109272,"rendererWorkingSetPeakKB":554668,"rendererWorkingSetDeltaKB":445396,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:18.2259061Z [3409:1009/013918.225394:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:18.2536742Z [3409:1009/013918.249817:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:18.2858893Z [3409:1009/013918.285641:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:18.2867765Z [3409:1009/013918.285764:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:18.2919515Z [3409:1009/013918.291801:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:18.4549343Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:22.1919300Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3682.100000000006,"throughputMiBps":278.10216995736084,"heapStartBytes":6028963,"heapPeakBytes":352209208,"heapDeltaBytes":346180245,"downloadHeadersMs":2.5,"downloadStreamWriteMs":3678.2999999999884}
+2026-10-09T01:39:22.2161068Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3682.100000000006,"throughputMiBps":278.10216995736084,"heapStartBytes":6028963,"heapPeakBytes":352209208,"heapDeltaBytes":346180245,"downloadHeadersMs":2.5,"downloadStreamWriteMs":3678.2999999999884,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":111956,"rendererWorkingSetPeakKB":526172,"rendererWorkingSetDeltaKB":414216,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:22.3990991Z [3509:1009/013922.398651:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:22.4221122Z [3509:1009/013922.419353:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:22.4518688Z [3509:1009/013922.451450:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:22.4556418Z [3509:1009/013922.452005:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:22.4576950Z [3509:1009/013922.455403:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:22.5416452Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:26.0493842Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3450.100000000006,"throughputMiBps":296.8029912176454,"heapStartBytes":4862072,"heapPeakBytes":7740108,"heapDeltaBytes":2878036,"downloadHeadersMs":2,"downloadStreamWriteMs":3446.7999999999884}
+2026-10-09T01:39:26.0648680Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3450.100000000006,"throughputMiBps":296.8029912176454,"heapStartBytes":4862072,"heapPeakBytes":7740108,"heapDeltaBytes":2878036,"downloadHeadersMs":2,"downloadStreamWriteMs":3446.7999999999884,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":110744,"rendererWorkingSetPeakKB":188580,"rendererWorkingSetDeltaKB":77836,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:26.2594315Z [3608:1009/013926.257757:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:26.2791787Z [3608:1009/013926.278737:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:26.3192395Z [3608:1009/013926.318706:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:26.3315931Z [3608:1009/013926.319340:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:26.3317829Z [3608:1009/013926.324846:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:26.4584570Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:27.6433900Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":1123.7999999999884,"throughputMiBps":911.1941626624049,"heapStartBytes":6039331,"heapPeakBytes":304673706,"heapDeltaBytes":298634375,"downloadHeadersMs":2,"downloadStreamWriteMs":1121.1999999999825}
+2026-10-09T01:39:27.6496437Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":1123.7999999999884,"throughputMiBps":911.1941626624049,"heapStartBytes":6039331,"heapPeakBytes":304673706,"heapDeltaBytes":298634375,"downloadHeadersMs":2,"downloadStreamWriteMs":1121.1999999999825,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109948,"rendererWorkingSetPeakKB":1566432,"rendererWorkingSetDeltaKB":1456484,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:27.8284167Z [3711:1009/013927.827942:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:27.8536516Z [3711:1009/013927.851580:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:27.8938306Z [3711:1009/013927.892749:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:27.8974287Z [3711:1009/013927.893042:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:27.9011647Z [3711:1009/013927.897628:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:27.9838299Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:28.8010078Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":758.0999999999767,"throughputMiBps":1350.7452842633313,"heapStartBytes":4843917,"heapPeakBytes":8936060,"heapDeltaBytes":4092143,"downloadHeadersMs":2,"downloadStreamWriteMs":755.3999999999942}
+2026-10-09T01:39:28.8251946Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":758.0999999999767,"throughputMiBps":1350.7452842633313,"heapStartBytes":4843917,"heapPeakBytes":8936060,"heapDeltaBytes":4092143,"downloadHeadersMs":2,"downloadStreamWriteMs":755.3999999999942,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":108260,"rendererWorkingSetPeakKB":121844,"rendererWorkingSetDeltaKB":13584,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:29.0066004Z [3812:1009/013929.005725:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:29.0254739Z [3812:1009/013929.025114:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:29.0636787Z [3812:1009/013929.063317:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:29.0642263Z [3812:1009/013929.063955:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:29.0681981Z [3812:1009/013929.068037:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:29.1589728Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:29.9959310Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":775.6000000000058,"throughputMiBps":1320.2681794739458,"heapStartBytes":4875125,"heapPeakBytes":8213490,"heapDeltaBytes":3338365,"downloadHeadersMs":2.2000000000116415,"downloadStreamWriteMs":772.7000000000116}
+2026-10-09T01:39:30.0145823Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":775.6000000000058,"throughputMiBps":1320.2681794739458,"heapStartBytes":4875125,"heapPeakBytes":8213490,"heapDeltaBytes":3338365,"downloadHeadersMs":2.2000000000116415,"downloadStreamWriteMs":772.7000000000116,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":110084,"rendererWorkingSetPeakKB":123256,"rendererWorkingSetDeltaKB":13172,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:30.2008848Z [3912:1009/013930.200293:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:30.2193475Z [3912:1009/013930.219135:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:30.2544376Z [3912:1009/013930.253242:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:30.2567052Z [3912:1009/013930.253300:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:30.2596919Z [3912:1009/013930.259474:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:30.3602854Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:31.5221091Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":1106.1000000000058,"throughputMiBps":925.7752463610836,"heapStartBytes":6056924,"heapPeakBytes":456682681,"heapDeltaBytes":450625757,"downloadHeadersMs":2.3999999999941792,"downloadStreamWriteMs":1103}
+2026-10-09T01:39:31.5464360Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":1106.1000000000058,"throughputMiBps":925.7752463610836,"heapStartBytes":6056924,"heapPeakBytes":456682681,"heapDeltaBytes":450625757,"downloadHeadersMs":2.3999999999941792,"downloadStreamWriteMs":1103,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109592,"rendererWorkingSetPeakKB":1660408,"rendererWorkingSetDeltaKB":1550816,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:31.7384963Z [4012:1009/013931.737999:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:31.7588215Z [4012:1009/013931.757228:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:31.7961266Z [4012:1009/013931.795394:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:31.7976703Z [4012:1009/013931.795478:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:31.8008700Z [4012:1009/013931.800663:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:31.9125324Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:33.0549241Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":1088.5,"throughputMiBps":940.7441433164905,"heapStartBytes":6068063,"heapPeakBytes":490259114,"heapDeltaBytes":484191051,"downloadHeadersMs":2.5,"downloadStreamWriteMs":1085.2999999999884}
+2026-10-09T01:39:33.0699200Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":1088.5,"throughputMiBps":940.7441433164905,"heapStartBytes":6068063,"heapPeakBytes":490259114,"heapDeltaBytes":484191051,"downloadHeadersMs":2.5,"downloadStreamWriteMs":1085.2999999999884,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109860,"rendererWorkingSetPeakKB":1668632,"rendererWorkingSetDeltaKB":1558772,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:33.2491018Z [4112:1009/013933.248601:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:33.2737295Z [4112:1009/013933.271725:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:33.3071014Z [4112:1009/013933.306566:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:33.3086939Z [4112:1009/013933.308456:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:33.3132801Z [4112:1009/013933.313106:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:33.4110445Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:34.2304280Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":764.6999999999825,"throughputMiBps":1339.0872237479057,"heapStartBytes":4874489,"heapPeakBytes":8344766,"heapDeltaBytes":3470277,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":761.8999999999942}
+2026-10-09T01:39:34.2406700Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":764.6999999999825,"throughputMiBps":1339.0872237479057,"heapStartBytes":4874489,"heapPeakBytes":8344766,"heapDeltaBytes":3470277,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":761.8999999999942,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":110244,"rendererWorkingSetPeakKB":123596,"rendererWorkingSetDeltaKB":13352,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T01:39:34.2957298Z __XDRIVE_LARGE_TRANSFER_COMPARISON__{"sizeBytes":1073741824,"samplesPerScenario":3,"thresholds":{"minimumHeapReductionPercent":50,"minimumWorkingSetDeltaReductionPercent":50,"minimumWorkingSetPeakReductionPercent":25,"maximumElapsedRegressionPercent":5,"maximumElapsedMs":60000,"everyPairedWorkingSetMustDecrease":true,"memoryBudgets":{"rendererWorkingSetPeakKB":524288,"rendererWorkingSetDeltaKB":262144,"heapDeltaBytes":134217728}},"scenarios":{"upload":{"diagnosticOnly":false,"metrics":{"elapsedMs":{"before":{"median":7150.900000000023,"min":7116,"max":7312.700000000012},"after":{"median":5582.600000000006,"min":5353.3000000000175,"max":6055.899999999994},"reductionPercent":21.931505125229165},"throughputMiBps":{"before":{"median":143.19875819826828,"min":140.03035814405052,"max":143.90106801573918},"after":{"median":183.42707698921632,"min":169.0912993939796,"max":191.28388097061563},"reductionPercent":-28.092645004120232},"heapDeltaBytes":{"before":{"median":486722106,"min":444168368,"max":486732756},"after":{"median":21307218,"min":21254298,"max":21477792},"reductionPercent":95.62230321217422},"rendererWorkingSetPeakKB":{"before":{"median":1065856,"min":984036,"max":1066876},"after":{"median":162776,"min":161376,"max":164512},"reductionPercent":84.72814338897562},"rendererWorkingSetDeltaKB":{"before":{"median":950280,"min":867956,"max":950344},"after":{"median":47524,"min":47132,"max":48064},"reductionPercent":94.99894767857894}},"memoryThresholdSatisfied":true,"heapNonRegressionSatisfied":true,"elapsedThresholdSatisfied":true,"allElapsedBudgetsSatisfied":true,"allMemoryBudgetsSatisfied":true},"download":{"diagnosticOnly":false,"metrics":{"elapsedMs":{"before":{"median":3682.100000000006,"min":3636.8000000000175,"max":3745.8000000000175},"after":{"median":3450.100000000006,"min":3449.2999999999884,"max":3509.7000000000116},"reductionPercent":6.300752288096456},"throughputMiBps":{"before":{"median":278.10216995736084,"min":273.3728442522279,"max":281.5662120545521},"after":{"median":296.8029912176454,"min":291.76282873179946,"max":296.87182906676816},"reductionPercent":-6.724442769774797},"heapDeltaBytes":{"before":{"median":360863467,"min":346180245,"max":383972313},"after":{"median":2830046,"min":2799772,"max":2878036},"reductionPercent":99.21575713287707},"rendererWorkingSetPeakKB":{"before":{"median":532364,"min":526172,"max":554668},"after":{"median":188108,"min":184944,"max":188580},"reductionPercent":64.66552960004809},"rendererWorkingSetDeltaKB":{"before":{"median":422852,"min":414216,"max":445396},"after":{"median":77836,"min":73696,"max":79452},"reductionPercent":81.59261396422389}},"memoryThresholdSatisfied":true,"heapNonRegressionSatisfied":true,"elapsedThresholdSatisfied":true,"allElapsedBudgetsSatisfied":true,"allMemoryBudgetsSatisfied":true},"download-discard":{"diagnosticOnly":true,"metrics":{"elapsedMs":{"before":{"median":1106.1000000000058,"min":1088.5,"max":1123.7999999999884},"after":{"median":764.6999999999825,"min":758.0999999999767,"max":775.6000000000058},"reductionPercent":30.86520206129839},"throughputMiBps":{"before":{"median":925.7752463610836,"min":911.1941626624049,"max":940.7441433164905},"after":{"median":1339.0872237479057,"min":1320.2681794739458,"max":1350.7452842633313},"reductionPercent":-44.64495880737951},"heapDeltaBytes":{"before":{"median":450625757,"min":298634375,"max":484191051},"after":{"median":3470277,"min":3338365,"max":4092143},"reductionPercent":99.22989821462869},"rendererWorkingSetPeakKB":{"before":{"median":1660408,"min":1566432,"max":1668632},"after":{"median":123256,"min":121844,"max":123596},"reductionPercent":92.57676426516856},"rendererWorkingSetDeltaKB":{"before":{"median":1550816,"min":1456484,"max":1558772},"after":{"median":13352,"min":13172,"max":13584},"reductionPercent":99.13903390215216}},"memoryThresholdSatisfied":true,"heapNonRegressionSatisfied":true,"elapsedThresholdSatisfied":true,"allElapsedBudgetsSatisfied":true,"allMemoryBudgetsSatisfied":true}},"accepted":true}
+2026-10-09T01:39:34.4417912Z [4219:1009/013934.441384:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:34.4617553Z [4219:1009/013934.460453:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:34.5017747Z [4219:1009/013934.501277:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:34.5019441Z [4219:1009/013934.501380:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:34.5067029Z [4219:1009/013934.505999:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:34.5899260Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:39:56.6952991Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-1","sizeBytes":4294967296,"elapsedMs":22019.5,"throughputMiBps":186.01693953087036,"heapStartBytes":4911655,"heapPeakBytes":39167862,"heapDeltaBytes":34256207,"prehashMs":8120.299999999988,"uploadSessionMs":7.899999999994179,"uploadChunksMs":13889.200000000012,"uploadFinalizeMs":2.1000000000058208}
+2026-10-09T01:39:56.7084784Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-1","sizeBytes":4294967296,"elapsedMs":22019.5,"throughputMiBps":186.01693953087036,"heapStartBytes":4911655,"heapPeakBytes":39167862,"heapDeltaBytes":34256207,"prehashMs":8120.299999999988,"uploadSessionMs":7.899999999994179,"uploadChunksMs":13889.200000000012,"uploadFinalizeMs":2.1000000000058208,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":115464,"rendererWorkingSetPeakKB":193608,"rendererWorkingSetDeltaKB":78144,"server":{"uploadBytes":4294967296,"uploadChunks":512,"uploadInitSize":4294967296,"downloadBytes":0}}
+2026-10-09T01:39:56.9303491Z [4322:1009/013956.929800:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:56.9497531Z [4322:1009/013956.948045:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:56.9922368Z [4322:1009/013956.991395:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:56.9924297Z [4322:1009/013956.991526:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:39:56.9973280Z [4322:1009/013956.996766:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:39:57.1106430Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:40:19.5307076Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-2","sizeBytes":4294967296,"elapsedMs":22337.70000000001,"throughputMiBps":183.36713269495058,"heapStartBytes":4892411,"heapPeakBytes":39132436,"heapDeltaBytes":34240025,"prehashMs":8339,"uploadSessionMs":7.899999999994179,"uploadChunksMs":13979.5,"uploadFinalizeMs":11.300000000017462}
+2026-10-09T01:40:19.5327634Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-2","sizeBytes":4294967296,"elapsedMs":22337.70000000001,"throughputMiBps":183.36713269495058,"heapStartBytes":4892411,"heapPeakBytes":39132436,"heapDeltaBytes":34240025,"prehashMs":8339,"uploadSessionMs":7.899999999994179,"uploadChunksMs":13979.5,"uploadFinalizeMs":11.300000000017462,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":114292,"rendererWorkingSetPeakKB":195612,"rendererWorkingSetDeltaKB":81320,"server":{"uploadBytes":4294967296,"uploadChunks":512,"uploadInitSize":4294967296,"downloadBytes":0}}
+2026-10-09T01:40:19.7447344Z [4430:1009/014019.744125:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:19.7653235Z [4430:1009/014019.764951:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:19.8048564Z [4430:1009/014019.804163:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:19.8064285Z [4430:1009/014019.804245:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:19.8117350Z [4430:1009/014019.811603:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:19.9023494Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:40:41.6836732Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-3","sizeBytes":4294967296,"elapsedMs":21691.699999999983,"throughputMiBps":188.8279848974494,"heapStartBytes":4890784,"heapPeakBytes":30550927,"heapDeltaBytes":25660143,"prehashMs":8196.399999999994,"uploadSessionMs":7.7000000000116415,"uploadChunksMs":13485.299999999988,"uploadFinalizeMs":2.2999999999883585}
+2026-10-09T01:40:41.6945227Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-3","sizeBytes":4294967296,"elapsedMs":21691.699999999983,"throughputMiBps":188.8279848974494,"heapStartBytes":4890784,"heapPeakBytes":30550927,"heapDeltaBytes":25660143,"prehashMs":8196.399999999994,"uploadSessionMs":7.7000000000116415,"uploadChunksMs":13485.299999999988,"uploadFinalizeMs":2.2999999999883585,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":113948,"rendererWorkingSetPeakKB":191800,"rendererWorkingSetDeltaKB":77852,"server":{"uploadBytes":4294967296,"uploadChunks":512,"uploadInitSize":4294967296,"downloadBytes":0}}
+2026-10-09T01:40:41.9244748Z [4534:1009/014041.924115:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:41.9463013Z [4534:1009/014041.944497:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:41.9861085Z [4534:1009/014041.985407:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:41.9907437Z [4534:1009/014041.985879:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:41.9928585Z [4534:1009/014041.990426:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:42.0853448Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:40:56.4405627Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-1","sizeBytes":4294967296,"elapsedMs":14300.5,"throughputMiBps":286.4235516240691,"heapStartBytes":4863100,"heapPeakBytes":9675625,"heapDeltaBytes":4812525,"downloadHeadersMs":2.099999999976717,"downloadStreamWriteMs":14297.200000000012}
+2026-10-09T01:40:56.4648409Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-1","sizeBytes":4294967296,"elapsedMs":14300.5,"throughputMiBps":286.4235516240691,"heapStartBytes":4863100,"heapPeakBytes":9675625,"heapDeltaBytes":4812525,"downloadHeadersMs":2.099999999976717,"downloadStreamWriteMs":14297.200000000012,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":109820,"rendererWorkingSetPeakKB":192604,"rendererWorkingSetDeltaKB":82784,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":4294967296}}
+2026-10-09T01:40:56.7437313Z [4638:1009/014056.743457:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:56.8202940Z [4638:1009/014056.820070:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:56.8417129Z [4638:1009/014056.838988:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:56.8446752Z [4638:1009/014056.839060:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:40:56.8641025Z [4638:1009/014056.863884:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:40:56.9554649Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:41:10.5043866Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-2","sizeBytes":4294967296,"elapsedMs":13498.600000000035,"throughputMiBps":303.4388751426066,"heapStartBytes":4853457,"heapPeakBytes":9658318,"heapDeltaBytes":4804861,"downloadHeadersMs":2.1000000000349246,"downloadStreamWriteMs":13495.299999999988}
+2026-10-09T01:41:10.5063394Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-2","sizeBytes":4294967296,"elapsedMs":13498.600000000035,"throughputMiBps":303.4388751426066,"heapStartBytes":4853457,"heapPeakBytes":9658318,"heapDeltaBytes":4804861,"downloadHeadersMs":2.1000000000349246,"downloadStreamWriteMs":13495.299999999988,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":110192,"rendererWorkingSetPeakKB":191372,"rendererWorkingSetDeltaKB":81180,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":4294967296}}
+2026-10-09T01:41:10.8903172Z [4744:1009/014110.889749:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:41:10.9157619Z [4744:1009/014110.915489:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:41:10.9524560Z [4744:1009/014110.951850:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:41:10.9533599Z [4744:1009/014110.952112:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T01:41:10.9598307Z [4744:1009/014110.957872:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T01:41:11.0425514Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T01:41:24.6131217Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-3","sizeBytes":4294967296,"elapsedMs":13507.799999999988,"throughputMiBps":303.232206576941,"heapStartBytes":4885856,"heapPeakBytes":9671643,"heapDeltaBytes":4785787,"downloadHeadersMs":2.2000000000116415,"downloadStreamWriteMs":13504.5}
+2026-10-09T01:41:24.6294715Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-3","sizeBytes":4294967296,"elapsedMs":13507.799999999988,"throughputMiBps":303.232206576941,"heapStartBytes":4885856,"heapPeakBytes":9671643,"heapDeltaBytes":4785787,"downloadHeadersMs":2.2000000000116415,"downloadStreamWriteMs":13504.5,"surface":"web","runtimeVersions":{"electron":"44.4.5","chromium":"152.0.7977.130","node":"24.21.0"},"rendererWorkingSetStartKB":107708,"rendererWorkingSetPeakKB":191984,"rendererWorkingSetDeltaKB":84276,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":4294967296}}
+2026-10-09T01:41:24.9758079Z __XDRIVE_LARGE_TRANSFER_COMPARISON__{"sizeBytes":4294967296,"samplesPerScenario":3,"comparison":"current baseline only; original 4 GiB path not measured","memoryBudgets":{"rendererWorkingSetPeakKB":524288,"rendererWorkingSetDeltaKB":262144,"heapDeltaBytes":134217728},"maximumElapsedMs":240000,"scenarios":{"upload":{"metrics":{"elapsedMs":{"median":22019.5,"min":21691.699999999983,"max":22337.70000000001},"throughputMiBps":{"median":186.01693953087036,"min":183.36713269495058,"max":188.8279848974494},"heapDeltaBytes":{"median":34240025,"min":25660143,"max":34256207},"rendererWorkingSetPeakKB":{"median":193608,"min":191800,"max":195612},"rendererWorkingSetDeltaKB":{"median":78144,"min":77852,"max":81320}},"allMemoryBudgetsSatisfied":true,"allElapsedBudgetsSatisfied":true},"download":{"metrics":{"elapsedMs":{"median":13507.799999999988,"min":13498.600000000035,"max":14300.5},"throughputMiBps":{"median":303.232206576941,"min":286.4235516240691,"max":303.4388751426066},"heapDeltaBytes":{"median":4804861,"min":4785787,"max":4812525},"rendererWorkingSetPeakKB":{"median":191984,"min":191372,"max":192604},"rendererWorkingSetDeltaKB":{"median":82784,"min":81180,"max":84276}},"allMemoryBudgetsSatisfied":true,"allElapsedBudgetsSatisfied":true}},"accepted":true}
+2026-10-09T01:41:25.3974102Z ##[group]Run actions/upload-artifact@v4
+2026-10-09T01:41:25.3974427Z with:
+2026-10-09T01:41:25.3974662Z   name: web-large-transfer-1gib-4gib
+2026-10-09T01:41:25.3974941Z   path: desktop/large-transfer-perf-results
+2026-10-09T01:41:25.3975494Z   if-no-files-found: error
+2026-10-09T01:41:25.3975746Z   retention-days: 7
+2026-10-09T01:41:25.3975997Z   compression-level: 6
+2026-10-09T01:41:25.3976242Z   overwrite: false
+2026-10-09T01:41:25.3976491Z   include-hidden-files: false
+2026-10-09T01:41:25.3976812Z ##[endgroup]
+2026-10-09T01:41:25.5197183Z (node:4864) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T01:41:25.5197873Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T01:41:25.5272293Z With the provided path, there will be 27 files uploaded
+2026-10-09T01:41:25.5275762Z Artifact name is valid!
+2026-10-09T01:41:25.5276730Z Root directory input is valid!
+2026-10-09T01:41:25.7833783Z Beginning upload of artifact content to blob storage
+2026-10-09T01:41:25.8156238Z (node:4864) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-09T01:41:26.0446903Z Uploaded bytes 15451
+2026-10-09T01:41:26.0907396Z Finished uploading artifact content to blob storage!
+2026-10-09T01:41:26.0908241Z SHA256 digest of uploaded artifact zip is 410171ed8de680fbac1290ccf93f63acb59b8ba4ffddb404e017bcff660aaee4
+2026-10-09T01:41:26.0909302Z Finalizing artifact upload
+2026-10-09T01:41:26.3022744Z Artifact web-large-transfer-1gib-4gib.zip successfully finalized. Artifact ID 11590172527
+2026-10-09T01:41:26.3023764Z Artifact web-large-transfer-1gib-4gib has been successfully uploaded! Final size is 15451 bytes. Artifact ID is 11590172527
+2026-10-09T01:41:26.3030080Z Artifact download URL: https://github.com/lazyxu/xdrive/actions/runs/37870615110/artifacts/11590172527
+2026-10-09T01:41:26.3166599Z Post job cleanup.
+2026-10-09T01:41:26.4071376Z (node:4879) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T01:41:26.4072425Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T01:41:26.4258125Z Post job cleanup.
+2026-10-09T01:41:26.4936090Z [command]/usr/bin/git version
+2026-10-09T01:41:26.4978036Z git version 2.55.0
+2026-10-09T01:41:26.5011631Z Temporarily overriding HOME='/home/runner/work/_temp/a5c2eac5-5b61-4433-8870-07aa4458ef60' before making global git config changes
+2026-10-09T01:41:26.5012796Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-09T01:41:26.5013731Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-09T01:41:26.5065608Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-09T01:41:26.5123609Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-09T01:41:26.5287928Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-09T01:41:26.5307194Z http.https://github.com/.extraheader
+2026-10-09T01:41:26.5316546Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-09T01:41:26.5339274Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-09T01:41:26.5516623Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-09T01:41:26.5546654Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-09T01:41:26.5807207Z Cleaning up orphan processes
+2026-10-09T01:41:26.6020475Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

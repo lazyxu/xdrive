@@ -1,0 +1,29 @@
+{
+  "scenario": "upload",
+  "sample": "sample-2",
+  "sizeBytes": 1073741824,
+  "elapsedMs": 5353.3000000000175,
+  "throughputMiBps": 191.28388097061563,
+  "heapStartBytes": 4913447,
+  "heapPeakBytes": 26220665,
+  "heapDeltaBytes": 21307218,
+  "prehashMs": 2015.7000000000116,
+  "uploadSessionMs": 3.2999999999883585,
+  "uploadChunksMs": 3332.5,
+  "uploadFinalizeMs": 1.8000000000174623,
+  "surface": "web",
+  "runtimeVersions": {
+    "electron": "44.4.5",
+    "chromium": "152.0.7977.130",
+    "node": "24.21.0"
+  },
+  "rendererWorkingSetStartKB": 113852,
+  "rendererWorkingSetPeakKB": 161376,
+  "rendererWorkingSetDeltaKB": 47524,
+  "server": {
+    "uploadBytes": 1073741824,
+    "uploadChunks": 128,
+    "uploadInitSize": 1073741824,
+    "downloadBytes": 0
+  }
+}

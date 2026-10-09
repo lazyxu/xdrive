@@ -1,0 +1,24 @@
+[
+  {
+    "name": "original2ca",
+    "size": 1048613,
+    "step": 32768,
+    "deliveryIntervalMs": 50,
+    "firstWriteMs": 51.58951999999999,
+    "firstRawProgressMs": 51.601268000000005,
+    "firstReporterPublicationMs": 102.162059,
+    "totalMs": 1663.014596,
+    "completed": 1048613
+  },
+  {
+    "name": "default-min",
+    "size": 1048613,
+    "step": 32768,
+    "deliveryIntervalMs": 50,
+    "firstWriteMs": 51.50231599999984,
+    "firstRawProgressMs": 51.5060219999998,
+    "firstReporterPublicationMs": 101.9063749999998,
+    "totalMs": 1663.717015,
+    "completed": 1048613
+  }
+]

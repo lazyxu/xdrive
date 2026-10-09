@@ -1,0 +1,245 @@
+{
+  "sizeBytes": 1073741824,
+  "samplesPerScenario": 3,
+  "thresholds": {
+    "minimumHeapReductionPercent": 50,
+    "minimumWorkingSetDeltaReductionPercent": 50,
+    "minimumWorkingSetPeakReductionPercent": 25,
+    "maximumElapsedRegressionPercent": 5,
+    "maximumElapsedMs": 60000,
+    "everyPairedWorkingSetMustDecrease": true,
+    "memoryBudgets": {
+      "rendererWorkingSetPeakKB": 524288,
+      "rendererWorkingSetDeltaKB": 262144,
+      "heapDeltaBytes": 134217728
+    }
+  },
+  "scenarios": {
+    "upload": {
+      "diagnosticOnly": false,
+      "metrics": {
+        "elapsedMs": {
+          "before": {
+            "median": 7150.900000000023,
+            "min": 7116,
+            "max": 7312.700000000012
+          },
+          "after": {
+            "median": 5582.600000000006,
+            "min": 5353.3000000000175,
+            "max": 6055.899999999994
+          },
+          "reductionPercent": 21.931505125229165
+        },
+        "throughputMiBps": {
+          "before": {
+            "median": 143.19875819826828,
+            "min": 140.03035814405052,
+            "max": 143.90106801573918
+          },
+          "after": {
+            "median": 183.42707698921632,
+            "min": 169.0912993939796,
+            "max": 191.28388097061563
+          },
+          "reductionPercent": -28.092645004120232
+        },
+        "heapDeltaBytes": {
+          "before": {
+            "median": 486722106,
+            "min": 444168368,
+            "max": 486732756
+          },
+          "after": {
+            "median": 21307218,
+            "min": 21254298,
+            "max": 21477792
+          },
+          "reductionPercent": 95.62230321217422
+        },
+        "rendererWorkingSetPeakKB": {
+          "before": {
+            "median": 1065856,
+            "min": 984036,
+            "max": 1066876
+          },
+          "after": {
+            "median": 162776,
+            "min": 161376,
+            "max": 164512
+          },
+          "reductionPercent": 84.72814338897562
+        },
+        "rendererWorkingSetDeltaKB": {
+          "before": {
+            "median": 950280,
+            "min": 867956,
+            "max": 950344
+          },
+          "after": {
+            "median": 47524,
+            "min": 47132,
+            "max": 48064
+          },
+          "reductionPercent": 94.99894767857894
+        }
+      },
+      "memoryThresholdSatisfied": true,
+      "heapNonRegressionSatisfied": true,
+      "elapsedThresholdSatisfied": true,
+      "allElapsedBudgetsSatisfied": true,
+      "allMemoryBudgetsSatisfied": true
+    },
+    "download": {
+      "diagnosticOnly": false,
+      "metrics": {
+        "elapsedMs": {
+          "before": {
+            "median": 3682.100000000006,
+            "min": 3636.8000000000175,
+            "max": 3745.8000000000175
+          },
+          "after": {
+            "median": 3450.100000000006,
+            "min": 3449.2999999999884,
+            "max": 3509.7000000000116
+          },
+          "reductionPercent": 6.300752288096456
+        },
+        "throughputMiBps": {
+          "before": {
+            "median": 278.10216995736084,
+            "min": 273.3728442522279,
+            "max": 281.5662120545521
+          },
+          "after": {
+            "median": 296.8029912176454,
+            "min": 291.76282873179946,
+            "max": 296.87182906676816
+          },
+          "reductionPercent": -6.724442769774797
+        },
+        "heapDeltaBytes": {
+          "before": {
+            "median": 360863467,
+            "min": 346180245,
+            "max": 383972313
+          },
+          "after": {
+            "median": 2830046,
+            "min": 2799772,
+            "max": 2878036
+          },
+          "reductionPercent": 99.21575713287707
+        },
+        "rendererWorkingSetPeakKB": {
+          "before": {
+            "median": 532364,
+            "min": 526172,
+            "max": 554668
+          },
+          "after": {
+            "median": 188108,
+            "min": 184944,
+            "max": 188580
+          },
+          "reductionPercent": 64.66552960004809
+        },
+        "rendererWorkingSetDeltaKB": {
+          "before": {
+            "median": 422852,
+            "min": 414216,
+            "max": 445396
+          },
+          "after": {
+            "median": 77836,
+            "min": 73696,
+            "max": 79452
+          },
+          "reductionPercent": 81.59261396422389
+        }
+      },
+      "memoryThresholdSatisfied": true,
+      "heapNonRegressionSatisfied": true,
+      "elapsedThresholdSatisfied": true,
+      "allElapsedBudgetsSatisfied": true,
+      "allMemoryBudgetsSatisfied": true
+    },
+    "download-discard": {
+      "diagnosticOnly": true,
+      "metrics": {
+        "elapsedMs": {
+          "before": {
+            "median": 1106.1000000000058,
+            "min": 1088.5,
+            "max": 1123.7999999999884
+          },
+          "after": {
+            "median": 764.6999999999825,
+            "min": 758.0999999999767,
+            "max": 775.6000000000058
+          },
+          "reductionPercent": 30.86520206129839
+        },
+        "throughputMiBps": {
+          "before": {
+            "median": 925.7752463610836,
+            "min": 911.1941626624049,
+            "max": 940.7441433164905
+          },
+          "after": {
+            "median": 1339.0872237479057,
+            "min": 1320.2681794739458,
+            "max": 1350.7452842633313
+          },
+          "reductionPercent": -44.64495880737951
+        },
+        "heapDeltaBytes": {
+          "before": {
+            "median": 450625757,
+            "min": 298634375,
+            "max": 484191051
+          },
+          "after": {
+            "median": 3470277,
+            "min": 3338365,
+            "max": 4092143
+          },
+          "reductionPercent": 99.22989821462869
+        },
+        "rendererWorkingSetPeakKB": {
+          "before": {
+            "median": 1660408,
+            "min": 1566432,
+            "max": 1668632
+          },
+          "after": {
+            "median": 123256,
+            "min": 121844,
+            "max": 123596
+          },
+          "reductionPercent": 92.57676426516856
+        },
+        "rendererWorkingSetDeltaKB": {
+          "before": {
+            "median": 1550816,
+            "min": 1456484,
+            "max": 1558772
+          },
+          "after": {
+            "median": 13352,
+            "min": 13172,
+            "max": 13584
+          },
+          "reductionPercent": 99.13903390215216
+        }
+      },
+      "memoryThresholdSatisfied": true,
+      "heapNonRegressionSatisfied": true,
+      "elapsedThresholdSatisfied": true,
+      "allElapsedBudgetsSatisfied": true,
+      "allMemoryBudgetsSatisfied": true
+    }
+  },
+  "accepted": true
+}

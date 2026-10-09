@@ -1,0 +1,21 @@
+✔ Web download consumes a real byte stream through bounded BYOB reads with exact tail and post-write progress (166.658369ms)
+✔ Web BYOB download handles empty byte-stream EOF without a write (13.43186ms)
+✔ Web BYOB write failure cancels the reader and never publishes failed bytes (10.837695ms)
+✔ Web BYOB read failure preserves the error and aborts destination (9.578474ms)
+✔ Web BYOB download preserves a write error when stream cancel and destination abort also fail (10.244193ms)
+✔ Web BYOB download reports only written bytes and aborts if destination close fails (11.635661ms)
+✔ Web direct-to-disk sink streams a large logical response with one in-flight write (82.736191ms)
+✔ Web download sink treats save-picker cancellation as a non-transfer outcome (16.371092ms)
+✔ Web download sink preserves Blob fallback when File System Access is unavailable (11.589532ms)
+✔ Web direct-to-disk sink aborts the destination when a chunk write fails (11.811712ms)
+✔ Web download wiring opens the save sink before archive work and skips success feedback on cancel (11.888516ms)
+✔ Web download progress reporter coalesces fast chunk bookkeeping and preserves time/flush visibility (15.67976ms)
+✔ Web authenticated download wires one coalesced progress reporter across direct and Blob paths (0.561284ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 473.60042

@@ -526,11 +526,17 @@ jobs:
           retention-days: 7
 
   large-transfer-web-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/large-transfer-1gib-baseline'
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.head_ref == 'perf/large-transfer-1gib-baseline' ||
+       github.head_ref == 'perf/large-transfer-web-memory-1gib')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -541,11 +547,15 @@ jobs:
       - name: Build Web large-transfer performance bundle
         env:
           VITE_XDRIVE_LARGE_TRANSFER_PERF: "1"
-        run: npm --prefix web run build
-      - name: Measure Web 1 GiB upload/download throughput and memory
+        run: npm --prefix web run build -- --config vite.config.ts
+      - name: Measure paired Web 1 GiB and bounded 4 GiB transfers
         working-directory: desktop
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_HEAD_REF" == "perf/large-transfer-web-memory-1gib" ]]; then
+            bash ../scripts/ci/test-large-transfer-performance-paired.sh HEAD^
+            exit 0
+          fi
           rm -rf large-transfer-perf-results
           mkdir -p large-transfer-perf-results
           for scenario in upload download download-discard; do
@@ -559,7 +569,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: web-large-transfer-1gib
+          name: web-large-transfer-1gib-4gib
           path: desktop/large-transfer-perf-results
           if-no-files-found: error
           retention-days: 7

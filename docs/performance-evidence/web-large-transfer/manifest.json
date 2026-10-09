@@ -1,0 +1,509 @@
+{
+  "status": "Accepted paired CI4ec/deab and current 4 GiB evidence; reconstructed-head authoritative CI is the merge gate",
+  "files": [
+    {
+      "path": "transfer-baseline-headless/web-download-discard-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-discard-sample-1.json",
+      "sha256": "439a83d59bec451f644d65e30c84ac46df3273a9628bc0de837ca43347f6a696"
+    },
+    {
+      "path": "transfer-baseline-headless/web-download-discard-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-discard-sample-2.json",
+      "sha256": "7f55b0d32da4b09d6de0226946b19676ff5bf5e96ff0ecf02ca438dc6619320c"
+    },
+    {
+      "path": "transfer-baseline-headless/web-download-discard-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-discard-sample-3.json",
+      "sha256": "930554c849886d1cb1814a8ac6fe831363bb1eed606117c9832dbfca8d0a2bc4"
+    },
+    {
+      "path": "transfer-baseline-headless/web-download-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-sample-1.json",
+      "sha256": "7e091d8c16229d5befcefabe31060a59ea978a13567e8589bae24b630a5af176"
+    },
+    {
+      "path": "transfer-baseline-headless/web-download-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-sample-2.json",
+      "sha256": "09d776cb1ce1857fe82f9841e1a6146d6d733e9afeed335de63859a9e326620a"
+    },
+    {
+      "path": "transfer-baseline-headless/web-download-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-download-sample-3.json",
+      "sha256": "67ac709288e3122cd5df2c9831b05305804a6869b4febf727d9af569f0225255"
+    },
+    {
+      "path": "transfer-baseline-headless/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-1.json",
+      "sha256": "a82c944c3b294ad04f2af6489e8dbbbc4a48fdaaeb43a251ad31816e82affda0"
+    },
+    {
+      "path": "transfer-baseline-headless/web-upload-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-2.json",
+      "sha256": "80997a7cf220d166f2900c3be13dd6f0d522058f1631fdb04dd0b8c25ae62e77"
+    },
+    {
+      "path": "transfer-baseline-headless/web-upload-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-3.json",
+      "sha256": "2d38b22532b5ea5f19ca0a6550d53aa9c8f1c73c196636be5bbad1028af26130"
+    },
+    {
+      "path": "transfer-remote-candidate-verified/web-download-discard-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-download-discard-sample-1.json",
+      "sha256": "dbc7edda77eff55c8e76b0654f410db3f9da9d72f4656a90e984f0c29b2d304d"
+    },
+    {
+      "path": "transfer-remote-candidate-verified/web-download-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-download-sample-1.json",
+      "sha256": "a562a5574d44f30223d5bc6009db837b53d8022188fabf0581e2d9faf357199d"
+    },
+    {
+      "path": "transfer-remote-candidate-verified/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-1.json",
+      "sha256": "5d653a3c8ae4726ea2ddd3a46b279583dc5a848a7895876a760accf0d82e2e75"
+    },
+    {
+      "path": "transfer-remote-candidate-verified/web-upload-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-2.json",
+      "sha256": "e85965e4bf3d3fe3826251080fb99eef2357df2bfbb6c5555cd9d5ed21d7e572"
+    },
+    {
+      "path": "transfer-remote-candidate-verified/web-upload-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-3.json",
+      "sha256": "16551b253c81622da598ac8f37d3cc5709972e808e0480e6d7628cc14ff0c996"
+    },
+    {
+      "path": "transfer-xhr-cleanup/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-xhr-cleanup/web-upload-sample-1.json",
+      "sha256": "a9c36159d29d5eb715540a78b3eb794f7ec3a1dace2b3c3216a690020bfcc0bf"
+    },
+    {
+      "path": "transfer-owned-release/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-owned-release/web-upload-sample-1.json",
+      "sha256": "c889b3c87db73860478283622b339ae93d16fe46bdad47a35c0f23c8040e4292"
+    },
+    {
+      "path": "transfer-blob-hash-release/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-blob-hash-release/web-upload-sample-1.json",
+      "sha256": "3646c198d364c41c004b9271e0987f595b8db9f1f5b74c472fe1d9aef1f3fb18"
+    },
+    {
+      "path": "transfer-byob-upload/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-1.json",
+      "sha256": "264c68e56d35bb6357f8fd9f9a1243e72990556ff7ff0a05226345ce4b3eb699"
+    },
+    {
+      "path": "transfer-byob-upload/web-upload-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-2.json",
+      "sha256": "23f8dcb6b0f51398ef4427c5924e800b54925b69ba5e2cde03faba3eae731702"
+    },
+    {
+      "path": "transfer-byob-upload/web-upload-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-3.json",
+      "sha256": "cb9b5e21f4d2a316837608e20ea2078724ece8febe9ce3bc71f9df8c3c4ec761"
+    },
+    {
+      "path": "transfer-download-byob-headless/summary-provenance.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-headless/summary-provenance.json",
+      "sha256": "3bdea4ae9f1e6cabd342d2d52673a7adf1452ad2a755a973e470a9bdfbf97012"
+    },
+    {
+      "path": "transfer-download-byob-headless/web-download-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-headless/web-download-sample-1.json",
+      "sha256": "2dc7f6524550d580cb98d078ac040e5af8c496c3b60852b600280db0c2a7b9e3"
+    },
+    {
+      "path": "transfer-download-byob-headless/web-download-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-headless/web-download-sample-2.json",
+      "sha256": "b1a7ce7fb16a2f445d637ba824557fadd0baf6f12ad4cdbff5a2494334a3c026"
+    },
+    {
+      "path": "transfer-download-byob-headless/web-download-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-headless/web-download-sample-3.json",
+      "sha256": "513346e4acafcfa1e7c16c3e213082e8770c3ae5121538ac1b8c6e98cddd972e"
+    },
+    {
+      "path": "transfer-download-byob-min1/slow-default-min.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/slow-default-min.json",
+      "sha256": "8f9d54f102cfa5cf57ff4b5aed538a04134a8b237f10f8cbd3d6b9d5b5d623bf"
+    },
+    {
+      "path": "transfer-download-byob-min1/slow-full-min.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/slow-full-min.json",
+      "sha256": "10da25db394ed5d8fdb94762e4c934dd42064aeef4cb3dbe5ee50c1b7a35000d"
+    },
+    {
+      "path": "transfer-download-byob-min1/summary-provenance.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/summary-provenance.json",
+      "sha256": "cdc08cd17faad74a2fd4376a95c7cf27ef5ef9333f2e9380569bd68dfdec842b"
+    },
+    {
+      "path": "transfer-download-byob-min1/web-download-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/web-download-sample-1.json",
+      "sha256": "d3c9e5b7da8b62bef73860baf499a014490873fdfde2bebda5f80cc118b72d62"
+    },
+    {
+      "path": "transfer-download-byob-min1/web-download-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/web-download-sample-2.json",
+      "sha256": "704c081232175ff8542b36f4ce8727bf982940044149ff0f5685c8882b6dfb42"
+    },
+    {
+      "path": "transfer-download-byob-min1/web-download-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/web-download-sample-3.json",
+      "sha256": "032c1f47f6dbd5b3aa2277688265408190cb1a251a0a956837b978d9abe1c09d"
+    },
+    {
+      "path": "transfer-4gib-upload/summary.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/summary.json",
+      "sha256": "82b91b8eac7247f20ee7fc59365d4fead48209ce5c124eced806f3787932d852"
+    },
+    {
+      "path": "transfer-4gib-upload/web-upload-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-1.json",
+      "sha256": "2bcd11867b08e0976a6731ce914aa2fa114f312a45eb2cc5281a82faa1341980"
+    },
+    {
+      "path": "transfer-4gib-upload/web-upload-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-2.json",
+      "sha256": "0edab5ed83ba82f4addb495f5f0ecd78112d0713c8dc99fc2dd5580ad3dc43fe"
+    },
+    {
+      "path": "transfer-4gib-upload/web-upload-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-upload/web-upload-sample-3.json",
+      "sha256": "a019946c8e35fdba3d1a3335356ae580befefdd603c83f71569928efa312a2fc"
+    },
+    {
+      "path": "transfer-4gib-download/summary.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-download/summary.json",
+      "sha256": "5c9d3e319007c74c51da9660b501f96216527fa882aebca2fac7573bc0036af8"
+    },
+    {
+      "path": "transfer-4gib-download/web-download-sample-1.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-download/web-download-sample-1.json",
+      "sha256": "1e8e3beabeb8699ab73aaea4ac426b2269ae55e812f6e39236d3d1ff3c41940c"
+    },
+    {
+      "path": "transfer-4gib-download/web-download-sample-2.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-download/web-download-sample-2.json",
+      "sha256": "b81cff8db47e4ca608264d774204fee9bf7b98add4a04f3cee65ab80ee9f0497"
+    },
+    {
+      "path": "transfer-4gib-download/web-download-sample-3.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-download/web-download-sample-3.json",
+      "sha256": "84a371e09cccc13f7e95e7c1a3561e4de6b48fe302c9da07ef85cdf00be884ba"
+    },
+    {
+      "path": "large-transfer-before-e1faa488.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/perf-audit-evidence/large-transfer-before-e1faa488.json",
+      "sha256": "e7d426cf27d3a35698fe25a139016536903e8de264a4a1b32a5a5b1c2544af4a"
+    },
+    {
+      "path": "large-transfer-baseline-2ca7f021.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/perf-audit-evidence/large-transfer-baseline-2ca7f021.json",
+      "sha256": "7bb44701133fe2247e7f7b0cdad0207c1cdb945a27fb4ca6eeb1748b79e2a93f"
+    },
+    {
+      "path": "remote1063-ac4571d5.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/perf-audit-evidence/remote1063-ac4571d5.json",
+      "sha256": "8d1fa5c985887ff6f64c08acd1e123c5c3de0de3af9a48b6f153941d8cdb07f1"
+    },
+    {
+      "path": "transfer-upload-evidence-summary.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-upload-evidence-summary.json",
+      "sha256": "7d99af1fbaf1f96519e8870e6ea4797045cd22ca8de093145dc1b792350e7473"
+    },
+    {
+      "path": "transfer-4gib-evidence-summary.json",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-4gib-evidence-summary.json",
+      "sha256": "0e29579e7526365e50c443d5775aae6bde366a207bc7d59fdcac948520fc77ed"
+    },
+    {
+      "path": "download-byob-red.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/download-byob-red.log",
+      "sha256": "4983cb1dcf732ca3747653c9d18518c3a167e17c5cf012528dde9ae1a1b93e9d"
+    },
+    {
+      "path": "download-byob-green.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/download-byob-green.log",
+      "sha256": "b604925f8b2890af44a931cd405a0ca1948afe5160d52ef9442460bbc058c188"
+    },
+    {
+      "path": "reproduce-native-pipe-progress.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/reproduce-native-pipe-progress.log",
+      "sha256": "598119fbf30c4a77ab4464f5f05d9336b7d6de7f0f2e7bc9e87a814290311bb6"
+    },
+    {
+      "path": "transfer-byob-integrity-tests.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-byob-integrity-tests.log",
+      "sha256": "64ce473b2997d8389457e9ff74423392d46f5ca39127c4cb6acc688d31da7beb"
+    },
+    {
+      "path": "transfer-upload-wiring-tests.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-upload-wiring-tests.log",
+      "sha256": "064e9f113e195edb837815cad9fe799618f13a77fcaf0e4ee05ea5c242d2059f"
+    },
+    {
+      "path": "transfer-download-byob-min1/slow-red.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/slow-red.log",
+      "sha256": "dcce42cd6c3ba22654ae0d1be6c6d4161b9f69aa8c15382a9605d807d0de4851"
+    },
+    {
+      "path": "transfer-download-byob-min1/slow-green.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/slow-green.log",
+      "sha256": "0ead562b23824336cc2f84fb9f6814b6a13e552eed7150225a9995b4f10597cf"
+    },
+    {
+      "path": "transfer-download-byob-min1/build.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/build.log",
+      "sha256": "740dcbde3dbc5c7619828c5604e100212ba8c6e47bc54a814420c10b3a036ed6"
+    },
+    {
+      "path": "transfer-download-byob-headless/test-main.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-headless/test-main.log",
+      "sha256": "9d208b0930851d06bb45ec354258ebe49d724eaab13b0dcb098ec9a53f11c1e4"
+    },
+    {
+      "path": "remote1063-ac4571d5-job113615882517.log",
+      "source": "GitHub Actions run37866968455/job113615882517 fetched directly",
+      "sha256": "682e9ded073265fd0beda4bbc4c876a1a801df4702576ab6aca853d4f53372af"
+    },
+    {
+      "path": "remote1063-ac4571d5-full-samples.json",
+      "source": "GitHub Actions run37866968455/job113615882517 fetched directly",
+      "sha256": "3b242b1d72f3ac46bb53e9b019cbe371c7b57ac2cff3869a4bd32827e90f0b16"
+    },
+    {
+      "path": "README.md",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/README.md",
+      "sha256": "d09415405c7807a1d39ee26dd6910f1375793f2520f15938ddb151da9be7aa96"
+    },
+    {
+      "path": "reproduce-native-pipe-progress.cjs",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/reproduce-native-pipe-progress.cjs",
+      "sha256": "d1b02347752b2e94f18be944d40378b98be832249ad4985f4d08d393ea2a5cfb"
+    },
+    {
+      "path": "transfer-byob-tests.log",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-byob-tests.log",
+      "sha256": "1dbe381ceea8f70b009cce7336d4311097e4414412492222e01d738be81d1c80"
+    },
+    {
+      "path": "run-transfer-headless.cjs",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/run-transfer-headless.cjs",
+      "sha256": "6b8164069a7ba6d6694ccba6a5717821fa47607d24e1ba63ce90b95715098fa2",
+      "provenance_note": "Archived after runs. Current final runner carries size parameterization; no contemporaneous original baseline runner capture existed."
+    },
+    {
+      "path": "run-transfer-download-byob-headless.cjs",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/run-transfer-download-byob-headless.cjs",
+      "sha256": "4f68fbfd33e5b9b8fdc2b0aa156586c4182193eabb2d9bc9290f8d269906149c",
+      "provenance_note": "Archived after runs. Current final runner carries size parameterization; no contemporaneous original baseline runner capture existed."
+    },
+    {
+      "path": "transfer-download-byob-min1/slow-stream-probe.cjs",
+      "original_scratch_path": "/workspace/scratch/4fa175e5d1c9/transfer-download-byob-min1/slow-stream-probe.cjs",
+      "sha256": "d5a44da926b401628805598535218e9f7a6622a212dcf0333391ea32b8051051",
+      "provenance_note": "Archived after runs. Current final runner carries size parameterization; no contemporaneous original baseline runner capture existed."
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-discard-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "c3658e6d90dc7badf88b0493856ee1d47d6c370a131a48c9641f293c5129e169"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-discard-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "62f15d0922b88307deb7ac3c66f7f56d3bedee81f1535ae9dd9af576af580009"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-discard-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "905ce23a0425c2112ff1b026bcba49506ba590d9a25c355b762bd010317fa2da"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "7f51712dcc03798bb33f9e1b0947932e6b37abf970c387dfee1905f6c2f47c70"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "d6eb5d2eaf386eb96b3888a8c5da5b621e6d8e033f7e1e6b900681b5010af8f1"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-download-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "9da5628305d0a01c9b78cdf4315d4a4ade3d59a35ff9ef40872fc4336f0a7e0f"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-upload-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "df27163d69329ac93822ab905eb38daffc28968f6134a40d6541bac0b7edca33"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-upload-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "5b5d0d6643b8d32061bc48363ff1592d9cdd4e85bc52e9063b8698f7d816f998"
+    },
+    {
+      "path": "ci-4ec31f39/after/web-upload-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "8e882f9599151bb1409dac742b95a91dcd59d773c4468eb0fb164df0851e4aff"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-download-sample-1-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "456c5c155033a26edd64b08e30bf86bb374b3fe7924fa3eae659753be39e60f5"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-download-sample-2-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "3f95df6d2929a8ac8e8f29b5933a13f29b82b93f30c6977c952623f5b8ba0361"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-download-sample-3-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "5b15f750c24b0545376c18058e48c94c817c447f95b61e080cc02629bc03b69a"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-upload-sample-1-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "caa689f5994ef9903086949f6b955fbbca5190d1fb67fed590c4d3580ad58c5e"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-upload-sample-2-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "1096d9171d49ec119cc691570f03583a2aa446b27a6b90cfcd18f718f89ae9e8"
+    },
+    {
+      "path": "ci-4ec31f39/after-4gib/web-upload-sample-3-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "d4157d70f5a401d00c95b54b9c1842012561f23a817c8323afd21d31fad7ffbe"
+    },
+    {
+      "path": "ci-4ec31f39/audit-verification.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "bc5cc1f2a8288c4051453b214399349dde4b077f4f79498428e6e7e03cc37367"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-discard-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "6110ebccc67a4ed34915bf287649ac218aa92bfcdabdb62ace1a3456cd866531"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-discard-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "7a7241ce3f97eda4b749d5002a4c8c5fda8fc970c5e400abff08f6a99c13617c"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-discard-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "2b2a57dffa1014e752d6f3634837154cddc95130fa69a3ab3bac41bdadbf9cea"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "d4f4e1d8b4bac1268a42af1c7a914ef6db6e3f4b98869687d418548e8ad54546"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "5c8dca116a6ad1bfe3166d3d90e492e3206895abedb74ecdc52af3613e6f9f50"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-download-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "4173454dd65abfe403abfa490ece8ecc3e40601091600d04ace9896565c45924"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-upload-sample-1.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "6f4ecb656c245dfc41faa61baf65cf657ad9bd2417abe8e3c49c536379cf810c"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-upload-sample-2.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "8e624c0895e889f661782369288219de636df1929d317a6d01c56884a3ad1bec"
+    },
+    {
+      "path": "ci-4ec31f39/before/web-upload-sample-3.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "10af4dc4528c0f62e38d0b792909e45bd73bb5e7b76f40127d75addeb593ca17"
+    },
+    {
+      "path": "ci-4ec31f39/comparison.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "5886d729af93003b91dcfe043daecd1a2f8efde485690d9b28d0f4922e046a24"
+    },
+    {
+      "path": "ci-4ec31f39/current-4gib.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "b2b85134bdbb509728e6a26efda09048bb49306c9fd6881f23589a2a4edaf633"
+    },
+    {
+      "path": "ci-4ec31f39/immutable-measurement-source/scripts/ci/compare-large-transfer-results.cjs",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "5675f8e5c109be019f84931fb85c1eb7da49955d12bad967b2736e516c696340"
+    },
+    {
+      "path": "ci-4ec31f39/immutable-measurement-source/scripts/ci/test-large-transfer-performance-paired.sh",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "a69d2b7a7e878265c9347ebe39707bb2ac641121da6963ba9ecad90117df93ba"
+    },
+    {
+      "path": "ci-4ec31f39/job113627600871.log",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "a2cf8ad06dbadb58b36855f89bdc6502157777bd020aef4b65ff5b70b77f8d19"
+    },
+    {
+      "path": "ci-4ec31f39/log-extracted-results.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "b8739ff8e632a805e143eef8c2d709199d922bc922c1ea4accac26cb23a9da82"
+    },
+    {
+      "path": "ci-4ec31f39/provenance-reconstructed.json",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "b8d0c5b96e89637270b9520cdf8f2f708d2058a327ce03d9d49022e6910e81b3"
+    },
+    {
+      "path": "ci-4ec31f39/verify-results.cjs",
+      "source": "Exact CI joblog4ec/deab or independently reconstructed immutable source audit; see provenance limits",
+      "sha256": "3ef61c31ce0fc78b7928767f0e23a04374aefea6c7fa45a19a89cde497a3bd4a"
+    },
+    {
+      "path": "memory-reconstructed-desktop-typecheck.log",
+      "source": "Post-reconstruction local validation log",
+      "sha256": "029064cbb9cfecba89b8fa3ca1ec9237eaead9aea7449d31d991f0e60e35d30f"
+    },
+    {
+      "path": "memory-reconstructed-main-build.log",
+      "source": "Post-reconstruction local validation log",
+      "sha256": "f6d49ce162e7efc1738f32ebcbbfdbc3747108684d4befe3a442fbadee5a5d48"
+    },
+    {
+      "path": "memory-reconstructed-main-tests.log",
+      "source": "Post-reconstruction local validation log",
+      "sha256": "b48bcbcb72f21e91e80df1fe81dedade72cb8e210d68b2e9749bbea1b275ef0d"
+    },
+    {
+      "path": "memory-reconstructed-web-build.log",
+      "source": "Post-reconstruction local validation log",
+      "sha256": "ac2991a5d79b623c2046840ff5414c87c2b07aa7eb1b0224fe06e18cc062e5b3"
+    },
+    {
+      "path": "ci-4ec31f39/comparison-original-log-record.json",
+      "source": "Original parsed comparison marker from exactjob113627600871 log; originalartifactJSON notmaterialized",
+      "sha256": "5886d729af93003b91dcfe043daecd1a2f8efde485690d9b28d0f4922e046a24"
+    },
+    {
+      "path": "ci-4ec31f39/current-4gib-original-log-record.json",
+      "source": "Original parsed comparison marker from exactjob113627600871 log; originalartifactJSON notmaterialized",
+      "sha256": "b2b85134bdbb509728e6a26efda09048bb49306c9fd6881f23589a2a4edaf633"
+    },
+    {
+      "path": "ci-4ec31f39/job-metadata.json",
+      "source": "GitHub run/jobs completed metadata for exactjob113627600871",
+      "sha256": "9d1c3adbc808b0cbd89e339fef649b27067c7b687ab67c1a2352aa43fb929060"
+    }
+  ],
+  "note": "Raw sample numbers retained without rounding. Scratch paths inside copied summaries describe original runs, not required delivery paths. No contemporaneous baseline headless runner hash existed; reconstructed hashes are labeled in source summaries."
+}

@@ -1,0 +1,517 @@
+﻿2026-10-09T00:58:01.9405980Z Current runner version: '2.337.0'
+2026-10-09T00:58:01.9425907Z ##[group]Runner Image Provisioner
+2026-10-09T00:58:01.9426674Z Hosted Compute Agent
+2026-10-09T00:58:01.9427211Z Version: 20261002.596
+2026-10-09T00:58:01.9427745Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-09T00:58:01.9428333Z Build Date: 2026-10-02T22:28:27Z
+2026-10-09T00:58:01.9428929Z Worker ID: {3d015a13-b39a-472d-8ae3-59ee0257c4a9}
+2026-10-09T00:58:01.9429506Z Region: westus3
+2026-10-09T00:58:01.9429967Z Cloud: Azure
+2026-10-09T00:58:01.9430466Z ##[endgroup]
+2026-10-09T00:58:01.9431488Z ##[group]Operating System
+2026-10-09T00:58:01.9432077Z Ubuntu
+2026-10-09T00:58:01.9432534Z 24.04.5
+2026-10-09T00:58:01.9432939Z LTS
+2026-10-09T00:58:01.9433414Z ##[endgroup]
+2026-10-09T00:58:01.9433863Z ##[group]Runner Image
+2026-10-09T00:58:01.9434636Z Image: ubuntu-24.04
+2026-10-09T00:58:01.9435115Z Version: 20261004.327.1
+2026-10-09T00:58:01.9436213Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-09T00:58:01.9437467Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+2026-10-09T00:58:01.9438280Z ##[endgroup]
+2026-10-09T00:58:01.9439221Z ##[group]GITHUB_TOKEN Permissions
+2026-10-09T00:58:01.9440751Z Contents: read
+2026-10-09T00:58:01.9441239Z Metadata: read
+2026-10-09T00:58:01.9441827Z ##[endgroup]
+2026-10-09T00:58:01.9443489Z Secret source: Actions
+2026-10-09T00:58:01.9444435Z Cache mode: write
+2026-10-09T00:58:01.9445068Z Prepare workflow directory
+2026-10-09T00:58:01.9789280Z Prepare all required actions
+2026-10-09T00:58:01.9828392Z Getting action download info
+2026-10-09T00:58:02.2886219Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-09T00:58:03.0082391Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-10-09T00:58:03.4206816Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-09T00:58:03.6764585Z Complete job name: large-transfer-web-performance
+2026-10-09T00:58:03.7473171Z ##[group]Run actions/checkout@v4
+2026-10-09T00:58:03.7474396Z with:
+2026-10-09T00:58:03.7475079Z   repository: lazyxu/xdrive
+2026-10-09T00:58:03.7482021Z   token: ***
+2026-10-09T00:58:03.7482717Z   ssh-strict: true
+2026-10-09T00:58:03.7483428Z   ssh-user: git
+2026-10-09T00:58:03.7484250Z   persist-credentials: true
+2026-10-09T00:58:03.7485042Z   clean: true
+2026-10-09T00:58:03.7485758Z   sparse-checkout-cone-mode: true
+2026-10-09T00:58:03.7486604Z   fetch-depth: 1
+2026-10-09T00:58:03.7487307Z   fetch-tags: false
+2026-10-09T00:58:03.7488022Z   show-progress: true
+2026-10-09T00:58:03.7488742Z   lfs: false
+2026-10-09T00:58:03.7489409Z   submodules: false
+2026-10-09T00:58:03.7490133Z   set-safe-directory: true
+2026-10-09T00:58:03.7490948Z   allow-unsafe-pr-checkout: false
+2026-10-09T00:58:03.7492084Z ##[endgroup]
+2026-10-09T00:58:03.8306254Z Syncing repository: lazyxu/xdrive
+2026-10-09T00:58:03.8309091Z ##[group]Getting Git version info
+2026-10-09T00:58:03.8310207Z Working directory is '/home/runner/work/xdrive/xdrive'
+2026-10-09T00:58:03.8311854Z [command]/usr/bin/git version
+2026-10-09T00:58:03.8382028Z git version 2.55.0
+2026-10-09T00:58:03.8409377Z ##[endgroup]
+2026-10-09T00:58:03.8417550Z Temporarily overriding HOME='/home/runner/work/_temp/68a2a26f-8d9c-4082-81b0-deac760628f2' before making global git config changes
+2026-10-09T00:58:03.8420017Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-09T00:58:03.8424666Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-09T00:58:03.8471152Z Deleting the contents of '/home/runner/work/xdrive/xdrive'
+2026-10-09T00:58:03.8475503Z ##[group]Initializing the repository
+2026-10-09T00:58:03.8479422Z [command]/usr/bin/git init /home/runner/work/xdrive/xdrive
+2026-10-09T00:58:03.8591921Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-09T00:58:03.8594716Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-09T00:58:03.8597084Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-09T00:58:03.8598766Z hint: call:
+2026-10-09T00:58:03.8599832Z hint:
+2026-10-09T00:58:03.8600834Z hint: 	git config --global init.defaultBranch <name>
+2026-10-09T00:58:03.8602073Z hint:
+2026-10-09T00:58:03.8603441Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-09T00:58:03.8605484Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-09T00:58:03.8606908Z hint:
+2026-10-09T00:58:03.8607729Z hint: 	git branch -m <name>
+2026-10-09T00:58:03.8608623Z hint:
+2026-10-09T00:58:03.8610192Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-09T00:58:03.8612440Z Initialized empty Git repository in /home/runner/work/xdrive/xdrive/.git/
+2026-10-09T00:58:03.8615705Z [command]/usr/bin/git remote add origin https://github.com/lazyxu/xdrive
+2026-10-09T00:58:03.8656979Z ##[endgroup]
+2026-10-09T00:58:03.8659053Z ##[group]Disabling automatic garbage collection
+2026-10-09T00:58:03.8660733Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-09T00:58:03.8688317Z ##[endgroup]
+2026-10-09T00:58:03.8690190Z ##[group]Setting up auth
+2026-10-09T00:58:03.8694313Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-09T00:58:03.8724245Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-09T00:58:03.9048937Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-09T00:58:03.9080521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-09T00:58:03.9281495Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-09T00:58:03.9310265Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-09T00:58:03.9498400Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-09T00:58:03.9583780Z ##[endgroup]
+2026-10-09T00:58:03.9585106Z ##[group]Fetching the repository
+2026-10-09T00:58:03.9591652Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +3018ec122225061d8766405dcbecdc0dfcde5b7d:refs/remotes/pull/1063/merge
+2026-10-09T00:58:05.3265774Z From https://github.com/lazyxu/xdrive
+2026-10-09T00:58:05.3266432Z  * [new ref]         3018ec122225061d8766405dcbecdc0dfcde5b7d -> pull/1063/merge
+2026-10-09T00:58:05.3268306Z ##[endgroup]
+2026-10-09T00:58:05.3268789Z ##[group]Determining the checkout info
+2026-10-09T00:58:05.3270344Z ##[endgroup]
+2026-10-09T00:58:05.3276198Z [command]/usr/bin/git sparse-checkout disable
+2026-10-09T00:58:05.3356683Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-09T00:58:05.3382315Z ##[group]Checking out the ref
+2026-10-09T00:58:05.3386413Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/1063/merge
+2026-10-09T00:58:05.4139740Z Note: switching to 'refs/remotes/pull/1063/merge'.
+2026-10-09T00:58:05.4140046Z 
+2026-10-09T00:58:05.4140326Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-09T00:58:05.4140942Z changes and commit them, and you can discard any commits you make in this
+2026-10-09T00:58:05.4141535Z state without impacting any branches by switching back to a branch.
+2026-10-09T00:58:05.4141911Z 
+2026-10-09T00:58:05.4142205Z If you want to create a new branch to retain commits you create, you may
+2026-10-09T00:58:05.4142767Z do so (now or later) by using -c with the switch command. Example:
+2026-10-09T00:58:05.4143324Z 
+2026-10-09T00:58:05.4143465Z   git switch -c <new-branch-name>
+2026-10-09T00:58:05.4143693Z 
+2026-10-09T00:58:05.4143830Z Or undo this operation with:
+2026-10-09T00:58:05.4144285Z 
+2026-10-09T00:58:05.4144384Z   git switch -
+2026-10-09T00:58:05.4144622Z 
+2026-10-09T00:58:05.4144889Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-09T00:58:05.4145270Z 
+2026-10-09T00:58:05.4145713Z HEAD is now at 3018ec1 Merge ac4571d5e101d943f341afe83655dcdd4625c1ec into d45a894ef19e03b3cdc90dcfde2cd91fef002bbf
+2026-10-09T00:58:05.4188466Z ##[endgroup]
+2026-10-09T00:58:05.4190936Z [command]/usr/bin/git log -1 --format=%H
+2026-10-09T00:58:05.4214110Z 3018ec122225061d8766405dcbecdc0dfcde5b7d
+2026-10-09T00:58:05.4499629Z ##[group]Run actions/setup-node@v4
+2026-10-09T00:58:05.4499866Z with:
+2026-10-09T00:58:05.4500037Z   node-version: 22
+2026-10-09T00:58:05.4500222Z   always-auth: false
+2026-10-09T00:58:05.4500407Z   check-latest: false
+2026-10-09T00:58:05.4502440Z   token: ***
+2026-10-09T00:58:05.4502633Z ##[endgroup]
+2026-10-09T00:58:05.5628134Z Found in cache @ /opt/hostedtoolcache/node/22.23.3/x64
+2026-10-09T00:58:05.5632116Z (node:2072) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T00:58:05.5632862Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T00:58:05.5634327Z ##[group]Environment details
+2026-10-09T00:58:05.9387767Z node: v22.23.3
+2026-10-09T00:58:05.9388105Z npm: 10.9.9
+2026-10-09T00:58:05.9388335Z yarn: 1.22.22
+2026-10-09T00:58:05.9388943Z ##[endgroup]
+2026-10-09T00:58:05.9509470Z ##[group]Run (cd desktop && npm install --no-audit --no-fund)
+2026-10-09T00:58:05.9509880Z [36;1m(cd desktop && npm install --no-audit --no-fund)[0m
+2026-10-09T00:58:05.9510178Z [36;1m(cd web && npm install --no-audit --no-fund)[0m
+2026-10-09T00:58:05.9741520Z shell: /usr/bin/bash -e {0}
+2026-10-09T00:58:05.9741753Z ##[endgroup]
+2026-10-09T00:58:21.5138719Z npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-09T00:58:21.5884898Z npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+2026-10-09T00:58:21.7701665Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-09T00:58:22.0082223Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-09T00:58:29.4158550Z 
+2026-10-09T00:58:29.4174926Z added 415 packages in 23s
+2026-10-09T00:58:37.0835010Z 
+2026-10-09T00:58:37.0835656Z added 139 packages in 8s
+2026-10-09T00:58:37.1175241Z ##[group]Run npm --prefix web run build
+2026-10-09T00:58:37.1175561Z [36;1mnpm --prefix web run build[0m
+2026-10-09T00:58:37.1231926Z shell: /usr/bin/bash -e {0}
+2026-10-09T00:58:37.1232133Z env:
+2026-10-09T00:58:37.1232304Z   VITE_XDRIVE_LARGE_TRANSFER_PERF: 1
+2026-10-09T00:58:37.1232527Z ##[endgroup]
+2026-10-09T00:58:37.2039148Z 
+2026-10-09T00:58:37.2039817Z > xdrive-web@0.1.0 build
+2026-10-09T00:58:37.2040249Z > tsc -b && vite build
+2026-10-09T00:58:37.2040452Z 
+2026-10-09T00:58:46.0218135Z [36mvite v6.4.3 [32mbuilding for production...[36m[39m
+2026-10-09T00:58:46.0779673Z transforming...
+2026-10-09T00:58:52.8603545Z [32m✓[39m 11916 modules transformed.
+2026-10-09T00:58:53.1135281Z rendering chunks...
+2026-10-09T00:58:53.3879613Z computing gzip size...
+2026-10-09T00:58:53.4198931Z [2mdist/[22m[32mindex.html                                          [39m[1m[2m    0.79 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-10-09T00:58:53.4200130Z [2mdist/[22m[2massets/[22m[32myike-photos-BAVDOHgk.png                     [39m[1m[2m    5.46 kB[22m[1m[22m
+2026-10-09T00:58:53.4201656Z [2mdist/[22m[2massets/[22m[32msynology-photos-BbjN8h_5.png                 [39m[1m[2m   27.73 kB[22m[1m[22m
+2026-10-09T00:58:53.4202378Z [2mdist/[22m[2massets/[22m[32msynology-file-station-Cy2dVLMI.png           [39m[1m[2m   42.19 kB[22m[1m[22m
+2026-10-09T00:58:53.4203143Z [2mdist/[22m[2massets/[22m[35mindex-BAElkkhY.css                           [39m[1m[2m    0.10 kB[22m[1m[22m[2m │ gzip:   0.09 kB[22m
+2026-10-09T00:58:53.4204287Z [2mdist/[22m[2massets/[22m[36mLargeTransferPerformanceHarness-D6RAf43D.js  [39m[1m[2m    4.70 kB[22m[1m[22m[2m │ gzip:   1.96 kB[22m
+2026-10-09T00:58:53.4205463Z [2mdist/[22m[2massets/[22m[36mindex-CP6D5HAs.js                            [39m[1m[33m1,496.26 kB[39m[22m[2m │ gzip: 448.06 kB[22m
+2026-10-09T00:58:53.4205983Z [32m✓ built in 7.38s[39m
+2026-10-09T00:58:53.4206557Z [33m
+2026-10-09T00:58:53.4207453Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-10-09T00:58:53.4207996Z - Using dynamic import() to code-split the application
+2026-10-09T00:58:53.4208764Z - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-10-09T00:58:53.4209590Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-10-09T00:58:53.5116335Z ##[group]Run set -euo pipefail
+2026-10-09T00:58:53.5116715Z [36;1mset -euo pipefail[0m
+2026-10-09T00:58:53.5116953Z [36;1mrm -rf large-transfer-perf-results[0m
+2026-10-09T00:58:53.5117219Z [36;1mmkdir -p large-transfer-perf-results[0m
+2026-10-09T00:58:53.5117536Z [36;1mfor scenario in upload download download-discard; do[0m
+2026-10-09T00:58:53.5117829Z [36;1m  for sample in 1 2 3; do[0m
+2026-10-09T00:58:53.5118407Z [36;1m    xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/large-transfer-performance-main.cjs "$scenario" "sample-$sample"[0m
+2026-10-09T00:58:53.5118980Z [36;1m  done[0m
+2026-10-09T00:58:53.5119145Z [36;1mdone[0m
+2026-10-09T00:58:53.5119482Z [36;1mtest "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9[0m
+2026-10-09T00:58:53.5119888Z [36;1mecho "=== Web 1 GiB transfer metrics ==="[0m
+2026-10-09T00:58:53.5120207Z [36;1mcat large-transfer-perf-results/web-*.json[0m
+2026-10-09T00:58:53.5176506Z shell: /usr/bin/bash -e {0}
+2026-10-09T00:58:53.5176725Z ##[endgroup]
+2026-10-09T00:58:54.3658254Z Downloading Electron binary...
+2026-10-09T00:58:56.9743876Z [2257:1009/005856.973653:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:58:56.9949623Z [2257:1009/005856.994745:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:58:57.0285828Z [2257:1009/005857.028131:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:58:57.0304725Z [2257:1009/005857.028242:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:58:57.0341469Z [2257:1009/005857.033835:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:58:57.1236011Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:03.6816784Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":6195.100000000006,"throughputMiBps":165.29192426272363,"heapStartBytes":4877132,"heapPeakBytes":407922960,"heapDeltaBytes":403045828,"prehashMs":1705.699999999997,"uploadSessionMs":3.900000000008731,"uploadChunksMs":4483.5,"uploadFinalizeMs":2}
+2026-10-09T00:59:03.7029404Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":6195.100000000006,"throughputMiBps":165.29192426272363,"heapStartBytes":4877132,"heapPeakBytes":407922960,"heapDeltaBytes":403045828,"prehashMs":1705.699999999997,"uploadSessionMs":3.900000000008731,"uploadChunksMs":4483.5,"uploadFinalizeMs":2,"surface":"web","rendererWorkingSetStartKB":134552,"rendererWorkingSetPeakKB":517576,"rendererWorkingSetDeltaKB":383024,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T00:59:03.9451403Z [2356:1009/005903.944882:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:03.9718133Z [2356:1009/005903.968153:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:04.0307763Z [2356:1009/005904.028010:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:04.0309926Z [2356:1009/005904.030202:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:04.0416499Z [2356:1009/005904.037650:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:04.1614726Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:09.6110421Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":5392.599999999991,"throughputMiBps":189.88984905240545,"heapStartBytes":4847664,"heapPeakBytes":483508914,"heapDeltaBytes":478661250,"prehashMs":1841,"uploadSessionMs":4,"uploadChunksMs":3545.699999999997,"uploadFinalizeMs":1.8999999999941792}
+2026-10-09T00:59:09.6122005Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":5392.599999999991,"throughputMiBps":189.88984905240545,"heapStartBytes":4847664,"heapPeakBytes":483508914,"heapDeltaBytes":478661250,"prehashMs":1841,"uploadSessionMs":4,"uploadChunksMs":3545.699999999997,"uploadFinalizeMs":1.8999999999941792,"surface":"web","rendererWorkingSetStartKB":132680,"rendererWorkingSetPeakKB":580344,"rendererWorkingSetDeltaKB":447664,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T00:59:09.6458137Z [2356:1009/005909.645519:ERROR:storage/browser/file_system/sandbox_directory_database.cc:916] SandboxDirectoryDatabase failed at: Init@storage/browser/file_system/sandbox_directory_database.cc:717 with error: IO error: /tmp/xdrive-large-transfer-FthEPF/File System/000/t/Paths/000001.dbtmp: Unable to create writable file (ChromeMethodBFE: 9::NewWritableFile::4)
+2026-10-09T00:59:09.8399190Z [2455:1009/005909.839404:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:09.8605923Z [2455:1009/005909.858497:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:09.9018634Z [2455:1009/005909.901618:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:09.9054796Z [2455:1009/005909.901843:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:09.9074985Z [2455:1009/005909.907003:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:09.9979426Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:15.3465377Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":5294.800000000003,"throughputMiBps":193.39729545969618,"heapStartBytes":4820061,"heapPeakBytes":559121350,"heapDeltaBytes":554301289,"prehashMs":1696.5999999999913,"uploadSessionMs":3.5,"uploadChunksMs":3592.9000000000087,"uploadFinalizeMs":1.8000000000029104}
+2026-10-09T00:59:15.3650034Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"upload","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":5294.800000000003,"throughputMiBps":193.39729545969618,"heapStartBytes":4820061,"heapPeakBytes":559121350,"heapDeltaBytes":554301289,"prehashMs":1696.5999999999913,"uploadSessionMs":3.5,"uploadChunksMs":3592.9000000000087,"uploadFinalizeMs":1.8000000000029104,"surface":"web","rendererWorkingSetStartKB":118392,"rendererWorkingSetPeakKB":664252,"rendererWorkingSetDeltaKB":545860,"server":{"uploadBytes":1073741824,"uploadChunks":128,"uploadInitSize":1073741824,"downloadBytes":0}}
+2026-10-09T00:59:15.6121877Z [2556:1009/005915.611711:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:15.6353458Z [2556:1009/005915.632757:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:15.6721355Z [2556:1009/005915.671341:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:15.6745867Z [2556:1009/005915.671615:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:15.6816221Z [2556:1009/005915.676587:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:15.7910594Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:19.0346431Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3216.199999999997,"throughputMiBps":318.3881599403025,"heapStartBytes":4794754,"heapPeakBytes":555014414,"heapDeltaBytes":550219660,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":3212.800000000003}
+2026-10-09T00:59:19.0569025Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":3216.199999999997,"throughputMiBps":318.3881599403025,"heapStartBytes":4794754,"heapPeakBytes":555014414,"heapDeltaBytes":550219660,"downloadHeadersMs":2.1000000000058208,"downloadStreamWriteMs":3212.800000000003,"surface":"web","rendererWorkingSetStartKB":123984,"rendererWorkingSetPeakKB":720348,"rendererWorkingSetDeltaKB":596364,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:19.3631815Z [2657:1009/005919.362668:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:19.3870786Z [2657:1009/005919.386800:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:19.4333529Z [2657:1009/005919.432474:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:19.4339768Z [2657:1009/005919.432568:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:19.4379479Z [2657:1009/005919.437755:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:19.5343852Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:23.2452628Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3660.600000000006,"throughputMiBps":279.7355624760964,"heapStartBytes":4807015,"heapPeakBytes":336946101,"heapDeltaBytes":332139086,"downloadHeadersMs":2.900000000008731,"downloadStreamWriteMs":3656.399999999994}
+2026-10-09T00:59:23.3527144Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":3660.600000000006,"throughputMiBps":279.7355624760964,"heapStartBytes":4807015,"heapPeakBytes":336946101,"heapDeltaBytes":332139086,"downloadHeadersMs":2.900000000008731,"downloadStreamWriteMs":3656.399999999994,"surface":"web","rendererWorkingSetStartKB":112576,"rendererWorkingSetPeakKB":498900,"rendererWorkingSetDeltaKB":386324,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:23.5646655Z [2757:1009/005923.564005:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:23.5895491Z [2757:1009/005923.585310:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:23.6228233Z [2757:1009/005923.622605:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:23.6255930Z [2757:1009/005923.623430:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:23.6288115Z [2757:1009/005923.626418:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:23.7231469Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:27.0871359Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3319,"throughputMiBps":308.5266646580295,"heapStartBytes":4775663,"heapPeakBytes":420551308,"heapDeltaBytes":415775645,"downloadHeadersMs":2,"downloadStreamWriteMs":3315.800000000003}
+2026-10-09T00:59:27.1097426Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":3319,"throughputMiBps":308.5266646580295,"heapStartBytes":4775663,"heapPeakBytes":420551308,"heapDeltaBytes":415775645,"downloadHeadersMs":2,"downloadStreamWriteMs":3315.800000000003,"surface":"web","rendererWorkingSetStartKB":114888,"rendererWorkingSetPeakKB":596696,"rendererWorkingSetDeltaKB":481808,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:27.3463617Z [2856:1009/005927.346095:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:27.3715840Z [2856:1009/005927.366245:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:27.4056962Z [2856:1009/005927.404085:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:27.4084318Z [2856:1009/005927.404405:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:27.4130599Z [2856:1009/005927.412869:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:27.5195293Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:28.5897521Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":1038.800000000003,"throughputMiBps":985.7527916827081,"heapStartBytes":4815565,"heapPeakBytes":403334557,"heapDeltaBytes":398518992,"downloadHeadersMs":2.6000000000058208,"downloadStreamWriteMs":1035.300000000003}
+2026-10-09T00:59:28.6176617Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-1","sizeBytes":1073741824,"elapsedMs":1038.800000000003,"throughputMiBps":985.7527916827081,"heapStartBytes":4815565,"heapPeakBytes":403334557,"heapDeltaBytes":398518992,"downloadHeadersMs":2.6000000000058208,"downloadStreamWriteMs":1035.300000000003,"surface":"web","rendererWorkingSetStartKB":124244,"rendererWorkingSetPeakKB":1274572,"rendererWorkingSetDeltaKB":1150328,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:28.6951842Z [2856:1009/005928.694886:ERROR:storage/browser/file_system/sandbox_directory_database.cc:916] SandboxDirectoryDatabase failed at: Init@storage/browser/file_system/sandbox_directory_database.cc:717 with error: IO error: /tmp/xdrive-large-transfer-FrqC4L/File System/000/t/Paths/000001.dbtmp: Unable to create writable file (ChromeMethodBFE: 9::NewWritableFile::4)
+2026-10-09T00:59:29.0667676Z [2958:1009/005929.066371:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:29.0867170Z [2958:1009/005929.084341:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:29.1211282Z [2958:1009/005929.120852:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:29.1232209Z [2958:1009/005929.122964:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:29.1250929Z [2958:1009/005929.124969:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:29.7404907Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:30.9072063Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":1139.5,"throughputMiBps":898.6397542781922,"heapStartBytes":4794059,"heapPeakBytes":231077925,"heapDeltaBytes":226283866,"downloadHeadersMs":2,"downloadStreamWriteMs":1136.699999999997}
+2026-10-09T00:59:30.9220257Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-2","sizeBytes":1073741824,"elapsedMs":1139.5,"throughputMiBps":898.6397542781922,"heapStartBytes":4794059,"heapPeakBytes":231077925,"heapDeltaBytes":226283866,"downloadHeadersMs":2,"downloadStreamWriteMs":1136.699999999997,"surface":"web","rendererWorkingSetStartKB":124460,"rendererWorkingSetPeakKB":916796,"rendererWorkingSetDeltaKB":792336,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:31.1218838Z [3059:1009/005931.120644:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:31.1401233Z [3059:1009/005931.139749:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:31.1925369Z [3059:1009/005931.192041:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:31.1935524Z [3059:1009/005931.192118:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+2026-10-09T00:59:31.1986345Z [3059:1009/005931.198458:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+2026-10-09T00:59:31.2966693Z (electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEventParams> object instead.
+2026-10-09T00:59:32.4746025Z __XDRIVE_LARGE_TRANSFER_PERF_METRICS__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":1139.800000000003,"throughputMiBps":898.4032286366007,"heapStartBytes":4774074,"heapPeakBytes":285999906,"heapDeltaBytes":281225832,"downloadHeadersMs":1.8999999999941792,"downloadStreamWriteMs":1137.199999999997}
+2026-10-09T00:59:32.5012834Z __XDRIVE_LARGE_TRANSFER_PERF_RESULT__{"scenario":"download-discard","sample":"sample-3","sizeBytes":1073741824,"elapsedMs":1139.800000000003,"throughputMiBps":898.4032286366007,"heapStartBytes":4774074,"heapPeakBytes":285999906,"heapDeltaBytes":281225832,"downloadHeadersMs":1.8999999999941792,"downloadStreamWriteMs":1137.199999999997,"surface":"web","rendererWorkingSetStartKB":120944,"rendererWorkingSetPeakKB":953352,"rendererWorkingSetDeltaKB":832408,"server":{"uploadBytes":0,"uploadChunks":0,"uploadInitSize":0,"downloadBytes":1073741824}}
+2026-10-09T00:59:32.5387871Z === Web 1 GiB transfer metrics ===
+2026-10-09T00:59:32.5395561Z {
+2026-10-09T00:59:32.5395906Z   "scenario": "download-discard",
+2026-10-09T00:59:32.5396257Z   "sample": "sample-1",
+2026-10-09T00:59:32.5396553Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5396879Z   "elapsedMs": 1038.800000000003,
+2026-10-09T00:59:32.5397238Z   "throughputMiBps": 985.7527916827081,
+2026-10-09T00:59:32.5397584Z   "heapStartBytes": 4815565,
+2026-10-09T00:59:32.5397903Z   "heapPeakBytes": 403334557,
+2026-10-09T00:59:32.5398123Z   "heapDeltaBytes": 398518992,
+2026-10-09T00:59:32.5398357Z   "downloadHeadersMs": 2.6000000000058208,
+2026-10-09T00:59:32.5398638Z   "downloadStreamWriteMs": 1035.300000000003,
+2026-10-09T00:59:32.5398864Z   "surface": "web",
+2026-10-09T00:59:32.5399064Z   "rendererWorkingSetStartKB": 124244,
+2026-10-09T00:59:32.5399316Z   "rendererWorkingSetPeakKB": 1274572,
+2026-10-09T00:59:32.5399568Z   "rendererWorkingSetDeltaKB": 1150328,
+2026-10-09T00:59:32.5399782Z   "server": {
+2026-10-09T00:59:32.5399953Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5400132Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5400316Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5400527Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5400714Z   }
+2026-10-09T00:59:32.5400863Z }
+2026-10-09T00:59:32.5401039Z {
+2026-10-09T00:59:32.5401213Z   "scenario": "download-discard",
+2026-10-09T00:59:32.5401436Z   "sample": "sample-2",
+2026-10-09T00:59:32.5401627Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5401813Z   "elapsedMs": 1139.5,
+2026-10-09T00:59:32.5402013Z   "throughputMiBps": 898.6397542781922,
+2026-10-09T00:59:32.5402242Z   "heapStartBytes": 4794059,
+2026-10-09T00:59:32.5402663Z   "heapPeakBytes": 231077925,
+2026-10-09T00:59:32.5402877Z   "heapDeltaBytes": 226283866,
+2026-10-09T00:59:32.5403080Z   "downloadHeadersMs": 2,
+2026-10-09T00:59:32.5403307Z   "downloadStreamWriteMs": 1136.699999999997,
+2026-10-09T00:59:32.5403532Z   "surface": "web",
+2026-10-09T00:59:32.5403740Z   "rendererWorkingSetStartKB": 124460,
+2026-10-09T00:59:32.5407691Z   "rendererWorkingSetPeakKB": 916796,
+2026-10-09T00:59:32.5407999Z   "rendererWorkingSetDeltaKB": 792336,
+2026-10-09T00:59:32.5408228Z   "server": {
+2026-10-09T00:59:32.5408401Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5408579Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5408764Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5408970Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5409164Z   }
+2026-10-09T00:59:32.5409308Z }
+2026-10-09T00:59:32.5409450Z {
+2026-10-09T00:59:32.5409630Z   "scenario": "download-discard",
+2026-10-09T00:59:32.5409857Z   "sample": "sample-3",
+2026-10-09T00:59:32.5410048Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5410259Z   "elapsedMs": 1139.800000000003,
+2026-10-09T00:59:32.5410482Z   "throughputMiBps": 898.4032286366007,
+2026-10-09T00:59:32.5410710Z   "heapStartBytes": 4774074,
+2026-10-09T00:59:32.5410908Z   "heapPeakBytes": 285999906,
+2026-10-09T00:59:32.5411128Z   "heapDeltaBytes": 281225832,
+2026-10-09T00:59:32.5411512Z   "downloadHeadersMs": 1.8999999999941792,
+2026-10-09T00:59:32.5411782Z   "downloadStreamWriteMs": 1137.199999999997,
+2026-10-09T00:59:32.5412009Z   "surface": "web",
+2026-10-09T00:59:32.5412210Z   "rendererWorkingSetStartKB": 120944,
+2026-10-09T00:59:32.5412448Z   "rendererWorkingSetPeakKB": 953352,
+2026-10-09T00:59:32.5412713Z   "rendererWorkingSetDeltaKB": 832408,
+2026-10-09T00:59:32.5412925Z   "server": {
+2026-10-09T00:59:32.5413088Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5413270Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5413449Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5413650Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5414145Z   }
+2026-10-09T00:59:32.5430920Z }
+2026-10-09T00:59:32.5431146Z {
+2026-10-09T00:59:32.5431384Z   "scenario": "download",
+2026-10-09T00:59:32.5431698Z   "sample": "sample-1",
+2026-10-09T00:59:32.5431898Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5432112Z   "elapsedMs": 3216.199999999997,
+2026-10-09T00:59:32.5432345Z   "throughputMiBps": 318.3881599403025,
+2026-10-09T00:59:32.5432573Z   "heapStartBytes": 4794754,
+2026-10-09T00:59:32.5432783Z   "heapPeakBytes": 555014414,
+2026-10-09T00:59:32.5432999Z   "heapDeltaBytes": 550219660,
+2026-10-09T00:59:32.5433219Z   "downloadHeadersMs": 2.1000000000058208,
+2026-10-09T00:59:32.5433472Z   "downloadStreamWriteMs": 3212.800000000003,
+2026-10-09T00:59:32.5433691Z   "surface": "web",
+2026-10-09T00:59:32.5433890Z   "rendererWorkingSetStartKB": 123984,
+2026-10-09T00:59:32.5434513Z   "rendererWorkingSetPeakKB": 720348,
+2026-10-09T00:59:32.5434893Z   "rendererWorkingSetDeltaKB": 596364,
+2026-10-09T00:59:32.5435232Z   "server": {
+2026-10-09T00:59:32.5435489Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5435774Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5436049Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5436264Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5436457Z   }
+2026-10-09T00:59:32.5436603Z }
+2026-10-09T00:59:32.5436743Z {
+2026-10-09T00:59:32.5436892Z   "scenario": "download",
+2026-10-09T00:59:32.5437071Z   "sample": "sample-2",
+2026-10-09T00:59:32.5437253Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5437454Z   "elapsedMs": 3660.600000000006,
+2026-10-09T00:59:32.5437677Z   "throughputMiBps": 279.7355624760964,
+2026-10-09T00:59:32.5437892Z   "heapStartBytes": 4807015,
+2026-10-09T00:59:32.5438086Z   "heapPeakBytes": 336946101,
+2026-10-09T00:59:32.5438287Z   "heapDeltaBytes": 332139086,
+2026-10-09T00:59:32.5438503Z   "downloadHeadersMs": 2.900000000008731,
+2026-10-09T00:59:32.5438752Z   "downloadStreamWriteMs": 3656.399999999994,
+2026-10-09T00:59:32.5438968Z   "surface": "web",
+2026-10-09T00:59:32.5439175Z   "rendererWorkingSetStartKB": 112576,
+2026-10-09T00:59:32.5439417Z   "rendererWorkingSetPeakKB": 498900,
+2026-10-09T00:59:32.5440110Z   "rendererWorkingSetDeltaKB": 386324,
+2026-10-09T00:59:32.5440435Z   "server": {
+2026-10-09T00:59:32.5440694Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5440961Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5441266Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5441531Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5441719Z   }
+2026-10-09T00:59:32.5441859Z }
+2026-10-09T00:59:32.5442002Z {
+2026-10-09T00:59:32.5442145Z   "scenario": "download",
+2026-10-09T00:59:32.5442324Z   "sample": "sample-3",
+2026-10-09T00:59:32.5442506Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5442698Z   "elapsedMs": 3319,
+2026-10-09T00:59:32.5442888Z   "throughputMiBps": 308.5266646580295,
+2026-10-09T00:59:32.5443111Z   "heapStartBytes": 4775663,
+2026-10-09T00:59:32.5443299Z   "heapPeakBytes": 420551308,
+2026-10-09T00:59:32.5443497Z   "heapDeltaBytes": 415775645,
+2026-10-09T00:59:32.5443687Z   "downloadHeadersMs": 2,
+2026-10-09T00:59:32.5443900Z   "downloadStreamWriteMs": 3315.800000000003,
+2026-10-09T00:59:32.5444408Z   "surface": "web",
+2026-10-09T00:59:32.5444675Z   "rendererWorkingSetStartKB": 114888,
+2026-10-09T00:59:32.5444912Z   "rendererWorkingSetPeakKB": 596696,
+2026-10-09T00:59:32.5445143Z   "rendererWorkingSetDeltaKB": 481808,
+2026-10-09T00:59:32.5445342Z   "server": {
+2026-10-09T00:59:32.5445497Z     "uploadBytes": 0,
+2026-10-09T00:59:32.5446022Z     "uploadChunks": 0,
+2026-10-09T00:59:32.5446230Z     "uploadInitSize": 0,
+2026-10-09T00:59:32.5446434Z     "downloadBytes": 1073741824
+2026-10-09T00:59:32.5446615Z   }
+2026-10-09T00:59:32.5446755Z }
+2026-10-09T00:59:32.5446887Z {
+2026-10-09T00:59:32.5447035Z   "scenario": "upload",
+2026-10-09T00:59:32.5447210Z   "sample": "sample-1",
+2026-10-09T00:59:32.5447384Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5447578Z   "elapsedMs": 6195.100000000006,
+2026-10-09T00:59:32.5447800Z   "throughputMiBps": 165.29192426272363,
+2026-10-09T00:59:32.5448007Z   "heapStartBytes": 4877132,
+2026-10-09T00:59:32.5448195Z   "heapPeakBytes": 407922960,
+2026-10-09T00:59:32.5448402Z   "heapDeltaBytes": 403045828,
+2026-10-09T00:59:32.5448610Z   "prehashMs": 1705.699999999997,
+2026-10-09T00:59:32.5448822Z   "uploadSessionMs": 3.900000000008731,
+2026-10-09T00:59:32.5449031Z   "uploadChunksMs": 4483.5,
+2026-10-09T00:59:32.5449216Z   "uploadFinalizeMs": 2,
+2026-10-09T00:59:32.5449393Z   "surface": "web",
+2026-10-09T00:59:32.5449593Z   "rendererWorkingSetStartKB": 134552,
+2026-10-09T00:59:32.5449833Z   "rendererWorkingSetPeakKB": 517576,
+2026-10-09T00:59:32.5450063Z   "rendererWorkingSetDeltaKB": 383024,
+2026-10-09T00:59:32.5450261Z   "server": {
+2026-10-09T00:59:32.5450435Z     "uploadBytes": 1073741824,
+2026-10-09T00:59:32.5450623Z     "uploadChunks": 128,
+2026-10-09T00:59:32.5450817Z     "uploadInitSize": 1073741824,
+2026-10-09T00:59:32.5451017Z     "downloadBytes": 0
+2026-10-09T00:59:32.5451181Z   }
+2026-10-09T00:59:32.5451315Z }
+2026-10-09T00:59:32.5451448Z {
+2026-10-09T00:59:32.5451591Z   "scenario": "upload",
+2026-10-09T00:59:32.5451757Z   "sample": "sample-2",
+2026-10-09T00:59:32.5451934Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5452132Z   "elapsedMs": 5392.599999999991,
+2026-10-09T00:59:32.5452344Z   "throughputMiBps": 189.88984905240545,
+2026-10-09T00:59:32.5452559Z   "heapStartBytes": 4847664,
+2026-10-09T00:59:32.5452749Z   "heapPeakBytes": 483508914,
+2026-10-09T00:59:32.5452954Z   "heapDeltaBytes": 478661250,
+2026-10-09T00:59:32.5453145Z   "prehashMs": 1841,
+2026-10-09T00:59:32.5453326Z   "uploadSessionMs": 4,
+2026-10-09T00:59:32.5453583Z   "uploadChunksMs": 3545.699999999997,
+2026-10-09T00:59:32.5454057Z   "uploadFinalizeMs": 1.8999999999941792,
+2026-10-09T00:59:32.5454380Z   "surface": "web",
+2026-10-09T00:59:32.5454685Z   "rendererWorkingSetStartKB": 132680,
+2026-10-09T00:59:32.5455081Z   "rendererWorkingSetPeakKB": 580344,
+2026-10-09T00:59:32.5455459Z   "rendererWorkingSetDeltaKB": 447664,
+2026-10-09T00:59:32.5455772Z   "server": {
+2026-10-09T00:59:32.5456044Z     "uploadBytes": 1073741824,
+2026-10-09T00:59:32.5456352Z     "uploadChunks": 128,
+2026-10-09T00:59:32.5456784Z     "uploadInitSize": 1073741824,
+2026-10-09T00:59:32.5457092Z     "downloadBytes": 0
+2026-10-09T00:59:32.5457353Z   }
+2026-10-09T00:59:32.5457562Z }
+2026-10-09T00:59:32.5457772Z {
+2026-10-09T00:59:32.5457992Z   "scenario": "upload",
+2026-10-09T00:59:32.5458255Z   "sample": "sample-3",
+2026-10-09T00:59:32.5458514Z   "sizeBytes": 1073741824,
+2026-10-09T00:59:32.5458828Z   "elapsedMs": 5294.800000000003,
+2026-10-09T00:59:32.5459166Z   "throughputMiBps": 193.39729545969618,
+2026-10-09T00:59:32.5459495Z   "heapStartBytes": 4820061,
+2026-10-09T00:59:32.5459784Z   "heapPeakBytes": 559121350,
+2026-10-09T00:59:32.5460100Z   "heapDeltaBytes": 554301289,
+2026-10-09T00:59:32.5460416Z   "prehashMs": 1696.5999999999913,
+2026-10-09T00:59:32.5460733Z   "uploadSessionMs": 3.5,
+2026-10-09T00:59:32.5461053Z   "uploadChunksMs": 3592.9000000000087,
+2026-10-09T00:59:32.5461445Z   "uploadFinalizeMs": 1.8000000000029104,
+2026-10-09T00:59:32.5461768Z   "surface": "web",
+2026-10-09T00:59:32.5462067Z   "rendererWorkingSetStartKB": 118392,
+2026-10-09T00:59:32.5462447Z   "rendererWorkingSetPeakKB": 664252,
+2026-10-09T00:59:32.5462813Z   "rendererWorkingSetDeltaKB": 545860,
+2026-10-09T00:59:32.5463128Z   "server": {
+2026-10-09T00:59:32.5463401Z     "uploadBytes": 1073741824,
+2026-10-09T00:59:32.5463701Z     "uploadChunks": 128,
+2026-10-09T00:59:32.5464478Z     "uploadInitSize": 1073741824,
+2026-10-09T00:59:32.5464800Z     "downloadBytes": 0
+2026-10-09T00:59:32.5465053Z   }
+2026-10-09T00:59:32.5465265Z }
+2026-10-09T00:59:32.5518638Z ##[group]Run actions/upload-artifact@v4
+2026-10-09T00:59:32.5518861Z with:
+2026-10-09T00:59:32.5519030Z   name: web-large-transfer-1gib
+2026-10-09T00:59:32.5519253Z   path: desktop/large-transfer-perf-results
+2026-10-09T00:59:32.5519479Z   if-no-files-found: error
+2026-10-09T00:59:32.5519665Z   retention-days: 7
+2026-10-09T00:59:32.5519832Z   compression-level: 6
+2026-10-09T00:59:32.5520010Z   overwrite: false
+2026-10-09T00:59:32.5520182Z   include-hidden-files: false
+2026-10-09T00:59:32.5520380Z ##[endgroup]
+2026-10-09T00:59:32.6816781Z (node:3144) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T00:59:32.6817418Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T00:59:32.6872521Z With the provided path, there will be 9 files uploaded
+2026-10-09T00:59:32.6877236Z Artifact name is valid!
+2026-10-09T00:59:32.6877894Z Root directory input is valid!
+2026-10-09T00:59:33.0365688Z Beginning upload of artifact content to blob storage
+2026-10-09T00:59:33.0600743Z (node:3144) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-09T00:59:33.2584872Z Uploaded bytes 4070
+2026-10-09T00:59:33.3134393Z Finished uploading artifact content to blob storage!
+2026-10-09T00:59:33.3135285Z SHA256 digest of uploaded artifact zip is 2f5bc51c4c4a2cb0d2d0ee7e5efcfdd55eafd6f2c69b112c0ead47d33a9222e5
+2026-10-09T00:59:33.3136993Z Finalizing artifact upload
+2026-10-09T00:59:33.5701123Z Artifact web-large-transfer-1gib.zip successfully finalized. Artifact ID 11589425063
+2026-10-09T00:59:33.5702238Z Artifact web-large-transfer-1gib has been successfully uploaded! Final size is 4070 bytes. Artifact ID is 11589425063
+2026-10-09T00:59:33.5707597Z Artifact download URL: https://github.com/lazyxu/xdrive/actions/runs/37866968455/artifacts/11589425063
+2026-10-09T00:59:33.5868710Z Post job cleanup.
+2026-10-09T00:59:33.6813284Z (node:3156) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-09T00:59:33.6814068Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-09T00:59:33.6970662Z Post job cleanup.
+2026-10-09T00:59:33.7668564Z [command]/usr/bin/git version
+2026-10-09T00:59:33.7704094Z git version 2.55.0
+2026-10-09T00:59:33.7735672Z Temporarily overriding HOME='/home/runner/work/_temp/f280c8f8-c9d7-4bf6-a4c5-2f930bebd7a0' before making global git config changes
+2026-10-09T00:59:33.7737127Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-09T00:59:33.7740251Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-09T00:59:33.7771361Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-09T00:59:33.7799738Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-09T00:59:33.8015519Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-09T00:59:33.8034599Z http.https://github.com/.extraheader
+2026-10-09T00:59:33.8042630Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-09T00:59:33.8073734Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-09T00:59:33.8291122Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-09T00:59:33.8321189Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-09T00:59:33.8648635Z Cleaning up orphan processes
+2026-10-09T00:59:33.8899548Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

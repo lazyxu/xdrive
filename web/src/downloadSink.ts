@@ -127,15 +127,31 @@ export async function xDriveWriteWebDownloadToSink(
   let completed = 0
   try {
     if (body) {
-      const reader = body.getReader()
+      let byobReader: ReadableStreamBYOBReader | null = null
+      try {
+        byobReader = body.getReader({ mode: 'byob' })
+      } catch {
+        // Ordinary streams and older runtimes retain the default-reader path.
+      }
+      const reader = byobReader ?? body.getReader()
+      let buffer: Uint8Array | null = byobReader ? new Uint8Array(1024 * 1024) : null
+      const readInto = byobReader?.read.bind(byobReader) as (
+        (view: Uint8Array) => Promise<ReadableStreamReadResult<Uint8Array>>
+      ) | undefined
       try {
         while (true) {
-          const { done, value } = await reader.read()
+          const { done, value } = buffer && readInto
+            ? await readInto(buffer)
+            : await (reader as ReadableStreamDefaultReader<Uint8Array>).read()
+          if (value && value.byteLength > 0) {
+            await sink.writable.write(value)
+            completed += value.byteLength
+            onProgress?.(completed)
+          }
           if (done) break
-          if (!value || value.byteLength === 0) continue
-          await sink.writable.write(value)
-          completed += value.byteLength
-          onProgress?.(completed)
+          // BYOB transfers ownership on every read. Reuse the returned backing
+          // storage only after the destination has finished consuming it.
+          if (buffer && value) buffer = new Uint8Array(value.buffer)
         }
       } catch (error) {
         try {
