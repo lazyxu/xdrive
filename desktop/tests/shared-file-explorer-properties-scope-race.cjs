@@ -70,6 +70,8 @@ test('FileExplorer interaction scope change clears stale Properties session and 
 
   const propertiesWrites = []
   const quickLookSessionWrites = []
+  const touchDragReleaseWrites = []
+  const touchDragActiveWrites = []
   const mediaDetailsCacheRef = {
     current: new Map([
       ['1:7', { id: 1, revision: 7, width: 111, height: 222 }],
@@ -96,6 +98,14 @@ test('FileExplorer interaction scope change clears stale Properties session and 
     suppressBackgroundClickRef: { current: false },
     dragPointerYRef: { current: null },
     dragAutoScrollFrameRef: { current: null },
+    touchDragRef: { current: {
+      pointerId: 2,
+      captureHost: {
+        hasPointerCapture: (value) => value === 2,
+        releasePointerCapture: (value) => touchDragReleaseWrites.push(value),
+      },
+    } },
+    setTouchDragActive: (value) => touchDragActiveWrites.push(value),
     setDraggedItems: () => {},
     setDropTargetID: () => {},
     setDropTargetCrumbID: () => {},
@@ -139,6 +149,9 @@ test('FileExplorer interaction scope change clears stale Properties session and 
   const effect = compileEffect(filename, callback, dependencies)
   effect()
 
+  assert.deepEqual(touchDragReleaseWrites, [2], 'scope change releases a captured touch pointer')
+  assert.deepEqual(touchDragActiveWrites, [false], 'scope change removes the touch drag overlay')
+  assert.equal(dependencies.touchDragRef.current, null, 'scope change invalidates pending touch drops')
   assert.equal(selectionLoad, null, 'scope change must clear the old selection-load state')
   assert.equal(selectionLoadRef.current, null, 'scope change must release the old selection-load owner')
   assert.equal(selectionLoadFeedback, '', 'scope change must clear selection feedback from the previous scope')
