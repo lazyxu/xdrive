@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -61,6 +63,7 @@ type mediaDuplicateOrganizeMember struct {
 }
 
 type mediaDuplicateOrganizePlan struct {
+	PlanRevision               string                         `json:"plan_revision"`
 	KeeperNodeID               uint64                         `json:"keeper_node_id"`
 	Members                    []mediaDuplicateOrganizeMember `json:"members"`
 	AssetComparison            string                         `json:"asset_comparison"`
@@ -345,6 +348,15 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 	if len(out.Descriptions) > 1 && status == duplicateAssetIdentical {
 		out.Reason = "多份副本含不同描述，必须逐一保留或人工解决；不能静默覆盖"
 	}
+	// The confirmation token binds the keeper, selected original Nodes, resource
+	// evidence, edits, user annotations and collection/person membership.
+	// A concurrent change invalidates it instead of overwriting newer intent.
+	snapshot, err := json.Marshal(out)
+	if err != nil {
+		return mediaDuplicateOrganizePlan{}, err
+	}
+	digest := sha256.Sum256(snapshot)
+	out.PlanRevision = hex.EncodeToString(digest[:])
 	return out, nil
 }
 

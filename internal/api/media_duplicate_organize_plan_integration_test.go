@@ -44,7 +44,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
-		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -205,14 +205,130 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("cross-owner plan must not reveal assets: %v", err)
 	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, mediaDuplicateOrganizeApplyInput{
+			KeeperNodeID:         a.node.ID,
+			NodeIDs:              []uint64{a.node.ID, b.node.ID, c.node.ID},
+			ExpectedPlanRevision: plan.PlanRevision,
+			Confirm:              true,
+		},
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("conflicting descriptions must block write: %v", err)
+	}
 	if err := db.Model(&meta.PhotoMetadata{}).
 		Where("asset_id = ?", b.asset.ID).
 		Update("description", "first description").Error; err != nil {
 		t.Fatal(err)
 	}
-	consistent := read(a.node.ID, b.node.ID)
-	if !consistent.ReadyForManualReview || len(consistent.Descriptions) != 1 {
-		t.Fatalf("equal descriptions should allow reviewed next step: %+v", consistent)
+	consistent := read(a.node.ID, b.node.ID, c.node.ID)
+	if !consistent.ReadyForManualReview || len(consistent.Descriptions) != 1 ||
+		len(consistent.PlanRevision) != 64 || plan.PlanRevision == consistent.PlanRevision {
+		t.Fatalf("equal descriptions should allow reviewed next step with new token: %+v", consistent)
+	}
+	input := mediaDuplicateOrganizeApplyInput{
+		KeeperNodeID:         a.node.ID,
+		NodeIDs:              []uint64{a.node.ID, b.node.ID, c.node.ID},
+		ExpectedPlanRevision: consistent.PlanRevision,
+		Confirm:              true,
+	}
+	// A changed backing File size must block a stale projected resource even
+	// when the read-only PhotoResource snapshot still has the old content SHA.
+	if err := db.Model(&meta.File{}).Where("node_id = ?", b.node.ID).
+		Update("size", 1001).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, input,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("stale original backing resource must prevent annotation union: %v", err)
+	}
+	if err := db.Model(&meta.File{}).Where("node_id = ?", b.node.ID).
+		Update("size", 1000).Error; err != nil {
+		t.Fatal(err)
+	}
+	applied, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, input,
+	)
+	if err != nil {
+		t.Fatalf("reviewed annotation union failed: %v", err)
+	}
+	if applied.KeeperNodeID != a.node.ID || !applied.MetadataUpdated ||
+		applied.ManualAlbumsAdded != 1 || applied.DurablePeopleAdded != 1 ||
+		!applied.OriginalFilesRetained || !applied.OriginalEditsRetained ||
+		!applied.SourceLinksUnchanged || applied.PhysicalBytesReclaimed != 0 {
+		t.Fatalf("unexpected consolidation result: %+v", applied)
+	}
+	var keeperMetadata meta.PhotoMetadata
+	if err := db.Where("asset_id = ?", a.asset.ID).
+		First(&keeperMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !keeperMetadata.Favorite || keeperMetadata.Description != "first description" ||
+		keeperMetadata.TagsJSON != `["cat","travel"]` ||
+		keeperMetadata.PeopleJSON != `["Alice","Bob"]` {
+		t.Fatalf("keeper lost combined annotations: %+v", keeperMetadata)
+	}
+	for _, tc := range []struct {
+		collectionID uint64
+		assetID      uint64
+		want         int64
+	}{
+		{collectionID: manual.ID, assetID: a.asset.ID, want: 1},
+		{collectionID: manual.ID, assetID: b.asset.ID, want: 1},
+		{collectionID: source.ID, assetID: a.asset.ID, want: 0},
+		{collectionID: source.ID, assetID: b.asset.ID, want: 1},
+	} {
+		var count int64
+		if err := db.Model(&meta.PhotoCollectionAsset{}).
+			Where("collection_id = ? AND asset_id = ?", tc.collectionID, tc.assetID).
+			Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != tc.want {
+			t.Fatalf("collection=%d asset=%d members=%d want=%d",
+				tc.collectionID, tc.assetID, count, tc.want)
+		}
+	}
+	for _, assetID := range []uint64{a.asset.ID, b.asset.ID} {
+		var count int64
+		if err := db.Model(&meta.PhotoPersonAsset{}).
+			Where("person_id = ? AND asset_id = ?", person.ID, assetID).
+			Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("persistent person assignment lost for asset=%d", assetID)
+		}
+	}
+	var files, resources, assetRows, audits int64
+	if err := db.Model(&meta.File{}).Count(&files).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).Count(&resources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoAsset{}).Count(&assetRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.AuditEvent{}).
+		Where("action = ?", "media.duplicate.organize_metadata").
+		Count(&audits).Error; err != nil {
+		t.Fatal(err)
+	}
+	if files != 4 || resources != 4 || assetRows != 4 || audits != 1 {
+		t.Fatalf("real files/resources/assets and audit not preserved: %d/%d/%d audits=%d",
+			files, resources, assetRows, audits)
+	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, input,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("stale user-confirmation token must be rejected: %v", err)
+	}
+	input.NodeIDs = []uint64{a.node.ID, other.node.ID}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, input,
+	); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("foreign account must remain isolated: %v", err)
 	}
 	if err := db.Create(&meta.PhotoEditRecipe{
 		AssetID: c.asset.ID, OwnerID: owners[0].ID,

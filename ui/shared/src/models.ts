@@ -851,6 +851,7 @@ export interface MediaDuplicateOrganizeMember {
 }
 
 export interface MediaDuplicateOrganizePlan {
+  plan_revision: string
   keeper_node_id: number
   members: MediaDuplicateOrganizeMember[]
   asset_comparison: 'identical' | 'different' | 'unverified'

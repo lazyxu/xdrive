@@ -737,6 +737,41 @@ automated deletion. Subsequent transactional consolidation and safe undo
 need separate native PostgreSQL correctness gates including concurrent sync
 and reimport. This stage is not a full metadata merge.
 
+### G11 P4 phase 3 — confirmed, non-destructive annotation consolidation (2026-10-09)
+
+**Implementation/CI pending:** new authenticated `POST /api/v1/media/duplicate-organize/apply`
+accepts a selected keeper, **2–32** unique primary Node IDs, a SHA-256
+`expected_plan_revision` returned by the G11 read-only preservation plan,
+and explicit `confirm: true`. The Server rechecks the complete resource/edit
+equivalence, owner isolation, primary and every backing Node-resource's
+SHA/size/revision/ready index state, collection and persistent-person
+membership inside a serializable PostgreSQL transaction. Changed/stale
+plan revisions or conflicting descriptions return 409, never a partial write.
+
+Only user-owned annotations on the keeper are combined: **Favorite OR**, valid
+case-insensitively deduplicated **tags and people labels**, at most one
+non-empty **description**, membership in additional **manual albums** (each
+album revision advances), and durable **person assignments**. If a union
+would exceed existing tag/person limits or ownership/revision evidence
+cannot be verified, all changes roll back. The transaction writes an
+auditable, non-sensitive operation record with the selected real Node IDs.
+
+The operation **never deletes or trashes a file**, does not detach
+`PhotoResource`, remove/rewrite `PhotoEditRecipe`, decrement CAS Blob
+reference counts, modify quota, change source-identity aliases, or move
+provider/folder/source-managed albums. Every original's annotations remain
+individually intact. Source re-sync can continue to update those original
+source identities; a new duplicate is **not** automatically merged. Report
+`physical_bytes_reclaimed=0` and never present this stage as storage cleanup
+or completed deletion-based duplicate consolidation.
+
+This is the reversible-by-source, audit-backed *annotation aggregation* stage.
+**Still pending for complete user-approved consolidation:** UI confirmation
+and result handling, description selection/history when texts differ,
+explainable per-copy resource/history choices, optional trash and undo,
+durable reconcile after a source is reimported, and same-owner/cross-owner
+CAS+quota deletion regression. These are separate gated changes.
+
 ### G11 P4 phase 1 — read-only metadata preservation plan (2026-10-09)
 
 **In progress / CI pending:** authenticated owner-scoped
