@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
+import type { KeyboardEvent, WheelEvent } from 'react'
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
@@ -18,7 +18,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 import type { MediaPlaceFacet } from '../models'
+import { useXDrivePointerDrag } from './usePointerDrag'
+import type { XDrivePointerDragPoint } from './usePointerDrag'
+import type { XDriveMediaPlacesMapViewport } from './MediaGalleryPlacesMapModel'
 import {
   XDRIVE_MEDIA_PLACES_MAP_MAX_ZOOM,
   XDRIVE_MEDIA_PLACES_MAP_MIN_ZOOM,
@@ -74,32 +78,43 @@ function clusterLabel(itemCount: number) {
 export function XDriveMediaGalleryPlacesMap({
   places,
   activePlaceID,
+  initialViewport,
+  onViewportChange,
   onOpenPlace,
 }: {
   places: MediaPlaceFacet[]
   activePlaceID?: string
+  initialViewport?: XDriveMediaPlacesMapViewport
+  onViewportChange?: (viewport: XDriveMediaPlacesMapViewport) => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
 }) {
+  const theme = useTheme()
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const dragRef = useRef<{
-    x: number
-    y: number
-    viewport: ReturnType<typeof xDriveMediaPlacesFitViewport>
-  } | null>(null)
+  const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ width: 960, height: 360 })
   const fittedViewport = useMemo(
     () => xDriveMediaPlacesFitViewport(places),
     [places],
   )
-  const [viewport, setViewport] = useState(fittedViewport)
+  const [viewport, setViewport] = useState(initialViewport ?? fittedViewport)
+  const previousFitRef = useRef(fittedViewport)
 
   useEffect(() => {
+    const previous = previousFitRef.current
+    if (previous.centerLatitude === fittedViewport.centerLatitude &&
+        previous.centerLongitude === fittedViewport.centerLongitude &&
+        previous.zoom === fittedViewport.zoom) return
+    previousFitRef.current = fittedViewport
     setViewport(fittedViewport)
   }, [
     fittedViewport.centerLatitude,
     fittedViewport.centerLongitude,
     fittedViewport.zoom,
   ])
+
+  useEffect(() => {
+    onViewportChange?.(viewport)
+  }, [onViewportChange, viewport])
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -147,34 +162,27 @@ export function XDriveMediaGalleryPlacesMap({
     activateCluster(cluster)
   }
 
-  const startDrag = (event: PointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      viewport,
-    }
-  }
-
-  const moveDrag = (event: PointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current
-    if (!drag) return
+  const pan = (
+    drag: { x: number; y: number; viewport: XDriveMediaPlacesMapViewport },
+    point: XDrivePointerDragPoint,
+  ) => {
     setViewport(xDriveMediaPlacesPanViewport(
       drag.viewport,
-      event.clientX - drag.x,
-      event.clientY - drag.y,
+      point.clientX - drag.x,
+      point.clientY - drag.y,
       size.width,
       size.height,
     ))
   }
-
-  const endDrag = (event: PointerEvent<SVGSVGElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    dragRef.current = null
-  }
+  const pointerDrag = useXDrivePointerDrag({
+    ownerRef: hostRef,
+    scrollHostRef,
+    enabled: true,
+    scopeKey: 'gallery-places-map',
+    onMove: pan,
+    onDrop: pan,
+    autoScrollDelta: () => 0,
+  })
 
   const zoomBy = (delta: number) => {
     setViewport((current) => ({
@@ -209,7 +217,13 @@ export function XDriveMediaGalleryPlacesMap({
         direction="row"
         spacing={1}
         alignItems="center"
-        sx={{ px: 1.5, py: 1 }}
+        sx={{
+          px: 1.5,
+          py: 1,
+          '@media (max-width: 899.95px)': {
+            '& .MuiIconButton-root': { minWidth: 44, minHeight: 44 },
+          },
+        }}
       >
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={700}>
@@ -258,6 +272,11 @@ export function XDriveMediaGalleryPlacesMap({
         </Tooltip>
       </Stack>
 
+      <Box onPointerDown={(event) => pointerDrag.begin(event, {
+        x: event.clientX,
+        y: event.clientY,
+        viewport,
+      })}>
       <Box
         component="svg"
         role="group"
@@ -265,37 +284,33 @@ export function XDriveMediaGalleryPlacesMap({
         viewBox={`0 0 ${size.width} ${size.height}`}
         width="100%"
         height={size.height}
-        onPointerDown={startDrag}
-        onPointerMove={moveDrag}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
         onWheel={handleWheel}
         sx={{
           display: 'block',
           touchAction: 'none',
-          cursor: dragRef.current ? 'grabbing' : 'grab',
+          cursor: pointerDrag.active ? 'grabbing' : 'grab',
           bgcolor: 'action.hover',
           '& .xdrive-map-grid': {
-            stroke: 'divider',
+            stroke: theme.palette.divider,
             strokeWidth: 1,
             opacity: 0.65,
           },
           '& .xdrive-map-land': {
-            fill: 'background.paper',
-            stroke: 'divider',
+            fill: theme.palette.background.paper,
+            stroke: theme.palette.divider,
             strokeWidth: 1.2,
           },
           '& .xdrive-map-cluster': {
-            fill: 'primary.main',
-            stroke: 'background.paper',
+            fill: theme.palette.primary.main,
+            stroke: theme.palette.background.paper,
             strokeWidth: 2,
             cursor: 'pointer',
           },
           '& .xdrive-map-cluster-active': {
-            fill: 'secondary.main',
+            fill: theme.palette.secondary.main,
           },
           '& .xdrive-map-count': {
-            fill: 'primary.contrastText',
+            fill: theme.palette.primary.contrastText,
             fontSize: 11,
             fontWeight: 700,
             pointerEvents: 'none',
@@ -303,7 +318,7 @@ export function XDriveMediaGalleryPlacesMap({
             dominantBaseline: 'central',
           },
           '& .xdrive-map-cluster-focus:focus-visible circle': {
-            stroke: 'text.primary',
+            stroke: theme.palette.text.primary,
             strokeWidth: 3,
           },
         }}
@@ -385,6 +400,7 @@ export function XDriveMediaGalleryPlacesMap({
             </g>
           )
         })}
+      </Box>
       </Box>
     </Paper>
   )

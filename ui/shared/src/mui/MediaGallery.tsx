@@ -99,6 +99,7 @@ import {
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import type { XDriveMediaPlacesMapViewport } from './MediaGalleryPlacesMapModel'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
@@ -479,6 +480,7 @@ export function XDriveMediaGalleryPage({
   const [currentFolderView, setCurrentFolderView] = useState<MediaFolderView | null>(null)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
+  const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
@@ -748,6 +750,7 @@ export function XDriveMediaGalleryPage({
     try {
       const rangePromise = loadTargetRange(target, 0, pageSize)
       if (target.kind === 'all' && !target.query.folder_id) {
+        setPlacesStatus('loading')
         const facetsPromise = Promise.all([
           source.listAlbums(),
           source.listPlaces
@@ -796,6 +799,7 @@ export function XDriveMediaGalleryPage({
             collectionTargetRef.current?.requestID !== request
           ) return
           if (result.error) {
+            setPlacesStatus('error')
             reportError(result.error)
             return
           }
@@ -809,6 +813,7 @@ export function XDriveMediaGalleryPage({
           ] = result.values
           setAlbums(nextAlbums)
           setPlaces(nextPlaces)
+          setPlacesStatus('ready')
           setPets(nextPets)
           setSuggestedPeople(
             nextSuggestedPeople.filter((item) => item.review_state !== 'accepted'),
@@ -856,6 +861,7 @@ export function XDriveMediaGalleryPage({
         collectionTargetRef.current?.requestID !== request
       ) return
       const message = xDriveMediaGalleryErrorMessage(loadError)
+      if (target.kind === 'all' && !target.query.folder_id) setPlacesStatus('error')
       setCollectionError(message)
       onError?.(loadError)
     } finally {
@@ -2102,6 +2108,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
+        placesStatus={placesStatus}
         memories={memories}
         burstReviews={burstReviews}
         pets={pets}
@@ -2489,6 +2496,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  placesStatus?: 'loading' | 'ready' | 'error'
   memories?: MediaMemory[]
   burstReviews?: MediaBurstReviewList | null
   pets?: MediaPetFacet[]
@@ -3837,6 +3845,49 @@ function MediaVirtualTimeline({
   )
 }
 
+const personTouchTargetSx = {
+  '@media (max-width:899.95px)': { minWidth: 44, minHeight: 44 },
+} as const
+
+const personDialogPaperProps = {
+  sx: {
+    ...xDriveDialogPaperProps.sx,
+    '@media (max-width:899.95px)': {
+      '& .MuiDialogTitle-root': {
+        flexShrink: 0, minHeight: 60, px: 1.5, py: 1,
+        '& .MuiTypography-h6': { fontSize: '1rem' },
+        '& .MuiTypography-body2': { display: 'none' },
+        '& .MuiIconButton-root': { width: 44, height: 44, mt: 0, mr: 0 },
+      },
+      '& .MuiDialogContent-root': { overflowY: 'visible' },
+      '& .MuiButton-root, & .MuiFormControlLabel-root': { minWidth: 44, minHeight: 44 },
+    },
+  },
+} as const
+
+// On short compact screens, only the title/Close stay fixed. Description,
+// fields, choices, errors and actions share one bounded scroll region.
+const personDialogScrollSx = {
+  display: 'contents',
+  '@media (max-width:899.95px)': {
+    display: 'block', flex: '1 1 auto', minHeight: 0,
+    overflowY: 'auto', overscrollBehavior: 'contain',
+  },
+} as const
+
+const personDialogDescriptionSx = {
+  display: 'none',
+  '@media (max-width:899.95px)': { display: 'block', mb: 1.5 },
+} as const
+
+const personDialogDescriptions = {
+  adopt: '保存后成为长期人物，不再受自动聚类重建影响。',
+  rename: '名称可以留空，长期人物身份仍会保留。',
+  assign: '把这组自动聚类建议加入一个长期人物；原人物名称与 ID 保留。',
+  merge: '选中的人物会合并到当前人物；当前人物 ID 和名称会保留。',
+  split: '选择要移动到新人物的照片。至少要给当前人物保留一张照片。',
+} as const
+
 export function XDriveMediaGallery({
   preferenceScope = '',
   items,
@@ -3849,6 +3900,7 @@ export function XDriveMediaGallery({
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
+  placesStatus = 'ready',
   memories = [],
   burstReviews = null,
   pets = [],
@@ -3967,6 +4019,7 @@ export function XDriveMediaGallery({
   const viewAnchorIndexRef = useRef(0)
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
   const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
+  const [placesMapViewport, setPlacesMapViewport] = useState<XDriveMediaPlacesMapViewport | null>(null)
   const [dayJumpInput, setDayJumpInput] = useState('')
   const [dayJumpFeedback, setDayJumpFeedback] = useState('')
   const galleryRootRef = useRef<HTMLDivElement | null>(null)
@@ -4025,6 +4078,20 @@ export function XDriveMediaGallery({
   const [splitDialogOpen, setSplitDialogOpen] = useState(false)
   const [splitNodeIDs, setSplitNodeIDs] = useState<number[]>([])
   const [splitName, setSplitName] = useState('')
+  const personContextTitleRef = useRef<HTMLHeadingElement | null>(null)
+  const restorePersonFocusRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (personNameDialog || suggestionTargetDialog) return
+    const suggestionID = restorePersonFocusRef.current
+    restorePersonFocusRef.current = null
+    // A successful adoption/assignment removes its original suggestion caller.
+    // Consume that one success request after the Dialog closes; ordinary
+    // navigation, cancellation and failed submissions do not request focus.
+    if (suggestionID && !suggestedPeople.some((person) => person.id === suggestionID)) {
+      personContextTitleRef.current?.focus()
+    }
+  }, [personNameDialog, suggestedPeople, suggestionTargetDialog])
 
   const patchLocalMediaItem = useCallback((
     nodeID: number,
@@ -4747,13 +4814,25 @@ export function XDriveMediaGallery({
         <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: { xs: '0 0 auto', lg: '1 1 320px' }, minWidth: 0 }}>
           {canBack && onBack ? (
             <Tooltip title="返回上一级">
-              <IconButton onClick={onBack} size="small" aria-label="返回上一级">
+              <IconButton
+                onClick={onBack}
+                size="small"
+                aria-label="返回上一级"
+                sx={currentPerson || currentSuggestedPerson || activePlaceID ? personTouchTargetSx : undefined}
+              >
                 <ArrowBackIcon />
               </IconButton>
             </Tooltip>
           ) : null}
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h5" fontWeight={700} noWrap>
+            <Typography
+              component="h5"
+              ref={personContextTitleRef}
+              tabIndex={-1}
+              variant="h5"
+              fontWeight={700}
+              noWrap
+            >
               {galleryTitle}
             </Typography>
             <Typography variant="body2" color="text.secondary" noWrap>
@@ -4802,6 +4881,7 @@ export function XDriveMediaGallery({
             <Button
               size="small"
               variant="contained"
+              sx={personTouchTargetSx}
               onClick={() => {
                 setPersonName('')
                 setPersonDialogError('')
@@ -4815,6 +4895,7 @@ export function XDriveMediaGallery({
             <Button
               size="small"
               variant="text"
+              sx={personTouchTargetSx}
               onClick={() => {
                 setPersonName(currentPerson.name)
                 setPersonDialogError('')
@@ -4828,6 +4909,7 @@ export function XDriveMediaGallery({
             <Button
               size="small"
               variant="text"
+              sx={personTouchTargetSx}
               onClick={() => {
                 void onTogglePersonHidden(currentPerson).catch(() => undefined)
               }}
@@ -4839,6 +4921,7 @@ export function XDriveMediaGallery({
             <Button
               size="small"
               variant="text"
+              sx={personTouchTargetSx}
               onClick={() => {
                 setMergePersonIDs([])
                 setPersonDialogError('')
@@ -4852,6 +4935,7 @@ export function XDriveMediaGallery({
             <Button
               size="small"
               variant="text"
+              sx={personTouchTargetSx}
               onClick={() => {
                 setSplitNodeIDs([])
                 setSplitName('')
@@ -5390,6 +5474,8 @@ export function XDriveMediaGallery({
           <XDriveMediaGalleryPlacesMap
             places={places}
             activePlaceID={activePlaceID}
+            initialViewport={placesMapViewport ?? undefined}
+            onViewportChange={setPlacesMapViewport}
             onOpenPlace={onOpenPlace}
           />
 
@@ -5670,7 +5756,7 @@ export function XDriveMediaGallery({
                     spacing={0.5}
                     useFlexGap
                     flexWrap="wrap"
-                    sx={{ mt: 0.5 }}
+                    sx={{ mt: 0.5, '& .MuiButton-root': personTouchTargetSx }}
                   >
                     {person.review_state === 'dismissed' ? (
                       onReviewSuggestedPerson ? (
@@ -6042,7 +6128,10 @@ export function XDriveMediaGallery({
           <Typography color="text.secondary">还没有相册</Typography>
         </Paper>
       ) : null}
-      {showPlacesIndex && places.length === 0 && !loading ? (
+      {showPlacesIndex && placesStatus === 'loading' ? (
+        <Typography role="status" color="text.secondary">正在加载地点…</Typography>
+      ) : null}
+      {showPlacesIndex && places.length === 0 && !loading && placesStatus === 'ready' ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
           <Typography color="text.secondary">没有带地点信息的照片</Typography>
         </Paper>
@@ -6311,65 +6400,73 @@ export function XDriveMediaGallery({
         onClose={() => !personDialogBusy && setPersonNameDialog(null)}
         maxWidth="xs"
         fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: personDialogPaperProps }}
       >
         <XDriveDialogTitle
           title={personNameDialog?.mode === 'rename' ? '重命名人物' : '保存为人物'}
-          subtitle={personNameDialog?.mode === 'adopt'
-            ? '保存后成为长期人物，不再受自动聚类重建影响。'
-            : '名称可以留空，长期人物身份仍会保留。'}
+          subtitle={personDialogDescriptions[personNameDialog?.mode || 'rename']}
           onClose={() => !personDialogBusy && setPersonNameDialog(null)}
         />
-        <XDriveDialogContent dividers>
-          <Stack spacing={1.5}>
-            <TextField
-              autoFocus
-              label="人物名称"
-              value={personName}
-              onChange={(event) => {
-                setPersonName(event.target.value)
+        <Box sx={personDialogScrollSx}>
+          <XDriveDialogContent dividers>
+            <Typography variant="body2" color="text.secondary" sx={personDialogDescriptionSx}>
+              {personDialogDescriptions[personNameDialog?.mode || 'rename']}
+            </Typography>
+            <Stack spacing={1.5}>
+              <TextField
+                autoFocus
+                label="人物名称"
+                value={personName}
+                onChange={(event) => {
+                  setPersonName(event.target.value)
+                  setPersonDialogError('')
+                }}
+                placeholder="可留空"
+              />
+              {personDialogError ? (
+                <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
+              ) : null}
+            </Stack>
+          </XDriveDialogContent>
+          <DialogActions>
+            <Button
+              disabled={personDialogBusy}
+              onClick={() => setPersonNameDialog(null)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="contained"
+              disabled={personDialogBusy}
+              onClick={() => {
+                const task = personNameDialog?.mode === 'adopt' &&
+                  personNameDialog.suggestion &&
+                  onAdoptSuggestedPerson
+                  ? onAdoptSuggestedPerson(personNameDialog.suggestion, personName.trim())
+                  : personNameDialog?.mode === 'rename' &&
+                      personNameDialog.person &&
+                      onRenamePerson
+                    ? onRenamePerson(personNameDialog.person, personName.trim())
+                    : Promise.reject(new Error('当前客户端不支持人物编辑'))
+                setPersonDialogBusy(true)
                 setPersonDialogError('')
+                void task
+                  .then(() => {
+                    if (personNameDialog?.mode === 'adopt') {
+                      restorePersonFocusRef.current = personNameDialog.suggestion?.id || null
+                    }
+                    setPersonNameDialog(null)
+                  })
+                  .catch((personError) => {
+                    setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
+                  })
+                  .finally(() => setPersonDialogBusy(false))
               }}
-              placeholder="可留空"
-            />
-            {personDialogError ? (
-              <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        </XDriveDialogContent>
-        <DialogActions>
-          <Button
-            disabled={personDialogBusy}
-            onClick={() => setPersonNameDialog(null)}
-          >
-            取消
-          </Button>
-          <Button
-            variant="contained"
-            disabled={personDialogBusy}
-            onClick={() => {
-              const task = personNameDialog?.mode === 'adopt' &&
-                personNameDialog.suggestion &&
-                onAdoptSuggestedPerson
-                ? onAdoptSuggestedPerson(personNameDialog.suggestion, personName.trim())
-                : personNameDialog?.mode === 'rename' &&
-                    personNameDialog.person &&
-                    onRenamePerson
-                  ? onRenamePerson(personNameDialog.person, personName.trim())
-                  : Promise.reject(new Error('当前客户端不支持人物编辑'))
-              setPersonDialogBusy(true)
-              setPersonDialogError('')
-              void task
-                .then(() => setPersonNameDialog(null))
-                .catch((personError) => {
-                  setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
-                })
-                .finally(() => setPersonDialogBusy(false))
-            }}
-          >
-            保存
-          </Button>
-        </DialogActions>
+            >
+              保存
+            </Button>
+          </DialogActions>
+        </Box>
       </Dialog>
 
       <Dialog
@@ -6377,60 +6474,68 @@ export function XDriveMediaGallery({
         onClose={() => !personDialogBusy && setSuggestionTargetDialog(null)}
         maxWidth="xs"
         fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: personDialogPaperProps }}
       >
         <XDriveDialogTitle
           title="添加到已有人物"
-          subtitle="把这组自动聚类建议加入一个长期人物；原人物名称与 ID 保留。"
+          subtitle={personDialogDescriptions.assign}
           onClose={() => !personDialogBusy && setSuggestionTargetDialog(null)}
         />
-        <XDriveDialogContent dividers>
-          <Stack spacing={0.75}>
-            {people
-              .filter((person) => !person.hidden)
-              .map((person) => (
-                <Button
-                  key={person.id}
-                  variant="outlined"
-                  disabled={personDialogBusy || !onAddSuggestedPersonToPerson}
-                  onClick={() => {
-                    if (!suggestionTargetDialog || !onAddSuggestedPersonToPerson) return
-                    setPersonDialogBusy(true)
-                    setPersonDialogError('')
-                    void onAddSuggestedPersonToPerson(
-                      suggestionTargetDialog,
-                      person,
-                    )
-                      .then(() => setSuggestionTargetDialog(null))
-                      .catch((personError) => {
-                        setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
-                      })
-                      .finally(() => setPersonDialogBusy(false))
-                  }}
-                  sx={{ justifyContent: 'space-between' }}
-                >
-                  <span>{person.name || '未命名人物'}</span>
-                  <span>{person.item_count.toLocaleString('zh-CN')} 张</span>
-                </Button>
-              ))}
-            {people.every((person) => person.hidden) ? (
-              <Typography variant="body2" color="text.secondary">
-                当前没有可用的已确认人物。
-              </Typography>
-            ) : null}
-            {personDialogError ? (
-              <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        </XDriveDialogContent>
-        <DialogActions>
-          <Button
-            disabled={personDialogBusy}
-            onClick={() => setSuggestionTargetDialog(null)}
-          >
-            取消
-          </Button>
-        </DialogActions>
+        <Box sx={personDialogScrollSx}>
+          <XDriveDialogContent dividers>
+            <Typography variant="body2" color="text.secondary" sx={personDialogDescriptionSx}>
+              {personDialogDescriptions.assign}
+            </Typography>
+            <Stack spacing={0.75}>
+              {people
+                .filter((person) => !person.hidden)
+                .map((person) => (
+                  <Button
+                    key={person.id}
+                    variant="outlined"
+                    disabled={personDialogBusy || !onAddSuggestedPersonToPerson}
+                    onClick={() => {
+                      if (!suggestionTargetDialog || !onAddSuggestedPersonToPerson) return
+                      setPersonDialogBusy(true)
+                      setPersonDialogError('')
+                      void onAddSuggestedPersonToPerson(
+                        suggestionTargetDialog,
+                        person,
+                      )
+                        .then(() => {
+                          restorePersonFocusRef.current = suggestionTargetDialog.id
+                          setSuggestionTargetDialog(null)
+                        })
+                        .catch((personError) => {
+                          setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
+                        })
+                        .finally(() => setPersonDialogBusy(false))
+                    }}
+                    sx={{ justifyContent: 'space-between' }}
+                  >
+                    <span>{person.name || '未命名人物'}</span>
+                    <span>{person.item_count.toLocaleString('zh-CN')} 张</span>
+                  </Button>
+                ))}
+              {people.every((person) => person.hidden) ? (
+                <Typography variant="body2" color="text.secondary">
+                  当前没有可用的已确认人物。
+                </Typography>
+              ) : null}
+              {personDialogError ? (
+                <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
+              ) : null}
+            </Stack>
+          </XDriveDialogContent>
+          <DialogActions>
+            <Button
+              disabled={personDialogBusy}
+              onClick={() => setSuggestionTargetDialog(null)}
+            >
+              取消
+            </Button>
+          </DialogActions>
+        </Box>
       </Dialog>
 
       <Dialog
@@ -6438,65 +6543,70 @@ export function XDriveMediaGallery({
         onClose={() => !personDialogBusy && setMergeDialogOpen(false)}
         maxWidth="xs"
         fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: personDialogPaperProps }}
       >
         <XDriveDialogTitle
           title="合并人物"
-          subtitle="选中的人物会合并到当前人物；当前人物 ID 和名称会保留。"
+          subtitle={personDialogDescriptions.merge}
           onClose={() => !personDialogBusy && setMergeDialogOpen(false)}
         />
-        <XDriveDialogContent dividers>
-          <Stack spacing={0.5}>
-            {people
-              .filter((person) => person.id !== currentPerson?.id)
-              .map((person) => (
-                <FormControlLabel
-                  key={person.id}
-                  control={(
-                    <Checkbox
-                      checked={mergePersonIDs.includes(person.id)}
-                      onChange={(event) => {
-                        setMergePersonIDs((current) => (
-                          event.target.checked
-                            ? [...current, person.id]
-                            : current.filter((id) => id !== person.id)
-                        ))
-                      }}
-                    />
-                  )}
-                  label={`${person.name || '未命名人物'} · ${person.item_count.toLocaleString('zh-CN')} 张照片`}
-                />
-              ))}
-            {personDialogError ? (
-              <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        </XDriveDialogContent>
-        <DialogActions>
-          <Button
-            disabled={personDialogBusy}
-            onClick={() => setMergeDialogOpen(false)}
-          >
-            取消
-          </Button>
-          <Button
-            variant="contained"
-            disabled={!currentPerson || mergePersonIDs.length === 0 || personDialogBusy || !onMergePeople}
-            onClick={() => {
-              if (!currentPerson || !onMergePeople) return
-              setPersonDialogBusy(true)
-              setPersonDialogError('')
-              void onMergePeople(currentPerson, mergePersonIDs)
-                .then(() => setMergeDialogOpen(false))
-                .catch((personError) => {
-                  setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
-                })
-                .finally(() => setPersonDialogBusy(false))
-            }}
-          >
-            合并
-          </Button>
-        </DialogActions>
+        <Box sx={personDialogScrollSx}>
+          <XDriveDialogContent dividers>
+            <Typography variant="body2" color="text.secondary" sx={personDialogDescriptionSx}>
+              {personDialogDescriptions.merge}
+            </Typography>
+            <Stack spacing={0.5}>
+              {people
+                .filter((person) => person.id !== currentPerson?.id)
+                .map((person) => (
+                  <FormControlLabel
+                    key={person.id}
+                    control={(
+                      <Checkbox
+                        checked={mergePersonIDs.includes(person.id)}
+                        onChange={(event) => {
+                          setMergePersonIDs((current) => (
+                            event.target.checked
+                              ? [...current, person.id]
+                              : current.filter((id) => id !== person.id)
+                          ))
+                        }}
+                      />
+                    )}
+                    label={`${person.name || '未命名人物'} · ${person.item_count.toLocaleString('zh-CN')} 张照片`}
+                  />
+                ))}
+              {personDialogError ? (
+                <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
+              ) : null}
+            </Stack>
+          </XDriveDialogContent>
+          <DialogActions>
+            <Button
+              disabled={personDialogBusy}
+              onClick={() => setMergeDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="contained"
+              disabled={!currentPerson || mergePersonIDs.length === 0 || personDialogBusy || !onMergePeople}
+              onClick={() => {
+                if (!currentPerson || !onMergePeople) return
+                setPersonDialogBusy(true)
+                setPersonDialogError('')
+                void onMergePeople(currentPerson, mergePersonIDs)
+                  .then(() => setMergeDialogOpen(false))
+                  .catch((personError) => {
+                    setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
+                  })
+                  .finally(() => setPersonDialogBusy(false))
+              }}
+            >
+              合并
+            </Button>
+          </DialogActions>
+        </Box>
       </Dialog>
 
       <Dialog
@@ -6504,90 +6614,96 @@ export function XDriveMediaGallery({
         onClose={() => !personDialogBusy && setSplitDialogOpen(false)}
         maxWidth="sm"
         fullWidth
-        slotProps={{ paper: xDriveDialogPaperProps }}
+        slotProps={{ paper: personDialogPaperProps }}
       >
         <XDriveDialogTitle
           title="拆分人物"
-          subtitle="选择要移动到新人物的照片。至少要给当前人物保留一张照片。"
+          subtitle={personDialogDescriptions.split}
           onClose={() => !personDialogBusy && setSplitDialogOpen(false)}
         />
-        <XDriveDialogContent dividers>
-          <Stack spacing={1}>
-            {currentPerson && currentPerson.item_count > items.length ? (
-              <XDriveStatusAlert tone="warning">
-                当前只加载了部分照片；如需选择更多照片，请先继续加载。
-              </XDriveStatusAlert>
-            ) : null}
-            <TextField
-              label="新人物名称"
-              value={splitName}
-              onChange={(event) => setSplitName(event.target.value)}
-              placeholder="可留空"
-            />
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                gap: 1,
-                maxHeight: 360,
-                overflow: 'auto',
+        <Box sx={personDialogScrollSx}>
+          <XDriveDialogContent dividers>
+            <Typography variant="body2" color="text.secondary" sx={personDialogDescriptionSx}>
+              {personDialogDescriptions.split}
+            </Typography>
+            <Stack spacing={1}>
+              {currentPerson && currentPerson.item_count > items.length ? (
+                <XDriveStatusAlert tone="warning">
+                  当前只加载了部分照片；如需选择更多照片，请先继续加载。
+                </XDriveStatusAlert>
+              ) : null}
+              <TextField
+                label="新人物名称"
+                value={splitName}
+                onChange={(event) => setSplitName(event.target.value)}
+                placeholder="可留空"
+              />
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                  gap: 1,
+                  maxHeight: 360,
+                  overflow: 'auto',
+                  '@media (max-width:899.95px)': { maxHeight: 'none', overflow: 'visible' },
+                }}
+              >
+                {items.map((item) => (
+                  <FormControlLabel
+                    key={item.node.id}
+                    control={(
+                      <Checkbox
+                        checked={splitNodeIDs.includes(item.node.id)}
+                        onChange={(event) => {
+                          setSplitNodeIDs((current) => (
+                            event.target.checked
+                              ? [...current, item.node.id]
+                              : current.filter((id) => id !== item.node.id)
+                          ))
+                        }}
+                      />
+                    )}
+                    label={item.node.name}
+                  />
+                ))}
+              </Box>
+              {personDialogError ? (
+                <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
+              ) : null}
+            </Stack>
+          </XDriveDialogContent>
+          <DialogActions>
+            <Button
+              disabled={personDialogBusy}
+              onClick={() => setSplitDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="contained"
+              disabled={
+                !currentPerson ||
+                splitNodeIDs.length === 0 ||
+                splitNodeIDs.length >= currentPerson.item_count ||
+                personDialogBusy ||
+                !onSplitPerson
+              }
+              onClick={() => {
+                if (!currentPerson || !onSplitPerson) return
+                setPersonDialogBusy(true)
+                setPersonDialogError('')
+                void onSplitPerson(currentPerson, splitNodeIDs, splitName.trim())
+                  .then(() => setSplitDialogOpen(false))
+                  .catch((personError) => {
+                    setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
+                  })
+                  .finally(() => setPersonDialogBusy(false))
               }}
             >
-              {items.map((item) => (
-                <FormControlLabel
-                  key={item.node.id}
-                  control={(
-                    <Checkbox
-                      checked={splitNodeIDs.includes(item.node.id)}
-                      onChange={(event) => {
-                        setSplitNodeIDs((current) => (
-                          event.target.checked
-                            ? [...current, item.node.id]
-                            : current.filter((id) => id !== item.node.id)
-                        ))
-                      }}
-                    />
-                  )}
-                  label={item.node.name}
-                />
-              ))}
-            </Box>
-            {personDialogError ? (
-              <XDriveStatusAlert tone="bad">{personDialogError}</XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        </XDriveDialogContent>
-        <DialogActions>
-          <Button
-            disabled={personDialogBusy}
-            onClick={() => setSplitDialogOpen(false)}
-          >
-            取消
-          </Button>
-          <Button
-            variant="contained"
-            disabled={
-              !currentPerson ||
-              splitNodeIDs.length === 0 ||
-              splitNodeIDs.length >= currentPerson.item_count ||
-              personDialogBusy ||
-              !onSplitPerson
-            }
-            onClick={() => {
-              if (!currentPerson || !onSplitPerson) return
-              setPersonDialogBusy(true)
-              setPersonDialogError('')
-              void onSplitPerson(currentPerson, splitNodeIDs, splitName.trim())
-                .then(() => setSplitDialogOpen(false))
-                .catch((personError) => {
-                  setPersonDialogError(xDriveMediaGalleryErrorMessage(personError))
-                })
-                .finally(() => setPersonDialogBusy(false))
-            }}
-          >
-            拆分
-          </Button>
-        </DialogActions>
+              拆分
+            </Button>
+          </DialogActions>
+        </Box>
       </Dialog>
 
     </Stack>
