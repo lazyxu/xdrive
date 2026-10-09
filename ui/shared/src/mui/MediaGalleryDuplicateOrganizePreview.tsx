@@ -229,6 +229,17 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
             <Typography variant="caption" color="text.secondary">
               标签：{joinLabels(plan.combined_tags)}；人物备注：{joinLabels(plan.combined_people_labels)}
             </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              data-xdrive-gallery-organize-source-coverage
+            >
+              {typeof plan.source_managed_assets === 'number' &&
+               typeof plan.potential_reimport_assets === 'number'
+                ? `当前已关联同步文件夹：${plan.source_managed_assets} 份 · Pull 来源可能重新导入：${plan.potential_reimport_assets} 份`
+                : '当前服务端未返回来源关联核对信息，请升级后核验'}
+              。该结果仅代表本地已关联的来源记录，不是远端完整扫描。
+            </Typography>
             {plan.distinct_descriptions.length > 1 ? (
               <Typography variant="body2" color="error">
                 描述冲突：{plan.distinct_descriptions.join(' / ')}。必须人工处理，不能静默覆盖。
@@ -260,6 +271,30 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
                       {resource.role} · {resource.name} · SHA-256 {resource.sha256.slice(0, 16)}…
                     </Typography>
                   ))}
+                  {(member.source_links ?? []).length > 0 ? (
+                    <Stack
+                      spacing={0.25}
+                      data-xdrive-gallery-organize-source-links={member.node_id}
+                    >
+                      {member.source_links?.map((link) => (
+                        <Typography
+                          key={`${link.source_item_id}-${link.resource_node_id}`}
+                          variant="caption"
+                          color={link.may_reimport ? 'warning.main' : 'text.secondary'}
+                        >
+                          同步文件夹：{link.source_name} · {link.direction}/{link.sync_mode}
+                          {' · '}资源 #{link.resource_node_id} · {link.path || '来源路径未知'}
+                          {link.may_reimport
+                            ? ' · 远端仍存在时再次同步可能重新导入'
+                            : ' · 当前来源记录未标记为可重新导入（不代表删除安全）'}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      未发现已关联来源记录；不能据此判定远端不存在副本。
+                    </Typography>
+                  )}
                 </Stack>
               </Box>
             ))}

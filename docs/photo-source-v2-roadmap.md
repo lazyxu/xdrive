@@ -102,6 +102,32 @@ space reclaim operation. Keep user album, people, labels, edits and
 synchronization provenance until an explicitly confirmed safe consolidation
 workflow exists.
 
+## G11 duplicate organization source-provenance visibility (2026-10-09)
+
+The existing safe, annotation-only Gallery organization plan now audits
+**currently linked** remote source items per complete PhotoAsset, not just
+the primary file Node. The per-resource join begins at
+`PhotoResource(resource_kind=node)` and follows `SourceItem.NodeID`
+and the owner-scoped `Source`, preserving SourceItem IDs, paths, sync
+direction/mode, item state and source name. It may identify a Live Photo
+motion clip or RAW component as belonging to another 同步文件夹. Linked
+paused Pull sources can resume and *may* import deleted local files again;
+the interface warns rather than guessing that deletion is permanent.
+No SourceItem association is changed by metadata-only annotation union.
+
+Missing source associations are not proof of no remote files: a not-yet
+scanned source, a previously detached Node, an ignored item, or a legacy
+identity may be absent from the current view. The existing plan fingerprint
+now covers known source links and invalidates confirmation if the local
+source provenance changes during review; the operation never suppresses
+future downloads or claims that a temporary absence is a deletion guarantee.
+
+A future destructive cleanup must separately define per-source replay and
+suppression rules, verify Live/RAW full-resource deletion scope, use
+the existing durable Trash/Undo machinery and retain cross-account CAS,
+quota, album/person, edits and source identity integrity. Until those gates
+pass, duplicate organization **preserves every original Node**.
+
 ## Design invariants
 
 1. A synchronization folder succeeds or fails based on file synchronization, not on media enrichment.
