@@ -31,6 +31,38 @@
 5. Old Agent/Server returns an explicit unsupported/error message and does not silently show fictitious health.
 6. Go unit tests, Web lint/typecheck, Desktop main/renderer typecheck, and scoped CI pass before merge.
 
+## Configuration and activation contract (phase P1-A)
+
+**Strict scope:** This administrator page lists only instance-wide runtime infrastructure and global service providers. Yike, Synology Photos, DSM FileStation, user credentials, per-user source schedules and all **同步文件夹** belong exclusively to each user's existing Sync Folder settings/API; the admin dependency inventory, editor and navigation must not surface them. The shared masked credential/reveal UI does **not** merge secret stores or permission domains.
+
+This page must **not** treat a service's configuration form, process presence and actual health as the same state. Every entry reports its **configuration scope**, **activation mode**, **runtime probe result**, and exact prerequisite. Missing probes are labeled unknown; future containers are planned, never reported ready.
+
+| Dependency | Configuration owner / controls today | Activation contract |
+| --- | --- | --- |
+| Baidu Server API | Admin service page; encrypted AK enable/edit/reveal/clear | Immediate, next authenticated map request, no restart |
+| GeoNames place labels | Read-only `/geonames` dataset mount plus `XD_PHOTO_PLACE_GEONAMES_DIR` / distance env | Controlled Server restart for new resolver data or distance; not a map fallback |
+| Face, animal/object, OCR and semantic image analysis | Optional shared `photo-intelligence` Compose container, Unix socket, pinned models | Controlled deployment for profile/socket/model changes; never represent a UI toggle as a container start |
+| Creative analyzer (cutout/erase/movie/collage) | Same optional Photo Intelligence runtime | Controlled deployment; independent model/info probe |
+| Media Worker / FFmpeg | Not yet integrated | Planned; **no enable button** or fabricated status |
+| PostgreSQL and file storage | Deployment volumes/database connection and backup policy | Restricted maintenance / controlled restart, not changed by web admin Server self-operation |
+| Caddy/HTTPS and background Worker | Deployment parameters/Host Manager when explicitly supported | Controlled redeploy/restart; do not mount or expose Docker socket |
+
+**Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
+
+**Next real control-plane stages:**
+1. Add a managed GeoNames dataset validation, update/reload protocol with safe indexing and version continuity before exposing an editor (current resolver loads at startup and is used by background analysis; unsafe hot pointer replacement is not acceptable).
+2. Add Photo Intelligence enable/disable and per-model resource controls with a real analyzer lifecycle and safe task semantics. Separate container installation/profile/CPU/memory from runtime job policy.
+3. Implement optional FFmpeg Media Worker with signed byte access, cancellation and resource isolation before introducing its configuration endpoint.
+4. Reuse the restricted Host Manager for deployment-only changes after implementing permissioned status/backup/diff/rollback and exact runtime-health checks. Never grant Server general Docker socket permissions.
+
+### Final instance-level configuration lifecycle target (not yet implemented)
+
+Every system-wide dependency in this inventory must ultimately support a truthful administrator-only **inspect → edit → validate → save desired revision → apply → verify effective revision/health → rollback on failure** workflow. This is a delivery requirement, not a claim about the current read-only entries. Versioned desired and effective settings, apply status (`pending`, `applying`, `applied`, `failed`, `rolled_back`), audit identifiers, actor, and restart requirements must be visible without exposing secrets. Stale revision writes return 409 and unauthorized writes/reveals are denied at the Server, regardless of UI visibility.
+
+- **Hot apply where safe:** Baidu AK already does so; GeoNames requires validating a whole candidate dataset and swapping an immutable resolver snapshot while an in-flight PlaceRunner retains a consistent version; AI/Media Worker hot policy changes must preserve in-flight work.
+- **Restricted apply where required:** database, storage mount, Caddy and container image/profile changes require a least-privilege Host Manager, explicit diff/preflight/impact confirmation, health probes, backup or rollback, and progress states; the application Server never gains a general Docker socket or host shell.
+- **No false success:** a persisted form is only `pending` until the effective runtime is proven. Disable apply if the required safe controller is not implemented. User-level **同步文件夹** connections are outside this inventory and do not share its admin configuration APIs.
+
 ## Follow-on sequence
 
 1. Finish server-side Media Worker signed preview input and output verification, worker cancellation and short-video cache; **measure production baseline first** per `AGENTS.md`.

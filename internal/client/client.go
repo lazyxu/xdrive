@@ -298,13 +298,16 @@ type BackgroundTaskPage struct {
 }
 
 type ServiceDependency struct {
-	ID      string `json:"id"`
-	Group   string `json:"group"`
-	Label   string `json:"label"`
-	Status  string `json:"status"`
-	Detail  string `json:"detail"`
-	Version string `json:"version,omitempty"`
-	Model   string `json:"model,omitempty"`
+	ID         string `json:"id"`
+	Group      string `json:"group"`
+	Label      string `json:"label"`
+	Status     string `json:"status"`
+	Detail     string `json:"detail"`
+	Version    string `json:"version,omitempty"`
+	Model      string `json:"model,omitempty"`
+	ConfigMode string `json:"config_mode"`
+	ApplyMode  string `json:"apply_mode"`
+	ConfigHint string `json:"config_hint,omitempty"`
 }
 
 type AdminBaiduMapConfig struct {

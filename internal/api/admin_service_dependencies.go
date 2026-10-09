@@ -10,13 +10,16 @@ import (
 )
 
 type serviceDependency struct {
-	ID      string `json:"id"`
-	Group   string `json:"group"`
-	Label   string `json:"label"`
-	Status  string `json:"status"`
-	Detail  string `json:"detail"`
-	Version string `json:"version,omitempty"`
-	Model   string `json:"model,omitempty"`
+	ID         string `json:"id"`
+	Group      string `json:"group"`
+	Label      string `json:"label"`
+	Status     string `json:"status"`
+	Detail     string `json:"detail"`
+	Version    string `json:"version,omitempty"`
+	Model      string `json:"model,omitempty"`
+	ConfigMode string `json:"config_mode"`
+	ApplyMode  string `json:"apply_mode"`
+	ConfigHint string `json:"config_hint,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
@@ -40,6 +43,9 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		{ID: "photo-semantic", Group: "intelligence", Label: "图片语义搜索", Status: "disabled", Detail: "未配置本地语义分析器"},
 		{ID: "geonames", Group: "location", Label: "GeoNames 离线地名", Status: "disabled", Detail: "未配置离线地名数据"},
 		{ID: "baidu-map", Group: "location", Label: "百度地图 Server API", Status: "disabled", Detail: "尚未启用百度地图；不使用其他地图底图"},
+		{ID: "photo-creative", Group: "intelligence", Label: "照片创作处理", Status: "disabled", Detail: "未配置抠图、照片电影与拼图分析器"},
+		{ID: "background-worker", Group: "core", Label: "后台 Worker", Status: "unknown", Detail: "当前 Server 未提供独立 Worker 进程健康探针"},
+		{ID: "caddy", Group: "core", Label: "Caddy / HTTPS 网关", Status: "unknown", Detail: "当前 Server 未提供独立网关进程健康探针"},
 	}
 
 	cfg, configErr := s.effectiveBaiduMapConfig(ctx)
@@ -142,7 +148,27 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			services[5].Model = info.VisionModel.Name + " / " + info.TextModel.Name
 		}()
 	}
+	if s.PhotoCreativeAnalyzer != nil {
+		services[8].Status = "unavailable"
+		services[8].Detail = "创作分析器已配置，但健康检查未通过"
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			info, err := s.PhotoCreativeAnalyzer.Info(ctx)
+			if err != nil {
+				return
+			}
+			services[8].Status = "ready"
+			services[8].Detail = "抠图、照片电影与拼图分析器已连接"
+			services[8].Version = info.PipelineVersion
+			services[8].Model = info.SegmentModel.Name
+		}()
+	}
 	wg.Wait()
+	for i := range services {
+		services[i].ConfigMode, services[i].ApplyMode, services[i].ConfigHint =
+			serviceDependencyConfigContract(services[i].ID)
+	}
 	c.JSON(http.StatusOK, serviceDependenciesSnapshot{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Services:  services,

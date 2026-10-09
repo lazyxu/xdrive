@@ -9,6 +9,7 @@ import type {
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
   XDriveServiceDependencyState,
+  XDriveServiceApplyMode,
 } from '../service-dependencies'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
@@ -26,7 +27,7 @@ const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; descripti
   { id: 'core', label: '基础服务', description: '核心数据库与文件存储的实时就绪探针。' },
   { id: 'media', label: '媒体处理', description: '独立 FFmpeg Media Worker 尚未进入生产服务合同。' },
   { id: 'intelligence', label: '照片智能分析', description: '共享 Photo Intelligence 容器；分别探测已配置的分析能力。' },
-  { id: 'location', label: '地理位置与地图', description: 'GeoNames 仅用于地名标签；图库地图只使用百度地图 Server API。' },
+  { id: 'location', label: '地理位置与地图', description: 'GeoNames 只提供可选地名标签；百度地图是唯一地图 Provider。' },
 ]
 
 const statusLabels: Record<XDriveServiceDependencyState, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
@@ -35,6 +36,12 @@ const statusLabels: Record<XDriveServiceDependencyState, { label: string; color:
   disabled: { label: '未启用', color: 'default' },
   unknown: { label: '无法检测', color: 'warning' },
   planned: { label: '尚未接入', color: 'default' },
+}
+
+const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
+  immediate: '保存后立即生效',
+  'controlled-restart': '受控重启／重新部署后生效',
+  'not-available': '尚无安全配置执行接口',
 }
 
 function ServiceRow({ service }: { service: XDriveServiceDependency }) {
@@ -58,6 +65,15 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               {service.version && service.model ? ' · ' : ''}
               {service.model ? '模型：' + service.model : ''}
             </Typography>
+          )}
+          {service.config_hint && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
+              {service.config_hint}
+            </Typography>
+          )}
+          {service.apply_mode && (
+            <Chip size="small" variant="outlined" sx={{ mt: 1 }}
+              label={applyModeLabels[service.apply_mode] ?? '配置生效模式待确认'} />
           )}
         </Box>
         <Chip size="small" color={state.color} variant="outlined" label={state.label} />
@@ -195,13 +211,15 @@ export function XDriveServiceDependenciesPage({
   const checkedAt = snapshot?.checked_at
     ? new Date(snapshot.checked_at).toLocaleString()
     : ''
-  const healthy = snapshot?.services.filter((item) => item.status === 'ready').length ?? 0
+  // Ignore user-level connector rows returned by older Server versions.
+  const systemServices = snapshot?.services.filter((item) => groups.some((group) => group.id === item.group)) ?? []
+  const healthy = systemServices.filter((item) => item.status === 'ready').length
 
   return (
     <XDriveWorkspaceSurface
       presentation="page"
       title="服务与依赖"
-      subtitle="查看外部依赖运行状态，并安全管理百度地图 Server AK。其他容器配置仍由 Compose 管理。"
+      subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
       pageActions={(
         <Button
           size="small"
@@ -219,13 +237,13 @@ export function XDriveServiceDependenciesPage({
           {loading
             ? '正在检查服务…'
             : snapshot
-              ? '检测时间：' + checkedAt + ' · 已就绪 ' + healthy + ' / ' + snapshot.services.length + ' 项'
+              ? '检测时间：' + checkedAt + ' · 已就绪 ' + healthy + ' 项 · 已登记服务 ' + systemServices.length + ' 项'
               : '尚未取得服务检测结果'}
         </Typography>
         {loading && <CircularProgress size={22} aria-label="正在加载服务状态" />}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
         {!loading && snapshot && groups.map((group) => {
-          const items = snapshot.services.filter((item) => item.group === group.id)
+          const items = systemServices.filter((item) => item.group === group.id)
           if (!items.length) return null
           return (
             <Box key={group.id} component="section" aria-label={group.label}>
@@ -328,7 +346,7 @@ export function XDriveServiceDependenciesPage({
           )
         })}
         <Typography variant="caption" color="text.secondary">
-          “尚未接入”表示服务或状态探针尚未实现。修改百度 AK 不会自动重启容器，也不会触发全库重分析。
+          “尚未接入”表示功能尚未实现；“无法检测”表示没有可靠的实时健康探针。只有支持在线配置的服务才开放保存操作。容器重启、数据迁移和镜像升级必须由受限部署流程执行，不会仅凭保存表单宣称生效。
         </Typography>
       </Stack>
     </XDriveWorkspaceSurface>

@@ -11,6 +11,9 @@ export type XDriveServiceDependencyGroup =
   | 'intelligence'
   | 'location'
 
+export type XDriveServiceConfigMode = 'in-app' | 'deployment' | 'planned'
+export type XDriveServiceApplyMode = 'immediate' | 'controlled-restart' | 'not-available'
+
 export type XDriveServiceDependency = {
   id: string
   group: XDriveServiceDependencyGroup
@@ -19,6 +22,9 @@ export type XDriveServiceDependency = {
   detail: string
   version?: string
   model?: string
+  config_mode?: XDriveServiceConfigMode
+  apply_mode?: XDriveServiceApplyMode
+  config_hint?: string
 }
 
 export type XDriveServiceDependenciesSnapshot = {

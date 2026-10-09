@@ -60,6 +60,15 @@ Provider delivery rules:
 
 
 
+## Service dependencies configuration and activation policy (2026-10-10)
+
+- The administrator **服务与依赖** page is the long-term management entry for **instance-wide** services, system-level provider credentials, model workers and deployment dependencies; Web/Desktop share the same MUI surface and Server-side admin authorization. Show every service's **configured/installed/health/activation** states separately. Display `config_mode`, `apply_mode` and an exact requirement, not a fake green status or an inert enable button.
+- **Strict boundary:** exclude all per-user Yike, Synology Photos, DSM FileStation and **同步文件夹** source records, credentials and navigation from this administrator page, its status API and its configuration contracts. Users manage them only from their own **同步文件夹** surfaces, with their existing authorization rules. Sharing masked/reveal credential UI is allowed; sharing secret storage, API permissions or global source data is not.
+- **Baidu Server API:** runtime-encrypted Server AK hot update/temporary audited reveal; new requests use the changed AK without restart. No alternate/offline map fallback.
+- **Final acceptance is actual configuration and application for every instance-wide dependency:** an administrator must eventually be able to inspect current/effective configuration, validate a proposed revision, save it, apply it by the safe service-specific mode, verify runtime health and see failed/pending/rolled-back results. Saving desired state alone never counts as applied. Preserve revision/concurrency checks, audited changes and rollback. Until the backend truly supports a stage, show its exact missing prerequisite and disable its action rather than using an inert button.
+- **GeoNames, Photo Intelligence, Worker, Caddy, PostgreSQL, file storage and future Media Worker:** backend configuration/control must be implemented and tested per dependency before advertising an edit/apply action. Clearly mark deployment-only settings as requiring restricted maintenance, controlled restart or task boundary. Never expose a Docker socket or restart core services merely because a user saved text; no interrupted durable upload/download/sync as a side effect.
+- Only mark **ready** after a genuine live probe; no probe means **unknown**, and unfinished integration means **planned**. Preserve authoritative statuses, admin audit, rollback path and actual-versus-desired configuration. Each phase adds tests; do not claim all providers fully managed until their real effect is proven.
+
 ## Race and concurrency specialization policy
 
 - For a race/concurrency specialization task, **test first and do not change production behavior until a real failure is reproduced**. Continue running or extending the relevant race/stress/interleaving tests until one of them fails because of an actual product concurrency/lifecycle bug.
