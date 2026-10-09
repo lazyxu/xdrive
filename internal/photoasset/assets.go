@@ -204,82 +204,192 @@ func reconcileAssetsDB(tx *gorm.DB, ownerID uint64) ([]desiredAsset, map[uint64]
 
 	nodeToAsset := make(map[uint64]uint64)
 	now := time.Now().UTC()
-	for _, want := range desired {
-		asset, exists := byPrimary[want.primaryID]
-		if exists {
-			if err := tx.Model(&meta.PhotoAsset{}).Where("id = ?", asset.ID).
-				Updates(map[string]any{
-					"kind":         want.kind,
-					"evidence_key": want.evidence,
-					"updated_at":   now,
-				}).Error; err != nil {
-				return nil, nil, err
+	// Read existing projection rows in bounded windows. A clean repeat scan
+	// must not issue four writes per unchanged PhotoAsset.
+	for offset := 0; offset < len(desired); offset += photoAssetNodeBatchSize {
+		end := min(offset+photoAssetNodeBatchSize, len(desired))
+		batch := desired[offset:end]
+		existingIDs := make([]uint64, 0, len(batch))
+		for _, want := range batch {
+			if current, exists := byPrimary[want.primaryID]; exists {
+				existingIDs = append(existingIDs, current.ID)
 			}
-			asset.Kind = want.kind
-			asset.EvidenceKey = want.evidence
-		} else {
-			asset = meta.PhotoAsset{
-				OwnerID: ownerID, PrimaryNodeID: want.primaryID,
-				Kind: want.kind, EvidenceKey: want.evidence,
-				CreatedAt: now, UpdatedAt: now,
-			}
-			if err := tx.Create(&asset).Error; err != nil {
-				return nil, nil, err
-			}
-			byPrimary[want.primaryID] = asset
 		}
+		resourceByAsset := make(map[uint64][]meta.PhotoResource, len(existingIDs))
+		metadataByAsset := make(map[uint64]meta.PhotoMetadata, len(existingIDs))
+		if len(existingIDs) != 0 {
+			var resourceRows []meta.PhotoResource
+			if err := tx.Where("asset_id IN ?", existingIDs).Find(&resourceRows).Error; err != nil {
+				return nil, nil, err
+			}
+			for _, row := range resourceRows {
+				resourceByAsset[row.AssetID] = append(resourceByAsset[row.AssetID], row)
+			}
+			var metadataRows []meta.PhotoMetadata
+			if err := tx.Where("asset_id IN ?", existingIDs).Find(&metadataRows).Error; err != nil {
+				return nil, nil, err
+			}
+			for _, row := range metadataRows {
+				metadataByAsset[row.AssetID] = row
+			}
+		}
+		for _, want := range batch {
+			current, exists := byPrimary[want.primaryID]
+			if exists && current.Kind == want.kind && current.EvidenceKey == want.evidence {
+				oldMetadata, metadataExists := metadataByAsset[current.ID]
+				if metadataExists &&
+					photoAssetTechnicalMetadataEqual(oldMetadata, want.metadata) &&
+					photoAssetResourceRowsEqual(resourceByAsset[current.ID], want.resources) {
+					for _, resource := range want.resources {
+						if resource.kind == meta.PhotoResourceKindNode {
+							nodeToAsset[resource.nodeID] = current.ID
+						}
+					}
+					continue
+				}
+			}
+			asset, exists := byPrimary[want.primaryID]
+			if exists {
+				if err := tx.Model(&meta.PhotoAsset{}).Where("id = ?", asset.ID).
+					Updates(map[string]any{
+						"kind":         want.kind,
+						"evidence_key": want.evidence,
+						"updated_at":   now,
+					}).Error; err != nil {
+					return nil, nil, err
+				}
+				asset.Kind = want.kind
+				asset.EvidenceKey = want.evidence
+			} else {
+				asset = meta.PhotoAsset{
+					OwnerID: ownerID, PrimaryNodeID: want.primaryID,
+					Kind: want.kind, EvidenceKey: want.evidence,
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := tx.Create(&asset).Error; err != nil {
+					return nil, nil, err
+				}
+				byPrimary[want.primaryID] = asset
+			}
 
-		if err := tx.Where("asset_id = ?", asset.ID).Delete(&meta.PhotoResource{}).Error; err != nil {
-			return nil, nil, err
-		}
-		resources := make([]meta.PhotoResource, 0, len(want.resources))
-		for _, resource := range want.resources {
-			resources = append(resources, meta.PhotoResource{
-				AssetID: asset.ID, ResourceKind: resource.kind,
-				NodeID: resource.nodeID, Role: resource.role,
-				Ordinal: resource.ordinal, Name: resource.name,
-				MediaKind: resource.mediaKind, MIMEType: resource.mimeType,
-				Size: resource.size, SHA256: resource.sha256,
-				ByteOffset: resource.byteOffset,
+			if err := tx.Where("asset_id = ?", asset.ID).Delete(&meta.PhotoResource{}).Error; err != nil {
+				return nil, nil, err
+			}
+			resources := make([]meta.PhotoResource, 0, len(want.resources))
+			for _, resource := range want.resources {
+				resources = append(resources, meta.PhotoResource{
+					AssetID: asset.ID, ResourceKind: resource.kind,
+					NodeID: resource.nodeID, Role: resource.role,
+					Ordinal: resource.ordinal, Name: resource.name,
+					MediaKind: resource.mediaKind, MIMEType: resource.mimeType,
+					Size: resource.size, SHA256: resource.sha256,
+					ByteOffset: resource.byteOffset,
+					CreatedAt:  now, UpdatedAt: now,
+				})
+				if resource.kind == meta.PhotoResourceKindNode {
+					nodeToAsset[resource.nodeID] = asset.ID
+				}
+			}
+			if len(resources) != 0 {
+				if err := tx.Create(&resources).Error; err != nil {
+					return nil, nil, err
+				}
+			}
+
+			metadataRow := meta.PhotoMetadata{
+				AssetID:    asset.ID,
+				MediaKind:  want.metadata.MediaKind,
+				MIMEType:   want.metadata.MIMEType,
+				Width:      want.metadata.Width,
+				Height:     want.metadata.Height,
+				DurationMS: want.metadata.DurationMS,
+				CapturedAt: want.metadata.CapturedAt,
+				Latitude:   want.metadata.Latitude,
+				Longitude:  want.metadata.Longitude,
+				AltitudeM:  want.metadata.AltitudeM,
+				EXIFJSON:   want.metadata.EXIFJSON,
+				VideoJSON:  want.metadata.VideoJSON,
 				CreatedAt:  now, UpdatedAt: now,
-			})
-			if resource.kind == meta.PhotoResourceKindNode {
-				nodeToAsset[resource.nodeID] = asset.ID
 			}
-		}
-		if len(resources) != 0 {
-			if err := tx.Create(&resources).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "asset_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"media_kind", "mime_type", "width", "height", "duration_ms",
+					"captured_at", "latitude", "longitude", "altitude_m",
+					"exif_json", "video_json", "updated_at",
+				}),
+			}).Create(&metadataRow).Error; err != nil {
 				return nil, nil, err
 			}
-		}
-
-		metadataRow := meta.PhotoMetadata{
-			AssetID:    asset.ID,
-			MediaKind:  want.metadata.MediaKind,
-			MIMEType:   want.metadata.MIMEType,
-			Width:      want.metadata.Width,
-			Height:     want.metadata.Height,
-			DurationMS: want.metadata.DurationMS,
-			CapturedAt: want.metadata.CapturedAt,
-			Latitude:   want.metadata.Latitude,
-			Longitude:  want.metadata.Longitude,
-			AltitudeM:  want.metadata.AltitudeM,
-			EXIFJSON:   want.metadata.EXIFJSON,
-			VideoJSON:  want.metadata.VideoJSON,
-			CreatedAt:  now, UpdatedAt: now,
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "asset_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"media_kind", "mime_type", "width", "height", "duration_ms",
-				"captured_at", "latitude", "longitude", "altitude_m",
-				"exif_json", "video_json", "updated_at",
-			}),
-		}).Create(&metadataRow).Error; err != nil {
-			return nil, nil, err
 		}
 	}
 	return desired, nodeToAsset, nil
+}
+
+// photoAssetTechnicalMetadataEqual deliberately ignores user annotations,
+// which are never overwritten by media reindexing (favorite, people, tags,
+// description and vendor metadata). Technical metadata changes still run the
+// existing upsert path.
+func photoAssetTechnicalMetadataEqual(existing meta.PhotoMetadata, wanted meta.MediaMetadata) bool {
+	return existing.MediaKind == wanted.MediaKind &&
+		existing.MIMEType == wanted.MIMEType &&
+		existing.Width == wanted.Width &&
+		existing.Height == wanted.Height &&
+		existing.DurationMS == wanted.DurationMS &&
+		photoAssetCapturedAtEqual(existing.CapturedAt, wanted.CapturedAt) &&
+		photoAssetOptionalFloatEqual(existing.Latitude, wanted.Latitude) &&
+		photoAssetOptionalFloatEqual(existing.Longitude, wanted.Longitude) &&
+		photoAssetOptionalFloatEqual(existing.AltitudeM, wanted.AltitudeM) &&
+		existing.EXIFJSON == wanted.EXIFJSON &&
+		existing.VideoJSON == wanted.VideoJSON
+}
+
+func photoAssetCapturedAtEqual(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
+}
+
+func photoAssetOptionalFloatEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// PhotoResources can be returned in any SQL row order, so compare as a
+// one-to-one multiset rather than relying on positional equivalence.
+func photoAssetResourceRowsEqual(existing []meta.PhotoResource, wanted []desiredResource) bool {
+	if len(existing) != len(wanted) {
+		return false
+	}
+	used := make([]bool, len(existing))
+	for _, want := range wanted {
+		found := false
+		for i, current := range existing {
+			if used[i] ||
+				current.ResourceKind != want.kind ||
+				current.NodeID != want.nodeID ||
+				current.Role != want.role ||
+				current.Ordinal != want.ordinal ||
+				current.Name != want.name ||
+				current.MediaKind != want.mediaKind ||
+				current.MIMEType != want.mimeType ||
+				current.Size != want.size ||
+				current.SHA256 != want.sha256 ||
+				current.ByteOffset != want.byteOffset {
+				continue
+			}
+			used[i] = true
+			found = true
+			break
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // loadAndPruneStalePhotoAssets reuses the owner-scoped existing asset read,

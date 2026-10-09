@@ -35,26 +35,43 @@ func reconcileCollectionsDB(
 		assetByPrimary[asset.PrimaryNodeID] = asset.ID
 	}
 	if len(primaryIDs) != 0 {
-		var primaryNodes []meta.Node
-		if err := tx.Where(
-			"id IN ? AND owner_id = ? AND deleted_at IS NULL",
-			primaryIDs,
-			ownerID,
-		).Find(&primaryNodes).Error; err != nil {
-			return 0, 0, err
-		}
-		parentIDs := make([]uint64, 0, len(primaryNodes))
-		for _, node := range primaryNodes {
-			if node.ParentID != nil {
-				parentIDs = append(parentIDs, *node.ParentID)
+		// Avoid expanding all 100k primary IDs into a single PostgreSQL
+		// statement (65,535 extended-protocol bind parameter limit).
+		primaryNodes := make([]meta.Node, 0, len(primaryIDs))
+		for start := 0; start < len(primaryIDs); start += photoAssetNodeBatchSize {
+			end := min(start+photoAssetNodeBatchSize, len(primaryIDs))
+			var rows []meta.Node
+			if err := tx.Where(
+				"id IN ? AND owner_id = ? AND deleted_at IS NULL",
+				primaryIDs[start:end],
+				ownerID,
+			).Find(&rows).Error; err != nil {
+				return 0, 0, err
 			}
+			primaryNodes = append(primaryNodes, rows...)
 		}
-		parents := make(map[uint64]meta.Node)
-		if len(parentIDs) != 0 {
+		// Most photo assets belong to the same few directories. Do not
+		// produce a 100k duplicate-ID parent-directory query.
+		parentIDs := make([]uint64, 0)
+		parentSeen := make(map[uint64]struct{})
+		for _, node := range primaryNodes {
+			if node.ParentID == nil {
+				continue
+			}
+			id := *node.ParentID
+			if _, seen := parentSeen[id]; seen {
+				continue
+			}
+			parentSeen[id] = struct{}{}
+			parentIDs = append(parentIDs, id)
+		}
+		parents := make(map[uint64]meta.Node, len(parentIDs))
+		for start := 0; start < len(parentIDs); start += photoAssetNodeBatchSize {
+			end := min(start+photoAssetNodeBatchSize, len(parentIDs))
 			var rows []meta.Node
 			if err := tx.Where(
 				"id IN ? AND owner_id = ? AND type = ? AND deleted_at IS NULL",
-				parentIDs,
+				parentIDs[start:end],
 				ownerID,
 				meta.NodeTypeDir,
 			).Find(&rows).Error; err != nil {
@@ -213,44 +230,67 @@ func reconcileCollectionsDB(
 			return 0, 0, err
 		}
 
-		if err := tx.Where(
-			"collection_id = ?",
-			collection.ID,
-		).Delete(&meta.PhotoCollectionAsset{}).Error; err != nil {
-			return 0, 0, err
-		}
-		if want.state != meta.PhotoCollectionStateActive || len(want.members) == 0 {
-			continue
-		}
-		type orderedMember struct {
-			assetID  uint64
-			position int64
-		}
-		ordered := make([]orderedMember, 0, len(want.members))
-		for assetID, position := range want.members {
-			ordered = append(ordered, orderedMember{
-				assetID:  assetID,
-				position: position,
-			})
-		}
-		sort.Slice(ordered, func(i, j int) bool {
-			if ordered[i].position != ordered[j].position {
-				return ordered[i].position < ordered[j].position
+		// Keep unchanged membership rows (including their CreatedAt) stable.
+		// Recreating 100k rows both wastes work and exceeds PostgreSQL's
+		// extended-protocol bind limit in a single GORM Create().
+		rows := make([]meta.PhotoCollectionAsset, 0, len(want.members))
+		if want.state == meta.PhotoCollectionStateActive {
+			type orderedMember struct {
+				assetID  uint64
+				position int64
 			}
-			return ordered[i].assetID < ordered[j].assetID
-		})
-		rows := make([]meta.PhotoCollectionAsset, 0, len(ordered))
-		for ordinal, member := range ordered {
-			rows = append(rows, meta.PhotoCollectionAsset{
-				CollectionID: collection.ID,
-				AssetID:      member.assetID,
-				Position:     int64(ordinal),
-				CreatedAt:    now,
-				UpdatedAt:    now,
+			ordered := make([]orderedMember, 0, len(want.members))
+			for assetID, position := range want.members {
+				ordered = append(ordered, orderedMember{
+					assetID:  assetID,
+					position: position,
+				})
+			}
+			sort.Slice(ordered, func(i, j int) bool {
+				if ordered[i].position != ordered[j].position {
+					return ordered[i].position < ordered[j].position
+				}
+				return ordered[i].assetID < ordered[j].assetID
 			})
+			for ordinal, member := range ordered {
+				rows = append(rows, meta.PhotoCollectionAsset{
+					CollectionID: collection.ID,
+					AssetID:      member.assetID,
+					Position:     int64(ordinal),
+					CreatedAt:    now,
+					UpdatedAt:    now,
+				})
+			}
 		}
-		if err := tx.Create(&rows).Error; err != nil {
+		var existingMembers []meta.PhotoCollectionAsset
+		if err := tx.Where("collection_id = ?", collection.ID).
+			Find(&existingMembers).Error; err != nil {
 			return 0, 0, err
+		}
+		unchanged := len(existingMembers) == len(rows)
+		if unchanged {
+			existingPositions := make(map[uint64]int64, len(existingMembers))
+			for _, entry := range existingMembers {
+				existingPositions[entry.AssetID] = entry.Position
+			}
+			for _, wanted := range rows {
+				position, exists := existingPositions[wanted.AssetID]
+				if !exists || position != wanted.Position {
+					unchanged = false
+					break
+				}
+			}
+		}
+		if !unchanged {
+			if err := tx.Where("collection_id = ?", collection.ID).
+				Delete(&meta.PhotoCollectionAsset{}).Error; err != nil {
+				return 0, 0, err
+			}
+			if len(rows) != 0 {
+				if err := tx.CreateInBatches(&rows, 1024).Error; err != nil {
+					return 0, 0, err
+				}
+			}
 		}
 		memberships += len(rows)
 	}
