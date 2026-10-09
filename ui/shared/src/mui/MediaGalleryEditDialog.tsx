@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -71,6 +71,27 @@ export function XDriveMediaGalleryEditDialog({
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // The editor can switch assets, recipe revisions, or open sessions while a
+  // previous request is unresolved. Each scope owns only its own async results.
+  const actionScopeRef = useRef({
+    nodeID: item?.node.id,
+    recipeRevision: item?.edit_recipe?.revision,
+    open,
+    inFlight: false,
+  })
+  if (
+    actionScopeRef.current.nodeID !== item?.node.id ||
+    actionScopeRef.current.recipeRevision !== item?.edit_recipe?.revision ||
+    actionScopeRef.current.open !== open
+  ) {
+    actionScopeRef.current = {
+      nodeID: item?.node.id,
+      recipeRevision: item?.edit_recipe?.revision,
+      open,
+      inFlight: false,
+    }
+  }
+  const actionScope = actionScopeRef.current
 
   useEffect(() => {
     if (!item || !open) return
@@ -127,18 +148,32 @@ export function XDriveMediaGalleryEditDialog({
         ((current.rotation_degrees + delta + 360) % 360),
     }))
   }
-  const save = async () => {
+  const runMutation = async (work: () => Promise<MediaEditRecipe>) => {
+    // A synchronous in-flight claim also prevents duplicate same-tick submits,
+    // before React can publish the next disabled/Busy render.
+    if (!open || actionScopeRef.current !== actionScope || actionScope.inFlight) return
+    actionScope.inFlight = true
     setBusy(true)
     setError('')
     try {
-      const saved = await onSave(item, draft)
-      setDraft(xDriveMediaEditInputFromRecipe(saved, item.metadata.media_kind))
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError))
+      const result = await work()
+      if (actionScopeRef.current === actionScope) {
+        setDraft(xDriveMediaEditInputFromRecipe(result, item.metadata.media_kind))
+      }
+    } catch (mutationError) {
+      if (actionScopeRef.current === actionScope) {
+        setError(mutationError instanceof Error
+          ? mutationError.message
+          : String(mutationError))
+      }
     } finally {
-      setBusy(false)
+      if (actionScopeRef.current === actionScope) {
+        actionScope.inFlight = false
+        setBusy(false)
+      }
     }
   }
+  const save = () => runMutation(() => onSave(item, draft))
 
   return (
     <Dialog
@@ -349,21 +384,9 @@ export function XDriveMediaGalleryEditDialog({
             color="warning"
             disabled={busy}
             onClick={() => {
-              setBusy(true)
-              setError('')
-              void onReset(item, item.edit_recipe!.revision)
-                .then((reset) => {
-                  setDraft(xDriveMediaEditInputFromRecipe(
-                    reset,
-                    item.metadata.media_kind,
-                  ))
-                })
-                .catch((resetError) => {
-                  setError(resetError instanceof Error
-                    ? resetError.message
-                    : String(resetError))
-                })
-                .finally(() => setBusy(false))
+              if (onReset && item.edit_recipe?.revision) {
+                void runMutation(() => onReset(item, item.edit_recipe!.revision))
+              }
             }}
           >
             移除已保存编辑

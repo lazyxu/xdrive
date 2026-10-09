@@ -561,6 +561,20 @@ Sections do not issue their own metadata requests, eagerly enumerate directories
 or introduce a second Preview Engine. The same data source, edit callbacks and
 responsive Inspector container remain unchanged.
 
+Gallery Edit Dialog lifecycle race verification (PR #1206, 2026-10-10):
+the shared Web/Desktop edit-recipe Save/Reset callbacks must not apply a late
+result, error, or Busy-finalizer from another selected asset, recipe revision,
+or closed/reopened edit session. An A→B→A return is still a new session.
+Synchronous in-flight ownership prevents same-render duplicate Save/Reset
+requests while preserving the existing durable Server mutation, edit recipe,
+and Preview Engine behavior. The original component function and Reset JSX
+handler were executed with controlled Promise ordering; the eight deterministic
+first-red failures are recorded in GitHub Actions run 37976170606
+(`desktop-tests`, test numbers 489–496). The same eight interleavings plus
+six current-owner/ABA/revision/same-tick regression checks live in
+`desktop/tests/media-gallery-edit-async-race.cjs`; PR exact-head CI is the
+merge gate, distinct from native Web/Desktop device acceptance.
+
 M09 acceptance preserves this shared contract. Tags/people/description editors keep
 local save completion, errors and busy state owned by the initiating selected Node,
 so A's late response cannot replace B's draft. A byte revision alone does not create
