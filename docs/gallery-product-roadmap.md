@@ -1043,6 +1043,12 @@ Gallery, its Viewer, the standalone Web media Viewer and FileExplorer use the sh
 
 Validation includes behavioral pure-function tests with valid `.livp`, valid exact pairs, missing, duplicate, wrong-kind, and derived resource cases; source contracts guard distinct UI affordances on both clients and normal original download behavior. The export itself is not transcoding, not edited-output export, and does not mutate existing logical album membership. Physical Web/Desktop download/ZIP inspection and updates during export require separate acceptance; do not claim media-revision atomic snapshot beyond existing Server archive semantics.
 
+## M11 compact panels — renderer acceptance (2026-10-09)
+
+Reused merged PR #1122's shared VisualViewport observer and in-app filter Drawer. A measured 844×200/200% text case exposed only23px of a63px first field beneath sticky actions; removing only compact sticky positioning makes the field and existing actions reachable through one scroller while fixed44px Close remains. Gallery navigation is at least44px below900CSSpx independent of pointer type. Existing draft/applied query, on-demand index status, album selection, IANA boundaries and adapters remain intact.
+
+The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37 all pass after preserving merged M12bd96. FullDesktop1594pass/0fail/1existing skip, typecheck/lint/build pass. Exact scope and hashes are in [M11 evidence](validation/mobile-panels-short-viewport-2026-10-09.json). Updated PR1125 CI/merge are pending; physical keyboards, installed modes and screen readers are not-run. This does not certify later Gallery follow-up items.
+
 ### Verified Gallery duplicate folding — opt-in (2026-10-09)
 
 - When enabled in the shared Gallery toolbar, the Server constructs owner-scoped verified equivalence groups using the exact complete PhotoResource identities and current PhotoEditRecipe checks that power Cleanup's conservative classifications. Different/unverified Live Photo motion, RAW, Sidecar, burst resources, edits or stale recipe sources **never fold**; groups too large to verify safely remain separate.

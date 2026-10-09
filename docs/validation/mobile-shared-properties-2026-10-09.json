@@ -6675,5 +6675,24 @@
       "ui/shared/src/mui/MediaGalleryInspector.tsx": "adaa419df9eefca10b44fb9f596aec4fe263df84044324d7290f9b22a1b52998",
       "web/src/WebFileViewerApps.tsx": "8b0be26342f8c93ff29627a375c405c859c59da724d382864ab73edc036a0647"
     }
+  },
+  "finalDelivery": {
+    "status": "merged",
+    "githubPR": 1111,
+    "url": "https://github.com/lazyxu/xdrive/pull/1111",
+    "head": "774c4aa509372d4787869c08e59b30b3d103aafe",
+    "completePRCI": {
+      "runID": 37902685808,
+      "conclusion": "success",
+      "postgresqlGate": "go-linux-api passed in CI; not run locally"
+    },
+    "merge": "43426b4eca6bb4186cbf95add679a83d1be0e42e",
+    "mergedAt": "2026-10-09T08:13:42Z",
+    "cleanup": {
+      "remoteBranch": "verified absent",
+      "localAndTrackingBranches": "removed"
+    },
+    "priorReceipts": "Historical local-accepted/PR-pending timestamps above remain unchanged; this final delivery record supersedes only delivery status.",
+    "nativeAcceptance": "Physical iOS/Android ordinary tab/installed modes, software keyboard, safe areas, VoiceOver/TalkBack remain not-run."
   }
 }

@@ -439,7 +439,6 @@ export function XDriveMediaGalleryFilterBar({
         ) : null}
         <Stack direction="row" spacing={1} useFlexGap flexWrap={compactScrollable ? 'wrap' : 'nowrap'}
           sx={compactScrollable ? {
-            position: 'sticky', bottom: 0, zIndex: 1,
             bgcolor: 'background.paper',
             flexShrink: 0, px: 0.5, py: 1, borderTop: 1, borderColor: 'divider',
             '& .MuiButton-root': {

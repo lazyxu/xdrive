@@ -436,6 +436,16 @@ Current behavior:
 
 Do not bypass this boundary with renderer-side absolute paths or generic shell execution.
 
+### Compact touch dragging and sidebar order
+
+Below900 CSS px, a44px handle in the persistent selection controls moves the complete selected projection to a mounted folder or breadcrumb. The same handle opens the existing Move To destination chooser on an ordinary tap. Existing Move/Copy To controls remain available. The handle is disabled with an explanation while selection is incomplete, renaming is active, the complete selection is unavailable, or the existing mutation limit is exceeded; no loaded-only subset is submitted. The drag snapshots source IDs/revisions, and the destination is revalidated against the current mounted projection at release.
+
+Quick Access and Smart Folder rows expose a sibling44px drag/order handle. Dragging shows a before/after insertion target; tapping or using Enter/Space opens **上移 / 下移** with first/last boundaries. Name-sorted Quick Access explains that manual ordering must be selected first. Both paths submit the same complete ordered-ID callbacks. Quick Access keeps its existing optimistic order rollback; Smart Folders keep their existing Organization serialization. No new mutation queue or local-only order is introduced.
+
+Only these handles use `touch-action:none`. Ordinary rows retain touch scrolling, long-press selection and normal activation; native mouse row dragging is preserved. Capture belongs to the mounted local owner, and autoscroll uses its existing bounded scroll host. Invalid release, Escape, visible Cancel, pointercancel, lost capture, a second contact, source/session changes or unmount cancel without a mutation. Target hit testing repeats after scroll and at release. A completed/cancelled drag consumes its own compatibility click even when a small native drag reports the original down coordinate or replacement UI occupies that point; subsequent intentional pointer input and keyboard activation remain available. The earlier long-press selection release likewise cannot click a new toolbar action that moved beneath the finger.
+
+M10 validation and physical-device boundaries are recorded in [Mobile Web](mobile-web.md) and M49.V08 of [the platform matrix](mobile-web-platform-matrix.md).
+
 ### Native drag-out boundary
 
 FileExplorer already owns HTML5 drag/drop for internal file operations. Electron native `webContents.startDrag()` competes with that same `dragstart` lifecycle, so ordinary row/card dragging remains the xDrive internal move/copy source.

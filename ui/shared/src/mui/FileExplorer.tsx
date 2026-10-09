@@ -78,8 +78,6 @@ import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, XDRIVE_FILE_EXPLORER_TOUCH_LONG_PRES
 import {
   XDRIVE_FILE_EXPLORER_DRAG_MIME,
   xDriveFileExplorerEncodeDragItems,
-  xDriveFileExplorerTouchDragActivated,
-  xDriveFileExplorerTouchDropAllowed,
 } from '../file-explorer-drag'
 import type {
   XDriveFileExplorerCopyMoveOperation,
@@ -115,6 +113,8 @@ import type {
 } from '../file-explorer-grouping'
 import { XDriveStatePanel } from './StatePanel'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
+import { useXDrivePointerDrag } from './usePointerDrag'
+import type { XDrivePointerDragPoint } from './usePointerDrag'
 import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
@@ -832,21 +832,6 @@ type XDriveFileExplorerMarqueePointer = {
   clientY: number
   host: HTMLDivElement
 }
-type XDriveFileExplorerTouchDropTarget =
-  | { kind: 'folder'; item: XDriveFileExplorerItem }
-  | { kind: 'crumb'; crumb: XDriveFileExplorerCrumb }
-type XDriveFileExplorerTouchDragSession = {
-  scope: string
-  pointerId: number
-  captureHost: HTMLElement
-  startX: number
-  startY: number
-  clientX: number
-  clientY: number
-  items: XDriveFileExplorerItem[]
-  active: boolean
-  target: XDriveFileExplorerTouchDropTarget | null
-}
 
 export type XDriveFileExplorerQuickLookRequest = {
   item: XDriveFileExplorerItem
@@ -1112,7 +1097,6 @@ export function XDriveFileExplorer({
   const compactViewport = useMediaQuery('(max-width:899.95px)')
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
-  const [touchDragActive, setTouchDragActive] = useState(false)
   const [selectionLoad, setSelectionLoad] = useState<FileExplorerSelectionLoad | null>(null)
   const selectionLoadRef = useRef<FileExplorerSelectionLoad | null>(null)
   const [selectionLoadFeedback, setSelectionLoadFeedback] = useState('')
@@ -1127,6 +1111,7 @@ export function XDriveFileExplorer({
   const navigationViewport = useXDriveMobilePanelViewport(compactViewport && navigationDrawerOpen)
   const lastPointerTypeRef = useRef<string | null>(null)
   const suppressTouchClickRef = useRef(false)
+  const completedTouchPressRef = useRef<number | null>(null)
   const touchPressRef = useRef<{
     pointerId: number
     itemKey: string
@@ -1134,8 +1119,8 @@ export function XDriveFileExplorer({
     startY: number
     timer: number
   } | null>(null)
-  const touchDragRef = useRef<XDriveFileExplorerTouchDragSession | null>(null)
   const commandBarRef = useRef<HTMLDivElement | null>(null)
+  const explorerElementRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const pendingScrollTopRef = useRef(0)
@@ -1312,12 +1297,6 @@ export function XDriveFileExplorer({
       window.cancelAnimationFrame(dragAutoScrollFrameRef.current)
     }
     dragAutoScrollFrameRef.current = null
-    const touchDragSession = touchDragRef.current
-    if (touchDragSession?.captureHost.hasPointerCapture(touchDragSession.pointerId)) {
-      touchDragSession.captureHost.releasePointerCapture(touchDragSession.pointerId)
-    }
-    touchDragRef.current = null
-    setTouchDragActive(false)
     setDraggedItems([])
     setDropTargetID(null)
     setDropTargetCrumbID(null)
@@ -1362,6 +1341,7 @@ export function XDriveFileExplorer({
     setNavigationDrawerOpen(false)
     lastPointerTypeRef.current = null
     suppressTouchClickRef.current = false
+    completedTouchPressRef.current = null
     if (touchPressRef.current && typeof window !== 'undefined') {
       window.clearTimeout(touchPressRef.current.timer)
     }
@@ -1442,11 +1422,6 @@ export function XDriveFileExplorer({
     if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current)
     if (marqueeFrameRef.current !== null) window.cancelAnimationFrame(marqueeFrameRef.current)
     if (touchPressRef.current) window.clearTimeout(touchPressRef.current.timer)
-    const touchSession = touchDragRef.current
-    if (touchSession?.captureHost.hasPointerCapture(touchSession.pointerId)) {
-      touchSession.captureHost.releasePointerCapture(touchSession.pointerId)
-    }
-    touchDragRef.current = null
   }, [])
 
   const visibleItems = useMemo(() => {
@@ -2376,6 +2351,7 @@ export function XDriveFileExplorer({
       if (!press || press.pointerId !== pointerId || press.itemKey !== itemKey) return
       touchPressRef.current = null
       suppressTouchClickRef.current = true
+      completedTouchPressRef.current = pointerId
       setTouchSelectionMode(true)
       setActiveItemID(item.id)
       setActiveLogicalIndex(index)
@@ -2777,58 +2753,6 @@ export function XDriveFileExplorer({
     dragAutoScrollFrameRef.current = null
   }
 
-
-  const touchDropTargetAt = (
-    clientX: number,
-    clientY: number,
-    sources: readonly XDriveFileExplorerItem[],
-  ): XDriveFileExplorerTouchDropTarget | null => {
-    if (typeof document === 'undefined') return null
-    const hit = document.elementFromPoint(clientX, clientY) as HTMLElement | null
-    const crumbElement = hit?.closest<HTMLElement>('[data-xdrive-file-explorer-drop-crumb-index]')
-    if (crumbElement && onDropItemsToCrumb) {
-      const index = Number(crumbElement.getAttribute('data-xdrive-file-explorer-drop-crumb-index'))
-      const crumb = Number.isSafeInteger(index) ? crumbs[index] : undefined
-      if (crumb && crumbElement.getAttribute('data-xdrive-file-explorer-drop-crumb-key') === explorerIDKey(crumb.id) &&
-          xDriveFileExplorerTouchDropAllowed(sources, crumb)) {
-        return { kind: 'crumb', crumb }
-      }
-    }
-    const row = hit?.closest<HTMLElement>('[data-xdrive-file-explorer-drop-folder-index]')
-    if (row && onDropItemsToFolder) {
-      const index = Number(row.getAttribute('data-xdrive-file-explorer-drop-folder-index'))
-      const item = Number.isSafeInteger(index) ? logicalItemAt(index) : undefined
-      if (item?.kind === 'dir' && row.getAttribute('data-xdrive-file-explorer-drop-folder-key') === explorerIDKey(item.id) &&
-          xDriveFileExplorerTouchDropAllowed(sources, item)) {
-        return { kind: 'folder', item }
-      }
-    }
-    return null
-  }
-  const updateTouchDropTarget = (clientX: number, clientY: number) => {
-    const session = touchDragRef.current
-    if (!session?.active || session.scope !== interactionScopeKey) return
-    session.clientX = clientX
-    session.clientY = clientY
-    const target = touchDropTargetAt(clientX, clientY, session.items)
-    session.target = target
-    setDropTargetID(target?.kind === 'folder' ? target.item.id : null)
-    setDropTargetCrumbID(target?.kind === 'crumb' ? target.crumb.id : null)
-  }
-  const cancelTouchDrag = () => {
-    const session = touchDragRef.current
-    if (!session) return
-    touchDragRef.current = null
-    if (session.captureHost.hasPointerCapture(session.pointerId)) {
-      session.captureHost.releasePointerCapture(session.pointerId)
-    }
-    stopDragAutoScroll()
-    setTouchDragActive(false)
-    setDraggedItems([])
-    setDropTargetID(null)
-    setDropTargetCrumbID(null)
-  }
-
   const runDragAutoScroll = () => {
     dragAutoScrollFrameRef.current = null
     const host = scrollHostRef.current
@@ -2838,8 +2762,6 @@ export function XDriveFileExplorer({
     const delta = xDriveFileExplorerDragAutoScrollDelta(pointerY, rect.top, rect.bottom)
     if (delta === 0) return
     host.scrollTop += delta
-    const touchSession = touchDragRef.current
-    if (touchSession?.active) updateTouchDropTarget(touchSession.clientX, touchSession.clientY)
     dragAutoScrollFrameRef.current = window.requestAnimationFrame(runDragAutoScroll)
   }
 
@@ -2881,97 +2803,6 @@ export function XDriveFileExplorer({
     setDropTargetID(null)
     setDropTargetCrumbID(null)
   }
-
-
-  // Explicit 44px handle protects ordinary row swipes and 450ms long press.
-  const startTouchDrag = (event: ReactPointerEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
-    if (!compactTouch || !touchSelectionMode ||
-        !(onDropItemsToFolder || onDropItemsToCrumb) ||
-        renamingID !== null || event.button !== 0) return
-    event.stopPropagation()
-    event.preventDefault()
-    cancelTouchDrag()
-    const fromSelection = selectedKeySet.has(explorerIDKey(item.id))
-    const selection = fromSelection && selectedItems.length > 0
-      ? [...selectedItems]
-      : [item]
-    const disabledReason = selectionActionDisabledReason(
-      'move-to', selection, fromSelection ? selectedCount : 1,
-    )
-    if (disabledReason) {
-      setSelectionLoadFeedback(disabledReason)
-      return
-    }
-    setSelectionLoadFeedback('')
-    const captureHost = event.currentTarget.closest<HTMLElement>('[data-xdrive-file-explorer]')
-    if (!captureHost) return
-    touchDragRef.current = {
-      scope: interactionScopeKey, pointerId: event.pointerId, captureHost,
-      startX: event.clientX, startY: event.clientY,
-      clientX: event.clientX, clientY: event.clientY,
-      items: selection, active: false, target: null,
-    }
-    // The Paper remains mounted even when source rows leave a virtual window.
-    captureHost.setPointerCapture(event.pointerId)
-  }
-  const moveTouchDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    const session = touchDragRef.current
-    if (!session || session.pointerId !== event.pointerId) return
-    event.stopPropagation()
-    if (!session.active) {
-      if (!xDriveFileExplorerTouchDragActivated(
-        session.startX, session.startY, event.clientX, event.clientY,
-      )) return
-      session.active = true
-      setTouchDragActive(true)
-      setDraggedItems(session.items)
-    }
-    event.preventDefault()
-    updateTouchDropTarget(event.clientX, event.clientY)
-    const host = scrollHostRef.current
-    if (!host) return
-    const rect = host.getBoundingClientRect()
-    if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
-      updateDragAutoScroll(event.clientY)
-    } else {
-      stopDragAutoScroll()
-    }
-  }
-  const finishTouchDrag = (event: ReactPointerEvent<HTMLElement>, cancelled = false) => {
-    const session = touchDragRef.current
-    if (!session || session.pointerId !== event.pointerId) return
-    event.preventDefault()
-    event.stopPropagation()
-    const target = cancelled || !session.active || session.scope !== interactionScopeKey
-      ? null
-      : touchDropTargetAt(event.clientX, event.clientY, session.items)
-    cancelTouchDrag()
-    if (target?.kind === 'folder') {
-      onDropItemsToFolder?.(session.items, target.item, 'move')
-    } else if (target?.kind === 'crumb') {
-      onDropItemsToCrumb?.(session.items, target.crumb, 'move')
-    }
-  }
-  useEffect(() => {
-    if (!compactTouch || !touchSelectionMode) cancelTouchDrag()
-  }, [compactTouch, touchSelectionMode, interactionScopeKey])
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape' || !touchDragRef.current) return
-      event.preventDefault()
-      cancelTouchDrag()
-    }
-    const onBlur = () => cancelTouchDrag()
-    const onVisibility = () => { if (document.hidden) cancelTouchDrag() }
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('blur', onBlur)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('blur', onBlur)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [compactTouch, touchSelectionMode, interactionScopeKey])
 
   const dragOverFolder = (event: ReactDragEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
     const external = event.dataTransfer.types.includes('Files') && Boolean(onExternalFilesDrop || onExternalFolderDrop)
@@ -3057,6 +2888,72 @@ export function XDriveFileExplorer({
       endItemDrag()
     }
   }
+
+  const touchDragDisabledReason = selectionLoad
+    ? '请等待选择加载完成'
+    : renamingID !== null
+      ? '请先完成重命名'
+      : selectionActionDisabledReason('move-to')
+  const touchDragEnabled = compactViewport && selectedCount > 0 &&
+    Boolean(onDropItemsToFolder || onDropItemsToCrumb) && !touchDragDisabledReason
+  const touchDragScopeKey = touchDragEnabled
+    ? JSON.stringify([interactionScopeKey, selectedItems.map((item) => [explorerIDKey(item.id), item.revision])])
+    : interactionScopeKey
+  const touchDropTarget = (source: readonly XDriveFileExplorerItem[], point: XDrivePointerDragPoint) => {
+    const owner = explorerElementRef.current
+    const element = owner?.ownerDocument.elementFromPoint(point.clientX, point.clientY)
+    if (!owner || !element || !owner.contains(element)) return null
+    const selectedKeys = new Set(source.map((item) => explorerIDKey(item.id)))
+    const crumbElement = element.closest('[data-xdrive-file-explorer-crumb]')
+    if (crumbElement && onDropItemsToCrumb) {
+      const key = crumbElement.getAttribute('data-xdrive-file-explorer-crumb')
+      const index = crumbs.findIndex((crumb) => explorerIDKey(crumb.id) === key)
+      if (index < 0 || (!searchSummary && index === crumbs.length - 1)) return null
+      if (crumbs.slice(0, index + 1).some((crumb) => selectedKeys.has(explorerIDKey(crumb.id)))) return null
+      return { kind: 'crumb' as const, value: crumbs[index] }
+    }
+    const row = element.closest('[data-xdrive-file-explorer-item-id]')
+    const key = row?.getAttribute('data-xdrive-file-explorer-item-id')
+    if (!key || !onDropItemsToFolder || itemElementRefs.current.get(key) !== row) return null
+    const item = interactionProjection.itemByKey.get(key)
+    if (!item || item.kind !== 'dir' || selectedKeys.has(key)) return null
+    return { kind: 'folder' as const, value: item }
+  }
+  const clearTouchDropTarget = () => {
+    setDropTargetID(null)
+    setDropTargetCrumbID(null)
+  }
+  const touchDrag = useXDrivePointerDrag<readonly XDriveFileExplorerItem[]>({
+    ownerRef: explorerElementRef,
+    scrollHostRef,
+    enabled: touchDragEnabled,
+    scopeKey: touchDragScopeKey,
+    autoScrollDelta: xDriveFileExplorerDragAutoScrollDelta,
+    onMove: (source, point) => {
+      const target = touchDropTarget(source, point)
+      setDropTargetID(target?.kind === 'folder' ? target.value.id : null)
+      setDropTargetCrumbID(target?.kind === 'crumb' ? target.value.id : null)
+    },
+    onDrop: (source, point) => {
+      const target = touchDropTarget(source, point)
+      clearTouchDropTarget()
+      if (!target || selectionActionDisabledReason('move-to', source, selectedCount)) return
+      if (target.kind === 'folder') onDropItemsToFolder?.([...source], target.value, 'move')
+      else onDropItemsToCrumb?.([...source], target.value, 'move')
+    },
+    onCancel: clearTouchDropTarget,
+  })
+  const refreshTouchDragTarget = touchDrag.refreshTarget
+  useEffect(() => {
+    // A delayed range can mount a folder beneath a stationary held pointer.
+    refreshTouchDragTarget()
+  }, [interactionProjection.itemByKey, refreshTouchDragTarget])
+  const touchDropName = dropTargetCrumbID !== null
+    ? crumbs.find((crumb) => explorerIDKey(crumb.id) === explorerIDKey(dropTargetCrumbID))?.name
+    : dropTargetID !== null ? logicalItemByID(dropTargetID)?.name : undefined
+  const touchDragStatus = touchDrag.active
+    ? touchDropName ? `松开以移动到“${touchDropName}”` : `正在拖动 ${selectedCount} 项`
+    : touchDragDisabledReason || '拖到文件夹或上方路径'
 
   const dropExternalFilesOnBackground = async (event: ReactDragEvent<HTMLElement>) => {
     if (!(onExternalFilesDrop || onExternalFolderDrop) || !event.dataTransfer.types.includes('Files')) return
@@ -4295,42 +4192,6 @@ export function XDriveFileExplorer({
     </IconButton>
   ) : null
 
-
-  const touchDragHandle = (
-    item: XDriveFileExplorerItem,
-    placement: 'details' | 'grid',
-  ) => compactTouch && touchSelectionMode && (onDropItemsToFolder || onDropItemsToCrumb) ? (
-    <IconButton
-      data-xdrive-file-explorer-touch-drag-handle
-      aria-label={'拖动移动：' + item.name}
-      title="抓住拖至文件夹；也可使用“移动到…”"
-      tabIndex={onMoveItemsTo ? 0 : -1}
-      size="small"
-      onPointerDown={(event) => startTouchDrag(event, item)}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        if (event.detail === 0 && onMoveItemsTo) {
-          const selection = selectedKeySet.has(explorerIDKey(item.id)) && selectedItems.length
-            ? selectedItems
-            : [item]
-          void runSelectionAction('move-to', onMoveItemsTo, selection,
-            selectedKeySet.has(explorerIDKey(item.id)) ? selectedCount : 1)
-        }
-      }}
-      sx={{
-        width: 44, height: 44, flex: '0 0 44px',
-        touchAction: 'none', cursor: 'grab', color: 'text.secondary',
-        ...(placement === 'grid'
-          ? { position: 'absolute', top: 50, right: 2, zIndex: 4,
-              bgcolor: 'background.paper', boxShadow: 1 }
-          : { ml: 0.25 }),
-      }}
-    >
-      <DragIndicatorRoundedIcon fontSize="small" />
-    </IconButton>
-  ) : null
-
   const renderDetailsLogicalItem = (
     item: XDriveFileExplorerItem | undefined,
     index: number,
@@ -4370,8 +4231,8 @@ export function XDriveFileExplorer({
         component="div"
         role="row"
         data-xdrive-file-explorer-item
-        data-xdrive-file-explorer-drop-folder-index={item.kind === 'dir' ? index : undefined}
-        data-xdrive-file-explorer-drop-folder-key={item.kind === 'dir' ? explorerIDKey(item.id) : undefined}
+        data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
+        data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
         title={fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
@@ -4472,7 +4333,6 @@ export function XDriveFileExplorer({
                     {renderItemName(item, false)}
                   </Box>
                   {availabilityIndicator(item)}
-                  {!renaming ? touchDragHandle(item, 'details') : null}
                   {!renaming ? touchItemActionButton(item, 'details') : null}
                 </Stack>
                 {!compactTouch && !renaming ? nativeDragOutHandle(item, 'details') : null}
@@ -4535,8 +4395,8 @@ export function XDriveFileExplorer({
         component="div"
         role="listitem"
         data-xdrive-file-explorer-item
-        data-xdrive-file-explorer-drop-folder-index={item.kind === 'dir' ? index : undefined}
-        data-xdrive-file-explorer-drop-folder-key={item.kind === 'dir' ? explorerIDKey(item.id) : undefined}
+        data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
+        data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
         title={fileExplorerItemHoverTitle(item, !compactViewport && Boolean(onOpenItemInNewTab))}
         tabIndex={active ? 0 : -1}
         aria-selected={selected}
@@ -4616,7 +4476,6 @@ export function XDriveFileExplorer({
             {selected ? <CheckCircleRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
           </Box>
         ) : null}
-        {!renaming ? touchDragHandle(item, 'grid') : null}
         {!renaming ? touchItemActionButton(item, 'grid') : null}
         <Box
           sx={{
@@ -5129,16 +4988,31 @@ export function XDriveFileExplorer({
       loadThumbnail={loadThumbnail}
     >
     <Paper
+      ref={explorerElementRef}
       variant={presentation === 'workspace' ? 'elevation' : 'outlined'}
       onKeyDown={handleExplorerKeyDown}
-      onPointerMove={moveTouchDrag}
-      onPointerUp={(event) => finishTouchDrag(event)}
-      onPointerCancel={(event) => finishTouchDrag(event, true)}
       onPointerDownCapture={(event) => {
         if (!event.currentTarget.contains(event.target as Node)) return
+        completedTouchPressRef.current = null
         captureViewSnapshotRef.current()
         if ((event.target as Element).closest('[data-xdrive-file-explorer-restore-control]')) return
         cancelPendingViewRestore()
+      }}
+      onPointerCancelCapture={(event) => {
+        if (completedTouchPressRef.current === event.pointerId) completedTouchPressRef.current = null
+      }}
+      onClickCapture={(event) => {
+        const pointerId = completedTouchPressRef.current
+        if (pointerId === null || event.detail === 0 || !event.currentTarget.contains(event.target as Node)) return
+        const clickPointerId = (event.nativeEvent as MouseEvent & { pointerId?: number }).pointerId
+        if (clickPointerId !== undefined && clickPointerId !== pointerId) return
+        // Selection chrome can move beneath a held finger. Own the completed
+        // press here even when its compatibility click targets a new button.
+        completedTouchPressRef.current = null
+        suppressTouchClickRef.current = false
+        lastPointerTypeRef.current = null
+        event.preventDefault()
+        event.stopPropagation()
       }}
       onWheelCapture={cancelPendingViewRestore}
       onKeyDownCapture={(event) => {
@@ -5157,32 +5031,12 @@ export function XDriveFileExplorer({
         flex: presentation === 'workspace' ? 1 : undefined,
         display: 'flex',
         flexDirection: 'column',
-        position: 'relative',
         overflow: 'hidden',
         border: presentation === 'workspace' ? 0 : undefined,
         borderRadius: presentation === 'workspace' ? 0 : 2,
         bgcolor: 'background.paper',
       }}
     >
-      {compactTouch && touchDragActive ? (
-        <Stack data-xdrive-file-explorer-touch-drag-status role="status"
-          direction="row" spacing={1} alignItems="center"
-          sx={{
-            position: 'absolute', right: 8,
-            bottom: 'max(8px, env(safe-area-inset-bottom))',
-            zIndex: 8, px: 1.25, py: 0.5, maxWidth: 'calc(100% - 16px)',
-            border: 1, borderColor: 'divider', borderRadius: 1,
-            bgcolor: 'background.paper', boxShadow: 3,
-          }}>
-          <Typography variant="caption" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-            正在移动 {draggedItems.length} 项 · 松开放入高亮文件夹
-          </Typography>
-          <Button size="small" variant="outlined" aria-label="取消拖动"
-            onClick={cancelTouchDrag} sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>
-            取消拖动
-          </Button>
-        </Stack>
-      ) : null}
       {tabBar && !compactViewport ? (
         <Box data-xdrive-file-explorer-tab-bar sx={{ minWidth: 0, flexShrink: 0 }}>
           {tabBar}
@@ -5291,14 +5145,14 @@ export function XDriveFileExplorer({
                 {crumbs.map((crumb, index) => (
                   <ButtonBase
                     key={crumb.id}
+                    data-xdrive-file-explorer-crumb={explorerIDKey(crumb.id)}
+                    data-xdrive-file-explorer-drop-target={dropTargetCrumbID !== null && explorerIDKey(dropTargetCrumbID) === explorerIDKey(crumb.id) ? 'crumb' : undefined}
                     title={crumbs.slice(0, index + 1).map((entry) => entry.name).join('/')}
                     aria-current={index === crumbs.length - 1 ? 'page' : undefined}
                     onClick={(event) => {
                       event.stopPropagation()
                       if (index !== crumbs.length - 1) onCrumbClick?.(crumb, index)
                     }}
-                    data-xdrive-file-explorer-drop-crumb-index={index}
-                     data-xdrive-file-explorer-drop-crumb-key={explorerIDKey(crumb.id)}
                     onDragOver={(event) => dragOverCrumb(event, crumb)}
                     onDragLeave={(event) => {
                       const related = event.relatedTarget
@@ -5946,6 +5800,50 @@ export function XDriveFileExplorer({
 
 
       <Divider />
+
+      {compactViewport && selectedCount > 0 && (onDropItemsToFolder || onDropItemsToCrumb) ? (
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          data-xdrive-file-explorer-touch-drag-controls
+          sx={{ minWidth: 0, flexShrink: 0, px: 1, py: 0.5 }}
+        >
+          <IconButton
+            aria-label="拖动所选项目"
+            data-xdrive-file-explorer-touch-drag-handle
+            title={touchDragDisabledReason || '按住拖到文件夹或路径，点按选择目标文件夹'}
+            disabled={!touchDragEnabled}
+            color={touchDrag.active ? 'primary' : 'default'}
+            onPointerDown={(event) => {
+              if (selectionActionDisabledReason('move-to')) return
+              touchDrag.begin(event, selectedItems.map((item) => ({ ...item })))
+            }}
+            onClick={() => runSelectionAction('move-to', onMoveItemsTo)}
+            sx={{ width: 44, height: 44, flex: '0 0 44px', touchAction: 'none', cursor: touchDrag.active ? 'grabbing' : 'grab' }}
+          >
+            <DragIndicatorRoundedIcon />
+          </IconButton>
+          <Typography
+            role="status"
+            aria-live="polite"
+            data-xdrive-file-explorer-touch-drag-status={touchDrag.active ? 'active' : 'idle'}
+            variant="caption"
+            title={touchDragStatus}
+            sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}
+          >
+            {touchDragStatus}
+          </Typography>
+          <IconButton
+            aria-label="取消拖动"
+            title="取消拖动"
+            onClick={touchDrag.cancel}
+            sx={{ width: 44, height: 44, flex: '0 0 44px', visibility: touchDrag.active ? 'visible' : 'hidden' }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </Stack>
+      ) : null}
 
       <Box
         data-xdrive-file-explorer-context-panel

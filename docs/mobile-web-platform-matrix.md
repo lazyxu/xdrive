@@ -2,7 +2,7 @@
 
 更新日期：**2026-10-09**。本文件维护用户批准的 M49，并为 M47 生命周期、M55 读屏和 M56 显示/输入验收提供记录规范。[Mobile Web](mobile-web.md) 与 [Web App Runtime](web-app-runtime.md) 继续定义产品行为；[逐项清单](mobile-web-followups.md) 定义实施顺序。
 
-**当前状态：矩阵与验收规范已建立，M01–M09 的共享组件与实际Web应用模拟浏览器证据已记录；四个真机环境均待验。** 当前没有 iOS/Android 真机执行结果。后续功能使用下列固定 case ID 追加结果；列出一个用例不代表对应功能已经交付。
+**当前状态：矩阵与验收规范已建立，M01–M11 的共享组件与实际Web应用模拟浏览器证据已记录；四个真机环境均待验。** 当前没有 iOS/Android 真机执行结果。后续功能使用下列固定 case ID 追加结果；列出一个用例不代表对应功能已经交付。
 
 ## 1. 结果必须分为四层
 
@@ -76,11 +76,11 @@
 | M49.V04 | Files 选择混合文件/目录，全选未加载结果；加载中取消、清除、完成；切至 200% 文字和短视口，再展示真实任务长错误或下载汇总。 | 数量按唯一身份计算，目录/Search 范围明确；完整选择不被操作上限截断；主操作、任务入口、关闭提示及完成均可触达，同一列表宿主保留。分别记录 renderer 回调、实际下载字节与真机触控证据。 |
 | M49.V05 | 从 Files 直接移动/复制到文件夹，翻页、进入深层目录、取消/重试；从反馈进入对应任务；重命名失败后改变 899→900→360 宽度，在短屏/200% 文字下修改并保存。 | 目标浏览不改 Files 历史，来源身份/版本不丢失；目标和错误可读，提交/取消至少 44px；冲突/取消/重试跟随同一任务。重命名保留草稿、仅提交一次、返回文件焦点。迟到完成不能关闭新目标或清除后来重新应用的同一搜索。真实软件键盘与 renderer 缩短视口分别记录。 |
 | M49.V06 | 无选择时从位置面板管理标签；读取失败后重试，创建/编辑定义，再给完整选择分配或移除标签；保存搜索、修改条件、进入目录并返回；在 700/899px 鼠标与 360×390/200% 文字下重复。 | 管理与分配入口、数量和删除语义明确；失败读取显示未知，空标签正常；规则与当前 Search/历史匹配，不使用加载行数量推测结果。长规则、错误、提交与完成可触达，模态关闭恢复入口焦点；真机键盘和读屏另行记录。 |
-| M49.V08 | Files 手机进入选择模式，分别在 List/Grid 抓住 44px 拖动手柄移动单项/多选到文件夹或面包屑；在普通行滑动、边缘滚动、无效目标、放开空白、Escape、PointerCancel、切目录/旋转时中断，复试“移动到／复制到”。 | 抓取手柄使用 touch-action:none，普通文件行保持浏览器滚动；只有有效目标高亮且松手只提交一次已存在的操作事务。取消清理目标和滚动 RAF，页面不跳转也无全局底栏；短横屏和200%文字的关闭/替代操作可达。Chromium 实际手势与 iOS/Android 真机记录分开，手动排序留 M19。 |
+| M49.V07 | 同一照片/视频/实况分别从Files、Gallery与实际Web Viewer打开属性；在竖屏/短横屏读取长字段与资源，关闭返回；挂起A的查询或保存，改看B或关闭后再完成A；刷新版本后重新打开。 | 共享媒体字段一致，Files保留路径/来源/大小/版本/ID及普通文件回退；未索引成功、部分元数据与查询失败分别表达。属性不增加Viewer播放器或原件/动态加载，返回焦点正确，旧查询/保存不能覆盖新目标。传输边界、实际App及真机结果分开记录。 |
+| M49.V08 | Files完整选择后用44px手柄拖到文件夹/路径，再对快速访问和智能文件夹作之前/之后重排；尝试小幅拖动、取消、第二手指、会话切换、卸载和边缘滚动，并使用无需拖动的目标选择或上移/下移。 | 仅有效目标高亮，保留完整ID/版本和同一滚动宿主；未加载选择不提交子集，当前目标与范围改变取消。松手不激活新出现或替代的控件，下一次有意点按仍生效。边缘滚动后重新命中当前挂载目标；失败恢复/重试复用现有操作。短横屏、200%文字和混合输入记录实际矩形，原生系统触控仍分环境验收。 |
 | M49.V09 | Files 先后打开筛选与位置抽屉；Gallery 打开高级筛选并选择设备、格式、日期。普通竖屏、844×390 短横屏、200% 文字下分别检验内部滚动、关闭、清除、保存／应用与焦点恢复；随后用真实 iOS／Android 软件键盘复测 VisualViewport 的 offsetTop/height、菜单、关闭和底部动作。 | 面板高度与底部遮挡依赖实际可见区域（VisualViewport），不得超出短横屏；只有面板内滚动，不占全局顶／底栏。图库应用／清除／保存智能相册仍可触及，Files 嵌套菜单关闭后恢复焦点；API 支持、模拟器检查和真实键盘手势三层分别留证。 |
 | M49.V10 | Gallery 手机在 360×780、844×390 和200%文字下选 3 项，检验数量、退出、收藏／标签／下载／删除、进入相册选择器、过滤并选择手动相册、提交一次与成功/权限失败；选择器开启后改变选中范围、旋转、键盘弹出、取消与返回。 | 选中数量由真实选择计算且不因面板截断；主操作保持在图库内容区可滚动区域；只列可写手动相册，须显式确认，失败提示可读、取消不提交、选择范围变化禁止旧操作；页面不新建全局底栏。真机键盘与模拟/React测试证据分开。 |
 | M49.V11 | Gallery 分别选择年/月/日，滚动到真实100k索引深处并观察“当前浏览”；用日期输入选中精确日、空白日、最近日期、未知日期、空集合；从跳转处“返回刚才位置”，再变更密度、原比例、排序、时区，打开 Viewer 后返回。依次在360×780、844×390、899/900px、200%字体和 iOS/Android 标签页／安装模式上重复。 | 日跳转只利用 Server 的日索引，不渲染成百上千下拉项，选无照片日期明确标出最近真实日期；年/月/日滚动日期提示与实际首个可见分组一致，未知日期不猜拍摄时间；返回原锚点且逻辑身份不变，排序时保留原照片锚点。100k 依旧有界渲染。短屏菜单、原生日历控件、安全区、真机横屏/读屏和已安装模式分别留证，未经真机验收标记 not-run。 |
-| M49.V07 | 同一照片/视频/实况分别从Files、Gallery与实际Web Viewer打开属性；在竖屏/短横屏读取长字段与资源，关闭返回；挂起A的查询或保存，改看B或关闭后再完成A；刷新版本后重新打开。 | 共享媒体字段一致，Files保留路径/来源/大小/版本/ID及普通文件回退；未索引成功、部分元数据与查询失败分别表达。属性不增加Viewer播放器或原件/动态加载，返回焦点正确，旧查询/保存不能覆盖新目标。传输边界、实际App及真机结果分开记录。 |
 | M49.K01 | 打开 Files 搜索并输入长查询；开筛选并选择类型/同步文件夹/标签；关闭键盘、嵌套菜单与面板；横屏重复。 | 可读/可点/可退出，焦点正确恢复，不触发背景文件；软件键盘与外接 Enter/空格/Ctrl+F 分列。筛选当前字段为选项按钮，不虚构可编辑字段。 |
 | M49.K02 | 搜索、长文件名重命名、真实密码表单；制造验证错误后取消。 | 输入位置、长错误、提交/取消可达，退出恢复视口与位置，密码不进入证据。 |
 | M49.K03 | 同步文件夹设置、目标/范围选择、长响应/错误、保存/重开。 | 用真实 M51 产品流程；该项目未就绪时保持待验，不以玩具弹窗替代。 |
@@ -153,3 +153,18 @@ M09的[共享媒体属性证据](validation/mobile-shared-properties-2026-10-09.
 复用脚本：`desktop/scripts/file-explorer-controls-browser.cjs`、`file-explorer-mobile-browser.cjs`、`file-explorer-selection-browser.cjs`、`file-explorer-organization-browser.cjs`、`file-explorer-media-properties-browser.cjs`、`media-properties-gallery-browser.cjs`、`web-media-properties-browser.cjs`、`mobile-web-app-browser.cjs`；表单/公开分享后续使用现有 `mobile-web-forms-browser.cjs` 与 `mobile-web-public-share-browser.cjs`。本次没有重新执行真实 Server 下载、OS 安装/分享或读屏用例；相应条目保持待验。
 
 上述标准和平台文档访问日期为 2026-10-09。规范草案与文档用于界定检测/动作语义，不能替代某个 OS/browser build 的实际结果，也不构成“当前所有 iOS/Android 版本都支持”的承诺。
+
+M10的[触控拖动与重排证据](validation/mobile-files-touch-drag-2026-10-09.json)记录M49.V08：Files135、Navigation162、实际Web App49项通过，独立原生触控21项和迟到挂载目标9项通过。完整选择与原始版本经过既有操作通路；单次拖动、取消、完整重排、上移/下移及失败恢复分别验收。844×390/200%根文字下的手柄、取消和位置入口可触达，360×390侧栏顺序菜单保留完整长名；触屏上下文中的鼠标操作也通过。迟到目标高亮、拖动状态造成的行位移和兼容点击误触均保留相同首次失败及修复证据。完整Desktop1575项通过、零失败、一项既有可选跳过；四个真机环境继续not-run，软件键盘、地址栏、物理安全区及读屏不从这些结果继承通过。
+
+
+M10 补充在相关 [PR #1119](https://github.com/lazyxu/xdrive/pull/1119) 完成 CI `37905955558` 并合并为 `f693cb00` 后重新整合，精确实现为 `d9179872`。整合后 Files135、侧栏162、保留并适配的既有手机80、实际Web49、原生指针21均通过；完整Desktop1582通过、零失败、一项既有可选跳过，类型检查、Web lint/build通过。保留页面隐藏取消与无效坐标校验，移除重复的本地拖动状态机；没有覆盖其他未合并分支。首次失败、相同检查和最终源文件哈希见证据的 `latestAcceptedIntegration`。完整补充PR CI、合并与清理仍待完成。
+
+### M49.V08/V09：合并依赖后的证据
+
+**Local acceptance complete; updated PR #1125 full CI and merge pending.** The confirmed checklist/matrix conflicts required reconstruction onto merged M12 `bd96b2b1`. The independently updated PR head `95a23fbb` was inspected: all of its M10 production and browser fixture bytes are retained. Upstream Gallery index readiness, selection-picker wiring and concise sidebar copy remain intact. The additional production changes are limited to the Files form scroll region, Gallery action positioning and compact navigation hit targets.
+
+At **844×200 CSS px with 200% root text**, Files previously left only **24px** for a **61px** field. Sharing the bounded scroller with Save/Clear leaves **87.97px** and reveals the whole field; native scrolling reaches the unchanged actions while Close remains visible. Gallery's sticky actions previously exposed only **23px** of a **63px** field; the same field is fully visible after removing sticky positioning, and actions remain reachable through the existing scroller. Compact Gallery navigation now measures at least44px with either pointer type.
+
+On production `53177a7b`, the same final **Files135**, **Navigation162**, **Files panels22**, **Gallery panels57**, **actual Web drag49** and **actual Web panels37** all pass with zero browser/unknown-request errors. The active build is `assets/index-BYQXNagw.js`; both App receipts contain exact runner/build hashes. Full Desktop validation passes **1594**, with zero failures and one existing optional benchmark skip; typecheck, Web lint and build pass. Eight prior actual VisualViewport scale/pan samples are retained as observations with an explicit dependency comparison, not rerun or keyboard tests. The native pointer21 receipt has an unchanged helper source.
+
+The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preserves the same17-check Files first-red (16pass/1fail), same57-check Gallery first-red (52pass/5fail), full final assertions, source/build hashes, geometry and fixture-only corrections. The [M10 ledger](validation/mobile-files-touch-drag-2026-10-09.json), `combinedPanelIntegration`, retains its earlier history and records these fresh integration results. Counts overlap and are not summed. All four physical iOS/Android tab/installed environments, real keyboard/address bars/safe areas and screen readers remain **not-run**; M49.V08/V09 record the actual evidence boundary.

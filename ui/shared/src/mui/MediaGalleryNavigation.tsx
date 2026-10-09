@@ -60,7 +60,10 @@ export function XDriveMediaGalleryNavigation({
             aria-current={value === section.value ? 'page' : undefined}
             data-xdrive-gallery-section={section.value}
             onClick={() => onChange(section.value)}
-            sx={{ flexShrink: 0, borderRadius: 999, px: 1.5 }}
+            sx={{
+              flexShrink: 0, borderRadius: 999, px: 1.5,
+              '@media (max-width:899.95px)': { minHeight: 44 },
+            }}
           >
             {section.label}
           </Button>
