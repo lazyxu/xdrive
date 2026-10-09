@@ -743,3 +743,9 @@ rail as media Viewer with **44 CSS px** targets and safe-area padding. Text rema
 read-only and uses **16 CSS px** on compact touch layouts; desktop keeps its existing
 text size. Compact Viewer sizing follows the dynamic viewport without replacing the
 mounted caller workspace. Native phone/browser acceptance remains a separate gate.
+
+## P0-C media loading progress contract (2026-10-09)
+
+Status: **Candidate awaiting full Web/Desktop validation**, not a completed device acceptance. Gallery, Viewer and FileExplorer share one transient visual progress primitive. Signed/HTTP image responses may report actual received HTTP body bytes and a trustworthy response Content-Length; corrupted, absent, compressed or Range-varying lengths must never be presented as the original Node size. Completed transfers may still be decoding. Native video/Live motion may expose buffered **time intervals** and duration, not full-file transferred MB. Cached images render immediately. Poster states distinguish persisted-cache lookup from original video reading and local frame capture. Source revision, ETag/409 freshness, current owner, AbortSignal and sender-scoped Desktop IPC identity are preserved. UI progress never starts a durable upload/download Task Center transfer, never rewrites original assets and never forces Live motion before the first explicit hold.
+
+Renderer subscriptions belong to the consuming viewport and are cleaned up on unmount, target revision change or cancellation. Reported errors remain errors; do not replace a decode-failure image with a generic file icon. Verify real image decode readiness and source URL revocation independently of network byte completion.

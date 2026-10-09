@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Box, CircularProgress, Typography } from '@mui/material'
+import { Box, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
+import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type { XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveTransformedImagePreview } from './FilePreviewTransformedMedia'
@@ -48,6 +49,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const [sources, setSources] = useState<Record<ImageRole, ImageSource>>({
     original: pendingImage(), thumbnail: pendingImage(),
   })
+  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const generationRef = useRef(0)
   const decodingRef = useRef(new Set<string>())
   const acquireSourcesRef = useRef<(() => void) | null>(null)
@@ -68,6 +70,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     const startedRoles = new Set<ImageRole>()
     const loaders = loadersRef.current
     decodingRef.current.clear()
+    setProgress({ loadedBytes: 0 })
     setSources({
       original: { url: '', status: loaders.loadPreviewURL ? 'loading' : 'failed' },
       thumbnail: { url: '', status: loaders.loadImagePreview ? 'loading' : 'failed' },
@@ -106,7 +109,12 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       }
       // A slow ticket/original must not delay the low-resolution first frame.
       start('original', currentLoaders.loadPreviewURL
-        ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind, requestController.signal) : undefined)
+        ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind, requestController.signal,
+          (loadedBytes, totalBytes) => {
+            if (generationRef.current === generation && !requestController.signal.aborted) {
+              setProgress({ loadedBytes, totalBytes })
+            }
+          }) : undefined)
       start('thumbnail', currentLoaders.loadImagePreview
         ? () => currentLoaders.loadImagePreview!(currentLoaders.target) : undefined)
     }
@@ -227,9 +235,13 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       ) : null}
       {loading ? (
         <Box sx={readySource
-          ? { position: 'absolute', right: 12, top: 12, display: 'grid', placeItems: 'center' }
-          : { position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-          <CircularProgress size={readySource ? 18 : 26} aria-label="正在加载图片" />
+          ? { position: 'absolute', right: 12, top: 12, width: 165, height: 46 }
+          : { position: 'absolute', inset: 0 }}>
+          <XDriveMediaLoadingProgress
+            compact={Boolean(readySource)}
+            stage={sources.original.url ? 'decode' : 'transfer'}
+            {...progress}
+          />
         </Box>
       ) : null}
       {failed ? (fallback ?? <Typography role="alert" color="text.secondary">图片预览失败</Typography>) : null}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent, SyntheticEvent } from 'react'
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
@@ -19,6 +19,7 @@ import type {
 import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
 import type { XDrivePreviewImageDimensions, XDrivePreviewPoint, XDrivePreviewViewport } from '../file-preview-viewport'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
+import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import { XDriveDecodedImagePreview } from './FilePreviewImage'
 import {
   XDriveTransformedVideoPreview,
@@ -41,6 +42,7 @@ export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriv
   target: T,
   kind: Exclude<XDriveFilePreviewKind, 'none' | 'text'>,
   signal?: AbortSignal,
+  onProgress?: XDriveByteProgressHandler,
 ) => Promise<string | null | undefined>
 
 export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = {
@@ -103,6 +105,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [failed, setFailed] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
   const [mediaBuffering, setMediaBuffering] = useState(false)
+  const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
   const previewURLRef = useRef('')
   const previewGenerationRef = useRef(0)
   const previewTargetRef = useRef(target)
@@ -379,6 +382,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setFailed(false)
     setMediaReady(false)
     setMediaBuffering(false)
+    setBufferProgress({ bufferedSeconds: 0 })
 
     // Images own their two decode-gated layers, including pending-source display.
     if (!currentTarget || previewKind === 'none' || previewKind === 'image' || previewKind === 'live_photo') {
@@ -458,6 +462,22 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setMediaBuffering(false)
     setFailed(true)
   }, [isCurrentMedia])
+  const updateBuffered = useCallback((event: SyntheticEvent<HTMLVideoElement>) => {
+    if (!isCurrentMedia()) return
+    const video = event.currentTarget
+    let bufferedSeconds = 0
+    for (let i = 0; i < video.buffered.length; i += 1) {
+      const start = video.buffered.start(i)
+      const end = video.buffered.end(i)
+      if (video.currentTime >= start && video.currentTime <= end) {
+        bufferedSeconds = Math.max(bufferedSeconds, end)
+      }
+    }
+    setBufferProgress({
+      bufferedSeconds,
+      durationSeconds: Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined,
+    })
+  }, [isCurrentMedia])
   const mediaPending = Boolean(
     previewURL &&
     (previewKind === 'video' || previewKind === 'audio' || previewKind === 'pdf') &&
@@ -486,7 +506,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         bgcolor: previewKind === 'audio' ? 'transparent' : 'rgba(0,0,0,.12)',
       }}
     >
-      <CircularProgress size={26} aria-label="正在加载媒体" />
+      {previewKind === 'video' ? (
+        <XDriveMediaLoadingProgress stage="buffering" {...bufferProgress} />
+      ) : <CircularProgress size={26} aria-label="正在加载媒体" />}
     </Box>
   ) : null
 
@@ -682,6 +704,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onCanPlay={markMediaReady}
               onPlaying={markMediaReady}
               onWaiting={markMediaWaiting}
+              onProgress={updateBuffered}
+              onLoadedMetadata={updateBuffered}
+              onTimeUpdate={updateBuffered}
               onError={markMediaFailed}
               sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
             />

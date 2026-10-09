@@ -2161,7 +2161,7 @@ export class AgentIPCClient {
     )
   }
 
-  mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number) {
+  mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: AgentBinaryProgressHandler) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     if (revision !== undefined && Number.isSafeInteger(revision) && revision > 0) {
       query.set('revision', String(revision))
@@ -2170,15 +2170,17 @@ export class AgentIPCClient {
       `/v1/media/thumbnail?${query.toString()}`,
       45_000,
       signal,
+      onProgress,
     )
   }
 
-  mediaAnalysisPreview(nodeID: number, signal?: AbortSignal) {
+  mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, onProgress?: AgentBinaryProgressHandler) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.requestBinary(
       `/v1/media/analysis-preview?${query.toString()}`,
       45_000,
       signal,
+      onProgress,
     )
   }
 

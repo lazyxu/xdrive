@@ -101,7 +101,7 @@ test('Gallery media tile passes revision and re-acquires same Node after revisio
   assert.ok(start >= 0, 'shared Gallery tile must exist')
   const tile = source.slice(start, start + 11000)
   assert.match(tile,
-    /thumbnailScheduler\.load\(nodeID,\s*thumbnailPriority,\s*item\.node\.revision\)/,
+    /thumbnailScheduler\.load\(nodeID,\s*thumbnailPriority,\s*item\.node\.revision,\s*onProgress\)/,
     'Gallery must supply Node revision for thumbnail cache ownership')
   assert.match(tile,
     /\[loadThumbnail,\s*thumbnailPriority,\s*thumbnailScheduler,\s*item\.node\.revision\]/,

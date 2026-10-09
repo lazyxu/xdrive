@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import { Box, Chip, CircularProgress, Typography } from '@mui/material'
+import { Box, Chip, CircularProgress } from '@mui/material'
+import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
@@ -80,6 +81,8 @@ export function XDriveLivePhotoSurface({
   const [motionURL, setMotionURL] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<number | null>(null)
+  const [motionBytes, setMotionBytes] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
   const [failed, setFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
 
@@ -132,10 +135,13 @@ export function XDriveLivePhotoSurface({
     const generation = loadGenerationRef.current
     setLoading(true)
     setLoadProgress(null)
+    setMotionBytes({ loadedBytes: 0 })
+    setBufferProgress({ bufferedSeconds: 0 })
 
     const onProgress: XDriveByteProgressHandler = (loadedBytes, totalBytes) => {
       if (loadGenerationRef.current !== generation) return
       setLoadProgress(livePhotoProgressPercent(loadedBytes, totalBytes))
+      setMotionBytes({ loadedBytes, totalBytes })
     }
 
     void loader(onProgress)
@@ -307,6 +313,16 @@ export function XDriveLivePhotoSurface({
             if (!holdActiveRef.current) setLoading(false)
           }}
           onCanPlay={() => setLoading(false)}
+          onProgress={(event) => {
+            const video = event.currentTarget
+            let bufferedSeconds = 0
+            for (let i = 0; i < video.buffered.length; i += 1) {
+              const start = video.buffered.start(i), end = video.buffered.end(i)
+              if (video.currentTime >= start && video.currentTime <= end) bufferedSeconds = end
+            }
+            setBufferProgress({ bufferedSeconds, durationSeconds:
+              Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined })
+          }}
           onEnded={stopPlayback}
           onError={() => {
             setLoading(false)
@@ -355,42 +371,11 @@ export function XDriveLivePhotoSurface({
       /> : null}
 
       {loading ? (
-        <Box
-          sx={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            width: 58,
-            height: 58,
-            transform: 'translate(-50%, -50%)',
-            display: 'grid',
-            placeItems: 'center',
-            borderRadius: '50%',
-            bgcolor: 'rgba(0, 0, 0, 0.46)',
-            pointerEvents: 'none',
-            backdropFilter: 'blur(6px)',
-          }}
-        >
-          <CircularProgress
-            size={42}
-            thickness={4}
-            variant={loadProgress === null ? 'indeterminate' : 'determinate'}
-            value={loadProgress ?? undefined}
-            sx={{ color: 'common.white' }}
-          />
-          {loadProgress !== null ? (
-            <Typography
-              variant="caption"
-              sx={{
-                position: 'absolute',
-                color: 'common.white',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {Math.round(loadProgress)}%
-            </Typography>
-          ) : null}
-        </Box>
+        <XDriveMediaLoadingProgress
+          stage={motionURL && loadProgress === null ? 'buffering' : 'transfer'}
+          {...motionBytes}
+          {...bufferProgress}
+        />
       ) : null}
 
     </Box>

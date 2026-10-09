@@ -75,7 +75,8 @@ test('Home video cards use the same persisted-first poster resolver on Web and D
   const provider = read('ui', 'shared', 'src', 'mui', 'FileExplorerThumbnail.tsx')
   assert.ok(sharedPoster.includes('export async function xDriveResolveMediaVideoPoster'))
   assert.ok(home.includes('signal?: AbortSignal'), 'shared Home must forward the provider cancellation signal')
-  assert.ok(provider.includes('scheduleFileThumbnail((signal) => loadThumbnail(requestedItem, signal))'))
+  assert.ok(provider.includes('scheduleFileThumbnail((signal) => loadThumbnail(') &&
+    provider.includes('requestedItem, signal,') && provider.includes('scheduled.cancel()'))
   for (const adapter of [webHome, desktopHome]) {
     assert.ok(adapter.includes("xDriveFileKind(item.name, item.kind) !== 'video'"), 'non-video thumbnails must not open media previews')
     assert.ok(adapter.includes('xDriveResolveMediaVideoPoster({'), 'video Home cards must try persisted poster first')

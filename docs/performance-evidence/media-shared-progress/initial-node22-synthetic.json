@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-09",
+  "kind": "exploratory synthetic Node Response only; not actual xDrive Web/Gin/Agent",
+  "node": "22.16.0",
+  "workload": {
+    "bytes": 16777216,
+    "chunk_bytes": 65536,
+    "per_method_warmups": 2,
+    "samples": 5
+  },
+  "host": "ChatGPT container Linux (not GitHub runner or actual user hardware)",
+  "methods": [
+    {
+      "name": "unmodified response.blob()",
+      "median_ms": 15.307,
+      "elapsed_ms": [
+        15.307,
+        27.334,
+        8.163,
+        8.506,
+        17.565
+      ],
+      "rss_delta_mb_snapshots": [
+        16,
+        31.88,
+        0.5,
+        0.13,
+        32
+      ]
+    },
+    {
+      "name": "prototype TransformStream metering -> Response.blob()",
+      "median_ms": 11.857,
+      "elapsed_ms": [
+        33.023,
+        9.689,
+        12.689,
+        10.637,
+        11.857
+      ],
+      "rss_delta_mb_snapshots": [
+        18.75,
+        0,
+        0.5,
+        0.13,
+        0.5
+      ]
+    },
+    {
+      "name": "prototype chunks + Blob diagnostic",
+      "median_ms": 4.666,
+      "elapsed_ms": [
+        5.207,
+        4.666,
+        4.95,
+        4.373,
+        3.513
+      ],
+      "rss_delta_mb_snapshots": [
+        0,
+        0,
+        0.13,
+        0.38,
+        0.13
+      ]
+    }
+  ],
+  "decision": "Measurement only; high variance, no real browser/Agent gain; candidate awaits native CI and comparable paired measurements."
+}

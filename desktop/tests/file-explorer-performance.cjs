@@ -79,7 +79,8 @@ test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(thumbnail.includes('rootMargin: `${fileThumbnailPrefetchMarginPx}px`'), 'thumbnail prefetch margin should stay bounded')
   assert.ok(thumbnail.includes('const fileThumbnailConcurrency = 6'), 'thumbnail concurrency budget is missing')
   assert.ok(thumbnail.includes('const fileThumbnailCacheLimit = 96'), 'thumbnail cache must stay bounded')
-  assert.ok(thumbnail.includes('const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(requestedItem, signal))'), 'thumbnail loads must pass through the cancellable scheduler')
+  assert.ok(thumbnail.includes('const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(') &&
+    thumbnail.includes('requestedItem, signal,') && thumbnail.includes('scheduled.cancel()'), 'thumbnail loads must pass through the cancellable scheduler')
   assert.ok(thumbnail.includes('scheduled.cancel()'), 'unmounted queued thumbnails must be cancellable')
   assert.ok(thumbnail.includes('fileThumbnailCacheAcquire(cache, cacheKey)'), 'thumbnail remounts should reuse cached sources through an active URL lease')
   assert.ok(thumbnail.includes('fileThumbnailCacheSet(cache, cacheKey, value)'), 'loaded thumbnails should enter the bounded cache')
