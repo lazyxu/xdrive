@@ -2092,3 +2092,52 @@ Each run captures first content, first HTTP range, first byte/thumbnail response
 **Remaining out of scope:** genuine Desktop Main→Preload→Agent IPC progress-event A/B (the distinct merged Desktop #1171 n=3 cold first decoded paint P50 ~1,793.6ms is a baseline, not paired P0-C), real 4K/HEVC video Range, Live Photo motion first-press network/hold sequence, 10k/100k rapid scrolling cancellations with real upstream context, duplicate folding ON and physical iOS/Android acceptance. No new production cache/index/player is justified by these Web numbers.
 
 **Delivery workflow:** preserve the matched first-acceptance sample raw JSON and this canonical table in the same single work commit, rerun full GitHub PR CI on the evidence-amended exact head, then linear-merge and branch-clean per AGENTS.md. No time/throughput or memory claim beyond the named source, scale and measurement boundary.
+
+## G07 PostgreSQL durable selection jobs 10k/100k baseline (2026-10-09)
+
+**Status: Measured baseline / no production optimization / evidence amendment under CI review.**
+Go production enqueue and worker, native PostgreSQL 17-alpine in GitHub Actions
+ubuntu-latest runner, 100-item worker chunks; **one** independent initial sample
+per scale, not a percentile, not a before/after improvement.
+
+[Source CI: run 37951640137, job 113891629077](https://github.com/lazyxu/xdrive/actions/runs/37951640137/job/113891629077).
+The run ended **successfully**, with exact persisted counts and favorites verified.
+
+| Workload | n | Fixture (ms) | BEFORE enqueue (ms) | BEFORE worker (ms) | Enqueue + worker (ms) | Chunks | Succeeded / Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 10,000 Nodes/PhotoAssets/PhotoMetadata | 1 | 946 | **411** | **3,783** | 4,194 | 100 | 10,000 / 0 |
+| 100,000 Nodes/PhotoAssets/PhotoMetadata | 1 | 9,509 | **5,760** | **48,315** | 54,075 | 1,000 | 100,000 / 0 |
+
+**Boundary:** the fixture is created separately using PostgreSQL INSERT SELECT;
+the measured code is the real Gin selection-to-job handler + SQL-backed job
+worker with identical owner-scoped immutable revisions, not a benchmark-only
+enqueue shortcut. No CAS bytes, photo/video thumbnails, browser/Electron
+rendering, network hop, live device, upload/download, UI wall time or
+client-side first paint. The generated owner-scoped selection is already
+constructed before the enqueue timer; full query snapshot creation is
+not measured by this test.
+
+Go point-in-time heap Alloc (before/after) was 2,685,680/3,029,720 bytes
+(10k) and 6,549,744/3,031,848 bytes (100k). **These are two heap samples,
+not peak RSS or maximum heap, and cannot prove memory scalability.**
+Fixture creation is reported but excluded from operation latency.
+
+**Decision:** 100k finished correctly but the **5.760-second synchronous
+enqueue is a responsiveness concern**, especially relative to the Agent
+IPC's nominal 10-second request budget. This is one sample, so do not
+make a P50/P95 claim. Establish the following *provisional, not yet
+validated* targets for a new n=3 same-fixture measurement: 100k enqueue
+P50 <=3,000ms, worker P50 <=60,000ms; 10k enqueue P50 <=750ms. A subsequent
+production change to improve enqueue must measure both BEFORE and AFTER
+on the same workload and preserve 100k item integrity, cancellation,
+partial failures, PostgreSQL CPU/I/O and heap; if gains are not material,
+revert the optimization and retain the rejection evidence.
+
+**Benchmark:** `XD_GALLERY_SELECTION_JOB_PERF=1 go test -mod=readonly
+-run '^TestGallerySelectionJobsReal10k100k$' -timeout=24m -count=1 -v
+./internal/api` with `XD_TEST_DATABASE_URL` set to runner PostgreSQL 17.
+The dedicated workflow is `.github/workflows/gallery-selection-jobs-performance.yml`
+and is branch-scoped; it does not alter GitHub/GitLab core CI parity.
+Current AFTER = **N/A (no optimization)**; improvements are not claimed.
+This evidence amendment must pass full PR CI before the benchmark branch
+can merge and be deleted.
