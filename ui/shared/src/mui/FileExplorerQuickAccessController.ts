@@ -81,6 +81,9 @@ export function useXDriveFileExplorerQuickAccess<
   }>())
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
+  // Render-phase ownership is separate from the request generation: clearing
+  // old session items in a passive effect is too late for the first frame.
+  const visibleScopeRef = useRef({ lifecycleKey, enabled })
   const lifecycleGenerationRef = useRef(1)
   const reorderGenerationRef = useRef(0)
 
@@ -136,6 +139,7 @@ export function useXDriveFileExplorerQuickAccess<
   }, [enabled, lifecycleKey, loadFresh])
 
   useEffect(() => {
+    visibleScopeRef.current = { lifecycleKey, enabled }
     setItems([])
     setLoading(false)
     setBusyID(null)
@@ -151,9 +155,12 @@ export function useXDriveFileExplorerQuickAccess<
     pendingMutationRef.current.clear()
   }, [])
 
+  const scopeVisible = enabled && visibleScopeRef.current.lifecycleKey === lifecycleKey &&
+    visibleScopeRef.current.enabled === enabled
+  const visibleItems = scopeVisible ? items : []
   const pinnedIDs = useMemo(
-    () => new Set(items.map((item) => item.id)),
-    [items],
+    () => new Set(visibleItems.map((item) => item.id)),
+    [visibleItems],
   )
 
   const enqueueMutation = useCallback((
@@ -308,9 +315,9 @@ export function useXDriveFileExplorerQuickAccess<
   }, [enabled, loadFresh])
 
   return {
-    items,
-    loading,
-    busyID,
+    items: visibleItems,
+    loading: scopeVisible ? loading : enabled,
+    busyID: scopeVisible ? busyID : null,
     pinnedIDs,
     refresh,
     pin,
