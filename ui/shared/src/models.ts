@@ -834,6 +834,21 @@ export interface MediaDuplicateOrganizePerson {
   name: string
 }
 
+/** One *locally linked* sync-folder origin. Not a remote inventory scan. */
+export interface MediaDuplicateOrganizeSourceLink {
+  source_id: number
+  source_name: string
+  source_kind: string
+  source_status: string
+  direction: 'pull' | 'push' | string
+  sync_mode: 'backup' | 'mirror' | string
+  source_item_id: number
+  resource_node_id: number
+  path: string
+  item_state: string
+  may_reimport: boolean
+}
+
 export interface MediaDuplicateOrganizeMember {
   node_id: number
   asset_id: number
@@ -847,6 +862,7 @@ export interface MediaDuplicateOrganizeMember {
   collections: MediaDuplicateOrganizeCollection[]
   durable_people: MediaDuplicateOrganizePerson[]
   original_resources: MediaDuplicateOrganizeResource[]
+  source_links?: MediaDuplicateOrganizeSourceLink[]
   edit_recipe?: MediaEditRecipe
   has_edit_recipe: boolean
 }
@@ -863,6 +879,8 @@ export interface MediaDuplicateOrganizePlan {
   combined_favorite: boolean
   manual_album_count: number
   durable_person_count: number
+  source_managed_assets?: number
+  potential_reimport_assets?: number
   ready_for_manual_review: boolean
   requires_manual_confirmation: boolean
   no_mutation: boolean

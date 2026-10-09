@@ -353,6 +353,20 @@ type MediaDuplicateOrganizeResource struct {
 	ByteOffset int64  `json:"byte_offset"`
 }
 
+type MediaDuplicateOrganizeSourceLink struct {
+	SourceID       uint64 `json:"source_id"`
+	SourceName     string `json:"source_name"`
+	SourceKind     string `json:"source_kind"`
+	SourceStatus   string `json:"source_status"`
+	Direction      string `json:"direction"`
+	SyncMode       string `json:"sync_mode"`
+	SourceItemID   uint64 `json:"source_item_id"`
+	ResourceNodeID uint64 `json:"resource_node_id"`
+	Path           string `json:"path"`
+	ItemState      string `json:"item_state"`
+	MayReimport    bool   `json:"may_reimport"`
+}
+
 type MediaDuplicateOrganizeMember struct {
 	NodeID        uint64                             `json:"node_id"`
 	AssetID       uint64                             `json:"asset_id"`
@@ -366,6 +380,7 @@ type MediaDuplicateOrganizeMember struct {
 	Collections   []MediaDuplicateOrganizeCollection `json:"collections"`
 	People        []MediaDuplicateOrganizePerson     `json:"durable_people"`
 	Resources     []MediaDuplicateOrganizeResource   `json:"original_resources"`
+	SourceLinks   []MediaDuplicateOrganizeSourceLink `json:"source_links"`
 	EditRecipe    *MediaEditRecipe                   `json:"edit_recipe,omitempty"`
 	HasEditRecipe bool                               `json:"has_edit_recipe"`
 }
@@ -382,6 +397,8 @@ type MediaDuplicateOrganizePlan struct {
 	CombinedFavorites          bool                           `json:"combined_favorite"`
 	ManualAlbumCount           int                            `json:"manual_album_count"`
 	DurablePersonCount         int                            `json:"durable_person_count"`
+	SourceManagedAssets        int                            `json:"source_managed_assets"`
+	PotentialReimportAssets    int                            `json:"potential_reimport_assets"`
 	ReadyForManualReview       bool                           `json:"ready_for_manual_review"`
 	RequiresManualConfirmation bool                           `json:"requires_manual_confirmation"`
 	NoMutation                 bool                           `json:"no_mutation"`

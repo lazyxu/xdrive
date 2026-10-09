@@ -737,9 +737,48 @@ automated deletion. Subsequent transactional consolidation and safe undo
 need separate native PostgreSQL correctness gates including concurrent sync
 and reimport. This stage is not a full metadata merge.
 
+### G11 P4 phase 5 — provenance-aware duplicate preservation (2026-10-09)
+
+**Pending authoritative CI.** Extend the already merged metadata-only
+preservation plan and the shared Web/Desktop review with a bounded, verified
+projection of existing **SourceItem → Source → PhotoResource(Node)** links.
+For every one of the selected 2–32 complete-asset-verified copies, report
+each linked 同步文件夹 name/kind, direction (Pull/Push), Backup/Mirror mode,
+active/paused status, SourceItem ID/path/state, and the actual linked
+**resource Node ID**. Crucially, a Live motion, RAW component or sidecar
+can carry source provenance separately from the primary still; a query
+restricted to the primary Node would miss that evidence. Limit the total
+source links to 1,024 and fail closed rather than silently omitting sources.
+
+Report how many selected PhotoAssets have currently linked source records,
+and how many have existing Pull source records that **may re-import** after
+deletion. A paused Pull source can resume; missing/ignored items are not
+currently flagged as re-import candidates, but that does *not* authorize
+deletion. An item with no current SourceItem link is **not proof** of
+no remote copy: this is an owner-scoped, local database view, not an inventory
+scan or suppression policy. Do not copy or rewrite SourceItem identity,
+source collections, real files or CAS references. The source-link snapshot
+is included in the existing SHA-256 plan-revision computation so a path/state
+change after preview invalidates a stale confirmation.
+
+Native PostgreSQL tests must include three same-SHA but independent
+annotations/sync folders, owner isolation (including inconsistent cross-owner
+links), 2-byte-equivalent Live assets with separate **motion-only**
+source links, stale provenance plan rejection and source identities remaining
+unchanged after annotation-only apply. A shared UI contract checks that the
+per-resource source warnings are accessible on Web/Desktop and no deletion
+API has been introduced.
+
+**Still missing for destructive consolidation:** durable multi-edit/description
+resolution, explicit consent for each candidate and complete resources,
+owner/CAS-refcount/quota invariant tests, conflict-aware background Trash +
+undo, actual Source re-import/suppression policy and regression testing after
+a completed sync run. The current metadata-only union does not count as
+source-safe permanent duplicate cleanup.
+
 ### G11 P4 phase 4 — explicit Web/Desktop annotation confirmation (2026-10-09)
 
-**Phase status: one-commit PR / full CI required.** Continue the existing
+**Merged in #1154 after full CI.** Continue the existing
 verified Gallery fold-expansion UI and its G11 read-only preservation plan.
 The user must first select the real keeper, explicitly request
 `查看保全计划`, and then check **“只合并标注、保留全部原文件”**

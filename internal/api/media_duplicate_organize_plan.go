@@ -17,7 +17,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const mediaDuplicateOrganizePlanMaxMembers = 32
+const (
+	mediaDuplicateOrganizePlanMaxMembers = 32
+	mediaDuplicateOrganizeMaxSourceLinks = 1024
+)
 
 // This is a dry-run, read-only projection. It does not authorize any
 // replacement, blob dereference, trash transition, or source identity rewrite.
@@ -45,6 +48,22 @@ type mediaDuplicateOrganizeResource struct {
 	ByteOffset int64  `json:"byte_offset"`
 }
 
+// SourceItem associations are evidence of a *current local link*, not a full
+// remote inventory or a guarantee that the item cannot be downloaded again.
+type mediaDuplicateOrganizeSourceLink struct {
+	SourceID       uint64 `json:"source_id"`
+	SourceName     string `json:"source_name"`
+	SourceKind     string `json:"source_kind"`
+	SourceStatus   string `json:"source_status"`
+	Direction      string `json:"direction"`
+	SyncMode       string `json:"sync_mode"`
+	SourceItemID   uint64 `json:"source_item_id"`
+	ResourceNodeID uint64 `json:"resource_node_id"`
+	Path           string `json:"path"`
+	ItemState      string `json:"item_state"`
+	MayReimport    bool   `json:"may_reimport"`
+}
+
 type mediaDuplicateOrganizeMember struct {
 	NodeID        uint64                             `json:"node_id"`
 	AssetID       uint64                             `json:"asset_id"`
@@ -58,6 +77,7 @@ type mediaDuplicateOrganizeMember struct {
 	Collections   []mediaDuplicateOrganizeMembership `json:"collections"`
 	People        []mediaDuplicateOrganizePerson     `json:"durable_people"`
 	Resources     []mediaDuplicateOrganizeResource   `json:"original_resources"`
+	SourceLinks   []mediaDuplicateOrganizeSourceLink `json:"source_links"`
 	EditRecipe    *mediaEditRecipeDTO                `json:"edit_recipe,omitempty"`
 	HasEditRecipe bool                               `json:"has_edit_recipe"`
 }
@@ -74,6 +94,8 @@ type mediaDuplicateOrganizePlan struct {
 	CombinedFavorites          bool                           `json:"combined_favorite"`
 	ManualAlbumCount           int                            `json:"manual_album_count"`
 	DurablePersonCount         int                            `json:"durable_person_count"`
+	SourceManagedAssets        int                            `json:"source_managed_assets"`
+	PotentialReimportAssets    int                            `json:"potential_reimport_assets"`
 	ReadyForManualReview       bool                           `json:"ready_for_manual_review"`
 	RequiresManualConfirmation bool                           `json:"requires_manual_confirmation"`
 	NoMutation                 bool                           `json:"no_mutation"`
@@ -253,6 +275,70 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 		)
 		durablePeople[value.PersonKey] = struct{}{}
 	}
+	// SourceItem can point to the still, motion, RAW, or sidecar Node. Link the
+	// *whole* PhotoAsset through its persisted Node resources so secondary
+	// source identities cannot disappear from the preview.
+	type sourceLinkRow struct {
+		AssetID        uint64
+		ResourceNodeID uint64
+		SourceItemID   uint64
+		SourceID       uint64
+		SourceName     string
+		SourceKind     string
+		SourceStatus   string
+		Direction      string
+		SyncMode       string
+		Path           string
+		ItemState      string
+	}
+	var sourceRows []sourceLinkRow
+	if err := s.DB.WithContext(ctx).
+		Table("xd_photo_resources AS pr").
+		Select("pr.asset_id, pr.node_id AS resource_node_id, "+
+			"si.id AS source_item_id, si.path, si.state AS item_state, "+
+			"src.id AS source_id, src.name AS source_name, "+
+			"src.kind AS source_kind, src.status AS source_status, "+
+			"src.direction, src.sync_mode").
+		Joins("JOIN xd_source_items AS si ON si.node_id = pr.node_id").
+		Joins("JOIN xd_sources AS src ON src.id = si.source_id").
+		Where("pr.asset_id IN ? AND pr.resource_kind = ? AND src.owner_id = ?",
+			assetIDs, meta.PhotoResourceKindNode, ownerID).
+		Order("pr.asset_id ASC, si.id ASC, pr.node_id ASC").
+		Limit(mediaDuplicateOrganizeMaxSourceLinks + 1).
+		Scan(&sourceRows).Error; err != nil {
+		return out, err
+	}
+	if len(sourceRows) > mediaDuplicateOrganizeMaxSourceLinks {
+		// Unbounded provenance can never silently look like 'no source'.
+		return out, gorm.ErrRecordNotFound
+	}
+	sourceLinksByAsset := make(map[uint64][]mediaDuplicateOrganizeSourceLink)
+	seenSourceItems := make(map[uint64]map[uint64]struct{})
+	for _, link := range sourceRows {
+		seen := seenSourceItems[link.AssetID]
+		if seen == nil {
+			seen = make(map[uint64]struct{})
+			seenSourceItems[link.AssetID] = seen
+		}
+		if _, exists := seen[link.SourceItemID]; exists {
+			continue
+		}
+		seen[link.SourceItemID] = struct{}{}
+		mayReimport := link.Direction == meta.SourceDirectionPull &&
+			link.ItemState != meta.SourceItemStateMissing &&
+			link.ItemState != meta.SourceItemStateIgnored
+		sourceLinksByAsset[link.AssetID] = append(
+			sourceLinksByAsset[link.AssetID],
+			mediaDuplicateOrganizeSourceLink{
+				SourceID: link.SourceID, SourceName: link.SourceName,
+				SourceKind: link.SourceKind, SourceStatus: link.SourceStatus,
+				Direction: link.Direction, SyncMode: link.SyncMode,
+				SourceItemID:   link.SourceItemID,
+				ResourceNodeID: link.ResourceNodeID, Path: link.Path,
+				ItemState: link.ItemState, MayReimport: mayReimport,
+			},
+		)
+	}
 	var base duplicateAssetIdentity
 	status := duplicateAssetIdentical
 	reason := "完整资源和当前编辑配方已验证一致；仍须人工确认整理范围"
@@ -264,7 +350,7 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 	out.NoMutation = true
 	out.RequiresManualConfirmation = true
 	out.PhysicalReclaimableBytes = 0
-	out.SourceWarning = "同步文件夹、来源相册及物理文件保持独立；本预览不会删除或转移来源。再次同步可能重新导入曾删除的文件。"
+	out.SourceWarning = "仅展示数据库当前已经关联的同步文件夹来源；未显示来源不代表文件不受远端管理，也不证明删除安全。本操作保留所有原文件、来源和共享 Blob。"
 	for index, row := range rows {
 		recipe, hasRecipe := byRecipe[row.AssetID]
 		verifiedMember := mediaDuplicateMemberRow{
@@ -327,6 +413,16 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 			detail := toMediaEditRecipeDTO(recipe, row.AssetKind, verified)
 			editDetails = &detail
 		}
+		links := sourceLinksByAsset[row.AssetID]
+		if len(links) > 0 {
+			out.SourceManagedAssets++
+			for _, link := range links {
+				if link.MayReimport {
+					out.PotentialReimportAssets++
+					break
+				}
+			}
+		}
 		out.Members = append(out.Members, mediaDuplicateOrganizeMember{
 			NodeID: row.NodeID, AssetID: row.AssetID,
 			AssetKind: row.AssetKind, NodeRevision: row.NodeRevision,
@@ -334,8 +430,11 @@ func (s *Server) queryMediaDuplicateOrganizePlan(
 			Description: row.Description, Tags: tags, PeopleLabels: labels,
 			Collections: collectionsByAsset[row.AssetID],
 			People:      peopleByAsset[row.AssetID], Resources: resourceDetails,
-			EditRecipe: editDetails, HasEditRecipe: hasRecipe,
+			SourceLinks: links, EditRecipe: editDetails, HasEditRecipe: hasRecipe,
 		})
+	}
+	if out.PotentialReimportAssets > 0 {
+		out.SourceWarning = "当前关联的 Pull 同步文件夹中有可再次导入的来源记录；未来删除这些 Node 后再次同步可能恢复副本。来源相册及全部原文件保持独立，本次只保全标注，不执行删除。未关联的来源也不代表无远端副本。"
 	}
 	out.AssetComparison = status
 	out.Reason = reason

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -45,6 +46,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.AuditEvent{},
+		&meta.Source{}, &meta.SourceItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +154,53 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	// One original can be linked to a Pull sync folder even when other
+	// exact byte copies live in different folders or accounts. Include a
+	// foreign-owned, incorrectly linked SourceItem to enforce owner isolation.
+	sourceA := meta.Source{
+		OwnerID: owners[0].ID, Name: "Synology A", Kind: "synology_files",
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
+	}
+	sourceB := meta.Source{
+		OwnerID: owners[0].ID, Name: "Yike B", Kind: "yike",
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused, Revision: 1,
+	}
+	foreignSource := meta.Source{
+		OwnerID: owners[1].ID, Name: "Other account", Kind: "synology_files",
+		Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+		RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive, Revision: 1,
+	}
+	for _, source := range []*meta.Source{&sourceA, &sourceB, &foreignSource} {
+		if err := db.Create(source).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	seenAt := time.Now().UTC()
+	sourceItemB := meta.SourceItem{
+		SourceID: sourceA.ID, ExternalID: "synology-b",
+		NodeID: &b.node.ID, NodeRevision: 1, Kind: meta.SourceItemKindFile,
+		Path: "/camera/b.jpg", State: meta.SourceItemStateSynced,
+		LastSeenAt: seenAt,
+	}
+	sourceItemC := meta.SourceItem{
+		SourceID: sourceB.ID, ExternalID: "yike-c",
+		NodeID: &c.node.ID, NodeRevision: 1, Kind: meta.SourceItemKindFile,
+		Path: "/album/c.jpg", State: meta.SourceItemStateSynced,
+		LastSeenAt: seenAt,
+	}
+	foreignItem := meta.SourceItem{
+		SourceID: foreignSource.ID, ExternalID: "foreign-link",
+		NodeID: &b.node.ID, NodeRevision: 1, Kind: meta.SourceItemKindFile,
+		Path:  "/private/should-not-appear.jpg",
+		State: meta.SourceItemStateSynced, LastSeenAt: seenAt,
+	}
+	for _, item := range []*meta.SourceItem{&sourceItemB, &sourceItemC, &foreignItem} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	server := &Server{DB: db}
 	read := func(ids ...uint64) mediaDuplicateOrganizePlan {
 		t.Helper()
@@ -182,6 +231,22 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	}
 	if len(plan.Members[1].Collections) != 2 || len(plan.Members[1].People) != 1 {
 		t.Fatalf("lost manual/source album or persistent people: %+v", plan.Members[1])
+	}
+	if plan.SourceManagedAssets != 2 || plan.PotentialReimportAssets != 2 ||
+		len(plan.Members[0].SourceLinks) != 0 ||
+		len(plan.Members[1].SourceLinks) != 1 ||
+		len(plan.Members[2].SourceLinks) != 1 {
+		t.Fatalf("source coverage not owner-scoped or complete: %+v", plan)
+	}
+	linkB := plan.Members[1].SourceLinks[0]
+	linkC := plan.Members[2].SourceLinks[0]
+	if !linkB.MayReimport || !linkC.MayReimport ||
+		linkB.SourceID != sourceA.ID || linkB.ResourceNodeID != b.node.ID ||
+		linkB.SourceItemID != sourceItemB.ID || linkB.Path != "/camera/b.jpg" ||
+		linkC.SourceID != sourceB.ID || linkC.SourceItemID != sourceItemC.ID ||
+		linkC.SourceStatus != meta.SourceStatusPaused ||
+		!strings.Contains(plan.SourceWarning, "再次同步") {
+		t.Fatalf("source provenance or possible reimport warning lost: %+v", plan)
 	}
 	if len(plan.Members[1].Resources) != 1 ||
 		plan.Members[1].Resources[0].SHA256 != hash ||
@@ -244,6 +309,23 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	}
 	if err := db.Model(&meta.File{}).Where("node_id = ?", b.node.ID).
 		Update("size", 1000).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The review fingerprint includes the current SourceItem identity and path.
+	// Even a read-only source rename requires a new user-approved preview.
+	if err := db.Model(&meta.SourceItem{}).
+		Where("id = ?", sourceItemB.ID).
+		Update("path", "/camera/renamed-b.jpg").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, input,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("changed sync-folder provenance must reject stale review: %v", err)
+	}
+	if err := db.Model(&meta.SourceItem{}).
+		Where("id = ?", sourceItemB.ID).
+		Update("path", "/camera/b.jpg").Error; err != nil {
 		t.Fatal(err)
 	}
 	applied, err := server.applyMediaDuplicateOrganizeMetadata(
@@ -319,6 +401,17 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		t.Fatalf("real files/resources/assets and audit not preserved: %d/%d/%d audits=%d",
 			files, resources, assetRows, audits)
 	}
+	for _, sourceItem := range []meta.SourceItem{sourceItemB, sourceItemC} {
+		var current meta.SourceItem
+		if err := db.First(&current, sourceItem.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if current.NodeID == nil || sourceItem.NodeID == nil ||
+			*current.NodeID != *sourceItem.NodeID ||
+			current.State != meta.SourceItemStateSynced {
+			t.Fatalf("annotation union mutated sync-folder identity: %+v", current)
+		}
+	}
 	if _, err := server.applyMediaDuplicateOrganizeMetadata(
 		context.Background(), owners[0].ID, input,
 	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
@@ -354,5 +447,172 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		[]uint64{a.node.ID, b.node.ID},
 	); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("stale index must reject organization preview: %v", err)
+	}
+}
+
+func TestMediaDuplicateOrganizePlanFindsLiveMotionSourceLinks(t *testing.T) {
+	dsn := os.Getenv("XD_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("XD_TEST_DATABASE_URL is not set")
+	}
+	db := fileExplorerMediaPerfDatabase(t, dsn)
+	if err := db.AutoMigrate(
+		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.MediaMetadata{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoEditRecipe{}, &meta.PhotoCollection{},
+		&meta.PhotoCollectionAsset{}, &meta.PhotoPerson{},
+		&meta.PhotoPersonAsset{}, &meta.Source{}, &meta.SourceItem{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	owner := meta.User{
+		Username: "live-motion-source", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := meta.Node{OwnerID: owner.ID, Name: "", Type: meta.NodeTypeDir, Revision: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	const copies = 2
+	stillIDs := make([]uint64, 0, copies)
+	motionIDs := make([]uint64, 0, copies)
+	stillHash := strings.Repeat("a", 64)
+	motionHash := strings.Repeat("b", 64)
+	for index := 0; index < copies; index++ {
+		newNode := func(name string, kind string, hash string, size int64) meta.Node {
+			t.Helper()
+			node := meta.Node{
+				OwnerID: owner.ID, ParentID: &root.ID,
+				Name: name, Type: meta.NodeTypeFile, Revision: 1,
+			}
+			if err := db.Create(&node).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&meta.File{
+				NodeID: node.ID, SHA256: hash, Size: size, StorageKey: "cas/" + hash,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			mimeType := "image/jpeg"
+			if kind == meta.MediaKindVideo {
+				mimeType = "video/quicktime"
+			}
+			if err := db.Create(&meta.MediaMetadata{
+				NodeID: node.ID, OwnerID: owner.ID, NodeRevision: 1,
+				SHA256: hash, MediaKind: kind, MIMEType: mimeType,
+				IndexState: meta.MediaIndexStateReady,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			return node
+		}
+		stillName := "live-still-a.jpg"
+		motionName := "live-motion-a.mov"
+		if index != 0 {
+			stillName = "live-still-b.jpg"
+			motionName = "live-motion-b.mov"
+		}
+		still := newNode(stillName, meta.MediaKindImage, stillHash, 1000)
+		motion := newNode(motionName, meta.MediaKindVideo, motionHash, 2000)
+		asset := meta.PhotoAsset{
+			OwnerID: owner.ID, PrimaryNodeID: still.ID,
+			Kind: meta.PhotoAssetKindLivePhoto, EvidenceKey: "group:" + stillName,
+		}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+		resources := []meta.PhotoResource{
+			{
+				AssetID: asset.ID, ResourceKind: meta.PhotoResourceKindNode,
+				NodeID: still.ID, Role: meta.MediaGroupRoleStill,
+				Ordinal: 0, Name: stillName, MediaKind: meta.MediaKindImage,
+				MIMEType: "image/jpeg", Size: 1000, SHA256: stillHash,
+			},
+			{
+				AssetID: asset.ID, ResourceKind: meta.PhotoResourceKindNode,
+				NodeID: motion.ID, Role: meta.MediaGroupRoleMotion,
+				Ordinal: 1, Name: motionName, MediaKind: meta.MediaKindVideo,
+				MIMEType: "video/quicktime", Size: 2000, SHA256: motionHash,
+			},
+		}
+		if err := db.Create(&resources).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		stillIDs = append(stillIDs, still.ID)
+		motionIDs = append(motionIDs, motion.ID)
+	}
+	sources := []meta.Source{
+		{
+			OwnerID: owner.ID, Name: "Camera A", Kind: "synology_files",
+			Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusActive,
+			Revision: 1,
+		},
+		{
+			OwnerID: owner.ID, Name: "Camera B", Kind: "yike",
+			Direction: meta.SourceDirectionPull, SyncMode: meta.SourceSyncModeBackup,
+			RunMode: meta.SourceRunModeSync, Status: meta.SourceStatusPaused,
+			Revision: 1,
+		},
+	}
+	if err := db.Create(&sources).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for index := range sources {
+		sourceItem := meta.SourceItem{
+			SourceID: sources[index].ID, ExternalID: "motion-copy",
+			NodeID: &motionIDs[index], NodeRevision: 1,
+			Kind: meta.SourceItemKindFile, State: meta.SourceItemStateSynced,
+			Path: "/Live/clip.mov", LastSeenAt: now,
+		}
+		if err := db.Create(&sourceItem).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := &Server{DB: db}
+	read := func() mediaDuplicateOrganizePlan {
+		t.Helper()
+		plan, err := server.queryMediaDuplicateOrganizePlan(
+			context.Background(), owner.ID, stillIDs[0], stillIDs,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plan
+	}
+	first := read()
+	if first.AssetComparison != duplicateAssetIdentical ||
+		first.SourceManagedAssets != 2 || first.PotentialReimportAssets != 2 ||
+		len(first.Members) != 2 {
+		t.Fatalf("identical Live Photos must retain both motion sources: %+v", first)
+	}
+	for index, member := range first.Members {
+		if len(member.SourceLinks) != 1 ||
+			member.SourceLinks[0].ResourceNodeID != motionIDs[index] ||
+			member.SourceLinks[0].SourceID != sources[index].ID ||
+			!member.SourceLinks[0].MayReimport {
+			t.Fatalf("motion source was not attached to whole PhotoAsset: %+v", member)
+		}
+	}
+	if err := db.Model(&meta.SourceItem{}).
+		Where("source_id = ? AND node_id = ?", sources[1].ID, motionIDs[1]).
+		Update("state", meta.SourceItemStateMissing).Error; err != nil {
+		t.Fatal(err)
+	}
+	second := read()
+	if second.PotentialReimportAssets != 1 ||
+		second.SourceManagedAssets != 2 ||
+		second.PlanRevision == first.PlanRevision ||
+		second.Members[1].SourceLinks[0].MayReimport {
+		t.Fatalf("source reimport eligibility did not invalidate review: %+v", second)
 	}
 }
