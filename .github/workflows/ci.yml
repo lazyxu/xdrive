@@ -504,11 +504,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p perf-results
+          rm -f perf-results/*.json
           for surface in desktop web; do
-            for scenario in image-cold image-warm video-poster-cold video-poster-warm; do
-              xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-media-trace-main.cjs "$surface" "$scenario"
+            for mode in grid details; do
+              for scenario in image-cold image-warm video-poster-cold video-poster-warm live-cold live-warm; do
+                xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-media-trace-main.cjs "$surface" "$scenario" "$mode"
+              done
             done
           done
+          test "$(find perf-results -maxdepth 1 -type f -name '*.json' ! -name '*-trace.json' | wc -l)" -eq 24
+          test "$(find perf-results -maxdepth 1 -type f -name '*-trace.json' | wc -l)" -eq 24
           echo "=== FileExplorer media renderer metrics ==="
           for file in perf-results/*.json; do
             case "$file" in

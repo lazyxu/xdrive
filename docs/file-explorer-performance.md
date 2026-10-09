@@ -84,6 +84,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Navigation-tree pagination | **Merged** | Unmeasured wall-clock | One 200-item folder page per expansion; additional siblings are explicit load-more. |
 | Search server sort + sort-bound cursor | **Merged** | Unmeasured wall-clock | name/updated/size/type are globally server-paged; renderer no longer re-sorts only the loaded subset. |
 | 100k image/video media-directory traces | **Server/object-store matrix measured; renderer trace measured** | Measured structural + diagnostic timing | Real Server + PostgreSQL + `storage.Local`: cold **102 original opens / 102 derivative writes**, warm **0 / 0** with **102 derivative reads**, video icon fallback **0 thumbnail/object-store work**. Synthetic Web/Desktop renderer remains bounded at <=6 thumbnail in-flight, 110 max mounted, and 1200 peak retained. |
+| 100k Grid/Details image-video-LIVP renderer matrix | **Measured baseline / no production optimization (#1072)** | 24 actual Web/Desktop Chromium renders; synthetic thumbnail payloads | All structural budgets passed: Grid **110** DOM max, Details **37**, sparse metadata **1200**, thumbnail in-flight **≤6**, first viewport **189–250 ms** diagnostic. Live glyph **16–50** once a thumbnail source is available; decode completion is not asserted. Real codec/HTTP/backfill remain pending. |
 | Current 100k local baseline (2026-10-09) | **Measured baseline / no production change** | Fresh controller, real image HTTP/store, PGlite metadata and 24 synthetic renderer samples | Bounded work: 800 controller peak retained, 110 renderer max mounted, 1200 renderer retained, <=6 thumbnail in-flight. Real video cold decode/backfill and LIVP HTTP coverage remain the next measurement-only gap. |
 | Current 4 GiB Agent transfer baseline | **Measured baseline / memory budget passed** | Three fresh Linux processes per direction; exact payload/chunk validation | Upload **11.466 s / +22.48 MiB RSS**, download **2.638 s / +2.469 MiB RSS**; local zero-filled overlayfs/loopback only. No Agent production change. |
 | Current native image/store + 4 GiB Agent qualification | **Measured baseline / budgets passed** | PR #1067 initial native CI, actual merge checkout `86cf14e1` | Image cold/warm batches **737.958 / 36.167 ms**, expected store bounds; Agent upload/download **10.987 / 11.414 s**, RSS deltas **23.523 / 3.414 MiB**. No production change or cross-environment speedup. |
@@ -1859,6 +1860,50 @@ The following four workloads are mandatory before claiming FileExplorer is valid
 - For video runs, keep cold and warm poster states distinct. The synthetic `video-poster-cold` / `video-poster-warm` traces validate renderer admission only; a real cold run must additionally measure preview-stream decode/capture and revision-fenced backfill, while a real warm run must prove no preview decode or poster PUT occurs.
 - The pure Node VirtualCollection baseline above is a prerequisite reference, not a substitute for these browser/Electron traces.
 - Do not claim the image cases are fully end-to-end validated until the real Server/object-store fixture is connected to the Web/Desktop renderer transport. The current Server/object-store sample and synthetic Chromium trace measure complementary layers rather than one combined pipeline.
+
+### 100k FileExplorer Grid/Details image, video and Live Photo renderer qualification (2026-10-09)
+
+Status: **Measured baseline / no production optimization**. First run [CI 37874175164](https://github.com/lazyxu/xdrive/actions/runs/37874175164) on source `0622ae5dc6b1ce92c3e20e0f37be5ce40b4627ea`. This extends the earlier Grid-only 100k synthetic image/video traces without altering production FileExplorer/Thumbnail controllers.
+
+- Logical directory size **100,000** for every run, 200-item pages and 2 retained pages either side of the viewport. Run the actual shared FileExplorer on **Web and Desktop**, in **Grid and Details**, with **image/video/LIVP**, each cold/warm: **24 named traces** per CI run.
+- Every trace drives 36 consecutive scroll positions and jumps to 50% / 100% / 0%, observes long tasks, mounted DOM rows, sparse retained metadata, renderer working set, thumbnail requests/in-flight work and viewport geometry. Grid additionally uses real Chromium mouse-driven marquee. Details deliberately excludes marquee because its sticky header and row selection differ from Grid; zero marquee events in Details is not a performance failure.
+- The `live-*` entries are real `.livp` file names classified by the production FileExplorer thumbnail/glyph UI; the trace asserts at least one displayed **实况照片** glyph after its thumbnail appears. Existing image/video poster scenarios continue to use SVG Blob thumbnails with synthetic 12 ms cold delay. Thus these results measure **real Chromium renderer + shared scheduler/virtual surface**, **not real Live Photo ZIP unpacking, codec decode, network/Agent IPC, Server poster GET/PUT, PostgreSQL or object-store I/O**.
+- Predeclared structural acceptance: exactly 100k logical items and the named view/media combination; peak retained metadata **≤1200**, thumbnail in-flight **≤6**, mounted items **<1000**, at least one thumbnail request, warm thumbnail requests **≤600**, one glyph for `.livp`, and nonempty marquee in Grid. Time-to-first-grid/Details and script duration are diagnostic only unless a stable, comparable baseline identifies a repeatable breach. Prior healthy Grid image/video traces are the historical reference; new Details/LIVP have **no prior BEFORE timing**.
+- Benchmark: `VITE_XDRIVE_FILE_EXPLORER_PERF=1` build both renderers, then `xvfb-run ... desktop/scripts/file-explorer-media-trace-main.cjs <web|desktop> <image-cold|image-warm|video-poster-cold|video-poster-warm|live-cold|live-warm> <grid|details>`; CI job `file-explorer-media-renderer-trace`, scoped to the performance branch. Samples per new combination: one initially; any suspected performance bottleneck requires at least three paired runs before optimization.
+- Current decision: **Accept the measured structural baseline; no production optimization**. All **24/24** combinations met their frozen structural budgets. There is no comparable BEFORE/AFTER production change. Host/CI timing and final renderer working-set snapshots are diagnostic, not a performance speedup claim.
+- Complete machine-readable raw metrics (all 24 rows, exact unrounded values): [ci-run-37874175164.json](performance-evidence/file-explorer-100k-grid-details/ci-run-37874175164.json). CI job [113638803698](https://github.com/lazyxu/xdrive/actions/runs/37874175164/job/113638803698).
+
+| Surface | View | Media/state | First viewport (ms) | Script (ms) | Max DOM | Peak metadata | Thumb requests | Peak in-flight | Live glyphs | End WS (MiB) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| desktop | grid | image-cold | 213.9 | 2714.4 | 110 | 1200 | 104 | 6 | 0 | 290.1 |
+| desktop | grid | image-warm | 237.1 | 2855.3 | 110 | 1200 | 164 | 1 | 0 | 296.1 |
+| desktop | grid | video-poster-cold | 229.9 | 2814.3 | 110 | 1200 | 104 | 6 | 0 | 285.3 |
+| desktop | grid | video-poster-warm | 249.8 | 2673.2 | 110 | 1200 | 164 | 1 | 0 | 289.3 |
+| desktop | grid | live-cold | 220.6 | 2787.5 | 110 | 1200 | 107 | 6 | 50 | 282.6 |
+| desktop | grid | live-warm | 247.8 | 2762.0 | 110 | 1200 | 164 | 1 | 50 | 305.0 |
+| desktop | details | image-cold | 203.5 | 2054.7 | 37 | 1200 | 50 | 6 | 0 | 236.7 |
+| desktop | details | image-warm | 199.6 | 2050.7 | 37 | 1200 | 50 | 1 | 0 | 245.1 |
+| desktop | details | video-poster-cold | 199.1 | 2049.5 | 37 | 1200 | 50 | 6 | 0 | 240.1 |
+| desktop | details | video-poster-warm | 202.2 | 2053.5 | 37 | 1200 | 50 | 1 | 0 | 247.4 |
+| desktop | details | live-cold | 203.5 | 2054.0 | 37 | 1200 | 50 | 6 | 16 | 244.6 |
+| desktop | details | live-warm | 188.9 | 2040.9 | 37 | 1200 | 50 | 1 | 16 | 248.6 |
+| web | grid | image-cold | 196.0 | 2695.8 | 110 | 1200 | 104 | 6 | 0 | 279.7 |
+| web | grid | image-warm | 236.1 | 2678.8 | 110 | 1200 | 164 | 1 | 0 | 302.1 |
+| web | grid | video-poster-cold | 197.5 | 2564.9 | 110 | 1200 | 101 | 6 | 0 | 291.7 |
+| web | grid | video-poster-warm | 242.5 | 2675.4 | 110 | 1200 | 164 | 1 | 0 | 293.5 |
+| web | grid | live-cold | 224.4 | 2706.1 | 110 | 1200 | 99 | 6 | 50 | 300.2 |
+| web | grid | live-warm | 243.9 | 2717.5 | 110 | 1200 | 164 | 1 | 50 | 302.9 |
+| web | details | image-cold | 206.7 | 2057.4 | 37 | 1200 | 50 | 6 | 0 | 255.1 |
+| web | details | image-warm | 199.6 | 2051.5 | 37 | 1200 | 50 | 1 | 0 | 247.1 |
+| web | details | video-poster-cold | 204.9 | 2055.1 | 37 | 1200 | 50 | 6 | 0 | 239.3 |
+| web | details | video-poster-warm | 201.5 | 2052.5 | 37 | 1200 | 50 | 1 | 0 | 243.6 |
+| web | details | live-cold | 210.5 | 2060.7 | 37 | 1200 | 50 | 6 | 16 | 246.5 |
+| web | details | live-warm | 214.5 | 2066.1 | 37 | 1200 | 50 | 1 | 16 | 260.6 |
+
+- Each run observed one startup long task; no runner-stable comparative CPU claim is made. All six `.livp` traces displayed the real shared Live Photo glyph (**50** Grid / **16** Details visible badges at final sampled viewport). Grid marquee remained non-empty; Details is a scroll/layout benchmark without marquee.
+- Existing image/video cold/warm labels in this renderer harness are **synthetic 12 ms-delay vs no-delay**; they do not imply a real cache-hit benchmark. Warm scenario admissions (up to **164** in Grid) reflect the faster synthetic loader and are not a cache-efficiency comparison.
+- **AFTER:** not applicable. No production code change was made; optimization was intentionally not attempted because all structural budgets passed. Later requests must not reuse the current single CI wall-clock numbers as a speed baseline across different hardware.
+- Next: a separate real-video cold decode/canvas/PUT-backfill and warm-cache Server/HTTP/Agent test with a 100k metadata namespace, then 100k sync/delete operational performance. Do not equate the synthetic renderer timing with end-to-end throughput.
 
 ## Performance scenarios
 
