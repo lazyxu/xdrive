@@ -146,6 +146,7 @@ import {
   type AgentMediaCreativeInput,
   type AgentMediaThumbnail,
   type AgentSource,
+  type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
   type AgentSourceRun,
@@ -1848,6 +1849,29 @@ function registerIPCHandlers() {
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
     return result.canceled ? null : result.filePaths[0] ?? null
   })
+  // The Renderer provides only a Source ID. It cannot nominate a local OS
+  // path: Electron MAIN opens a native picker and sends its result to Agent.
+  ipcMain.handle('desktop:authorize-local-folder', (_event, sourceID: unknown) =>
+    runAgentAction<{ cancelled: boolean; grant?: AgentLocalFolderGrant }>(async () => {
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Source ID must be a positive integer.')
+      }
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'local-folder-root-grants')
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        throw new AgentIPCError('agent_unavailable', 0, 'Desktop window is unavailable for folder authorization.')
+      }
+      const selected = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: '选择要主动同步的本机文件夹',
+      })
+      if (selected.canceled || !selected.filePaths[0]) return { cancelled: true }
+      return {
+        cancelled: false,
+        grant: await requireAgentClient().authorizeLocalFolder(sourceID, selected.filePaths[0]),
+      }
+    }, false),
+  )
   ipcMain.on('desktop:start-native-drag-out', (event, relativePathValue: unknown) => {
     if (!desktopNativeDragOutSupported()) return
     if (typeof relativePathValue !== 'string') return

@@ -52,6 +52,7 @@ type agentController struct {
 	wake     chan struct{}
 	recovery chan agentRecoveryRequest
 
+	localFolderGrantMu sync.Mutex
 	mu                 sync.RWMutex
 	snap               agentSnapshot
 	snapshotRevision   uint64

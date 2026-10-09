@@ -787,6 +787,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   setCloseToTray: (enabled: boolean) => ipcRenderer.invoke('desktop:set-close-to-tray', enabled),
   setAppearance: (appearance: 'system' | 'light' | 'dark') => ipcRenderer.invoke('desktop:set-appearance', appearance),
   selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('desktop:select-directory', defaultPath),
+  authorizeLocalFolder: (sourceID: number) => ipcRenderer.invoke('desktop:authorize-local-folder', sourceID),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
   startNativeDragOut: (relativePath: string) =>
     ipcRenderer.send('desktop:start-native-drag-out', relativePath),
