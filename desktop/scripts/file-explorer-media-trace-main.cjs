@@ -3,20 +3,22 @@ const path = require('node:path')
 const { app, BrowserWindow, contentTracing } = require('electron')
 
 const surfaces = new Set(['desktop', 'web'])
-const scenarios = new Set(['image-cold', 'image-warm', 'video-poster-cold', 'video-poster-warm'])
+const scenarios = new Set(['image-cold', 'image-warm', 'video-poster-cold', 'video-poster-warm', 'live-cold', 'live-warm'])
+const viewModes = new Set(['grid', 'details'])
 const surface = process.argv.find((value) => surfaces.has(value))
 const scenario = process.argv.find((value) => scenarios.has(value))
+const viewMode = process.argv.find((value) => viewModes.has(value)) || 'grid'
 
 if (!surface || !scenario) {
-  console.error('Usage: electron scripts/file-explorer-media-trace-main.cjs <desktop|web> <image-cold|image-warm|video-poster-cold|video-poster-warm>')
+  console.error('Usage: electron scripts/file-explorer-media-trace-main.cjs <desktop|web> <image-cold|image-warm|video-poster-cold|video-poster-warm|live-cold|live-warm> [grid|details]')
   process.exit(2)
 }
 
 const desktopRoot = path.resolve(__dirname, '..')
 const repoRoot = path.resolve(desktopRoot, '..')
 const resultsDir = path.join(desktopRoot, 'perf-results')
-const tracePath = path.join(resultsDir, `${surface}-${scenario}-trace.json`)
-const metricsPath = path.join(resultsDir, `${surface}-${scenario}.json`)
+const tracePath = path.join(resultsDir, `${surface}-${viewMode}-${scenario}-trace.json`)
+const metricsPath = path.join(resultsDir, `${surface}-${viewMode}-${scenario}.json`)
 const rendererPath = surface === 'desktop'
   ? path.join(desktopRoot, 'dist', 'renderer', 'index.html')
   : path.join(repoRoot, 'web', 'dist', 'index.html')
@@ -166,7 +168,7 @@ app.whenReady().then(async () => {
       ],
     })
     await win.loadFile(rendererPath, {
-      query: { xdriveFileExplorerPerf: scenario },
+      query: { xdriveFileExplorerPerf: scenario, xdriveFileExplorerViewMode: viewMode },
     })
     const result = await waitForResult(win)
     const appMetrics = app.getAppMetrics()
@@ -187,16 +189,22 @@ app.whenReady().then(async () => {
     if (combined.peakThumbnailInFlight > 6) {
       throw new Error(`Thumbnail concurrency exceeded: ${combined.peakThumbnailInFlight}`)
     }
-    if (combined.marqueeSelectionChangeCount < 1 || combined.marqueePeakSelectedItems < 1) {
+    if (viewMode === 'grid' && (combined.marqueeSelectionChangeCount < 1 || combined.marqueePeakSelectedItems < 1)) {
       throw new Error(
         `Marquee trace did not select items: changes=${combined.marqueeSelectionChangeCount} peak=${combined.marqueePeakSelectedItems}`,
       )
+    }
+    if (combined.itemCount !== 100000 || combined.viewMode !== viewMode || combined.scenario !== scenario) {
+      throw new Error(`Trace workload mismatch: ${JSON.stringify({ mode: combined.viewMode, scenario: combined.scenario, items: combined.itemCount })}`)
+    }
+    if (scenario.startsWith('live-') && combined.liveGlyphCount < 1) {
+      throw new Error(`No decoded Live Photo glyph rendered for ${surface}/${viewMode}/${scenario}`)
     }
     if (combined.thumbnailRequests === 0) {
       throw new Error(`Media scenario ${scenario} did not request any thumbnails.`)
     }
     if (
-      (scenario === 'image-warm' || scenario === 'video-poster-warm') &&
+      (scenario === 'image-warm' || scenario === 'video-poster-warm' || scenario === 'live-warm') &&
       combined.thumbnailRequests > 600
     ) {
       throw new Error(`Warm thumbnail admission budget exceeded: ${combined.thumbnailRequests} requests.`)

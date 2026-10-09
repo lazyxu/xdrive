@@ -3,6 +3,7 @@ import { Box, Chip, Stack, Typography } from '@mui/material'
 import {
   XDriveFileExplorer,
   type XDriveFileExplorerID,
+  type XDriveFileExplorerViewMode,
   type XDriveFileExplorerItem,
   type XDriveFileExplorerSort,
   type XDriveFileExplorerVirtualCollection,
@@ -13,10 +14,13 @@ export type XDriveFileExplorerMediaTraceScenario =
   | 'image-warm'
   | 'video-poster-cold'
   | 'video-poster-warm'
+  | 'live-cold'
+  | 'live-warm'
 
 export type XDriveFileExplorerMediaTraceResult = {
   synthetic: true
   scenario: XDriveFileExplorerMediaTraceScenario
+  viewMode: XDriveFileExplorerViewMode
   itemCount: number
   timeToFirstGridMs: number
   scriptDurationMs: number
@@ -35,6 +39,7 @@ export type XDriveFileExplorerMediaTraceResult = {
   marqueeSelectionChangeCount: number
   marqueeSelectedItems: number
   marqueePeakSelectedItems: number
+  liveGlyphCount: number
 }
 
 declare global {
@@ -72,8 +77,9 @@ function itemForIndex(
   scenario: XDriveFileExplorerMediaTraceScenario,
 ): XDriveFileExplorerItem {
   const video = scenario.startsWith('video-poster-')
+  const live = scenario.startsWith('live-')
   const sequence = String(index + 1).padStart(6, '0')
-  const name = video ? `clip-${sequence}.mp4` : `image-${sequence}.jpg`
+  const name = video ? `clip-${sequence}.mp4` : live ? `live-${sequence}.livp` : `image-${sequence}.jpg`
   return {
     id: index + 1,
     name,
@@ -87,8 +93,7 @@ function itemForIndex(
 }
 
 function findScrollHost() {
-  const grid = document.querySelector('[aria-label="文件图标"]')
-  return grid?.parentElement as HTMLElement | null
+  return document.querySelector('[data-xdrive-file-explorer-scroll-host]') as HTMLElement | null
 }
 
 export function XDriveFileExplorerPerformanceHarness({
@@ -96,6 +101,8 @@ export function XDriveFileExplorerPerformanceHarness({
 }: {
   scenario: XDriveFileExplorerMediaTraceScenario
 }) {
+  const viewMode: XDriveFileExplorerViewMode = new URLSearchParams(window.location.search)
+    .get('xdriveFileExplorerViewMode') === 'details' ? 'details' : 'grid'
   const [loadedItems, setLoadedItems] = useState<ReadonlyMap<number, XDriveFileExplorerItem>>(
     () => new Map(),
   )
@@ -218,37 +225,41 @@ export function XDriveFileExplorerPerformanceHarness({
         sampleMounted()
       }
 
-      const hostBounds = host.getBoundingClientRect()
-      const marqueeStartX = Math.round(hostBounds.left + 6)
-      const marqueeStartY = Math.round(hostBounds.top + 6)
-      const marqueeStartedAt = performance.now()
-      window.__xdriveFileExplorerPerfMarqueeDone = false
-      window.__xdriveFileExplorerPerfMarqueeRequest = {
-        startX: marqueeStartX,
-        startY: marqueeStartY,
-        endX: Math.round(Math.min(
-          hostBounds.right - 24,
-          marqueeStartX + Math.max(240, host.clientWidth * 0.55),
-        )),
-        endY: Math.round(Math.min(
-          hostBounds.bottom - 24,
-          marqueeStartY + Math.max(180, host.clientHeight * 0.55),
-        )),
-        steps: 12,
+      // Native marquee is a Grid interaction; Details has a sticky header and
+      // is benchmarked for scrolling, thumbnails, sparse metadata and layout.
+      if (viewMode === 'grid') {
+        const hostBounds = host.getBoundingClientRect()
+        const marqueeStartX = Math.round(hostBounds.left + 6)
+        const marqueeStartY = Math.round(hostBounds.top + 6)
+        const marqueeStartedAt = performance.now()
+        window.__xdriveFileExplorerPerfMarqueeDone = false
+        window.__xdriveFileExplorerPerfMarqueeRequest = {
+          startX: marqueeStartX,
+          startY: marqueeStartY,
+          endX: Math.round(Math.min(
+            hostBounds.right - 24,
+            marqueeStartX + Math.max(240, host.clientWidth * 0.55),
+          )),
+          endY: Math.round(Math.min(
+            hostBounds.bottom - 24,
+            marqueeStartY + Math.max(180, host.clientHeight * 0.55),
+          )),
+          steps: 12,
+        }
+        for (
+          let attempt = 0;
+          attempt < 200 && !window.__xdriveFileExplorerPerfMarqueeDone;
+          attempt += 1
+        ) {
+          await wait(25)
+        }
+        if (!window.__xdriveFileExplorerPerfMarqueeDone) {
+          throw new Error('FileExplorer marquee trace input was not completed.')
+        }
+        await waitFrames(4)
+        marqueeDurationMs = performance.now() - marqueeStartedAt
+        delete window.__xdriveFileExplorerPerfMarqueeRequest
       }
-      for (
-        let attempt = 0;
-        attempt < 200 && !window.__xdriveFileExplorerPerfMarqueeDone;
-        attempt += 1
-      ) {
-        await wait(25)
-      }
-      if (!window.__xdriveFileExplorerPerfMarqueeDone) {
-        throw new Error('FileExplorer marquee trace input was not completed.')
-      }
-      await waitFrames(4)
-      marqueeDurationMs = performance.now() - marqueeStartedAt
-      delete window.__xdriveFileExplorerPerfMarqueeRequest
 
       let stableRequests = thumbnailRequestsRef.current
       let stableRounds = 0
@@ -269,6 +280,7 @@ export function XDriveFileExplorerPerformanceHarness({
       const result: XDriveFileExplorerMediaTraceResult = {
         synthetic: true,
         scenario,
+        viewMode,
         itemCount,
         timeToFirstGridMs,
         scriptDurationMs: performance.now() - runStartedAtRef.current,
@@ -287,6 +299,7 @@ export function XDriveFileExplorerPerformanceHarness({
         marqueeSelectionChangeCount: marqueeSelectionChangeCountRef.current,
         marqueeSelectedItems: marqueeSelectedItemsRef.current,
         marqueePeakSelectedItems: marqueePeakSelectedItemsRef.current,
+        liveGlyphCount: document.querySelectorAll('[data-xdrive-file-explorer-item-visual] [aria-label="实况照片"]').length,
       }
       window.__xdriveFileExplorerPerfResult = result
       console.info('__XDRIVE_FILE_EXPLORER_PERF_RESULT__' + JSON.stringify(result))
@@ -309,6 +322,7 @@ export function XDriveFileExplorerPerformanceHarness({
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
         <Typography variant="subtitle2">FileExplorer 100k renderer trace</Typography>
         <Chip size="small" label={scenario} />
+        <Chip size="small" label={viewMode} />
         <Chip size="small" label="synthetic namespace" variant="outlined" />
       </Stack>
       <Box sx={{ height: 'calc(100vh - 48px)', minHeight: 0 }}>
@@ -317,7 +331,7 @@ export function XDriveFileExplorerPerformanceHarness({
           items={[]}
           crumbs={[{ id: 1, name: 'Performance' }]}
           pathValue="Performance"
-          viewMode="grid"
+          viewMode={viewMode}
           onViewModeChange={() => {}}
           sort={defaultSort}
           onSortChange={() => {}}
