@@ -18,6 +18,13 @@ export function createDesktopMediaGalleryDataSource(
     ),
     listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
     getIndexStatus: () => agent.getMediaIndexStatus(),
+    createSelectionSnapshot: (query, albumID, day) =>
+      agent.createMediaSelectionSnapshot(query, albumID, day),
+    getSelectionSnapshot: (token, offset, limit) =>
+      agent.getMediaSelectionSnapshot(token, offset, limit),
+    setSelectionExcluded: (token, nodeID, excluded, version) =>
+      agent.setMediaSelectionExcluded(token, nodeID, excluded, version),
+    deleteSelectionSnapshot: (token) => agent.deleteMediaSelectionSnapshot(token),
     getNodeLocation: (nodeID, signal) => xDriveDesktopViewportRequest(
       signal,
       (requestID) => agent.getNodeLocation(nodeID, requestID),

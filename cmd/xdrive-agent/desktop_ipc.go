@@ -103,6 +103,7 @@ var desktopIPCCapabilities = []string{
 	"server-update",
 	"media-gallery",
 	"media-index-status",
+	"media-selection-snapshot",
 	"media-folder-recursive",
 	"media-duplicate-organize-plan",
 	"media-duplicate-organize-apply",
@@ -626,6 +627,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/node-location", h.nodeLocation)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
+	mux.HandleFunc("POST /v1/media/selection-snapshot", h.mediaCreateSelectionSnapshot)
+	mux.HandleFunc("GET /v1/media/selection-snapshot", h.mediaGetSelectionSnapshot)
+	mux.HandleFunc("PATCH /v1/media/selection-snapshot/exclusion", h.mediaSetSelectionExcluded)
+	mux.HandleFunc("DELETE /v1/media/selection-snapshot", h.mediaDeleteSelectionSnapshot)
 	mux.HandleFunc("GET /v1/media/duplicate-organize/plan", h.mediaDuplicateOrganizePlan)
 	mux.HandleFunc("POST /v1/media/duplicate-organize/apply", h.mediaDuplicateOrganizeApply)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
@@ -2864,6 +2869,140 @@ func (h *desktopIPCHandler) mediaIndexStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, status)
+}
+
+func desktopIPCSelectionToken(w http.ResponseWriter, r *http.Request) (string, bool) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if _, err := uuid.Parse(token); err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection", "a valid selection token is required")
+		return "", false
+	}
+	return token, true
+}
+
+func (h *desktopIPCHandler) mediaCreateSelectionSnapshot(w http.ResponseWriter, r *http.Request) {
+	query, ok := desktopIPCMediaQuery(w, r)
+	if !ok {
+		return
+	}
+	if query.FoldDuplicates || len(query.FoldMemberIDs) > 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection", "turn off duplicate folding before query selection")
+		return
+	}
+	albumID := strings.TrimSpace(r.URL.Query().Get("album_id"))
+	if albumID != "" && !desktopIPCValidMediaAlbumID(albumID, false) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_id", "album_id must be a Gallery album id")
+		return
+	}
+	day := strings.TrimSpace(r.URL.Query().Get("day"))
+	if day != "" {
+		parsed, err := time.Parse("2006-01-02", day)
+		if err != nil || parsed.Format("2006-01-02") != day {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_day", "day must be YYYY-MM-DD")
+			return
+		}
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaCreateSelectionSnapshot(context.Context, client.MediaQuery, string, string) (client.MediaSelectionSnapshot, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_unavailable", "update Desktop Agent for Gallery query selection")
+		return
+	}
+	value, err := provider.CloudMediaCreateSelectionSnapshot(r.Context(), query, albumID, day)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, value)
+}
+
+func (h *desktopIPCHandler) mediaGetSelectionSnapshot(w http.ResponseWriter, r *http.Request) {
+	token, ok := desktopIPCSelectionToken(w, r)
+	if !ok {
+		return
+	}
+	offset, limit := 0, 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_page", "offset must be nonnegative")
+			return
+		}
+		offset = value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 200 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_page", "limit must be 1..200")
+			return
+		}
+		limit = value
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaGetSelectionSnapshot(context.Context, string, int, int) (client.MediaSelectionSnapshotPage, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_unavailable", "update Desktop Agent for Gallery query selection")
+		return
+	}
+	page, err := provider.CloudMediaGetSelectionSnapshot(r.Context(), token, offset, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
+}
+
+func (h *desktopIPCHandler) mediaSetSelectionExcluded(w http.ResponseWriter, r *http.Request) {
+	token, ok := desktopIPCSelectionToken(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		NodeID   uint64 `json:"node_id"`
+		Excluded *bool  `json:"excluded"`
+		Version  uint64 `json:"version"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.NodeID == 0 || input.Excluded == nil || input.Version == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_exclusion", "node_id, excluded and version are required")
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaSetSelectionExcluded(context.Context, string, uint64, bool, uint64) (client.MediaSelectionSnapshot, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_unavailable", "update Desktop Agent for Gallery query selection")
+		return
+	}
+	value, err := provider.CloudMediaSetSelectionExcluded(r.Context(), token, input.NodeID, *input.Excluded, input.Version)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, value)
+}
+
+func (h *desktopIPCHandler) mediaDeleteSelectionSnapshot(w http.ResponseWriter, r *http.Request) {
+	token, ok := desktopIPCSelectionToken(w, r)
+	if !ok {
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaDeleteSelectionSnapshot(context.Context, string) error
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_unavailable", "update Desktop Agent for Gallery query selection")
+		return
+	}
+	if err := provider.CloudMediaDeleteSelectionSnapshot(r.Context(), token); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *desktopIPCHandler) mediaSyncFolders(w http.ResponseWriter, r *http.Request) {

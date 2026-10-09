@@ -784,6 +784,24 @@ export type AgentMediaItemRange = {
   timeline_group_sets?: AgentMediaTimelineGroupSets
 }
 
+export type AgentMediaSelectionSnapshot = {
+  token: string
+  version: number
+  total: number
+  selected: number
+  excluded: number
+  day: string
+  scope?: 'known_photo_assets'
+  expires_at: string
+}
+
+export type AgentMediaSelectionSnapshotPage = AgentMediaSelectionSnapshot & {
+  offset: number
+  limit: number
+  items: Array<{ node_id: number; revision: number; name: string; stale: boolean }>
+  has_more: boolean
+}
+
 export type AgentMediaQuery = {
   time_zone?: string
   anchor_node_id?: number
@@ -1598,6 +1616,40 @@ export class AgentIPCClient {
 
   mediaIndexStatus() {
     return this.request<AgentMediaGalleryIndexStatus>('GET', '/v1/media/index-status')
+  }
+
+  createMediaSelectionSnapshot(filters: AgentMediaQuery, albumID = '', day = '') {
+    const query = new URLSearchParams()
+    appendAgentMediaQuery(query, filters)
+    if (albumID) query.set('album_id', albumID)
+    if (day) query.set('day', day)
+    return this.request<AgentMediaSelectionSnapshot>(
+      'POST', `/v1/media/selection-snapshot?${query.toString()}`,
+    )
+  }
+
+  getMediaSelectionSnapshot(token: string, offset = 0, limit = 100) {
+    const params = new URLSearchParams({
+      token, offset: String(offset), limit: String(limit),
+    })
+    return this.request<AgentMediaSelectionSnapshotPage>(
+      'GET', `/v1/media/selection-snapshot?${params}`,
+    )
+  }
+
+  setMediaSelectionExcluded(token: string, nodeID: number, excluded: boolean, version: number) {
+    const params = new URLSearchParams({ token })
+    return this.request<AgentMediaSelectionSnapshot>(
+      'PATCH', `/v1/media/selection-snapshot/exclusion?${params}`,
+      { node_id: nodeID, excluded, version },
+    )
+  }
+
+  deleteMediaSelectionSnapshot(token: string) {
+    const params = new URLSearchParams({ token })
+    return this.request<void>(
+      'DELETE', `/v1/media/selection-snapshot?${params}`,
+    )
   }
 
   mediaDuplicateOrganizePlan(keeperNodeID: number, nodeIDs: number[]) {

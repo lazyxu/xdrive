@@ -668,6 +668,79 @@ func (c *Client) MediaFacets(
 	return out, err
 }
 
+// MediaSelectionSnapshot is a transient server-frozen, read-only selection.
+type MediaSelectionSnapshot struct {
+	Token     string     `json:"token"`
+	Version   uint64     `json:"version"`
+	Total     int        `json:"total"`
+	Selected  int        `json:"selected"`
+	Excluded  int        `json:"excluded"`
+	Day       string     `json:"day"`
+	Scope     string     `json:"scope,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	ExpiresAt time.Time  `json:"expires_at"`
+}
+
+type MediaSelectionSnapshotItem struct {
+	NodeID   uint64 `json:"node_id"`
+	Revision uint64 `json:"revision"`
+	Name     string `json:"name"`
+	Stale    bool   `json:"stale"`
+}
+
+type MediaSelectionSnapshotPage struct {
+	MediaSelectionSnapshot
+	Offset  int                          `json:"offset"`
+	Limit   int                          `json:"limit"`
+	Items   []MediaSelectionSnapshotItem `json:"items"`
+	HasMore bool                         `json:"has_more"`
+}
+
+func (c *Client) MediaCreateSelectionSnapshot(ctx context.Context, query MediaQuery, albumID, day string) (MediaSelectionSnapshot, error) {
+	values := url.Values{}
+	query.add(values)
+	if albumID != "" {
+		values.Set("album_id", albumID)
+	}
+	if day != "" {
+		values.Set("day", day)
+	}
+	path := "/api/v1/media/selection-snapshots?" + values.Encode()
+	var out MediaSelectionSnapshot
+	err := c.json(ctx, http.MethodPost, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaGetSelectionSnapshot(ctx context.Context, token string, offset, limit int) (MediaSelectionSnapshotPage, error) {
+	if offset < 0 || limit < 1 || limit > 200 {
+		return MediaSelectionSnapshotPage{}, fmt.Errorf("selection page offset/limit invalid")
+	}
+	path := "/api/v1/media/selection-snapshots/" + url.PathEscape(token) + "?offset=" + strconv.Itoa(offset) + "&limit=" + strconv.Itoa(limit)
+	var out MediaSelectionSnapshotPage
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSetSelectionExcluded(ctx context.Context, token string, nodeID uint64, excluded bool, version uint64) (MediaSelectionSnapshot, error) {
+	if nodeID == 0 || version == 0 {
+		return MediaSelectionSnapshot{}, fmt.Errorf("node ID and selection version are required")
+	}
+	path := "/api/v1/media/selection-snapshots/" + url.PathEscape(token) + "/exclusion"
+	input := struct {
+		NodeID   uint64 `json:"node_id"`
+		Excluded bool   `json:"excluded"`
+		Version  uint64 `json:"version"`
+	}{NodeID: nodeID, Excluded: excluded, Version: version}
+	var out MediaSelectionSnapshot
+	err := c.json(ctx, http.MethodPatch, path, input, &out)
+	return out, err
+}
+
+func (c *Client) MediaDeleteSelectionSnapshot(ctx context.Context, token string) error {
+	path := "/api/v1/media/selection-snapshots/" + url.PathEscape(token)
+	return c.json(ctx, http.MethodDelete, path, nil, nil)
+}
+
 func (c *Client) MediaIndexStatus(ctx context.Context) (MediaGalleryIndexStatus, error) {
 	var out MediaGalleryIndexStatus
 	err := c.json(ctx, http.MethodGet, "/api/v1/media/index-status", nil, &out)

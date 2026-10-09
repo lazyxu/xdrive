@@ -18,6 +18,8 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  MediaSelectionSnapshot,
+  MediaSelectionSnapshotPage,
   NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaDuplicateOrganizeApplyInput,
@@ -458,6 +460,16 @@ declare global {
           albumID?: string,
         ) => Promise<DesktopResult<MediaGalleryFacets>>
         getMediaIndexStatus: () => Promise<DesktopResult<MediaGalleryIndexStatus>>
+        createMediaSelectionSnapshot: (
+          query: MediaGalleryQuery, albumID?: string, day?: string,
+        ) => Promise<DesktopResult<MediaSelectionSnapshot>>
+        getMediaSelectionSnapshot: (
+          token: string, offset: number, limit: number,
+        ) => Promise<DesktopResult<MediaSelectionSnapshotPage>>
+        setMediaSelectionExcluded: (
+          token: string, nodeID: number, excluded: boolean, version: number,
+        ) => Promise<DesktopResult<MediaSelectionSnapshot>>
+        deleteMediaSelectionSnapshot: (token: string) => Promise<DesktopResult<void>>
         getNodeLocation: (nodeID: number, requestID?: string) => Promise<DesktopResult<NodeLocation>>
         getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) => Promise<DesktopResult<MediaDuplicateOrganizePlan>>
         applyMediaDuplicateOrganize: (input: MediaDuplicateOrganizeApplyInput) => Promise<DesktopResult<MediaDuplicateOrganizeApplyResult>>

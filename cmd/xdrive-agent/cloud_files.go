@@ -2051,6 +2051,38 @@ func (c *agentController) CloudMediaIndexStatus(
 	return cli.MediaIndexStatus(ctx)
 }
 
+func (c *agentController) CloudMediaCreateSelectionSnapshot(ctx context.Context, query client.MediaQuery, albumID, day string) (client.MediaSelectionSnapshot, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionSnapshot{}, err
+	}
+	return cli.MediaCreateSelectionSnapshot(ctx, query, albumID, day)
+}
+
+func (c *agentController) CloudMediaGetSelectionSnapshot(ctx context.Context, token string, offset, limit int) (client.MediaSelectionSnapshotPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionSnapshotPage{}, err
+	}
+	return cli.MediaGetSelectionSnapshot(ctx, token, offset, limit)
+}
+
+func (c *agentController) CloudMediaSetSelectionExcluded(ctx context.Context, token string, nodeID uint64, excluded bool, version uint64) (client.MediaSelectionSnapshot, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaSelectionSnapshot{}, err
+	}
+	return cli.MediaSetSelectionExcluded(ctx, token, nodeID, excluded, version)
+}
+
+func (c *agentController) CloudMediaDeleteSelectionSnapshot(ctx context.Context, token string) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.MediaDeleteSelectionSnapshot(ctx, token)
+}
+
 func (c *agentController) CloudMediaSyncFolders(
 	ctx context.Context,
 ) ([]client.MediaSyncFolder, error) {
