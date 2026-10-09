@@ -2899,9 +2899,9 @@ function MediaTile({
 
   const effectiveThumbnailLoader = useCallback(
     (nodeID: number) => thumbnailScheduler
-      ? thumbnailScheduler.load(nodeID, thumbnailPriority)
+      ? thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision)
       : loadThumbnail(nodeID),
-    [loadThumbnail, thumbnailPriority, thumbnailScheduler],
+    [loadThumbnail, thumbnailPriority, thumbnailScheduler, item.node.revision],
   )
 
   return (
