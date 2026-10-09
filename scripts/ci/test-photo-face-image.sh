@@ -24,7 +24,7 @@ mkdir -p "$runtime_cache_dir"
 # applies when the CI job has no override, and proxy credentials stay out of logs.
 download_env=()
 proxy_build_args=()
-for name in HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+for name in HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
   if [[ -v "$name" ]]; then
     download_env+=(--env "$name")
   fi

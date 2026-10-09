@@ -175,6 +175,42 @@ class DownloadTests(unittest.TestCase):
             other = "https://raw.githubusercontent.com/owner/repo/commit/LICENSE"
             self.assertEqual(fetch_models.download_urls(other), [other])
 
+    def test_opencv_zoo_models_prefer_hf_mirror_with_pinned_origin_fallback(self):
+        url = fetch_models.ZOO_MEDIA + "/models/text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx"
+        with mock.patch.dict(os.environ, {"HF_ENDPOINT": "https://hf-mirror.example/"}):
+            self.assertEqual(fetch_models.download_urls(url), [
+                "https://hf-mirror.example/opencv/opencv_zoo/resolve/main/models/"
+                "text_recognition_crnn/text_recognition_CRNN_CN_2021nov.onnx", url,
+            ])
+            original_license = fetch_models.ZOO_RAW + "/models/text_recognition_crnn/LICENSE"
+            self.assertEqual(fetch_models.download_urls(original_license), [original_license])
+
+    def test_trickling_mirror_exceeds_wall_budget_and_falls_back(self):
+        original_urlopen = fetch_models.urllib.request.urlopen
+
+        def urlopen(request, **kwargs):
+            if request.full_url.endswith("/mirror"):
+                threading.Event().wait(0.45)
+            return original_urlopen(request, **kwargs)
+
+        with download_server(lambda *args: (
+            200, self.payload, {"Content-Length": len(self.payload)}
+        )) as (base, requests):
+            with (
+                mock.patch.object(fetch_models, "download_urls",
+                                  return_value=[base + "/mirror", base + "/origin"]),
+                mock.patch.object(fetch_models.urllib.request, "urlopen", side_effect=urlopen),
+                mock.patch.dict(os.environ, {"XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS": "0.2"}),
+            ):
+                fetch_models.download(base + "/canonical", self.destination, attempts=1)
+        self.assertEqual(self.destination.read_bytes(), self.payload)
+        self.assertEqual(requests, [("/mirror", None), ("/origin", None)])
+
+    def test_invalid_source_wall_budget_fails_before_network(self):
+        with mock.patch.dict(os.environ, {"XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS": "nan"}):
+            with self.assertRaises(ValueError):
+                fetch_models.download("https://example.invalid/model", self.destination)
+
     def test_changed_model_identity_discards_partial_from_older_version(self):
         with download_server(self.interrupted_then_resumed) as (base, requests):
             with self.assertRaises(RuntimeError):

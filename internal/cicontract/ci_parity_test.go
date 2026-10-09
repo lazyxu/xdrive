@@ -115,6 +115,9 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
 		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
 	)
+	requireRaw(t, "GitLab model prefetch soft timeout", gitlabRaw,
+		"timeout --signal=TERM --kill-after=30s 45m bash scripts/ci/test-photo-face-image.sh dist/photo-face-image",
+	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
 	var imageConfig map[string]any
@@ -222,6 +225,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"go mod tidy \"-go=1.25\"",
 		"git diff --exit-code -- go.mod go.sum",
 		"bash scripts/ci/test-go-api-race.sh",
+		"go test -race -timeout=25m ./cmd/server",
 		"go test -p 1 -race \"${packages[@]}\"",
 		"go vet ./...",
 		"go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater",
@@ -595,6 +599,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	requireRaw(t, "GitLab Linux split wrappers", gitlabLinuxBash,
 		"XDRIVE_GO_TEST_SCOPE",
 		"bash scripts/ci/test-go-api-race.sh",
+		"go test -race -timeout=25m ./cmd/server",
 		"go test -p 1 -race \"${packages[@]}\"",
 		"go vet ./...",
 		"bash scripts/build-source-agent.sh \"$XDRIVE_RELEASE_VERSION\" release/source-agent",
@@ -1661,7 +1666,7 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 		`--mount "$runtime_mount"`,
 		`--mount "type=bind,src=$model_cache_dir,dst=/model-cache"`,
 		`python /workspace/fetch_models.py /model-cache/models /model-cache/licenses`,
-		`HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy`,
+		`HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy`,
 		`download_env+=(--env "$name")`,
 		`python -m unittest discover -s tests -v`,
 		`python analyzer.py --self-test`,

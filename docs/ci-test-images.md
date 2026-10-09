@@ -161,13 +161,13 @@ On a cold or invalid runtime cache, the shared script:
 
 A valid completed runtime skips model prefetch entirely and remains usable when the raw-model cache is empty or absent. Runtime dependency changes can reuse unchanged verified models even though they require a different runtime archive. Model changes invalidate incompatible partial bytes through the fetcher's pinned download identity.
 
-GitLab's `photo-face-image` job saves `.cache/photo-face-models/` alongside the existing runtime and tool caches with `policy: pull-push` and `when: always`. The shared mutable namespace remains `xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH`.
+GitLab's `photo-face-image` job saves `.cache/photo-face-models/` alongside the existing runtime and tool caches with `policy: pull-push` and `when: always`. The shared mutable namespace remains `xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH`. A 45-minute script-level soft deadline prevents the runner's observed 1-hour hard timeout from skipping the cache-save stage. It exits normally on an incomplete build, allowing a future run to resume compatible `.part` files. Without distributed Runner cache, restoration still requires the same Runner machine.
 
 GitHub keeps the completed-runtime cache separate from model downloads. Raw models use explicit `actions/cache/restore@v4` and `actions/cache/save@v4` steps. A run that attempts prefetch saves a new immutable key, `photo-face-models-v1-<runner OS>-<run ID>-<run attempt>`, and restores the newest accessible entry through the stable `photo-face-models-v1-<runner OS>-` prefix. This lets a failed run preserve additional partial bytes without trying to overwrite an existing immutable cache key. The shared script writes `model_cache_attempted=true` to the build step's output before fetching; the save step runs under `always()` only when that output is present. A hot-runtime run therefore does not save another unchanged raw-model cache.
 
 ### Download endpoints and local use
 
-GitLab defaults `HF_ENDPOINT` to `https://hf-mirror.com` in `infra/ci/images.yml`; project/group CI/CD variables can override it. GitHub defaults to `https://huggingface.co`, with an optional `HF_ENDPOINT` repository variable. An alternate Hugging Face endpoint changes the base URL while preserving each pinned repository revision and path. The original pinned official URL remains the fallback, and model checksums still apply.
+GitLab defaults `HF_ENDPOINT` to `https://hf-mirror.com` in `infra/ci/images.yml`; project/group CI/CD variables can override it. GitHub defaults to `https://huggingface.co`, with an optional `HF_ENDPOINT` repository variable. The configured endpoint is tried first for pinned Hub models **and OpenCV Zoo ONNX weights**: OpenCV also hosts its Zoo models under `opencv/opencv_zoo/resolve/main/models/`. The mirror's mutable `main` is not trusted as the identity: completed files must match the existing pinned SHA-256 and declared size. A missing/changed mirror file falls back to the original pinned GitHub media URL. Pinned OpenCV source text/licenses still use `raw.githubusercontent.com`.
 
 The shared script forwards configured download settings by environment-variable name:
 
@@ -176,6 +176,7 @@ The shared script forwards configured download settings by environment-variable 
 | `HF_ENDPOINT` | Optional Hugging Face base URL; the fetcher uses the official source when unset. |
 | `XDRIVE_MODEL_DOWNLOAD_ATTEMPTS` | Positive number of retry rounds, default `5`. |
 | `XDRIVE_MODEL_DOWNLOAD_TIMEOUT` | Positive download socket timeout in seconds, default `30`. |
+| `XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS` | Maximum wall-clock time for a single source per attempt, default `240` seconds; bounds slow trickling HTTP responses so the next mirror/source is tried. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and their lowercase equivalents | Existing proxy routing for downloads; values are not inserted into logged Docker command arguments. |
 | `XDRIVE_PHOTO_FACE_MODEL_CACHE_DIR` | Override the local download-workspace path. |
 | `XDRIVE_PHOTO_FACE_RUNTIME_CACHE_DIR` | Override the local completed-runtime archive path. |

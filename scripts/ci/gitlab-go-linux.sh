@@ -35,7 +35,10 @@ case "$scope" in
       exit 1
     fi
 
-    mapfile -t packages < <(go list ./... | grep -v '^github.com/lazyxu/xdrive/internal/api$')
+    # Full-schema PostgreSQL migrations make cmd/server unusually expensive
+    # on some runners. Keep every test and race assertion enabled.
+    mapfile -t packages < <(go list ./... | grep -Ev '^github.com/lazyxu/xdrive/(internal/api|cmd/server)$')
+    go test -race -timeout=25m ./cmd/server
     go test -p 1 -race "${packages[@]}"
     go vet ./...
     go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater

@@ -229,7 +229,9 @@ jobs:
       - name: Race test Go packages except internal/api
         shell: bash
         run: |
-          mapfile -t packages < <(go list ./... | grep -v '^github.com/lazyxu/xdrive/internal/api$')
+          # cmd/server migrates large PostgreSQL schemas on every test.
+          mapfile -t packages < <(go list ./... | grep -Ev '^github.com/lazyxu/xdrive/(internal/api|cmd/server)$')
+          go test -race -timeout=25m ./cmd/server
           go test -p 1 -race "${packages[@]}"
       - run: go vet ./...
       - run: go build ./cmd/server ./cmd/xd ./cmd/xdrive-agent ./cmd/xdrive-updater

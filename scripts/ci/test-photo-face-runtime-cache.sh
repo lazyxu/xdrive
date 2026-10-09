@@ -222,7 +222,7 @@ case "${1:-}" in
       [[ "$source_mount" == "type=bind,src=$FAKE_DOCKER_SOURCE/services/photo-face-analyzer,dst=/workspace,readonly" ]]
       [[ "$model_mount" == "type=bind,src=$XDRIVE_PHOTO_FACE_MODEL_CACHE_DIR,dst=/model-cache" ]]
       [[ "$*" == 'python /workspace/fetch_models.py /model-cache/models /model-cache/licenses' ]]
-      for name in HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+      for name in HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
         [[ "$env_names" == *"|$name|"* ]] || {
           echo "prefetch must forward configured $name by name" >&2
           exit 99
@@ -315,6 +315,7 @@ run_photo_face() {
     GITHUB_OUTPUT="$TMP/$name.outputs" \
     HF_ENDPOINT=https://models.example.invalid \
     XDRIVE_MODEL_DOWNLOAD_ATTEMPTS=2 XDRIVE_MODEL_DOWNLOAD_TIMEOUT=3 \
+    XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS=2 \
     HTTP_PROXY=http://proxy.example.invalid http_proxy=http://proxy.example.invalid \
     HTTPS_PROXY=http://proxy.example.invalid https_proxy=http://proxy.example.invalid \
     NO_PROXY=localhost no_proxy=localhost \
