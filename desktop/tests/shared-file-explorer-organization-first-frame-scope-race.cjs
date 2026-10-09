@@ -111,8 +111,9 @@ function loadOrganizationHook(react) {
 
 function deferred() {
   let resolve
-  const promise = new Promise((next) => { resolve = next })
-  return { promise, resolve }
+  let reject
+  const promise = new Promise((next, fail) => { resolve = next; reject = fail })
+  return { promise, resolve, reject }
 }
 
 async function flushAsync() {
@@ -276,4 +277,95 @@ test('Organization account B eventually loads its own tags and saved searches wi
   assert.equal(b.busyKey, '')
   assert.equal(b.loading, false)
   assert.deepEqual(scope.errors, [])
+})
+
+test('Organization disabled/re-enabled capability cannot append a stale tag after the fresh list already includes it', async () => {
+  const scope = fixture()
+  await loadedA(scope)
+  const pending = deferred()
+  scope.adapterA.createTag = async () => pending.promise
+  const operation = scope.render().createTag('Late-tag', '#114466')
+  await flushAsync()
+
+  // The Server committed ID 43, but its old response is still delayed.
+  // Desktop capabilities temporarily disappear and then recover for the
+  // *same* account/lifecycle key. Fresh list already contains ID 43.
+  scope.setEnabled(false)
+  scope.render()
+  await flushAsync()
+  const committed = { id: 43, name: 'A:Late-tag', color: '#114466', node_count: 0 }
+  scope.adapterA.listTags = async () => [tag('A'), committed]
+  scope.setEnabled(true)
+  scope.render()
+  await flushAsync()
+  assert.deepEqual(scope.render().tags.map((value) => value.id), [42, 43])
+
+  pending.resolve(committed)
+  await operation
+  await flushAsync()
+  assert.deepEqual(
+    scope.render().tags.map((value) => value.id),
+    [42, 43],
+    'a late create response from the disabled capability must not append the same persisted tag twice',
+  )
+  assert.deepEqual(scope.errors, [])
+})
+
+test('Organization capability restart must not queue fresh tag intent behind a detached request', async () => {
+  const scope = fixture()
+  await loadedA(scope)
+  const oldPending = deferred()
+  const calls = []
+  scope.adapterA.createTag = (name, color) => {
+    calls.push(name)
+    return name === 'Old-pending' ? oldPending.promise
+      : Promise.resolve({ id: 44, name: 'New-intent', color, node_count: 0 })
+  }
+  const oldRequest = scope.render().createTag('Old-pending', '#114466')
+  await flushAsync()
+  assert.deepEqual(calls, ['Old-pending'])
+  scope.setEnabled(false)
+  scope.render()
+  await flushAsync()
+  scope.setEnabled(true)
+  scope.render()
+  await flushAsync()
+
+  const newRequest = scope.render().createTag('New-intent', '#225577')
+  await flushAsync()
+  const dispatchedWithoutOldCompletion = calls.includes('New-intent')
+
+  oldPending.resolve({ id: 43, name: 'Old-pending', color: '#114466', node_count: 0 })
+  await Promise.all([oldRequest, newRequest])
+  await flushAsync()
+  assert.equal(dispatchedWithoutOldCompletion, true,
+    'new capability must not wait behind an unresolved operation from the old disabled lifecycle')
+  assert.deepEqual(scope.render().tags.map((value) => value.name), [
+    'A private tag',
+    'New-intent',
+  ])
+  assert.deepEqual(scope.errors, [])
+})
+
+test('Organization old capability failure cannot publish an error after re-enable', async () => {
+  const scope = fixture()
+  await loadedA(scope)
+  const pending = deferred()
+  scope.adapterA.createTag = async () => pending.promise
+  const oldRequest = scope.render().createTag('Old-failure', '#114466')
+  await flushAsync()
+
+  scope.setEnabled(false)
+  scope.render()
+  await flushAsync()
+  scope.setEnabled(true)
+  scope.render()
+  await flushAsync()
+
+  pending.reject(new Error('expired capability request'))
+  await assert.rejects(oldRequest, /expired capability request/)
+  await flushAsync()
+  assert.deepEqual(scope.errors, [],
+    'a detached old-capability request must not surface an error in the recovered Organization')
+  assert.equal(scope.render().busyKey, '')
 })
