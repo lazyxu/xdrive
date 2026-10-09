@@ -88,6 +88,35 @@ as additional rows rather than duplicating the Gallery media-field formatter.
 [#1062](https://github.com/lazyxu/xdrive/pull/1062) was covered by merged #1065.
 Do not reopen those completed capability scopes from their closed/unmerged state.
 
+### Mobile full-viewport delivery
+
+The merged implementation in [PR #1078](https://github.com/lazyxu/xdrive/pull/1078) gives
+every registered Mobile Web App the entire browser-available dynamic viewport below
+900 CSS px. Global header/footer, permanent bottom navigation and desktop outer page
+padding reserve no app space; app switching, account/settings and transfers remain
+reachable through the shared on-demand overlay. Gallery's stacked title uses content
+height, immersive media chrome overlays the full content area, and Viewer loading/error
+states retain their frame and Return. This is the current layout contract; do not
+reintroduce the earlier middle-only content area while polishing Gallery controls.
+
+The precise before/after geometry, renderer matrix, caller continuity, last-row touch
+target checks and device limitations live in [Mobile Web](mobile-web.md). Its PR CI
+passed before merge. The remaining G02 work is app-specific control polish and whole-task
+device acceptance, not rebuilding the viewport Shell. The separate
+[Mobile Web iOS inventory](mobile-web-ios-comparison.md) covers Files, dedicated
+viewers, transfers and platform/accessibility work and references this audit for
+Gallery-specific follow-up; its proposals do not authorize implementation.
+
+The current delivery rows and log take precedence over earlier execution-order wording
+for completed G01/G02 scopes: preserve their shipped foundations while validating
+complete tasks. Future Gallery deliveries maintain their own status and evidence.
+
+The chronological sorting foundation is separately delivered by
+[#1082](https://github.com/lazyxu/xdrive/pull/1082) at
+`3f4d27db0b9e83579bee42e9904f3cd200572737`: capture/added ordering, query propagation
+and time-axis grouping are implemented. G03 still includes IANA timezone consistency
+and same-photo anchoring across re-sorts; do not label that whole item complete.
+
 ## What to borrow from KFS
 
 All KFS links below are pinned to the audited develop SHA. These are code observations,
@@ -215,7 +244,8 @@ of retained sparse rows. Do not run every facet/count aggregation before the fir
 
 ### G07: selection scale must match what the UI promises
 
-Current Shift selection walks at most 1000 logical indexes and selects metadata retained
+Current Shift selection permits an index distance of at most 1000, walks both endpoints
+(at most 1001 logical indexes), and selects metadata retained
 in the sparse collection. This is not select-all-results. Do not silently describe a
 partial window as a whole day, album, or search result.
 
