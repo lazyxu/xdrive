@@ -308,6 +308,8 @@ type MediaDuplicateGroup struct {
 
 type MediaDuplicateGroupList struct {
 	Groups                   []MediaDuplicateGroup `json:"groups"`
+	Offset                   int                   `json:"offset"`
+	HasMore                  bool                  `json:"has_more"`
 	TotalGroups              int64                 `json:"total_groups"`
 	TotalItems               int64                 `json:"total_items"`
 	LogicalDuplicateBytes    int64                 `json:"logical_duplicate_bytes"`
@@ -328,6 +330,8 @@ type MediaBurstReview struct {
 
 type MediaBurstReviewList struct {
 	Groups                   []MediaBurstReview `json:"groups"`
+	Offset                   int                `json:"offset"`
+	HasMore                  bool               `json:"has_more"`
 	TotalGroups              int64              `json:"total_groups"`
 	TotalItems               int64              `json:"total_items"`
 	PotentialCleanupBytes    int64              `json:"potential_cleanup_bytes"`
@@ -718,10 +722,17 @@ func (c *Client) MediaMemoryItemsRange(
 func (c *Client) MediaDuplicateGroups(
 	ctx context.Context,
 	limit int,
+	offsets ...int,
 ) (MediaDuplicateGroupList, error) {
 	values := url.Values{}
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
+	}
+	if len(offsets) != 0 {
+		if offsets[0] < 0 {
+			return MediaDuplicateGroupList{}, fmt.Errorf("offset must be zero or greater")
+		}
+		values.Set("offset", strconv.Itoa(offsets[0]))
 	}
 	path := "/api/v1/media/duplicates"
 	if encoded := values.Encode(); encoded != "" {
@@ -756,10 +767,17 @@ func (c *Client) MediaDuplicateItemsRange(
 func (c *Client) MediaBurstReviews(
 	ctx context.Context,
 	limit int,
+	offsets ...int,
 ) (MediaBurstReviewList, error) {
 	values := url.Values{}
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
+	}
+	if len(offsets) != 0 {
+		if offsets[0] < 0 {
+			return MediaBurstReviewList{}, fmt.Errorf("offset must be zero or greater")
+		}
+		values.Set("offset", strconv.Itoa(offsets[0]))
 	}
 	path := "/api/v1/media/bursts"
 	if encoded := values.Encode(); encoded != "" {

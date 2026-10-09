@@ -302,4 +302,67 @@ func TestMediaCleanupDuplicateAndBurstProjections(t *testing.T) {
 		burstPage.Items[2].Node.ID != frameC {
 		t.Fatalf("burst page=%+v", burstPage)
 	}
+	// The landing page loads only 48 groups; all additional groups must remain
+	// reachable through stable Server-side pagination (no client-side full scan).
+	var deletedNodes []uint64
+	for i := 0; i < 55; i++ {
+		hash := fmt.Sprintf("%064x", i+4096)
+		for copyIndex := 0; copyIndex < 2; copyIndex++ {
+			node, _ := addLogicalMedia(
+				fmt.Sprintf("extra-%d-%d.jpg", i, copyIndex),
+				hash, int64(i+1000), 3000, 2000, false,
+				now.Add(time.Duration(i)*time.Minute),
+			)
+			if i == 0 {
+				deletedNodes = append(deletedNodes, node.ID)
+			}
+		}
+	}
+	const groupPageSize = 24
+	seenGroupIDs := make(map[string]struct{})
+	for offset := 0; offset < 56; offset += groupPageSize {
+		page, err := (&Server{DB: db}).queryDuplicateGroups(
+			context.Background(), user.ID, groupPageSize, offset,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Offset != offset || page.TotalGroups != 56 ||
+			page.HasMore != (offset+len(page.Groups) < 56) {
+			t.Fatalf("duplicate group page offset=%d result=%+v", offset, page)
+		}
+		for _, row := range page.Groups {
+			if _, exists := seenGroupIDs[row.ID]; exists {
+				t.Fatalf("duplicate group repeated across pages: %s", row.ID)
+			}
+			seenGroupIDs[row.ID] = struct{}{}
+		}
+	}
+	if len(seenGroupIDs) != 56 {
+		t.Fatalf("only %d of 56 duplicate groups reachable", len(seenGroupIDs))
+	}
+	if err := db.Model(&meta.Node{}).
+		Where("id IN ? AND owner_id = ?", deletedNodes, user.ID).
+		Update("deleted_at", now).Error; err != nil {
+		t.Fatal(err)
+	}
+	afterDelete, err := (&Server{DB: db}).queryDuplicateGroups(
+		context.Background(), user.ID, groupPageSize, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterDelete.TotalGroups != 55 || afterDelete.Offset != 0 {
+		t.Fatalf("deleted group still counted after refresh: %+v", afterDelete)
+	}
+	burstPastEnd, err := (&Server{DB: db}).queryBurstReviews(
+		context.Background(), user.ID, groupPageSize, 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if burstPastEnd.TotalGroups != 1 || burstPastEnd.HasMore || len(burstPastEnd.Groups) != 0 {
+		t.Fatalf("burst page past end: %+v", burstPastEnd)
+	}
+
 }

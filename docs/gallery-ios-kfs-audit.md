@@ -272,7 +272,11 @@ persistent derivatives need storage-inventory categories and safe cleanup semant
 ### G11/G12: organization, deletion and privacy are different contracts
 
 Current exact duplicates are equal primary SHA-256 originals. Near-duplicates and Burst
-quality are separate evidence classes. Combining records must preserve favorites,
+quality are separate evidence classes. As of 2026-10-09, the cleanup index
+must support more than 48 groups via bounded group-level pagination shared
+by Web/Desktop, with an explicit older-Agent fallback. A zero-card empty state
+still only covers indexed, ready media; complete indexing coverage is a
+separate pending status feature, not an implied guarantee. Combining records must preserve favorites,
 descriptions, tags, people, album membership and resource relationships; comparing
 primary hashes alone must not discard a richer logical asset.
 

@@ -200,13 +200,13 @@ export interface MediaGalleryDataSource {
     offset: number,
     timeZone?: string,
   ) => Promise<MediaItemRange>
-  listDuplicateGroups?: (limit?: number) => Promise<MediaDuplicateGroupList>
+  listDuplicateGroups?: (limit?: number, offset?: number) => Promise<MediaDuplicateGroupList>
   listDuplicateItemRange?: (
     duplicateID: string,
     limit: number,
     offset: number,
   ) => Promise<MediaItemRange>
-  listBurstReviews?: (limit?: number) => Promise<MediaBurstReviewList>
+  listBurstReviews?: (limit?: number, offset?: number) => Promise<MediaBurstReviewList>
   listBurstReviewItemRange?: (
     burstID: string,
     limit: number,
@@ -480,6 +480,8 @@ export function XDriveMediaGalleryPage({
     useState<MediaDuplicateGroupList | null>(null)
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
+  const [cleanupMoreLoading, setCleanupMoreLoading] = useState<'duplicate' | 'burst' | null>(null)
+  const cleanupMoreInFlightRef = useRef(false)
   const [pets, setPets] = useState<MediaPetFacet[]>([])
   const [suggestedPeople, setSuggestedPeople] = useState<MediaSuggestedPerson[]>([])
   const [people, setPersonIdentities] = useState<MediaPersonIdentity[]>([])
@@ -897,6 +899,8 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    cleanupMoreInFlightRef.current = false
+    setCleanupMoreLoading(null)
     collectionTargetRef.current = null
     setCollectionTarget(null)
     setCurrentAlbum(null)
@@ -912,10 +916,10 @@ export function XDriveMediaGalleryPage({
     try {
       const [nextDuplicates, nextBursts] = await Promise.all([
         source.listDuplicateGroups
-          ? source.listDuplicateGroups(48)
+          ? source.listDuplicateGroups(48, 0)
           : Promise.resolve(emptyMediaDuplicateGroupList()),
         source.listBurstReviews
-          ? source.listBurstReviews(48)
+          ? source.listBurstReviews(48, 0)
           : Promise.resolve(emptyMediaBurstReviewList()),
       ])
       if (request !== requestID.current) return
@@ -928,6 +932,61 @@ export function XDriveMediaGalleryPage({
       if (request === requestID.current) setLoading(false)
     }
   }, [reportError, source, virtualCollection.reset])
+
+  const loadMoreCleanupGroups = useCallback(async (kind: 'duplicate' | 'burst') => {
+    if (cleanupMoreInFlightRef.current) return
+    const current = kind === 'duplicate' ? duplicateGroups : burstReviews
+    const list = kind === 'duplicate' ? source.listDuplicateGroups : source.listBurstReviews
+    if (!current || !list || current.groups.length >= current.total_groups) return
+    const offset = current.groups.length
+    const generation = requestID.current
+    cleanupMoreInFlightRef.current = true
+    setCleanupMoreLoading(kind)
+    try {
+      const next = kind === 'duplicate'
+        ? await source.listDuplicateGroups!(48, offset)
+        : await source.listBurstReviews!(48, offset)
+      if (generation !== requestID.current) return
+
+      // Older Servers/Agents ignore offset. Never loop over their first page.
+      if (next.offset !== offset) {
+        throw new Error('当前服务端或 Agent 不支持清理组分页，请升级后重试')
+      }
+      const known = new Set(current.groups.map((group) => group.id))
+      if (next.total_groups !== current.total_groups ||
+          next.groups.length === 0 ||
+          next.groups.some((group) => known.has(group.id))) {
+        // Imports/deletes may have reordered groups between pages. Restart from
+        // the first group rather than silently skipping or duplicating results.
+        await loadCleanup()
+        return
+      }
+      if (kind === 'duplicate') {
+        const previous = current as MediaDuplicateGroupList
+        const page = next as MediaDuplicateGroupList
+        setDuplicateGroups({
+          ...page,
+          groups: [...previous.groups, ...page.groups],
+        })
+      } else {
+        const previous = current as MediaBurstReviewList
+        const page = next as MediaBurstReviewList
+        setBurstReviews({
+          ...page,
+          groups: [...previous.groups, ...page.groups],
+        })
+      }
+    } catch (pageError) {
+      if (generation === requestID.current) {
+        reportError(pageError)
+      }
+    } finally {
+      if (generation === requestID.current) {
+        cleanupMoreInFlightRef.current = false
+        setCleanupMoreLoading(null)
+      }
+    }
+  }, [burstReviews, duplicateGroups, loadCleanup, reportError, source])
 
   const loadSyncFolders = useCallback(async () => {
     if (!source.listSyncFolders) {
@@ -2111,6 +2170,9 @@ export function XDriveMediaGalleryPage({
         onOpenMemory={openMemory}
         onOpenDuplicateGroup={openDuplicateGroup}
         onOpenBurstReview={openBurstReview}
+        onLoadMoreDuplicate={() => void loadMoreCleanupGroups('duplicate')}
+        onLoadMoreBurst={() => void loadMoreCleanupGroups('burst')}
+        cleanupMoreLoading={cleanupMoreLoading}
         onOpenPet={openPet}
         onOpenSuggestedPerson={openSuggestedPerson}
         onOpenPerson={openPerson}
@@ -2362,6 +2424,9 @@ export interface XDriveMediaGalleryProps {
   onOpenMemory?: (memory: MediaMemory) => void
   onOpenDuplicateGroup?: (group: MediaDuplicateGroup) => void
   onOpenBurstReview?: (group: MediaBurstReview) => void
+  onLoadMoreDuplicate?: () => void
+  onLoadMoreBurst?: () => void
+  cleanupMoreLoading?: 'duplicate' | 'burst' | null
   onOpenPet?: (pet: MediaPetFacet) => void
   onOpenSuggestedPerson?: (person: MediaSuggestedPerson) => void
   onOpenPerson?: (person: MediaPersonIdentity) => void
@@ -3683,6 +3748,9 @@ export function XDriveMediaGallery({
   onOpenMemory,
   onOpenDuplicateGroup,
   onOpenBurstReview,
+  onLoadMoreDuplicate,
+  onLoadMoreBurst,
+  cleanupMoreLoading,
   onOpenPet,
   onOpenSuggestedPerson,
   onOpenPerson,
@@ -4770,6 +4838,10 @@ export function XDriveMediaGallery({
           loadThumbnail={loadThumbnail}
           onOpenDuplicate={onOpenDuplicateGroup}
           onOpenBurst={onOpenBurstReview}
+          onLoadMoreDuplicate={onLoadMoreDuplicate}
+          onLoadMoreBurst={onLoadMoreBurst}
+          onRefresh={onRefresh}
+          loadingMore={cleanupMoreLoading}
         />
       ) : null}
 

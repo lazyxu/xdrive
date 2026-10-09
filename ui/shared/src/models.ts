@@ -748,6 +748,8 @@ export interface MediaDuplicateGroup {
 
 export interface MediaDuplicateGroupList {
   groups: MediaDuplicateGroup[]
+  offset?: number
+  has_more?: boolean
   total_groups: number
   total_items: number
   logical_duplicate_bytes: number
@@ -768,6 +770,8 @@ export interface MediaBurstReview {
 
 export interface MediaBurstReviewList {
   groups: MediaBurstReview[]
+  offset?: number
+  has_more?: boolean
   total_groups: number
   total_items: number
   potential_cleanup_bytes: number

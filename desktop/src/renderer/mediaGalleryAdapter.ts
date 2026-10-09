@@ -41,10 +41,10 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaMemories(anchorDate, limit, timeZone),
     listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>
       agent.getMediaMemoryItemRange(memoryID, limit, offset, timeZone),
-    listDuplicateGroups: (limit = 24) => agent.getMediaDuplicateGroups(limit),
+    listDuplicateGroups: (limit = 24, offset = 0) => agent.getMediaDuplicateGroups(limit, offset),
     listDuplicateItemRange: (duplicateID, limit, offset) =>
       agent.getMediaDuplicateItemRange(duplicateID, limit, offset),
-    listBurstReviews: (limit = 24) => agent.getMediaBurstReviews(limit),
+    listBurstReviews: (limit = 24, offset = 0) => agent.getMediaBurstReviews(limit, offset),
     listBurstReviewItemRange: (burstID, limit, offset) =>
       agent.getMediaBurstReviewItemRange(burstID, limit, offset),
     listPets: () => agent.getMediaPets(),

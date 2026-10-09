@@ -1635,8 +1635,8 @@ export class AgentIPCClient {
     )
   }
 
-  mediaDuplicateGroups(limit = 24) {
-    const query = new URLSearchParams({ limit: String(limit) })
+  mediaDuplicateGroups(limit = 24, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<AgentMediaDuplicateGroupList>(
       'GET',
       `/v1/media/duplicates?${query.toString()}`,
@@ -1659,8 +1659,8 @@ export class AgentIPCClient {
     )
   }
 
-  mediaBurstReviews(limit = 24) {
-    const query = new URLSearchParams({ limit: String(limit) })
+  mediaBurstReviews(limit = 24, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<AgentMediaBurstReviewList>(
       'GET',
       `/v1/media/bursts?${query.toString()}`,

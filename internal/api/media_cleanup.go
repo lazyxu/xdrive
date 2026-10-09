@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -35,6 +36,8 @@ type mediaDuplicateGroupDTO struct {
 
 type mediaDuplicateGroupListDTO struct {
 	Groups                   []mediaDuplicateGroupDTO `json:"groups"`
+	Offset                   int                      `json:"offset"`
+	HasMore                  bool                     `json:"has_more"`
 	TotalGroups              int64                    `json:"total_groups"`
 	TotalItems               int64                    `json:"total_items"`
 	LogicalDuplicateBytes    int64                    `json:"logical_duplicate_bytes"`
@@ -55,6 +58,8 @@ type mediaBurstReviewDTO struct {
 
 type mediaBurstReviewListDTO struct {
 	Groups                   []mediaBurstReviewDTO `json:"groups"`
+	Offset                   int                   `json:"offset"`
+	HasMore                  bool                  `json:"has_more"`
 	TotalGroups              int64                 `json:"total_groups"`
 	TotalItems               int64                 `json:"total_items"`
 	PotentialCleanupBytes    int64                 `json:"potential_cleanup_bytes"`
@@ -105,6 +110,21 @@ func mediaCleanupLimit(c *gin.Context) (int, bool) {
 		limit = value
 	}
 	return limit, true
+}
+
+// Pagination is deliberately bounded. A negative or excessively large
+// offset must not produce an integer overflow in page slicing.
+func mediaCleanupOffset(c *gin.Context) (int, bool) {
+	raw := strings.TrimSpace(c.Query("offset"))
+	if raw == "" {
+		return 0, true
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < 0 || offset > 10000000 {
+		fail(c, http.StatusBadRequest, "offset must be between 0 and 10000000")
+		return 0, false
+	}
+	return offset, true
 }
 
 func mediaDuplicateID(sha256 string) string {
@@ -296,14 +316,24 @@ func (s *Server) queryDuplicateGroups(
 	ctx context.Context,
 	ownerID uint64,
 	limit int,
+	offsets ...int,
 ) (mediaDuplicateGroupListDTO, error) {
 	var out mediaDuplicateGroupListDTO
+	offset := 0
+	if len(offsets) != 0 {
+		offset = offsets[0]
+	}
+	if offset < 0 || offset > 10000000 {
+		return out, fmt.Errorf("invalid duplicate-group offset: %d", offset)
+	}
+	out.Offset = offset
 	base := s.duplicateAggregateQuery(ctx, ownerID)
 	var aggregates []mediaDuplicateAggregateRow
 	if err := base.Session(&gorm.Session{}).
 		Order("(COUNT(DISTINCT cleanup_pa.id) - 1) * MAX(cleanup_f.size) DESC").
 		Order("cleanup_f.sha256 ASC").
 		Limit(limit).
+		Offset(offset).
 		Scan(&aggregates).Error; err != nil {
 		return out, err
 	}
@@ -326,6 +356,7 @@ func (s *Server) queryDuplicateGroups(
 	out.TotalGroups = totals.TotalGroups
 	out.TotalItems = totals.TotalItems
 	out.LogicalDuplicateBytes = totals.LogicalDuplicateBytes
+	out.HasMore = int64(offset+len(aggregates)) < totals.TotalGroups
 	// Exact duplicate content shares one CAS blob. Keeping one logical copy means
 	// deleting the other references does not reclaim that physical blob.
 	out.PhysicalReclaimableBytes = 0
@@ -482,12 +513,32 @@ func chooseBurstRecommendation(
 	return best, reason, true
 }
 
+func mediaBurstReviewPage(groups []mediaBurstReviewDTO, limit, offset int) []mediaBurstReviewDTO {
+	if offset >= len(groups) {
+		return groups[:0]
+	}
+	end := offset + limit
+	if end > len(groups) {
+		end = len(groups)
+	}
+	return groups[offset:end]
+}
+
 func (s *Server) queryBurstReviews(
 	ctx context.Context,
 	ownerID uint64,
 	limit int,
+	offsets ...int,
 ) (mediaBurstReviewListDTO, error) {
 	var out mediaBurstReviewListDTO
+	offset := 0
+	if len(offsets) != 0 {
+		offset = offsets[0]
+	}
+	if offset < 0 || offset > 10000000 {
+		return out, fmt.Errorf("invalid burst-review offset: %d", offset)
+	}
+	out.Offset = offset
 	rows, err := s.burstMembers(ctx, ownerID)
 	if err != nil {
 		return out, err
@@ -569,10 +620,9 @@ func (s *Server) queryBurstReviews(
 		out.PotentialCleanupBytes += group.PotentialCleanupBytes
 		out.PhysicalReclaimableBytes += group.PhysicalReclaimableBytes
 	}
-	if len(groups) > limit {
-		groups = groups[:limit]
-	}
+	groups = mediaBurstReviewPage(groups, limit, offset)
 	out.Groups = groups
+	out.HasMore = int64(offset+len(groups)) < out.TotalGroups
 	return out, nil
 }
 
@@ -759,6 +809,10 @@ func (s *Server) listMediaDuplicateGroups(c *gin.Context) {
 	if !ok {
 		return
 	}
+	offset, ok := mediaCleanupOffset(c)
+	if !ok {
+		return
+	}
 	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
@@ -771,6 +825,7 @@ func (s *Server) listMediaDuplicateGroups(c *gin.Context) {
 		c.Request.Context(),
 		userID(c),
 		limit,
+		offset,
 	)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "list duplicate media failed")
@@ -822,6 +877,10 @@ func (s *Server) listMediaBurstReviews(c *gin.Context) {
 	if !ok {
 		return
 	}
+	offset, ok := mediaCleanupOffset(c)
+	if !ok {
+		return
+	}
 	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
@@ -834,6 +893,7 @@ func (s *Server) listMediaBurstReviews(c *gin.Context) {
 		c.Request.Context(),
 		userID(c),
 		limit,
+		offset,
 	)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "list burst reviews failed")

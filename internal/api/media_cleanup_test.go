@@ -1,9 +1,13 @@
 package api
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestMediaCleanupIDs(t *testing.T) {
@@ -79,5 +83,60 @@ func TestChooseBurstRecommendationUsesResolutionThenCenter(t *testing.T) {
 	}
 	if reason != "同等分辨率下推荐连拍中间帧" {
 		t.Fatalf("center reason=%q", reason)
+	}
+}
+
+func TestMediaCleanupOffsetValidation(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  int
+		valid bool
+	}{
+		{query: "", want: 0, valid: true},
+		{query: "?offset=0", want: 0, valid: true},
+		{query: "?offset=48", want: 48, valid: true},
+		{query: "?offset=10000000", want: 10000000, valid: true},
+		{query: "?offset=-1"},
+		{query: "?offset=10000001"},
+		{query: "?offset=not-a-number"},
+	} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, "/media/duplicates"+tc.query, nil)
+		got, ok := mediaCleanupOffset(c)
+		if ok != tc.valid || (ok && got != tc.want) {
+			t.Errorf("query=%q got=%d valid=%v want=%d valid=%v",
+				tc.query, got, ok, tc.want, tc.valid)
+		}
+		if !ok && recorder.Code != http.StatusBadRequest {
+			t.Errorf("query=%q status=%d want=%d", tc.query, recorder.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+func TestMediaBurstReviewPageBeyond48Groups(t *testing.T) {
+	groups := make([]mediaBurstReviewDTO, 53)
+	for i := range groups {
+		groups[i].ID = mediaBurstReviewID(uint64(i + 1))
+	}
+	var ids []string
+	for _, offset := range []int{0, 24, 48} {
+		page := mediaBurstReviewPage(groups, 24, offset)
+		for _, row := range page {
+			ids = append(ids, row.ID)
+		}
+	}
+	if len(ids) != len(groups) {
+		t.Fatalf("expected %d groups; paged %d", len(groups), len(ids))
+	}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			t.Fatalf("duplicate burst group on page boundary: %s", id)
+		}
+		seen[id] = struct{}{}
+	}
+	if got := mediaBurstReviewPage(groups, 24, 53); len(got) != 0 {
+		t.Fatalf("unexpected groups beyond end: %+v", got)
 	}
 }

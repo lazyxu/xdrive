@@ -29,6 +29,19 @@ Status: **Measured query-stage feasibility / no production code change** ([CI 37
 - **Decision:** the batched query shape is **accepted as a candidate for the Node/File stage**, but this PR retains **no production modification**. It repairs the oversized-query *failure*, not a demonstrated successful-query speedup. This benchmark alone does not validate soft-deleted assets, group/derived resources, collections or the 100k write path.
 - **Next performance PR:** replace the first failing production preload with bounded reads, then independently measure and fix the remaining `NOT IN`, collection-node and per-asset write bottlenecks. A full `ReconcileOwner` must succeed on a real 100k logical/115k physical fixture before status can be advanced to fully scalable.
 - Full unrounded fixture and per-sample evidence: [ci-run-37900391031.json](performance-evidence/photoasset-owner-node-preload-100k/ci-run-37900391031.json). Post-document-formatting full CI remains the merge gate.
+## Gallery cleanup group pagination — G11 phase 2a (2026-10-09)
+
+Status: **Unmeasured / complexity-only, validation pending**. The duplicate
+and Burst group list endpoints now accept bounded `offset` windows with a
+48-card initial shared Web/Desktop view. The first-window query, whole-library
+group counts and derived recommendation correctness are unchanged. Burst
+groups still enumerate eligible source rows before sorting and slicing;
+this PR does **not** claim a 100k latency reduction or an alternative SQL
+plan. Group-page correctness is validated by PostgreSQL and 53-group
+pure/page-contract tests; any future performance-specific optimization must
+use the canonical named 100k workload and same-host BEFORE/AFTER as required
+by `AGENTS.md`.
+
 ## Gallery entry performance — Memories, 同步文件夹, 清理建议 (2026-10-09)
 
 Status: **Merged / accepted (#1100)**. Initial source commit `c55044b6e4c79cbf94da0acb75ced5e9bb588c48` failed all three affected HTTP endpoints. The measured minimal handler-only change uses the pre-existing Gallery stale-node probe before any owner-wide reconciliation; the unchanged stale-data path still runs original reconciliation. Three-pair same-host native PostgreSQL/Gin validation [run 37897331199](https://github.com/lazyxu/xdrive/actions/runs/37897331199) **passed**; final evidence-amended CI [run 37898368646](https://github.com/lazyxu/xdrive/actions/runs/37898368646) passed and PR #1100 merged.
