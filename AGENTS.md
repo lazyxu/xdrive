@@ -83,6 +83,32 @@ Provider delivery rules:
 - Do not duplicate cross-surface Source/status/formatting rules or common business presentation in Web and Desktop. Put framework-neutral semantics in `ui/shared/src`, common React/MUI rendering in `ui/shared/src/mui`, and only platform-specific orchestration in each app.
 - When waiting on GitHub/GitLab CI for the current PR, use that time to **plan** the next small feature: inspect the relevant interfaces, tests, dependency chain, and branch strategy. Do not modify or open the next feature branch until the current small feature is merged, unless the work is an explicitly approved stacked dependency.
 
+## Gallery documentation and product-contract policy
+
+- Before a Gallery, media Viewer, or media Properties change, read
+  `docs/gallery-product-roadmap.md` and `docs/gallery-ios-kfs-audit.md`; also read
+  `docs/preview-engine.md` for rendering/Properties and `docs/mobile-web.md` for touch
+  or viewport changes. The audit is dated evidence, so verify the current shared code,
+  Web/Desktop adapters, and materially related PR state before choosing new work.
+- Keep **Verified baseline**, **In progress**, **Proposed**, and **Validation pending**
+  distinct. Update affected canonical contracts and follow-up status in the same
+  delivery, with the actual commit/PR and relevant validation evidence. Do not turn an
+  implemented foundation into a new backlog item, or an unmerged/disabled/mock control
+  into a completed feature.
+- Preserve the accepted Gallery ordinary-click/tap-to-Viewer and common **属性**
+  direction for active, permitted media, explicit/modifier selection, one shared media
+  Properties content layer, and one active media player when opening Properties. Trash
+  remains restricted to Properties and must not open Viewer or fetch original/Live
+  motion resources. Check the implementation
+  status rather than reverting to older double-click/Info-only wording. Gallery
+  activation must not silently change FileExplorer's normal selection/open contract.
+- KFS is a reference for useful interaction and information design, not an authority
+  for xDrive semantics. Keep **同步文件夹** terminology, shared MUI/adapters,
+  evidence-based media grouping/classification, local canonical metadata, remote
+  read-only defaults, non-copying album memberships, and bounded VirtualCollection
+  behavior. Do not copy filename/time-based Live Photo pairing or all-items DOM
+  materialization.
+
 ## Cloud storage inventory policy
 
 - **`docs/storage-inventory.md` is normative** for Server physical-storage accounting, cache classification, host-path display, and storage cleanup. Read and follow it before adding or changing any Server-side persistent cache, derivative, temporary directory, database/storage sidecar, backup class, or other xDrive-managed file class.
