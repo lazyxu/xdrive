@@ -1,0 +1,130 @@
+{
+  "ci_run_id": 37914755065,
+  "job_id": 113768126932,
+  "commit": "78547c92c07a82c1165ec8bf0a54b6184102ed63",
+  "burst_group_count_extreme": 10000,
+  "huge_single_group_copies": 10000,
+  "logical_photo_assets": 100000,
+  "medians_ms": {
+    "burst-10000-groups": 197.763,
+    "burst-2000-groups": 61.206,
+    "duplicate-2000-groups": 601.912,
+    "duplicate-one-10000-copy-group": 720.792
+  },
+  "physical_media_nodes": 115000,
+  "samples": [
+    {
+      "phase": "duplicate-2000-groups",
+      "sample": 1,
+      "elapsed_ms": 621.548,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 10000,
+      "allocated_bytes": 1793192
+    },
+    {
+      "phase": "burst-2000-groups",
+      "sample": 1,
+      "elapsed_ms": 310.773,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 6000,
+      "allocated_bytes": 6758160
+    },
+    {
+      "phase": "duplicate-2000-groups",
+      "sample": 2,
+      "elapsed_ms": 601.912,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 10000,
+      "allocated_bytes": 1719080
+    },
+    {
+      "phase": "burst-2000-groups",
+      "sample": 2,
+      "elapsed_ms": 61.206,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 6000,
+      "allocated_bytes": 6769928
+    },
+    {
+      "phase": "duplicate-2000-groups",
+      "sample": 3,
+      "elapsed_ms": 599.383,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 10000,
+      "allocated_bytes": 1765224
+    },
+    {
+      "phase": "burst-2000-groups",
+      "sample": 3,
+      "elapsed_ms": 56.744,
+      "total_groups": 2000,
+      "returned_groups": 48,
+      "total_items": 6000,
+      "allocated_bytes": 6736560
+    },
+    {
+      "phase": "duplicate-one-10000-copy-group",
+      "sample": 1,
+      "elapsed_ms": 720.792,
+      "total_groups": 1,
+      "returned_groups": 1,
+      "total_items": 10000,
+      "allocated_bytes": 16654336
+    },
+    {
+      "phase": "duplicate-one-10000-copy-group",
+      "sample": 2,
+      "elapsed_ms": 706.675,
+      "total_groups": 1,
+      "returned_groups": 1,
+      "total_items": 10000,
+      "allocated_bytes": 16683992
+    },
+    {
+      "phase": "duplicate-one-10000-copy-group",
+      "sample": 3,
+      "elapsed_ms": 749.231,
+      "total_groups": 1,
+      "returned_groups": 1,
+      "total_items": 10000,
+      "allocated_bytes": 16723064
+    },
+    {
+      "phase": "burst-10000-groups",
+      "sample": 1,
+      "elapsed_ms": 197.763,
+      "total_groups": 10000,
+      "returned_groups": 48,
+      "total_items": 30000,
+      "allocated_bytes": 36761608
+    },
+    {
+      "phase": "burst-10000-groups",
+      "sample": 2,
+      "elapsed_ms": 196.284,
+      "total_groups": 10000,
+      "returned_groups": 48,
+      "total_items": 30000,
+      "allocated_bytes": 36803776
+    },
+    {
+      "phase": "burst-10000-groups",
+      "sample": 3,
+      "elapsed_ms": 198.581,
+      "total_groups": 10000,
+      "returned_groups": 48,
+      "total_items": 30000,
+      "allocated_bytes": 36799672
+    }
+  ],
+  "samples_per_phase": 3,
+  "scope": "real PostgreSQL 17 direct cleanup SQL; excludes HTTP/Web/Desktop rendering and source bytes",
+  "seed_ms": 40446.134,
+  "status": "baseline_only_no_optimization",
+  "workload": "gallery-cleanup-extreme-native-postgres-100k"
+}
