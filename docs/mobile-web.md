@@ -15,6 +15,29 @@ The first delivery is the shared workspace shell. It does not change file select
 | P1 | Tasks, sync folders and storage | Narrow forms, task actions and summaries |
 | P2 | Administration and install experience | Mobile admin pages, existing manifest/install experience and subsequent enhancements |
 
+## Gallery comparison follow-up
+
+The [Gallery experience audit](gallery-ios-kfs-audit.md) is the dated, source-backed
+comparison with iOS Photos and KFS. Existing compact Shell, Gallery tap-to-open,
+Viewer pinch/double-tap/pan/swipe, and shared bottom Properties Drawer are foundations;
+do not list them as wholly absent or rewrite them as another mobile Gallery.
+
+For Gallery follow-up, use the complete available Web App viewport, preserve the
+existing scroll root and caller workspace, keep 44 CSS px touch targets and safe
+areas, and avoid duplicate navigation/action rows consuming the photo wall. Full
+available viewport does not mean removing browser chrome through an unsupported API
+or hiding controls the user needs. A compact in-Viewer Properties surface must keep
+the Viewer mounted and avoid a duplicate player. Trash remains Properties-only, without
+original preview or Live motion. The accepted label is **属性**; the transition and
+FileExplorer media-adapter status are recorded in the audit.
+
+Any new toolbar, photo-wall pinch density, drag selection, or Drawer behavior must be
+verified through the whole Gallery -> Viewer -> Properties -> return flow at narrow,
+wide and short landscape sizes. Keep real iOS Safari/Android Chrome, installed mode,
+keyboard/safe-area, background/foreground and native media/download results separate
+from Chromium emulation and pure controller tests. Existing acceptance records below
+remain valid only for the exact environments and paths they measured.
+
 ## Phase 1 contract
 
 ### Navigation

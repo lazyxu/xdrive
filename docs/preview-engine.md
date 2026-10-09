@@ -9,6 +9,16 @@ The Preview Engine is shared by FileExplorer and Gallery. Platform code may adap
 authentication and transport, but must not create a second ordinary-media preview
 pipeline.
 
+## Gallery experience and Properties follow-up
+
+[Gallery product roadmap](gallery-product-roadmap.md) owns Gallery product behavior.
+The [dated iOS Photos / KFS audit](gallery-ios-kfs-audit.md) distinguishes implemented
+capabilities, in-progress work, proposed extensions, and device acceptance.
+Do not use an older double-click/Info description to undo the accepted direct-open
+and common **属性** contract. Extending media Properties must reuse the shared
+media content and platform adapters; ordinary file/folder Properties and FileExplorer
+selection remain separate. See the audit for implementation status.
+
 ## Architecture
 
 ```text
@@ -404,11 +414,24 @@ download an unsupported file, and Desktop Open must not download before handing 
 path to the OS default application.
 
 Gallery keeps media information, EXIF/GPS, Favorite/Tags/People/albums, and Live Photo
-motion semantics outside the ordinary Preview Engine. Double-clicking a Gallery media
-tile opens the media preview; opening media information remains a separate Gallery
-interaction. Viewer actions such as Favorite, Info, Download, Share, Delete, and its
-bounded filmstrip therefore live in the shared Gallery layer, even though Viewer
+motion semantics outside the ordinary Preview Engine. The accepted Gallery contract
+opens active, permitted media on an ordinary single click/tap; explicit selection mode
+and modifier keys continue selecting. Trash remains Properties-only and must not open
+Viewer or fetch original/Live motion resources. The existing Info icon is labeled
+**属性**, and opening Properties must retain the Viewer without mounting another media
+player. [PR #1071](https://github.com/lazyxu/xdrive/pull/1071), merged on 2026-10-09,
+delivers desktop single-click and in-Viewer Properties after the audit's fixed baseline;
+touch single-tap was already delivered. FileExplorer media Properties integration is
+a separate follow-up. These Gallery activation rules do not replace FileExplorer's
+normal file selection/open behavior. Viewer actions such as Favorite, Properties,
+Download, Share, Delete, and its bounded filmstrip therefore live in the shared
+Gallery layer, even though Viewer
 embeds the generic preview shell and renderer.
+
+Double-clicking a Gallery media
+tile opens the media preview through the first permitted click; the second click is
+ignored so it does not reopen Viewer or show Properties. The active-media and Trash
+boundaries above still apply.
 
 ### Quick Look
 

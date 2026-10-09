@@ -15,8 +15,27 @@ presentation and product intelligence.
 - Large collections continue to use VirtualCollection plus viewport-proximate
   thumbnail scheduling. New UI must not regress to append-only dense materialization.
 - User-authored state (favorites, tags, descriptions, albums, durable people and
-  future edit recipes) is durable intent; automatic analysis remains rebuildable.
+  edit recipes) is durable intent; automatic analysis remains rebuildable.
 - Features that are not implemented must not be presented as working controls.
+
+## Status discipline and follow-up work
+
+The Phase 1-13 table below records delivered foundations; it is not a claim of complete
+iOS Photos parity or of completed physical-device acceptance. The dated
+[Gallery experience audit: iOS Photos and KFS](gallery-ios-kfs-audit.md) records the verified
+baseline, related PR delivery status, remaining gaps, priorities, and acceptance boundaries.
+
+Before changing Gallery, recheck the selected master commit, the actual shared code
+and both adapters, and only materially related PRs. Keep **Verified baseline**,
+**In progress**, **Proposed**, and **Validation pending** distinct. Update the affected
+contract and the audit's follow-up status in the same feature delivery; a component
+name, a roadmap heading, or an unmerged PR is not completion evidence.
+
+Do not rebuild the existing time scales/density memory, camera/format facets,
+synchronization-folder browsing, selection toolbar, Viewer, Inspector hierarchy,
+Places, Search, Memories, Cleanup, People/Pets, editing, or creative tools as new
+features. Extend the concrete gap recorded in the audit. Proposed enhancements in
+that audit are recommendations, not an instruction to implement the whole backlog.
 
 ## Fixed implementation order
 
@@ -82,12 +101,14 @@ may remain non-blocking alerts when collection content is still valid. Successfu
 results distinguish Trash, Favorites, media-type collections and active search/filter
 conditions; an empty filtered Library offers **清除筛选**.
 
-## Next phase
+## Follow-up after the delivered foundation
 
-Phase 2 must build Year / Month / Day semantic navigation on the existing range-based
-VirtualCollection contract. It must keep stable scrollbar geometry and bounded
-metadata/thumbnail retention, and must not implement semantic zoom by materializing
-the entire Gallery.
+Year / Month / Day navigation and density are already implemented below. Follow-up
+work is tracked in the [dated experience audit](gallery-ios-kfs-audit.md), beginning
+with the shared FileExplorer media Properties adapter built on merged #1071.
+All browsing extensions retain stable scrollbar geometry and
+bounded metadata/thumbnail retention; semantic zoom must not materialize the entire
+Gallery.
 
 
 ## Phase 2 — semantic time scale and thumbnail density
@@ -311,7 +332,21 @@ two responsibilities:
   space so the photo collection remains usable while information is open. Narrower
   layouts use a bottom MUI Drawer with the same content and business semantics.
 
-Viewer **Info** continues to exit the immersive Viewer and opens this Inspector/Drawer.
+The accepted interaction target uses the Info icon with the product label **属性**.
+Opening Properties from Viewer must retain the Viewer and its active media, and the
+Properties surface must not mount a second player or fetch Live Photo motion again.
+Active, permitted Gallery media opens Viewer on ordinary single click/tap, while
+explicit selection and modifier-key selection keep selecting. Trash remains restricted
+to Properties; it does not open Viewer or fetch original/Live motion resources.
+Right-click exposes **属性**. FileExplorer media
+Properties must consume the same content through a Node/MediaItem adapter, without
+changing ordinary file/folder selection or Properties semantics.
+
+[PR #1071](https://github.com/lazyxu/xdrive/pull/1071) merged on 2026-10-09 as
+[27fe038ec87c2b2b8ca200f86977e6e8938925da](https://github.com/lazyxu/xdrive/commit/27fe038ec87c2b2b8ca200f86977e6e8938925da),
+delivering desktop direct-open and in-Viewer Properties after the audit's fixed
+baseline. The audit records this delivered update. The FileExplorer media Properties
+adapter remains a separate follow-up; do not mark it complete from the Gallery change.
 There is no Web/Desktop details fork: both clients consume the same shared content and
 responsive container, while Preview transport remains platform-specific through the
 existing adapters.
@@ -345,8 +380,9 @@ Gallery Trash keeps its Phase-4 capability boundary in the new Inspector. Delete
 may show thumbnails and indexed metadata, but Favorite/tag/people/description/album
 mutations and original Preview remain unavailable.
 
-Phase 7 should build Places on the existing local GPS/GeoNames projection and keep map
-presentation in the shared Gallery layer.
+Places is already implemented on the local GPS/GeoNames projection as described in
+Phase 7 below. Further map usability and scale work is a follow-up, not a new Places
+implementation.
 
 
 ## Phase 7 — privacy-safe Map Places
