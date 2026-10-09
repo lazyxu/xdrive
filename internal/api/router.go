@@ -207,6 +207,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places", s.listMediaPlaces)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
+	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
 	authed.GET("/media/duplicates", s.listMediaDuplicateGroups)
 	authed.GET("/media/duplicates/:duplicateID/items", s.listMediaDuplicateItems)
 	authed.GET("/media/bursts", s.listMediaBurstReviews)
