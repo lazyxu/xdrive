@@ -969,4 +969,195 @@ func TestMediaDuplicateOrganizePlanFindsLiveMotionSourceLinks(t *testing.T) {
 		second.Members[1].SourceLinks[0].MayReimport {
 		t.Fatalf("source reimport eligibility did not invalidate review: %+v", second)
 	}
+
+	// Regression for #1181: the still/primary Node has NO SourceItem, but the
+	// motion resource of copy B has a SourceItem. A now-Mirror-managed motion
+	// makes the whole selected keeper volatile. This must reject a confirmed
+	// metadata union even when the source item is presently marked missing.
+	if err := db.Model(&meta.Source{}).
+		Where("id = ?", sources[1].ID).
+		Update("sync_mode", meta.SourceSyncModeMirror).Error; err != nil {
+		t.Fatal(err)
+	}
+	mirrorPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[1], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mirrorPlan.AssetComparison != duplicateAssetIdentical ||
+		mirrorPlan.ReadyForManualReview ||
+		!mediaDuplicateOrganizeKeeperMirrorManaged(mirrorPlan) ||
+		!strings.Contains(mirrorPlan.SourceWarning, "Mirror") ||
+		len(mirrorPlan.Members[1].SourceLinks) != 1 ||
+		mirrorPlan.Members[1].SourceLinks[0].ResourceNodeID != motionIDs[1] ||
+		mirrorPlan.Members[1].SourceLinks[0].SyncMode != meta.SourceSyncModeMirror {
+		t.Fatalf("motion-only Mirror keeper must fail closed: %+v", mirrorPlan)
+	}
+	rejectedApply := mediaDuplicateOrganizeApplyInput{
+		KeeperNodeID: stillIDs[1], NodeIDs: stillIDs,
+		ExpectedPlanRevision: mirrorPlan.PlanRevision, Confirm: true,
+	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owner.ID, rejectedApply,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("Mirror motion-only keeper accepted annotation union: %v", err)
+	}
+	localPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[0], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if localPlan.AssetComparison != duplicateAssetIdentical ||
+		!localPlan.ReadyForManualReview ||
+		mediaDuplicateOrganizeKeeperMirrorManaged(localPlan) ||
+		localPlan.PlanRevision == second.PlanRevision {
+		t.Fatalf("independent keeper should remain eligible and invalidate stale source token: %+v", localPlan)
+	}
+
+	// Also reject when the Mirror source item is again marked synced: missing
+	// evidence is not a reason to exempt a still-current SourceItem link.
+	if err := db.Model(&meta.SourceItem{}).
+		Where("source_id = ? AND node_id = ?", sources[1].ID, motionIDs[1]).
+		Update("state", meta.SourceItemStateSynced).Error; err != nil {
+		t.Fatal(err)
+	}
+	syncedMirrorPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[1], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if syncedMirrorPlan.AssetComparison != duplicateAssetIdentical ||
+		!mediaDuplicateOrganizeKeeperMirrorManaged(syncedMirrorPlan) ||
+		syncedMirrorPlan.ReadyForManualReview ||
+		syncedMirrorPlan.PlanRevision == mirrorPlan.PlanRevision {
+		t.Fatalf("synced Mirror motion must invalidate the old review: %+v", syncedMirrorPlan)
+	}
+	rejectedApply.ExpectedPlanRevision = syncedMirrorPlan.PlanRevision
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owner.ID, rejectedApply,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("synced Mirror motion keeper accepted annotation union: %v", err)
+	}
+
+	// Exercise the same source ownership for two complete RAW pairs.
+	// Pair evidence is stored in PhotoAsset/PhotoResource roles, never inferred
+	// from the test Node filename (.mov on this reused fixture).
+	if err := db.Model(&meta.PhotoAsset{}).
+		Where("owner_id = ? AND primary_node_id IN ?", owner.ID, stillIDs).
+		Update("kind", meta.PhotoAssetKindRAWPair).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).
+		Where("node_id IN ?", stillIDs).
+		Update("role", meta.MediaGroupRoleRendered).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).
+		Where("node_id IN ?", motionIDs).
+		Updates(map[string]any{
+			"role":       meta.MediaGroupRoleRAW,
+			"media_kind": meta.MediaKindImage,
+			"mime_type":  "image/x-adobe-dng",
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("node_id IN ?", motionIDs).
+		Updates(map[string]any{
+			"media_kind": meta.MediaKindImage,
+			"mime_type":  "image/x-adobe-dng",
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	rawMirrorPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[1], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rawMirrorPlan.AssetComparison != duplicateAssetIdentical ||
+		rawMirrorPlan.ReadyForManualReview ||
+		!mediaDuplicateOrganizeKeeperMirrorManaged(rawMirrorPlan) ||
+		len(rawMirrorPlan.Members[1].SourceLinks) != 1 ||
+		rawMirrorPlan.Members[1].SourceLinks[0].ResourceNodeID != motionIDs[1] {
+		t.Fatalf("RAW resource-only Mirror keeper must fail closed: %+v", rawMirrorPlan)
+	}
+	rejectedApply.ExpectedPlanRevision = rawMirrorPlan.PlanRevision
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owner.ID, rejectedApply,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("RAW resource-only Mirror keeper accepted annotation union: %v", err)
+	}
+	rawLocalPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[0], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rawLocalPlan.AssetComparison != duplicateAssetIdentical ||
+		!rawLocalPlan.ReadyForManualReview ||
+		mediaDuplicateOrganizeKeeperMirrorManaged(rawLocalPlan) {
+		t.Fatalf("independent RAW keeper unexpectedly blocked: %+v", rawLocalPlan)
+	}
+
+	// Even an explicitly reviewed description choice cannot bypass the
+	// selected keeper's Mirror ownership. Both original descriptions stay
+	// on their independently owned assets after this rejected transaction.
+	var localAsset, mirrorAsset meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND primary_node_id = ?", owner.ID, stillIDs[0]).
+		First(&localAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("owner_id = ? AND primary_node_id = ?", owner.ID, stillIDs[1]).
+		First(&mirrorAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", localAsset.ID).
+		Update("description", "local original description").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoMetadata{}).
+		Where("asset_id = ?", mirrorAsset.ID).
+		Update("description", "mirror original description").Error; err != nil {
+		t.Fatal(err)
+	}
+	choicePlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, stillIDs[1], stillIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if choicePlan.AssetComparison != duplicateAssetIdentical ||
+		!mediaDuplicateOrganizeKeeperMirrorManaged(choicePlan) ||
+		len(choicePlan.Descriptions) != 2 {
+		t.Fatalf("different descriptions cannot conceal Mirror risk: %+v", choicePlan)
+	}
+	selectedDescription := "mirror original description"
+	rejectedApply.ExpectedPlanRevision = choicePlan.PlanRevision
+	rejectedApply.SelectedDescription = &selectedDescription
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owner.ID, rejectedApply,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("description-choice bypass accepted RAW Mirror keeper: %v", err)
+	}
+	for _, expected := range []struct {
+		AssetID     uint64
+		Description string
+	}{
+		{AssetID: localAsset.ID, Description: "local original description"},
+		{AssetID: mirrorAsset.ID, Description: "mirror original description"},
+	} {
+		var saved meta.PhotoMetadata
+		if err := db.Where("asset_id = ?", expected.AssetID).
+			First(&saved).Error; err != nil {
+			t.Fatal(err)
+		}
+		if saved.Description != expected.Description || saved.Favorite {
+			t.Fatalf("rejected Mirror apply mutated source annotations: %+v", saved)
+		}
+	}
 }
