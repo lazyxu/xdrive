@@ -3,13 +3,16 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photoasset"
+	"gorm.io/gorm"
 )
 
 // TestPhotoAssetOwnerReconcilePerformance100K measures the first remaining
@@ -17,7 +20,8 @@ import (
 // end-to-end 100k throughput benchmark when PostgreSQL rejects an oversized IN.
 // Real 15k Live Photo groups and their two physical resources are in the fixture.
 func TestPhotoAssetOwnerReconcilePerformance100K(t *testing.T) {
-	if os.Getenv("XD_PHOTOASSET_OWNER_RECONCILE_PERF") != "1" {
+	writeDiagnostic := os.Getenv("XD_PHOTOASSET_OWNER_WRITE_DIAGNOSTIC") == "1"
+	if os.Getenv("XD_PHOTOASSET_OWNER_RECONCILE_PERF") != "1" && !writeDiagnostic {
 		t.Skip("set XD_PHOTOASSET_OWNER_RECONCILE_PERF=1 for native PostgreSQL full 100k owner reconciliation")
 	}
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
@@ -84,12 +88,44 @@ func TestPhotoAssetOwnerReconcilePerformance100K(t *testing.T) {
 			beforeAssets, beforeResources, beforeMediaNodes, beforeLiveGroups, beforeMemberships)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	// Diagnostic mode is a measurement-only cutoff, not an acceptance budget
+	// for a successful 100k reconciliation.
+	reconcileLimit := 120 * time.Second
+	var assetUpdates, resourceDeletes, resourceCreates, metadataUpserts atomic.Int64
+	if writeDiagnostic {
+		reconcileLimit = 60 * time.Second
+		if err := db.Callback().Update().After("gorm:update").Register("perf:owner-asset-update", func(tx *gorm.DB) {
+			if tx.Statement.Table == "xd_photo_assets" {
+				assetUpdates.Add(1)
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Callback().Delete().After("gorm:delete").Register("perf:owner-resource-delete", func(tx *gorm.DB) {
+			if tx.Statement.Table == "xd_photo_resources" {
+				resourceDeletes.Add(1)
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Callback().Create().After("gorm:create").Register("perf:owner-create-count", func(tx *gorm.DB) {
+			switch tx.Statement.Table {
+			case "xd_photo_resources":
+				resourceCreates.Add(1)
+			case "xd_photo_metadata":
+				metadataUpserts.Add(1)
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), reconcileLimit)
 	start := time.Now()
 	report, reconcileErr := photoasset.ReconcileOwner(ctx, db, user.ID)
 	elapsedMS := float64(time.Since(start).Microseconds()) / 1000
 	contextErr := ctx.Err()
 	cancel()
+	sqlWrites := assetUpdates.Load() + resourceDeletes.Load() + resourceCreates.Load() + metadataUpserts.Load()
 
 	afterAssets := count(&meta.PhotoAsset{}, true)
 	afterResources := count(&meta.PhotoResource{}, false)
@@ -112,6 +148,13 @@ func TestPhotoAssetOwnerReconcilePerformance100K(t *testing.T) {
 		"seed_ms":                 seedMS,
 		"reconcile_elapsed_ms":    elapsedMS,
 		"success":                 reconcileErr == nil,
+		"write_diagnostic":        writeDiagnostic,
+		"reconcile_deadline_ms":   reconcileLimit.Milliseconds(),
+		"asset_update_callbacks":  assetUpdates.Load(),
+		"resource_deletes":        resourceDeletes.Load(),
+		"resource_creates":        resourceCreates.Load(),
+		"metadata_upserts":        metadataUpserts.Load(),
+		"observed_write_calls":    sqlWrites,
 		"bind_parameter_overflow": overflow,
 		"error":                   errorText,
 		"context_error":           contextError,
@@ -136,7 +179,14 @@ func TestPhotoAssetOwnerReconcilePerformance100K(t *testing.T) {
 	t.Logf("PHOTOASSET_OWNER_RECONCILE_100K %s", raw)
 
 	if reconcileErr != nil {
-		if !overflow {
+		if writeDiagnostic {
+			timedOut := errors.Is(contextErr, context.DeadlineExceeded) ||
+				errors.Is(reconcileErr, context.DeadlineExceeded)
+			if !timedOut || sqlWrites < 1000 {
+				t.Fatalf("unexpected write diagnostic error after %.3f ms, sql_calls=%d: %v (ctx=%s)",
+					elapsedMS, sqlWrites, reconcileErr, contextError)
+			}
+		} else if !overflow {
 			t.Fatalf("unexpected owner reconciliation failure after %.3f ms: %v (ctx=%s)", elapsedMS, reconcileErr, contextError)
 		}
 		if beforeAssets != afterAssets || beforeResources != afterResources ||
