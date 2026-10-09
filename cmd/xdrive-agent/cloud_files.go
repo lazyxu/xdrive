@@ -2029,6 +2029,18 @@ func (c *agentController) CloudMediaDuplicateOrganizePlan(
 	return cli.MediaDuplicateOrganizePlan(ctx, keeperID, nodeIDs)
 }
 
+// Confirmed annotation union; original media, resources and CAS remain intact.
+func (c *agentController) CloudMediaDuplicateOrganizeApply(
+	ctx context.Context,
+	input client.MediaDuplicateOrganizeApplyInput,
+) (client.MediaDuplicateOrganizeApplyResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaDuplicateOrganizeApplyResult{}, err
+	}
+	return cli.MediaDuplicateOrganizeApply(ctx, input)
+}
+
 func (c *agentController) CloudMediaIndexStatus(
 	ctx context.Context,
 ) (client.MediaGalleryIndexStatus, error) {

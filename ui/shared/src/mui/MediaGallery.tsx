@@ -52,6 +52,8 @@ import type {
   MediaGalleryIndexStatus,
   NodeLocation,
   MediaDuplicateOrganizePlan,
+  MediaDuplicateOrganizeApplyInput,
+  MediaDuplicateOrganizeApplyResult,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderBreadcrumb,
@@ -189,6 +191,7 @@ export interface MediaGalleryDataSource {
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<MediaDuplicateOrganizePlan>
+  applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<MediaDuplicateOrganizeApplyResult>
   listSyncFolders?: () => Promise<MediaSyncFolder[]>
   getSyncFolder?: (sourceID: number, folderID: number) => Promise<MediaFolderView>
   listTrashItemRange?: (
@@ -2083,6 +2086,37 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
   }, [currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson, loadFirstPage, query])
 
+  const refreshGallery = () => {
+    if (currentFolderView) {
+      void openSyncFolderDirectory(
+        currentFolderView.source.source_id,
+        currentFolderView.current.id,
+      )
+      return
+    }
+    if (section === 'albums' && !currentFolderView) {
+      void loadSyncFolders()
+    }
+    if (section === 'memories' && !currentMemory) {
+      void loadMemories()
+      return
+    }
+    if (section === 'cleanup' && !currentCleanupReview) {
+      void loadCleanup()
+      return
+    }
+    void loadFirstPage(
+      currentAlbum,
+      query,
+      currentSuggestedPerson,
+      currentPerson,
+      section === 'trash' ? 'trash' : 'default',
+      currentMemory,
+      currentCleanupReview,
+      currentPet,
+    )
+  }
+
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
       ' · ' + currentFolderView.current.path + '（仅当前目录）'
@@ -2307,36 +2341,7 @@ export function XDriveMediaGalleryPage({
         onMergePeople={source.mergePeople ? mergePeople : undefined}
         onSplitPerson={source.splitPerson ? splitPerson : undefined}
         onBack={leaveCollection}
-        onRefresh={() => {
-          if (currentFolderView) {
-            void openSyncFolderDirectory(
-              currentFolderView.source.source_id,
-              currentFolderView.current.id,
-            )
-            return
-          }
-          if (section === 'albums' && !currentFolderView) {
-            void loadSyncFolders()
-          }
-          if (section === 'memories' && !currentMemory) {
-            void loadMemories()
-            return
-          }
-          if (section === 'cleanup' && !currentCleanupReview) {
-            void loadCleanup()
-            return
-          }
-          void loadFirstPage(
-            currentAlbum,
-            query,
-            currentSuggestedPerson,
-            currentPerson,
-            section === 'trash' ? 'trash' : 'default',
-            currentMemory,
-            currentCleanupReview,
-            currentPet,
-          )
-        }}
+        onRefresh={refreshGallery}
       />
       <Dialog
         open={Boolean(foldDialog)}
@@ -2395,6 +2400,8 @@ export function XDriveMediaGalleryPage({
                 nodeIDs={foldDialog.nodeIDs}
                 items={foldDialog.items}
                 requestPlan={source.getDuplicateOrganizePlan}
+                applyPlan={source.applyDuplicateOrganize}
+                onRefresh={refreshGallery}
               />
             </Stack>
           ) : (

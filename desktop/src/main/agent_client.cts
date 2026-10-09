@@ -863,6 +863,25 @@ export type AgentMediaGalleryFacets = {
 // Transport the verified plan as an unchanged JSON payload.
 export type AgentMediaDuplicateOrganizePlan = Record<string, unknown>
 
+export type AgentMediaDuplicateOrganizeApplyInput = {
+  keeper_node_id: number
+  node_ids: number[]
+  expected_plan_revision: string
+  confirm: true
+}
+
+export type AgentMediaDuplicateOrganizeApplyResult = {
+  keeper_node_id: number
+  metadata_updated: boolean
+  manual_albums_added: number
+  durable_people_added: number
+  original_files_retained: boolean
+  original_edits_retained: boolean
+  source_links_unchanged: boolean
+  physical_bytes_reclaimed: number
+}
+
+
 export type AgentMediaGalleryIndexStatus = {
   known_assets: number
   ready_assets: number
@@ -1593,6 +1612,12 @@ export class AgentIPCClient {
       'GET',
       `/v1/cloud/node-location?node_id=${encodeURIComponent(String(nodeID))}`,
       undefined, 10_000, signal,
+    )
+  }
+
+  mediaDuplicateOrganizeApply(input: AgentMediaDuplicateOrganizeApplyInput) {
+    return this.request<AgentMediaDuplicateOrganizeApplyResult>(
+      'POST', '/v1/media/duplicate-organize/apply', input,
     )
   }
 
