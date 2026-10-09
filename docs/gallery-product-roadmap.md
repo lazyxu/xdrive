@@ -1253,3 +1253,22 @@ on G06 Web phase 2a and requires its own complete PR CI before merge.
 - `folder_id` and `include_descendants=true` travel together from shared MUI `MediaGalleryQuery` through Web HTTP or Desktop Agent/Main/Go client to the same query builder. Recursive requests without a folder ID are rejected. Older Desktop Agents without `media-folder-recursive` fail visibly rather than silently reducing scope.
 - Exact PostgreSQL fixture expectations: current folder `child.jpg`; recursive child `child.jpg` and `grand.mov`; recursive source `root.jpg`, `child.jpg`, `grand.mov`; another owner cannot enumerate the source. Facet values and regular counts must match the visible range. Go Client serialization and React/UI source contracts are separately tested.
 - This is an **unmerged candidate** stacked after G06 Phase 2b. Physical iOS/Android/Desktop interaction, the full CI run, PostgreSQL 10k/100k recursive-folder benchmark, and scope-preserving Viewer return behavior require separate acceptance evidence. G06 is not yet signed off.
+
+### G07 phase 1 — explicit selection review, Web/Desktop candidate (2026-10-09)
+
+**In progress / CI pending.** Shared Gallery Selection Toolbar exposes
+**查看已选项** to inspect the *explicitly selected* media without starting
+a second Viewer or loading additional original/thumbnail bytes.
+The selected-items drawer/dialog uses a bounded 100-row page, name filter,
+precise live count, per-item **移除**, and explicit **清空选择**. It reuses the
+existing selection Map, so removing from the selection is not a deletion or
+file metadata operation. While a batch action is busy, removal, clear and
+closing are disabled. Scope changes invalidate the selection and close review.
+
+The bounded UI does **not** implement selecting all unloaded query results
+or a whole 100k day. Those require a Server-owned snapshot/selection token,
+owner and ACL rechecks, exclusions, bounded job processing, progress and
+partial-failure/undo semantics before the relevant buttons may be enabled.
+Do not materialize 100k MediaItem objects in Web/Desktop or pretend 100
+review rows represent every search hit. On-device and 100k verification
+are independent acceptance gates.

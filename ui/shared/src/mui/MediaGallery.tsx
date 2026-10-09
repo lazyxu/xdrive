@@ -109,6 +109,7 @@ import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
+import { XDriveMediaGallerySelectionReviewDialog } from './MediaGallerySelectionReviewDialog'
 import { XDriveMediaGalleryAlbumOrganizer } from './MediaGalleryAlbumOrganizer'
 import type { XDriveMediaGalleryAlbumFolderActions } from './MediaGalleryAlbumOrganizer'
 import {
@@ -4037,6 +4038,7 @@ export function XDriveMediaGallery({
   const aspectMode = viewPreferences.aspectMode
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
+  const [selectedReviewOpen, setSelectedReviewOpen] = useState(false)
   const selectionBusyRef = useRef(false)
   const selectionActionGenerationRef = useRef(0)
   const selectionControlRef = useRef<HTMLButtonElement | null>(null)
@@ -4606,6 +4608,7 @@ export function XDriveMediaGallery({
   )
 
   const clearMediaSelection = useCallback(() => {
+    setSelectedReviewOpen(false)
     setSelectedMediaItems(new Map())
     setSelectionAnchorIndex(null)
     setSelectionMode(false)
@@ -5454,9 +5457,26 @@ export function XDriveMediaGallery({
           onDelete={!isTrashSection && onDeleteItems
             ? () => runSelectionAction(onDeleteItems)
             : undefined}
+          onReview={() => setSelectedReviewOpen(true)}
           onClear={clearMediaSelection}
         />
       ) : null}
+
+      <XDriveMediaGallerySelectionReviewDialog
+        open={selectionMode && selectedReviewOpen}
+        items={selectedMedia}
+        busy={selectionBusy}
+        onRemove={(nodeID) => {
+          setSelectedMediaItems((current) => {
+            if (!current.has(nodeID)) return current
+            const next = new Map(current)
+            next.delete(nodeID)
+            return next
+          })
+        }}
+        onClear={clearMediaSelection}
+        onClose={() => setSelectedReviewOpen(false)}
+      />
 
       {error ? (
         <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>

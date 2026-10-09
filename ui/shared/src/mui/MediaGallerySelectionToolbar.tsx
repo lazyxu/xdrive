@@ -64,6 +64,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onDelete,
   onRestore,
   onPermanentDelete,
+  onReview,
   onClear,
 }: {
   selectedCount: number
@@ -82,6 +83,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onDelete?: () => Promise<void>
   onRestore?: () => Promise<void>
   onPermanentDelete?: () => Promise<void>
+  onReview?: () => void
   onClear: () => void
 }) {
   const compactViewport = useMediaQuery('(max-width:899.95px)')
@@ -192,6 +194,18 @@ export function XDriveMediaGallerySelectionToolbar({
               对应 {trashRootCount.toLocaleString('zh-CN')} 个回收站条目
               {trashIncludesFolderRoot ? ' · 包含已删除文件夹' : ''}
             </Typography>
+          ) : null}
+          {onReview ? (
+            <Button
+              size="small"
+              variant="text"
+              disabled={disabled}
+              aria-label="查看已选项"
+              data-xdrive-gallery-review-selected
+              onClick={onReview}
+            >
+              查看已选项
+            </Button>
           ) : null}
           {busy ? <CircularProgress size={18} /> : null}
           </Stack>
