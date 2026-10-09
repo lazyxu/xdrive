@@ -732,7 +732,7 @@ func (s *Server) listMediaDuplicateGroups(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
@@ -795,7 +795,7 @@ func (s *Server) listMediaBurstReviews(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,
