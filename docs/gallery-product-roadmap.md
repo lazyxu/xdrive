@@ -109,6 +109,16 @@ the query key, reset VirtualCollection, or issue a new Server request. Viewport
 retention and the bounded thumbnail scheduler therefore continue to control memory and
 network work independently from tile size.
 
+The shared view preference now remembers the selected time scale plus an independent
+tile density for Year / Month / Day / All Photos. Defaults intentionally make Year the
+densest scan (96 px), Month medium (144 px), Day larger (192 px), and All Photos medium
+(144 px). The preference is stored locally by the shared Gallery surface, so Web and
+Desktop renderer sessions keep the same behavior without adding a Server preference
+contract. Changing time scale or density restores the first visible logical media index;
+the sparse collection key and range query remain unchanged. Timeline date headers are
+sticky, and a bounded year/month jump control uses the compact timeline group indexes to
+move directly to a group start without materializing the full Gallery.
+
 
 ### Photo-wall presentation
 
