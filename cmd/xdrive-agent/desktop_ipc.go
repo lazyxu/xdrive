@@ -101,6 +101,7 @@ var desktopIPCCapabilities = []string{
 	"upload-conflict-policy",
 	"server-update",
 	"media-gallery",
+	"media-index-status",
 	"media-album-folders",
 	"external-sources",
 	"storage-intelligence",
@@ -619,6 +620,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
+	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
 	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
@@ -2710,6 +2712,22 @@ func (h *desktopIPCHandler) mediaFacets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, facets)
+}
+
+func (h *desktopIPCHandler) mediaIndexStatus(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(interface {
+		CloudMediaIndexStatus(context.Context) (client.MediaGalleryIndexStatus, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_index_status_unavailable", "this Agent does not support Gallery index coverage")
+		return
+	}
+	status, err := provider.CloudMediaIndexStatus(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, status)
 }
 
 func (h *desktopIPCHandler) mediaSyncFolders(w http.ResponseWriter, r *http.Request) {

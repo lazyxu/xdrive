@@ -2,6 +2,7 @@ import type {
   MediaAlbum,
   MediaAlbumFolder,
   MediaGalleryFacets,
+  MediaGalleryIndexStatus,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderView,
@@ -73,6 +74,7 @@ export interface XDriveMediaGalleryPort {
     query?: MediaGalleryQuery,
     albumID?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaGalleryFacets>>
+  getIndexStatus?: () => Promise<XDriveMediaGalleryTransportResult<MediaGalleryIndexStatus>>
   listSyncFolders?: () => Promise<XDriveMediaGalleryTransportResult<MediaSyncFolder[]>>
   getSyncFolder?: (
     sourceID: number,
@@ -378,6 +380,9 @@ export function createXDriveMediaGalleryDataSource(
     ),
     listFacets: port.listFacets
       ? (query, albumID) => resolveXDriveTransport(port.listFacets!(query, albumID))
+      : undefined,
+    getIndexStatus: port.getIndexStatus
+      ? () => resolveXDriveTransport(port.getIndexStatus!())
       : undefined,
     listSyncFolders: port.listSyncFolders
       ? () => resolveXDriveTransport(port.listSyncFolders!())

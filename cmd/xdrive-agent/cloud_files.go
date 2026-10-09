@@ -2009,6 +2009,16 @@ func (c *agentController) CloudMediaFacets(
 	return cli.MediaFacets(ctx, query, albumID)
 }
 
+func (c *agentController) CloudMediaIndexStatus(
+	ctx context.Context,
+) (client.MediaGalleryIndexStatus, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaGalleryIndexStatus{}, err
+	}
+	return cli.MediaIndexStatus(ctx)
+}
+
 func (c *agentController) CloudMediaSyncFolders(
 	ctx context.Context,
 ) ([]client.MediaSyncFolder, error) {

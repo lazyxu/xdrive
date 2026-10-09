@@ -669,6 +669,18 @@ export interface MediaGalleryFacets {
   formats: MediaFacetOption[]
 }
 
+/** Counts describe known active logical media, not all files scanned. */
+export interface MediaGalleryIndexStatus {
+  known_assets: number
+  ready_assets: number
+  failed_assets: number
+  unsupported_assets: number
+  missing_metadata_assets: number
+  other_unready_assets: number
+  scope: 'known_photo_assets'
+  checked_at: string
+}
+
 export interface MediaSyncFolder {
   source_id: number
   source_name: string

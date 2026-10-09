@@ -178,6 +178,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/download/archive", s.downloadArchive)
 	authed.GET("/media/items", s.listMediaItems)
 	authed.GET("/media/facets", s.listMediaFacets)
+	authed.GET("/media/index-status", s.listMediaIndexStatus)
 	authed.GET("/media/sync-folders", s.listMediaSyncFolders)
 	authed.GET("/media/sync-folders/:sourceID/folders/:folderID", s.getMediaSyncFolder)
 	authed.GET("/media/trash", s.listMediaTrash)

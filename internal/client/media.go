@@ -277,6 +277,17 @@ type MediaGalleryFacets struct {
 	Formats []MediaFacetOption `json:"formats"`
 }
 
+type MediaGalleryIndexStatus struct {
+	KnownAssets           int64     `json:"known_assets"`
+	ReadyAssets           int64     `json:"ready_assets"`
+	FailedAssets          int64     `json:"failed_assets"`
+	UnsupportedAssets     int64     `json:"unsupported_assets"`
+	MissingMetadataAssets int64     `json:"missing_metadata_assets"`
+	OtherUnreadyAssets    int64     `json:"other_unready_assets"`
+	Scope                 string    `json:"scope"`
+	CheckedAt             time.Time `json:"checked_at"`
+}
+
 type MediaMemory struct {
 	ID          string     `json:"id"`
 	Kind        string     `json:"kind"`
@@ -537,6 +548,12 @@ func (c *Client) MediaFacets(
 	}
 	var out MediaGalleryFacets
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaIndexStatus(ctx context.Context) (MediaGalleryIndexStatus, error) {
+	var out MediaGalleryIndexStatus
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/index-status", nil, &out)
 	return out, err
 }
 

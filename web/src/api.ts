@@ -23,6 +23,7 @@ import type {
   MediaAlbum,
   MediaAlbumFolder,
   MediaGalleryFacets,
+  MediaGalleryIndexStatus,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderView,
@@ -796,6 +797,10 @@ export class XDriveApi {
     return this.request<MediaGalleryFacets>(
       `/api/v1/media/facets${encoded ? `?${encoded}` : ''}`,
     )
+  }
+
+  mediaIndexStatus() {
+    return this.request<MediaGalleryIndexStatus>('/api/v1/media/index-status')
   }
 
   mediaSyncFolders() {

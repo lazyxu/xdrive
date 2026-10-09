@@ -115,6 +115,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/download/archive", suite: "files"},
 		{method: "GET", path: "/api/v1/media/items", suite: "media"},
 		{method: "GET", path: "/api/v1/media/facets", suite: "media"},
+		{method: "GET", path: "/api/v1/media/index-status", suite: "media"},
 		{method: "GET", path: "/api/v1/media/sync-folders", suite: "media"},
 		{method: "GET", path: "/api/v1/media/sync-folders/:sourceID/folders/:folderID", suite: "media"},
 		{method: "GET", path: "/api/v1/media/trash", suite: "media"},
