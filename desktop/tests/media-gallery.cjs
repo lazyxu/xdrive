@@ -1542,7 +1542,7 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir, timeZone)'), 'standalone dense fallback uses current order without materializing the sparse collection')
   assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
   for (const token of [
-    'searchActive={Boolean(query.search?.trim())}',
+    'searchActive={Boolean(appliedFilterQuery.search?.trim())}',
     'searchActive || currentCleanupReview',
     "? 'all' : timeScale",
     'showCollectionTimeScale',

@@ -157,6 +157,25 @@ rename/move/delete actions, and display actual Server folder assignments.
 Neither device-local pinned albums nor saved searches should masquerade as
 durable synchronized album-folder membership.
 
+## G05 search and filter feedback (staged, 2026-10-09)
+
+**Current delivery candidate:** The shared Gallery labels the applied Server query
+separately from editable draft controls. Applied chips, exact owner/collection
+scope, and the sparse range's `total_count` follow the same collection generation.
+Clearing one chip creates a new Server query rather than locally filtering a
+partially loaded 100k timeline; locked navigation filters remain read-only.
+The search order reflects the Server's `search_order=relevance` when present,
+or labels basic matching otherwise. Local recent search suggestions are bounded
+and per-account; unavailable storage must never block browsing.
+
+**Still missing:** real index-coverage state (including failures and unindexed
+assets) must be supplied separately from the filtered result count. The UI
+explicitly says `索引覆盖尚未核验`; it must never interpret zero matched assets
+as evidence that the full library was indexed. Add an owner-scoped on-demand
+Server index status rather than scanning all assets or recomputing facets on
+first image. Changes in G05 must preserve facets' own-filter exclusion,
+Server-owned sort/ranges and Viewer browsing context.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |

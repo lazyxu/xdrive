@@ -86,6 +86,13 @@ import {
 } from './MediaGalleryFilters'
 import type { MediaGalleryFilterDraft } from './MediaGalleryFilters'
 import {
+  xDriveGalleryAppliedChips,
+  xDriveGalleryFilterSignature,
+  xDriveGalleryRecentSearches,
+  xDriveGalleryRememberSearch,
+} from './MediaGallerySearchModel'
+import type { XDriveGalleryAppliedFilterKey } from './MediaGallerySearchModel'
+import {
   XDriveMediaGalleryNavigation,
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
@@ -495,6 +502,13 @@ export function XDriveMediaGalleryPage({
     emptyMediaGalleryFilterDraft,
   )
   const [query, setQuery] = useState<MediaGalleryQuery>({})
+  const [recentSearches, setRecentSearches] = useState(
+    () => xDriveGalleryRecentSearches(preferenceScope),
+  )
+  const [searchOrder, setSearchOrder] = useState('')
+  useEffect(() => {
+    setRecentSearches(xDriveGalleryRecentSearches(preferenceScope))
+  }, [preferenceScope])
   const [gallerySort, setGallerySort] = useState<{
     by: 'captured' | 'added'
     dir: 'asc' | 'desc'
@@ -708,6 +722,7 @@ export function XDriveMediaGalleryPage({
     collectionTargetRef.current = target
     setCollectionTarget(target)
     setTimelineGroupSets(emptyMediaTimelineGroupSets())
+    setSearchOrder('')
     virtualCollection.reset(mediaGalleryCollectionKey(target))
     setLoading(true)
     setError('')
@@ -742,6 +757,10 @@ export function XDriveMediaGalleryPage({
         setCurrentMemory(null)
         setCurrentCleanupReview(null)
         setItems([...range.items])
+        setSearchOrder(range.search_order ?? '')
+        if (target.query.search?.trim()) {
+          setRecentSearches(xDriveGalleryRememberSearch(preferenceScope, target.query.search))
+        }
         setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
         setSortAnchorRestoration(typeof range.anchor_index === 'number'
           ? { index: range.anchor_index, requestID: request }
@@ -799,6 +818,10 @@ export function XDriveMediaGalleryPage({
           : null,
       )
       setItems([...range.items])
+      setSearchOrder(range.search_order ?? '')
+      if (target.query.search?.trim()) {
+        setRecentSearches(xDriveGalleryRememberSearch(preferenceScope, target.query.search))
+      }
       setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
       setSortAnchorRestoration(typeof range.anchor_index === 'number'
         ? { index: range.anchor_index, requestID: request }
@@ -824,6 +847,7 @@ export function XDriveMediaGalleryPage({
     listAllPeople,
     loadTargetRange,
     pageSize,
+    preferenceScope,
     onError,
     reportError,
     source,
@@ -1882,6 +1906,34 @@ export function XDriveMediaGalleryPage({
     syncFolderRequestID.current += 1
   }, [])
 
+  // Search feedback must describe the last accepted Server query, not edits still
+  // sitting in the filter popover. Saved smart-album rules are separately scoped.
+  const appliedFilterQuery = currentAlbum?.kind === 'smart'
+    ? currentAlbum.query ?? {}
+    : query
+  const draftPending = xDriveGalleryFilterSignature(
+    mediaGalleryQueryFromDraft(draftFilters),
+  ) !== xDriveGalleryFilterSignature(appliedFilterQuery)
+
+  const removeAppliedFilter = useCallback((key: XDriveGalleryAppliedFilterKey) => {
+    if (currentAlbum?.kind === 'smart') return
+    const nextApplied: MediaGalleryQuery = { ...query }
+    delete nextApplied[key]
+    const nextDraft = mediaGalleryDraftFromQuery(nextApplied)
+    const nextQuery: MediaGalleryQuery = {
+      ...mediaGalleryQueryFromDraft(nextDraft),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+    }
+    setDraftFilters(nextDraft)
+    setQuery(nextQuery)
+    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
+  }, [currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson, loadFirstPage, query])
+
+  const appliedScopeLabel = currentFolderView
+    ? '同步文件夹：' + currentFolderView.source.source_name +
+      ' · ' + currentFolderView.current.path + '（仅当前目录）'
+    : undefined
+
   return (
     <XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>
       <XDriveMediaGallery
@@ -1925,7 +1977,14 @@ export function XDriveMediaGalleryPage({
         collectionError={collectionError}
         section={section}
         activeMediaType={activeMediaType}
-        searchActive={Boolean(query.search?.trim())}
+        searchActive={Boolean(appliedFilterQuery.search?.trim())}
+        appliedQuery={appliedFilterQuery}
+        appliedScopeLabel={appliedScopeLabel}
+        draftPending={draftPending}
+        searchOrder={searchOrder}
+        onRemoveAppliedFilter={
+          currentAlbum?.kind === 'smart' ? undefined : removeAppliedFilter
+        }
         sortBy={gallerySort.by}
         sortDir={gallerySort.dir}
         timeZone={mediaTimeZone}
@@ -1933,11 +1992,12 @@ export function XDriveMediaGalleryPage({
         onSortChange={changeGallerySort}
         sortAnchorIndex={sortAnchorRestoration?.index}
         sortAnchorRevision={sortAnchorRestoration?.requestID}
-        filtersActive={hasMediaGalleryFilters(draftFilters)}
+        filtersActive={xDriveGalleryAppliedChips(appliedFilterQuery).length > 0}
         onClearFilters={clearFilters}
         filters={(
           <XDriveMediaGalleryFilterToolbar
             draft={draftFilters}
+            recentSearches={recentSearches}
             loading={loading}
             applyLabel={currentAlbum?.kind === 'smart' ? '保存规则' : '应用'}
             clearLabel={currentAlbum?.kind === 'smart' ? '还原规则' : '清除'}
@@ -2229,6 +2289,11 @@ export interface XDriveMediaGalleryProps {
   section?: MediaGallerySection
   activeMediaType?: string
   searchActive?: boolean
+  appliedQuery?: MediaGalleryQuery
+  appliedScopeLabel?: string
+  draftPending?: boolean
+  searchOrder?: string
+  onRemoveAppliedFilter?: (key: XDriveGalleryAppliedFilterKey) => void
   sortBy?: 'captured' | 'added'
   sortDir?: 'asc' | 'desc'
   timeZone?: string
@@ -3562,6 +3627,11 @@ export function XDriveMediaGallery({
   section = 'library',
   activeMediaType = '',
   searchActive = false,
+  appliedQuery = {},
+  appliedScopeLabel,
+  draftPending = false,
+  searchOrder = '',
+  onRemoveAppliedFilter,
   sortBy = 'captured',
   sortDir = 'desc',
   timeZone = xDriveReadMediaTimeZone(),
@@ -4152,6 +4222,21 @@ export function XDriveMediaGallery({
     ? [...pendingSuggestedPeople, ...dismissedSuggestedPeople]
     : pendingSuggestedPeople
 
+  const lockedAppliedFilterKeys: XDriveGalleryAppliedFilterKey[] = [
+    ...(section === 'favorites' ? ['favorite' as const] : []),
+    ...(currentPerson ? ['person_identity' as const] : []),
+    ...(section === 'media-types' && activeMediaType
+      ? ['asset_kind' as const, 'category' as const]
+      : []),
+  ]
+  const appliedChips = xDriveGalleryAppliedChips(appliedQuery, {
+    timeZone,
+    locked: lockedAppliedFilterKeys,
+    placeLabel: places.find((place) => place.id === appliedQuery.place)?.name,
+    personLabel: currentPerson?.name ||
+      people.find((person) => person.id === appliedQuery.person_identity)?.name,
+  })
+
   const galleryTitle = currentFolderView
     ? currentFolderView.current.name
     : currentCleanupReview
@@ -4559,6 +4644,53 @@ export function XDriveMediaGallery({
           </Stack>
         ) : null}
       </Stack>
+
+      {showCollectionFilters ? (
+        <Stack
+          direction="row"
+          spacing={0.75}
+          flexWrap="wrap"
+          useFlexGap
+          alignItems="center"
+          data-xdrive-gallery-search-feedback
+          aria-live="polite"
+        >
+          <Typography variant="caption" color="text.secondary">
+            {'范围：' + (appliedScopeLabel || galleryTitle) + ' · '}
+            {loading ? '正在查询…'
+              : collectionError ? '查询失败'
+                : logicalItemCount.toLocaleString('zh-CN') + ' 个匹配项目'}
+          </Typography>
+          {appliedChips.map((chip) => (
+            <Chip
+              key={chip.key}
+              size="small"
+              variant="outlined"
+              label={chip.label}
+              onDelete={chip.removable && onRemoveAppliedFilter
+                ? () => onRemoveAppliedFilter(chip.key)
+                : undefined}
+              data-xdrive-gallery-applied-filter={chip.key}
+            />
+          ))}
+          {draftPending ? (
+            <Typography variant="caption" color="text.secondary" data-xdrive-gallery-pending-filters>
+              条件已修改，尚未应用
+            </Typography>
+          ) : null}
+          {searchActive ? (
+            <Typography variant="caption" color="text.secondary">
+              {searchOrder === 'relevance' ? '按语义相关度排列' : '按基础匹配结果排列'}
+              {' · 索引覆盖尚未核验'}
+            </Typography>
+          ) : null}
+          {appliedChips.some((chip) => chip.removable) && onClearFilters ? (
+            <Button size="small" variant="text" onClick={onClearFilters}>
+              清除已生效条件
+            </Button>
+          ) : null}
+        </Stack>
+      ) : null}
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
