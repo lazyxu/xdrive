@@ -1259,6 +1259,7 @@ function FileManager({
         ) : appView === 'gallery' ? (
           <XDriveMediaGalleryPage
             source={gallerySource}
+            preferenceScope={`web:${profile?.id ?? username}`}
             initialSection={route.app === 'gallery'
               ? route.params.section as MediaGallerySection | undefined
               : undefined}

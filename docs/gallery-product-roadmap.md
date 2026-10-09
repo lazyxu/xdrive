@@ -68,6 +68,23 @@ Mark G03 complete only after this timezone stage's full CI and integration
 tests pass; record missing physical-device testing separately. See the
 [Gallery audit](gallery-ios-kfs-audit.md).
 
+## G04 shared album presentation (2026-10-09)
+
+The proposed first subdelivery (pending PR CI) adds a shared Web/Desktop
+**album index organizer**, not a new album content model: client-side name
+filtering of the bounded album index, name/recent/count/custom sort,
+individually pinned albums and accessible up/down ordering. Pins/custom
+order are stored under account-scoped localStorage keys, do not copy media
+or mutate provider data, and are not synchronized across devices.
+
+A later G04 stage must use the actual owner-scoped Server collection API
+for manual album cover selection and real nested album-folder metadata,
+with revision checks, migrations, Web/Desktop adapters and tests. Do not
+present locally pinned UI rows as durable server-side folders. An optional
+ratio-preserving photo-wall display must keep bounded virtual range and
+thumbnail scheduling, including Live/video posters; its separate
+acceptance is pending.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |

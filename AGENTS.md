@@ -89,6 +89,14 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G04 UI album pins, sorting and search operate on existing logical album
+  records and must not create duplicate media membership. Account-scoped
+  client preferences are local to each device; durable album cover and
+  nested album-folder organization require authoritative, owner-scoped
+  Server models and revision checks. Never claim local visual folders
+  are synced albums or replace 100k virtualized media rendering with
+  full media arrays.
+
 - Chronology in Gallery/Viewer/Properties/Memories/date filters must use one
   validated IANA time-zone identity, not hardcoded UTC calendar labels, a
   browser-local-only filter or fixed +08:00 boundaries. Compute both local
