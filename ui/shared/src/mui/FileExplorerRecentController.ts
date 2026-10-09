@@ -215,10 +215,13 @@ export function useXDriveFileExplorerRecent<
       if (!target) return false
       if (target.node.type === 'dir') {
         const activated = await handlers.onDirectory(target.crumbs)
-        if (activated === false) return false
+        if (activated === false || requestID !== loadRequestRef.current) return false
       } else {
         const activated = await handlers.onFile(target)
-        if (activated === false) return false
+        // The opener can finish after this Recent controller moved to a
+        // different account/session. Do not record the old node using the
+        // current lifecycle's touch adapter.
+        if (activated === false || requestID !== loadRequestRef.current) return false
         await record(nodeID)
       }
       return true
