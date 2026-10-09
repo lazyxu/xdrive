@@ -129,6 +129,8 @@ type PhotoCollection struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
+	PreferredCoverNodeID *uint64
+
 	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 

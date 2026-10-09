@@ -2379,6 +2379,18 @@ func (c *agentController) CloudRenameMediaAlbum(
 	return cli.RenameMediaAlbum(ctx, albumID, revision, name)
 }
 
+func (c *agentController) CloudSetMediaAlbumCover(
+	ctx context.Context,
+	albumID string,
+	revision, nodeID uint64,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.SetMediaAlbumCover(ctx, albumID, revision, nodeID)
+}
+
 func (c *agentController) CloudDeleteMediaAlbum(
 	ctx context.Context,
 	albumID string,

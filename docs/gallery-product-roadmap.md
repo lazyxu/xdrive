@@ -85,6 +85,25 @@ ratio-preserving photo-wall display must keep bounded virtual range and
 thumbnail scheduling, including Live/video posters; its separate
 acceptance is pending.
 
+## G04 manual album cover persistence (2026-10-09)
+
+Phase 1 was delivered through [#1095](https://github.com/lazyxu/xdrive/pull/1095).
+The separate phase 2 candidate adds `preferred_cover_node_id` to the
+canonical `PhotoCollection` record (automatic migration); the effective
+`cover_node_id` is only the preference when the target is still a visible
+member of the owner-scoped manual album, and otherwise retains the existing
+automatic cover. Explicit reset uses `node_id: 0`.
+
+Every cover mutation requires `If-Match` revision fencing. The preferred
+cover is a *logical member*, not copied bytes, and is selected through the
+existing Gallery thumbnail/API/Agent transport. Gallery Viewer/Properties
+remain single-presentation. Source/imported and smart collections must not
+silently become editable via this manual-album endpoint.
+
+**This phase is pending CI.** Persisted nested album folders and full-aspect
+thumbnail wall remain separate acceptance and must not be marked complete
+by implementing covers or device-local pins.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |

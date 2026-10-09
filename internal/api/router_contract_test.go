@@ -162,6 +162,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/media/albums", suite: "media"},
 		{method: "PATCH", path: "/api/v1/media/albums/:albumID", suite: "media"},
 		{method: "DELETE", path: "/api/v1/media/albums/:albumID", suite: "media"},
+		{method: "PUT", path: "/api/v1/media/albums/:albumID/cover", suite: "media"},
 		{method: "GET", path: "/api/v1/media/albums/:albumID/items", suite: "media"},
 		{method: "POST", path: "/api/v1/media/albums/:albumID/items", suite: "media"},
 		{method: "DELETE", path: "/api/v1/media/albums/:albumID/items/:nodeID", suite: "media"},
