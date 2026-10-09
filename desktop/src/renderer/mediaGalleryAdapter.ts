@@ -1,4 +1,5 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import { xDriveCompleteLivePhotoOriginalNodeIDs } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -106,6 +107,12 @@ export function createDesktopMediaGalleryDataSource(
     downloadItems: (items) => items.length === 1
       ? agent.cloudDownload(items[0].node.id, items[0].node.name)
       : agent.cloudDownloadArchive(items.map((item) => item.node.id)),
+    exportLivePhoto: (item) => {
+      const ids = xDriveCompleteLivePhotoOriginalNodeIDs(item)
+      return ids.length === 1
+        ? agent.cloudDownload(item.node.id, item.node.name)
+        : agent.cloudDownloadArchive(ids)
+    },
     setTags: (nodeID, tags) => agent.setMediaTags(nodeID, tags),
     setPeople: (nodeID, people) => agent.setMediaPeople(nodeID, people),
     setDescription: (nodeID, description) => agent.setMediaDescription(nodeID, description),

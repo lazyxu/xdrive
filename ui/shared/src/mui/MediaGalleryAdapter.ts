@@ -233,6 +233,9 @@ export interface XDriveMediaGalleryPort {
   downloadItems?: (
     items: MediaItem[],
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  exportLivePhoto?: (
+    item: MediaItem,
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setTags?: (
     nodeID: number,
     tags: string[],
@@ -532,6 +535,11 @@ export function createXDriveMediaGalleryDataSource(
     downloadItems: port.downloadItems
       ? async (items) => {
           await resolveXDriveTransport(port.downloadItems!(items))
+        }
+      : undefined,
+    exportLivePhoto: port.exportLivePhoto
+      ? async (item) => {
+          await resolveXDriveTransport(port.exportLivePhoto!(item))
         }
       : undefined,
     setTags: port.setTags

@@ -283,6 +283,7 @@ export interface MediaGalleryDataSource {
   addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
   deleteItems?: (items: MediaItem[]) => Promise<void>
   downloadItems?: (items: MediaItem[]) => Promise<void>
+  exportLivePhoto?: (item: MediaItem) => Promise<void>
   setTags?: (nodeID: number, tags: string[]) => Promise<string[]>
   setPeople?: (nodeID: number, people: string[]) => Promise<string[]>
   setDescription?: (nodeID: number, description: string) => Promise<string>
@@ -1805,6 +1806,18 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
 
+  const exportLivePhoto = useCallback(async (item: MediaItem) => {
+    if (!source.exportLivePhoto) return
+    setError('')
+    try {
+      await source.exportLivePhoto(item)
+    } catch (exportError) {
+      setError(xDriveMediaGalleryErrorMessage(exportError))
+      onError?.(exportError)
+      throw exportError
+    }
+  }, [onError, source])
+
   const downloadItems = useCallback(async (selectedItems: MediaItem[]) => {
     if (!source.downloadItems || selectedItems.length === 0) return
     setError('')
@@ -1952,6 +1965,7 @@ export function XDriveMediaGalleryPage({
         onAddItemsToAlbum={source.addToAlbum ? addItemsToAlbum : undefined}
         onDeleteItems={source.deleteItems ? deleteItems : undefined}
         onDownloadItems={source.downloadItems ? downloadItems : undefined}
+        onExportLivePhoto={source.exportLivePhoto ? exportLivePhoto : undefined}
         onShareItem={shareDialog ? setShareItem : undefined}
         onOpenViewer={onOpenViewer ? (item, activeIndex) => {
           const target = collectionTargetRef.current
@@ -2219,6 +2233,7 @@ export interface XDriveMediaGalleryProps {
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShareItem?: (item: MediaItem) => void
   onOpenViewer?: (item: MediaItem, logicalIndex: number) => void
   onRestoreTrashItems?: (items: MediaItem[]) => Promise<void>
@@ -3540,6 +3555,7 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  onExportLivePhoto,
   onShareItem,
   onOpenViewer,
   onRestoreTrashItems,
@@ -5379,6 +5395,16 @@ export function XDriveMediaGallery({
             打开
           </MenuItem>
         ) : null}
+        {!isTrashSection && onExportLivePhoto &&
+        (mediaContextMenu?.item.live_photo || mediaContextMenu?.item.asset_kind === 'live_photo') ? (
+          <MenuItem onClick={() => {
+            const item = mediaContextMenu!.item
+            setMediaContextMenu(null)
+            void onExportLivePhoto(item).catch(() => undefined)
+          }}>
+            导出完整实况
+          </MenuItem>
+        ) : null}
         <MenuItem onClick={() => {
           if (mediaContextMenu) openMediaItem(mediaContextMenu.item)
           setMediaContextMenu(null)
@@ -5413,6 +5439,7 @@ export function XDriveMediaGallery({
         onDownload={onDownloadItems
           ? (item) => onDownloadItems([item])
           : undefined}
+        onExportLivePhoto={onExportLivePhoto}
         onShare={onShareItem}
         onDelete={onDeleteItems
           ? (item) => onDeleteItems([item])

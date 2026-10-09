@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -60,6 +61,7 @@ export function XDriveMediaGalleryViewer({
   onCancelCreativeGeneration,
   onCreativeCompleted,
   onDownload,
+  onExportLivePhoto,
   onShare,
   onDelete,
   onClose,
@@ -98,6 +100,7 @@ export function XDriveMediaGalleryViewer({
   ) => Promise<MediaCreativeGeneration>
   onCreativeCompleted?: (generation: MediaCreativeGeneration) => void
   onDownload?: (item: MediaItem) => Promise<void>
+  onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShare?: (item: MediaItem) => void
   onDelete?: (item: MediaItem) => Promise<void>
   onClose: () => void
@@ -193,6 +196,22 @@ export function XDriveMediaGalleryViewer({
               }}
             >
               <DownloadRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      ) : null}
+      {onExportLivePhoto && (item.live_photo || item.asset_kind === 'live_photo') ? (
+        <Tooltip title="导出完整实况（照片与动态原件）">
+          <span>
+            <IconButton
+              size="small"
+              aria-label="导出完整实况"
+              disabled={Boolean(busyAction)}
+              onClick={() => {
+                void run('download', () => onExportLivePhoto(item)).catch(() => undefined)
+              }}
+            >
+              <ArchiveRoundedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
