@@ -337,7 +337,8 @@ export function XDriveMediaGallerySelectionToolbar({
       >
         <Stack direction="row" alignItems="center" spacing={1}
           sx={{ minHeight: 52, px: 1.5, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap',
+            alignItems: 'baseline', columnGap: 1 }}>
             <Typography variant="subtitle1" fontWeight={700}>加入手动相册</Typography>
             <Typography variant="caption" role="status">
               已选择 {selectedCount.toLocaleString('zh-CN')} 项
@@ -348,59 +349,61 @@ export function XDriveMediaGallerySelectionToolbar({
             <CloseRoundedIcon fontSize="small" />
           </IconButton>
         </Stack>
-        <Box sx={{ p: 1.5, flexShrink: 0 }}>
-          <TextField fullWidth size="small" label="搜索相册"
-            placeholder="输入手动相册名称" value={albumQuery}
-            disabled={albumBusy}
-            onChange={(event) => setAlbumQuery(event.target.value)} />
-        </Box>
-        <List data-xdrive-gallery-album-picker
-          sx={{ minHeight: 0, flex: '1 1 auto', overflowY: 'auto',
-            overscrollBehavior: 'contain', py: 0 }}>
-          {filteredAlbums.length === 0 ? (
-            <Typography variant="body2" role="status" color="text.secondary"
-              sx={{ px: 1.5, py: 2 }}>
-              {manualAlbums.length === 0 ? '暂无手动相册，请先在相册页面创建。' : '没有匹配的手动相册'}
+        <Box data-xdrive-gallery-album-picker-content
+          sx={{ minHeight: 0, flex: '1 1 auto', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+          <Box sx={{ p: 1.5, flexShrink: 0 }}>
+            <TextField fullWidth size="small" label="搜索相册"
+              placeholder="输入手动相册名称" value={albumQuery}
+              disabled={albumBusy}
+              onChange={(event) => setAlbumQuery(event.target.value)} />
+          </Box>
+          <List data-xdrive-gallery-album-picker
+            sx={{ py: 0 }}>
+            {filteredAlbums.length === 0 ? (
+              <Typography variant="body2" role="status" color="text.secondary"
+                sx={{ px: 1.5, py: 2 }}>
+                {manualAlbums.length === 0 ? '暂无手动相册，请先在相册页面创建。' : '没有匹配的手动相册'}
+              </Typography>
+            ) : filteredAlbums.map((album) => (
+              <ListItemButton key={album.id} selected={albumID === album.id}
+                disabled={albumBusy || busy || albumSelectionChanged}
+                onClick={() => {
+                  setAlbumID(album.id)
+                  setAlbumError('')
+                }}
+                sx={{ minHeight: 44, gap: 1.5, px: 2 }}>
+                <Typography variant="body2" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+                  {album.name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {album.item_count.toLocaleString('zh-CN')} 项
+                </Typography>
+              </ListItemButton>
+            ))}
+          </List>
+          {albumSelectionChanged ? (
+            <Typography color="warning.main" role="alert" sx={{ px: 1.5, pt: 0.5 }}>
+              选择范围已变化，请关闭后重新打开相册选择器。
             </Typography>
-          ) : filteredAlbums.map((album) => (
-            <ListItemButton key={album.id} selected={albumID === album.id}
-              disabled={albumBusy || busy || albumSelectionChanged}
-              onClick={() => {
-                setAlbumID(album.id)
-                setAlbumError('')
-              }}
-              sx={{ minHeight: 44, gap: 1.5, px: 2 }}>
-              <Typography variant="body2" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-                {album.name}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {album.item_count.toLocaleString('zh-CN')} 项
-              </Typography>
-            </ListItemButton>
-          ))}
-        </List>
-        {albumSelectionChanged ? (
-          <Typography color="warning.main" role="alert" sx={{ px: 1.5, pt: 0.5 }}>
-            选择范围已变化，请关闭后重新打开相册选择器。
-          </Typography>
-        ) : null}
-        {albumError ? (
-          <Typography color="error" role="alert"
-            sx={{ px: 1.5, pt: 0.5, maxHeight: 72, overflowY: 'auto', overflowWrap: 'anywhere' }}>
-            {albumError}
-          </Typography>
-        ) : null}
-        <Stack direction="row" spacing={1}
-          sx={{ px: 1.5, py: 1, pb: 'calc(8px + env(safe-area-inset-bottom, 0px))',
-            borderTop: 1, borderColor: 'divider', flexShrink: 0,
-            '& .MuiButton-root': { minHeight: 44, flex: 1 } }}>
-          <Button disabled={albumBusy} onClick={closeAlbumPicker}>取消</Button>
-          <Button variant="contained"
-            disabled={albumBusy || busy || albumSelectionChanged || !albumID}
-            onClick={() => { void confirmAlbumPicker() }}>
-            {albumBusy ? '正在添加…' : '添加到相册'}
-          </Button>
-        </Stack>
+          ) : null}
+          {albumError ? (
+            <Typography color="error" role="alert"
+              sx={{ px: 1.5, pt: 0.5, overflowWrap: 'anywhere' }}>
+              {albumError}
+            </Typography>
+          ) : null}
+          <Stack direction="row" spacing={1}
+            sx={{ px: 1.5, py: 1, pb: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+              borderTop: 1, borderColor: 'divider', flexShrink: 0,
+              '& .MuiButton-root': { minHeight: 44, flex: 1 } }}>
+            <Button disabled={albumBusy} onClick={closeAlbumPicker}>取消</Button>
+            <Button variant="contained"
+              disabled={albumBusy || busy || albumSelectionChanged || !albumID}
+              onClick={() => { void confirmAlbumPicker() }}>
+              {albumBusy ? '正在添加…' : '添加到相册'}
+            </Button>
+          </Stack>
+        </Box>
       </Drawer>
 
       <Dialog

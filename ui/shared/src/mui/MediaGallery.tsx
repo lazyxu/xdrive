@@ -3968,6 +3968,8 @@ export function XDriveMediaGallery({
   const [selectionBusy, setSelectionBusy] = useState(false)
   const selectionBusyRef = useRef(false)
   const selectionActionGenerationRef = useRef(0)
+  const selectionControlRef = useRef<HTMLButtonElement | null>(null)
+  const restoreSelectionFocusRef = useRef(false)
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null)
   const [selectedMediaItems, setSelectedMediaItems] = useState<Map<number, MediaItem>>(
     () => new Map(),
@@ -4449,6 +4451,7 @@ export function XDriveMediaGallery({
   const runSelectionAction = useCallback(async (
     action: (selectedItems: MediaItem[]) => Promise<void>,
     clearAfter = true,
+    restoreFocusAfterClear = false,
   ) => {
     if (selectedMedia.length === 0 || selectionBusyRef.current) return
     const actionGeneration = selectionActionGenerationRef.current
@@ -4459,7 +4462,10 @@ export function XDriveMediaGallery({
     setSelectionBusy(true)
     try {
       await action(selectedMedia)
-      if (isCurrent() && clearAfter) clearMediaSelection()
+      if (isCurrent() && clearAfter) {
+        if (restoreFocusAfterClear) restoreSelectionFocusRef.current = true
+        clearMediaSelection()
+      }
     } finally {
       if (isCurrent()) {
         selectionBusyRef.current = false
@@ -4467,6 +4473,14 @@ export function XDriveMediaGallery({
       }
     }
   }, [clearMediaSelection, selectedMedia])
+
+  useEffect(() => {
+    if (selectionMode || !restoreSelectionFocusRef.current) return
+    restoreSelectionFocusRef.current = false
+    // Successful album assignment removes the picker and its initiating button.
+    // Return after their cleanup to the Gallery control that remains mounted.
+    selectionControlRef.current?.focus()
+  }, [selectionMode])
 
   useEffect(() => {
     selectionActionGenerationRef.current += 1
@@ -4890,6 +4904,7 @@ export function XDriveMediaGallery({
               </Button>
             ) : null}
             <Button
+              ref={selectionControlRef}
               size="small"
               variant={selectionMode ? 'contained' : 'text'}
               onClick={() => {
@@ -4981,7 +4996,17 @@ export function XDriveMediaGallery({
                   )
                   if (group) jumpToTimelineGroup(group)
                 }}
-                sx={{ minWidth: 126 }}
+                sx={{
+                  minWidth: 126,
+                  '@media (max-width:899.95px)': {
+                    '& .MuiInputBase-root .MuiSelect-select': {
+                      minHeight: 44,
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      alignItems: 'center',
+                    },
+                  },
+                }}
               >
                 <MenuItem value="">
                   {effectiveTimeScale === 'year' ? '跳转年份' : '跳转年月'}
@@ -5181,6 +5206,8 @@ export function XDriveMediaGallery({
           onAddToAlbum={!isTrashSection && onAddItemsToAlbum
             ? (album) => runSelectionAction(
                 (selectedItems) => onAddItemsToAlbum(album, selectedItems),
+                true,
+                true,
               )
             : undefined}
           onAddTags={!isTrashSection && onAddTagsBatch

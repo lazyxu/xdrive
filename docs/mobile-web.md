@@ -511,6 +511,20 @@ The newly integrated RAW compatibility loader exposed one additional real Proper
 
 M10 补充在相关 [PR #1119](https://github.com/lazyxu/xdrive/pull/1119) 完成 CI `37905955558` 并合并为 `f693cb00` 后重新整合，精确实现为 `d9179872`。整合后 Files135、侧栏162、保留并适配的既有手机80、实际Web49、原生指针21均通过；完整Desktop1582通过、零失败、一项既有可选跳过，类型检查、Web lint/build通过。保留页面隐藏取消与无效坐标校验，移除重复的本地拖动状态机；没有覆盖其他未合并分支。首次失败、相同检查和最终源文件哈希见证据的 `latestAcceptedIntegration`。完整补充PR CI、合并与清理仍待完成。
 
+### M12–M14：相册选择、日期触控与属性反馈（2026-10-09）
+
+**本地整合验收完成，新的完整 PR CI 与线性合并待完成。** M10–M11 已由 [PR #1125](https://github.com/lazyxu/xdrive/pull/1125) 的完整 CI `37914259268` 通过并合并为 `3ad7e73a`，远端工作分支已清理。本批固定在该合并点，只叠加 M12/M13/M14 自己的补充，不重复实现已合并基础。最终生产检查点为 `c55d5ad1`，随后仅增加文档与证据。
+
+M12 在现有相册选择器中整理固定关闭、搜索、候选、错误和确认操作的滚动关系。844×200／200% 文字时，原本被压到0px的列表行恢复为可滚动到的56px；相同14项12通过/2失败→14/0，扩展35项使用完全相同的已记录依赖复用。实际 Web 同40项39/1→40/0：取消回到“加入相册”；加入成功并清空选择后，焦点回到仍挂载的“选择”。403失败保留选择和草稿，显式重试发送同一组三个文件ID及相册版本。整合期间曾错误挂接焦点ref，实际同40检查发现后，已恢复经复查的持久按钮和原effect位置。
+
+M13 保留已交付的年/月/日、各尺度密度、日索引、当前日期提示及返回锚点，仅将窄于900px的年月选择框实际命中区由40px补足至44px；900px仍为40px。最终同45项在合并父版本上41/4→45/0，覆盖原生上下边缘点按、Escape返回、空白日期最近匹配、日期提示和原锚点返回。新主线明确的`fold_duplicates:false`只需要测试契约适配；不因该测试比较错误改变产品行为。
+
+M14 的描述、标签和人物各自显示正在保存、已保存和未保存更改。服务端返回的规范化值及随后父组件更新保留已保存提示；新编辑、当前目标变化和错误保留既有作用域规则。三个保存按钮在窄屏分别至少44×44px，900px原密度不变。视频旋转优先使用已记录的有限数值，再读现有video元数据；两处均缺失时显示“未记录”，明确记录的0°仍保留。相同21项11/10→21/0，旋转同5项3/2→5/0；最终扩展28项全部通过，含844×390／200%文字下原生滚动读到保存状态。
+
+最终构建的实际 Web 相册40项、面板37项及共享属性28项均通过，零意外请求/浏览器错误。日期45、共享面板57、相册35明确复用其相同源码与测试记录。完整 Desktop **1613通过／0失败／1项既有可选跳过**；完整结果摘要已显式核对，类型检查、Web lint/build均通过。[整合证据](validation/mobile-gallery-selection-timeline-properties-2026-10-09.json)与[保留的M12/M13首次失败](validation/mobile-gallery-controls-m10-m13-2026-10-09.json)记录真实命令、完整断言、独立复查、源码和构建哈希，数量不相加。
+
+M49.V10–V12 继续区分实际渲染与真机结果。iOS/Android 普通标签页/安装模式、真实软件键盘、地址栏、安全区、VoiceOver/TalkBack均为 **not-run**。这里的逻辑360项日期样本不表示100k渲染或真机Viewer往返已经验收。
+
 ### Combined M10–M11 acceptance on merged dependencies — 2026-10-09
 
 **Local acceptance complete; updated PR #1125 full CI and merge pending.** The confirmed checklist/matrix conflicts required reconstruction onto merged M12 `bd96b2b1`. The independently updated PR head `95a23fbb` was inspected: all of its M10 production and browser fixture bytes are retained. Upstream Gallery index readiness, selection-picker wiring and concise sidebar copy remain intact. The additional production changes are limited to the Files form scroll region, Gallery action positioning and compact navigation hit targets.

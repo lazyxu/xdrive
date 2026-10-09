@@ -121,6 +121,42 @@ function mediaResourceRoleLabel(role: string) {
 
 type MediaDetailRow = [label: string, value: string]
 
+function videoRotationLabel(metadata: MediaItem['metadata']) {
+  const rotation = [metadata.rotation_degrees, metadata.video?.rotation_degrees]
+    .find((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  return rotation === undefined ? '未记录' : `${rotation}°`
+}
+
+type MediaEditorFeedback = {
+  target: { nodeID: number | undefined }
+  phase: 'edited' | 'saving' | 'saved'
+  value: string
+}
+
+function MediaEditorStatus({ feedback, target, value, canonicalValue, busy, error, label }: {
+  feedback: MediaEditorFeedback | null
+  target: MediaEditorFeedback['target']
+  value: string
+  canonicalValue: string
+  busy: boolean
+  error: string
+  label: string
+}) {
+  let message = ''
+  if (feedback?.target === target) {
+    if (busy) message = `正在保存${label}…`
+    else if (!error && feedback.value === value) {
+      if (feedback.phase === 'saved') message = `${label}已保存`
+      else if (feedback.phase === 'edited' && value !== canonicalValue) message = `${label}有未保存的更改`
+    }
+  }
+  return (
+    <Typography role="status" aria-live="polite" variant="body2" color="text.secondary" sx={{ mt: message ? 0.75 : 0 }}>
+      {message}
+    </Typography>
+  )
+}
+
 /** Presentation-only groups over canonical local media metadata; no directory inference. */
 export function xDriveMediaInspectorFields(item: MediaItem) {
   const metadata = item.metadata
@@ -138,7 +174,7 @@ export function xDriveMediaInspectorFields(item: MediaItem) {
   if (metadata.media_kind === 'video') {
     photoInfo.push(
       ['时长', xDriveMediaFormatDuration(metadata.duration_ms) || '—'],
-      ['视频旋转', metadata.rotation_degrees ? `${metadata.rotation_degrees}°` : '0°'],
+      ['视频旋转', videoRotationLabel(metadata)],
       ['帧率', metadata.frame_rate ? `${metadata.frame_rate.toFixed(2)} fps` : '—'],
       ['码率', metadata.bit_rate ? `${(metadata.bit_rate / 1_000_000).toFixed(2)} Mbps` : '—'],
       ['视频编码', metadata.video_codec || '—'],
@@ -245,12 +281,15 @@ export function XDriveMediaDetailsContent({
   const [tagsInput, setTagsInput] = useState('')
   const [tagsBusy, setTagsBusy] = useState(false)
   const [tagsError, setTagsError] = useState('')
+  const [tagsFeedback, setTagsFeedback] = useState<MediaEditorFeedback | null>(null)
   const [peopleInput, setPeopleInput] = useState('')
   const [peopleBusy, setPeopleBusy] = useState(false)
   const [peopleError, setPeopleError] = useState('')
+  const [peopleFeedback, setPeopleFeedback] = useState<MediaEditorFeedback | null>(null)
   const [descriptionInput, setDescriptionInput] = useState('')
   const [descriptionBusy, setDescriptionBusy] = useState(false)
   const [descriptionError, setDescriptionError] = useState('')
+  const [descriptionFeedback, setDescriptionFeedback] = useState<MediaEditorFeedback | null>(null)
   const tagsKey = (item?.tags || []).join('\u0000')
   const peopleKey = (item?.people || []).join('\u0000')
   const livePhoto = Boolean(item?.live_photo || item?.asset_kind === 'live_photo')
@@ -437,19 +476,26 @@ export function XDriveMediaDetailsContent({
                   onChange={(event) => {
                     setTagsInput(event.target.value)
                     setTagsError('')
+                    setTagsFeedback({ target: editorTargetRef.current, phase: 'edited', value: event.target.value })
                   }}
                   helperText="使用逗号分隔；最多 32 个标签。"
                 />
                 <Button
                   variant="outlined"
+                  sx={{ '@media (max-width:899.95px)': { minHeight: 44, minWidth: 44 } }}
                   disabled={tagsBusy}
                   onClick={() => {
                     const target = editorTargetRef.current
                     setTagsBusy(true)
                     setTagsError('')
+                    setTagsFeedback({ target, phase: 'saving', value: tagsInput })
                     void onSetTags(item, parseMediaTagsInput(tagsInput))
                       .then((tags) => {
-                        if (editorTargetRef.current === target) setTagsInput(tags.join(', '))
+                        if (editorTargetRef.current === target) {
+                          const value = tags.join(', ')
+                          setTagsInput(value)
+                          setTagsFeedback({ target, phase: 'saved', value })
+                        }
                       })
                       .catch((tagError) => {
                         if (editorTargetRef.current === target) setTagsError(xDriveMediaGalleryErrorMessage(tagError))
@@ -462,6 +508,8 @@ export function XDriveMediaDetailsContent({
                   保存标签
                 </Button>
               </Stack>
+              <MediaEditorStatus feedback={tagsFeedback} target={editorTargetRef.current} value={tagsInput}
+                canonicalValue={(item.tags || []).join(', ')} busy={tagsBusy} error={tagsError} label="标签" />
               {tagsError ? (
                 <Box sx={{ mt: 1 }}>
                   <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
@@ -483,19 +531,26 @@ export function XDriveMediaDetailsContent({
                   onChange={(event) => {
                     setPeopleInput(event.target.value)
                     setPeopleError('')
+                    setPeopleFeedback({ target: editorTargetRef.current, phase: 'edited', value: event.target.value })
                   }}
                   helperText="用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。"
                 />
                 <Button
                   variant="outlined"
+                  sx={{ '@media (max-width:899.95px)': { minHeight: 44, minWidth: 44 } }}
                   disabled={peopleBusy}
                   onClick={() => {
                     const target = editorTargetRef.current
                     setPeopleBusy(true)
                     setPeopleError('')
+                    setPeopleFeedback({ target, phase: 'saving', value: peopleInput })
                     void onSetPeople(item, parseMediaTagsInput(peopleInput))
                       .then((people) => {
-                        if (editorTargetRef.current === target) setPeopleInput(people.join(', '))
+                        if (editorTargetRef.current === target) {
+                          const value = people.join(', ')
+                          setPeopleInput(value)
+                          setPeopleFeedback({ target, phase: 'saved', value })
+                        }
                       })
                       .catch((saveError) => {
                         if (editorTargetRef.current === target) setPeopleError(xDriveMediaGalleryErrorMessage(saveError))
@@ -508,6 +563,8 @@ export function XDriveMediaDetailsContent({
                   保存人物
                 </Button>
               </Stack>
+              <MediaEditorStatus feedback={peopleFeedback} target={editorTargetRef.current} value={peopleInput}
+                canonicalValue={(item.people || []).join(', ')} busy={peopleBusy} error={peopleError} label="人物" />
               {peopleError ? (
                 <Box sx={{ mt: 1 }}>
                   <XDriveStatusAlert tone="bad">{peopleError}</XDriveStatusAlert>
@@ -531,20 +588,26 @@ export function XDriveMediaDetailsContent({
                   onChange={(event) => {
                     setDescriptionInput(event.target.value)
                     setDescriptionError('')
+                    setDescriptionFeedback({ target: editorTargetRef.current, phase: 'edited', value: event.target.value })
                   }}
                   helperText={`${Array.from(descriptionInput).length.toLocaleString('zh-CN')} / 4096 字符；仅保存在 xDrive 本地图库。`}
                 />
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     variant="outlined"
+                    sx={{ '@media (max-width:899.95px)': { minHeight: 44, minWidth: 44 } }}
                     disabled={descriptionBusy || Array.from(descriptionInput).length > 4096}
                     onClick={() => {
                       const target = editorTargetRef.current
                       setDescriptionBusy(true)
                       setDescriptionError('')
+                      setDescriptionFeedback({ target, phase: 'saving', value: descriptionInput })
                       void onSetDescription(item, descriptionInput)
                         .then((description) => {
-                          if (editorTargetRef.current === target) setDescriptionInput(description)
+                          if (editorTargetRef.current === target) {
+                            setDescriptionInput(description)
+                            setDescriptionFeedback({ target, phase: 'saved', value: description })
+                          }
                         })
                         .catch((saveError) => {
                           if (editorTargetRef.current === target) setDescriptionError(xDriveMediaGalleryErrorMessage(saveError))
@@ -558,6 +621,8 @@ export function XDriveMediaDetailsContent({
                   </Button>
                 </Box>
               </Stack>
+              <MediaEditorStatus feedback={descriptionFeedback} target={editorTargetRef.current} value={descriptionInput}
+                canonicalValue={item.description || ''} busy={descriptionBusy} error={descriptionError} label="描述" />
               {descriptionError ? (
                 <Box sx={{ mt: 1 }}>
                   <XDriveStatusAlert tone="bad">{descriptionError}</XDriveStatusAlert>
