@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -109,22 +109,60 @@ export function XDriveMediaGalleryViewer({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [creativeOpen, setCreativeOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [busyAction, setBusyAction] = useState<ViewerAction>('')
+  // The visible Viewer can change while a durable action is still running.
+  // Pending work keeps running, but only its initiating media session may own
+  // the action chrome or close that session on completion.
+  const actionOwnerRef = useRef({
+    nodeID: item?.node.id,
+    nodeRevision: item?.node.revision,
+    inFlight: false,
+  })
+  if (
+    actionOwnerRef.current.nodeID !== item?.node.id ||
+    actionOwnerRef.current.nodeRevision !== item?.node.revision
+  ) {
+    actionOwnerRef.current = {
+      nodeID: item?.node.id,
+      nodeRevision: item?.node.revision,
+      inFlight: false,
+    }
+  }
+  const actionOwner = actionOwnerRef.current
+  const [busyState, setBusyState] = useState<{
+    owner: typeof actionOwner
+    action: ViewerAction
+  } | null>(null)
+  const busyAction: ViewerAction =
+    busyState?.owner === actionOwner ? busyState.action : ''
 
   const run = useCallback(async (
     action: ViewerAction,
     task: () => Promise<void>,
-  ) => {
-    if (busyAction) return
-    setBusyAction(action)
+  ): Promise<boolean> => {
+    // Claim ownership synchronously, before React can publish disabled state.
+    // Old JSX callbacks and same-tick repeated actions are both rejected.
+    if (!item || actionOwnerRef.current !== actionOwner || actionOwner.inFlight) {
+      return false
+    }
+    actionOwner.inFlight = true
+    setBusyState({ owner: actionOwner, action })
     try {
       await task()
+      return actionOwnerRef.current === actionOwner
     } finally {
-      setBusyAction('')
+      actionOwner.inFlight = false
+      if (actionOwnerRef.current === actionOwner) setBusyState(null)
     }
-  }, [busyAction])
+  }, [actionOwner, item])
 
   const close = () => {
+    // A close/reopen of the same Node still starts a fresh action session.
+    actionOwnerRef.current = {
+      nodeID: undefined,
+      nodeRevision: undefined,
+      inFlight: false,
+    }
+    setBusyState(null)
     setDeleteOpen(false)
     setCreativeOpen(false)
     setEditOpen(false)
@@ -320,7 +358,8 @@ export function XDriveMediaGalleryViewer({
         onConfirm={() => {
           if (!item || !onDelete) return
           void run('delete', () => onDelete(item))
-            .then(() => {
+            .then((completedInCurrentSession) => {
+              if (!completedInCurrentSession) return
               setDeleteOpen(false)
               close()
             })

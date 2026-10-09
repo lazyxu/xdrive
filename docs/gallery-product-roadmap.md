@@ -501,6 +501,30 @@ filmstrip renders only already available entries around the active item (current
 No new preview endpoint, media token, Gallery-only raw stream, or persistent preview
 cache is introduced by Viewer 2.0.
 
+### Viewer action/session concurrency (2026-10-10; PR #1212)
+
+Web and Desktop share Viewer action ownership for Favorite, Download, complete
+Live Photo export, and Delete. The action lane claims its current media-session
+owner **synchronously**, not only through React's next Busy render, so same-tick
+clicks cannot submit duplicate mutations/transfers or start Download and Live
+export together. Selection of another Node/revision and close/reopen of the
+same media create a new action scope without aborting prior durable Server tasks.
+Older completions, failures, and finally handlers cannot release the current
+item's Busy state; a stale Delete completion cannot close a new Viewer.
+A stale confirmation handler never starts a mutation. A successful current
+Delete still closes the initiating Viewer normally.
+
+Deterministic first-red: GitHub Actions run 37979553061, `desktop-tests`,
+original production Viewer hooks and actual JSX handlers, **8 failing assertions
+out of 10 tests** (duplicates, A→B Busy and stale Delete closure; two unchanged
+normal flows passed). The same executable source-backed regressions and
+additional A→B→A, stale confirm, and rejection-path cases are in
+`desktop/tests/shared-gallery-viewer-action-async-race.cjs`.
+Acceptance requires the original schedules to become green, the related
+Viewer tests, Web/Desktop builds, Go race, and exact-head CI final gate.
+Physical mobile/device acceptance remains separate.
+
+
 
 ## Phase 6 — responsive media Inspector
 
