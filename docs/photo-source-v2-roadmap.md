@@ -630,3 +630,23 @@ are **still separate gates** before allowing one-click destructive
 duplicate consolidation. The independently merged #1164 native CAS/quota
 regression covers physical shared-Blob reference safety, not these
 remote-provider rules.
+
+### G11 follow-up: Mirror keeper linked only through Live/RAW resource (2026-10-09)
+
+The merged #1181 annotation-only keeper guard uses the existing owner-scoped,
+bounded SourceItem link on **every original PhotoResource Node**, not just the
+PhotoAsset primary. Its companion native PostgreSQL regression reuses two
+byte-equivalent Live Photo assets with source records **only on their motion
+resources** and then tests equivalent RAW pair roles: converting source B
+to Mirror must reject the Mirror-backed keeper in the **plan** and in the
+actual serializable **apply**, including an explicitly reviewed description
+choice and both synced/missing SourceItem states. The Backup-linked,
+independent keeper remains eligible, the content comparison remains
+`identical`, and the rejected operation leaves independent descriptions,
+resources and source identities intact.
+
+This does not contact live provider APIs or validate atomic deletion of every
+Live/RAW resource, and does not justify deleting any original. An unlinked
+resource is not authoritative proof of independent provider ownership.
+Keep the existing two-full-scan/24h Mirror Trash gate and Backup re-import
+policy unchanged.

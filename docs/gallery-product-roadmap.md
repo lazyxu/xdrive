@@ -713,7 +713,7 @@ provider trip/albums/person semantics, online location services, or AI inference
 
 ### G11 P4 phase 8 — protect annotations from a Mirror-managed keeper (2026-10-09)
 
-**Implementation candidate / CI-required safety gate.** Previous native
+**Merged #1181 — CI verified.** Previous native
 PostgreSQL #1176 verifies that Mirror's completed full inventory can move
 *only* its bound source duplicate to Trash after the existing two-scan/24h
 grace, leaving an unrelated independent annotated keeper unchanged.
@@ -741,6 +741,19 @@ rewrite albums, or protect historical annotation merges already committed
 to a Mirror-linked keeper. Full resource-group Trash, original description
 and edit-version history retention, audited Undo and actual provider
 replay remain explicit release gates before destructive consolidation.
+
+**2026-10-09 motion-only / RAW-resource Mirror regression:** the PostgreSQL
+owner-scoped two-copy media fixture now additionally tests a keeper whose
+**primary still/rendered Node has no SourceItem**, but whose secondary Live
+motion or RAW original Node is linked to Mirror. The plan remains factually
+complete-asset `identical` while reporting `ready_for_manual_review=false`;
+confirmed `/apply` must fail with a stale-safe conflict even with a fresh
+plan digest, for both synced and missing source-item states. Reclassifying
+the verified pair as RAW in the fixture exercises the resource-role rule,
+not filename/extension pairing. The independent Backup-linked keeper remains
+eligible. This is an integration **test**, not physical remote-provider replay,
+whole-asset Trash, or a new production capability. No original Node, edit,
+SourceItem or CAS reference is changed by a rejected merge.
 
 ### G11 P4 phase 7 — preserve distinct descriptions by explicit keeper choice (2026-10-09)
 
