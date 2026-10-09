@@ -1568,7 +1568,8 @@ test('Gallery time-scale preferences persist per scale and preserve the browsing
     assert.ok(sharedGalleryMain.includes(token), `Gallery date-browsing memory missing: ${token}`)
   }
   assert.ok(
-    sharedGalleryMain.includes('viewAnchorIndexRef.current = Math.max(0, Math.trunc(group.start_index))'),
+    sharedGalleryMain.includes('const target = Math.max(0, Math.trunc(group.start_index))') &&
+    sharedGalleryMain.includes('viewAnchorIndexRef.current = target'),
     'timeline jump must preserve logical sparse indexes instead of materializing media',
   )
   assert.ok(

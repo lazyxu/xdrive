@@ -143,6 +143,10 @@ import {
   xDriveMediaGalleryTimelineWindow,
 } from './MediaGalleryVirtualTimeline'
 import {
+  xDriveMediaGalleryTimelineGroupAtIndex,
+  xDriveMediaGalleryTimelineNearestDay,
+} from './MediaGalleryTimelineNavigation'
+import {
   XDriveMediaThumbnailScheduler,
 } from './MediaGalleryThumbnailScheduler'
 import type {
@@ -3773,6 +3777,10 @@ export function XDriveMediaGallery({
   )
   const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
   const viewAnchorIndexRef = useRef(0)
+  const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
+  const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
+  const [dayJumpInput, setDayJumpInput] = useState('')
+  const [dayJumpFeedback, setDayJumpFeedback] = useState('')
   const galleryRootRef = useRef<HTMLDivElement | null>(null)
   const timeScale = viewPreferences.timeScale
   const effectiveTimeScale: MediaGalleryTimeScale =
@@ -3895,12 +3903,6 @@ export function XDriveMediaGallery({
     ))
   }, [onSetFavorite])
 
-  const captureVisibleAnchor = useCallback((index: number) => {
-    if (Number.isFinite(index)) {
-      viewAnchorIndexRef.current = Math.max(0, Math.trunc(index))
-    }
-  }, [])
-
   const requestGallerySort = useCallback((by: 'captured' | 'added', dir: 'asc' | 'desc') => {
     const index = viewAnchorIndexRef.current
     const anchorNodeID = (virtualCollection?.itemAt(index) ?? items[index])?.node.id
@@ -3934,9 +3936,47 @@ export function XDriveMediaGallery({
   }, [aspectMode])
 
   const jumpToTimelineGroup = useCallback((group: MediaTimelineGroupIndex) => {
-    viewAnchorIndexRef.current = Math.max(0, Math.trunc(group.start_index))
+    const target = Math.max(0, Math.trunc(group.start_index))
+    const original = viewAnchorIndexRef.current
+    if (original !== target) setTimelineReturnAnchor(original)
+    viewAnchorIndexRef.current = target
+    setCurrentTimelineGroupKey(group.key)
     setViewAnchorRevision((current) => current + 1)
   }, [])
+
+  const jumpToTimelineDay = (day: string) => {
+    setDayJumpInput(day)
+    if (!day) {
+      setDayJumpFeedback('')
+      return
+    }
+    const match = xDriveMediaGalleryTimelineNearestDay(dayGroupsForJump, day)
+    if (!match) {
+      setDayJumpFeedback('当前视图没有可定位的有效日期')
+      return
+    }
+    // The displayed input and current-date feedback reflect the actual
+    // indexed date; never silently claim an empty day contains photos.
+    setDayJumpInput(match.group.key)
+    setDayJumpFeedback(match.exact
+      ? ''
+      : '所选日期没有照片，已定位至' + xDriveMediaGalleryTimelineGroupLabel(match.group.key))
+    jumpToTimelineGroup(match.group)
+  }
+
+  const returnToTimelineAnchor = () => {
+    if (timelineReturnAnchor === null) return
+    const index = Math.max(0, Math.min(
+      Math.trunc(timelineReturnAnchor), Math.max(0, logicalItemCount - 1),
+    ))
+    viewAnchorIndexRef.current = index
+    const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineNavigationGroups, index)
+    setCurrentTimelineGroupKey(group?.key ?? null)
+    setViewAnchorRevision((current) => current + 1)
+    setTimelineReturnAnchor(null)
+    setDayJumpFeedback('')
+    setDayJumpInput('')
+  }
   const activeTimelineGroups = effectiveTimeScale === 'year'
     ? timelineGroupSets.year
     : effectiveTimeScale === 'month'
@@ -3944,16 +3984,99 @@ export function XDriveMediaGallery({
       : effectiveTimeScale === 'day'
         ? timelineGroupSets.day
         : []
-  const timelineJumpGroups = (
-    effectiveTimeScale === 'year' ? timelineGroupSets.year : timelineGroupSets.month
-  ).filter((group) => group.key !== 'unknown')
   const denseTimelineGroups = useMemo(
     () => effectiveTimeScale === 'all'
       ? []
       : mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir, timeZone),
     [effectiveTimeScale, items, sortBy, sortDir, timeZone],
   )
+  // Local, non-virtual album views already have grouped media even when the
+  // server does not attach timeline_group_sets. Keep their day/year/month
+  // navigation working without ever scanning a virtual 100k collection.
+  const timelineNavigationGroups = useMemo(
+    () => activeTimelineGroups.length > 0 || virtualCollection || effectiveTimeScale === 'all'
+      ? activeTimelineGroups
+      : denseTimelineGroups.map((group) => ({
+          key: group.key,
+          item_count: group.items.length,
+          start_index: group.startIndex,
+        })),
+    [activeTimelineGroups, virtualCollection, effectiveTimeScale, denseTimelineGroups],
+  )
+  const dayGroupsForJump = effectiveTimeScale === 'day'
+    ? timelineNavigationGroups
+    : timelineGroupSets.day
+  const timelineJumpGroups = (
+    effectiveTimeScale === 'year' || effectiveTimeScale === 'month'
+      ? timelineNavigationGroups
+      : timelineGroupSets.month
+  ).filter((group) => group.key !== 'unknown')
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
+
+  const timelineGroupsRef = useRef(timelineNavigationGroups)
+  timelineGroupsRef.current = timelineNavigationGroups
+  const captureVisibleAnchor = useCallback((index: number) => {
+    if (!Number.isSafeInteger(index) || index < 0) return
+    viewAnchorIndexRef.current = index
+    const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineGroupsRef.current, index)
+    const key = group?.key ?? null
+    setCurrentTimelineGroupKey((current) => current === key ? current : key)
+  }, [])
+
+  useEffect(() => {
+    const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineNavigationGroups, viewAnchorIndexRef.current)
+    setCurrentTimelineGroupKey((current) => current === (group?.key ?? null)
+      ? current : group?.key ?? null)
+  }, [timelineNavigationGroups, effectiveTimeScale, collectionKey])
+
+  useEffect(() => {
+    setTimelineReturnAnchor(null)
+    setDayJumpFeedback('')
+    setDayJumpInput('')
+  }, [collectionKey, sortBy, sortDir, timeZone, logicalItemCount])
+
+  // The non-virtual timeline also reports its visible date. Keep header DOM
+  // references once per layout, then find the current header by binary search
+  // on scroll rather than scanning every date group at every frame.
+  useEffect(() => {
+    if (virtualCollection || effectiveTimeScale === 'all' ||
+        denseTimelineGroups.length === 0 || typeof window === 'undefined') return
+    const root = galleryRootRef.current
+    if (!root) return
+    const headers = Array.from(root.querySelectorAll<HTMLElement>(
+      '[data-xdrive-gallery-sticky-date-start-index]',
+    ))
+    if (headers.length === 0) return
+    const scrollParent = mediaGalleryScrollParent(root)
+    const scrollTarget = scrollParent ?? window
+    let frame: number | null = null
+    const update = () => {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        const top = scrollParent ? scrollParent.getBoundingClientRect().top : 0
+        let lower = 0
+        let upper = headers.length
+        while (lower < upper) {
+          const middle = Math.floor((lower + upper) / 2)
+          if (headers[middle].getBoundingClientRect().top <= top + 8) lower = middle + 1
+          else upper = middle
+        }
+        const firstVisible = headers[Math.max(0, lower - 1)]
+        const index = Number(firstVisible.dataset.xdriveGalleryStickyDateStartIndex)
+        if (Number.isSafeInteger(index)) captureVisibleAnchor(index)
+      })
+    }
+    scrollTarget.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    update()
+    return () => {
+      scrollTarget.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+      if (frame !== null) window.cancelAnimationFrame(frame)
+    }
+  }, [virtualCollection, effectiveTimeScale, denseTimelineGroups, captureVisibleAnchor])
+
 
   useLayoutEffect(() => {
     if (viewAnchorRevision <= 0 || virtualCollection) return
@@ -4616,7 +4739,9 @@ export function XDriveMediaGallery({
               </Stack>
             ) : null}
             {showCollectionTimeScale ? (
-              <Stack direction="row" spacing={0.25} aria-label="图库时间尺度">
+              <Stack direction="row" spacing={0.25} useFlexGap flexWrap="wrap"
+                aria-label="图库时间尺度"
+                sx={{ '& .MuiButton-root': { '@media (max-width:899.95px)': { minHeight: 44 } } }}>
                 {([
                   ['year', '年'],
                   ['month', '月'],
@@ -4660,6 +4785,51 @@ export function XDriveMediaGallery({
                   </MenuItem>
                 ))}
               </TextField>
+            ) : null}
+            {showCollectionTimeScale && effectiveTimeScale === 'day' ? (
+              <TextField
+                size="small"
+                type="date"
+                label="跳转日期"
+                aria-label="跳转日期"
+                data-xdrive-gallery-timeline-day-jump
+                value={dayJumpInput}
+                disabled={dayGroupsForJump.length === 0 ||
+                  dayGroupsForJump[0]?.key === 'unknown'}
+                onChange={(event) => jumpToTimelineDay(event.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ minWidth: 160, '& .MuiInputBase-root': { minHeight: 44 } }}
+              />
+            ) : null}
+            {showCollectionTimeScale && effectiveTimeScale !== 'all' ? (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                role="status"
+                data-xdrive-gallery-timeline-current-date
+                sx={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}
+              >
+                {'当前浏览：' + (currentTimelineGroupKey
+                  ? xDriveMediaGalleryTimelineGroupLabel(currentTimelineGroupKey)
+                  : '尚无可定位日期')}
+              </Typography>
+            ) : null}
+            {showCollectionTimeScale && effectiveTimeScale === 'day' && dayJumpFeedback ? (
+              <Typography role="status" variant="caption" color="text.secondary"
+                sx={{ overflowWrap: 'anywhere' }}>
+                {dayJumpFeedback}
+              </Typography>
+            ) : null}
+            {showCollectionTimeScale && timelineReturnAnchor !== null ? (
+              <Button
+                size="small"
+                variant="outlined"
+                data-xdrive-gallery-timeline-return
+                onClick={returnToTimelineAnchor}
+                sx={{ minHeight: 44 }}
+              >
+                返回刚才位置
+              </Button>
             ) : null}
             <Stack direction="row" spacing={0.25} aria-label="照片墙显示比例">
               <Button
@@ -5540,6 +5710,7 @@ export function XDriveMediaGallery({
                     spacing={1}
                     alignItems="baseline"
                     data-xdrive-gallery-sticky-date
+                    data-xdrive-gallery-sticky-date-start-index={group.startIndex}
                     sx={{
                       position: 'sticky',
                       top: 0,
