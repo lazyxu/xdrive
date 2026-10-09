@@ -26,14 +26,15 @@ type mediaSelectionNode struct {
 }
 
 type mediaSelectionSnapshot struct {
-	ownerID   uint64
-	nodes     []mediaSelectionNode
-	memberIDs map[uint64]struct{}
-	excluded  map[uint64]struct{}
-	version   uint64
-	createdAt time.Time
-	expiresAt time.Time
-	day       string
+	ownerID    uint64
+	nodes      []mediaSelectionNode
+	memberIDs  map[uint64]struct{}
+	excluded   map[uint64]struct{}
+	version    uint64
+	createdAt  time.Time
+	expiresAt  time.Time
+	day        string
+	submitting bool
 }
 
 var (
@@ -298,6 +299,11 @@ func (s *Server) updateMediaSelectionExclusion(c *gin.Context) {
 	if !ok {
 		s.mediaSelectionMu.Unlock()
 		fail(c, http.StatusNotFound, "selection expired or not found")
+		return
+	}
+	if session.submitting {
+		s.mediaSelectionMu.Unlock()
+		fail(c, http.StatusConflict, "selection is already being submitted")
 		return
 	}
 	if err := session.setExcluded(input.NodeID, *input.Excluded, input.Version); err != nil {
