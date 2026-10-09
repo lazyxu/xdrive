@@ -1536,7 +1536,9 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       await source.setFavorite(item.node.id, favorite)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, favorite }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision ? { ...value, favorite } : value
+      ))
       if (
         query.favorite !== undefined ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.favorite !== undefined)
@@ -1565,7 +1567,9 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setTags(item.node.id, tags)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, tags: normalized }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision ? { ...value, tags: normalized } : value
+      ))
       if (
         query.tag ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.tag)
@@ -1594,7 +1598,9 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setPeople(item.node.id, people)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, people: normalized }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision ? { ...value, people: normalized } : value
+      ))
       if (
         query.person ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.person)
@@ -1623,7 +1629,9 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const normalized = await source.setDescription(item.node.id, description)
-      patchLoadedItems(item.node.id, (value) => ({ ...value, description: normalized }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision ? { ...value, description: normalized } : value
+      ))
       if (
         query.search ||
         (currentAlbum?.kind === 'smart' && currentAlbum.query?.search)
@@ -1655,10 +1663,11 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const recipe = await source.saveEditRecipe(item.node.id, input)
-      patchLoadedItems(item.node.id, (value) => ({
-        ...value,
-        edit_recipe: recipe.revision ? recipe : undefined,
-      }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision
+          ? { ...value, edit_recipe: recipe.revision ? recipe : undefined }
+          : value
+      ))
       return recipe
     } catch (editError) {
       setError(xDriveMediaGalleryErrorMessage(editError))
@@ -1677,10 +1686,11 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const recipe = await source.resetEditRecipe(item.node.id, revision)
-      patchLoadedItems(item.node.id, (value) => ({
-        ...value,
-        edit_recipe: recipe.revision ? recipe : undefined,
-      }))
+      patchLoadedItems(item.node.id, (value) => (
+        value.node.revision === item.node.revision
+          ? { ...value, edit_recipe: recipe.revision ? recipe : undefined }
+          : value
+      ))
       return recipe
     } catch (editError) {
       setError(xDriveMediaGalleryErrorMessage(editError))
@@ -5503,7 +5513,7 @@ export function XDriveMediaGallery({
         onSetFavorite={!isTrashSection && onSetFavorite ? async (item, favorite) => {
           await onSetFavorite(item, favorite)
           setSelected((current) => (
-            current?.node.id === item.node.id
+            current?.node.id === item.node.id && current?.node.revision === item.node.revision
               ? { ...current, favorite }
               : current
           ))
@@ -5511,7 +5521,7 @@ export function XDriveMediaGallery({
         onSetTags={!isTrashSection && onSetTags ? async (item, tags) => {
           const normalized = await onSetTags(item, tags)
           setSelected((current) => (
-            current?.node.id === item.node.id
+            current?.node.id === item.node.id && current?.node.revision === item.node.revision
               ? { ...current, tags: normalized }
               : current
           ))
@@ -5520,7 +5530,7 @@ export function XDriveMediaGallery({
         onSetPeople={!isTrashSection && onSetPeople ? async (item, people) => {
           const normalized = await onSetPeople(item, people)
           setSelected((current) => (
-            current?.node.id === item.node.id
+            current?.node.id === item.node.id && current?.node.revision === item.node.revision
               ? { ...current, people: normalized }
               : current
           ))
@@ -5529,7 +5539,7 @@ export function XDriveMediaGallery({
         onSetDescription={!isTrashSection && onSetDescription ? async (item, description) => {
           const normalized = await onSetDescription(item, description)
           setSelected((current) => (
-            current?.node.id === item.node.id
+            current?.node.id === item.node.id && current?.node.revision === item.node.revision
               ? { ...current, description: normalized }
               : current
           ))

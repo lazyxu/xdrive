@@ -75,7 +75,7 @@ export function XDriveMediaDetailsInspector({
   const content = (
     <Box sx={{ minHeight: 0, flex: 1, overflowY: 'auto' }}>
       {item
-        ? <XDriveMediaDetailsContent item={item} {...contentProps} />
+        ? <XDriveMediaDetailsContent item={item} key={`${item.node.id}:${item.node.revision}`} {...contentProps} />
         : <Typography sx={{ p: 2 }} color="text.secondary" role="status">正在加载媒体属性…</Typography>}
     </Box>
   )
