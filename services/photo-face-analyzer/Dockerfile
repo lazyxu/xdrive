@@ -1,10 +1,4 @@
-FROM python:3.12-slim-bookworm AS runtime
-
-ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown
-
-LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
-      org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies" \
-      io.github.lazyxu.xdrive.photo-face.runtime-contract="$XDRIVE_RUNTIME_CONTRACT_HASH"
+FROM python:3.12-slim-bookworm AS dependencies
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -30,6 +24,17 @@ RUN apt-get update \
 WORKDIR /opt/xdrive-photo-face-runtime
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --no-cache-dir -r requirements.txt
+
+FROM dependencies AS runtime
+
+ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown
+ARG HF_ENDPOINT
+ARG XDRIVE_MODEL_DOWNLOAD_ATTEMPTS
+ARG XDRIVE_MODEL_DOWNLOAD_TIMEOUT
+
+LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
+      org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies" \
+      io.github.lazyxu.xdrive.photo-face.runtime-contract="$XDRIVE_RUNTIME_CONTRACT_HASH"
 
 COPY fetch_models.py ./fetch_models.py
 RUN python fetch_models.py /models /licenses \

@@ -10,12 +10,30 @@ artifact_dir="${1:-dist/photo-face-image}"
 final_image="xdrive/photo-face:test"
 analyzer_dir="$ROOT/services/photo-face-analyzer"
 runtime_cache_dir="${XDRIVE_PHOTO_FACE_RUNTIME_CACHE_DIR:-$ROOT/.cache/photo-face-runtime}"
+model_cache_dir="${XDRIVE_PHOTO_FACE_MODEL_CACHE_DIR:-$ROOT/.cache/photo-face-models}"
 runtime_contract_hash="$(bash scripts/ci/photo-face-runtime-cache-key.sh)"
 runtime_image="xdrive/photo-face:test-runtime-$runtime_contract_hash"
+dependencies_image="xdrive/photo-face:test-dependencies-$runtime_contract_hash"
 runtime_contract_label="io.github.lazyxu.xdrive.photo-face.runtime-contract"
 runtime_archive="$runtime_cache_dir/$runtime_contract_hash.tar.gz"
 runtime_dependency_probe='import cv2; import numpy; import onnxruntime; import tokenizers'
+runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"
 mkdir -p "$runtime_cache_dir"
+
+# Forward only configured values by name. Docker's own proxy configuration still
+# applies when the CI job has no override, and proxy credentials stay out of logs.
+download_env=()
+proxy_build_args=()
+for name in HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+  if [[ -v "$name" ]]; then
+    download_env+=(--env "$name")
+  fi
+done
+for name in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy; do
+  if [[ -v "$name" ]]; then
+    proxy_build_args+=(--build-arg "$name")
+  fi
+done
 
 runtime_image_valid() {
   docker image inspect "$runtime_image" >/dev/null 2>&1 || return 1
@@ -56,12 +74,41 @@ if ! runtime_image_valid; then
   docker image rm -f "$runtime_image" >/dev/null 2>&1 || true
   echo "[photo-face] building reusable runtime image $runtime_image ($runtime_contract_hash)"
   docker build \
+    "${proxy_build_args[@]}" \
+    --target dependencies \
+    -f services/photo-face-analyzer/Dockerfile \
+    -t "$dependencies_image" \
+    services/photo-face-analyzer
+
+  # Downloads run outside docker build so a failed transfer remains in the
+  # workspace cache, including when a later job starts with a fresh daemon.
+  mkdir -p "$model_cache_dir/models" "$model_cache_dir/licenses"
+  model_cache_dir="$(cd "$model_cache_dir" && pwd)"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'model_cache_attempted=true\n' >>"$GITHUB_OUTPUT"
+  fi
+  docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    "${download_env[@]}" \
+    --mount "$runtime_mount" \
+    --mount "type=bind,src=$model_cache_dir,dst=/model-cache" \
+    "$dependencies_image" \
+    python /workspace/fetch_models.py /model-cache/models /model-cache/licenses
+
+  # Stream completed inputs directly to Docker without a second host-side copy.
+  # Verification runs with networking disabled before the runtime is accepted.
+  tar --exclude='*.part*' --exclude='*.tmp' \
+    -C "$model_cache_dir" -cf - models licenses \
+    -C "$analyzer_dir" Dockerfile.cached fetch_models.py | \
+    docker build \
+    --network none \
     --target runtime \
     --build-arg BUILDKIT_INLINE_CACHE=1 \
     --build-arg "XDRIVE_RUNTIME_CONTRACT_HASH=$runtime_contract_hash" \
-    -f services/photo-face-analyzer/Dockerfile \
+    --build-arg "XDRIVE_RUNTIME_DEPENDENCIES_IMAGE=$dependencies_image" \
+    -f Dockerfile.cached \
     -t "$runtime_image" \
-    services/photo-face-analyzer
+    -
   runtime_image_valid || {
     echo "[photo-face] freshly built runtime image failed contract validation: $runtime_image" >&2
     exit 1
@@ -79,7 +126,6 @@ fi
 # GitLab uses a mutable cache namespace; retain only the current environment.
 find "$runtime_cache_dir" -maxdepth 1 -type f -name '*.tar.gz' ! -name "$runtime_contract_hash.tar.gz" -delete
 
-runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"
 docker run --rm \
   --mount "$runtime_mount" \
   --workdir /workspace \
@@ -100,13 +146,20 @@ docker run --rm \
 
 # The final image is the release artifact. Build and validate it separately so
 # bind mounts never mask the packaged business code that will be published.
+# Use the validated runtime directly: a hot runtime archive needs no raw model
+# cache, and the final build cannot fall back to downloading models again.
+final_dockerfile="$(mktemp)"
+trap 'rm -f "$final_dockerfile"' EXIT
+{
+  printf 'FROM %s AS runtime\n' "$runtime_image"
+  sed -n '/^FROM runtime AS final$/,$p' "$analyzer_dir/Dockerfile"
+} >"$final_dockerfile"
 docker build \
-  --cache-from "$runtime_image" \
+  --network none \
   --target final \
-  --build-arg "XDRIVE_RUNTIME_CONTRACT_HASH=$runtime_contract_hash" \
   --build-arg "VERSION=$XDRIVE_BUILD_VERSION" \
   --build-arg "BUILD_COMMIT=$XDRIVE_BUILD_COMMIT" \
-  -f services/photo-face-analyzer/Dockerfile \
+  -f "$final_dockerfile" \
   -t "$final_image" \
   services/photo-face-analyzer
 

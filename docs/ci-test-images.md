@@ -131,17 +131,70 @@ The fast source-mounted stage proves current behavior in a stable environment. T
 
 `scripts/ci/test-photo-face-image.sh` is the reference implementation for this contract.
 
-The `runtime` Docker target contains only the stable Photo Face execution environment: Python, native libraries, pinned Python dependencies, and verified third-party face models. It deliberately contains no `analyzer.py`, no `tests/`, and no commit/version labels.
+The `runtime` Docker target contains only the stable Photo Face execution environment: Python, native libraries, pinned Python dependencies, and verified third-party face models. It deliberately contains no `analyzer.py`, no `creative.py`, no `tests/`, and no commit/version labels. The preceding `dependencies` target contains the interpreter, native libraries, and Python dependencies so CI can build that environment before downloading models.
 
 The ordinary analyzer unit tests, self-test, and benchmark run from that runtime image with `services/photo-face-analyzer` bind-mounted read-only at `/workspace`. A business-source or test-only change therefore does not create a different test-runtime image; Docker can reuse the runtime layers while the mounted checkout supplies the current code.
 
-The runtime image is also persisted across CI runs as a compressed Docker image archive. Its content identity is derived only from the Dockerfile `runtime` stage, `requirements.txt`, and `fetch_models.py`; `analyzer.py`, `tests/`, commit metadata, and the Dockerfile `final` stage are intentionally excluded. GitHub keys its immutable Actions cache by that identity, while GitLab keeps a mutable v2 cache namespace whose archive filename carries the same content hash.
+### Runtime identity and validation
+
+The runtime image is persisted across CI runs as a compressed Docker image archive at `.cache/photo-face-runtime/<hash>.tar.gz`. Its content identity is derived only from the original Dockerfile before `FROM runtime AS final`, `Dockerfile.cached`, `requirements.txt`, and `fetch_models.py`. This includes both dependency stages and the offline model-packaging contract. `analyzer.py`, `creative.py`, `tests/`, the shell test harness, commit metadata, and the Dockerfile `final` stage are intentionally excluded. GitHub keys its immutable completed-runtime cache by that identity, while GitLab keeps a mutable v2 cache namespace whose archive filename carries the same content hash.
 
 The Docker image tag is content-addressed by that same full runtime hash, and the image itself carries `io.github.lazyxu.xdrive.photo-face.runtime-contract=<hash>`. Cache restore is accepted only when the expected hash-tag exists, the embedded contract label matches, and the runtime can import the pinned critical dependencies (`numpy`, `cv2`, `onnxruntime`, and `tokenizers`). A restored archive that is corrupt, carries an old/fixed tag, has the wrong label, or fails the dependency probe is evicted **only for that runtime hash** and rebuilt. This prevents a mutable GitLab cache from saving an old runtime image under a newer archive filename.
 
-The regression harness `scripts/ci/test-photo-face-runtime-cache.sh` exercises a cold cache, a hot archive restore on a fresh fake Docker daemon, the historical poisoned-archive shape, and a dependency-contract change. A source/test-only change therefore loads the existing runtime image instead of rebuilding it, while a dependency change necessarily selects a new image tag and archive.
+### Model downloads survive failed builds
 
-The `final` Docker target is separate. It packages `analyzer.py`, adds build version/revision labels, runs exact-image self-test/benchmark without source overrides, and is then exported as the release artifact. This preserves **Build Once / Test Exact Artifact / Publish Exact Artifact** while keeping ordinary source tests independent from the release image contents.
+CI keeps a second, independent cache at `.cache/photo-face-models/`. It holds the `models/` and `licenses/` directories, including interrupted downloads and their identity metadata. A failed download inside an ordinary Docker `RUN` does not produce a completed runtime archive; persisting only that archive therefore loses download progress. The shared script performs model downloads through a writable workspace mount before it packages the runtime.
+
+The two cache layers serve different purposes:
+
+| Cache | Identity and validation | Failure behavior |
+| --- | --- | --- |
+| Completed runtime image, `.cache/photo-face-runtime/<hash>.tar.gz` | Full runtime-contract hash; accepted only after image-tag, embedded-label, and dependency-probe validation | An incomplete runtime is never exported or accepted. |
+| Download workspace, `.cache/photo-face-models/` | Independent of the runtime hash; model files, licenses, and derived label/charset assets have pinned SHA-256 digests, model sizes are checked where declared, and partial files are associated with the pinned URL/digest/size | Compatible partial files remain available for the next attempt or CI run. |
+
+On a cold or invalid runtime cache, the shared script:
+
+1. Builds the `dependencies` target, then runs the checked-out `fetch_models.py` from a read-only analyzer-source mount. The model-cache directory is the explicit writable host mount for downloads.
+2. Fetches missing or invalid model and license files into that persistent directory. Interrupted responses retain partial bytes; subsequent requests resume compatible downloads. Label/charset generation also checks the pinned OpenCV source hashes and the resulting text assets. The fetcher verifies completed files before making them available for packaging.
+3. Streams the completed model/license directories and the fetcher into `Dockerfile.cached`, excluding partial and temporary files. This runtime build uses `--network none` and invokes `fetch_models.py --verify-only`. Offline verification checks every model, license, and derived text asset against its pinned digest, checks declared model sizes, and requires the provenance metadata to match the current pinned model contract before accepting the image. Verification and permission normalization happen in an intermediate `verified-assets` stage; the exported runtime copies only its model/license directories, without retaining the fetcher or a later model-permission rewrite layer.
+4. Validates and exports the completed runtime archive, then runs the ordinary unit tests, self-test, and benchmark with current business source mounted read-only.
+
+A valid completed runtime skips model prefetch entirely and remains usable when the raw-model cache is empty or absent. Runtime dependency changes can reuse unchanged verified models even though they require a different runtime archive. Model changes invalidate incompatible partial bytes through the fetcher's pinned download identity.
+
+GitLab's `photo-face-image` job saves `.cache/photo-face-models/` alongside the existing runtime and tool caches with `policy: pull-push` and `when: always`. The shared mutable namespace remains `xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH`.
+
+GitHub keeps the completed-runtime cache separate from model downloads. Raw models use explicit `actions/cache/restore@v4` and `actions/cache/save@v4` steps. A run that attempts prefetch saves a new immutable key, `photo-face-models-v1-<runner OS>-<run ID>-<run attempt>`, and restores the newest accessible entry through the stable `photo-face-models-v1-<runner OS>-` prefix. This lets a failed run preserve additional partial bytes without trying to overwrite an existing immutable cache key. The shared script writes `model_cache_attempted=true` to the build step's output before fetching; the save step runs under `always()` only when that output is present. A hot-runtime run therefore does not save another unchanged raw-model cache.
+
+### Download endpoints and local use
+
+GitLab defaults `HF_ENDPOINT` to `https://hf-mirror.com` in `infra/ci/images.yml`; project/group CI/CD variables can override it. GitHub defaults to `https://huggingface.co`, with an optional `HF_ENDPOINT` repository variable. An alternate Hugging Face endpoint changes the base URL while preserving each pinned repository revision and path. The original pinned official URL remains the fallback, and model checksums still apply.
+
+The shared script forwards configured download settings by environment-variable name:
+
+| Setting | Purpose |
+| --- | --- |
+| `HF_ENDPOINT` | Optional Hugging Face base URL; the fetcher uses the official source when unset. |
+| `XDRIVE_MODEL_DOWNLOAD_ATTEMPTS` | Positive number of retry rounds, default `5`. |
+| `XDRIVE_MODEL_DOWNLOAD_TIMEOUT` | Positive download socket timeout in seconds, default `30`. |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and their lowercase equivalents | Existing proxy routing for downloads; values are not inserted into logged Docker command arguments. |
+| `XDRIVE_PHOTO_FACE_MODEL_CACHE_DIR` | Override the local download-workspace path. |
+| `XDRIVE_PHOTO_FACE_RUNTIME_CACHE_DIR` | Override the local completed-runtime archive path. |
+
+For example, a local run can reuse resumable downloads through the same CI entry point:
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com \
+XDRIVE_MODEL_DOWNLOAD_TIMEOUT=60 \
+bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+```
+
+If a CI job overrides either cache directory, its provider cache paths must follow that override. A direct build with the original Dockerfile remains supported and downloads models in its online `runtime` stage; it accepts `HF_ENDPOINT`, `XDRIVE_MODEL_DOWNLOAD_ATTEMPTS`, and `XDRIVE_MODEL_DOWNLOAD_TIMEOUT` as build arguments. The persistent workspace download flow belongs to the shared CI script.
+
+### Final artifact and regression coverage
+
+The `final` Docker target is separate. CI generates a temporary Dockerfile whose first stage refers directly to the validated runtime image and whose remainder is the original `FROM runtime AS final` section. It builds this final stage with `--network none` and the original analyzer source context. The stage packages the business code and adds build version/revision labels; exact-image self-test/benchmark then run without source overrides, and that image is exported as the release artifact. The final build does not need a raw-model cache and cannot silently restart model downloads. This preserves **Build Once / Test Exact Artifact / Publish Exact Artifact** while keeping ordinary source tests independent from the release image contents.
+
+The regression harness `scripts/ci/test-photo-face-runtime-cache.sh` exercises cold-cache packaging, failed-prefetch retention, a hot archive restore on a fresh fake Docker daemon with no raw models, the historical poisoned-archive shape, and a dependency-contract change. A source/test-only change loads the existing runtime image, while a dependency change selects a new image tag and archive. `internal/cicontract/ci_parity_test.go` also parses both providers' cache configuration and enforces the failure-save gate, independent model-cache identity, read-only source mounts, and offline packaging contract.
 
 Stable OpenCV/native dependencies and verified third-party face models remain in the reusable runtime target because they are runtime dependencies rather than mutable xDrive business source. Changing those inputs is a valid reason to rebuild the runtime layers.
 

@@ -1125,6 +1125,8 @@ jobs:
 
   photo-face-image:
     runs-on: ubuntu-latest
+    env:
+      HF_ENDPOINT: ${{ vars.HF_ENDPOINT || 'https://huggingface.co' }}
     steps:
       - uses: actions/checkout@v4
       - name: Resolve Photo Intelligence runtime cache identity
@@ -1136,9 +1138,24 @@ jobs:
         with:
           path: .cache/photo-face-runtime
           key: photo-face-runtime-v2-${{ runner.os }}-${{ steps.photo-face-runtime-cache.outputs.hash }}
+      - name: Restore resumable Photo Intelligence model downloads
+        id: photo-face-model-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/photo-face-models
+          key: photo-face-models-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            photo-face-models-v1-${{ runner.os }}-
       - name: Test mounted analyzer code and export exact Photo Intelligence image
+        id: photo-face-build
         shell: bash
         run: bash scripts/ci/test-photo-face-image.sh dist/photo-face-image
+      - name: Save Photo Intelligence model download progress
+        if: always() && steps.photo-face-build.outputs.model_cache_attempted == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/photo-face-models
+          key: ${{ steps.photo-face-model-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: xdrive-photo-face-image

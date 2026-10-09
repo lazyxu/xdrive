@@ -113,7 +113,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	)
 	assertGitLabCache(t, gitlab, "photo-face-image",
 		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
-		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/"},
+		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
 	)
 
 	imageConfigRaw := readFile(t, filepath.Join(root, "infra", "ci", "images.yml"))
@@ -136,6 +136,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"XDRIVE_CI_DISTROLESS_IMAGE: \"gcr.m.daocloud.io/distroless/static-debian12:nonroot\"",
 		"XDRIVE_CI_GITHUB_RELEASE_PROXY: \"\"",
 		"XDRIVE_CI_DOWNLOAD_ATTEMPTS: \"5\"",
+		"HF_ENDPOINT: \"https://hf-mirror.com\"",
 		"ELECTRON_MIRROR: \"https://cdn.npmmirror.com/binaries/electron/\"",
 		"ELECTRON_BUILDER_BINARIES_MIRROR: \"https://cdn.npmmirror.com/binaries/electron-builder-binaries/\"",
 	)
@@ -1445,9 +1446,107 @@ func assertGitLabCache(t *testing.T, root map[string]any, jobName, wantKey strin
 	}
 }
 
+func TestPhotoFaceModelCachePersistsFailedPrefetch(t *testing.T) {
+	root := repositoryRoot(t)
+	var github, gitlab map[string]any
+	if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"))), &github); err != nil {
+		t.Fatalf("parse GitHub CI: %v", err)
+	}
+	if err := yaml.Unmarshal([]byte(readFile(t, filepath.Join(root, ".gitlab-ci.yml"))), &gitlab); err != nil {
+		t.Fatalf("parse GitLab CI: %v", err)
+	}
+
+	jobs, ok := github["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("GitHub jobs has type %T, want map", github["jobs"])
+	}
+	job, ok := jobs["photo-face-image"].(map[string]any)
+	if !ok {
+		t.Fatal("GitHub Photo Face job missing or invalid")
+	}
+	env, ok := job["env"].(map[string]any)
+	if !ok || env["HF_ENDPOINT"] != `${{ vars.HF_ENDPOINT || 'https://huggingface.co' }}` {
+		t.Errorf("GitHub Photo Face must default to official Hugging Face with a repository-variable override; env=%v", job["env"])
+	}
+	rawSteps, ok := job["steps"].([]any)
+	if !ok {
+		t.Fatalf("GitHub Photo Face steps=%v, want list", job["steps"])
+	}
+	findStep := func(field, want string) (int, map[string]any) {
+		t.Helper()
+		foundIndex := -1
+		var found map[string]any
+		for index, rawStep := range rawSteps {
+			step, ok := rawStep.(map[string]any)
+			if !ok {
+				t.Fatalf("GitHub Photo Face step %d has type %T, want map", index, rawStep)
+			}
+			if step[field] == want {
+				if foundIndex >= 0 {
+					t.Fatalf("GitHub Photo Face has duplicate %s=%q steps", field, want)
+				}
+				foundIndex, found = index, step
+			}
+		}
+		if foundIndex < 0 {
+			t.Fatalf("GitHub Photo Face is missing %s=%q step", field, want)
+		}
+		return foundIndex, found
+	}
+	cacheInputs := func(step map[string]any, wantPath, wantKey string) map[string]any {
+		t.Helper()
+		inputs, ok := step["with"].(map[string]any)
+		if !ok {
+			t.Fatalf("GitHub Photo Face cache step %v is missing inputs", step["name"])
+		}
+		if inputs["path"] != wantPath {
+			t.Errorf("GitHub Photo Face cache %v path=%v want=%q", step["name"], inputs["path"], wantPath)
+		}
+		if inputs["key"] != wantKey {
+			t.Errorf("GitHub Photo Face cache %v key=%v want=%q", step["name"], inputs["key"], wantKey)
+		}
+		return inputs
+	}
+
+	runtimeIndex, runtimeCache := findStep("uses", "actions/cache@v4")
+	cacheInputs(runtimeCache, ".cache/photo-face-runtime", `photo-face-runtime-v2-${{ runner.os }}-${{ steps.photo-face-runtime-cache.outputs.hash }}`)
+	restoreIndex, restore := findStep("uses", "actions/cache/restore@v4")
+	if restore["id"] != "photo-face-model-cache" {
+		t.Errorf("GitHub model-cache restore id=%v want=photo-face-model-cache", restore["id"])
+	}
+	modelKeyPrefix := `photo-face-models-v1-${{ runner.os }}-`
+	restoreInputs := cacheInputs(restore, ".cache/photo-face-models", modelKeyPrefix+`${{ github.run_id }}-${{ github.run_attempt }}`)
+	if got := strings.TrimSpace(fmt.Sprint(restoreInputs["restore-keys"])); got != modelKeyPrefix {
+		t.Errorf("GitHub model cache must restore across runs and runtime-contract changes: restore-keys=%q want=%q", got, modelKeyPrefix)
+	}
+	buildIndex, build := findStep("id", "photo-face-build")
+	if build["run"] != "bash scripts/ci/test-photo-face-image.sh dist/photo-face-image" {
+		t.Errorf("GitHub Photo Face build must run the shared prefetch/test/export script; run=%v", build["run"])
+	}
+	saveIndex, save := findStep("uses", "actions/cache/save@v4")
+	cacheInputs(save, ".cache/photo-face-models", `${{ steps.photo-face-model-cache.outputs.cache-primary-key }}`)
+	if save["if"] != "always() && steps.photo-face-build.outputs.model_cache_attempted == 'true'" {
+		t.Errorf("GitHub model cache must save failed prefetches and skip hot runtimes; if=%v", save["if"])
+	}
+	if runtimeIndex >= buildIndex || restoreIndex >= buildIndex || saveIndex <= buildIndex {
+		t.Errorf("GitHub caches must restore before the build and save model progress afterward: runtime=%d restore=%d build=%d save=%d", runtimeIndex, restoreIndex, buildIndex, saveIndex)
+	}
+
+	assertGitLabCache(t, gitlab, "photo-face-image",
+		"xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH",
+		[]string{".cache/ci-tools/", ".cache/photo-face-runtime/", ".cache/photo-face-models/"},
+	)
+	gitlabJob := gitlab["photo-face-image"].(map[string]any)
+	gitlabCache := gitlabJob["cache"].(map[string]any)
+	if gitlabCache["when"] != "always" || gitlabCache["policy"] != "pull-push" {
+		t.Errorf("GitLab Photo Face must restore and save model progress after failures; cache=%v", gitlabCache)
+	}
+}
+
 func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	root := repositoryRoot(t)
 	dockerfile := readFile(t, filepath.Join(root, "services", "photo-face-analyzer", "Dockerfile"))
+	cachedDockerfile := readFile(t, filepath.Join(root, "services", "photo-face-analyzer", "Dockerfile.cached"))
 	testScript := readFile(t, filepath.Join(root, "scripts", "ci", "test-photo-face-image.sh"))
 
 	finalMarker := "FROM runtime AS final"
@@ -1457,23 +1556,71 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	}
 	runtimeSection := dockerfile[:finalIndex]
 	requireRaw(t, "Photo Face runtime image", runtimeSection,
-		"FROM python:3.12-slim-bookworm AS runtime",
+		"FROM python:3.12-slim-bookworm AS dependencies",
+		"FROM dependencies AS runtime",
 		"ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown",
 		"io.github.lazyxu.xdrive.photo-face.runtime-contract=\"$XDRIVE_RUNTIME_CONTRACT_HASH\"",
 		"COPY requirements.txt",
 		"COPY fetch_models.py",
+		"RUN python fetch_models.py /models /licenses",
 	)
-	for _, forbidden := range []string{
-		"ARG VERSION",
-		"ARG BUILD_COMMIT",
-		"COPY analyzer.py",
-		"COPY tests",
-		"RUN python -m unittest",
-		"--self-test",
-		"--benchmark",
+	dependenciesIndex := strings.Index(runtimeSection, "FROM dependencies AS runtime")
+	if dependenciesIndex < 0 {
+		t.Fatal("Photo Face runtime must extend a separate dependencies target")
+	}
+	if strings.Contains(runtimeSection[:dependenciesIndex], "fetch_models.py") {
+		t.Error("Photo Face dependencies target must be buildable before model downloads")
+	}
+	requireRaw(t, "Photo Face cached runtime image", cachedDockerfile,
+		"ARG XDRIVE_RUNTIME_DEPENDENCIES_IMAGE",
+		"FROM ${XDRIVE_RUNTIME_DEPENDENCIES_IMAGE} AS runtime",
+		"ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown",
+		"io.github.lazyxu.xdrive.photo-face.runtime-contract=\"$XDRIVE_RUNTIME_CONTRACT_HASH\"",
+		"COPY models/ /models/",
+		"COPY licenses/ /licenses/",
+		"COPY fetch_models.py",
+		"RUN python fetch_models.py /models /licenses --verify-only",
+		"chmod -R a=rX /models /licenses",
+	)
+	verifiedAssetsIndex := strings.Index(cachedDockerfile, "FROM ${XDRIVE_RUNTIME_DEPENDENCIES_IMAGE} AS verified-assets")
+	cachedRuntimeIndex := strings.Index(cachedDockerfile, "FROM ${XDRIVE_RUNTIME_DEPENDENCIES_IMAGE} AS runtime")
+	if verifiedAssetsIndex < 0 || cachedRuntimeIndex <= verifiedAssetsIndex {
+		t.Fatal("Photo Face cached runtime must copy a separate verified-assets stage")
+	}
+	requireRaw(t, "Photo Face verified assets stage", cachedDockerfile[verifiedAssetsIndex:cachedRuntimeIndex],
+		"RUN python fetch_models.py /models /licenses --verify-only",
+		"chmod -R a=rX /models /licenses",
+	)
+	cachedRuntime := cachedDockerfile[cachedRuntimeIndex:]
+	requireRaw(t, "Photo Face exported cached runtime", cachedRuntime,
+		"COPY --from=verified-assets /models/ /models/",
+		"COPY --from=verified-assets /licenses/ /licenses/",
+		"io.github.lazyxu.xdrive.photo-face.runtime-contract=\"$XDRIVE_RUNTIME_CONTRACT_HASH\"",
+		"RUN rm -rf /opt/xdrive-photo-face-runtime",
+		"WORKDIR /workspace",
+	)
+	for _, forbidden := range []string{"fetch_models.py", "chmod", "COPY models/", "COPY licenses/"} {
+		if strings.Contains(cachedRuntime, forbidden) {
+			t.Errorf("Photo Face exported runtime must only copy the verified, permission-normalized assets; found %q", forbidden)
+		}
+	}
+	for label, content := range map[string]string{
+		"runtime":        runtimeSection,
+		"cached runtime": cachedDockerfile,
 	} {
-		if strings.Contains(runtimeSection, forbidden) {
-			t.Errorf("Photo Face runtime image must not contain mutable business/test input %q", forbidden)
+		for _, forbidden := range []string{
+			"ARG VERSION",
+			"ARG BUILD_COMMIT",
+			"COPY analyzer.py",
+			"COPY creative.py",
+			"COPY tests",
+			"RUN python -m unittest",
+			"--self-test",
+			"--benchmark",
+		} {
+			if strings.Contains(content, forbidden) {
+				t.Errorf("Photo Face %s image must not contain mutable business/test input %q", label, forbidden)
+			}
 		}
 	}
 
@@ -1484,6 +1631,7 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	gitlabServerValidation := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-validation.sh"))
 	requireRaw(t, "Photo Face runtime cache identity", cacheKeyScript,
 		`sed '/^FROM runtime AS final$/,$d' "$dockerfile"`,
+		`cat "$analyzer_dir/Dockerfile.cached"`,
 		`cat "$analyzer_dir/requirements.txt"`,
 		`cat "$analyzer_dir/fetch_models.py"`,
 	)
@@ -1491,27 +1639,61 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	requireRaw(t, "Photo Face mounted-source test script", testScript,
 		`runtime_contract_hash="$(bash scripts/ci/photo-face-runtime-cache-key.sh)"`,
 		`runtime_image="xdrive/photo-face:test-runtime-$runtime_contract_hash"`,
+		`dependencies_image="xdrive/photo-face:test-dependencies-$runtime_contract_hash"`,
 		`runtime_contract_label="io.github.lazyxu.xdrive.photo-face.runtime-contract"`,
 		`runtime_archive="$runtime_cache_dir/$runtime_contract_hash.tar.gz"`,
+		`model_cache_dir="${XDRIVE_PHOTO_FACE_MODEL_CACHE_DIR:-$ROOT/.cache/photo-face-models}"`,
 		`docker image rm -f "$runtime_image"`,
 		`runtime_image_valid()`,
 		`docker image inspect --format "{{ index .Config.Labels \"$runtime_contract_label\" }}"`,
 		`import cv2; import numpy; import onnxruntime; import tokenizers`,
 		`cached runtime image does not match its archive key; rebuilding only $runtime_archive`,
 		`gzip -dc "$runtime_archive" | docker load`,
+		`--target dependencies`,
 		`--target runtime`,
 		`--build-arg BUILDKIT_INLINE_CACHE=1`,
 		`--build-arg "XDRIVE_RUNTIME_CONTRACT_HASH=$runtime_contract_hash"`,
+		`--build-arg "XDRIVE_RUNTIME_DEPENDENCIES_IMAGE=$dependencies_image"`,
+		`-f Dockerfile.cached`,
+		`tar --exclude='*.part*' --exclude='*.tmp'`,
+		`printf 'model_cache_attempted=true\n' >>"$GITHUB_OUTPUT"`,
 		`runtime_mount="type=bind,src=$analyzer_dir,dst=/workspace,readonly"`,
 		`--mount "$runtime_mount"`,
+		`--mount "type=bind,src=$model_cache_dir,dst=/model-cache"`,
+		`python /workspace/fetch_models.py /model-cache/models /model-cache/licenses`,
+		`HF_ENDPOINT XDRIVE_MODEL_DOWNLOAD_ATTEMPTS XDRIVE_MODEL_DOWNLOAD_TIMEOUT HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy`,
+		`download_env+=(--env "$name")`,
 		`python -m unittest discover -s tests -v`,
 		`python analyzer.py --self-test`,
 		`python analyzer.py --benchmark --iterations 1`,
-		`--cache-from "$runtime_image"`,
+		`printf 'FROM %s AS runtime\n' "$runtime_image"`,
+		`sed -n '/^FROM runtime AS final$/,$p' "$analyzer_dir/Dockerfile"`,
+		`-f "$final_dockerfile"`,
 		`--target final`,
 		`docker run --rm "$final_image" --self-test`,
+		`docker run --rm "$final_image" --benchmark --iterations 1`,
 		`bash scripts/ci/export-docker-image.sh "$final_image" "$artifact_dir"`,
 	)
+	buildLines := strings.Split(strings.ReplaceAll(testScript, "\\\n", ""), "\n")
+	for _, target := range []string{"runtime", "final"} {
+		found := false
+		for _, line := range buildLines {
+			if strings.Contains(line, "docker build ") && strings.Contains(line, "--target "+target) {
+				found = true
+				if !strings.Contains(line, "--network none") {
+					t.Errorf("Photo Face %s packaging must disable build networking", target)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("Photo Face script is missing its %s packaging command", target)
+		}
+	}
+	outputIndex := strings.Index(testScript, `printf 'model_cache_attempted=true\n'`)
+	prefetchIndex := strings.Index(testScript, "python /workspace/fetch_models.py")
+	if outputIndex < 0 || prefetchIndex < 0 || outputIndex >= prefetchIndex {
+		t.Error("Photo Face must report its model-cache attempt before prefetch can fail")
+	}
 	for _, forbidden := range []string{
 		"--target test ",
 		"test-stage",
@@ -1524,6 +1706,9 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	requireRaw(t, "Photo Face runtime cache regression harness", cacheRegressionTest,
 		"cold cache must build runtime exactly once",
 		"hot cache must restore without rebuilding runtime",
+		"hot runtime cache must not require raw model downloads",
+		"failed prefetch must preserve partial model downloads",
+		"failed prefetch must stop before runtime or final image export",
 		"poisoned current-hash archive must be evicted and rebuilt",
 		"dependency hash change must build a distinct runtime image",
 	)
@@ -1536,6 +1721,7 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	requireRaw(t, "GitLab Photo Face runtime cache", gitlabCI,
 		`key: "xdrive-photo-face-runtime-v2-$CI_RUNNER_EXECUTABLE_ARCH"`,
 		`- .cache/photo-face-runtime/`,
+		`- .cache/photo-face-models/`,
 	)
 	requireRaw(t, "GitLab Photo Face runtime cache regression harness", gitlabServerValidation,
 		"bash scripts/ci/test-photo-face-runtime-cache.sh",

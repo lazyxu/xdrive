@@ -8,6 +8,8 @@ dockerfile="$analyzer_dir/Dockerfile"
 {
   printf '%s\0' 'Dockerfile:runtime'
   sed '/^FROM runtime AS final$/,$d' "$dockerfile"
+  printf '\0%s\0' 'Dockerfile.cached'
+  cat "$analyzer_dir/Dockerfile.cached"
   printf '\0%s\0' 'requirements.txt'
   cat "$analyzer_dir/requirements.txt"
   printf '\0%s\0' 'fetch_models.py'
