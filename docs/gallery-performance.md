@@ -4,6 +4,78 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+
+## Cleanup extreme group coverage at 100k — native PostgreSQL baseline (2026-10-09)
+
+Status: **Measured native PostgreSQL 17 baseline / evidence-amended full CI pending** ([run 37914755065](https://github.com/lazyxu/xdrive/actions/runs/37914755065), benchmark job 113768126932, 3 samples per stage). Measurement-only
+`perf/gallery-cleanup-extreme-100k-*` branch; no product query, pagination,
+CAS, metadata, allocation or concurrency policy change in this PR.
+
+- **Named fixture:** PostgreSQL 17, one owner; **100,000 logical PhotoAssets
+  and 115,000 physical media nodes** (70k JPEG, 15k videos, 15k genuine
+  still+motion Live Photo relations), derived from
+  `mediaGallerySeedFirstOpen100K`. Same baseline enrichments as #1100:
+  **2,000 SHA duplicate groups** over 10k identical-principal photos and
+  **2,000 three-frame Burst groups**.
+- **Four separately identified query stages:** original 2k duplicate
+  groups; original 2k Burst groups; one 10k-copy SHA group (with the
+  MediaMetadata and PhotoResource SHA mirrors updated consistently); and
+  **10k total Burst groups** (8k additional three-frame groups, each using
+  different already-existing nodes). Preserve exactly 100k logical assets and
+  115k media nodes across phases. Full owner and folder permissions remain
+  unchanged; the fixture does not touch real user albums or bytes.
+- **Measurement:** each stage directly invokes existing production
+  `queryDuplicateGroups` or `queryBurstReviews` with `limit=48, offset=0`
+  three times. Record each elapsed milliseconds, rows, full group/member
+  totals and Go TotalAlloc delta; compute p50 per stage. Database schema
+  seed and ANALYZE are excluded from measured query time. HTTP/browser
+  paint and thumbnail decode are *not* included; record DB/Go query latency,
+  not UI first paint.
+- **Correctness gates:** ordinary groups must yield exact 2k/48 results,
+  the 10k-copy group must yield exactly 1 group with 10,000 members
+  and remain **unverified**, and the 10k Burst groups must yield
+  exactly 10k total / 48 visible. A query error, missing group, unsafe
+  duplicate recommendation, or dimension mismatch is a failed benchmark,
+  not a speedup. Keep return values and owner scope unchanged.
+- **Command:** `XD_GALLERY_CLEANUP_EXTREME_PERF=1 XD_TEST_DATABASE_URL=postgres://... go test -run '^TestGalleryCleanupExtremeGroupsPerformance100K$' -count=1 -timeout=30m -v ./internal/api`.
+  Dedicated, branch-scoped GitHub/GitLab CI job; the 100k seed must
+  **not** run on unrelated PRs.
+- **Measured current/BEFORE baseline (PostgreSQL 17, n=3, p50):**
+  - 2,000 duplicate groups, first 48 returned: **601.912 ms**;
+    allocated bytes per run **1,793,192 / 1,719,080 / 1,765,224**.
+  - One 10,000-copy duplicate group, one returned: **720.792 ms**;
+    allocated bytes **16,654,336 / 16,683,992 / 16,723,064**.
+    This group remained explicitly `unverified` as required.
+  - 2,000 3-frame Burst groups, first 48 returned: **61.206 ms**;
+    allocated bytes **6,758,160 / 6,769,928 / 6,736,560**.
+    The first cold sample was **310.773 ms**, so do not treat its
+    p50 as an uncached first-request bound.
+  - 10,000 3-frame Burst groups, first 48 returned: **197.763 ms**;
+    allocated bytes **36,761,608 / 36,803,776 / 36,799,672**.
+  - Fixture seed took **40,446.134 ms**, excluded. All **12/12**
+    production query samples passed exact total/visible/member validation
+    (duplicate 2,000/48 and 1/1, Burst 2,000/48 and 10,000/48).
+    No physical bytes were read.
+  - Exact source evidence:
+    [ci-run-37914755065.json](performance-evidence/gallery-cleanup-extreme-100k/ci-run-37914755065.json).
+- **AFTER result:** N/A (measurement-only PR, **zero production
+  optimization changes**). No success-latency percentage, memory
+  improvement, or user-visible first-paint speedup is claimed.
+  **Acceptance:** preserve this benchmark as reproducible baseline; future
+  candidate must record same-host BEFORE/AFTER with n>=3,
+  group/member correctness, Go allocations and CPU/SQL statistics where
+  available. Large-group member loading and all-Burst aggregation remain
+  candidates for cost reduction, not accepted optimizations.
+  The evidence-amended commit must rerun authoritative CI before merge.
+- **Next decision:** if the 10k-copy group demonstrates unacceptable
+  all-member preload cost, investigate bounded per-group assessment without
+  changing strict whole-asset equality or personal metadata. If 10k Burst
+  groups prove costly, measure a SQL-side group pagination aggregate against
+  this same fixture before retaining any optimization. Do not conflate
+  `#1131` opt-in Gallery folding and #1124 CAS storage savings with
+  cleanup page timing.
+
+
 ## 100k PhotoAsset full-owner post-prune write pressure — diagnostic (2026-10-09)
 
 Status: **Measured baseline / confirmed high write-pressure at 100k / evidence-amended CI pending (#1129)**. Baseline from merged [#1123](https://github.com/lazyxu/xdrive/pull/1123): 100k stale pruning now succeeds in a native PostgreSQL stage benchmark (n=3, p50 **377.987 ms**). This does **not** establish that a full `ReconcileOwner` succeeds at 100k after that fix.
