@@ -4,6 +4,7 @@ This document is the canonical **non-performance** FileExplorer design contract 
 
 ## Shared architecture
 
+- Mobile Web FileExplorer is a full-screen Web App: its main/root occupies the entire browser-available dynamic viewport, including former global header/footer space. Do not wrap it in a persistent mobile global AppBar, bottom navigation or desktop outer page padding. Use the shared on-demand application-navigation overlay for app/account/transfer access. Its own command/address/status bars remain part of FileExplorer. Follow [Mobile Web](mobile-web.md) and verify main/root bounds against the viewport itself, with the same mounted directory/tab/scroll state across responsive changes and Viewer return.
 - Web and Desktop use the shared FileExplorer interaction/model layer and shared MUI surface under `ui/shared`.
 - Platform-specific transport remains local: Web REST/fetch stays in Web; Desktop Electron/Agent IPC and native-shell integration stay in Desktop.
 - Server is authoritative for filesystem semantics that require the full namespace. Clients must not reconstruct recursive filesystem state by paginating/traversing the tree in the renderer.

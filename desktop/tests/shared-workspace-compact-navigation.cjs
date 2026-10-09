@@ -332,6 +332,39 @@ test('More opens and closes a drawer without changing the selected route or invo
   assert.deepEqual(harness.calls, [])
 })
 
+test('full-screen navigation keeps every application in an overlay without reserving a bottom bar', () => {
+  const harness = componentHarness({ fullscreen: true, actions: '账户与上传下载' })
+  let tree = harness.render()
+  assert.equal(nodes(tree).filter((node) => node.type === 'BottomNavigation').length, 0)
+  const trigger = only(tree, 'IconButton', (node) => node.props['aria-label'] === '打开应用导航')
+  assert.equal(trigger.props.sx.width, 44)
+  assert.equal(trigger.props.sx.height, 44)
+  trigger.props.onClick(clickEvent())
+  tree = harness.render()
+  assert.equal(drawerOpen(tree), true)
+  assert.ok(textOf(tree).includes('账户与上传下载'))
+  for (const label of ['主页', '文件', '图库', '传输', '同步文件夹', '用户管理']) {
+    only(tree, 'ListItemButton', (node) => textOf(node) === label)
+  }
+  assert.deepEqual(harness.calls, [], 'opening application navigation must not launch an app')
+  const event = clickEvent({ ctrlKey: true })
+  only(tree, 'ListItemButton', (node) => textOf(node) === '图库').props.onClick(event)
+  assert.deepEqual(harness.calls, [{ key: 'gallery', event }])
+  assert.equal(drawerOpen(harness.render()), false)
+})
+
+test('full-screen navigation closes and hides its trigger while a Viewer owns the screen', () => {
+  const harness = componentHarness({ fullscreen: true })
+  only(harness.render(), 'IconButton', (node) => node.props['aria-label'] === '打开应用导航').props.onClick(clickEvent())
+  assert.equal(drawerOpen(harness.render()), true)
+  const disabled = harness.render({ disabled: true })
+  assert.equal(drawerOpen(disabled), false)
+  const aside = only(disabled, 'Box', (node) => node.props.component === 'aside')
+  assert.equal(aside.props.sx.position, 'fixed')
+  assert.equal(aside.props.sx.display, 'none')
+  assert.equal(drawerOpen(harness.render({ disabled: false })), false)
+})
+
 test('selecting a More destination forwards the original event once and closes the drawer', () => {
   const harness = componentHarness()
   moreAction(harness.render()).props.onClick(clickEvent())

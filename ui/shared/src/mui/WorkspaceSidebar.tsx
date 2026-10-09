@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import type { QuotaUsage } from '../models'
 import { Box, useMediaQuery } from '@mui/material'
 import type { Theme } from '@mui/material/styles'
@@ -119,6 +119,10 @@ export function XDriveWorkspaceSidebar({
   storageSummary,
   appearance = 'light',
   responsive = false,
+  compactFullscreen = false,
+  compactOpen,
+  onCompactOpenChange,
+  compactActions,
   disabled = false,
   className,
   ariaLabel,
@@ -133,6 +137,10 @@ export function XDriveWorkspaceSidebar({
   storageSummary?: XDriveWorkspaceSidebarStorageSummary | null
   appearance?: XDriveSidebarAppearance
   responsive?: boolean
+  compactFullscreen?: boolean
+  compactOpen?: boolean
+  onCompactOpenChange?: (open: boolean) => void
+  compactActions?: ReactNode
   disabled?: boolean
   className?: string
   ariaLabel: string
@@ -152,6 +160,10 @@ export function XDriveWorkspaceSidebar({
         ariaLabel={ariaLabel}
         navAriaLabel={navAriaLabel}
         disabled={disabled}
+        fullscreen={compactFullscreen}
+        open={compactOpen}
+        onOpenChange={onCompactOpenChange}
+        actions={compactActions}
         onSelect={onSelect}
       />
     )

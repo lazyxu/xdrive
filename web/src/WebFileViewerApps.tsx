@@ -264,6 +264,7 @@ function WebViewerFrame({
         minWidth: 0,
         minHeight: 0,
         height: compactTouch ? '100dvh' : undefined,
+        overflow: 'hidden',
         outline: 0,
         bgcolor: immersive ? 'black' : 'background.default',
         color: immersive ? 'common.white' : 'text.primary',
@@ -274,6 +275,11 @@ function WebViewerFrame({
         alignItems="center"
         spacing={1}
         sx={{
+          position: compactImmersive ? 'absolute' : 'relative',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 2,
           minHeight: compactTouch ? 56 : 52,
           px: compactTouch ? 1 : 1.5,
           pl: compactTouch ? 'max(8px, env(safe-area-inset-left))' : undefined,
@@ -604,9 +610,13 @@ function WebPreviewApp({
         onClose={() => onClose(viewer.node)}
       >
         {viewer.loading ? (
-          <XDriveStatePanel variant="plain" loading message="正在打开预览…" />
+          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
+            <XDriveStatePanel variant="plain" loading message="正在打开预览…" />
+          </Box>
         ) : viewer.error || !viewer.node ? (
-          <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
+          <Box sx={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', p: 2 }}>
+            <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
+          </Box>
         ) : <XDriveFilePreviewSurface
           target={target}
           loadTextPreview={() => api.fileTextPreview(viewer.node!.id)}
@@ -681,23 +691,13 @@ function WebMediaViewerApp({
     if (!infoOpen) void gallerySource.listAlbums().then(setAlbums).catch(onError)
   }
 
-  if (viewer.loading) return <XDriveStatePanel variant="plain" loading message="正在打开媒体…" />
-  if (viewer.error || !viewer.node) {
-    return <XDriveStatusAlert tone="bad">{viewer.error || '媒体不存在或已无法访问。'}</XDriveStatusAlert>
-  }
-
-  const previewKind = xDriveClassifyFilePreview({
+  const previewKind = viewer.node ? xDriveClassifyFilePreview({
     name: viewer.node.name,
     kind: viewer.node.type,
-  })
-  if (!['image', 'video', 'live_photo'].includes(previewKind)) {
-    return <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
-  }
-  if (!mediaItem || mediaItem.node.id !== viewer.node.id) {
-    return <XDriveStatePanel variant="plain" loading message="正在加载媒体信息…" />
-  }
+  }) : ''
+  const supported = ['image', 'video', 'live_photo'].includes(previewKind)
 
-  const actions = (
+  const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
     <Stack direction="row" spacing={0.25}>
       {mediaItem && gallerySource.setFavorite ? (
         <Tooltip title={mediaItem.favorite ? '取消收藏' : '收藏'}>
@@ -731,13 +731,13 @@ function WebMediaViewerApp({
         onTags={() => setTagsOpen(true)}
       />
     </Stack>
-  )
+  ) : null
 
   return (
     <>
       <WebViewerFrame
-        title={viewer.node.name}
-        subtitle={xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at)}
+        title={viewer.node?.name ?? '媒体查看器'}
+        subtitle={mediaItem && mediaItem.node.id === viewer.node?.id ? xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at) : undefined}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         canPrevious={Boolean(viewer.previous)}
@@ -747,7 +747,23 @@ function WebMediaViewerApp({
         actions={actions}
         onClose={() => onClose(viewer.node)}
       >
-        <XDriveMediaViewerContent
+        {viewer.loading ? (
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+            <XDriveStatePanel variant="plain" loading message="正在打开媒体…" />
+          </Box>
+        ) : viewer.error || !viewer.node ? (
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
+            <XDriveStatusAlert tone="bad">{viewer.error || '媒体不存在或已无法访问。'}</XDriveStatusAlert>
+          </Box>
+        ) : !supported ? (
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
+            <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
+          </Box>
+        ) : !mediaItem || mediaItem.node.id !== viewer.node.id ? (
+          <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+            <XDriveStatePanel variant="plain" loading message="正在加载媒体信息…" />
+          </Box>
+        ) : <XDriveMediaViewerContent
           item={mediaItem}
           loadThumbnail={gallerySource.loadThumbnail}
           loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
@@ -757,9 +773,9 @@ function WebMediaViewerApp({
           onSwipeNext={viewer.next ? viewer.goNext : undefined}
           minHeight={0}
           maxHeight="none"
-        />
+        />}
       </WebViewerFrame>
-      <FileDialogs
+      {viewer.node ? <FileDialogs
         node={viewer.node}
         api={api}
         shareDialogAdapter={shareDialogAdapter}
@@ -768,7 +784,7 @@ function WebMediaViewerApp({
         onShareClose={() => setShareOpen(false)}
         onTagsClose={() => setTagsOpen(false)}
         onError={onError}
-      />
+      /> : null}
       <XDriveMediaDetailsInspector
         item={infoOpen ? mediaItem : null}
         overlayZIndex={1251}
@@ -849,13 +865,10 @@ function WebTextViewerApp({
     element.setSelectionRange(start, end)
   }, [preview, route.params.column, route.params.line])
 
-  if (error) return <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
-  if (!node || !preview) return <XDriveStatePanel variant="plain" loading message="正在加载文本…" />
-
   return (
     <WebViewerFrame
-      title={node.name}
-      actions={(
+      title={node?.name ?? '文本/代码查看器'}
+      actions={node && preview && !error ? (
         <Stack direction="row" spacing={0.25}>
           <Tooltip title={wrap ? '关闭自动换行' : '自动换行'}>
             <IconButton size="small" aria-label="切换自动换行" onClick={() => setWrap((value) => !value)}>
@@ -868,10 +881,18 @@ function WebTextViewerApp({
             </IconButton>
           </Tooltip>
         </Stack>
-      )}
+      ) : null}
       onClose={() => onClose(node)}
     >
-      <Stack spacing={1} sx={{ flex: 1, minWidth: 0, minHeight: 0, p: 1.5 }}>
+      {error ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
+          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+        </Box>
+      ) : !node || !preview ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatePanel variant="plain" loading message="正在加载文本…" />
+        </Box>
+      ) : <Stack spacing={1} sx={{ flex: 1, minWidth: 0, minHeight: 0, p: compactTouch ? 0 : 1.5 }}>
         {preview.truncated ? (
           <XDriveStatusAlert tone="neutral">
             文件较大，仅显示前 1 MiB。可使用下载按钮获取完整文件。
@@ -890,9 +911,9 @@ function WebTextViewerApp({
             minHeight: 0,
             width: '100%',
             resize: 'none',
-            border: 1,
+            border: compactTouch ? 0 : 1,
             borderColor: 'divider',
-            borderRadius: 1,
+            borderRadius: compactTouch ? 0 : 1,
             p: 1.5,
             bgcolor: 'background.paper',
             color: 'text.primary',
@@ -905,7 +926,7 @@ function WebTextViewerApp({
             outline: 0,
           }}
         />
-      </Stack>
+      </Stack>}
     </WebViewerFrame>
   )
 }
@@ -932,22 +953,27 @@ function WebSinglePreviewApp({
     return () => { active = false }
   }, [api, route.params.node])
 
-  if (error) return <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
-  if (!node) return <XDriveStatePanel variant="plain" loading message="正在打开文件…" />
-
   return (
     <WebViewerFrame
-      title={node.name}
-      actions={(
+      title={node?.name ?? (route.app === 'pdf-viewer' ? 'PDF 查看器' : '音频播放器')}
+      actions={node && !error ? (
         <Tooltip title="下载">
           <IconButton size="small" aria-label="下载" onClick={() => { void api.download(node) }}>
             <DownloadRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-      )}
+      ) : null}
       onClose={() => onClose(node)}
     >
-      <XDriveFilePreviewSurface
+      {error ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 2 }}>
+          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+        </Box>
+      ) : !node ? (
+        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatePanel variant="plain" loading message="正在打开文件…" />
+        </Box>
+      ) : <XDriveFilePreviewSurface
         target={{
           id: node.id,
           name: node.name,
@@ -965,7 +991,7 @@ function WebSinglePreviewApp({
         }}
         minHeight={0}
         maxHeight="none"
-      />
+      />}
     </WebViewerFrame>
   )
 }

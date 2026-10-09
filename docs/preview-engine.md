@@ -658,6 +658,15 @@ presentation transforms and do not change preview source identity or durable rec
 
 ### Standalone text and compact Viewer chrome
 
+All Mobile Web programs own the entire available dynamic viewport, with no global
+AppBar/bottom-navigation reservation. A Viewer must keep that full-screen frame and
+Return action during metadata loading and error/unsupported states, not render an
+unframed status message under the inert caller. Compact immersive Web headers/actions
+overlay media; hiding chrome cannot retain blank header height. Text/PDF/Audio may
+reserve space for their own reading controls inside the full-screen app. Follow the
+normative [Mobile Web contract](mobile-web.md); app/main bounds must be checked
+against the full viewport, not the space remaining between global bars.
+
 Text line/column jumps clamp to the requested line and exclude the CR in CRLF text;
 they must not select characters from the next line. Text/PDF/Audio remain standalone
 programs with their own loading/error states and no directory/Gallery neighbor reads.

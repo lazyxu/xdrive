@@ -74,6 +74,40 @@ Object.assign(sharedUI, load(path.join(repo, 'ui/shared/src/mui/usePreviewSlides
 const { WebFileViewerApps } = load(path.join(repo, 'web/src/WebFileViewerApps.tsx'))
 const { XDriveOpenPreviewDialog } = load(path.join(repo, 'ui/shared/src/mui/FileOpenPreviewDialog.tsx'))
 
+for (const app of ['preview', 'media-viewer', 'text-viewer', 'pdf-viewer', 'audio-player']) {
+  test(`${app} owns a full-screen frame and Return while metadata is pending or fails`, async () => {
+    compactTouch = true
+    let rejectRead
+    const pending = new Promise((_resolve, reject) => { rejectRead = reject })
+    let renderer
+    let closes = 0
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app, params: { node: 81 } },
+        api: { node: () => pending, mediaItem: () => pending, fileTextPreview: () => pending },
+        gallerySource: {}, shareDialogAdapter: {},
+        onClose() { closes += 1 }, onReplaceRoute() {}, onError() {},
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    const frames = () => renderer.root.findAll((element) => element.type === 'div' && element.props['data-xdrive-web-viewer'] !== undefined)
+    try {
+      assert.equal(frames().length, 1, 'the loading app must cover the workspace, including global header/footer')
+      const frame = frames()[0]
+      assert.equal(frame.props.sx.position, 'fixed')
+      assert.equal(frame.props.sx.inset, 0)
+      assert.equal(buttons(renderer, '返回').length, 1, 'loading must remain dismissible')
+      await act(async () => { rejectRead(new Error('metadata unavailable')) })
+      assert.equal(frames().length, 1, 'failure must stay in the full-screen app')
+      assert.equal(frames()[0], frame, 'loading-to-failure must preserve the app frame')
+      assert.equal(renderer.root.findAll((element) => element.props.role === 'alert').length, 1)
+      await act(async () => { buttons(renderer, '返回')[0].props.onClick() })
+      assert.equal(closes, 1)
+    } finally {
+      await act(async () => renderer.unmount())
+    }
+  })
+}
+
 function buttons(renderer, label) {
   return renderer.root.findAll((element) => element.type === 'button' && element.props['aria-label'] === label)
 }

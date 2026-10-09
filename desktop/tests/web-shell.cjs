@@ -26,7 +26,7 @@ const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
-test('Web AppBar keeps global chrome compact while admin tools live in the shared sidebar', () => {
+test('wide Web keeps compact chrome while mobile moves global controls into fullscreen app navigation', () => {
   const backgroundStart = webApp.indexOf('data-xdrive-workspace-background')
   assert.notEqual(backgroundStart, -1, 'missing authenticated workspace background')
   const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', backgroundStart)
@@ -35,8 +35,17 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
   assert.notEqual(appEnd, -1, 'missing Web AppBar end')
   const appBar = webApp.slice(appStart, appEnd)
 
-  assert.ok(appBar.includes('WebAccountMenu'), 'Web AppBar must retain the account menu')
-  assert.ok(appBar.includes('disabled={viewerActive}'), 'Viewer must close account portals as well as making the AppBar inert')
+  const actionsStart = webApp.indexOf('const workspaceActions = (')
+  const actionsEnd = webApp.indexOf('\n  return (', actionsStart)
+  assert.notEqual(actionsStart, -1, 'global actions must have one shared Web owner')
+  const actions = webApp.slice(actionsStart, actionsEnd)
+  assert.ok(actions.includes('<WebAccountMenu'), 'global actions must retain the account menu')
+  assert.ok(actions.includes('<XDriveTransferPopover'), 'global actions must retain transfers')
+  assert.ok(actions.includes('disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}'), 'Viewer and closed mobile navigation must close account/transfer portals')
+  assert.ok(appBar.includes("display: { xs: 'none', md: 'flex' }"), 'mobile AppBar must reserve no viewport height')
+  assert.ok(appBar.includes('{!compactWorkspace ? workspaceActions : null}'), 'wide Web AppBar must retain global actions without mounting a hidden second mobile copy')
+  assert.ok(webApp.includes('compactFullscreen'), 'mobile Web must use the fullscreen app-navigation overlay')
+  assert.ok(webApp.includes('compactActions={compactWorkspace ? workspaceActions : undefined}'), 'mobile global controls must be reachable inside app navigation')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')
@@ -56,7 +65,7 @@ test('Web AppBar keeps global chrome compact while admin tools live in the share
   assert.ok(webApp.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
   assert.ok(webApp.includes('AssessmentRoundedIcon'), 'missing Audit icon')
 })
-test('Web first-class workspaces use page chrome except the full-bleed Files workspace', () => {
+test('Web workspaces share page presentation while Files avoids a duplicate internal page header', () => {
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
   assert.equal(webApp.includes("height: { xs: 560, md: '100%' }"), false, 'Files must use the available workspace height on narrow screens')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')

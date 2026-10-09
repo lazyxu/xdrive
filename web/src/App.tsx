@@ -13,6 +13,7 @@ import {
   TextField,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import {
   XDriveAccountAvatarButton,
@@ -473,6 +474,7 @@ function FileManager({
   onAuthExpired: (notice?: string) => void
   onLogout: () => void
 }) {
+  const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
@@ -489,6 +491,7 @@ function FileManager({
   }, [launchWebApp])
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
+  const [compactNavigationOpen, setCompactNavigationOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -503,6 +506,15 @@ function FileManager({
     requestID: number
   } | null>(null)
   const taskCenterFocusSequenceRef = useRef(0)
+
+  useEffect(() => {
+    setCompactNavigationOpen(false)
+    setTransferPopoverOpen(false)
+  }, [compactWorkspace, viewerActive])
+
+  useEffect(() => {
+    if (compactWorkspace && !compactNavigationOpen) setTransferPopoverOpen(false)
+  }, [compactWorkspace, compactNavigationOpen])
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -1034,6 +1046,29 @@ function FileManager({
       : []),
   ]
 
+  const workspaceActions = (
+    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={{ xs: 0.5, sm: 1 }}>
+      <XDriveTransferPopover
+        transfers={transfers}
+        sessionKey={`${window.location.origin}:${username}`}
+        disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
+        open={transferPopoverOpen}
+        onOpenChange={setTransferPopoverOpen}
+        onClearHistory={() => { api.clearTransferHistory('network') }}
+      />
+      <WebAccountMenu
+        disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
+        username={username}
+        api={api}
+        serverBuild={serverBuild}
+        canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
+        appearance={appearance}
+        onAppearanceChange={onAppearanceChange}
+        onLogout={onLogout}
+      />
+    </Stack>
+  )
+
   return (
     <Box
       sx={{
@@ -1055,8 +1090,8 @@ function FileManager({
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          pl: 'env(safe-area-inset-left)',
-          pr: 'env(safe-area-inset-right)',
+          pl: { xs: 0, md: 'env(safe-area-inset-left)' },
+          pr: { xs: 0, md: 'env(safe-area-inset-right)' },
           pb: { xs: 0, md: 'env(safe-area-inset-bottom)' },
         }}
       >
@@ -1065,7 +1100,7 @@ function FileManager({
           elevation={0}
           color="inherit"
           className="web-appbar"
-          sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
+          sx={{ display: { xs: 'none', md: 'flex' }, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
         >
         <Toolbar
             sx={{
@@ -1078,26 +1113,7 @@ function FileManager({
             }}
           >
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
-          <Stack direction="row" alignItems="center" spacing={{ xs: 0.5, sm: 1 }}>
-            <XDriveTransferPopover
-              transfers={transfers}
-              sessionKey={`${window.location.origin}:${username}`}
-              disabled={viewerActive}
-              open={transferPopoverOpen}
-              onOpenChange={setTransferPopoverOpen}
-              onClearHistory={() => { api.clearTransferHistory('network') }}
-            />
-            <WebAccountMenu
-              disabled={viewerActive}
-              username={username}
-              api={api}
-              serverBuild={serverBuild}
-              canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
-              appearance={appearance}
-              onAppearanceChange={onAppearanceChange}
-              onLogout={onLogout}
-            />
-          </Stack>
+          {!compactWorkspace ? workspaceActions : null}
         </Toolbar>
       </AppBar>
 
@@ -1110,6 +1126,10 @@ function FileManager({
           ariaLabel="网页端功能区"
           navAriaLabel="网页端功能区导航"
           responsive
+          compactFullscreen
+          compactOpen={compactNavigationOpen}
+          onCompactOpenChange={setCompactNavigationOpen}
+          compactActions={compactWorkspace ? workspaceActions : undefined}
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
@@ -1163,7 +1183,10 @@ function FileManager({
               void loadDirectory(id, nextCrumbs)
             }}
             onOpenGallery={() => setAppView('gallery')}
-            onOpenTransfers={() => setTransferPopoverOpen(true)}
+            onOpenTransfers={() => {
+              if (compactWorkspace) setCompactNavigationOpen(true)
+              setTransferPopoverOpen(true)
+            }}
           />
         ) : appView === 'files' ? (
           <Box

@@ -4010,7 +4010,7 @@ export function XDriveMediaGallery({
         alignItems={{ xs: 'stretch', lg: 'center' }}
         data-xdrive-gallery-header
       >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: '1 1 320px', minWidth: 0 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: { xs: '0 0 auto', lg: '1 1 320px' }, minWidth: 0 }}>
           {canBack && onBack ? (
             <Tooltip title="返回上一级">
               <IconButton onClick={onBack} size="small" aria-label="返回上一级">

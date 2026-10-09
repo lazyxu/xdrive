@@ -50,7 +50,7 @@ Canonical 文件身份使用 node ID。路径可以由上层调用者解析后�
 
 Sidebar 的“任务”与管理员专用“全局任务”是独立入口，分别启动 `tasks?scope=mine` 和 `tasks?scope=global`。它们共用一个 Web 程序与共享任务页面，`task` 参数仍可定位具体后台任务。内部 workspace key 保留 `transfers` 作为“任务”的兼容键，并增加 `global-tasks`；旧的无 scope `tasks` 链接继续进入个人任务。
 
-上传和下载从任务页面移到头像旁的共享传输浮层。该浮层不是 Web 程序，也不写浏览器历史；打开、关闭或查看传输历史都保留当前目录与页面。Viewer 打开或账号切换时关闭浮层。速度口径与任务范围见 [传输与任务](transfers-and-tasks.md)。
+上传和下载从任务页面移到共享传输浮层。宽屏 Web/Desktop 在顶栏头像旁打开；Mobile Web 在按需打开的“应用导航”浮层中，通过账号旁的上传/下载入口打开，不保留常驻全局顶栏。该浮层不是 Web 程序，也不写浏览器历史；打开、关闭或查看传输历史都保留当前目录与页面。Viewer 打开或账号切换时关闭浮层。速度口径与任务范围见 [传输与任务](transfers-and-tasks.md)。
 
 多选列表、目录排序/分组、Search filter、Gallery collection target 等浏览上下文通过 `sessionStorage` 保存；只有 Quick Look / Preview 与 Media Viewer 把短的 `context` session ID 放进 URL。Text、PDF、Audio 是单文件程序，不携带集合 context，也不提供上一项/下一项。直接 deep-link 没有 context 时仍能打开 Preview / Media Viewer 的目标文件，只是不提供集合前后切换。
 
@@ -105,11 +105,17 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 
 ## Presentation 与 UI 边界
 
-- workspace：正常 App Shell + Sidebar。
+- workspace：宽屏使用 App Shell + Sidebar；Mobile Web（小于 900 CSS px）所有程序直接铺满整个可用动态视口，全局 header/footer/Sidebar 不占布局空间。
 - viewer：覆盖 workspace 的全视口查看器，保留轻量 header。
 - immersive：Preview / Media Viewer，内容区可隐藏 chrome。
 - MUI Modal（分享、标签等）必须位于 Viewer 之上；Viewer 自己不抢占 modal z-index。
 - Gallery Inspector 在 Viewer 模式下使用专用 overlay z-index，但仍低于 MUI Modal。
+
+### Mobile Web 全屏硬约束
+
+适用于上述 **15 个 Web 程序及今后新增程序**。文件管理器“铺满中间内容区”不等于全屏；应用必须同时收回全局 header/footer 占用的区域。禁止恢复常驻全局顶栏、底部导航、补偿头尾高度的占位空间或桌面页面外边距。应用根/main 的验收坐标为 `x=0, y=0, width=viewportWidth, height=viewportHeight`，安全区只用于保护控件。
+
+44px“打开应用导航”悬浮按钮按需打开同一权限过滤后的程序列表、账号/设置和传输入口；浮层打开与关闭不改变 route/history，不重新挂载当前 main。程序自己的文件工具条、PDF 页码、文本操作等可以保留在程序内。Viewer 的加载、失败、不可访问及不支持状态也必须处于同一全屏框架内，并保留“返回”。详细布局与验证规则以 [Mobile Web](mobile-web.md) 为准。
 
 ## 新增 Web 程序的规则
 
@@ -125,7 +131,7 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 
 ## 移动 Viewer
 
-移动 Web 的 Viewer 继续使用同一个 Web App Runtime 和浏览上下文，不建立独立 mobile viewer。窄屏且主指针为 coarse 时，immersive Viewer 使用全动态视口高度和安全区内边距；标题栏只保留返回、标题与位置，收藏/信息/标签/分享/下载等动作移到底部 44px 操作栏。
+移动 Web 的 Viewer 继续使用同一个 Web App Runtime 和浏览上下文，不建立独立 mobile viewer。全屏根框架从加载到成功或失败持续存在。窄屏且主指针为 coarse 时，immersive Viewer 使用全动态视口高度；标题栏与底部 44px 操作栏覆盖在媒体上，安全区保护返回和操作控件，隐藏 chrome 不留下占位条。Text/PDF/Audio 也占满完整应用视口，但保留各自阅读所需的程序内工具栏。
 
 图片预览在 1× 时支持横向 swipe 切换前后项目；放大后单指移动图片，双指 pinch 缩放，双击在 1× / 2× 间切换。单击内容延迟切换 chrome，从而与双击缩放区分。视频继续由原生 media controls 拥有手势；Live Photo 继续保持按住播放、松开停止，不用 Gallery swipe 覆盖其 hold 语义。
 
