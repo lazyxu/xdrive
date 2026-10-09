@@ -520,6 +520,81 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  large-transfer-web-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/large-transfer-1gib-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Web/Desktop performance dependencies
+        run: |
+          (cd desktop && npm install --no-audit --no-fund)
+          (cd web && npm install --no-audit --no-fund)
+      - name: Build Web large-transfer performance bundle
+        env:
+          VITE_XDRIVE_LARGE_TRANSFER_PERF: "1"
+        run: npm --prefix web run build
+      - name: Measure Web 1 GiB upload/download throughput and memory
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          rm -rf large-transfer-perf-results
+          mkdir -p large-transfer-perf-results
+          for scenario in upload download download-discard; do
+            for sample in 1 2 3; do
+              xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/large-transfer-performance-main.cjs "$scenario" "sample-$sample"
+            done
+          done
+          test "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9
+          echo "=== Web 1 GiB transfer metrics ==="
+          cat large-transfer-perf-results/web-*.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-large-transfer-1gib
+          path: desktop/large-transfer-perf-results
+          if-no-files-found: error
+          retention-days: 7
+
+  large-transfer-agent-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/large-transfer-1gib-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure Desktop/Agent-core 1 GiB upload/download throughput and RSS
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/large-transfer-agent-results"
+          rm -rf "$out"
+          mkdir -p "$out"
+          for scenario in upload download; do
+            for sample in 1 2 3; do
+              XD_LARGE_TRANSFER_PERF=1 \
+              XD_LARGE_TRANSFER_SCENARIO="$scenario" \
+              XD_LARGE_TRANSFER_SAMPLE="sample-$sample" \
+              XD_LARGE_TRANSFER_PERF_OUTPUT="$out" \
+                go test -run '^TestLargeTransferPerformanceBaseline1GiB$' -count=1 -v ./cmd/xdrive-agent
+            done
+          done
+          test "$(find "$out" -maxdepth 1 -type f -name 'agent-*.json' | wc -l)" -eq 6
+          echo "=== Desktop/Agent-core 1 GiB transfer metrics ==="
+          cat "$out"/agent-*.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-large-transfer-1gib
+          path: large-transfer-agent-results
+          if-no-files-found: error
+          retention-days: 7
+
   gallery-renderer-first-paint-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-media-first-paint-100k'
     runs-on: ubuntu-latest

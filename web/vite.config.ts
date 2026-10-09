@@ -7,7 +7,8 @@ const webRoot = fileURLToPath(new URL('.', import.meta.url))
 
 const performanceFileBuild =
   process.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1' ||
-  process.env.VITE_XDRIVE_GALLERY_PERF === '1'
+  process.env.VITE_XDRIVE_GALLERY_PERF === '1' ||
+  process.env.VITE_XDRIVE_LARGE_TRANSFER_PERF === '1'
 
 export default defineConfig({
   base: performanceFileBuild ? './' : '/',

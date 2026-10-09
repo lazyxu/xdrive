@@ -36,16 +36,36 @@ const fileExplorerPerfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF 
 const galleryPerfScenario = import.meta.env.VITE_XDRIVE_GALLERY_PERF === '1'
   ? perfSearch.get('xdriveGalleryPerf')
   : null
+const largeTransferPerfScenario = import.meta.env.VITE_XDRIVE_LARGE_TRANSFER_PERF === '1'
+  ? perfSearch.get('xdriveLargeTransferPerf')
+  : null
+const largeTransferPerfSample = perfSearch.get('xdriveLargeTransferSample') ?? 'sample-unknown'
 const perfWindow = window as Window & {
   __xdriveFileExplorerPerfBoot?: string | null
   __xdriveFileExplorerPerfBootError?: string
   __xdriveGalleryPerfBoot?: string | null
   __xdriveGalleryPerfBootError?: string
+  __xdriveLargeTransferPerfBoot?: string | null
+  __xdriveLargeTransferPerfBootError?: string
 }
 perfWindow.__xdriveFileExplorerPerfBoot = fileExplorerPerfScenario
 perfWindow.__xdriveGalleryPerfBoot = galleryPerfScenario
+perfWindow.__xdriveLargeTransferPerfBoot = largeTransferPerfScenario
 
-if (galleryPerfScenario) {
+if (largeTransferPerfScenario) {
+  void import('./LargeTransferPerformanceHarness').then((module) => {
+    root.render(
+      <module.XDriveLargeTransferPerformanceHarness
+        scenario={largeTransferPerfScenario as 'upload' | 'download'}
+        sample={largeTransferPerfSample}
+      />,
+    )
+  }).catch((error) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    perfWindow.__xdriveLargeTransferPerfBootError = message
+    console.error('__XDRIVE_LARGE_TRANSFER_PERF_BOOT_ERROR__' + message)
+  })
+} else if (galleryPerfScenario) {
   void import('@xdrive/ui/mui/perf').then((module) => {
     root.render(
       <XDriveAppearanceThemeProvider appearance="light">
