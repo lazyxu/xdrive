@@ -1624,6 +1624,28 @@ transport, owner-scope, Task Center and ordinary Gallery regressions.
 Require exact-head CI, Go race and the final gate before merging; physical
 Web/Desktop/device acceptance remains separate.
 
+### G07 durable-job poll overtaking race (2026-10-10; PR #1221)
+
+The one active durable media-selection job may be polled by two overlapping
+1.7-second requests. Only the **most recently issued** poll response, for
+the still-mounted same job/status scope, may apply status/counters or report
+errors; an older in-flight request cannot rewind current running progress,
+nor report an obsolete failure after a newer successful read. This stays
+separate from G07's snapshot/job submission single-flight lane, does not
+increase polling frequency, cancel a durable server job, fetch all 100k media
+items, or alter Server/Agent request semantics. Poll effects continue to
+clean up on job/status change, close and unmount.
+
+Actual first-red: GitHub Actions run 37984715216, Desktop assertions
+487–488: newer 30/230 was visibly overwritten by old 5/230; after newer
+48/230 was displayed, an older rejected poll published a stale error.
+The unchanged single-poll control (test 489) passed. These **same
+source-backed React component/controlled timer-Promise regressions**
+remain in `desktop/tests/media-gallery-durable-job-poll-order-race.cjs`
+for exact-head post-fix acceptance alongside all original G07 tests,
+Web/Desktop builds, Go race and final PR CI gate. Do not claim native
+physical-device acceptance from these controlled tests.
+
 ### G07 Phase 3c — Web Task Center persistence visibility (candidate)
 
 Web Task Center now loads the authenticated durable media-selection job
