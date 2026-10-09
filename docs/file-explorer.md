@@ -126,6 +126,7 @@ Open-tab session restore is an optional shared navigation capability used by bot
 - after a full restart, the persisted active tab is reloaded through the same navigation generation and `onLoadDirectory` path as normal navigation, including its saved sort/grouping;
 - if the saved target no longer exists, the active tab falls back to the already-loaded current directory/default ordering rather than leaving tab/address/directory state inconsistent;
 - if the user performs a newer navigation while startup restore is pending, the startup request becomes stale and may not reclaim the visible directory.
+- across an account/Server navigation-session key change, incoming directory breadcrumbs may still belong to the previous session until the new root arrives. The shared controller must not seed the new default tab from that stale root or use it as a failed-session-restore fallback; it may seed from a newly observed root, and a failed saved-session target otherwise falls back only to its same-session saved root. Completion after a later navigation/lifecycle change remains generation-fenced.
 
 Session persistence is best-effort UI state. Storage/quota/privacy failures must not break FileExplorer navigation.
 

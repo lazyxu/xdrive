@@ -410,6 +410,71 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   navigationStateRef.current = navigationState
   const onNavigationStateChangeRef = useRef(onNavigationStateChange)
   onNavigationStateChangeRef.current = onNavigationStateChange
+  const navigationSessionStorageKeyRef = useRef(navigationSessionStorageKey)
+  const lastCrumbsRef = useRef(crumbs)
+  const previousCrumbs = lastCrumbsRef.current
+  lastCrumbsRef.current = crumbs
+  const previousSessionRootRef = useRef<{
+    lifecycleKey: string | undefined
+    rootID: TCrumb['id'] | undefined
+  } | null>(null)
+
+  if (navigationSessionStorageKeyRef.current !== navigationSessionStorageKey) {
+    const previousTab = navigationStateRef.current.tabs.find(
+      (tab) => tab.id === navigationStateRef.current.activeTabID,
+    )
+    const previousRootID =
+      previousTab?.history[previousTab.historyIndex]?.[0]?.id ?? previousCrumbs[0]?.id
+    previousSessionRootRef.current = {
+      lifecycleKey: navigationSessionStorageKey,
+      rootID: previousRootID,
+    }
+    navigationSessionStorageKeyRef.current = navigationSessionStorageKey
+
+    const storedState = initialNavigationState
+      ? undefined
+      : loadStoredNavigationSession<TCrumb>(
+          navigationSessionStorageKey,
+          maxTabs,
+        )
+    const restoredState = initialNavigationState ?? storedState
+    const source = initialNavigationState
+      ? 'explicit'
+      : storedState ? 'session' : 'default'
+    const nextState = createInitialNavigationState(
+      restoredState,
+      initialViewMode,
+      maxTabs,
+    )
+
+    initialNavigationStateRef.current = cloneNavigationState(nextState)
+    initialNavigationSourceRef.current = source
+    initialSessionRestorePendingRef.current = source === 'session'
+    nextTabIDRef.current = nextNavigationTabID(nextState.tabs)
+    navigationRequestRef.current = {
+      id: navigationRequestRef.current.id + 1,
+      targetTabID: nextState.activeTabID,
+      sourceTabID: undefined,
+    }
+    closedTabsRef.current = []
+    setClosedTabCount(0)
+    navigationStateRef.current = nextState
+    setNavigationState(nextState)
+  }
+
+  // Parent directory props may still represent the previous account for one
+  // or more renders after the session key changes. Node roots are distinct
+  // within a Server's owner-scoped namespace.
+  const canUseCrumbsForCurrentSession = (candidate: readonly TCrumb[]) => {
+    if (candidate.length === 0) return false
+    const previous = previousSessionRootRef.current
+    return (
+      !previous ||
+      previous.lifecycleKey !== navigationSessionStorageKey ||
+      previous.rootID === undefined ||
+      candidate[0].id !== previous.rootID
+    )
+  }
 
   const commitNavigationState = (
     updater: (
@@ -523,7 +588,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
         id: navigationRequestRef.current.id + 1,
       }
     }
-  }, [])
+  }, [maxTabs, navigationSessionStorageKey])
 
   useEffect(() => {
     if (
@@ -540,7 +605,6 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     const target = targetCrumbs?.at(-1)
     if (!targetTab || !targetCrumbs || !target) return
 
-    const fallbackCrumbs = crumbs.map((crumb) => ({ ...crumb }))
     const requestID = beginNavigation(targetTab.id)
     void (async () => {
       const committed = await onLoadDirectory(
@@ -550,6 +614,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
         targetTab.grouping,
       )
       if (!isNavigationCurrent(requestID) || committed !== false) return
+      const currentCrumbs = lastCrumbsRef.current
+      const fallbackCrumbs = canUseCrumbsForCurrentSession(currentCrumbs)
+        ? currentCrumbs.map((crumb) => ({ ...crumb }))
+        : targetCrumbs.slice(0, 1).map((crumb) => ({ ...crumb }))
       commitNavigationState((state) => ({
         ...state,
         tabs: state.tabs.map((tab) => (
@@ -565,16 +633,20 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
         )),
       }))
     })()
-  }, [crumbs, onLoadDirectory])
+  }, [crumbs, navigationSessionStorageKey, onLoadDirectory])
 
   useEffect(() => {
-    if (crumbs.length === 0 || !activeTab || activeTab.history.length > 0) return
+    if (
+      !canUseCrumbsForCurrentSession(crumbs) ||
+      !activeTab ||
+      activeTab.history.length > 0
+    ) return
     updateActiveTab((tab) => ({
       ...tab,
       history: [[...crumbs]],
       historyIndex: 0,
     }))
-  }, [activeTab, activeTabID, crumbs])
+  }, [activeTab, activeTabID, crumbs, navigationSessionStorageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
