@@ -11,6 +11,8 @@ import type {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackgroundTaskList, XDriveBackgroundTaskTable } from './BackgroundTaskCenter'
 import { XDriveFileOperationCenter } from './FileOperationCenter'
+import { XDriveMediaSelectionJobCenter } from './MediaSelectionJobCenter'
+import type { XDriveMediaSelectionJobPort } from './MediaSelectionJobCenter'
 import { XDriveTransferCenter } from './TransferCenter'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -64,6 +66,7 @@ export interface XDriveTaskCenterClearHistory {
 export interface XDriveTaskCenterPageProps {
   transfers: XDriveTransferTask[]
   operations: XDriveFileOperation[]
+  mediaSelectionJobPort?: XDriveMediaSelectionJobPort
   backgroundTasks?: XDriveBackgroundTask[]
   globalBackgroundTasks?: XDriveBackgroundTask[]
   backgroundTasksLoading?: boolean
@@ -107,6 +110,7 @@ export interface XDriveTaskCenterPageProps {
 export function XDriveTaskCenterPage({
   transfers,
   operations,
+  mediaSelectionJobPort,
   backgroundTasks = [],
   globalBackgroundTasks = [],
   backgroundTasksLoading = false,
@@ -212,6 +216,12 @@ export function XDriveTaskCenterPage({
           </Box>
         ) : (
           <>
+            {mediaSelectionJobPort ? (
+              <Box>
+                <XDriveMediaSelectionJobCenter port={mediaSelectionJobPort} />
+              </Box>
+            ) : null}
+            {mediaSelectionJobPort ? <Divider /> : null}
             <Box>
               <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
                 文件操作

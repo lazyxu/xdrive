@@ -512,3 +512,9 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   owner isolation through the server API. Explicit 100k Original MediaItem[]
   actions remain disabled. Desktop Task Center not yet wired, and no
   real-device or 10k/100k execution timing is certified.
+
+- 2026-10-09 G07 Phase 3c Web Task Center candidate. Server-backed media
+  job history and true progress are visible after leaving Gallery. Cancel,
+  retry and paged partial failures remain owner-bound. Task list polling
+  mounts only when entering the Tasks app; no Gallery-first-open 100k scan.
+  Desktop requires the pending Agent job-protocol extension.
