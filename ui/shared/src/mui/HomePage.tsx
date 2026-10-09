@@ -86,7 +86,7 @@ export function XDriveHomePage({
   favoriteItems?: readonly XDriveHomeListItem[]
   recentAvailable?: boolean
   favoritesAvailable?: boolean
-  loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  loadThumbnail?: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
   openLocalFolderLoading?: boolean
   onOpenLocalFolder?: () => void
   onUploadFiles?: () => void

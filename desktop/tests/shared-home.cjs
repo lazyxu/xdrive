@@ -52,7 +52,7 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
   assert.ok(webApp.includes('<WebOverviewPage'))
   assert.ok(webHome.includes('api.fileRecent(6)'))
   assert.ok(webHome.includes('api.fileFavorites()'))
-  assert.ok(webHome.includes('api.mediaThumbnail(Number(item.id))'))
+  assert.ok(webHome.includes('api.mediaThumbnail(id, requestSignal)'))
   assert.ok(webHome.includes('onOpenDirectory(entry.node.id, entry.crumbs)'))
   assert.ok(webHome.includes('entry.crumbs.slice(0, -1)'))
   assert.ok(webApp.includes('loadDirectory(id, nextCrumbs)'))
@@ -67,4 +67,27 @@ test('Desktop-only local disk and availability remain outside the shared Home co
   assert.ok(desktopHome.includes('xDriveFileExplorerAvailabilityFromSnapshot'))
   assert.equal(webHome.includes('getLocalDiskSpace'), false)
   assert.equal(webHome.includes('getFileAvailabilityBatch'), false)
+})
+
+
+test('Home video cards use the same persisted-first poster resolver on Web and Desktop', () => {
+  const sharedPoster = read('ui', 'shared', 'src', 'mui', 'MediaGalleryVideoPoster.ts')
+  const provider = read('ui', 'shared', 'src', 'mui', 'FileExplorerThumbnail.tsx')
+  assert.ok(sharedPoster.includes('export async function xDriveResolveMediaVideoPoster'))
+  assert.ok(home.includes('signal?: AbortSignal'), 'shared Home must forward the provider cancellation signal')
+  assert.ok(provider.includes('scheduleFileThumbnail((signal) => loadThumbnail(requestedItem, signal))'))
+  for (const adapter of [webHome, desktopHome]) {
+    assert.ok(adapter.includes("xDriveFileKind(item.name, item.kind) !== 'video'"), 'non-video thumbnails must not open media previews')
+    assert.ok(adapter.includes('xDriveResolveMediaVideoPoster({'), 'video Home cards must try persisted poster first')
+    assert.ok(adapter.includes('revision: Number(item.revision)'), 'poster backfill must use the current node revision')
+    assert.ok(adapter.includes('signal,'), 'Home video work must support cancelling a recycled viewport')
+    assert.ok(adapter.includes('loadCached,'), 'warm Home video card must avoid original-video decode')
+    assert.ok(adapter.includes('capture: async (requestSignal)'), 'cold Home video card must try bounded frame capture')
+    assert.ok(adapter.includes('xDriveCaptureVideoPosterBlob('), 'cold Home capture must use shared bounded helper')
+  }
+  assert.ok(webHome.includes('api.filePreviewURL(nodeID, requestSignal)'))
+  assert.ok(webHome.includes('api.mediaVideoPoster(id, revision, poster, requestSignal)'))
+  assert.ok(desktopHome.includes('xDriveDesktopViewportRequest('))
+  assert.ok(desktopHome.includes('agent.cloudFilePreviewURL(nodeID)'))
+  assert.ok(desktopHome.includes('agent.putMediaVideoPoster(id, revision, bytes)'))
 })

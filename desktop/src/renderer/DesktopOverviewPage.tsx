@@ -11,6 +11,9 @@ import {
 } from '@xdrive/shared'
 import {
   XDriveHomePage,
+  xDriveCaptureVideoPosterBlob,
+  xDriveFileKind,
+  xDriveResolveMediaVideoPoster,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerItem,
@@ -18,6 +21,7 @@ import type {
   XDriveHomeListItem,
 } from '@xdrive/ui/mui'
 import type { DesktopFileExplorerAction } from './DesktopFileExplorer'
+import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 
 function recentTime(value: string) {
   const parsed = new Date(value)
@@ -161,12 +165,47 @@ export function DesktopOverviewPage({
     return () => { active = false }
   }, [fileAvailabilitySupported, overviewItems, overviewLifecycleKey])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (item.kind !== 'file') return null
-    const result = await window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id))
-    if (!result.ok) return null
-    const contentType = result.data.content_type || 'image/jpeg'
-    return URL.createObjectURL(new Blob([result.data.data], { type: contentType }))
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = Number(item.id)
+    const agent = window.xdriveDesktop.agent
+    const loadCached = async (id: number, requestSignal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(
+        requestSignal,
+        (requestID) => agent.getMediaThumbnail(id, requestID),
+      )
+      if (!result.ok || requestSignal?.aborted) return null
+      return URL.createObjectURL(new Blob(
+        [result.data.data],
+        { type: result.data.content_type || 'image/jpeg' },
+      ))
+    }
+    if (xDriveFileKind(item.name, item.kind) !== 'video') {
+      try {
+        return await loadCached(nodeID, signal)
+      } catch {
+        return null
+      }
+    }
+    return xDriveResolveMediaVideoPoster({
+      nodeID,
+      revision: Number(item.revision),
+      signal,
+      loadCached,
+      capture: async (requestSignal) => {
+        requestSignal?.throwIfAborted()
+        const result = await agent.cloudFilePreviewURL(nodeID)
+        if (!result.ok || requestSignal?.aborted) return null
+        return xDriveCaptureVideoPosterBlob(result.data, 0, 0, 0, 512, requestSignal)
+      },
+      save: async (id, revision, poster, requestSignal) => {
+        requestSignal?.throwIfAborted()
+        const bytes = await poster.arrayBuffer()
+        requestSignal?.throwIfAborted()
+        const result = await agent.putMediaVideoPoster(id, revision, bytes)
+        if (!result.ok) throw new Error('video poster backfill failed')
+      },
+    })
   }, [])
 
   const explorerItem = (
