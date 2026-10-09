@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -46,7 +50,8 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -447,6 +452,168 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		[]uint64{a.node.ID, b.node.ID},
 	); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("stale index must reject organization preview: %v", err)
+	}
+
+	// Real SourceRun API replay after the confirmed metadata-only union.
+	// A normal unchanged Pull observation must not rewrite a keeper's newly
+	// combined annotations or steal its original source-owned album members.
+	// Existing source paths in this test are provider-style absolute strings;
+	// normalize this test-only SourceItem to the SourceRun's relative path.
+	rootID := roots[owners[0].ID]
+	if err := db.Model(&meta.Source{}).
+		Where("id = ?", sourceA.ID).
+		Update("target_node_id", rootID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.SourceItem{}).
+		Where("id = ?", sourceItemB.ID).
+		Updates(map[string]any{
+			"path": "b.jpg", "size": int64(1000), "sha256": hash,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("node_id = ?", b.node.ID).
+		Update("node_revision", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	authManager := auth.New("duplicate-source-replay-secret", time.Hour)
+	token, err := authManager.Issue(owners[0].ID, owners[0].SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Auth = authManager
+	server.RefreshTTL = 24 * time.Hour
+	server.AllowedOrigin = "http://localhost"
+	router := server.Router()
+	sourcePath := fmt.Sprintf("/api/v1/sources/%d/runs", sourceA.ID)
+	startRun := func() string {
+		t.Helper()
+		runID := uuid.NewString()
+		request(t, router, http.MethodPost, sourcePath, token,
+			strings.NewReader(fmt.Sprintf(`{"run_id":%q,"trigger":"scheduled"}`, runID)),
+			http.StatusCreated)
+		return runID
+	}
+	observe := func(runID, externalID, path string) observeSourceRunResponse {
+		t.Helper()
+		payload := fmt.Sprintf(
+			`{"items":[{"external_id":%q,"kind":"file","path":%q,"size":1000,"sha256":%q}]}`,
+			externalID, path, hash,
+		)
+		out := request(t, router, http.MethodPost,
+			sourcePath+"/"+runID+"/observe", token,
+			strings.NewReader(payload), http.StatusOK)
+		var observed observeSourceRunResponse
+		if err := json.Unmarshal(out.Body.Bytes(), &observed); err != nil {
+			t.Fatal(err)
+		}
+		return observed
+	}
+	finish := func(runID string, complete bool, summary string) {
+		t.Helper()
+		body := fmt.Sprintf(
+			`{"status":"completed","complete_inventory":%t,"summary":%s}`,
+			complete, summary,
+		)
+		request(t, router, http.MethodPost,
+			sourcePath+"/"+runID+"/finish", token,
+			strings.NewReader(body), http.StatusOK)
+	}
+	replayedRunID := startRun()
+	reobserved := observe(replayedRunID, "synology-b", "b.jpg")
+	if len(reobserved.Plans) != 1 ||
+		reobserved.Plans[0].Action != "unchanged" ||
+		reobserved.Plans[0].NodeID == nil ||
+		*reobserved.Plans[0].NodeID != b.node.ID {
+		t.Fatalf("unchanged re-sync should retain real independent source Node: %+v", reobserved)
+	}
+	finish(replayedRunID, true,
+		`{"scanned_items":1,"scanned_bytes":1000,"scanned_file_items":1,"unchanged_items":1,"unchanged_bytes":1000}`)
+	var linkedAfterReplay meta.SourceItem
+	if err := db.First(&linkedAfterReplay, sourceItemB.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if linkedAfterReplay.State != meta.SourceItemStateSynced ||
+		linkedAfterReplay.NodeID == nil ||
+		*linkedAfterReplay.NodeID != b.node.ID ||
+		linkedAfterReplay.LastSeenRunID != replayedRunID {
+		t.Fatalf("replayed sync broke original SourceItem identity: %+v", linkedAfterReplay)
+	}
+	var keeperAfterReplay meta.PhotoMetadata
+	if err := db.First(&keeperAfterReplay, "asset_id = ?", a.asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !keeperAfterReplay.Favorite ||
+		keeperAfterReplay.Description != "first description" ||
+		keeperAfterReplay.TagsJSON != `["cat","travel"]` ||
+		keeperAfterReplay.PeopleJSON != `["Alice","Bob"]` {
+		t.Fatalf("unchanged real SourceRun erased previously merged annotations: %+v", keeperAfterReplay)
+	}
+	var keeperSourceMembers int64
+	if err := db.Model(&meta.PhotoCollectionAsset{}).
+		Where("collection_id = ? AND asset_id = ?", source.ID, a.asset.ID).
+		Count(&keeperSourceMembers).Error; err != nil {
+		t.Fatal(err)
+	}
+	if keeperSourceMembers != 0 {
+		t.Fatal("SourceRun incorrectly moved provider album membership to keeper")
+	}
+
+	// Discovery of a *new* remote identity with identical bytes is explicitly
+	// a CREATE plan, not automatic reuse of the keeper or metadata consolidation.
+	// The fixture materializes the planned transfer as an independent Node; it
+	// does NOT fetch bytes through a live Synology or Yike connector.
+	secondRunID := startRun()
+	newPlan := observe(secondRunID, "synology-new-identity", "reimported.jpg")
+	if len(newPlan.Plans) != 1 || newPlan.Plans[0].Action != "create" {
+		t.Fatalf("new source identity silently merged by SHA-256: %+v", newPlan)
+	}
+	incoming := create(owners[0], "reimported.jpg", "", `[]`, `[]`, false)
+	commit := fmt.Sprintf(
+		`{"items":[{"external_id":"synology-new-identity","action":"create","node_id":%d,"node_revision":1,"kind":"file","path":"reimported.jpg","size":1000,"sha256":%q,"transferred":true,"transferred_bytes":1000}]}`,
+		incoming.node.ID, hash,
+	)
+	commitPath := sourcePath + "/" + secondRunID + "/commit"
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(commit), http.StatusNoContent)
+	// Simulate lost commit response: the same event must be idempotent.
+	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(commit), http.StatusNoContent)
+	finish(secondRunID, false,
+		`{"scanned_items":1,"scanned_bytes":1000,"scanned_file_items":1,"new_items":1,"new_bytes":1000,"planned_transfer_items":1,"planned_transfer_bytes":1000}`)
+	var newlyImportedSource meta.SourceItem
+	if err := db.Where("source_id = ? AND external_id = ?",
+		sourceA.ID, "synology-new-identity").First(&newlyImportedSource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if newlyImportedSource.NodeID == nil ||
+		*newlyImportedSource.NodeID != incoming.node.ID ||
+		newlyImportedSource.State != meta.SourceItemStateSynced {
+		t.Fatalf("committed new source identity lost independent Node: %+v", newlyImportedSource)
+	}
+	var incomingMetadata meta.PhotoMetadata
+	if err := db.Where("asset_id = ?", incoming.asset.ID).
+		First(&incomingMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	if incomingMetadata.Favorite || incomingMetadata.Description != "" ||
+		incomingMetadata.TagsJSON != `[]` || incomingMetadata.PeopleJSON != `[]` {
+		t.Fatalf("newly synced exact-content copy inherited keeper annotations without confirmation: %+v", incomingMetadata)
+	}
+	if err := db.Where("asset_id = ?", a.asset.ID).
+		First(&keeperAfterReplay).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !keeperAfterReplay.Favorite ||
+		keeperAfterReplay.TagsJSON != `["cat","travel"]` {
+		t.Fatalf("newly synced duplicate modified confirmed keeper annotations: %+v", keeperAfterReplay)
+	}
+	var ownedAssets int64
+	if err := db.Model(&meta.PhotoAsset{}).
+		Where("owner_id = ?", owners[0].ID).Count(&ownedAssets).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ownedAssets != 4 { // 3 original owner-A assets + independent new import.
+		t.Fatalf("newly synced independent asset count=%d want=4", ownedAssets)
 	}
 }
 

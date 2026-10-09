@@ -544,3 +544,37 @@ Do not add connector dependencies on:
 - perceptual duplicate merging across differently encoded media.
 
 Those capabilities, if desired later, must be implemented as connector-neutral local media features unless they are strictly necessary to enumerate or transfer files.
+## G11 duplicate metadata-only consolidation: SourceRun replay regression (2026-10-09)
+
+The already implemented Gallery duplicate-organize confirmation intentionally
+**aggregates user annotations only**, retaining every original PhotoAsset,
+PhotoResource, Node, SourceItem and source-managed collection independently.
+SourcePlan decisions are based on stable remote source identities and file
+evidence; a shared primary SHA-256 is **never** a valid remote identity alias.
+
+A dedicated owner-scoped PostgreSQL regression should exercise the real
+Server `/sources/:id/runs` begin/observe/finish and execution-commit
+protocol after a metadata-only duplicate annotation union:
+
+- **Existing unchanged Pull SourceItem:** repeating an observed remote ID
+  with unchanged path, SHA and size must yield `unchanged`, retain its
+  original Node mapping, leave all source-owned album memberships alone,
+  and preserve already user-confirmed keeper Favorites, tags, people and
+  description. No file consolidation or CAS reference mutation.
+- **New remote identity, same SHA bytes:** the SourceRun planner must yield
+  `create` and an executor-committed second Node rather than assigning
+  it the Keeper's identity. The new PhotoAsset keeps **independent**
+  annotations; never automatically inherit the Keeper's manual albums or
+  durable person memberships. Replayed source commit must be idempotent.
+- **Provider ownership:** source and resource links remain owner-scoped.
+  Paused Pull sources still present a possible reimport risk; no local
+  SourceItem linkage does not certify absence of the file remotely.
+
+This fixture can call the **real Server SourceRun API** while simulating
+only the executor's already-downloaded Node/File/PhotoAsset commit. It does
+not access live Synology or Yike, perform remote Range downloads, or prove
+future provider-specific cursor/tombstone behavior. It also does **not**
+simulate permanent deletion of an original: source-initiated reimport after
+destructive Trash/GC remains a distinct safety gate. Backup/Mirror replay,
+restoration, rollback and edit-version preservation must be separately
+proven before allowing a one-click destructive duplicate cleanup.
