@@ -138,6 +138,14 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:set-media-selection-excluded', token, nodeID, excluded, version),
   deleteMediaSelectionSnapshot: (token: string) =>
     ipcRenderer.invoke('agent:delete-media-selection-snapshot', token),
+  submitMediaSelectionFavoriteJob: (token: string, version: number, favorite: boolean) =>
+    ipcRenderer.invoke('agent:submit-media-selection-favorite-job', token, version, favorite),
+  getMediaSelectionJob: (id: string) => ipcRenderer.invoke('agent:get-media-selection-job', id),
+  listMediaSelectionJobs: () => ipcRenderer.invoke('agent:list-media-selection-jobs'),
+  cancelMediaSelectionJob: (id: string) => ipcRenderer.invoke('agent:cancel-media-selection-job', id),
+  retryMediaSelectionJob: (id: string) => ipcRenderer.invoke('agent:retry-media-selection-job', id),
+  mediaSelectionJobFailures: (id: string, offset: number, limit: number) =>
+    ipcRenderer.invoke('agent:media-selection-job-failures', id, offset, limit),
   getNodeLocation: (nodeID: number, requestID?: string) =>
     ipcRenderer.invoke('agent:get-node-location', nodeID, requestID),
   getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) =>

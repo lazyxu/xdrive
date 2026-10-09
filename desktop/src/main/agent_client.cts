@@ -795,6 +795,32 @@ export type AgentMediaSelectionSnapshot = {
   expires_at: string
 }
 
+export type AgentMediaSelectionJob = {
+  id: string
+  action: 'favorite'
+  favorite: boolean
+  status: 'queued' | 'running' | 'cancel_requested' | 'completed' | 'partial' | 'cancelled'
+  retry_of_id?: string
+  total_items: number
+  processed_items: number
+  succeeded_items: number
+  failed_items: number
+  cancelled_items: number
+  started_at?: string
+  cancel_requested_at?: string
+  finished_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AgentMediaSelectionJobFailurePage = {
+  items: Array<{ node_id: number; revision: number; status: 'failed'; failure_code: string }>
+  total: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export type AgentMediaSelectionSnapshotPage = AgentMediaSelectionSnapshot & {
   offset: number
   limit: number
@@ -1650,6 +1676,43 @@ export class AgentIPCClient {
     const params = new URLSearchParams({ token })
     return this.request<void>(
       'DELETE', `/v1/media/selection-snapshot?${params}`,
+    )
+  }
+
+  submitMediaSelectionFavoriteJob(token: string, version: number, favorite: boolean) {
+    const query = new URLSearchParams({ token })
+    return this.request<AgentMediaSelectionJob>(
+      'POST', `/v1/media/selection-snapshot/job?${query}`,
+      { version, favorite, confirm: true },
+    )
+  }
+
+  getMediaSelectionJob(id: string) {
+    return this.request<AgentMediaSelectionJob>(
+      'GET', `/v1/media/selection-job?${new URLSearchParams({ id })}`,
+    )
+  }
+
+  listMediaSelectionJobs() {
+    return this.request<AgentMediaSelectionJob[]>('GET', '/v1/media/selection-jobs')
+  }
+
+  cancelMediaSelectionJob(id: string) {
+    return this.request<void>(
+      'POST', `/v1/media/selection-job/cancel?${new URLSearchParams({ id })}`,
+    )
+  }
+
+  retryMediaSelectionJob(id: string) {
+    return this.request<AgentMediaSelectionJob>(
+      'POST', `/v1/media/selection-job/retry?${new URLSearchParams({ id })}`,
+    )
+  }
+
+  mediaSelectionJobFailures(id: string, offset: number, limit: number) {
+    const params = new URLSearchParams({ id, offset: String(offset), limit: String(limit) })
+    return this.request<AgentMediaSelectionJobFailurePage>(
+      'GET', `/v1/media/selection-job/failures?${params}`,
     )
   }
 

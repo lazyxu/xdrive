@@ -104,6 +104,7 @@ var desktopIPCCapabilities = []string{
 	"media-gallery",
 	"media-index-status",
 	"media-selection-snapshot",
+	"media-selection-jobs",
 	"media-folder-recursive",
 	"media-duplicate-organize-plan",
 	"media-duplicate-organize-apply",
@@ -631,6 +632,12 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/selection-snapshot", h.mediaGetSelectionSnapshot)
 	mux.HandleFunc("PATCH /v1/media/selection-snapshot/exclusion", h.mediaSetSelectionExcluded)
 	mux.HandleFunc("DELETE /v1/media/selection-snapshot", h.mediaDeleteSelectionSnapshot)
+	mux.HandleFunc("POST /v1/media/selection-snapshot/job", h.mediaSubmitSelectionFavoriteJob)
+	mux.HandleFunc("GET /v1/media/selection-jobs", h.mediaListSelectionJobs)
+	mux.HandleFunc("GET /v1/media/selection-job", h.mediaGetSelectionJob)
+	mux.HandleFunc("GET /v1/media/selection-job/failures", h.mediaSelectionJobFailures)
+	mux.HandleFunc("POST /v1/media/selection-job/cancel", h.mediaCancelSelectionJob)
+	mux.HandleFunc("POST /v1/media/selection-job/retry", h.mediaRetrySelectionJob)
 	mux.HandleFunc("GET /v1/media/duplicate-organize/plan", h.mediaDuplicateOrganizePlan)
 	mux.HandleFunc("POST /v1/media/duplicate-organize/apply", h.mediaDuplicateOrganizeApply)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
@@ -3008,6 +3015,159 @@ func (h *desktopIPCHandler) mediaDeleteSelectionSnapshot(w http.ResponseWriter, 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func desktopIPCMediaSelectionJobID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if _, err := uuid.Parse(id); err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_job", "valid media job id is required")
+		return "", false
+	}
+	return id, true
+}
+
+func (h *desktopIPCHandler) mediaSubmitSelectionFavoriteJob(w http.ResponseWriter, r *http.Request) {
+	token, ok := desktopIPCSelectionToken(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Version  uint64 `json:"version"`
+		Favorite *bool  `json:"favorite"`
+		Confirm  bool   `json:"confirm"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Version == 0 || input.Favorite == nil || !input.Confirm {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_job", "confirmation, version and favorite are required")
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaSubmitSelectionFavoriteJob(context.Context, string, uint64, bool) (client.MediaSelectionJob, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to run Gallery selection jobs")
+		return
+	}
+	value, err := provider.CloudMediaSubmitSelectionFavoriteJob(r.Context(), token, input.Version, *input.Favorite)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, value)
+}
+
+func (h *desktopIPCHandler) mediaListSelectionJobs(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(interface {
+		CloudMediaListSelectionJobs(context.Context) ([]client.MediaSelectionJob, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to list Gallery selection jobs")
+		return
+	}
+	jobs, err := provider.CloudMediaListSelectionJobs(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, jobs)
+}
+
+func (h *desktopIPCHandler) mediaGetSelectionJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := desktopIPCMediaSelectionJobID(w, r)
+	if !ok {
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaGetSelectionJob(context.Context, string) (client.MediaSelectionJob, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to read Gallery selection jobs")
+		return
+	}
+	job, err := provider.CloudMediaGetSelectionJob(r.Context(), id)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, job)
+}
+
+func (h *desktopIPCHandler) mediaCancelSelectionJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := desktopIPCMediaSelectionJobID(w, r)
+	if !ok {
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaCancelSelectionJob(context.Context, string) error
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to cancel Gallery selection jobs")
+		return
+	}
+	if err := provider.CloudMediaCancelSelectionJob(r.Context(), id); err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *desktopIPCHandler) mediaRetrySelectionJob(w http.ResponseWriter, r *http.Request) {
+	id, ok := desktopIPCMediaSelectionJobID(w, r)
+	if !ok {
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaRetrySelectionJob(context.Context, string) (client.MediaSelectionJob, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to retry Gallery selection jobs")
+		return
+	}
+	job, err := provider.CloudMediaRetrySelectionJob(r.Context(), id)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusAccepted, job)
+}
+
+func (h *desktopIPCHandler) mediaSelectionJobFailures(w http.ResponseWriter, r *http.Request) {
+	id, ok := desktopIPCMediaSelectionJobID(w, r)
+	if !ok {
+		return
+	}
+	offset, limit := 0, 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_job_page", "offset must be nonnegative")
+			return
+		}
+		offset = value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 200 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_selection_job_page", "limit must be 1..200")
+			return
+		}
+		limit = value
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaSelectionJobFailures(context.Context, string, int, int) (client.MediaSelectionJobFailurePage, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_selection_jobs_unavailable", "update Agent to inspect Gallery selection job failures")
+		return
+	}
+	page, err := provider.CloudMediaSelectionJobFailures(r.Context(), id, offset, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) mediaSyncFolders(w http.ResponseWriter, r *http.Request) {

@@ -232,9 +232,13 @@ export default function App({
     state: XDriveFileExplorerNavigationState<AgentCloudCrumb>
   } | null>(null)
 
+  const mediaSelectionJobsSupported =
+    agent.hello?.capabilities.includes('media-selection-jobs') ?? false
   const mediaGallerySource = useMemo(
-    () => createDesktopMediaGalleryDataSource(window.xdriveDesktop.agent),
-    [],
+    () => createDesktopMediaGalleryDataSource(
+      window.xdriveDesktop.agent, mediaSelectionJobsSupported,
+    ),
+    [mediaSelectionJobsSupported],
   )
 
 
@@ -625,6 +629,32 @@ export default function App({
     backgroundTasksSupported,
     status?.role,
   ])
+
+  const mediaSelectionJobPort = useMemo(() => (
+    agent.connected && configured && mediaSelectionJobsSupported ? {
+      list: async () => {
+        const response = await window.xdriveDesktop.agent.listMediaSelectionJobs()
+        if (!response.ok) throw new Error(response.error.message)
+        return response.data
+      },
+      cancel: async (id: string) => {
+        const response = await window.xdriveDesktop.agent.cancelMediaSelectionJob(id)
+        if (!response.ok) throw new Error(response.error.message)
+      },
+      retry: async (id: string) => {
+        const response = await window.xdriveDesktop.agent.retryMediaSelectionJob(id)
+        if (!response.ok) throw new Error(response.error.message)
+        return response.data
+      },
+      failures: async (id: string, offset: number, limit: number) => {
+        const response = await window.xdriveDesktop.agent.mediaSelectionJobFailures(
+          id, offset, limit,
+        )
+        if (!response.ok) throw new Error(response.error.message)
+        return response.data
+      },
+    } : undefined
+  ), [agent.connected, configured, mediaSelectionJobsSupported])
 
   const taskCenter = useXDriveTaskCenterController({
     transfers: transfers.transfers,
@@ -2183,6 +2213,7 @@ export default function App({
         {(view === 'transfers' || view === 'global-tasks') && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            mediaSelectionJobPort={view === 'transfers' ? mediaSelectionJobPort : undefined}
             operationFocusID={filesOperationFocus?.operationID}
             operationFocusRequestID={filesOperationFocus?.requestID}
             clearHistory={{

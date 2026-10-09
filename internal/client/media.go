@@ -742,6 +742,89 @@ func (c *Client) MediaDeleteSelectionSnapshot(ctx context.Context, token string)
 	return c.json(ctx, http.MethodDelete, path, nil, nil)
 }
 
+// MediaSelectionJob is a durable batch task, distinct from an expiring selection token.
+type MediaSelectionJob struct {
+	ID                string     `json:"id"`
+	Action            string     `json:"action"`
+	Favorite          bool       `json:"favorite"`
+	Status            string     `json:"status"`
+	RetryOfID         string     `json:"retry_of_id,omitempty"`
+	TotalItems        int64      `json:"total_items"`
+	ProcessedItems    int64      `json:"processed_items"`
+	SucceededItems    int64      `json:"succeeded_items"`
+	FailedItems       int64      `json:"failed_items"`
+	CancelledItems    int64      `json:"cancelled_items"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type MediaSelectionJobFailure struct {
+	NodeID      uint64 `json:"node_id"`
+	Revision    uint64 `json:"revision"`
+	Status      string `json:"status"`
+	FailureCode string `json:"failure_code"`
+}
+
+type MediaSelectionJobFailurePage struct {
+	Items   []MediaSelectionJobFailure `json:"items"`
+	Total   int64                      `json:"total"`
+	Offset  int                        `json:"offset"`
+	Limit   int                        `json:"limit"`
+	HasMore bool                       `json:"has_more"`
+}
+
+func (c *Client) MediaSubmitSelectionFavoriteJob(ctx context.Context, token string, version uint64, favorite bool) (MediaSelectionJob, error) {
+	if version == 0 || token == "" {
+		return MediaSelectionJob{}, fmt.Errorf("selection token and version are required")
+	}
+	input := struct {
+		Version  uint64 `json:"version"`
+		Action   string `json:"action"`
+		Favorite bool   `json:"favorite"`
+		Confirm  bool   `json:"confirm"`
+	}{Version: version, Action: "favorite", Favorite: favorite, Confirm: true}
+	var out MediaSelectionJob
+	err := c.json(ctx, http.MethodPost, "/api/v1/media/selection-snapshots/"+url.PathEscape(token)+"/jobs", input, &out)
+	return out, err
+}
+
+func (c *Client) MediaGetSelectionJob(ctx context.Context, id string) (MediaSelectionJob, error) {
+	var out MediaSelectionJob
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/selection-jobs/"+url.PathEscape(id), nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaListSelectionJobs(ctx context.Context) ([]MediaSelectionJob, error) {
+	var out []MediaSelectionJob
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/selection-jobs", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaCancelSelectionJob(ctx context.Context, id string) error {
+	return c.json(ctx, http.MethodPost, "/api/v1/media/selection-jobs/"+url.PathEscape(id)+"/cancel", nil, nil)
+}
+
+func (c *Client) MediaRetrySelectionJob(ctx context.Context, id string) (MediaSelectionJob, error) {
+	var out MediaSelectionJob
+	err := c.json(ctx, http.MethodPost, "/api/v1/media/selection-jobs/"+url.PathEscape(id)+"/retry", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSelectionJobFailures(ctx context.Context, id string, offset, limit int) (MediaSelectionJobFailurePage, error) {
+	if offset < 0 || limit < 1 || limit > 200 {
+		return MediaSelectionJobFailurePage{}, fmt.Errorf("media job failure offset/limit invalid")
+	}
+	query := url.Values{}
+	query.Set("offset", strconv.Itoa(offset))
+	query.Set("limit", strconv.Itoa(limit))
+	var out MediaSelectionJobFailurePage
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/selection-jobs/"+url.PathEscape(id)+"/failures?"+query.Encode(), nil, &out)
+	return out, err
+}
+
 func (c *Client) MediaIndexStatus(ctx context.Context) (MediaGalleryIndexStatus, error) {
 	var out MediaGalleryIndexStatus
 	err := c.json(ctx, http.MethodGet, "/api/v1/media/index-status", nil, &out)
