@@ -1405,12 +1405,12 @@ test('Gallery media details use shared responsive Inspector and Drawer instead o
     'export function XDriveMediaAsyncVideoPoster',
     'IntersectionObserver',
     'xDriveCaptureVideoPosterBlob',
-    'URL.createObjectURL',
     'revokeIfBlob',
     'export function xDriveMediaFallback',
   ]) {
     assert.ok(sharedGalleryPreview.includes(token), `MediaGalleryPreviewMedia missing: ${token}`)
   }
+  assert.ok(sharedGalleryVideoPoster.includes('URL.createObjectURL'), 'Persisted video poster resolver must own cold Blob URL creation')
   for (const token of [
     'export function xDriveCaptureVideoPosterBlob',
     'xDriveMediaVideoPosterGeometry',

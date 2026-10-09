@@ -207,7 +207,14 @@ export interface XDriveMediaGalleryPort {
   loadPreviewURL?: (
     nodeID: number,
     kind: 'image' | 'video' | 'live_photo',
+    signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<string>>
+  saveVideoPoster?: (
+    nodeID: number,
+    revision: number,
+    poster: Blob,
+    signal?: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   setFavorite?: (
     nodeID: number,
     favorite: boolean,
@@ -490,7 +497,12 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     loadPreviewURL: port.loadPreviewURL
-      ? (nodeID, kind) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind))
+      ? (nodeID, kind, signal) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind, signal))
+      : undefined,
+    saveVideoPoster: port.saveVideoPoster
+      ? async (nodeID, revision, poster, signal) => {
+          await resolveXDriveTransport(port.saveVideoPoster!(nodeID, revision, poster, signal))
+        }
       : undefined,
     setFavorite: port.setFavorite
       ? async (nodeID, favorite) => {
