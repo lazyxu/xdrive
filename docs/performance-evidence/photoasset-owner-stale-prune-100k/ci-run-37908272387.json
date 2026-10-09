@@ -1,0 +1,38 @@
+{
+  "source": "GitHub Actions native PostgreSQL 17 photoasset-owner-stale-prune-100k-performance",
+  "run_id": 37908272387,
+  "job_id": 113746939701,
+  "measured_commit": "f0dbf3d323d76d8552441f107bf052886196116a",
+  "measure_label": "PHOTOASSET_STALE_PRUNE_100K",
+  "assets": 100000,
+  "baseline_error": "extended protocol limited to 65535 parameters",
+  "baseline_failed_ms": 78.136,
+  "bound_ids_per_delete": 4096,
+  "candidate_median_ms": 377.987,
+  "candidate_samples": [
+    {
+      "sample": 1,
+      "elapsed_ms": 377.987,
+      "retained": 100000
+    },
+    {
+      "sample": 2,
+      "elapsed_ms": 380.604,
+      "retained": 100000
+    },
+    {
+      "sample": 3,
+      "elapsed_ms": 364.554,
+      "retained": 100000
+    }
+  ],
+  "other_owner_asset_count": 1,
+  "owner_assets_after_stale_prune": 95750,
+  "sample_count": 3,
+  "scope": "native PostgreSQL stale PhotoAsset pruning only; not full owner reconcile or rendering",
+  "seed_ms": 6794.987,
+  "soft_deleted_frozen_retained": 50,
+  "stale_active_removed": 4250,
+  "stale_delete_batches": 2,
+  "workload": "photoasset-owner-stale-prune-100k"
+}
