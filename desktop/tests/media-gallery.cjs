@@ -1551,6 +1551,34 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   assert.match(sharedModels, /search_order\?: 'relevance' \| 'time' \| string/)
 })
 
+test('Gallery time-scale preferences persist per scale and preserve the browsing anchor', () => {
+  for (const token of [
+    "xdrive.gallery.view-preferences.v1",
+    'year: 96',
+    'month: 144',
+    'day: 192',
+    'all: 144',
+    'densityByScale',
+    'restoreAnchorIndex',
+    'restoreAnchorRevision',
+    'onVisibleAnchorChange',
+    'data-xdrive-gallery-sticky-date',
+    'data-xdrive-gallery-timeline-jump',
+    'xDriveMediaGalleryTimelineGroupLabel',
+    'window.localStorage.setItem',
+  ]) {
+    assert.ok(sharedGalleryMain.includes(token), `Gallery date-browsing memory missing: ${token}`)
+  }
+  assert.ok(
+    sharedGalleryMain.includes('viewAnchorIndexRef.current = Math.max(0, Math.trunc(group.start_index))'),
+    'timeline jump must preserve logical sparse indexes instead of materializing media',
+  )
+  assert.ok(
+    sharedGalleryMain.includes('collection.onRangeChange('),
+    'anchor restore must stay on the existing sparse VirtualCollection range contract',
+  )
+})
+
 
 test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler-owned URL lifetime', () => {
   for (const token of [

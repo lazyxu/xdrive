@@ -118,6 +118,7 @@ import {
 } from './MediaGalleryVirtualGrid'
 import {
   XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_GAP,
+  xDriveMediaGalleryTimelineGroupLabel,
   xDriveMediaGalleryTimelineIndexVisible,
   xDriveMediaGalleryTimelineLayout,
   xDriveMediaGalleryTimelineWindow,
@@ -2185,6 +2186,110 @@ function mediaAssetChipLabel(item: MediaItem) {
 
 type MediaGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 
+type MediaGalleryDensityPreferences = Record<MediaGalleryTimeScale, number>
+
+type MediaGalleryViewPreferences = {
+  timeScale: MediaGalleryTimeScale
+  densityByScale: MediaGalleryDensityPreferences
+}
+
+const XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY = 'xdrive.gallery.view-preferences.v1'
+const XDRIVE_MEDIA_GALLERY_DEFAULT_DENSITY: MediaGalleryDensityPreferences = {
+  year: 96,
+  month: 144,
+  day: 192,
+  all: 144,
+}
+const XDRIVE_MEDIA_GALLERY_DENSITY_MIN = 96
+const XDRIVE_MEDIA_GALLERY_DENSITY_MAX = 240
+const XDRIVE_MEDIA_GALLERY_DENSITY_STEP = 24
+const mediaGalleryTimeScaleValues: readonly MediaGalleryTimeScale[] = [
+  'year',
+  'month',
+  'day',
+  'all',
+]
+
+function mediaGalleryNormalizeDensity(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  const snapped = XDRIVE_MEDIA_GALLERY_DENSITY_MIN +
+    Math.round(
+      (value - XDRIVE_MEDIA_GALLERY_DENSITY_MIN) /
+      XDRIVE_MEDIA_GALLERY_DENSITY_STEP,
+    ) * XDRIVE_MEDIA_GALLERY_DENSITY_STEP
+  return Math.max(
+    XDRIVE_MEDIA_GALLERY_DENSITY_MIN,
+    Math.min(XDRIVE_MEDIA_GALLERY_DENSITY_MAX, snapped),
+  )
+}
+
+function xDriveReadMediaGalleryViewPreferences(): MediaGalleryViewPreferences {
+  const fallback: MediaGalleryViewPreferences = {
+    timeScale: 'all',
+    densityByScale: { ...XDRIVE_MEDIA_GALLERY_DEFAULT_DENSITY },
+  }
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<MediaGalleryViewPreferences>
+    const timeScale = mediaGalleryTimeScaleValues.includes(
+      parsed.timeScale as MediaGalleryTimeScale,
+    )
+      ? parsed.timeScale as MediaGalleryTimeScale
+      : fallback.timeScale
+    const densityByScale = { ...fallback.densityByScale }
+    for (const scale of mediaGalleryTimeScaleValues) {
+      densityByScale[scale] = mediaGalleryNormalizeDensity(
+        parsed.densityByScale?.[scale],
+        densityByScale[scale],
+      )
+    }
+    return { timeScale, densityByScale }
+  } catch {
+    return fallback
+  }
+}
+
+function xDriveWriteMediaGalleryViewPreferences(
+  preferences: MediaGalleryViewPreferences,
+) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY,
+      JSON.stringify(preferences),
+    )
+  } catch {
+    // Browsing remains functional when storage is disabled or unavailable.
+  }
+}
+
+function scrollMediaGalleryHostToOffset(host: HTMLElement, offset: number) {
+  const scrollParent = mediaGalleryScrollParent(host)
+  const hostRect = host.getBoundingClientRect()
+  if (scrollParent) {
+    const parentRect = scrollParent.getBoundingClientRect()
+    scrollParent.scrollTop += hostRect.top - parentRect.top + Math.max(0, offset)
+    return
+  }
+  window.scrollBy({ top: hostRect.top + Math.max(0, offset), behavior: 'auto' })
+}
+
+function mediaGalleryTimelineOffsetForIndex(
+  layout: ReturnType<typeof xDriveMediaGalleryTimelineLayout>,
+  logicalIndex: number,
+) {
+  const index = Math.max(0, Math.trunc(logicalIndex))
+  const group = layout.groups.find((candidate) => (
+    index >= candidate.startIndex &&
+    index < candidate.startIndex + candidate.itemCount
+  ))
+  if (!group) return null
+  const row = Math.floor((index - group.startIndex) / Math.max(1, layout.columns))
+  return group.itemsTop + row * layout.rowStep
+}
+
 const mediaGalleryMediaTypes = [
   { value: 'image', label: '图片', description: '普通照片与静态图像' },
   { value: 'video', label: '视频', description: '所有视频媒体' },
@@ -2355,6 +2460,7 @@ function MediaTile({
     <Paper
       variant="outlined"
       data-xdrive-media-tile
+      data-xdrive-media-index={logicalIndex}
       role="button"
       tabIndex={0}
       onPointerDown={(event) => {
@@ -2723,6 +2829,9 @@ function MediaVirtualTileGrid({
   onPreview,
   onToggleFavorite,
   recommendedNodeID,
+  restoreAnchorIndex,
+  restoreAnchorRevision = 0,
+  onVisibleAnchorChange,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
@@ -2738,6 +2847,9 @@ function MediaVirtualTileGrid({
   onPreview: (item: MediaItem, index: number) => void
   onToggleFavorite: (item: MediaItem) => void
   recommendedNodeID?: number
+  restoreAnchorIndex?: number
+  restoreAnchorRevision?: number
+  onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
@@ -2797,6 +2909,9 @@ function MediaVirtualTileGrid({
           visibleTop,
           visibleBottom,
         })
+        if (visibleWindow.end > visibleWindow.start) {
+          onVisibleAnchorChange?.(visibleWindow.start)
+        }
         setLayout((current) => (
           current.metrics.columns === metrics.columns &&
           Math.abs(current.metrics.totalHeight - metrics.totalHeight) < 0.5 &&
@@ -2829,7 +2944,32 @@ function MediaVirtualTileGrid({
         frameRef.current = null
       }
     }
-  }, [collection.itemCount, collection.onRangeChange, minTileWidth])
+  }, [collection.itemCount, collection.onRangeChange, minTileWidth, onVisibleAnchorChange])
+
+  useLayoutEffect(() => {
+    if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    const host = hostRef.current
+    if (!host || collection.itemCount <= 0) return
+    const metrics = xDriveMediaGalleryGridMetrics({
+      width: host.clientWidth,
+      itemCount: collection.itemCount,
+      minColumnWidth: minTileWidth,
+    })
+    const index = Math.max(
+      0,
+      Math.min(collection.itemCount - 1, Math.trunc(restoreAnchorIndex)),
+    )
+    const offset = Math.floor(index / Math.max(1, metrics.columns)) * metrics.rowStep
+    const frame = window.requestAnimationFrame(() => {
+      if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    collection.itemCount,
+    minTileWidth,
+    restoreAnchorIndex,
+    restoreAnchorRevision,
+  ])
 
   useEffect(() => {
     const retainedNodeIDs: number[] = []
@@ -2957,6 +3097,9 @@ function MediaVirtualTimeline({
   onOpen,
   onPreview,
   onToggleFavorite,
+  restoreAnchorIndex,
+  restoreAnchorRevision = 0,
+  onVisibleAnchorChange,
 }: {
   groups: MediaTimelineGroupIndex[]
   collection: XDriveMediaGalleryVirtualCollection
@@ -2972,6 +3115,9 @@ function MediaVirtualTimeline({
   onOpen: (item: MediaItem) => void
   onPreview: (item: MediaItem, index: number) => void
   onToggleFavorite: (item: MediaItem) => void
+  restoreAnchorIndex?: number
+  restoreAnchorRevision?: number
+  onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
@@ -3031,6 +3177,11 @@ function MediaVirtualTimeline({
           visibleTop,
           visibleBottom,
         })
+        if (visibleWindow.endIndex > visibleWindow.startIndex) {
+          onVisibleAnchorChange?.(visibleWindow.startIndex)
+        } else if (nextWindow.endIndex > nextWindow.startIndex) {
+          onVisibleAnchorChange?.(nextWindow.startIndex)
+        }
         setState((current) => (
           current.layout.columns === layout.columns &&
           Math.abs(current.layout.totalHeight - layout.totalHeight) < 0.5 &&
@@ -3064,7 +3215,29 @@ function MediaVirtualTimeline({
         frameRef.current = null
       }
     }
-  }, [collection.onRangeChange, groups, minTileWidth])
+  }, [collection.onRangeChange, groups, minTileWidth, onVisibleAnchorChange])
+
+  useLayoutEffect(() => {
+    if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    const host = hostRef.current
+    if (!host) return
+    const layout = xDriveMediaGalleryTimelineLayout({
+      width: host.clientWidth,
+      groups,
+      minColumnWidth: minTileWidth,
+    })
+    const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
+    if (offset === null) return
+    const frame = window.requestAnimationFrame(() => {
+      if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    groups,
+    minTileWidth,
+    restoreAnchorIndex,
+    restoreAnchorRevision,
+  ])
 
   useEffect(() => {
     const retainedNodeIDs: number[] = []
@@ -3157,9 +3330,14 @@ function MediaVirtualTimeline({
               direction="row"
               spacing={1}
               alignItems="baseline"
+              data-xdrive-gallery-sticky-date
               sx={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
                 height: group.headerHeight,
                 mb: `${XDRIVE_MEDIA_GALLERY_TIMELINE_HEADER_GAP}px`,
+                bgcolor: 'background.paper',
               }}
             >
               <Typography variant="subtitle1" fontWeight={700}>
@@ -3291,8 +3469,16 @@ export function XDriveMediaGallery({
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
-  const [timeScale, setTimeScale] = useState<MediaGalleryTimeScale>('all')
-  const [minTileWidth, setMinTileWidth] = useState(150)
+  const [viewPreferences, setViewPreferences] = useState<MediaGalleryViewPreferences>(
+    xDriveReadMediaGalleryViewPreferences,
+  )
+  const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
+  const viewAnchorIndexRef = useRef(0)
+  const galleryRootRef = useRef<HTMLDivElement | null>(null)
+  const timeScale = viewPreferences.timeScale
+  const effectiveTimeScale: MediaGalleryTimeScale =
+    searchActive || currentCleanupReview ? 'all' : timeScale
+  const minTileWidth = viewPreferences.densityByScale[effectiveTimeScale]
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
   const selectionBusyRef = useRef(false)
@@ -3308,6 +3494,10 @@ export function XDriveMediaGallery({
   const [albumDialogBusy, setAlbumDialogBusy] = useState(false)
   const [albumDialogError, setAlbumDialogError] = useState('')
   const [deleteAlbumOpen, setDeleteAlbumOpen] = useState(false)
+
+  useEffect(() => {
+    xDriveWriteMediaGalleryViewPreferences(viewPreferences)
+  }, [viewPreferences])
 
   const [showHiddenPeople, setShowHiddenPeople] = useState(false)
   const [showDismissedSuggestions, setShowDismissedSuggestions] = useState(false)
@@ -3396,8 +3586,35 @@ export function XDriveMediaGallery({
     ))
   }, [onSetFavorite])
 
-  const effectiveTimeScale: MediaGalleryTimeScale =
-    searchActive || currentCleanupReview ? 'all' : timeScale
+  const captureVisibleAnchor = useCallback((index: number) => {
+    if (Number.isFinite(index)) {
+      viewAnchorIndexRef.current = Math.max(0, Math.trunc(index))
+    }
+  }, [])
+
+  const updateGalleryTimeScale = useCallback((nextScale: MediaGalleryTimeScale) => {
+    if (nextScale === timeScale) return
+    setViewAnchorRevision((current) => current + 1)
+    setViewPreferences((current) => ({ ...current, timeScale: nextScale }))
+  }, [timeScale])
+
+  const updateGalleryDensity = useCallback((value: number) => {
+    const normalized = mediaGalleryNormalizeDensity(value, minTileWidth)
+    if (normalized === minTileWidth) return
+    setViewAnchorRevision((current) => current + 1)
+    setViewPreferences((current) => ({
+      ...current,
+      densityByScale: {
+        ...current.densityByScale,
+        [effectiveTimeScale]: normalized,
+      },
+    }))
+  }, [effectiveTimeScale, minTileWidth])
+
+  const jumpToTimelineGroup = useCallback((group: MediaTimelineGroupIndex) => {
+    viewAnchorIndexRef.current = Math.max(0, Math.trunc(group.start_index))
+    setViewAnchorRevision((current) => current + 1)
+  }, [])
   const activeTimelineGroups = effectiveTimeScale === 'year'
     ? timelineGroupSets.year
     : effectiveTimeScale === 'month'
@@ -3405,6 +3622,9 @@ export function XDriveMediaGallery({
       : effectiveTimeScale === 'day'
         ? timelineGroupSets.day
         : []
+  const timelineJumpGroups = (
+    effectiveTimeScale === 'year' ? timelineGroupSets.year : timelineGroupSets.month
+  ).filter((group) => group.key !== 'unknown')
   const denseTimelineGroups = useMemo(
     () => effectiveTimeScale === 'all'
       ? []
@@ -3412,6 +3632,20 @@ export function XDriveMediaGallery({
     [effectiveTimeScale, items],
   )
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
+
+  useLayoutEffect(() => {
+    if (viewAnchorRevision <= 0 || virtualCollection) return
+    const root = galleryRootRef.current
+    if (!root) return
+    const frame = window.requestAnimationFrame(() => {
+      const target = root.querySelector<HTMLElement>(
+        `[data-xdrive-media-index="${viewAnchorIndexRef.current}"]`,
+      )
+      target?.scrollIntoView({ block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [effectiveTimeScale, minTileWidth, viewAnchorRevision, virtualCollection])
+
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
   const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
     if (section === 'trash') return
@@ -3781,6 +4015,7 @@ export function XDriveMediaGallery({
 
   return (
     <Stack
+      ref={galleryRootRef}
       spacing={2}
       sx={{
         minWidth: 0,
@@ -3968,12 +4203,37 @@ export function XDriveMediaGallery({
                     variant={effectiveTimeScale === value ? 'contained' : 'text'}
                     aria-pressed={effectiveTimeScale === value}
                     data-xdrive-gallery-time-scale={value}
-                    onClick={() => setTimeScale(value)}
+                    onClick={() => updateGalleryTimeScale(value)}
                   >
                     {label}
                   </Button>
                 ))}
               </Stack>
+            ) : null}
+            {showCollectionTimeScale && timelineJumpGroups.length > 1 ? (
+              <TextField
+                select
+                size="small"
+                value=""
+                aria-label={effectiveTimeScale === 'year' ? '跳转年份' : '跳转年月'}
+                data-xdrive-gallery-timeline-jump
+                onChange={(event) => {
+                  const group = timelineJumpGroups.find(
+                    (candidate) => candidate.key === event.target.value,
+                  )
+                  if (group) jumpToTimelineGroup(group)
+                }}
+                sx={{ minWidth: 126 }}
+              >
+                <MenuItem value="">
+                  {effectiveTimeScale === 'year' ? '跳转年份' : '跳转年月'}
+                </MenuItem>
+                {timelineJumpGroups.map((group) => (
+                  <MenuItem key={group.key} value={group.key}>
+                    {xDriveMediaGalleryTimelineGroupLabel(group.key)}
+                  </MenuItem>
+                ))}
+              </TextField>
             ) : null}
             <Stack direction="row" spacing={1} alignItems="center">
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
@@ -3982,12 +4242,12 @@ export function XDriveMediaGallery({
               <Slider
                 size="small"
                 aria-label="缩略图密度"
-                min={96}
-                max={240}
-                step={24}
+                min={XDRIVE_MEDIA_GALLERY_DENSITY_MIN}
+                max={XDRIVE_MEDIA_GALLERY_DENSITY_MAX}
+                step={XDRIVE_MEDIA_GALLERY_DENSITY_STEP}
                 value={minTileWidth}
                 onChange={(_event, value) => {
-                  if (typeof value === 'number') setMinTileWidth(value)
+                  if (typeof value === 'number') updateGalleryDensity(value)
                 }}
                 sx={{ width: 120 }}
               />
@@ -4806,6 +5066,9 @@ export function XDriveMediaGallery({
               onOpen={openMediaItem}
               onPreview={openMediaPreview}
               onToggleFavorite={toggleMediaFavorite}
+              restoreAnchorIndex={viewAnchorIndexRef.current}
+              restoreAnchorRevision={viewAnchorRevision}
+              onVisibleAnchorChange={captureVisibleAnchor}
             />
           ) : (
             <Stack spacing={2.5}>
@@ -4815,7 +5078,14 @@ export function XDriveMediaGallery({
                     direction="row"
                     spacing={1}
                     alignItems="baseline"
-                    sx={{ mb: 1 }}
+                    data-xdrive-gallery-sticky-date
+                    sx={{
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 2,
+                      mb: 1,
+                      bgcolor: 'background.paper',
+                    }}
                   >
                     <Typography variant="subtitle1" fontWeight={700}>
                       {group.label}
@@ -4867,6 +5137,9 @@ export function XDriveMediaGallery({
             onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}
             recommendedNodeID={cleanupRecommendedNodeID}
+            restoreAnchorIndex={viewAnchorIndexRef.current}
+            restoreAnchorRevision={viewAnchorRevision}
+            onVisibleAnchorChange={captureVisibleAnchor}
           />
         ) : (
           <MediaTileGrid
