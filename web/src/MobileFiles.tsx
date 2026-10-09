@@ -59,7 +59,7 @@ type SectionEntry = {
   updatedAt?: string
 }
 type MobileCollectionAction = 'copy' | 'download' | 'share'
-type SavedEntry = { id: number; name: string }
+type SavedEntry = { id: number; name: string; subtitle?: string }
 
 type Props = {
   lifecycleKey: string
@@ -87,6 +87,14 @@ type Props = {
   onOpenQuickAccess: (id: number) => Promise<boolean>
   onReorderQuickAccess?: (ids: number[]) => Promise<boolean>
   onReorderSavedSearches?: (ids: number[]) => Promise<void>
+  organizationLoading?: boolean
+  organizationError?: string
+  onRetryOrganization?: () => void
+  organizationBusyKey?: string
+  onRenameSavedSearch?: (id: number) => void
+  canReplaceSavedSearch?: boolean
+  onReplaceSavedSearch?: (id: number) => void
+  onDeleteSavedSearch?: (id: number) => Promise<unknown>
   onClearRecent: () => void | boolean | Promise<void | boolean>
   onUnfavorite: (id: number) => void | boolean | Promise<void | boolean>
   onCollectionAction?: (entry: SectionEntry, action: MobileCollectionAction) => Promise<void>
@@ -270,6 +278,14 @@ export default function MobileFiles(props: Props) {
   const [section, setSection] = useState<MobileFilesSection>('browse')
   const [browseHome, setBrowseHome] = useState(initial.folderID === null)
   const [editBrowseHome, setEditBrowseHome] = useState(false)
+  const [savedSearchMenu, setSavedSearchMenu] = useState<{ anchor: HTMLElement; id: number; name: string } | null>(null)
+  const [deleteSavedSearchTarget, setDeleteSavedSearchTarget] = useState<{ id: number; name: string } | null>(null)
+  const [deleteSavedSearchBusy, setDeleteSavedSearchBusy] = useState(false)
+  const [deleteSavedSearchError, setDeleteSavedSearchError] = useState('')
+  const deleteSavedSearchBusyRef = useRef(false)
+  const deleteSavedSearchGenerationRef = useRef(0)
+  const [replaceSavedSearchOpen, setReplaceSavedSearchOpen] = useState(false)
+  const [replaceSavedSearchTargetID, setReplaceSavedSearchTargetID] = useState<number | null>(null)
   const browseSectionsKey = 'xdrive.mobile.files.sections.v1:' + props.lifecycleKey
   const [browseSections, setBrowseSections] = useState<{ quick: boolean; organization: boolean }>(() => {
     const defaults = { quick: true, organization: true }
@@ -391,6 +407,24 @@ export default function MobileFiles(props: Props) {
       return next
     })
   }
+  const confirmDeleteSavedSearch = () => {
+    const target = deleteSavedSearchTarget
+    if (!target || !props.onDeleteSavedSearch || deleteSavedSearchBusyRef.current) return
+    deleteSavedSearchBusyRef.current = true
+    const generation = deleteSavedSearchGenerationRef.current
+    setDeleteSavedSearchBusy(true)
+    setDeleteSavedSearchError('')
+    void Promise.resolve().then(() => props.onDeleteSavedSearch?.(target.id)).then(() => {
+      if (deleteSavedSearchGenerationRef.current === generation) setDeleteSavedSearchTarget(null)
+    }).catch(error => {
+      if (deleteSavedSearchGenerationRef.current !== generation) return
+      setDeleteSavedSearchError(error instanceof Error ? error.message : String(error))
+    }).finally(() => {
+      if (deleteSavedSearchGenerationRef.current !== generation) return
+      deleteSavedSearchBusyRef.current = false
+      setDeleteSavedSearchBusy(false)
+    })
+  }
   const reorderHomeEntry = (kind: 'quick' | 'saved', from: number, offset: -1 | 1) => {
     const entries = kind === 'quick' ? props.quickAccess : props.savedSearches
     const destination = from + offset
@@ -468,7 +502,13 @@ export default function MobileFiles(props: Props) {
 
   useEffect(() => () => {
     nativeShareControllerRef.current?.abort()
+    deleteSavedSearchGenerationRef.current += 1
   }, [props.lifecycleKey])
+  useEffect(() => {
+    if (props.searchActive) return
+    setReplaceSavedSearchOpen(false)
+    setReplaceSavedSearchTargetID(null)
+  }, [props.searchActive])
   // Navigation invalidates the prepared bytes, even if the parent app remains
   // mounted behind a sibling viewer.
   useEffect(() => {
@@ -1089,6 +1129,15 @@ export default function MobileFiles(props: Props) {
           onClick={() => reorderHomeEntry(kind, index, 1)} sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}>
           <KeyboardArrowDownRoundedIcon />
         </IconButton>
+        {kind === 'saved' && (props.onRenameSavedSearch || props.onReplaceSavedSearch || props.onDeleteSavedSearch) ? (
+          <IconButton data-mobile-files-saved-options={entry.id}
+            aria-label={`管理智能文件夹 ${entry.name}`}
+            disabled={Boolean(props.organizationBusyKey)}
+            onClick={event => setSavedSearchMenu({ anchor: event.currentTarget, id: entry.id, name: entry.name })}
+            sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0 }}>
+            <MoreHorizRoundedIcon />
+          </IconButton>
+        ) : null}
       </Stack>
     )
   }
@@ -1256,6 +1305,20 @@ export default function MobileFiles(props: Props) {
                   ) : null}
                 </>
               ) : null}
+              {props.organizationLoading ? (
+                <Typography data-mobile-files-organization-loading variant="caption" sx={{ px: 2 }}>
+                  正在加载智能文件夹和标签…
+                </Typography>
+              ) : null}
+              {props.organizationError ? (
+                <Stack data-mobile-files-organization-error role="alert" direction="row" alignItems="center"
+                  sx={{ px: 2, gap: 1, minHeight: MIN_TOUCH }}>
+                  <Typography variant="caption" color="error" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+                    {props.organizationError}
+                  </Typography>
+                  {props.onRetryOrganization ? <Button onClick={props.onRetryOrganization} sx={{ minHeight: MIN_TOUCH }}>重试</Button> : null}
+                </Stack>
+              ) : null}
               {props.savedSearches.length > 0 || props.tags.length > 0 ? (
                 <>
                   <Button data-mobile-files-home-section="organization" aria-expanded={browseSections.organization}
@@ -1269,7 +1332,7 @@ export default function MobileFiles(props: Props) {
                     <Box data-mobile-files-group="organization" sx={{ mx: 2, borderRadius: '13px',
                       overflow: 'hidden', bgcolor: 'background.paper' }}>
                       {props.savedSearches.map((entry, index) => editableHomeRow({
-                        ...entry, kind: 'dir', subtitle: '智能文件夹',
+                        ...entry, kind: 'dir', subtitle: entry.subtitle ? `智能文件夹 · ${entry.subtitle}` : '智能文件夹',
                       }, () => launchGlobalSearch(() => props.onOpenSavedSearch(entry.id)), 'saved', index))}
                       {props.tags.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '标签' }, () => {
                         if (!editBrowseHome) launchGlobalSearch(() => props.onOpenTag(entry.id))
@@ -1463,7 +1526,93 @@ export default function MobileFiles(props: Props) {
           {overflowAction('刷新', refresh)}
           {overflowAction('管理标签', props.onManageTags)}
           {overflowAction('搜索全部文件', () => launchGlobalSearch(() => props.onSearch(props.searchValue)))}
+          {props.searchActive && props.canReplaceSavedSearch && props.savedSearches.length > 0
+            ? overflowAction('更新已有智能文件夹…', () => {
+              setReplaceSavedSearchTargetID(null)
+              setReplaceSavedSearchOpen(true)
+            })
+            : null}
         </Menu>
+        <Menu data-mobile-files-saved-search-menu anchorEl={savedSearchMenu?.anchor ?? null}
+          open={Boolean(savedSearchMenu)} onClose={() => setSavedSearchMenu(null)}
+          slotProps={{ paper: { sx: { maxHeight: 'min(65dvh, 420px)' } } }}>
+          {props.onRenameSavedSearch ? <MenuItem sx={{ minHeight: MIN_TOUCH }}
+            onClick={() => {
+              const target = savedSearchMenu
+              setSavedSearchMenu(null)
+              if (target) props.onRenameSavedSearch?.(target.id)
+            }}>重命名智能文件夹</MenuItem> : null}
+          {props.onReplaceSavedSearch ? <MenuItem sx={{ minHeight: MIN_TOUCH }}
+            disabled={!props.canReplaceSavedSearch}
+            onClick={() => {
+              const target = savedSearchMenu
+              setSavedSearchMenu(null)
+              if (target) props.onReplaceSavedSearch?.(target.id)
+            }}>更新为当前搜索</MenuItem> : null}
+          {props.onDeleteSavedSearch ? <MenuItem sx={{ minHeight: MIN_TOUCH, color: 'error.main' }}
+            onClick={() => {
+              const target = savedSearchMenu
+              setSavedSearchMenu(null)
+              setDeleteSavedSearchError('')
+              if (target) setDeleteSavedSearchTarget({ id: target.id, name: target.name })
+            }}>删除智能文件夹</MenuItem> : null}
+        </Menu>
+        <Dialog data-mobile-files-saved-replace open={replaceSavedSearchOpen && Boolean(props.searchActive)}
+          onClose={() => { setReplaceSavedSearchOpen(false); setReplaceSavedSearchTargetID(null) }}
+          fullWidth maxWidth="xs">
+          <DialogTitle>更新智能文件夹</DialogTitle>
+          <DialogContent sx={{ maxHeight: 'min(60dvh, 440px)', overflowY: 'auto' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              将当前已应用的全部文件搜索条件保存到所选智能文件夹，原规则会被替换，文件不会被修改。
+            </Typography>
+            {props.savedSearches.map(item => (
+              <MenuItem key={item.id} data-mobile-files-saved-replace-target={item.id}
+                selected={replaceSavedSearchTargetID === item.id}
+                onClick={() => setReplaceSavedSearchTargetID(item.id)}
+                sx={{ minHeight: MIN_TOUCH, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                {item.name}
+              </MenuItem>
+            ))}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => { setReplaceSavedSearchOpen(false); setReplaceSavedSearchTargetID(null) }}
+              sx={{ minHeight: MIN_TOUCH }}>取消</Button>
+            <Button data-mobile-files-saved-replace-confirm disabled={!props.canReplaceSavedSearch || replaceSavedSearchTargetID === null}
+              onClick={() => {
+                const id = replaceSavedSearchTargetID
+                setReplaceSavedSearchOpen(false)
+                setReplaceSavedSearchTargetID(null)
+                if (id !== null) props.onReplaceSavedSearch?.(id)
+              }} sx={{ minHeight: MIN_TOUCH }}>更新规则</Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog data-mobile-files-saved-delete open={Boolean(deleteSavedSearchTarget)}
+          onClose={() => {
+            if (deleteSavedSearchBusy) return
+            setDeleteSavedSearchTarget(null)
+            setDeleteSavedSearchError('')
+          }} fullWidth maxWidth="xs">
+          <DialogTitle>删除智能文件夹？</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+              只删除保存的搜索规则“{deleteSavedSearchTarget?.name}”，不会删除任何匹配的文件。
+            </Typography>
+            {deleteSavedSearchError ? (
+              <Typography role="alert" variant="body2" color="error" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                {deleteSavedSearchError}
+              </Typography>
+            ) : null}
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={deleteSavedSearchBusy}
+              onClick={() => { setDeleteSavedSearchTarget(null); setDeleteSavedSearchError('') }}
+              sx={{ minHeight: MIN_TOUCH }}>取消</Button>
+            <Button data-mobile-files-saved-delete-confirm color="error" disabled={deleteSavedSearchBusy}
+              onClick={confirmDeleteSavedSearch} sx={{ minHeight: MIN_TOUCH }}>
+              {deleteSavedSearchBusy ? '正在删除…' : '删除规则'}
+            </Button>
+          </DialogActions>
+        </Dialog>
         <Menu anchorEl={arrangeAnchor} open={Boolean(arrangeAnchor)} onClose={() => setArrangeAnchor(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 460px)' } } }}>
           {(['name', 'updated', 'type', 'size'] as const).map(key => (

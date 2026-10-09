@@ -838,3 +838,94 @@ test('F-PARITY-02: Mobile file context invokes the existing Copy Paths adapter o
     assert.deepEqual(ids, [[2]])
   }, { props: { onCopyPaths: items => ids.push(items.map(item => item.id)) } })
 })
+
+test('F-PARITY-03: Browse Edit makes saved-rule Rename and Delete reachable without opening files', async () => {
+  const renamed = []
+  let deleteAttempts = 0
+  const removedFiles = []
+  await withView(async h => {
+    const more = h.view.root.findAll(node => node.props?.['aria-label'] === '文件操作菜单')[0]
+    await act(async () => { more.props.onClick({ currentTarget: {} }) })
+    const edit = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '整理浏览首页')[0]
+    assert.ok(edit)
+    await act(async () => { edit.props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-home-edit-item'), 1)
+    const options = () => find(h.view, 'data-mobile-files-saved-options', 17)
+    await act(async () => { options().props.onClick({ currentTarget: {} }) })
+    const rename = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '重命名智能文件夹')[0]
+    assert.ok(rename)
+    await act(async () => { rename.props.onClick() })
+    assert.deepEqual(renamed, [17])
+    await act(async () => { options().props.onClick({ currentTarget: {} }) })
+    const deleteAction = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '删除智能文件夹')[0]
+    assert.ok(deleteAction)
+    await act(async () => { deleteAction.props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-saved-delete', true).props.open, true)
+    const button = () => find(h.view, 'data-mobile-files-saved-delete-confirm', true)
+    await act(async () => {
+      button().props.onClick()
+      button().props.onClick()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    assert.equal(deleteAttempts, 1, 'two same-tick confirmation clicks submit one authoritative mutation')
+    assert.equal(find(h.view, 'data-mobile-files-saved-delete', true).props.open, true,
+      'failed deletion retains rule and retryable confirmation')
+    assert.match(h.view.root.findAll(node => node.props?.role === 'alert').map(node => textOf(node.props.children)).join(' '),
+      /拒绝删除规则/)
+    await act(async () => { button().props.onClick(); await Promise.resolve(); await Promise.resolve() })
+    assert.equal(deleteAttempts, 2)
+    assert.equal(find(h.view, 'data-mobile-files-saved-delete', true).props.open, false)
+    assert.deepEqual(removedFiles, [], 'deleting saved Search may never remove matching files')
+  }, { props: {
+    savedSearches: [{ id: 17, name: '照片规则', subtitle: '图片' }],
+    onRenameSavedSearch: id => renamed.push(id),
+    onReplaceSavedSearch: () => {},
+    onDeleteSavedSearch: async id => {
+      assert.equal(id, 17)
+      deleteAttempts += 1
+      if (deleteAttempts === 1) throw new Error('拒绝删除规则')
+    },
+    onDelete: values => removedFiles.push(...values.map(item => item.id)),
+  } })
+})
+
+test('F-PARITY-03: active all-files Search can explicitly choose and replace a saved rule', async () => {
+  const replaced = []
+  await withView(async h => {
+    await h.update({ searchActive: true, canReplaceSavedSearch: true })
+    const more = h.view.root.findAll(node => node.props?.['aria-label'] === '文件操作菜单')[0]
+    await act(async () => { more.props.onClick({ currentTarget: {} }) })
+    const replace = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '更新已有智能文件夹…')[0]
+    assert.ok(replace)
+    await act(async () => { replace.props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-saved-replace', true).props.open, true)
+    const confirm = () => find(h.view, 'data-mobile-files-saved-replace-confirm', true)
+    assert.equal(confirm().props.disabled, true, 'must choose a target before overwriting rules')
+    await act(async () => { find(h.view, 'data-mobile-files-saved-replace-target', 29).props.onClick() })
+    assert.equal(confirm().props.disabled, false)
+    await act(async () => { confirm().props.onClick() })
+    assert.deepEqual(replaced, [29])
+    assert.equal(find(h.view, 'data-mobile-files-saved-replace', true).props.open, false)
+  }, { props: {
+    savedSearches: [{ id: 29, name: '共享的照片查询' }],
+    onReplaceSavedSearch: id => replaced.push(id),
+  } })
+})
+
+test('F-PARITY-03: an organization read failure is retryable, not a fake empty list', async () => {
+  let retries = 0
+  await withView(async h => {
+    const error = find(h.view, 'data-mobile-files-organization-error', true)
+    assert.equal(error.props.role, 'alert')
+    assert.match(textOf(error.props.children), /加载智能文件夹失败/)
+    const retry = h.view.root.findAll(node => node.props?.children === '重试' && node.props?.onClick)[0]
+    assert.ok(retry)
+    await act(async () => { retry.props.onClick() })
+    assert.equal(retries, 1)
+  }, { props: {
+    savedSearches: [], tags: [], organizationError: '加载智能文件夹失败',
+    onRetryOrganization: () => { retries += 1 },
+  } })
+})

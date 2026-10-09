@@ -45,3 +45,9 @@
 - 10k and 100k measured workloads: List/Grid at top/middle/end, grouping, cold/visible thumbnails, rapid scroll/close and Search; record mounted item count, actual requests, aborted requests, CPU/RSS and median/P95 before and after optimization. CI DOM/source tests do not certify physical device or 100k throughput.
 
 **Acceptance labels:** `Target locked` → `Implemented` → `Component tested` → `CI green` → `Merged` → `Browser visual verified` → `Physical iOS verified` → `Measured 1:1`. Do not skip levels.
+
+## 2026-10-10 F-PARITY-03 · Mobile Smart Folder management parity
+
+**In development; CI and merge pending.** Mobile Browse edit mode now exposes 44 CSS px action targets for a saved Smart Folder's Rename / Replace-with-current-Search / Delete through the same Web organization controller and shared `XDriveFileNameDialog`. The mounted rules remain a bounded owner-scoped list rather than independently scanning a 100k directory. The current applied global Search, not a draft text string or stale folder path, is the only source for replacement. The replacement action is available from Search's More menu with an explicit target picker and confirmation. Delete prompts before permanently removing **only the saved query definition**, never matching Nodes or physical bytes; a rejected mutation preserves the rule and dialog for retry. Source/rule labels, loading/error and retry feedback use the same Web controller.
+
+No extra Mobile REST endpoint, no separate Server Search engine, no second virtual collection or tab state is introduced. Physical iOS 27 screenshot, genuine native Share/Browser state, inline-folder disclosure and native Browse drag-reorder remain not verified. After tests and CI, mark this phase `Merged`; until then do not call parity complete.

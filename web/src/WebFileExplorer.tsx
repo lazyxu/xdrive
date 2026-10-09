@@ -943,7 +943,35 @@ export default function WebFileExplorer({
             updatedAt: item.updatedAt,
           }))}
           quickAccess={quickAccess.items.map(item => ({ id: item.id, name: item.name, kind: 'dir' as const, subtitle: item.path }))}
-          savedSearches={organization.savedSearches.map(item => ({ id: item.id, name: item.name }))}
+          savedSearches={organization.savedSearches.map(item => ({
+            id: item.id, name: item.name,
+            subtitle: xDriveFileExplorerSavedSearchRuleLabels(item, {
+              sourceOptions: searchSourceOptions, tagOptions: organization.tagOptions,
+            }).join(' · '),
+          }))}
+          organizationLoading={organization.loading}
+          organizationError={organization.error}
+          onRetryOrganization={() => { void organization.refresh() }}
+          organizationBusyKey={organization.busyKey}
+          onRenameSavedSearch={id => {
+            const saved = organization.savedSearches.find(item => item.id === id)
+            if (saved) setRenameSavedSearch(saved)
+          }}
+          canReplaceSavedSearch={canSaveSmartFolder}
+          onReplaceSavedSearch={id => {
+            const saved = organization.savedSearches.find(item => item.id === id)
+            if (!saved || !canSaveSmartFolder) return
+            const lifecycleKey = organizationLifecycleKeyRef.current
+            void organization.updateSavedSearch(saved.id, {
+              name: saved.name,
+              query: searchState.query,
+              filters: persistedSearchFilters,
+            }).then(() => {
+              if (organizationLifecycleKeyRef.current !== lifecycleKey) return
+              onFeedback('good', '智能文件夹已更新。')
+            }, () => undefined)
+          }}
+          onDeleteSavedSearch={id => organization.deleteSavedSearch(id)}
           tags={organization.tags.map(item => ({ id: item.id, name: item.name }))}
           onOpenRecent={id => {
             onCloseTrash()
