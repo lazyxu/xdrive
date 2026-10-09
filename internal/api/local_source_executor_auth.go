@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // localSourceExecutorProof is a stage-gated admission guard. It does not yet
@@ -103,4 +104,73 @@ func (s *Server) checkLocalSourceExecutor(c *gin.Context) bool {
 		DeviceID: device.ID, RootID: binding.RootID, SourceRevision: source.Revision,
 	})
 	return true
+}
+
+var errLocalSourceExecutorTransactionUnauthorized = errors.New("local source executor transaction authorization failed")
+
+// requireLocalSourceExecutorTx repeats device and Root authorization under the
+// SAME PostgreSQL transaction as the Source Run mutation. Revoke locks the
+// device row before Sources; matching this order fences concurrent revocation.
+func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourceID uint64, runID string) error {
+	raw, exists := c.Get(localSourceExecutorContextKey)
+	if !exists {
+		// Only local_folder Sources have this middleware-provided proof.
+		return nil
+	}
+	proof, ok := raw.(localSourceExecutorProof)
+	if !ok || proof.DeviceID == "" || proof.RootID == "" || proof.SourceRevision == 0 {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	var device meta.ClientDevice
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ?", proof.DeviceID, userID(c)).
+		First(&device).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+		return err
+	}
+	if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	var source meta.Source
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND owner_id = ?", sourceID, userID(c)).
+		First(&source).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+		return err
+	}
+	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
+		source.Revision != proof.SourceRevision || source.Status != meta.SourceStatusActive {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	var binding meta.LocalSourceBinding
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("source_id = ? AND owner_id = ? AND device_id = ?", sourceID, userID(c), proof.DeviceID).
+		First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+		return err
+	}
+	if binding.RootID != proof.RootID ||
+		binding.RootFingerprint != strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint"))) {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	if runID != "" {
+		var run meta.SyncRun
+		if err := tx.Select("id", "source_id", "source_revision").
+			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errLocalSourceExecutorTransactionUnauthorized
+			}
+			return err
+		}
+		if run.SourceRevision != proof.SourceRevision {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+	}
+	return nil
 }

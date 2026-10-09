@@ -159,6 +159,10 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 	var out meta.SyncRun
 	created := false
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, ""); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
@@ -308,6 +312,10 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 	now := time.Now().UTC()
 	var plans []sourcePlanDTO
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
@@ -498,6 +506,10 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 
 	now := time.Now().UTC()
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
@@ -704,6 +716,10 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 
 	now := time.Now().UTC()
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
@@ -817,6 +833,10 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 
 	now := time.Now().UTC()
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
@@ -938,6 +958,10 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 
 	now := time.Now().UTC()
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
@@ -996,6 +1020,10 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 	now := time.Now().UTC()
 	var out meta.SyncRun
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceExecutorTx(tx, c, sourceID, runID); err != nil {
+			return err
+		}
+
 		var source meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
@@ -1320,6 +1348,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		fail(c, http.StatusNotFound, "source or source run not found")
+	case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
+		fail(c, http.StatusForbidden, "local source executor binding was revoked or changed")
 	case errors.Is(err, errLocalFolderNotReady):
 		fail(c, http.StatusConflict, "local folder has no authorized device-bound executor")
 	case errors.Is(err, errSourcePaused):

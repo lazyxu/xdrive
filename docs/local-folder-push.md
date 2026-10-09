@@ -17,6 +17,10 @@ The currently implemented L01-A is **Server-only, fail-closed**: the kind `local
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
 
+## L01-B2-B transaction-scoped device revocation fencing (non-operational)
+
+Source Run mutating handlers revalidate the bound device token, Root and Source revision under the same database transaction as their writes. Device rows are locked before the Source and binding, consistent with device revoke. A write must commit before revoke or observe revoke and fail, never silently continue afterward. Existing run source revisions are also checked. This is not an OS-local Root grant and **does not lift L01-A's hard activation/run denial**; native Agent approval, scoped uploads and E2E verification remain outstanding.
+
 ## L01-B2-A Source Run executor-proof preflight (non-operational)
 
 For the seven Source Run **mutating** endpoints (begin, observe, commit, failures, progress, heartbeat, finish), local-folder Sources require a verified owner-scoped device enrollment token and the exact bound Device ID, Root UUID and fingerprint. The owner's JWT alone is insufficient. All existing non-local-folder Source executors are unchanged. Source Run cancel remains a signed-in owner's control operation and does not require the executing device's secret.
