@@ -3902,6 +3902,16 @@ func (h *desktopIPCHandler) mediaLivePhotoMotionTicket(w http.ResponseWriter, r 
 
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {
 	var out client.MediaQuery
+	out.SortBy = strings.TrimSpace(r.URL.Query().Get("sort_by"))
+	if out.SortBy != "" && out.SortBy != "captured" && out.SortBy != "added" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_sort", "sort_by must be captured or added")
+		return client.MediaQuery{}, false
+	}
+	out.SortDir = strings.TrimSpace(r.URL.Query().Get("sort_dir"))
+	if out.SortDir != "" && out.SortDir != "asc" && out.SortDir != "desc" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_sort", "sort_dir must be asc or desc")
+		return client.MediaQuery{}, false
+	}
 	out.MediaKind = strings.TrimSpace(r.URL.Query().Get("kind"))
 	if out.MediaKind != "" &&
 		out.MediaKind != meta.MediaKindImage &&

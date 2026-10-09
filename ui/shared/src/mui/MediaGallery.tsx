@@ -468,6 +468,27 @@ export function XDriveMediaGalleryPage({
     emptyMediaGalleryFilterDraft,
   )
   const [query, setQuery] = useState<MediaGalleryQuery>({})
+  const [gallerySort, setGallerySort] = useState<{
+    by: 'captured' | 'added'
+    dir: 'asc' | 'desc'
+  }>(() => {
+    if (typeof window === 'undefined') return { by: 'captured', dir: 'desc' }
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('xdrive.gallery.sort.v1') || '{}')
+      return {
+        by: stored.by === 'added' ? 'added' : 'captured',
+        dir: stored.dir === 'asc' ? 'asc' : 'desc',
+      }
+    } catch {
+      return { by: 'captured', dir: 'desc' }
+    }
+  })
+  const gallerySortRef = useRef(gallerySort)
+  useEffect(() => {
+    try { window.localStorage.setItem('xdrive.gallery.sort.v1', JSON.stringify(gallerySort)) } catch {
+      // Browsing works without persisted preferences.
+    }
+  }, [gallerySort])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [collectionError, setCollectionError] = useState('')
@@ -637,7 +658,11 @@ export function XDriveMediaGalleryPage({
             : mediaGalleryTarget(
           request,
           album,
-          nextQuery,
+          {
+            ...nextQuery,
+            sort_by: gallerySortRef.current.by,
+            sort_dir: gallerySortRef.current.dir,
+          },
           suggestedPerson,
           person,
         )
@@ -1006,6 +1031,15 @@ export function XDriveMediaGalleryPage({
     replaceAlbum,
     source,
   ])
+
+  const changeGallerySort = useCallback((by: 'captured' | 'added', dir: 'asc' | 'desc') => {
+    if (gallerySortRef.current.by === by && gallerySortRef.current.dir === dir) return
+    const next = { by, dir }
+    gallerySortRef.current = next
+    setGallerySort(next)
+    // A new server range order owns a new sparse-collection generation.
+    void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson)
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, query])
 
   const clearFilters = useCallback(() => {
     if (currentAlbum?.kind === 'smart') {
@@ -1781,6 +1815,9 @@ export function XDriveMediaGalleryPage({
         section={section}
         activeMediaType={activeMediaType}
         searchActive={Boolean(query.search?.trim())}
+        sortBy={gallerySort.by}
+        sortDir={gallerySort.dir}
+        onSortChange={changeGallerySort}
         filtersActive={hasMediaGalleryFilters(draftFilters)}
         onClearFilters={clearFilters}
         filters={(
@@ -2071,6 +2108,9 @@ export interface XDriveMediaGalleryProps {
   section?: MediaGallerySection
   activeMediaType?: string
   searchActive?: boolean
+  sortBy?: 'captured' | 'added'
+  sortDir?: 'asc' | 'desc'
+  onSortChange?: (by: 'captured' | 'added', dir: 'asc' | 'desc') => void
   filtersActive?: boolean
   onClearFilters?: () => void
   filters?: ReactNode
@@ -2313,27 +2353,30 @@ type MediaTimelineGroup = {
   startIndex: number
 }
 
-function mediaTimelineDate(item: MediaItem) {
-  if (!item.metadata.captured_at) return null
-  const captured = new Date(item.metadata.captured_at)
-  return Number.isNaN(captured.getTime()) ? null : captured
+function mediaTimelineDate(item: MediaItem, sortBy: 'captured' | 'added') {
+  const raw = sortBy === 'added' ? item.node.created_at : item.metadata.captured_at
+  if (!raw) return null
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function mediaTimelineGroups(
   items: MediaItem[],
   scale: Exclude<MediaGalleryTimeScale, 'all'>,
+  sortBy: 'captured' | 'added' = 'captured',
+  sortDir: 'asc' | 'desc' = 'desc',
 ): MediaTimelineGroup[] {
   const groups = new Map<string, MediaTimelineGroup>()
   const unknown: MediaItem[] = []
   for (const item of items) {
-    const date = mediaTimelineDate(item)
+    const date = mediaTimelineDate(item, sortBy)
     if (!date) {
       unknown.push(item)
       continue
     }
-    const year = String(date.getFullYear())
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+    const year = String(date.getUTCFullYear())
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(date.getUTCDate()).padStart(2, '0')
     const key = scale === 'year'
       ? year
       : scale === 'month'
@@ -2351,12 +2394,14 @@ function mediaTimelineGroups(
         : { year: 'numeric', month: 'long', day: 'numeric' }
     groups.set(key, {
       key,
-      label: new Intl.DateTimeFormat('zh-CN', formatOptions).format(date),
+      label: new Intl.DateTimeFormat('zh-CN', { ...formatOptions, timeZone: 'UTC' }).format(date),
       items: [item],
       startIndex: 0,
     })
   }
-  const ordered = Array.from(groups.values()).sort((a, b) => b.key.localeCompare(a.key))
+  const ordered = Array.from(groups.values()).sort((a, b) => (
+    sortDir === 'asc' ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)
+  ))
   let startIndex = 0
   for (const group of ordered) {
     group.startIndex = startIndex
@@ -3361,6 +3406,9 @@ export function XDriveMediaGallery({
   section = 'library',
   activeMediaType = '',
   searchActive = false,
+  sortBy = 'captured',
+  sortDir = 'desc',
+  onSortChange,
   filtersActive = false,
   onClearFilters,
   filters,
@@ -3588,8 +3636,8 @@ export function XDriveMediaGallery({
   const denseTimelineGroups = useMemo(
     () => effectiveTimeScale === 'all'
       ? []
-      : mediaTimelineGroups(items, effectiveTimeScale),
-    [effectiveTimeScale, items],
+      : mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir),
+    [effectiveTimeScale, items, sortBy, sortDir],
   )
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
 
@@ -4170,6 +4218,35 @@ export function XDriveMediaGallery({
             >
               {selectionMode ? '完成' : '选择'}
             </Button>
+            {showPhotoCollection && !isTrashSection && !searchActive &&
+             !currentMemory && !currentPet && !currentCleanupReview && onSortChange ? (
+              <Stack direction="row" spacing={0.75}>
+                <TextField
+                  select
+                  size="small"
+                  label="排序依据"
+                  value={sortBy}
+                  onChange={(event) => onSortChange(event.target.value as 'captured' | 'added', sortDir)}
+                  data-xdrive-gallery-sort-by
+                  sx={{ minWidth: 112 }}
+                >
+                  <MenuItem value="captured">拍摄时间</MenuItem>
+                  <MenuItem value="added">加入时间</MenuItem>
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="排序方向"
+                  value={sortDir}
+                  onChange={(event) => onSortChange(sortBy, event.target.value as 'asc' | 'desc')}
+                  data-xdrive-gallery-sort-dir
+                  sx={{ minWidth: 100 }}
+                >
+                  <MenuItem value="desc">最新在前</MenuItem>
+                  <MenuItem value="asc">最早在前</MenuItem>
+                </TextField>
+              </Stack>
+            ) : null}
             {showCollectionTimeScale ? (
               <Stack direction="row" spacing={0.25} aria-label="图库时间尺度">
                 {([

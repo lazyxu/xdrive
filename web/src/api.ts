@@ -262,6 +262,8 @@ function appendMediaGalleryQuery(
   values: URLSearchParams,
   query: MediaGalleryQuery = {},
 ) {
+  if (query.sort_by) values.set('sort_by', query.sort_by)
+  if (query.sort_dir) values.set('sort_dir', query.sort_dir)
   if (query.search?.trim()) values.set('q', query.search.trim())
   if (query.asset_kind) values.set('asset_kind', query.asset_kind)
   if (query.category?.trim()) values.set('category', query.category.trim())

@@ -587,17 +587,38 @@ func (s *Server) mediaItemsBaseQuery(
 	return query.Where("n.id IN (?)", membership), nil
 }
 
+func mediaGallerySortClauses(options mediaQueryOptions) []string {
+	direction := "DESC"
+	if options.SortDir == "asc" {
+		direction = "ASC"
+	}
+	if options.SortBy == "added" {
+		return []string{"n.created_at " + direction, "n.id " + direction}
+	}
+	return []string{
+		"CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC",
+		"xd_media_metadata.captured_at " + direction,
+		"n.created_at " + direction,
+		"n.id " + direction,
+	}
+}
+
 func (s *Server) materializeMediaItems(
 	ctx context.Context,
 	uid uint64,
 	query *gorm.DB,
 	limit, offset int,
+	sorts ...mediaQueryOptions,
 ) ([]mediaItemDTO, error) {
+	var options mediaQueryOptions
+	if len(sorts) > 0 {
+		options = sorts[0]
+	}
 	var metadata []meta.MediaMetadata
+	for _, clause := range mediaGallerySortClauses(options) {
+		query = query.Order(clause)
+	}
 	if err := query.
-		Order("CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC").
-		Order("xd_media_metadata.captured_at DESC").
-		Order("n.created_at DESC, n.id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&metadata).Error; err != nil {
@@ -673,7 +694,7 @@ func (s *Server) materializeMediaItemsByNodeIDs(
 		return nil, err
 	}
 	query = query.Where("n.id IN ?", nodeIDs)
-	items, err := s.materializeMediaItems(ctx, uid, query, len(nodeIDs), 0)
+	items, err := s.materializeMediaItems(ctx, uid, query, len(nodeIDs), 0, options)
 	if err != nil {
 		return nil, err
 	}
@@ -717,10 +738,11 @@ func (s *Server) queryMediaItems(
 	if err != nil {
 		return nil, err
 	}
-	return s.materializeMediaItems(ctx, uid, query, limit, offset)
+	return s.materializeMediaItems(ctx, uid, query, limit, offset, options)
 }
 
 const mediaTimelineDayGroupExpression = "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 'unknown' ELSE TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') END"
+const mediaAddedDayGroupExpression = "TO_CHAR(n.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
 
 func collapseMediaTimelineGroups(
 	groups []mediaTimelineGroupDTO,
@@ -745,7 +767,19 @@ func collapseMediaTimelineGroups(
 	return out
 }
 
-func queryMediaTimelineGroupSets(query *gorm.DB) (mediaTimelineGroupSetsDTO, error) {
+func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (mediaTimelineGroupSetsDTO, error) {
+	var options mediaQueryOptions
+	if len(sorts) > 0 {
+		options = sorts[0]
+	}
+	expression := mediaTimelineDayGroupExpression
+	if options.SortBy == "added" {
+		expression = mediaAddedDayGroupExpression
+	}
+	direction := "group_key DESC"
+	if options.SortDir == "asc" {
+		direction = "group_key ASC"
+	}
 	type groupRow struct {
 		Key         string `gorm:"column:group_key"`
 		ItemCount   int64  `gorm:"column:item_count"`
@@ -756,13 +790,13 @@ func queryMediaTimelineGroupSets(query *gorm.DB) (mediaTimelineGroupSetsDTO, err
 	if err := query.
 		Session(&gorm.Session{}).
 		Select(
-			mediaTimelineDayGroupExpression +
+			expression +
 				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
 				"MAX(CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END) AS unknown_rank",
 		).
-		Group(mediaTimelineDayGroupExpression).
+		Group(expression).
 		Order("unknown_rank ASC").
-		Order("group_key DESC").
+		Order(direction).
 		Scan(&rows).Error; err != nil {
 		return mediaTimelineGroupSetsDTO{}, err
 	}
@@ -837,7 +871,7 @@ func (s *Server) queryMediaItemRange(
 	var timelineGroups []mediaTimelineGroupDTO
 	var timelineGroupSets *mediaTimelineGroupSetsDTO
 	if offset == 0 {
-		sets, groupErr := queryMediaTimelineGroupSets(query)
+		sets, groupErr := queryMediaTimelineGroupSets(query, options)
 		if groupErr != nil {
 			return mediaItemRangeDTO{}, groupErr
 		}
@@ -845,7 +879,7 @@ func (s *Server) queryMediaItemRange(
 		timelineGroupSets = &sets
 	}
 
-	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset)
+	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset, options)
 	if err != nil {
 		return mediaItemRangeDTO{}, err
 	}

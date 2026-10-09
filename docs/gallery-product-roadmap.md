@@ -37,6 +37,21 @@ Places, Search, Memories, Cleanup, People/Pets, editing, or creative tools as ne
 features. Extend the concrete gap recorded in the audit. Proposed enhancements in
 that audit are recommendations, not an instruction to implement the whole backlog.
 
+## Chronological sort follow-up (G03, 2026-10-09)
+
+The current implementation track extends the existing Server-owned sparse Gallery query
+with sort_by=captured|added and sort_dir=asc|desc (capture-descending remains
+the default). It does **not** perform client-side reordering of the retained viewport
+or add another renderer. Timeline group-index order must match item-range ordering;
+missing capture dates sort last. A semantic search remains relevance-ranked.
+
+**G03 is not complete** until one user-selected IANA timezone governs
+Timeline, captured-date filter boundaries, Memories and Viewer labels, and sort
+changes can restore the original media-item anchor rather than merely preserving
+the previous scroll offset. The remaining work is tracked in the
+[Gallery audit](gallery-ios-kfs-audit.md). Web/Desktop continue to share
+the same query model and platform adapters.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |

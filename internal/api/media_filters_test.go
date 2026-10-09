@@ -215,3 +215,52 @@ func TestMediaSmartAlbumQueryPersistsCameraAndFormatFilters(t *testing.T) {
 		t.Fatalf("decoded formats=%q", got)
 	}
 }
+
+func TestMediaGallerySortQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		query string
+		valid bool
+		by    string
+		dir   string
+	}{
+		{"", true, "", ""},
+		{"sort_by=captured&sort_dir=desc", true, "captured", "desc"},
+		{"sort_by=captured&sort_dir=asc", true, "captured", "asc"},
+		{"sort_by=added&sort_dir=desc", true, "added", "desc"},
+		{"sort_by=added&sort_dir=asc", true, "added", "asc"},
+		{"sort_by=none", false, "", ""},
+		{"sort_dir=random", false, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			ctx.Request = httptest.NewRequest("GET", "/api/v1/media/items?"+tc.query, nil)
+			got, ok := mediaQueryFromRequest(ctx)
+			if ok != tc.valid {
+				t.Fatalf("valid=%v want=%v response=%s", ok, tc.valid, w.Body.String())
+			}
+			if ok && (got.SortBy != tc.by || got.SortDir != tc.dir) {
+				t.Fatalf("got sort=%q dir=%q, expected %q/%q", got.SortBy, got.SortDir, tc.by, tc.dir)
+			}
+		})
+	}
+}
+
+func TestMediaGallerySortClausesStable(t *testing.T) {
+	cases := []struct {
+		option mediaQueryOptions
+		want   string
+	}{
+		{mediaQueryOptions{}, "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC|xd_media_metadata.captured_at DESC|n.created_at DESC|n.id DESC"},
+		{mediaQueryOptions{SortBy: "captured", SortDir: "asc"}, "CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC|xd_media_metadata.captured_at ASC|n.created_at ASC|n.id ASC"},
+		{mediaQueryOptions{SortBy: "added", SortDir: "desc"}, "n.created_at DESC|n.id DESC"},
+		{mediaQueryOptions{SortBy: "added", SortDir: "asc"}, "n.created_at ASC|n.id ASC"},
+	}
+	for _, tc := range cases {
+		if got := strings.Join(mediaGallerySortClauses(tc.option), "|"); got != tc.want {
+			t.Fatalf("sort %+v = %q, want %q", tc.option, got, tc.want)
+		}
+	}
+}

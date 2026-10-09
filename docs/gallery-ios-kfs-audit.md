@@ -159,9 +159,9 @@ already accepted requirements. **P0** closes an existing interaction/integration
 
 | ID | Priority / status at audit | Concrete next delta | Completion evidence |
 | --- | --- | --- | --- |
-| G01 | P0 / #1071 merged; adapter follow-up remains | Build on #1071 so FileExplorer uses the same media Properties as Gallery and Viewer; real path/origin can build on G06 | Same asset fields/actions from all entries; one mounted player; Properties follows Viewer target; normal file/folder behavior preserved |
-| G02 | P0 / Validation pending + Proposed polish | Use the full available mobile workspace; compact Gallery navigation/actions; short landscape and safe areas; touch/keyboard/screen-reader access | Whole-App Gallery -> Viewer -> Properties -> return at narrow/wide/landscape, real iOS/Android recorded separately; no stacked duplicate chrome |
-| G03 | P1 / Proposed | Capture-date/added-date sort, ascending/descending where useful; shared timeline/Memory/filter timezone; preserve an item anchor and collection context | Stable Server order plus tie-breaker, consistent range/Viewer order, midnight/DST/missing-zone cases, no full-collection load |
+| G01 | P0 / #1071 + #1076 merged; complete (2026-10-09) | Build on #1071 so FileExplorer uses the same media Properties as Gallery and Viewer; real path/origin can build on G06 | Same asset fields/actions from all entries; one mounted player; Properties follows Viewer target; normal file/folder behavior preserved |
+| G02 | P0 / #1078 merged; physical iOS/Android acceptance pending | Use the full available mobile workspace; compact Gallery navigation/actions; short landscape and safe areas; touch/keyboard/screen-reader access | Whole-App Gallery -> Viewer -> Properties -> return at narrow/wide/landscape, real iOS/Android recorded separately; no stacked duplicate chrome |
+| G03 | P1 / Sort query/UI substage in progress; timezone and cross-sort anchor still pending | Capture-date/added-date sort, ascending/descending where useful; shared timeline/Memory/filter timezone; preserve an item anchor and collection context | Stable Server order plus tie-breaker, consistent range/Viewer order, midnight/DST/missing-zone cases, no full-collection load |
 | G04 | P1 / Proposed | Pin/reorder useful collections; album search, manual-album order/cover/folder organization; optional aspect-ratio wall and grid pinch density | Account-scoped preferences, return-position consistency, no copied media or second Gallery navigation model |
 | G05 | P1 / Proposed on existing search | Applied filter chips, recent/suggested searches, exact scope, counts and index-readiness feedback; search within album/person/folder | Count/list/facet agreement; preserve own-filter exclusion; lexical fallback visible; no mandatory facet work on first image |
 | G06 | P1 / Proposed on existing folder browser | Authoritative file path, synchronization-folder provenance and Open in folder; optional explicit include-descendants scope; save reusable scope only after contract design | Owner-scoped path API; direct versus recursive counts explicit; scope composes with filters; no provider metadata dependency |
@@ -295,6 +295,10 @@ repeatable material improvement with the same workload. This audit reports no ne
 timing, memory, FPS or throughput result.
 
 ## Delivery log
+
+- 2026-10-09: G01 delivered by [#1076](https://github.com/lazyxu/xdrive/pull/1076), merge commit b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68; FileExplorer, Gallery and Viewer now reuse media Properties. G06 still owns precise file origin and navigation.
+- 2026-10-09: G02 mobile Web viewport/overlay work delivered by [#1078](https://github.com/lazyxu/xdrive/pull/1078), merge commit 1541d78cc4facafc535bb59cd1bdc7fd3045d3d8. Full-app Chromium checks passed; actual iOS Safari/Android Chrome hardware acceptance remains outstanding.
+- 2026-10-09: G03 implementation staged: explicit Server-backed sort_by=captured|added and sort_dir=asc|desc, matching sparse-range timeline group ordering, and Web/Desktop query/UI. Semantic search retains relevance ranking. This does not establish user-zone consistency or stable same-photo anchoring after a re-sort. UTC grouping, Memories, timezone-selectable date bounds, and original-item anchor restoration remain pending until additional implementation/verification.
 
 - 2026-10-09: related PR #1071 was verified merged as 27fe038ec87c2b2b8ca200f86977e6e8938925da
   before documentation delivery. Direct-open and in-Viewer Properties are delivered;
