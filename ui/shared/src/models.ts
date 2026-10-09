@@ -918,6 +918,8 @@ export interface MediaDuplicateOrganizeApplyInput {
   keeper_node_id: number
   node_ids: number[]
   expected_plan_revision: string
+  /** Required only for differing nonempty descriptions; keeps other originals unchanged. */
+  selected_description?: string
   confirm: true
 }
 

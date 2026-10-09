@@ -2820,6 +2820,11 @@ func (h *desktopIPCHandler) mediaDuplicateOrganizeApply(w http.ResponseWriter, r
 			"plan revision must be a SHA-256 hex digest")
 		return
 	}
+	if input.SelectedDescription != nil && len([]rune(*input.SelectedDescription)) > 4096 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+			"selected description is too long")
+		return
+	}
 	seen := make(map[uint64]struct{}, len(input.NodeIDs))
 	for _, id := range input.NodeIDs {
 		if id == 0 {

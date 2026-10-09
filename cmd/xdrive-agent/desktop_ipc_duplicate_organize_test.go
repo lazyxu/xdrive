@@ -16,6 +16,7 @@ func TestDesktopIPCDuplicateOrganizeApplyRejectsUnsafeRequests(t *testing.T) {
 		`{"keeper_node_id":1,"node_ids":[1,1],"expected_plan_revision":"` + valid + `","confirm":true}`,
 		`{"keeper_node_id":3,"node_ids":[1,2],"expected_plan_revision":"` + valid + `","confirm":true}`,
 		`{"keeper_node_id":1,"node_ids":[1,0],"expected_plan_revision":"` + valid + `","confirm":true}`,
+		`{"keeper_node_id":1,"node_ids":[1,2],"expected_plan_revision":"` + valid + `","selected_description":"` + strings.Repeat("x", 4097) + `","confirm":true}`,
 	} {
 		request := httptest.NewRequest(
 			http.MethodPost, "/v1/media/duplicate-organize/apply", strings.NewReader(body),
