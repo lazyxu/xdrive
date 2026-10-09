@@ -505,6 +505,39 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  gallery-hover-real-codecs-4k:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-hover-real-codecs-4k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Ensure local 4K encoder and probe
+        run: |
+          command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null ||
+            (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: Install native benchmark dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure 4K H264 HEVC long-GOP long-video hover cost (baseline only)
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-4k-real-codec-trial-main.cjs
+          cat perf-results/gallery-hover-4k-real-codec-trial.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-hover-real-codecs-4k
+          path: desktop/perf-results/gallery-hover-4k-real-codec-trial.json
+          if-no-files-found: error
+          retention-days: 7
+
   gallery-hover-original-video-trial:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-hover-original-video-trial'
     runs-on: ubuntu-latest
