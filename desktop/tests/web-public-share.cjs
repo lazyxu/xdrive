@@ -18,7 +18,7 @@ test('Web public share uses the shared auth and brand surfaces', () => {
     'variant="large"',
     'subtitle="安全文件分享"',
     '<XDriveAuthShell viewport decorated spacing="compact">',
-    '<XDriveAuthPanel size="compact">',
+    '<XDriveAuthPanel size="compact" form onSubmit=',
   ]) {
     assert.ok(publicShare.includes(token), `Public Share shared surface missing: ${token}`)
   }
@@ -40,7 +40,7 @@ test('Web public share uses the shared auth and brand surfaces', () => {
   assert.ok(brandLockup.includes('export function XDriveBrandLockup'), 'shared brand lockup must remain available')
 })
 
-test('Web public share keeps download and password behavior unchanged', () => {
+test('Web public share keeps native download, password and eligibility feedback', () => {
   for (const token of [
     'api.publicShare(token)',
     'api.downloadPublicShare(token, password, share.name)',
@@ -50,7 +50,7 @@ test('Web public share keeps download and password behavior unchanged', () => {
     'share.max_downloads > 0',
     '此分享已达到下载上限。',
     'loading={downloading}',
-    'disabled={exhausted || (share.requires_password && !password)}',
+    'disabled={!canDownload}',
   ]) {
     assert.ok(publicShare.includes(token), `Public Share behavior missing: ${token}`)
   }

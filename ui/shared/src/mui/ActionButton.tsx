@@ -49,9 +49,17 @@ export function XDriveActionButton({
       title={title}
       onClick={onClick}
       startIcon={loading ? <CircularProgress size={compact ? 12 : 14} thickness={5} color="inherit" /> : startIcon}
-      sx={compact
-        ? { minHeight: 28, minWidth: 'auto', borderRadius: 1.5, px: 1.1, py: 0.25, fontSize: 11, whiteSpace: 'nowrap' }
-        : { minHeight: 36, borderRadius: 2, whiteSpace: 'nowrap' }}
+      sx={[
+        compact
+          ? { minHeight: 28, minWidth: 'auto', borderRadius: 1.5, px: 1.1, py: 0.25, fontSize: 11, whiteSpace: 'nowrap' }
+          : { minHeight: 36, borderRadius: 2, whiteSpace: 'nowrap' },
+        {
+          '@media (max-width:899.95px) and (pointer: coarse)': {
+            minHeight: 44,
+            minWidth: compact ? 44 : 64,
+          },
+        },
+      ]}
     >
       {loading ? (loadingLabel || children) : children}
     </Button>

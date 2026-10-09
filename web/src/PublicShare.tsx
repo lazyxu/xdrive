@@ -40,8 +40,11 @@ export default function PublicShareView({ token }: { token: string }) {
     return () => { active = false }
   }, [api, token])
 
+  const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
+  const canDownload = !!share && !downloading && !exhausted && (!share.requires_password || Boolean(password))
+
   const download = async () => {
-    if (!share) return
+    if (!share || !canDownload) return
     setDownloading(true)
     setError('')
     setNotice('')
@@ -62,11 +65,12 @@ export default function PublicShareView({ token }: { token: string }) {
     }
   }
 
-  const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
-
   return (
     <XDriveAuthShell viewport decorated spacing="compact">
-      <XDriveAuthPanel size="compact">
+      <XDriveAuthPanel size="compact" form onSubmit={(event) => {
+        event.preventDefault()
+        void download()
+      }}>
         <XDriveBrandLockup
           iconSrc={xDriveBrandIcon}
           variant="large"
@@ -104,9 +108,7 @@ export default function PublicShareView({ token }: { token: string }) {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void download()
-                }}
+                label="分享密码"
                 placeholder="分享密码"
                 autoComplete="current-password"
                 slotProps={{
@@ -125,12 +127,12 @@ export default function PublicShareView({ token }: { token: string }) {
 
             <XDriveActionButton
               intent="primary"
+              type="submit"
               fullWidth
               startIcon={<DownloadRoundedIcon />}
               loading={downloading}
               loadingLabel="正在下载…"
-              disabled={exhausted || (share.requires_password && !password)}
-              onClick={() => void download()}
+              disabled={!canDownload}
             >
               下载
             </XDriveActionButton>

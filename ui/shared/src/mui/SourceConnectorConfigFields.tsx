@@ -1,5 +1,6 @@
 import { useCallback, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import {
   Alert,
   Box,
@@ -8,11 +9,9 @@ import {
   Chip,
   CircularProgress,
   Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
   FormHelperText,
+  IconButton,
   InputLabel,
   List,
   ListItem,
@@ -40,6 +39,9 @@ import {
   synologyPhotoSpaceOptions,
 } from '../external-sources'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
+import { XDriveDialogActions } from './DialogActions'
+import { XDriveDialogContent } from './DialogContent'
+import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
 
 function photoSpaceLabel(value: SynologyPhotoSpace) {
   return synologyPhotoSpaceOptions.find((option) => option.value === value)?.label ?? value
@@ -134,6 +136,8 @@ export function XDriveSynologyFileRootsField({
   browseButtonLabel?: ReactNode
   sx?: SxProps<Theme>
 }) {
+  const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
+  const touchButtonSx = compactTouch ? { minHeight: 44, minWidth: 44 } : undefined
   const [browseOpen, setBrowseOpen] = useState(false)
   const [browsePath, setBrowsePath] = useState('')
   const [browseItems, setBrowseItems] = useState<ExternalSourceBrowseDirectory[]>([])
@@ -219,6 +223,7 @@ export function XDriveSynologyFileRootsField({
             <Button
               size="small"
               variant="outlined"
+              sx={touchButtonSx}
               disabled={browseDisabled}
               onClick={openBrowser}
             >
@@ -234,17 +239,21 @@ export function XDriveSynologyFileRootsField({
           onClose={closeBrowser}
           maxWidth="sm"
           fullWidth
+          fullScreen={compactTouch}
+          scroll="paper"
+          slotProps={{ paper: dialogPaper }}
           aria-label="浏览群晖 File Station 目录"
         >
-          <DialogTitle>选择 File Station 根目录</DialogTitle>
-          <DialogContent dividers>
+          <XDriveDialogTitle title="选择 File Station 根目录" onClose={closeBrowser} />
+          <XDriveDialogContent dividers>
             <Stack spacing={1.5}>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Button size="small" onClick={() => void loadBrowsePath('', 0, false)}>
+                <Button size="small" sx={touchButtonSx} onClick={() => void loadBrowsePath('', 0, false)}>
                   共享文件夹
                 </Button>
                 <Button
                   size="small"
+                  sx={touchButtonSx}
                   disabled={!browsePath}
                   onClick={() => void loadBrowsePath(parentRemotePath(browsePath), 0, false)}
                 >
@@ -257,7 +266,7 @@ export function XDriveSynologyFileRootsField({
 
               {browseError ? <Alert severity="error">{browseError}</Alert> : null}
 
-              <List dense disablePadding>
+              <List dense={!compactTouch} disablePadding>
                 {browseItems.map((item) => {
                   const selected = draftRoots.includes(item.path)
                   return (
@@ -267,13 +276,14 @@ export function XDriveSynologyFileRootsField({
                       secondaryAction={(
                         <Button
                           size="small"
+                          sx={touchButtonSx}
                           onClick={() => void loadBrowsePath(item.path, 0, false)}
                         >
                           进入
                         </Button>
                       )}
                     >
-                      <ListItemButton onClick={() => toggleDraftRoot(item.path)} sx={{ pr: 8 }}>
+                      <ListItemButton onClick={() => toggleDraftRoot(item.path)} sx={{ pr: 8, minHeight: compactTouch ? 52 : undefined }}>
                         <ListItemIcon sx={{ minWidth: 40 }}>
                           <Checkbox
                             edge="start"
@@ -286,7 +296,10 @@ export function XDriveSynologyFileRootsField({
                         <ListItemText
                           primary={item.name}
                           secondary={item.path}
-                          slotProps={{ secondary: { sx: { wordBreak: 'break-all' } } }}
+                          slotProps={{
+                            primary: { sx: { overflowWrap: 'anywhere' } },
+                            secondary: { sx: { wordBreak: 'break-all' } },
+                          }}
                         />
                       </ListItemButton>
                     </ListItem>
@@ -329,7 +342,26 @@ export function XDriveSynologyFileRootsField({
                 </Typography>
                 {draftRootsError ? <Alert severity="warning" sx={{ mb: 1 }}>{draftRootsError}</Alert> : null}
                 <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                  {draftRoots.length ? draftRoots.map((root) => (
+                  {draftRoots.length ? draftRoots.map((root) => compactTouch ? (
+                    <Stack
+                      key={root}
+                      direction="row"
+                      alignItems="flex-start"
+                      sx={{ width: '100%', minWidth: 0, pl: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5 }}
+                    >
+                      <Typography variant="body2" sx={{ flex: 1, minWidth: 0, py: 1.25, overflowWrap: 'anywhere' }}>
+                        {root}
+                      </Typography>
+                      <IconButton
+                        aria-label={'移除 ' + root}
+                        size="small"
+                        sx={{ width: 44, height: 44, flex: '0 0 auto' }}
+                        onClick={() => toggleDraftRoot(root)}
+                      >
+                        <CloseRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                  ) : (
                     <Chip
                       key={root}
                       size="small"
@@ -344,11 +376,12 @@ export function XDriveSynologyFileRootsField({
                 </Stack>
               </Box>
             </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeBrowser}>取消</Button>
+          </XDriveDialogContent>
+          <XDriveDialogActions>
+            <Button sx={touchButtonSx} onClick={closeBrowser}>取消</Button>
             <Button
               variant="contained"
+              sx={touchButtonSx}
               disabled={browseLoading || draftRoots.length === 0 || Boolean(draftRootsError)}
               onClick={() => {
                 onChange(normalizeSynologyFileRoots(draftRoots))
@@ -357,7 +390,7 @@ export function XDriveSynologyFileRootsField({
             >
               使用所选目录
             </Button>
-          </DialogActions>
+          </XDriveDialogActions>
         </Dialog>
       ) : null}
     </>
