@@ -1,0 +1,152 @@
+{
+  "source": {
+    "repo": "lazyxu/xdrive",
+    "commit": "e329e683b51564cbf12187b04f539447fe55cca4",
+    "job_id": 113646340328,
+    "run_id": 37876509402,
+    "ci": "https://github.com/lazyxu/xdrive/actions/runs/37876509402/job/113646340328",
+    "retrieval": "2026-10-09",
+    "scope": "real Server Gin HTTP + PostgreSQL + storage.Local, but synthetic source video; separate tiny embedded H.264 Chromium codec sample"
+  },
+  "benchmark": "file-explorer-video-poster-server-http-100k",
+  "decision": "measured current baseline; no production change",
+  "server": {
+    "concurrency_budget": 6,
+    "limits": "real Gin/PostgreSQL/storage.Local GET miss, revision-validated PUT and warm GET; synthetic JPEG backfill; no MP4 decode/preview transport",
+    "logical_items": 100000,
+    "phases": [
+      {
+        "phase": "cold-miss",
+        "sample": 1,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 3876,
+        "batch_ms": 93.841,
+        "p50_ms": 3.519,
+        "p95_ms": 18.265
+      },
+      {
+        "phase": "poster-put",
+        "sample": 1,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 0,
+        "batch_ms": 102.922,
+        "p50_ms": 5.907,
+        "p95_ms": 8.235
+      },
+      {
+        "phase": "warm-hit",
+        "sample": 1,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 929118,
+        "batch_ms": 62.328,
+        "p50_ms": 3.187,
+        "p95_ms": 5.952
+      },
+      {
+        "phase": "cold-miss",
+        "sample": 2,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 3876,
+        "batch_ms": 52.897,
+        "p50_ms": 2.941,
+        "p95_ms": 4.187
+      },
+      {
+        "phase": "poster-put",
+        "sample": 2,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 0,
+        "batch_ms": 102.501,
+        "p50_ms": 5.77,
+        "p95_ms": 8.449
+      },
+      {
+        "phase": "warm-hit",
+        "sample": 2,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 929118,
+        "batch_ms": 62.194,
+        "p50_ms": 3.418,
+        "p95_ms": 5.925
+      },
+      {
+        "phase": "cold-miss",
+        "sample": 3,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 3876,
+        "batch_ms": 62.67,
+        "p50_ms": 3.275,
+        "p95_ms": 6.691
+      },
+      {
+        "phase": "poster-put",
+        "sample": 3,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 0,
+        "batch_ms": 110.996,
+        "p50_ms": 5.978,
+        "p95_ms": 8.744
+      },
+      {
+        "phase": "warm-hit",
+        "sample": 3,
+        "requests": 102,
+        "peak_in_flight": 6,
+        "bytes": 929118,
+        "batch_ms": 59.557,
+        "p50_ms": 3.192,
+        "p95_ms": 5.357
+      }
+    ],
+    "poster_bytes": 9109,
+    "sample_node_count": 102,
+    "samples_per_phase": 3,
+    "workload": "video-poster-server-http-100k"
+  },
+  "codec": {
+    "samples": 7,
+    "videoBytes": 2958,
+    "firstProcessColdMs": 329.19999999995343,
+    "coldMedianMs": 3.6000000000349246,
+    "steadyColdMedianMs": 3.6000000000349246,
+    "coldMinMs": 3.099999999976717,
+    "coldMaxMs": 329.19999999995343,
+    "warmMedianMs": 3.3999999999650754,
+    "warmMinMs": 3.2000000000116415,
+    "warmMaxMs": 4.5,
+    "warmToColdRatio": 0.9444444444255808,
+    "warmToSteadyColdRatio": 0.9444444444255808,
+    "posterBytesMedian": 2338
+  },
+  "phaseMedian": {
+    "cold-miss": {
+      "n": 3,
+      "batchMedian": 62.67,
+      "p50Ms": 3.275,
+      "p95Ms": 6.691,
+      "bytes": 3876
+    },
+    "poster-put": {
+      "n": 3,
+      "batchMedian": 102.922,
+      "p50Ms": 5.907,
+      "p95Ms": 8.449,
+      "bytes": 0
+    },
+    "warm-hit": {
+      "n": 3,
+      "batchMedian": 62.194,
+      "p50Ms": 3.192,
+      "p95Ms": 5.925,
+      "bytes": 929118
+    }
+  }
+}

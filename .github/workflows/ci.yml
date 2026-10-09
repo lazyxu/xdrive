@@ -326,6 +326,56 @@ jobs:
           XD_FILEEXPLORER_MEDIA_SERVER_PERF: "1"
         run: go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
 
+  file-explorer-video-poster-server-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-video-poster-server-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_VIDEO_POSTER_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure 100k Video Poster cold miss, cache PUT, warm GET on real Server
+        run: go test -run '^TestFileExplorerVideoPosterCachePerformance100K$' -count=1 -v ./internal/api
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install native Chromium video-poster benchmark dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure actual Chromium MP4 first-frame JPEG poster capture
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-video-poster-performance-main.cjs
+          cat perf-results/gallery-video-poster-performance.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-video-poster-100k-server-and-chromium
+          path: desktop/perf-results/gallery-video-poster-performance.json
+          if-no-files-found: warn
+          retention-days: 7
+
   gallery-video-poster-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-first-visible-100k'
     runs-on: ubuntu-latest
