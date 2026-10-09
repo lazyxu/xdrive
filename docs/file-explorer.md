@@ -361,6 +361,14 @@ These are correctness requirements, not a FileExplorer performance specializatio
 
 ## Selection and action feedback
 
+### Selection chrome — keep the file viewport stable (2026-10-09)
+
+In wide Web/Desktop FileExplorer, selecting one or more files or folders **must not insert an extra selection-scope panel beneath the command bar**. Remove the redundant sentence stating the current folder name/count and whether descendants are included, along with the duplicate desktop “全选当前目录 / 清除选择” row. The existing bottom status bar already shows “已选择 N 项” and unavailable-item/file-size information; the main command bar still provides Copy/Cut/Download/Delete. Native `Ctrl/Cmd+A` must continue selecting the full current logical directory or applied search results, and `Esc` / clicking the blank file area continues clearing the selection.
+
+The desktop async large selection (`Ctrl/Cmd+A` over a sparse 10k/100k collection) must remain cancellable: show its actual resolved/total progress and a short **取消** action inside the **existing status bar**, not a new selection banner. Preserve error/cancellation feedback in the status bar. Selection identity, scope, retained metadata, search semantics, server range work and cancellation are unchanged. Selecting files must not reduce scroll-host height or reset the view's anchor.
+
+On compact/touch FileExplorer, retain the existing touch-accessible Select All / Clear / destination controls and their 44px targets, but remove the redundant **选择范围：...** prose. Web's dedicated iOS-style Mobile Files implementation is unaffected. An active full-library search still displays its actual independently applied “范围：全部文件” and “清除搜索与筛选” controls; those are not selection chrome and must not be removed.
+
 Count unique selected identities even when an item's metadata is temporarily unavailable. Explain the unavailable subset and refuse operations that would silently submit only the resolved portion. Keep retained node IDs and revisions for valid selections across render-page eviction.
 
 Below 900 CSS px, a compact selection summary keeps its count and **完成选择** separate from direct Copy, Cut, Download, Delete and More actions. Targets are at least 44 × 44 CSS px. Clear keeps selection mode open; Finish clears the selection, exits the mode and returns focus to its trigger. Escape cancels pending All first, then exits compact selection. Widening preserves selected identities. Selection/search/outcome details share a bounded scrollable region inside Files so a long error at 200% text cannot push its actions outside a short viewport; the main Files scroll host remains mounted.
