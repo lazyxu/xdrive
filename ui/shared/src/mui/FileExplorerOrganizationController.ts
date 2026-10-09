@@ -32,6 +32,9 @@ export function useXDriveFileExplorerOrganization({
   const [savedSearches, setSavedSearches] = useState<Awaited<ReturnType<XDriveFileExplorerOrganizationPort['listSavedSearches']>>>([])
   const [loading, setLoading] = useState(false)
   const [busyKey, setBusyKey] = useState('')
+  // The passive lifecycle reset cannot protect the first render after
+  // changing accounts or disabling the Organization sidebar.
+  const visibleScopeRef = useRef({ lifecycleKey, enabled })
 
   const refresh = useCallback(async () => {
     const generation = ++refreshGenerationRef.current
@@ -58,6 +61,7 @@ export function useXDriveFileExplorerOrganization({
   }, [adapter, enabled])
 
   useEffect(() => {
+    visibleScopeRef.current = { lifecycleKey, enabled }
     lifecycleGenerationRef.current += 1
     refreshGenerationRef.current += 1
     reorderGenerationRef.current += 1
@@ -78,6 +82,9 @@ export function useXDriveFileExplorerOrganization({
   }, [lifecycleKey])
 
   useEffect(() => {
+    // This effect also runs when the same account's capabilities toggle.
+    // The disabled frame must not reveal the previously enabled list.
+    visibleScopeRef.current = { lifecycleKey, enabled }
     void refresh()
   }, [lifecycleKey, refresh])
 
@@ -264,17 +271,22 @@ export function useXDriveFileExplorerOrganization({
     return operation
   }, [adapter])
 
+  const scopeVisible = enabled &&
+    visibleScopeRef.current.lifecycleKey === lifecycleKey &&
+    visibleScopeRef.current.enabled === enabled
+  const visibleTags = scopeVisible ? tags : []
+  const visibleSavedSearches = scopeVisible ? savedSearches : []
   const tagOptions = useMemo(
-    () => tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
-    [tags],
+    () => visibleTags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
+    [visibleTags],
   )
 
   return {
-    tags,
+    tags: visibleTags,
     tagOptions,
-    savedSearches,
-    loading,
-    busyKey,
+    savedSearches: visibleSavedSearches,
+    loading: scopeVisible ? loading : enabled,
+    busyKey: scopeVisible ? busyKey : '',
     refresh,
     queryNodeTags: adapter.queryNodeTags,
     createTag,
