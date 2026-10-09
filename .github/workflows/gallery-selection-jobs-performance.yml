@@ -1,0 +1,51 @@
+name: G07 Durable Selection 10k 100k Baseline
+
+on:
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-selection-jobs-real-10k-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-selection-durable-10k-100k-g07'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_SELECTION_JOB_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure G07 durable jobs on 10k and 100k PostgreSQL items
+        run: |
+          set -euo pipefail
+          go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k$' -timeout=24m -count=1 -v ./internal/api | tee gallery-selection-jobs-baseline.log
+          test "$(grep -c 'G07_SELECTION_JOB_BASELINE' gallery-selection-jobs-baseline.log)" -eq 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-selection-jobs-10k-100k
+          path: gallery-selection-jobs-baseline.log
+          if-no-files-found: warn
+          retention-days: 14
