@@ -136,6 +136,58 @@ Still run the real application on iOS Safari and Android Chrome, both normal-tab
 
 Offline file pinning, Service Worker caching, incoming Web Share Target and touch drag/reorder remain subsequent enhancements rather than requirements of the merged adaptive-layout milestone.
 
+## Compact forms and public-share follow-up — 2026-10-09
+
+**Status: Implemented and verified in Chromium; physical-device acceptance remains open.** The related Mobile Web branches and PRs were reconciled first; none remained open for this work. The fixed baseline is `24dac1f00214169c640d792299e24a2fa886bea2`. Viewer-specific work continues separately; this change preserves its media and gesture contracts.
+
+The earlier browser acceptance concentrated on Shell, Files, Gallery and navigation. This follow-up found additional implementation gaps in populated synchronization-folder controls, the nested File Station directory picker, authentication controls and Public Share keyboard submission.
+
+### Reproduced gaps and resulting behavior
+
+| Same browser case | Before | After |
+| --- | --- | --- |
+| 390 px coarse shared compact action | 41.59×28 px | 44×44 px |
+| 390 px coarse shared ordinary action | 64×36 px | 64×44 px |
+| Login password visibility / submit | 30×30 px / 42 px high | 44×44 px / 44 px high |
+| File Station directory content at 390 px | Client width 326 px; scroll width 1083 px | Client and scroll width both 390 px |
+| File Station directory content at 360×390 | Client width 296 px; scroll width 1083 px | Client and scroll width both 360 px; footer remains reachable |
+| Selected long-root removal | 16×16 px icon | Explicit 44×44 px remove button |
+| Shared dialog title with a 118-character Source name | Paper width 390 px; scroll width 1599 px | Paper and scroll width both 390 px |
+| Required password empty, then Enter | One invalid ticket POST despite disabled button | No ticket POST |
+| Share exhausted, then Enter | One extra ticket POST despite disabled button | No ticket POST |
+| Ticket request pending, then Enter again | Two ticket POSTs | One ticket POST |
+
+The existing compact-touch boundary remains below 900 CSS px with a coarse primary pointer. Shared action controls and dialog close controls now provide 44 px touch targets in that presentation. Wide/coarse and narrow/fine-pointer retain the original compact 28 px and ordinary 36 px action heights; authentication retains its original 30 px visibility control and 42 px submit height outside compact touch. Long shared titles wrap within their available width.
+
+The File Station root picker consumes the existing shared full-screen compact Dialog, title, content and actions. Long directory names and selected paths wrap; the mobile selected-root list provides labelled remove buttons, while desktop retains Chips. Enter-directory actions remain separate from row selection. Draft selection, exact path normalization, overlap validation, pagination, loading/disabled conditions, cancellation and the existing request fence are unchanged. Confirm applies the exact normalized roots once; dismissing the picker does not save its draft.
+
+Public Share reuses the shared AuthPanel's native form. Its submit button and Enter action use the same eligibility guard, including loading, exhaustion and a required password. The password has an associated label and its value is passed unchanged. A failed ticket does not consume the local download count; a corrected password can retry. Successful handoff still reports “已交给浏览器下载。” rather than page-owned byte progress. Server authorization and ticket/count semantics are unchanged.
+
+### Verification and reproducible commands
+
+- `desktop/scripts/mobile-web-forms-browser.cjs` with its TSX fixture: **82/82 passed**, from **40 passed / 42 failed** on the baseline. Both runs had zero browser runtime errors. It renders the real shared controls, Source summary card, directory picker, title, FileName modal and Upload Conflict modal, with only directory data and platform callbacks supplied by fixtures. The same cases verify geometry, enabled/disabled/loading actions, selection → enter → parent → remove → reselect, responsive state preservation, exact confirmation, cancellation and Enter submission.
+- `desktop/scripts/mobile-web-public-share-browser.cjs`: **43/43 passed**, from **37 passed / 6 failed** against the earlier `index-GjpNsJVx.js` build. Its Public Share, AuthForm and ActionButton sources match the fixed baseline. The final build is `index-Dxdqrd5M.js`. The script serves the actual Web App and explicit API fixtures over local HTTP; attachment bytes are served by HTTP rather than a download interception substitute. It verifies the real Enter/button paths and login visibility controls at compact touch, 900 px touch and narrow fine-pointer widths.
+- Both successful Public Share cases produced a native Chromium download named `移动验收报告.txt`, saved **38 exact bytes**, with no browser download failure. The byte SHA-256 is `c0c023955c7ca35bd5c0150543384683369fb35dc3e8a87030e2c4fd7877ec74`. The page did not fetch the attachment body. Unknown requests, page errors and unexpected console errors were zero; one deliberate wrong-password HTTP 401 remained an expected negative-test response.
+- `desktop/tests/web-public-share-form.cjs`: **7/7 passed**, from **3 passed / 4 failed**. It runs real React state/effects and the actual PublicShare/AuthPanel/ActionButton implementations with API and MUI visual boundaries substituted. It certifies handler eligibility and business state, not native browser keyboard or geometry.
+- Existing shared FileExplorer browser regression: **54/54 passed**. Actual built Web App regression: **300/300 passed**, with no unknown API requests, page errors or console errors.
+- Desktop typecheck and complete `test:main`: **1121 passed, 0 failed, 1 existing opt-in 100k CPU baseline skipped** (1122 total). Web forced TypeScript rebuild, lint and production build passed. Independent review found no unresolved production or browser-test issues.
+
+```bash
+npm --prefix web run build
+node desktop/scripts/mobile-web-forms-browser.cjs --output-dir=/tmp/xdrive-mobile-forms
+node desktop/scripts/mobile-web-public-share-browser.cjs --output-dir=/tmp/xdrive-mobile-entry
+```
+
+Both optional browser runners accept `--source-root`, `XDRIVE_PLAYWRIGHT_MODULE`, `XDRIVE_BROWSER_EXECUTABLE` and `XDRIVE_BROWSER_ARGS`. The forms runner records source hashes as well as before/after geometry. This run used Linux, Node 24.19.0 and Chromium 153.0.8010.0. No package dependency or CI workflow was added. The existing Vite large-chunk warning remains.
+
+### Remaining work after this follow-up
+
+1. Continue real-browser integration acceptance for ordinary file/version and ZIP downloads, directory upload selection, interruption/error recovery, and populated Task Center, storage and Admin Audit interactions. The small Public Share fixture does not certify these paths or a real Server's ticket authorization/expiry.
+2. Exercise iOS Safari, Android Chrome, installed/standalone mode, actual software keyboards and safe areas, physical touch/mouse hardware, real download Range/resume and background/foreground return. Chromium viewport resizing is not a substitute for those device checks.
+3. Combine the separately maintained Viewer mobile/gesture work with whole-App acceptance after it lands. Preserve the same workspace and navigation contracts.
+
+The additional read-only capability probe found no horizontal overflow in login/forced-password-change layouts at the inspected portrait and short/landscape sizes. Chromium parsed the manifest with no errors and reported no installability errors, but no installation was performed. Offline pinning, Service Worker caching, incoming Share Target and touch drag/reorder remain optional later enhancements.
+
 ## Browser acceptance follow-up — 2026-10-09
 
 **Status: Chromium renderer acceptance implemented; native-device acceptance remains open.** This follow-up reconciled the existing Mobile Web PRs first: the relevant implementations were merged, their PR CI had succeeded, and their remote branches were already removed. The superseded phase-2 draft #1000 remains closed; its implementation was delivered through #993.

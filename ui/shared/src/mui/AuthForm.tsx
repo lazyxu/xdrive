@@ -264,6 +264,7 @@ export function XDriveAuthPasswordField({
                   size="small"
                   aria-label={visible ? '隐藏密码' : '显示密码'}
                   edge="end"
+                  sx={{ '@media (max-width:899.95px) and (pointer: coarse)': { minWidth: 44, minHeight: 44 } }}
                   onClick={() => setVisible((current) => !current)}
                 >
                   {visible
@@ -328,6 +329,7 @@ export function XDriveAuthSubmitRow({
             minWidth: fullWidth ? 0 : 180,
             minHeight: 42,
             borderRadius: 1.25,
+            '@media (max-width:899.95px) and (pointer: coarse)': { minHeight: 44 },
           },
         }}
       >

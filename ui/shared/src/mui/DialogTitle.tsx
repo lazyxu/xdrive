@@ -62,7 +62,7 @@ export function XDriveDialogTitle({
       }}
     >
       <Box sx={{ minWidth: 0 }}>
-        <Typography component="div" variant="h6" fontWeight={700} sx={{ lineHeight: 1.35 }}>
+        <Typography component="div" variant="h6" fontWeight={700} sx={{ lineHeight: 1.35, overflowWrap: 'anywhere' }}>
           {title}
         </Typography>
         {subtitle ? (
@@ -77,7 +77,10 @@ export function XDriveDialogTitle({
         size="small"
         disabled={closeDisabled}
         onClick={onClose}
-        sx={{ flex: '0 0 auto', mt: -0.4, mr: -0.5 }}
+        sx={{
+          flex: '0 0 auto', mt: -0.4, mr: -0.5,
+          '@media (max-width:899.95px) and (pointer: coarse)': { width: 44, height: 44 },
+        }}
       >
         <CloseRoundedIcon fontSize="small" />
       </IconButton>
