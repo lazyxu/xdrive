@@ -85,6 +85,24 @@ ratio-preserving photo-wall display must keep bounded virtual range and
 thumbnail scheduling, including Live/video posters; its separate
 acceptance is pending.
 
+## G04 album-folder interface and durable hierarchy (in progress, 2026-10-09)
+
+The owner-scoped album-folder hierarchy is **implemented on Server** by
+[#1102](https://github.com/lazyxu/xdrive/pull/1102). The pending shared
+Web/Desktop organizer uses `MediaAlbumFolder` (id/parent_id/revision) and
+`MediaAlbum.album_folder_id` to show direct child folders, breadcrumbs and
+local manual/smart album membership. Folder create/rename/move/delete and
+album reassignment travel through authenticated REST/Agent with the Server's
+revision-fenced `If-Match` mutations. Nonempty folder deletion, sibling
+name conflicts, cycles and cross-owner destinations must never be
+silently accepted, and no operation creates a new asset or changes the
+filesystem's **同步文件夹** tree. Folder placement is cross-device Server data;
+pinned/custom album order remains account-scoped per-device preference.
+Cross-folder searching must be explicit and preserve the existing Gallery
+navigation/Viewer context. Until PR CI and real device/browser acceptance,
+the **shared UI integration remains under validation**; a square contain
+image mode is not variable-height masonry.
+
 ## G04 virtual-wall thumbnail aspect modes (candidate, 2026-10-09)
 
 The shared Gallery supports **方形裁切** by default and an opt-in

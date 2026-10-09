@@ -26,6 +26,14 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
       }
     },
     listAlbums: () => api.mediaAlbums(),
+    listAlbumFolders: () => api.mediaAlbumFolders(),
+    createAlbumFolder: (name, parentID) => api.createMediaAlbumFolder(name, parentID),
+    updateAlbumFolder: (folderID, revision, change) =>
+      api.updateMediaAlbumFolder(folderID, revision, change),
+    deleteAlbumFolder: (folderID, revision) =>
+      api.deleteMediaAlbumFolder(folderID, revision),
+    moveAlbumToFolder: (albumID, revision, folderID) =>
+      api.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       api.mediaMemories(anchorDate, limit, timeZone),

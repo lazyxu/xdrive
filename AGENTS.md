@@ -100,6 +100,13 @@ Provider delivery rules:
   transparent automatic-cover fallback when source media goes missing or is
   removed, and shared Web/Desktop transport. Never treat a selected cover as
   copied media bytes or allow cross-user images as covers.
+- G04 album folder browser must use the shared MUI Web/Desktop organizer,
+  consume only the Server's owner-scoped folder list and album_folder_id,
+  preserve direct-child vs global-search scope, and explicitly handle
+  revision conflicts, incomplete operations and nonempty-folder deletion.
+  Never simulate folders via local pinned preferences or create duplicate
+  PhotoAssets/PhotoCollectionAssets. Keep real mobile acceptance separate
+  from Chromium fixtures.
 - G04 persistent album folders must be owner-scoped Server metadata separate
   from synchronization-folder/file paths. Each folder write and album move
   must be revision-fenced, reject cross-user parents and ancestry cycles,

@@ -97,6 +97,16 @@ const agent = Object.freeze({
   getMediaTrash: (limit = 200, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
+  getMediaAlbumFolders: () => ipcRenderer.invoke('agent:get-media-album-folders'),
+  createMediaAlbumFolder: (name: string, parentID: number) =>
+    ipcRenderer.invoke('agent:create-media-album-folder', name, parentID),
+  updateMediaAlbumFolder: (
+    folderID: number, revision: number, change: { name?: string; parent_id?: number },
+  ) => ipcRenderer.invoke('agent:update-media-album-folder', folderID, revision, change),
+  deleteMediaAlbumFolder: (folderID: number, revision: number) =>
+    ipcRenderer.invoke('agent:delete-media-album-folder', folderID, revision),
+  moveMediaAlbumToFolder: (albumID: string, revision: number, folderID: number) =>
+    ipcRenderer.invoke('agent:move-media-album-to-folder', albumID, revision, folderID),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
     ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit, timeZone),

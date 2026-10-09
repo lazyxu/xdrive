@@ -2,6 +2,13 @@
 
 ## Direction and scope
 
+- G04 nested Gallery album-folder navigation uses the shared compact MUI
+  organizer with easy-to-tap folder rows, breadcrumbs and focused create/move
+  dialogs. The Server-backed album folders are different from synchronization
+  file directories; device-local pinned album ordering stays separate.
+  Browser viewport simulation is not real iOS/Android keyboard or safe-area
+  acceptance and must be logged separately.
+
 Use one shared business/controller layer and one shared React/MUI component layer, with an adaptive presentation for a narrow Web viewport. Keep Web routing, authentication and platform APIs in `web`; keep common navigation and workspace layout in `ui/shared/src/mui`.
 
 **Current mandatory contract — 2026-10-09:** every registered Mobile Web App occupies the **entire browser-available dynamic viewport**, including the area previously reserved for the global header and footer. Filling only the middle content area is insufficient. The global AppBar and bottom navigation do not remain in layout flow on mobile. An on-demand shared application-navigation overlay provides app switching, account/settings and upload/download access. App-specific controls remain inside their own app; Desktop and wide Web retain their existing shell.

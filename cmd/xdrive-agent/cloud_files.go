@@ -2050,6 +2050,52 @@ func (c *agentController) CloudMediaAlbums(ctx context.Context) ([]client.MediaA
 	return cli.MediaAlbums(ctx)
 }
 
+func (c *agentController) CloudMediaAlbumFolders(ctx context.Context) ([]client.MediaAlbumFolder, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.MediaAlbumFolders(ctx)
+}
+
+func (c *agentController) CloudCreateMediaAlbumFolder(
+	ctx context.Context, name string, parentID uint64,
+) (client.MediaAlbumFolder, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbumFolder{}, err
+	}
+	return cli.CreateMediaAlbumFolder(ctx, name, parentID)
+}
+
+func (c *agentController) CloudUpdateMediaAlbumFolder(
+	ctx context.Context, folderID, revision uint64, name *string, parentID *uint64,
+) (client.MediaAlbumFolder, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbumFolder{}, err
+	}
+	return cli.UpdateMediaAlbumFolder(ctx, folderID, revision, name, parentID)
+}
+
+func (c *agentController) CloudDeleteMediaAlbumFolder(ctx context.Context, folderID, revision uint64) error {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return err
+	}
+	return cli.DeleteMediaAlbumFolder(ctx, folderID, revision)
+}
+
+func (c *agentController) CloudMoveMediaAlbumToFolder(
+	ctx context.Context, albumID string, revision, folderID uint64,
+) (client.MediaAlbum, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaAlbum{}, err
+	}
+	return cli.MoveMediaAlbumToFolder(ctx, albumID, revision, folderID)
+}
+
 func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]client.MediaPlaceFacet, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -1,5 +1,6 @@
 import type {
   MediaAlbum,
+  MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -88,6 +89,15 @@ export interface XDriveMediaGalleryPort {
     items: MediaItem[],
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
   listAlbums: () => Promise<XDriveMediaGalleryTransportResult<MediaAlbum[]>>
+  listAlbumFolders?: () => Promise<XDriveMediaGalleryTransportResult<MediaAlbumFolder[]>>
+  createAlbumFolder?: (name: string, parentID: number) => Promise<XDriveMediaGalleryTransportResult<MediaAlbumFolder>>
+  updateAlbumFolder?: (
+    folderID: number, revision: number, change: { name?: string; parent_id?: number },
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbumFolder>>
+  deleteAlbumFolder?: (folderID: number, revision: number) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  moveAlbumToFolder?: (
+    albumID: string, revision: number, folderID: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
   listPlaces?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
@@ -391,6 +401,27 @@ export function createXDriveMediaGalleryDataSource(
         }
       : undefined,
     listAlbums: () => resolveXDriveTransport(port.listAlbums()),
+    listAlbumFolders: port.listAlbumFolders
+      ? () => resolveXDriveTransport(port.listAlbumFolders!())
+      : undefined,
+    createAlbumFolder: port.createAlbumFolder
+      ? (name, parentID) => resolveXDriveTransport(port.createAlbumFolder!(name, parentID))
+      : undefined,
+    updateAlbumFolder: port.updateAlbumFolder
+      ? (folderID, revision, change) => resolveXDriveTransport(
+          port.updateAlbumFolder!(folderID, revision, change),
+        )
+      : undefined,
+    deleteAlbumFolder: port.deleteAlbumFolder
+      ? async (folderID, revision) => {
+          await resolveXDriveTransport(port.deleteAlbumFolder!(folderID, revision))
+        }
+      : undefined,
+    moveAlbumToFolder: port.moveAlbumToFolder
+      ? (albumID, revision, folderID) => resolveXDriveTransport(
+          port.moveAlbumToFolder!(albumID, revision, folderID),
+        )
+      : undefined,
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
       : undefined,

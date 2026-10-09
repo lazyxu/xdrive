@@ -15,6 +15,7 @@ import type {
   FileShare,
   FileVersion,
   MediaAlbum,
+  MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -460,6 +461,17 @@ declare global {
           offset?: number,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
+        getMediaAlbumFolders: () => Promise<DesktopResult<MediaAlbumFolder[]>>
+        createMediaAlbumFolder: (name: string, parentID: number) => Promise<DesktopResult<MediaAlbumFolder>>
+        updateMediaAlbumFolder: (
+          folderID: number, revision: number, change: { name?: string; parent_id?: number },
+        ) => Promise<DesktopResult<MediaAlbumFolder>>
+        deleteMediaAlbumFolder: (
+          folderID: number, revision: number,
+        ) => Promise<DesktopResult<{ ok: boolean }>>
+        moveMediaAlbumToFolder: (
+          albumID: string, revision: number, folderID: number,
+        ) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaMemories: (
           anchorDate?: string,

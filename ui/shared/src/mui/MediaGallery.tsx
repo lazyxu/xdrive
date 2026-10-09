@@ -47,6 +47,7 @@ import type {
 import type { XDriveWebAppGalleryTarget } from '../web-app'
 import type {
   MediaAlbum,
+  MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -94,6 +95,7 @@ import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
 import { XDriveMediaGalleryAlbumOrganizer } from './MediaGalleryAlbumOrganizer'
+import type { XDriveMediaGalleryAlbumFolderActions } from './MediaGalleryAlbumOrganizer'
 import {
   XDriveMediaGalleryCollageDialog,
   xDriveMediaItemSupportsCollage,
@@ -176,6 +178,13 @@ export interface MediaGalleryDataSource {
   restoreTrashItems?: (items: MediaItem[]) => Promise<void>
   permanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   listAlbums: () => Promise<MediaAlbum[]>
+  listAlbumFolders?: () => Promise<MediaAlbumFolder[]>
+  createAlbumFolder?: (name: string, parentID: number) => Promise<MediaAlbumFolder>
+  updateAlbumFolder?: (
+    folderID: number, revision: number, change: { name?: string; parent_id?: number },
+  ) => Promise<MediaAlbumFolder>
+  deleteAlbumFolder?: (folderID: number, revision: number) => Promise<void>
+  moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
@@ -1882,6 +1891,16 @@ export function XDriveMediaGalleryPage({
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         albums={albums}
+        albumFolderActions={source.listAlbumFolders ? {
+          list: source.listAlbumFolders,
+          create: source.createAlbumFolder,
+          update: source.updateAlbumFolder,
+          remove: source.deleteAlbumFolder,
+          moveAlbum: source.moveAlbumToFolder,
+          onAlbumMoved: (updated) => setAlbums((current) => (
+            current.map((album) => album.id === updated.id ? updated : album)
+          )),
+        } : undefined}
         syncFolders={syncFolders}
         currentFolderView={currentFolderView}
         syncFoldersLoading={syncFoldersLoading}
@@ -2184,6 +2203,7 @@ export interface XDriveMediaGalleryProps {
   virtualCollection?: XDriveMediaGalleryVirtualCollection
   collectionKey?: string
   albums?: MediaAlbum[]
+  albumFolderActions?: XDriveMediaGalleryAlbumFolderActions
   syncFolders?: MediaSyncFolder[]
   currentFolderView?: MediaFolderView | null
   syncFoldersLoading?: boolean
@@ -3516,6 +3536,7 @@ export function XDriveMediaGallery({
   virtualCollection,
   collectionKey = '',
   albums = [],
+  albumFolderActions,
   syncFolders = [],
   currentFolderView = null,
   syncFoldersLoading = false,
@@ -4703,6 +4724,7 @@ export function XDriveMediaGallery({
           accountScope={preferenceScope}
           loadThumbnail={loadThumbnail}
           onOpenAlbum={onOpenAlbum}
+          folderActions={albumFolderActions}
         />
       ) : null}
 
