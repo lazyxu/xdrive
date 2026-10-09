@@ -99,7 +99,11 @@ test('Gallery video poster viewport cleanup cancels queued work', () => {
     path.join(repo, 'ui', 'shared', 'src', 'mui', 'MediaGalleryPreviewMedia.tsx'),
     'utf8',
   )
-  assert.ok(preview.includes('const scheduled = scheduleMediaPoster(() => xDriveResolveMediaVideoPoster({'))
+  assert.ok(preview.includes('const scheduled = scheduleMediaPoster((signal) => xDriveResolveMediaVideoPoster({'))
+  assert.ok(preview.includes('task: (signal: AbortSignal) => Promise<string | null>'))
+  assert.ok(preview.includes('entry.controller.abort()'), 'a started video-poster request must receive a real abort')
+  assert.ok(preview.includes('      signal,\n      capture: (signal) => captureVideoPoster('), 'signal must reach cache GET, cold capture and revision-fenced PUT')
+  assert.ok(preview.includes('        sourceHeight,\n        signal,'), 'cold video capture must receive cancellation')
   assert.ok(preview.includes('void scheduled.promise'))
   assert.ok(preview.includes('scheduled.cancel()'))
   assert.ok(preview.includes('if (!entry.started) {'))
