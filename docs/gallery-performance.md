@@ -1674,3 +1674,67 @@ Go request context, user/session-scoped access and cancellation unchanged.
 **Machine evidence:** [original eight incorrect route/status rows](performance-evidence/gallery-thumbnail-server-revision/ci-run-37923974647-before.json), [exact paired eight corrected route/status/HTTP bytes rows and eight unit test names](performance-evidence/gallery-thumbnail-server-revision/ci-run-37925088310-after.json). The actual Go API test saw 409/400 for every invalid or mismatched request with Cache-Control private,no-store (checked in test). This is a structural version/HTTP correctness acceptance, **not** an apples-to-apples latency or memory improvement; distinct CI runners were used and the 1280px endpoint's fixture is PNG not a physical RAW photo.
 
 **Final merge gate:** same source and test functionality but evidence-amended **one-work-commit HEAD** must complete its entire new GitHub CI, including Go Race, Web/Desktop, Windows packages and final gate. Do not merge on the earlier candidate CI alone. No extra viewer, generated media class, source-workload change or video hover was enabled.
+
+## P4 actual signed Preview Engine and persisted poster HTTP transport baseline (2026-10-09)
+
+Status: **Accepted measured existing signed transport / evidence-amended full CI pending**.
+The preceding 24-FFmpeg plus 84-Chromium 4K codec/short-preview comparison
+proves synthetic candidate feasibility, not deployed Server/Agent cost.
+This follow-up measures the real authenticated Gin/Postgres 17/Store
+signed Range path with deterministic MP4-sized pseudo-content.
+The stand-in files are NOT codec-decodable: do not claim decode,
+first frame, image quality, real HEVC, CPU encoding or video seek times.
+
+| Original source and duration | Encoded original bytes | 3s 480p/450kbps bytes | 3s 720p/850kbps bytes |
+| --- | ---: | ---: | ---: |
+| 4K H.264 6s | 10,204,316 | 155,308 | 312,647 |
+| 4K HEVC 6s | 11,290,579 | 153,430 | 307,554 |
+| 4K H.264 60s | 102,035,663 | 155,308 | 312,485 |
+| 4K HEVC 60s | 112,875,577 | 153,390 | 307,759 |
+
+These sizes are copied exactly from the prior 4K encoded native sample evidence.
+The benchmark seeds 12 owner-scoped Node/File/SHA identities in an isolated
+PostgreSQL schema and temporary local Store; only four original Nodes have
+pre-existing valid 512px JPEG poster derivatives. No production transcode
+storage path or new API is enabled.
+
+Frozen test: 3 real signed GET HTTP Range=bytes=0-1048575 per 12 objects
+(**36** Range 206 requests), plus 3 poster hits per four originals (**12**
+poster GETs). Require real owner-scoped POST ticket, signature/Range,
+correct response byte count and Content-Range, video/mp4 and private,
+no-store. Repeated warm poster reads must have zero original Store.Open
+(12/12) while poster Store.Open is measured separately.
+
+Cancellation fixture: the source-sized H.264 60s object and its 480p-size
+3s candidate, 3 abandoned paced-body Range sessions each (**6**). Read
+first 1KiB, cancel request, verify server Context done and zero remaining
+active sessions at +160ms, with strictly less than the full Range
+sent. Artificial writer pacing is for transport stress only.
+
+CI job: gallery-video-signed-range-server, on this branch only.
+Run with XD_GALLERY_REAL_SIGNED_VIDEO_RANGE_PERF=1 and
+XD_TEST_DATABASE_URL for PostgreSQL 17; command:
+go test -run '^TestGalleryVideoSignedPreviewRangeRealServerBaseline$'
+-count=1 -timeout=12m -v ./internal/api.
+
+**Measured current implementation:** [scoped CI run 37928037275](https://github.com/lazyxu/xdrive/actions/runs/37928037275), [real Go signed transport job 113811627049](https://github.com/lazyxu/xdrive/actions/runs/37928037275/job/113811627049). All predeclared *transport* acceptance checks passed:
+
+| Existing real signed Preview Engine workload | Frozen target | Observed |
+| --- | ---: | ---: |
+| Signed HTTP 206 Range reads | 36 / 36 correct | **36 / 36** exact Range/body/content type/no-store |
+| Owner-scoped cached-poster GETs | 12 / 12 without original Store.Open | **12 / 12** persisted 512px-class JPEG poster hits, **0 original Store.Open** |
+| Canceled signed Range requests | 6 / 6 server Context aborted by +160ms | **6 / 6**, zero active at +160ms |
+| Emitted payload per abandoned 1 MiB Range | less than 1 MiB | **32,768 B** each, n=6, paced streaming fixture |
+
+The 4 original-size objects each returned exactly 1,048,576 bytes of the frozen signed 0–1MiB Range per pass; the 8 smaller preview-sized objects each returned their complete 153,390–312,647 B content. On this **specific capped 1MiB signed-Range transport pattern**, per-object original-to-candidate byte reductions are **6.75–6.84×** for 480p and **3.35–3.41×** for 720p. These are NOT the earlier Chromium original-hover/full encoded-file byte ratios, and are NOT a predicted browser total-GET cost. Time per signed read was also recorded as a diagnostic, not an A/B page speedup. The test uses pseudo-byte file payloads sized exactly like prior actual encoded 4K fixtures; no video decode or HEVC seek is exercised.
+
+**Permanent 36 signed Range + 6 actual cancellation rows:** [CI raw machine evidence](performance-evidence/gallery-video-signed-range-server/ci-run-37928037275.json). The signed ticket/stream and storage attribution operated through current Gin, PostgreSQL 17, real local object Store and net/http with no product edits.
+
+**Decision: ACCEPT the existing signed Preview Engine, revisioned warm poster and request-Context path unchanged** for this isolated Server transport workload. The native browser/FFmpeg evidence remains a separate cohort. Do **not** turn on video hover, permanent short previews or background worker generation based on this alone: real Desktop Renderer/Main/Agent streaming proxy, decodable 4K codecs/frames, peak FFmpeg worker CPU/RSS, queue delay, storage inventory and GC remain unmeasured. No performance code optimization is proposed because current transport met frozen resource and cancellation gates.
+
+**CI formatting correction:** The first scoped benchmark job passed, but full CI Go formatting initially found only the new Go benchmark file needed gofmt; exact CI gofmt -d hunks were applied without changing the workload or passing conditions. Full authoritative CI must be rerun on the evidence-amended one-work-commit head before merge.
+
+**AFTER:** not applicable (this is a benchmark-only PR, no production edits).
+Accept current signed Preview Engine unchanged if all 36 Range,
+12 poster and 6 cancellation gates pass. No ordinary-video hover,
+transcode worker or permanent preview cache is authorized by this test.
