@@ -510,6 +510,8 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 ### Column View
 
 - `columns` is the third shared FileExplorer view mode beside `details` and `grid`; it is persisted in the same tab/session view-mode contract.
+- Compact touch presentation (below 900 CSS px with a coarse primary pointer) projects a saved `columns` preference into the shared touch Details list. This gives inherited or restored tabs the same single-tap open, explicit multi-select, 52 px rows and per-item More actions as other mobile lists.
+- This responsive projection must not call `onViewModeChange` or rewrite the saved tab/session preference. Returning to a wide viewport restores Column View; mouse-only narrow windows retain their existing desktop view semantics.
 - Every visible column is one paged directory request. Columns must never fetch an entire large directory only to render Finder-style hierarchy.
 - Web propagates `AbortSignal` to the paged REST request. Desktop may not be able to cancel an already-issued Agent request, so the shared view still fences every completion with per-column generation state and discards stale responses.
 - When breadcrumbs shrink or switch, inactive column requests are aborted and inactive column state is pruned.

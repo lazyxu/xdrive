@@ -56,7 +56,7 @@ Exercise 390×844, 899×700, 900×700 and a wide desktop viewport, including nar
 
 ### Phase 1 delivery record — 2026-10-08
 
-**Status: Implemented and merged to `master`; real-renderer/device QA remains pending.** Automated CI is complete for the merged implementation, but the browser/device acceptance below has not been executed in this environment.
+**Status: Implemented and merged to `master`; native-device QA remains pending.** The table below preserves the original 2026-10-08 delivery evidence. The 2026-10-09 browser acceptance record below supersedes the original local-renderer blocker for the cases it explicitly covers.
 
 | Check | Result |
 | --- | --- |
@@ -70,12 +70,12 @@ Exercise 390×844, 899×700, 900×700 and a wide desktop viewport, including nar
 
 Local validation used Node 24.19.0 with the repository's Web lockfile and Desktop package dependencies. The official Playwright Chromium and headless-shell downloads returned a 195-byte HTML “Site Unavailable” response rather than an archive. The local Vite preview started successfully, but the available remote browser could not connect to that loopback service (`ERR_CONNECTION_REFUSED`). No browser layout, touch, focus, DOM-preservation or physical-device pass is claimed.
 
-Before leaving Draft, run the real app with a bounded API fixture or a test server at the listed viewports. Include More close/Escape/backdrop/focus, narrow → wide → narrow, actual Files/Gallery scroll hosts and the browser Back → account menu/settings → Forward to Viewer path. The latter must also close update confirmation without executing an account action. Keep native iOS/Android keyboard and safe-area checks explicitly separate from desktop browser emulation.
+Post-merge acceptance uses the real app with a bounded API fixture or a test server at the listed viewports. Include More close/Escape/backdrop/focus, narrow → wide → narrow, actual Files/Gallery scroll hosts and the browser Back → account menu/settings → Forward to Viewer path. The latter must also close update confirmation without executing an account action. Keep native iOS/Android keyboard and safe-area checks explicitly separate from desktop browser emulation.
 
 
 ### Phase 2 implementation record — 2026-10-08
 
-**Status: Implemented and merged to `master`; browser/device QA pending.**
+**Status: Implemented and merged to `master`; shared FileExplorer Chromium acceptance completed on 2026-10-09; native-device QA pending.**
 
 - Shared FileExplorer now detects the compact touch presentation only when the viewport is below the shared 900 CSS px boundary **and** the primary pointer is coarse. Item activation still inspects the actual pointer event, so mouse clicks keep desktop selection/double-click semantics even when the compact layout is active. Desktop mouse interaction keeps single-click selection, double-click open, Ctrl/Cmd/Shift selection, resize splitters and drag behavior.
 - Compact touch uses single-tap Open outside selection mode. “选择” or a 450 ms long press enters explicit multi-select; subsequent taps toggle items until “完成”. Scroll motion cancels long-press selection and suppresses the corresponding click so a swipe cannot open an item on release.
@@ -84,7 +84,7 @@ Before leaving Draft, run the real app with a bounded API fixture or a test serv
 - Mobile search collapses to an icon until invoked; Forward/Refresh leave the compact address row and Refresh remains available from the overflow menu.
 - Native touch drag/reorder remains out of scope for this phase. Internal/external desktop drag/drop behavior is unchanged; touch move/copy continues through explicit file actions.
 
-Before this phase is merge-ready, validate tap/long-press/scroll discrimination, selection actions, action-sheet focus and dismissal, navigation Drawer, 360/390/430 px portrait, landscape, and a mouse on a touch-capable Windows device. Native iOS/Android keyboard and safe-area checks remain device acceptance rather than desktop-browser emulation.
+The post-merge acceptance scope includes tap/long-press/scroll discrimination, selection actions, action-sheet focus and dismissal, navigation Drawer, 360/390/430 px portrait, landscape, and a mouse on a touch-capable Windows device. The browser checks below cover the shared renderer; native iOS/Android keyboard, safe areas and physical Windows input hardware remain separate device acceptance.
 
 
 ## 2026-10-08 merged delivery status
@@ -109,6 +109,9 @@ The adaptive Mobile Web implementation is now merged to `master`. Code completio
 | Admin Users responsive card/table projection | #1023 |
 | Admin Audit virtualized mobile cards | #1024 |
 | PWA install identity / start URL / scope | #1025 |
+| Synchronization-folder compact-touch dialogs | #1035 |
+| Shared Share dialog compact layout and system share | #1050 |
+| File Properties, Version History and Tags compact-touch dialogs | #1054 |
 
 ### Native download contract
 
@@ -132,3 +135,51 @@ Still run the real application on iOS Safari and Android Chrome, both normal-tab
 - touch-capable Windows device with an attached mouse to confirm actual-pointer semantics.
 
 Offline file pinning, Service Worker caching, incoming Web Share Target and touch drag/reorder remain subsequent enhancements rather than requirements of the merged adaptive-layout milestone.
+
+## Browser acceptance follow-up — 2026-10-09
+
+**Status: Chromium renderer acceptance implemented; native-device acceptance remains open.** This follow-up reconciled the existing Mobile Web PRs first: the relevant implementations were merged, their PR CI had succeeded, and their remote branches were already removed. The superseded phase-2 draft #1000 remains closed; its implementation was delivered through #993.
+
+### Reproduced and fixed: inherited Column View
+
+Baseline: `3a35c385ecc953d31a9ca2b81b75e9be4f569ea2`. A saved `columns` view remained active at 390×844 with a coarse primary pointer. Although the toolbar offered mobile selection, the body still rendered desktop Column View: 30 px rows, no per-item More, no single-tap file open, and only the last tapped item selected.
+
+The shared FileExplorer now projects that preference into its existing compact Details list. The preferred mode remains unchanged, so widening the viewport restores columns without a preference write. The same effective view is used by rendering, range loading, keyboard navigation and scrolling; Web/Desktop adapters remain unchanged.
+
+| Same real-renderer case | Before | After |
+| --- | --- | --- |
+| 390 px inherited view | Desktop Column View | Compact Details list |
+| First rendered row heights | 30 px | 52 px |
+| Per-item More | Missing | 44×44 px targets |
+| One touch tap on file 1 | No open callback | Exactly one open of file 1 |
+| Selection-mode taps on files 1 and 2 | Only file 2 selected | Both files selected |
+| Narrow → 900 px → narrow | Columns at every width | List → columns → list |
+| Persisted preferred mode / change callback | `columns` / no change callback | `columns` / no change callback |
+
+The built Web App independently reproduced the same missing touch-list projection from the real `xdrive.files.view_mode=columns` preference. Its API fixture produced no unknown requests or page errors in that failing case; the failure came from the rendered application contract.
+
+### Reusable validation
+
+`desktop/scripts/file-explorer-mobile-browser.cjs` and its TSX fixture render the production shared FileExplorer and theme. **54/54 checks pass** on the fixed source, including 360/390/430/899/900 px, List/Grid activation and selection, Copy receiving both selected items, More/Drawer focus and dismissal, long press, scrolling and attached-mouse semantics. The scroll gesture remains held beyond the 450 ms long-press deadline before checking that it cannot open or select an item. JSON evidence records the source revision, dirty-tree flag, FileExplorer source SHA-256, browser version, measured geometry and screenshots.
+
+`desktop/scripts/mobile-web-app-browser.cjs` serves the actual production `web/dist` and supplies bounded API fixtures. Components, routing, navigation/session persistence, Gallery and Viewer run unchanged. Unknown API requests, unexpected network access, console errors and page errors fail the run. This is UI and routing acceptance with fixture data, not a Server authorization, native download, media-performance or physical-device test.
+
+The final production build passed **300/300 App checks**: ordinary user 133, administrator 136, the real inherited-columns entry point 28, and three global error gates. Unknown requests, page errors, console errors and scenario failures were all zero. The matrix includes 390×844, 360×780, 430×932, 899×700, 900×700, 1280×800 and 844×390, then returns to the original narrow viewport. It verifies the actual main/Files scroll elements and directory survive breakpoints, the document has no overflow, short/landscape Files fill the available space, More closes by button/Escape/backdrop and restores focus, and navigation exposes only the caller's permitted destinations.
+
+Gallery acceptance uses 240 images and verifies its real scroll ancestor, unchanged DOM on resize, decoded Viewer content, background inert state, and restoration of the same collection and scroll position after closing Viewer. Browser Forward closes More, the account menu, Settings, the transfer popup and the administrator update confirmation; returning does not reopen those portals or execute their actions. The real saved-columns scenario verifies touch selection and More, directory activation, wide-mode restoration and unchanged `xdrive.files.view_mode` through the Web navigation controller. The final run used `web/dist/assets/index-GjpNsJVx.js`, built from the fixed source, and completed at `2026-10-09T00:50:51Z`.
+
+The scripts are optional local renderer checks; the standard Desktop suite also runs `tests/shared-file-explorer-mobile-view.cjs`, which renders the real component with MUI SSR media inputs and covers projection without claiming browser gesture coverage. That regression was observed failing on the baseline before the production change.
+
+Run with installed Web/Desktop dependencies, Playwright and an available Chromium executable:
+
+```bash
+npm --prefix web run build
+node desktop/scripts/file-explorer-mobile-browser.cjs --output-dir=/tmp/xdrive-mobile-files
+node desktop/scripts/mobile-web-app-browser.cjs --scenario=all --output-dir=/tmp/xdrive-mobile-app
+```
+
+Both runners accept `XDRIVE_PLAYWRIGHT_MODULE`, `XDRIVE_BROWSER_EXECUTABLE` and a JSON array in `XDRIVE_BROWSER_ARGS` for an externally supplied browser runtime. The shared FileExplorer runner also accepts `--source-root=/path/to/checkout` for before/after comparison and `--case=columns` for the narrow regression. The App runner requires a fresh build in the selected checkout; `--scenario=inherited-columns` isolates the real saved-preference entry point.
+
+This run used Linux, Node 24.19.0 and Chromium 153.0.8010.0 supplied by `@sparticuz/chromium` 153.0.0. The standard Playwright browser download still returned an invalid archive; the separately installed portable runtime made local renderer execution possible without adding a production dependency. Web lint and production build passed; the existing Vite large-chunk warning remains. Desktop typecheck passed; `test:main` finished with **1103 passed, 0 failed, 1 existing opt-in 100k scroll CPU benchmark skipped**.
+
+Native iOS Safari/Android Chrome, WebKit, installed/standalone mode, software keyboards and safe areas, real downloads/Range/resume and background return remain unverified here. The shared FileExplorer fixture contains 73 items; the App fixture contains 97 root entries, 64 child files and 240 images. These do not constitute 100k performance acceptance.
