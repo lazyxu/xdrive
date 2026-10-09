@@ -184,6 +184,7 @@ FileExplorer keeps **folder pinning** and **file favorites** as separate concept
 - FileExplorer favorites are also independent from Gallery / Photo Intelligence `PhotoMetadata.favorite`; starring a document or arbitrary file must not require media indexing.
 - Both relations use stable Node identity. Rename/move resolves live path and breadcrumbs on read; a trashed node is hidden while the relation remains so restore can surface it again.
 - Web and Desktop share the favorite state/controller and navigation UI. Platform code remains transport-only (Web REST versus Desktop Agent IPC).
+- An optimistic Quick Access reorder owns ordering only. If it fails, restore the previous order and positions of surviving pin relations while preserving their current names/paths and any newer successful pin/unpin results. A folder unpinned and then re-pinned has a new `pinned_at` and retains its new Server position. Do not replace the current list with the entire pre-reorder snapshot; a newer reorder or lifecycle still supersedes the old failure.
 - Favorite activation is owned by the mounted FileExplorer lifecycle. Unmounting the Explorer invalidates pending favorite lookups and mutations before they can run user-visible activation callbacks (for example Desktop `openLocalNode`) after an Agent reconnect.
 - The navigation pane renders Quick Access and Favorites as distinct sections. File context menus expose `添加到收藏 / 取消收藏`; folders continue to expose `固定到快速访问 / 从快速访问取消固定`.
 

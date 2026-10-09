@@ -13,6 +13,25 @@ export type XDriveFileExplorerQuickAccessEntry = {
   pinnedAt: string
 }
 
+function rollbackQuickAccessOrder(
+  current: XDriveFileExplorerQuickAccessEntry[],
+  previous: XDriveFileExplorerQuickAccessEntry[],
+) {
+  const currentByID = new Map(current.map((item) => [item.id, item]))
+  const restoredIDs = new Set<number>()
+  const next = previous.flatMap((item) => {
+    const latest = currentByID.get(item.id)
+    // A re-created pin owns its new Server position, even for the same folder.
+    if (!latest || latest.pinnedAt !== item.pinnedAt) return []
+    restoredIDs.add(item.id)
+    return [{ ...latest, position: item.position }]
+  })
+  for (const item of current) {
+    if (!restoredIDs.has(item.id)) next.push(item)
+  }
+  return next
+}
+
 function projectQuickAccessItem<TNode extends { id: number; name: string }>(
   item: XDriveFileQuickAccessItem<TNode>,
 ): XDriveFileExplorerQuickAccessEntry {
@@ -253,7 +272,7 @@ export function useXDriveFileExplorerQuickAccess<
         reorderGeneration !== reorderGenerationRef.current ||
         !enabledRef.current
       ) return false
-      setItems(previous)
+      setItems((current) => rollbackQuickAccessOrder(current, previous))
       onErrorRef.current(error)
       return false
     }
