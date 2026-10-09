@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -130,6 +131,40 @@ func TestMirrorMissingDuplicateAfterAnnotationUnionKeepsLocalKeeper(t *testing.T
 
 	server := &Server{DB: db}
 	nodeIDs := []uint64{keeper.node.ID, remote.node.ID}
+	// Deliberately try to concentrate user annotations on the Mirror-owned
+	// duplicate instead of the independent local keeper. This must fail:
+	// the provider may later remove that Node under the normal Mirror grace
+	// policy, hiding the newly aggregated keeper annotations from Gallery.
+	mirrorKeeperPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owner.ID, remote.node.ID, nodeIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mirrorKeeperPlan.AssetComparison != duplicateAssetIdentical ||
+		!mediaDuplicateOrganizeKeeperMirrorManaged(mirrorKeeperPlan) ||
+		mirrorKeeperPlan.ReadyForManualReview ||
+		!strings.Contains(mirrorKeeperPlan.SourceWarning, "Mirror") {
+		t.Fatalf("Mirror-owned keeper must not receive a metadata union: %+v", mirrorKeeperPlan)
+	}
+	_, err = server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owner.ID, mediaDuplicateOrganizeApplyInput{
+			KeeperNodeID: remote.node.ID, NodeIDs: nodeIDs,
+			ExpectedPlanRevision: mirrorKeeperPlan.PlanRevision, Confirm: true,
+		},
+	)
+	if !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("Mirror-owned keeper annotation union must fail closed: %v", err)
+	}
+	var rejectedKeeper meta.PhotoMetadata
+	if err := db.Where("asset_id = ?", remote.asset.ID).First(&rejectedKeeper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !rejectedKeeper.Favorite || rejectedKeeper.TagsJSON != `["source"]` ||
+		rejectedKeeper.Description != "" {
+		t.Fatalf("rejected Mirror keeper union mutated original annotations: %+v", rejectedKeeper)
+	}
+
 	plan, err := server.queryMediaDuplicateOrganizePlan(
 		context.Background(), owner.ID, keeper.node.ID, nodeIDs,
 	)

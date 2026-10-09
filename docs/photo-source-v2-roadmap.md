@@ -443,9 +443,21 @@ permanently delete media or call Synology/Yike.
 
 This evidence does **not** authorize physical duplicate consolidation:
 a keeper that is itself bound to a Mirror source can also be moved to Trash
-upon genuine remote disappearance. Durable user-selected keeper protection,
+upon genuine remote disappearance. The subsequent G11 keeper-annotation
+safety guard inspects the source links of **all original Node resources**
+(still/motion/RAW/sidecar) in the owner-scoped preview. If the selected
+keeper has a known `sync_mode=mirror` link, the preview explicitly warns
+that the keeper is volatile, marks it not ready, and the confirmed
+metadata-only union fails closed; the shared Web/Desktop review hides the
+confirmation action. This conservatively directs the user to select a
+real independent keeper first, but does not protect existing source-managed
+annotations or a keeper with **missing / undiscovered** SourceItem links.
+This guard never changes the remote Mirror policy, SourceItem identity,
+file/PhotoResource, Trash or CAS reference state.
+
+Durable user-selected keeper protection for all unknown/remote link cases,
 archive of original descriptions/edit history, full grouped Live Photo/RAW
-Trash, audited undo, and actual provider/device replay are still release
+Trash, audited undo, and actual provider/device replay remain release
 gates before any source-owned original may be removed by one-click cleanup.
 
 Web/Desktop expose one shared opt-in selector with Backup as the default and explicit warning text for the confirmation/grace behavior.
