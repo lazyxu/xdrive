@@ -11,6 +11,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listItems: (limit, offset, query) => api.mediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => api.mediaItemRange('', limit, offset, query),
     listFacets: (query, albumID) => api.mediaFacets(query, albumID),
+    listSyncFolders: () => api.mediaSyncFolders(),
+    getSyncFolder: (sourceID, folderID) => api.mediaSyncFolder(sourceID, folderID),
     listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),
     restoreTrashItems: async (items) => {
       for (const root of xDriveMediaGalleryTrashRoots(items)) {

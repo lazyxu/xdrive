@@ -110,6 +110,8 @@ import {
   type AgentMediaItem,
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
+  type AgentMediaSyncFolder,
+  type AgentMediaFolderView,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaMemory,
@@ -1317,6 +1319,16 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
       raw.map((value) => (value as string).trim().toLowerCase()),
     )).sort()
   }
+  if (input.folder_id !== undefined) {
+    if (
+      typeof input.folder_id !== 'number' ||
+      !Number.isSafeInteger(input.folder_id) ||
+      input.folder_id <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media folder id is invalid.')
+    }
+    out.folder_id = input.folder_id
+  }
   for (const key of ['captured_from', 'captured_to'] as const) {
     const raw = input[key]
     if (raw === undefined) continue
@@ -1942,6 +1954,35 @@ function registerIPCHandlers() {
       albumID.trim(),
     )
   }, false))
+
+  ipcMain.handle('agent:get-media-sync-folders', () =>
+    runAgentAction<AgentMediaSyncFolder[]>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      return requireAgentClient().mediaSyncFolders()
+    }, false))
+
+  ipcMain.handle(
+    'agent:get-media-sync-folder',
+    (
+      _event,
+      sourceID: unknown,
+      folderID: unknown,
+    ) => runAgentAction<AgentMediaFolderView>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      for (const [value, label] of [[sourceID, 'source'], [folderID, 'folder']] as const) {
+        if (
+          typeof value !== 'number' ||
+          !Number.isSafeInteger(value) ||
+          value <= 0
+        ) {
+          throw new AgentIPCError('invalid_input', 0, `Media ${label} id is invalid.`)
+        }
+      }
+      return requireAgentClient().mediaSyncFolder(sourceID as number, folderID as number)
+    }, false),
+  )
 
   ipcMain.handle('agent:get-media-trash', (
     _event,

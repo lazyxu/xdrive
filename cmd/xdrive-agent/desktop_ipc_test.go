@@ -135,6 +135,8 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev             uint64
 	cloudMediaItems            []client.MediaItem
 	cloudMediaFacets           client.MediaGalleryFacets
+	cloudMediaSyncFolders      []client.MediaSyncFolder
+	cloudMediaSyncFolder       client.MediaFolderView
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaPlaces           []client.MediaPlaceFacet
 	cloudMediaMemories         []client.MediaMemory
@@ -183,6 +185,8 @@ type fakeDesktopIPCController struct {
 	cloudMediaLimit            int
 	cloudMediaOffset           int
 	cloudMediaAlbumID          string
+	cloudMediaSourceID         uint64
+	cloudMediaFolderID         uint64
 	cloudMediaThumbnailID      uint64
 	cloudMediaStillID          uint64
 	cloudMediaMotionID         uint64
@@ -874,6 +878,20 @@ func (f *fakeDesktopIPCController) CloudMediaFacets(
 	f.cloudMediaQuery = query
 	f.cloudMediaAlbumID = albumID
 	return f.cloudMediaFacets, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSyncFolders(context.Context) ([]client.MediaSyncFolder, error) {
+	return append([]client.MediaSyncFolder(nil), f.cloudMediaSyncFolders...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSyncFolder(
+	_ context.Context,
+	sourceID uint64,
+	folderID uint64,
+) (client.MediaFolderView, error) {
+	f.cloudMediaSourceID = sourceID
+	f.cloudMediaFolderID = folderID
+	return f.cloudMediaSyncFolder, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudMediaTrash(
@@ -2269,6 +2287,16 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 				IndexState: "ready", HasThumbnail: true,
 			},
 		}},
+		cloudMediaSyncFolders: []client.MediaSyncFolder{{
+			SourceID: 9, SourceName: "Synology", TargetNodeID: 42, TargetName: "Photos",
+			TargetPath: "同步文件夹/Synology", DirectMediaCount: 3, ChildFolderCount: 2,
+		}},
+		cloudMediaSyncFolder: client.MediaFolderView{
+			Source:      client.MediaSyncFolder{SourceID: 9, SourceName: "Synology", TargetNodeID: 42},
+			Current:     client.MediaFolderEntry{ID: 42, Name: "Photos", DirectMediaCount: 3, ChildFolderCount: 2},
+			Breadcrumbs: []client.MediaFolderBreadcrumb{{ID: 42, Name: "Photos", Path: "同步文件夹/Synology"}},
+			Children:    []client.MediaFolderEntry{{ID: 43, Name: "2026", DirectMediaCount: 5}},
+		},
 		cloudMediaFacets: client.MediaGalleryFacets{
 			Cameras: []client.MediaFacetOption{{Value: "apple iphone 15 pro", Label: "Apple iPhone 15 Pro", ItemCount: 2}},
 			Formats: []client.MediaFacetOption{{Value: "image/jpeg", Label: "JPEG", ItemCount: 1}},
@@ -2377,7 +2405,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&camera=Sony%20ILCE-7M4&camera=APPLE%20IPHONE%2015%20PRO&camera=apple%20iphone%2015%20pro&format=IMAGE%2FJPEG&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&camera=Sony%20ILCE-7M4&camera=APPLE%20IPHONE%2015%20PRO&camera=apple%20iphone%2015%20pro&format=IMAGE%2FJPEG&folder_id=42&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -2393,6 +2421,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		strings.Join(ctrl.cloudMediaQuery.Cameras, ",") != "apple iphone 15 pro,sony ilce-7m4" ||
 		len(ctrl.cloudMediaQuery.Formats) != 1 ||
 		ctrl.cloudMediaQuery.Formats[0] != "image/jpeg" ||
+		ctrl.cloudMediaQuery.FolderID != 42 ||
 		ctrl.cloudMediaQuery.HasLocation == nil ||
 		!*ctrl.cloudMediaQuery.HasLocation ||
 		ctrl.cloudMediaQuery.Tag != "Travel" ||
@@ -2433,6 +2462,24 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		!strings.Contains(res.Body.String(), "\"JPEG\"") ||
 		ctrl.cloudMediaAlbumID != "folder:8" {
 		t.Fatalf("media facets status=%d body=%s album=%q", res.Code, res.Body.String(), ctrl.cloudMediaAlbumID)
+	}
+
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/sync-folders", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Synology\"") {
+		t.Fatalf("media sync folders status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(
+		t,
+		handler,
+		http.MethodGet,
+		"/v1/media/sync-folder?source_id=9&folder_id=42",
+		"",
+	)
+	if res.Code != http.StatusOK ||
+		!strings.Contains(res.Body.String(), "\"2026\"") ||
+		ctrl.cloudMediaSourceID != 9 ||
+		ctrl.cloudMediaFolderID != 42 {
+		t.Fatalf("media sync folder status=%d body=%s source=%d folder=%d", res.Code, res.Body.String(), ctrl.cloudMediaSourceID, ctrl.cloudMediaFolderID)
 	}
 
 	res = desktopIPCRequest(

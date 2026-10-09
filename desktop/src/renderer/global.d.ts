@@ -17,6 +17,8 @@ import type {
   MediaAlbum,
   MediaGalleryFacets,
   MediaGalleryQuery,
+  MediaSyncFolder,
+  MediaFolderView,
   MediaItem,
   MediaItemRange,
   MediaMemory,
@@ -446,6 +448,11 @@ declare global {
           query?: MediaGalleryQuery,
           albumID?: string,
         ) => Promise<DesktopResult<MediaGalleryFacets>>
+        getMediaSyncFolders: () => Promise<DesktopResult<MediaSyncFolder[]>>
+        getMediaSyncFolder: (
+          sourceID: number,
+          folderID: number,
+        ) => Promise<DesktopResult<MediaFolderView>>
         getMediaTrash: (
           limit?: number,
           offset?: number,

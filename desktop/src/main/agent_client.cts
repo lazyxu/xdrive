@@ -789,6 +789,7 @@ export type AgentMediaQuery = {
   category?: string
   cameras?: string[]
   formats?: string[]
+  folder_id?: number
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -811,6 +812,9 @@ function appendAgentMediaQuery(
   }
   for (const format of filters.formats ?? []) {
     if (format.trim()) query.append('format', format.trim())
+  }
+  if (filters.folder_id && Number.isSafeInteger(filters.folder_id) && filters.folder_id > 0) {
+    query.set('folder_id', String(filters.folder_id))
   }
   if (filters.captured_from) query.set('captured_from', filters.captured_from)
   if (filters.captured_to) query.set('captured_to', filters.captured_to)
@@ -837,6 +841,42 @@ export type AgentMediaFacetOption = {
 export type AgentMediaGalleryFacets = {
   cameras: AgentMediaFacetOption[]
   formats: AgentMediaFacetOption[]
+}
+
+export type AgentMediaSyncFolder = {
+  source_id: number
+  source_name: string
+  source_kind: string
+  source_status: string
+  target_node_id: number
+  target_name: string
+  target_path: string
+  direct_media_count: number
+  child_folder_count: number
+  cover_node_id?: number
+}
+
+export type AgentMediaFolderView = {
+  source: AgentMediaSyncFolder
+  current: {
+    id: number
+    parent_id?: number
+    name: string
+    path: string
+    direct_media_count: number
+    child_folder_count: number
+    cover_node_id?: number
+  }
+  breadcrumbs: Array<{ id: number; name: string; path: string }>
+  children: Array<{
+    id: number
+    parent_id?: number
+    name: string
+    path: string
+    direct_media_count: number
+    child_folder_count: number
+    cover_node_id?: number
+  }>
 }
 
 export type AgentMediaAlbum = {
@@ -1469,6 +1509,21 @@ export class AgentIPCClient {
     return this.request<AgentMediaGalleryFacets>(
       'GET',
       `/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
+
+  mediaSyncFolders() {
+    return this.request<AgentMediaSyncFolder[]>('GET', '/v1/media/sync-folders')
+  }
+
+  mediaSyncFolder(sourceID: number, folderID: number) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      folder_id: String(folderID),
+    })
+    return this.request<AgentMediaFolderView>(
+      'GET',
+      `/v1/media/sync-folder?${query.toString()}`,
     )
   }
 

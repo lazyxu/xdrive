@@ -633,6 +633,7 @@ export interface MediaGalleryQuery {
   category?: string
   cameras?: string[]
   formats?: string[]
+  folder_id?: number
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -652,6 +653,42 @@ export interface MediaFacetOption {
 export interface MediaGalleryFacets {
   cameras: MediaFacetOption[]
   formats: MediaFacetOption[]
+}
+
+export interface MediaSyncFolder {
+  source_id: number
+  source_name: string
+  source_kind: string
+  source_status: string
+  target_node_id: number
+  target_name: string
+  target_path: string
+  direct_media_count: number
+  child_folder_count: number
+  cover_node_id?: number
+}
+
+export interface MediaFolderEntry {
+  id: number
+  parent_id?: number
+  name: string
+  path: string
+  direct_media_count: number
+  child_folder_count: number
+  cover_node_id?: number
+}
+
+export interface MediaFolderBreadcrumb {
+  id: number
+  name: string
+  path: string
+}
+
+export interface MediaFolderView {
+  source: MediaSyncFolder
+  current: MediaFolderEntry
+  breadcrumbs: MediaFolderBreadcrumb[]
+  children: MediaFolderEntry[]
 }
 
 export interface MediaPlaceFacet {

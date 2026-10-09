@@ -17,8 +17,9 @@ func TestMediaItemRangeQueries(t *testing.T) {
 	}
 	query := MediaQuery{
 		Search: "marina", Category: "panorama",
-		Cameras: []string{"apple iphone 15 pro", "sony ilce-7m4"},
-		Formats: []string{"image/jpeg", "video/quicktime"},
+		Cameras:  []string{"apple iphone 15 pro", "sony ilce-7m4"},
+		Formats:  []string{"image/jpeg", "video/quicktime"},
+		FolderID: 42,
 	}
 	cases := []requestCase{
 		{
@@ -81,6 +82,9 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				}
 				if got := strings.Join(r.URL.Query()["format"], ","); got != "image/jpeg,video/quicktime" {
 					t.Fatalf("format=%q", got)
+				}
+				if got := r.URL.Query().Get("folder_id"); got != "42" {
+					t.Fatalf("folder_id=%q", got)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(MediaItemRange{
@@ -633,5 +637,45 @@ func TestMediaCreativeCollageGenerationQuery(t *testing.T) {
 	}
 	if generation.ID != "creative-collage-1" || generation.Kind != "collage" {
 		t.Fatalf("created collage generation=%+v", generation)
+	}
+}
+
+func TestMediaSyncFolderBrowser(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.URL.Path {
+		case "/api/v1/media/sync-folders":
+			_ = json.NewEncoder(w).Encode([]MediaSyncFolder{{
+				SourceID: 9, SourceName: "Synology", TargetNodeID: 42, TargetName: "Photos",
+				TargetPath: "同步文件夹/Synology", DirectMediaCount: 3, ChildFolderCount: 2,
+			}})
+		case "/api/v1/media/sync-folders/9/folders/42":
+			_ = json.NewEncoder(w).Encode(MediaFolderView{
+				Source:      MediaSyncFolder{SourceID: 9, SourceName: "Synology", TargetNodeID: 42},
+				Current:     MediaFolderEntry{ID: 42, Name: "Photos", DirectMediaCount: 3, ChildFolderCount: 2},
+				Breadcrumbs: []MediaFolderBreadcrumb{{ID: 42, Name: "Photos", Path: "同步文件夹/Synology"}},
+				Children:    []MediaFolderEntry{{ID: 43, Name: "2026", DirectMediaCount: 5}},
+			})
+		default:
+			t.Fatalf("unexpected path=%q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "token")
+	roots, err := cli.MediaSyncFolders(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 1 || roots[0].SourceID != 9 || roots[0].TargetNodeID != 42 {
+		t.Fatalf("roots=%+v", roots)
+	}
+	view, err := cli.MediaSyncFolder(context.Background(), 9, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Current.ID != 42 || len(view.Children) != 1 || view.Children[0].ID != 43 || requests != 2 {
+		t.Fatalf("view=%+v requests=%d", view, requests)
 	}
 }

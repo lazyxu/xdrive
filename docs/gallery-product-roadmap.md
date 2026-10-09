@@ -173,8 +173,14 @@ import provider directory semantics.
   EXIF, and provider directory metadata are not required for Gallery folder browsing.
 
 The Server exposes synchronization-folder roots and one-directory-at-a-time navigation
-through dedicated Gallery endpoints. Web/Desktop wiring remains a later focused client
-slice so this Server PR cannot regress Gallery first-visible rendering.
+through dedicated Gallery endpoints. Web and Desktop consume the same shared browser:
+entering **相册** lazily loads synchronization-folder roots, opening one folder loads only
+that directory's children, breadcrumbs stay bounded to the selected root, and the normal
+Gallery VirtualCollection renders only the current directory's direct media. Search,
+camera/format, date, favorite, person and place filters continue to compose with the
+transient `folder_id` scope. The initial Gallery first-visible path never loads folder
+roots or recursive subtree statistics. Directory scope is intentionally not persisted
+inside smart-album rules.
 
 
 ## Phase 3 — multi-select and shared Selection Toolbar

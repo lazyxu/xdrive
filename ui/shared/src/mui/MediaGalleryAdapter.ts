@@ -2,6 +2,8 @@ import type {
   MediaAlbum,
   MediaGalleryFacets,
   MediaGalleryQuery,
+  MediaSyncFolder,
+  MediaFolderView,
   MediaItem,
   MediaItemRange,
   MediaMemory,
@@ -70,6 +72,11 @@ export interface XDriveMediaGalleryPort {
     query?: MediaGalleryQuery,
     albumID?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaGalleryFacets>>
+  listSyncFolders?: () => Promise<XDriveMediaGalleryTransportResult<MediaSyncFolder[]>>
+  getSyncFolder?: (
+    sourceID: number,
+    folderID: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaFolderView>>
   listTrashItemRange?: (
     limit: number,
     offset: number,
@@ -341,6 +348,12 @@ export function createXDriveMediaGalleryDataSource(
     ),
     listFacets: port.listFacets
       ? (query, albumID) => resolveXDriveTransport(port.listFacets!(query, albumID))
+      : undefined,
+    listSyncFolders: port.listSyncFolders
+      ? () => resolveXDriveTransport(port.listSyncFolders!())
+      : undefined,
+    getSyncFolder: port.getSyncFolder
+      ? (sourceID, folderID) => resolveXDriveTransport(port.getSyncFolder!(sourceID, folderID))
       : undefined,
     listTrashItemRange: port.listTrashItemRange
       ? (limit, offset) => resolveXDriveTransport(
