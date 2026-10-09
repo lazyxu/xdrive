@@ -482,6 +482,44 @@ export type XDriveMediaGalleryShareDialogOptions = {
   showCloseAction?: boolean
 }
 
+type XDriveGallerySortChoice = {
+  by: 'captured' | 'added'
+  dir: 'asc' | 'desc'
+}
+
+export function xDriveReadGallerySortChoice(mobile = false): XDriveGallerySortChoice {
+  const fallback: XDriveGallerySortChoice = mobile
+    ? { by: 'captured', dir: 'asc' }
+    : { by: 'captured', dir: 'desc' }
+  if (typeof window === 'undefined') return fallback
+  try {
+    const key = mobile ? 'xdrive.gallery.mobile.sort.v1' : 'xdrive.gallery.sort.v1'
+    const stored = JSON.parse(window.localStorage.getItem(key) || '{}')
+    if (stored.by !== 'captured' && stored.by !== 'added') return fallback
+    if (stored.dir !== 'asc' && stored.dir !== 'desc') return fallback
+    return { by: stored.by, dir: stored.dir }
+  } catch {
+    return fallback
+  }
+}
+
+type XDriveMobileGalleryReturnAnchor = {
+  nodeID: number
+  section: MediaGallerySection
+  kind: 'all' | 'album'
+  id: string
+}
+// A Viewer route unmounts Gallery; keep only its current return identity in
+// the same Web session. No photo items or thumbnails are retained here.
+const mobileGalleryViewerReturns = new Map<string, XDriveMobileGalleryReturnAnchor>()
+
+// Only one visible Node identity per scope is retained. No 100k image array,
+// photo bytes or virtual page cache survives leaving the Mobile Web app.
+type XDriveMobileGalleryBrowsePosition = XDriveMobileGalleryReturnAnchor & {
+  querySignature: string
+}
+const mobileGalleryBrowsePositions = new Map<string, XDriveMobileGalleryBrowsePosition>()
+
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
   mobileWebChrome?: boolean
@@ -511,6 +549,7 @@ export function XDriveMediaGalleryPage({
   onShowInFolder,
   onError,
 }: XDriveMediaGalleryPageProps) {
+  const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
   const [facetsLoading, setFacetsLoading] = useState(false)
   const [facetsError, setFacetsError] = useState('')
@@ -581,32 +620,29 @@ export function XDriveMediaGalleryPage({
   useEffect(() => {
     setRecentSearches(xDriveGalleryRecentSearches(preferenceScope))
   }, [preferenceScope])
-  const [gallerySort, setGallerySort] = useState<{
-    by: 'captured' | 'added'
-    dir: 'asc' | 'desc'
-  }>(() => {
-    if (typeof window === 'undefined') return { by: 'captured', dir: 'desc' }
-    try {
-      const stored = JSON.parse(window.localStorage.getItem('xdrive.gallery.sort.v1') || '{}')
-      return {
-        by: stored.by === 'added' ? 'added' : 'captured',
-        dir: stored.dir === 'asc' ? 'asc' : 'desc',
-      }
-    } catch {
-      return { by: 'captured', dir: 'desc' }
-    }
-  })
-  const gallerySortRef = useRef(gallerySort)
+  const [desktopGallerySort, setDesktopGallerySort] = useState(
+    () => xDriveReadGallerySortChoice(false),
+  )
+  const [mobileGallerySort, setMobileGallerySort] = useState(
+    () => xDriveReadGallerySortChoice(true),
+  )
+  const gallerySort = mobileGalleryViewport ? mobileGallerySort : desktopGallerySort
+  const gallerySortRef = useRef<XDriveGallerySortChoice>(gallerySort)
   const [mediaTimeZone, setMediaTimeZone] = useState(xDriveReadMediaTimeZone)
   const mediaTimeZoneRef = useRef(mediaTimeZone)
   const pendingSortAnchorRef = useRef(0)
   const [sortAnchorRestoration, setSortAnchorRestoration] =
     useState<{ index: number; requestID: number } | null>(null)
   useEffect(() => {
-    try { window.localStorage.setItem('xdrive.gallery.sort.v1', JSON.stringify(gallerySort)) } catch {
-      // Browsing works without persisted preferences.
+    try { window.localStorage.setItem('xdrive.gallery.sort.v1', JSON.stringify(desktopGallerySort)) } catch {
+      // No storage permission should block browsing.
     }
-  }, [gallerySort])
+  }, [desktopGallerySort])
+  useEffect(() => {
+    try { window.localStorage.setItem('xdrive.gallery.mobile.sort.v1', JSON.stringify(mobileGallerySort)) } catch {
+      // Mobile sorting still works without localStorage.
+    }
+  }, [mobileGallerySort])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [collectionError, setCollectionError] = useState('')
@@ -631,7 +667,13 @@ export function XDriveMediaGalleryPage({
     offset: number,
     limit: number,
     signal?: AbortSignal,
+    initialPosition?: 'latest',
   ): Promise<MediaItemRange> => {
+    // initial_position is intentionally ephemeral. VirtualCollection page 0
+    // and Viewer navigation must always use ordinary indexed offsets.
+    const rangedQuery = initialPosition
+      ? { ...target.query, initial_position: initialPosition }
+      : target.query
     switch (target.kind) {
       case 'trash':
         if (!source.listTrashItemRange) {
@@ -672,9 +714,9 @@ export function XDriveMediaGalleryPage({
         return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
       case 'album':
         if (!target.id) throw new Error('相册 ID 缺失')
-        return source.listAlbumItemRange(target.id, limit, offset, target.query)
+        return source.listAlbumItemRange(target.id, limit, offset, rangedQuery)
       default:
-        return source.listItemRange(limit, offset, target.query, signal)
+        return source.listItemRange(limit, offset, rangedQuery, signal)
     }
   }, [source])
 
@@ -739,6 +781,23 @@ export function XDriveMediaGalleryPage({
     setCurrentPerson((current) => current?.id === next.id ? next : current)
   }, [])
 
+  const rememberMobileGalleryAnchor = useCallback((nodeID: number) => {
+    if (!mobileGalleryViewport || !preferenceScope || !Number.isSafeInteger(nodeID) || nodeID <= 0) return
+    const current = collectionTargetRef.current
+    if (!current || (current.kind !== 'all' && current.kind !== 'album')) return
+    mobileGalleryBrowsePositions.set(preferenceScope, {
+      nodeID,
+      section,
+      kind: current.kind,
+      id: current.id ?? '',
+      querySignature: mediaGalleryQuerySignature({
+        ...current.query,
+        anchor_node_id: undefined,
+        initial_position: undefined,
+      }),
+    })
+  }, [mobileGalleryViewport, preferenceScope, section])
+
   const listAllPeople = useCallback(async () => {
     if (!source.listPeople) return [] as MediaPersonIdentity[]
     const all: MediaPersonIdentity[] = []
@@ -762,8 +821,38 @@ export function XDriveMediaGalleryPage({
     pet: MediaPetFacet | null = null,
   ) => {
     const request = ++requestID.current
-    const anchorNodeID = pendingSortAnchorRef.current
+    const viewerReturn = mobileGalleryViewport && preferenceScope
+      ? mobileGalleryViewerReturns.get(preferenceScope)
+      : undefined
+    const returningHere = Boolean(viewerReturn &&
+      viewerReturn.section === section &&
+      viewerReturn.kind === (album ? 'album' : 'all') &&
+      viewerReturn.id === (album?.id ?? ''))
+    const scopedQuery: MediaGalleryQuery = {
+      ...nextQuery,
+      fold_duplicates: foldDuplicatesRef.current && !nextQuery.fold_member_ids?.length,
+      time_zone: mediaTimeZoneRef.current,
+      sort_by: gallerySortRef.current.by,
+      sort_dir: gallerySortRef.current.dir,
+      unknown_first: mobileGalleryViewport &&
+        gallerySortRef.current.by === 'captured' &&
+        gallerySortRef.current.dir === 'asc' || undefined,
+      anchor_node_id: undefined,
+      initial_position: undefined,
+    }
+    const browsePosition = mobileGalleryViewport && preferenceScope
+      ? mobileGalleryBrowsePositions.get(preferenceScope)
+      : undefined
+    const matchingBrowsePosition = Boolean(browsePosition &&
+      browsePosition.section === section &&
+      browsePosition.kind === (album ? 'album' : 'all') &&
+      browsePosition.id === (album?.id ?? '') &&
+      browsePosition.querySignature === mediaGalleryQuerySignature(scopedQuery))
+    const anchorNodeID = pendingSortAnchorRef.current ||
+      (returningHere ? viewerReturn?.nodeID ?? 0 : 0) ||
+      (matchingBrowsePosition ? browsePosition?.nodeID ?? 0 : 0)
     pendingSortAnchorRef.current = 0
+    if (returningHere && preferenceScope) mobileGalleryViewerReturns.delete(preferenceScope)
     setSortAnchorRestoration(null)
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
       ? { kind: 'trash', query: {}, requestID: request }
@@ -783,14 +872,7 @@ export function XDriveMediaGalleryPage({
             : mediaGalleryTarget(
           request,
           album,
-          {
-            ...nextQuery,
-            fold_duplicates: foldDuplicatesRef.current && !nextQuery.fold_member_ids?.length,
-            time_zone: mediaTimeZoneRef.current,
-            sort_by: gallerySortRef.current.by,
-            sort_dir: gallerySortRef.current.dir,
-            ...(anchorNodeID > 0 ? { anchor_node_id: anchorNodeID } : {}),
-          },
+          { ...scopedQuery, ...(anchorNodeID > 0 ? { anchor_node_id: anchorNodeID } : {}) },
           suggestedPerson,
           person,
         )
@@ -803,7 +885,15 @@ export function XDriveMediaGalleryPage({
     setError('')
     setCollectionError('')
     try {
-      const rangePromise = loadTargetRange(target, 0, pageSize)
+      // Server provides a sparse, page-aligned tail and absolute anchor_index;
+      // never iterate offset=0..100k to scroll to the newest asset.
+      const firstAtLatest = mobileGalleryViewport && !anchorNodeID &&
+        (target.kind === 'all' || target.kind === 'album') &&
+        target.query.sort_dir === 'asc' &&
+        !target.query.search?.trim()
+      const rangePromise = loadTargetRange(
+        target, 0, pageSize, undefined, firstAtLatest ? 'latest' : undefined,
+      )
       if (target.kind === 'all' && !target.query.folder_id) {
         setPlacesStatus('loading')
         const facetsPromise = Promise.all([
@@ -925,8 +1015,10 @@ export function XDriveMediaGalleryPage({
   }, [
     listAllPeople,
     loadTargetRange,
+    mobileGalleryViewport,
     pageSize,
     preferenceScope,
+    section,
     onError,
     reportError,
     source,
@@ -1330,10 +1422,23 @@ export function XDriveMediaGalleryPage({
       ? anchorNodeID!
       : 0
     gallerySortRef.current = next
-    setGallerySort(next)
+    if (mobileGalleryViewport) setMobileGallerySort(next)
+    else setDesktopGallerySort(next)
     // A new server range order owns a new sparse-collection generation.
     void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson)
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, query])
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, query])
+
+  const previousMobileGalleryRef = useRef(mobileGalleryViewport)
+  useEffect(() => {
+    if (previousMobileGalleryRef.current === mobileGalleryViewport) return
+    previousMobileGalleryRef.current = mobileGalleryViewport
+    gallerySortRef.current = gallerySort
+    const kind = collectionTargetRef.current?.kind
+    if (kind === 'all' || kind === 'album') {
+      void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson)
+    }
+  }, [mobileGalleryViewport, gallerySort, currentAlbum, currentPerson,
+      currentSuggestedPerson, loadFirstPage, query])
 
   const changeGalleryTimeZone = useCallback((nextZone: string) => {
     if (!xDriveValidMediaTimeZone(nextZone) || mediaTimeZoneRef.current === nextZone) return
@@ -2229,6 +2334,7 @@ export function XDriveMediaGalleryPage({
         key={preferenceScope || 'gallery-default'}
         preferenceScope={preferenceScope}
         mobileWebChrome={mobileWebChrome}
+        onVisibleAnchorNode={rememberMobileGalleryAnchor}
         items={items}
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
@@ -2384,6 +2490,15 @@ export function XDriveMediaGalleryPage({
           if (!target) return
           const { requestID: _requestID, ...serializableTarget } = target
           const { anchor_node_id: _anchor, ...viewerQuery } = serializableTarget.query
+          if (mobileGalleryViewport && preferenceScope &&
+            (target.kind === 'all' || target.kind === 'album')) {
+            mobileGalleryViewerReturns.set(preferenceScope, {
+              nodeID: item.node.id,
+              section,
+              kind: target.kind,
+              id: target.id ?? '',
+            })
+          }
           onOpenViewer(item, {
             target: { ...serializableTarget, query: viewerQuery },
             activeIndex,
@@ -2633,6 +2748,7 @@ export type XDriveMediaGalleryVirtualCollection = {
 
 export interface XDriveMediaGalleryProps {
   mobileWebChrome?: boolean
+  onVisibleAnchorNode?: (nodeID: number) => void
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
   preferenceScope?: string
@@ -4014,6 +4130,7 @@ const personDialogDescriptions = {
 
 export function XDriveMediaGallery({
   mobileWebChrome = false,
+  onVisibleAnchorNode,
   preferenceScope = '',
   items,
   virtualCollection,
@@ -4407,10 +4524,12 @@ export function XDriveMediaGallery({
   const captureVisibleAnchor = useCallback((index: number) => {
     if (!Number.isSafeInteger(index) || index < 0) return
     viewAnchorIndexRef.current = index
+    const visible = virtualCollection?.itemAt(index) ?? items[index]
+    if (visible?.node?.id) onVisibleAnchorNode?.(visible.node.id)
     const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineGroupsRef.current, index)
     const key = group?.key ?? null
     setCurrentTimelineGroupKey((current) => current === key ? current : key)
-  }, [])
+  }, [items, onVisibleAnchorNode, virtualCollection])
 
   useEffect(() => {
     const group = xDriveMediaGalleryTimelineGroupAtIndex(timelineNavigationGroups, viewAnchorIndexRef.current)

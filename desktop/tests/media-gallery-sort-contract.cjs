@@ -12,7 +12,12 @@ test('G03 capture/added ordering is server-owned and deterministic', () => {
   assert.match(server, /func mediaGallerySortClauses\(options mediaQueryOptions\)/)
   assert.match(server, /n\.created_at " \+ direction/)
   assert.match(server, /n\.id " \+ direction/)
-  assert.match(server, /CASE WHEN xd_media_metadata\.captured_at IS NULL THEN 1 ELSE 0 END ASC/)
+  // Default Web/Desktop keeps unknown dates last; opt-in mobile ascending
+  // puts unknown dates first without changing canonical captured ordering.
+  assert.match(server, /unknownOrder := "ASC"/)
+  assert.match(server, /options.UnknownFirst && options.SortDir == "asc"/)
+  assert.match(server, /unknownOrder = "DESC"/)
+  assert.match(server, /"CASE WHEN xd_media_metadata\.captured_at IS NULL THEN 1 ELSE 0 END " \+ unknownOrder/)
   assert.match(server, /mediaAddedDayGroupExpression/)
   assert.match(server, /queryMediaTimelineGroupSets\(query, options\)/)
   assert.match(filters, /sort_by must be captured or added/)

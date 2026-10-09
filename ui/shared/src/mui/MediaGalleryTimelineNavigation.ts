@@ -2,7 +2,7 @@ import type { MediaTimelineGroupIndex } from '../models'
 
 // The day input must not allocate thousands of DOM option elements. Day
 // groups are ordered by start_index and date (ascending/descending), with
-// the optional "unknown" group at the end.
+// an optional "unknown" group at either edge according to the sort contract.
 function calendarDayOrdinal(key: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null
   const [year, month, day] = key.split('-').map(Number)
@@ -38,15 +38,15 @@ export function xDriveMediaGalleryTimelineNearestDay(
 ): { group: MediaTimelineGroupIndex; exact: boolean } | null {
   const wanted = calendarDayOrdinal(requestedDay)
   if (wanted === null) return null
-  let count = groups.length
-  if (count > 0 && groups[count - 1].key === 'unknown') count -= 1
-  if (count === 0) return null
-  const first = calendarDayOrdinal(groups[0].key)
-  const last = calendarDayOrdinal(groups[count - 1].key)
+  const start = groups[0]?.key === 'unknown' ? 1 : 0
+  const end = groups.length - (groups.at(-1)?.key === 'unknown' ? 1 : 0)
+  if (start >= end) return null
+  const first = calendarDayOrdinal(groups[start].key)
+  const last = calendarDayOrdinal(groups[end - 1].key)
   if (first === null || last === null) return null
   const ascending = first <= last
-  let lower = 0
-  let upper = count
+  let lower = start
+  let upper = end
   while (lower < upper) {
     const mid = Math.floor((lower + upper) / 2)
     const midDay = calendarDayOrdinal(groups[mid].key)
@@ -58,7 +58,7 @@ export function xDriveMediaGalleryTimelineNearestDay(
   let selectedDelta = Number.POSITIVE_INFINITY
   let selectedDay = Number.POSITIVE_INFINITY
   for (const position of [lower - 1, lower]) {
-    if (position < 0 || position >= count) continue
+    if (position < start || position >= end) continue
     const candidate = groups[position]
     const ordinal = calendarDayOrdinal(candidate.key)
     if (ordinal === null || candidate.item_count <= 0) continue

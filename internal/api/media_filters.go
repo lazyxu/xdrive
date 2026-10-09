@@ -22,13 +22,17 @@ const (
 )
 
 type mediaQueryOptions struct {
-	TimeZone           string
-	AnchorNodeID       uint64
-	FoldDuplicates     bool
-	FoldMemberIDs      []uint64
-	foldIndex          *mediaVerifiedFoldIndex
-	SortBy             string
-	SortDir            string
+	TimeZone       string
+	AnchorNodeID   uint64
+	FoldDuplicates bool
+	FoldMemberIDs  []uint64
+	foldIndex      *mediaVerifiedFoldIndex
+	SortBy         string
+	SortDir        string
+	// InitialPosition affects only the initial ranged response, never regular pagination.
+	InitialPosition string
+	// UnknownFirst is an opt-in mobile sort contract; desktop defaults remain unchanged.
+	UnknownFirst       bool
 	MediaKind          string
 	Search             string
 	AssetKind          string
@@ -100,6 +104,21 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	if out.SortDir != "" && out.SortDir != "asc" && out.SortDir != "desc" {
 		fail(c, http.StatusBadRequest, "sort_dir must be asc or desc")
 		return mediaQueryOptions{}, false
+	}
+	if raw := strings.TrimSpace(c.Query("initial_position")); raw != "" {
+		if raw != "latest" {
+			fail(c, http.StatusBadRequest, "initial_position must be latest")
+			return mediaQueryOptions{}, false
+		}
+		out.InitialPosition = raw
+	}
+	if raw := strings.TrimSpace(c.Query("unknown_first")); raw != "" {
+		value, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			fail(c, http.StatusBadRequest, "unknown_first must be true or false")
+			return mediaQueryOptions{}, false
+		}
+		out.UnknownFirst = value
 	}
 	out.MediaKind = strings.TrimSpace(c.Query("kind"))
 	if out.MediaKind != "" && out.MediaKind != meta.MediaKindImage && out.MediaKind != meta.MediaKindVideo {

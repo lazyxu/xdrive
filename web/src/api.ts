@@ -283,6 +283,8 @@ function appendMediaGalleryQuery(
     if (Number.isSafeInteger(id) && id > 0) values.append('fold_member_id', String(id))
   }
   if (query.time_zone) values.set('time_zone', query.time_zone)
+  if (query.initial_position) values.set('initial_position', query.initial_position)
+  if (query.unknown_first) values.set('unknown_first', 'true')
   if (query.sort_by) values.set('sort_by', query.sort_by)
   if (query.sort_dir) values.set('sort_dir', query.sort_dir)
   if (query.search?.trim()) values.set('q', query.search.trim())
