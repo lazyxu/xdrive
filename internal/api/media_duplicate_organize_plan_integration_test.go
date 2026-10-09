@@ -50,7 +50,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		&meta.PhotoMetadata{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
+		&meta.Share{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
 		&meta.SyncRun{}, &meta.SourceRunFailure{},
 	); err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		}
 		asset := meta.PhotoAsset{
 			OwnerID: owner.ID, PrimaryNodeID: n.ID, Kind: meta.PhotoAssetKindImage,
-			EvidenceKey: "node:" + name,
+			EvidenceKey: fmt.Sprintf("node:%d", n.ID),
 		}
 		if err := db.Create(&asset).Error; err != nil {
 			t.Fatal(err)
@@ -614,6 +614,108 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 	}
 	if ownedAssets != 4 { // 3 original owner-A assets + independent new import.
 		t.Fatalf("newly synced independent asset count=%d want=4", ownedAssets)
+	}
+
+	// Even after the user explicitly trashes the newly imported source copy,
+	// the same remote Backup identity remains authoritative on the provider.
+	// The next real SourceRun must plan a new independent Node, not revive the
+	// trashed Node, mutate the unrelated keeper, or reuse it merely by SHA.
+	trashPath := fmt.Sprintf("/api/v1/nodes/%d", incoming.node.ID)
+	trashRequest := httptest.NewRequest(http.MethodDelete, trashPath, nil)
+	trashRequest.Header.Set("Authorization", "Bearer "+token)
+	trashRequest.Header.Set("If-Match", "1")
+	trashResponse := httptest.NewRecorder()
+	router.ServeHTTP(trashResponse, trashRequest)
+	if trashResponse.Code != http.StatusNoContent {
+		t.Fatalf("real Node-to-Trash request status=%d body=%s",
+			trashResponse.Code, trashResponse.Body.String())
+	}
+	var trashedCopy meta.Node
+	if err := db.First(&trashedCopy, incoming.node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if trashedCopy.DeletedAt == nil || trashedCopy.TrashRootID == nil ||
+		*trashedCopy.TrashRootID != incoming.node.ID {
+		t.Fatalf("original source copy was not moved to Trash: %+v", trashedCopy)
+	}
+	trashReimportRun := startRun()
+	reimportPlan := observe(trashReimportRun, "synology-new-identity", "reimported.jpg")
+	if len(reimportPlan.Plans) != 1 ||
+		reimportPlan.Plans[0].Action != "create" ||
+		reimportPlan.Plans[0].NodeID != nil {
+		t.Fatalf("deleted source copy must be re-created with a new Node: %+v", reimportPlan)
+	}
+	restored := create(owners[0], "reimported.jpg", "", `[]`, `[]`, false)
+	if restored.node.ID == incoming.node.ID || restored.node.ID == a.node.ID {
+		t.Fatalf("reimported source reused trashed or keeper Node: %d", restored.node.ID)
+	}
+	restoredCommit := fmt.Sprintf(
+		`{"items":[{"external_id":"synology-new-identity","action":"create","node_id":%d,"node_revision":1,"kind":"file","path":"reimported.jpg","size":1000,"sha256":%q,"transferred":true,"transferred_bytes":1000}]}`,
+		restored.node.ID, hash,
+	)
+	restoredCommitPath := sourcePath + "/" + trashReimportRun + "/commit"
+	request(t, router, http.MethodPost, restoredCommitPath, token,
+		strings.NewReader(restoredCommit), http.StatusNoContent)
+	// The same SourceRun commit must remain replay-safe even after an earlier
+	// local Trash action disconnected the previously synced real Node.
+	request(t, router, http.MethodPost, restoredCommitPath, token,
+		strings.NewReader(restoredCommit), http.StatusNoContent)
+	finish(trashReimportRun, false,
+		`{"scanned_items":1,"scanned_bytes":1000,"scanned_file_items":1,"new_items":1,"new_bytes":1000,"planned_transfer_items":1,"planned_transfer_bytes":1000}`)
+	var refreshedSourceItem meta.SourceItem
+	if err := db.First(&refreshedSourceItem, newlyImportedSource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshedSourceItem.ID != newlyImportedSource.ID ||
+		refreshedSourceItem.NodeID == nil ||
+		*refreshedSourceItem.NodeID != restored.node.ID ||
+		refreshedSourceItem.State != meta.SourceItemStateSynced ||
+		refreshedSourceItem.LastSyncedRunID != trashReimportRun {
+		t.Fatalf("Backup reimport lost source identity or new Node: %+v", refreshedSourceItem)
+	}
+	var originalTrashNode meta.Node
+	if err := db.First(&originalTrashNode, incoming.node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if originalTrashNode.DeletedAt == nil {
+		t.Fatal("reimport restored a Trash Node instead of creating an independent copy")
+	}
+	var preservedKeeper meta.PhotoMetadata
+	if err := db.First(&preservedKeeper, "asset_id = ?", a.asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !preservedKeeper.Favorite ||
+		preservedKeeper.Description != "first description" ||
+		preservedKeeper.TagsJSON != `["cat","travel"]` ||
+		preservedKeeper.PeopleJSON != `["Alice","Bob"]` {
+		t.Fatalf("reimport after Trash damaged keeper annotations: %+v", preservedKeeper)
+	}
+	var reimportedMetadata meta.PhotoMetadata
+	if err := db.First(&reimportedMetadata, "asset_id = ?", restored.asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reimportedMetadata.Favorite || reimportedMetadata.Description != "" ||
+		reimportedMetadata.TagsJSON != `[]` || reimportedMetadata.PeopleJSON != `[]` {
+		t.Fatalf("reimport after Trash silently inherited merged metadata: %+v", reimportedMetadata)
+	}
+	var sourceOnKeeper int64
+	if err := db.Model(&meta.PhotoCollectionAsset{}).
+		Where("collection_id = ? AND asset_id = ?", source.ID, a.asset.ID).
+		Count(&sourceOnKeeper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sourceOnKeeper != 0 {
+		t.Fatalf("reimport moved provider album membership to keeper: %d", sourceOnKeeper)
+	}
+	var assetCountAfterTrashReimport int64
+	if err := db.Model(&meta.PhotoAsset{}).
+		Where("owner_id = ?", owners[0].ID).
+		Count(&assetCountAfterTrashReimport).Error; err != nil {
+		t.Fatal(err)
+	}
+	if assetCountAfterTrashReimport != 5 {
+		t.Fatalf("trashed PhotoAsset must remain frozen plus new independent copy: %d",
+			assetCountAfterTrashReimport)
 	}
 }
 
