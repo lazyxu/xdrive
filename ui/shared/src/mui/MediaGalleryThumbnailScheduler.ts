@@ -6,6 +6,7 @@ export type XDriveMediaThumbnailPriority = 0 | 1 | 2
 export type XDriveMediaThumbnailSourceLoader = (
   nodeID: number,
   signal?: AbortSignal,
+  revision?: number,
 ) => Promise<string | null>
 
 type ThumbnailTask = {
@@ -196,7 +197,7 @@ export class XDriveMediaThumbnailScheduler {
       if (task.cancelled) continue
       this.active += 1
       this.inFlight.set(task.key, task)
-      void this.loader(task.nodeID, task.controller.signal)
+      void this.loader(task.nodeID, task.controller.signal, task.revision || undefined)
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)

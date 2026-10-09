@@ -86,7 +86,7 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaAlbumItems(albumID, limit, offset, query),
     listAlbumItemRange: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItemRange(albumID, limit, offset, query),
-    loadThumbnail: (nodeID, signal) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID)),
+    loadThumbnail: (nodeID, signal, revision) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID, revision)),
     saveVideoPoster: async (nodeID, revision, poster, signal) => {
       signal?.throwIfAborted()
       const bytes = await poster.arrayBuffer()

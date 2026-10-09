@@ -8,7 +8,7 @@ import { Box, Skeleton } from '@mui/material'
 import type { MediaMetadata } from '../models'
 import { xDriveCaptureVideoPosterBlob, xDriveResolveMediaVideoPoster } from './MediaGalleryVideoPoster'
 
-type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal) => Promise<string | null>
+type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',
@@ -22,12 +22,14 @@ function revokeIfBlob(url: string) {
 
 export function XDriveMediaAsyncThumbnail({
   nodeID,
+  revision,
   alt,
   loadThumbnail,
   fallback,
   revokeOnDispose = true,
 }: {
   nodeID?: number
+  revision?: number
   alt: string
   loadThumbnail: MediaThumbnailLoader
   fallback: ReactNode
@@ -44,7 +46,7 @@ export function XDriveMediaAsyncThumbnail({
     if (!nodeID) return () => undefined
     const controller = new AbortController()
 
-    void loadThumbnail(nodeID, controller.signal)
+    void loadThumbnail(nodeID, controller.signal, revision)
       .then((value) => {
         if (!value) {
           if (active) setFailed(true)
@@ -63,7 +65,7 @@ export function XDriveMediaAsyncThumbnail({
       controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID, revokeOnDispose])
+  }, [loadThumbnail, nodeID, revision, revokeOnDispose])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {

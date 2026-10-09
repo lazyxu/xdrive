@@ -91,6 +91,7 @@ export function XDriveMediaGalleryFilmstrip({
             <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
               <XDriveMediaAsyncThumbnail
                 nodeID={item.metadata.has_thumbnail || item.metadata.media_kind === 'video' ? item.node.id : undefined}
+                revision={item.node.revision}
                 alt={item.node.name}
                 loadThumbnail={loadThumbnail}
                 fallback={xDriveMediaFallback(item.metadata.media_kind)}

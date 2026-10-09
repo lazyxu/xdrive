@@ -31,6 +31,48 @@ jobs:
             exit 1
           fi
 
+  gallery-thumbnail-web-overwrite:
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/media-thumbnail-http-revision'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install native Chromium benchmark dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Browser HTTP cache revision overwrite test (baseline first)
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-thumbnail-revision-main.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-thumbnail-web-overwrite
+          path: desktop/perf-results/gallery-web-thumbnail-revision.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  gallery-thumbnail-agent-overwrite:
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/media-thumbnail-http-revision'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Agent real HTTP 3600s-cache overwrite test (baseline first)
+        run: |
+          go test -run '^TestAgentCloudMediaThumbnailOverwriteRevalidatesUnknownRevision$' -count=1 -v ./cmd/xdrive-agent
   desktop-tests:
     runs-on: ubuntu-latest
     steps:

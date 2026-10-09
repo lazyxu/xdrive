@@ -238,3 +238,44 @@ func TestFileExplorerDesktopThumbnailWarmAgentCachePerformance(t *testing.T) {
 		float64(elapsed.Microseconds())/1000,
 	)
 }
+
+func TestAgentThumbnailRevisionKnownKeyPreservesWarmHit(t *testing.T) {
+	cfg := userconfig.Config{
+		Server:   "https://drive.example.test",
+		Username: "alice", SessionID: "session",
+	}
+	oldKey := agentMediaThumbnailCacheKey(cfg, 417, 3)
+	nextKey := agentMediaThumbnailCacheKey(cfg, 417, 4)
+	if oldKey == nextKey || oldKey == agentMediaThumbnailCacheKey(cfg, 417) {
+		t.Fatalf("revision-aware thumbnail cache key did not change: old=%q new=%q", oldKey, nextKey)
+	}
+	cache := newAgentMediaThumbnailCache(8, 1<<20)
+	now := time.Unix(4500, 0)
+	cache.now = func() time.Time { return now }
+	reads := 0
+	load := func(etag string) (agentMediaThumbnailFetch, error) {
+		reads++
+		return agentMediaThumbnailFetch{
+			Thumbnail: agentMediaThumbnail{ContentType: "image/jpeg", Data: []byte(fmt.Sprintf("version-%d", reads))},
+			ETag:      fmt.Sprintf("\"etag-%d\"", reads),
+			MaxAge:    time.Hour,
+		}, nil
+	}
+	a, err := cache.Load(context.Background(), oldKey, load)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := cache.Load(context.Background(), oldKey, load)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := cache.Load(context.Background(), nextKey, load)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a.Data) != "version-1" || string(b.Data) != "version-1" ||
+		string(c.Data) != "version-2" || reads != 2 {
+		t.Fatalf("warm or version-bumped cache GETs wrong: first=%q warm=%q new=%q requests=%d",
+			a.Data, b.Data, c.Data, reads)
+	}
+}

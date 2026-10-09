@@ -191,14 +191,14 @@ export async function xDriveResolveMediaVideoPoster({
 }: {
   nodeID: number
   revision: number
-  loadCached: (nodeID: number, signal?: AbortSignal) => Promise<string | null>
+  loadCached: (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
   capture: (signal?: AbortSignal) => Promise<Blob | null>
   save?: (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
   signal?: AbortSignal
 }): Promise<string | null> {
   if (signal?.aborted) return null
   try {
-    const cached = await loadCached(nodeID, signal)
+    const cached = await loadCached(nodeID, signal, revision)
     if (cached) {
       if (signal?.aborted) {
         if (cached.startsWith('blob:')) URL.revokeObjectURL(cached)

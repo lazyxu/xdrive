@@ -2711,7 +2711,9 @@ func (c *agentController) CloudCancelMediaCreativeGeneration(
 	return cli.CancelMediaCreativeGeneration(ctx, generationID)
 }
 
-func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
+func (c *agentController) CloudMediaThumbnail(
+	ctx context.Context, nodeID uint64, revision ...uint64,
+) (agentMediaThumbnail, error) {
 	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return agentMediaThumbnail{}, err
@@ -2720,11 +2722,22 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 	if cache == nil {
 		cache = newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes)
 	}
-	key := agentMediaThumbnailCacheKey(cfg, nodeID)
+	// Revision-known calls can reuse a warm 3600s entry because the key
+	// changes when the source changes. Covers with no known revision must
+	// revalidate with the Server's ETag on each new request.
+	sourceRevision := uint64(0)
+	if len(revision) > 0 {
+		sourceRevision = revision[0]
+	}
+	key := agentMediaThumbnailCacheKey(cfg, nodeID, sourceRevision)
 	return cache.Load(ctx, key, func(etag string) (agentMediaThumbnailFetch, error) {
 		response, err := cli.MediaThumbnailConditional(ctx, nodeID, etag)
 		if err != nil {
 			return agentMediaThumbnailFetch{}, err
+		}
+		maxAge := response.MaxAge
+		if sourceRevision == 0 {
+			maxAge = 0
 		}
 		return agentMediaThumbnailFetch{
 			Thumbnail: agentMediaThumbnail{
@@ -2732,7 +2745,7 @@ func (c *agentController) CloudMediaThumbnail(ctx context.Context, nodeID uint64
 				Data:        response.Data,
 			},
 			ETag:        response.ETag,
-			MaxAge:      response.MaxAge,
+			MaxAge:      maxAge,
 			NotModified: response.NotModified,
 		}, nil
 	})
