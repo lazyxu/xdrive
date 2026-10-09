@@ -179,6 +179,7 @@ export interface MediaGalleryDataSource {
     limit: number,
     offset: number,
     query?: MediaGalleryQuery,
+    signal?: AbortSignal,
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
@@ -569,6 +570,7 @@ export function XDriveMediaGalleryPage({
     target: MediaGalleryCollectionTarget,
     offset: number,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<MediaItemRange> => {
     switch (target.kind) {
       case 'trash':
@@ -612,12 +614,13 @@ export function XDriveMediaGalleryPage({
         if (!target.id) throw new Error('相册 ID 缺失')
         return source.listAlbumItemRange(target.id, limit, offset, target.query)
       default:
-        return source.listItemRange(limit, offset, target.query)
+        return source.listItemRange(limit, offset, target.query, signal)
     }
   }, [source])
 
   const loadVirtualRange = useCallback(async (
     range: { offset: number; limit: number },
+    signal: AbortSignal,
   ) => {
     const target = collectionTargetRef.current
     if (!target) {
@@ -628,7 +631,7 @@ export function XDriveMediaGalleryPage({
         limit: range.limit,
       }
     }
-    const page = await loadTargetRange(target, range.offset, range.limit)
+    const page = await loadTargetRange(target, range.offset, range.limit, signal)
     if (
       range.offset === 0 &&
       collectionTargetRef.current?.requestID === target.requestID

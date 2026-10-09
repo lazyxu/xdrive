@@ -83,6 +83,20 @@ test('Desktop viewport cancel reaches an in-flight Agent HTTP 100k range GET', a
   })
 })
 
+test('Desktop Gallery 100k media range abort reaches Agent HTTP transport', async () => {
+  await withSlowAgent(async ({ events, client }) => {
+    const mgr = new DesktopViewportRequests()
+    const sender = new WindowSender(125)
+    const pending = mgr.run(sender, 'gallery-media-range-1', (signal) =>
+      client.mediaItemRange('', 200, 50000, {}, signal))
+    await until(() => events.started === 1)
+    mgr.cancel(sender, 'gallery-media-range-1')
+    await assert.rejects(pending, /cancel|abort/i)
+    await until(() => events.aborted === 1, 160)
+    assert.equal(events.bytes, 0)
+  })
+})
+
 test('Desktop request IDs belong to their sender and survive pre-admission cancellation', async () => {
   const mgr = new DesktopViewportRequests()
   const one = new WindowSender(1)
