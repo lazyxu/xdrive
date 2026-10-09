@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
-  Collections as CollectionsIcon,
   FolderOutlined as FolderOutlinedIcon,
   Image as ImageIcon,
   InfoOutlined as InfoOutlinedIcon,
@@ -94,6 +93,7 @@ import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
 import { XDriveMediaGallerySelectionToolbar } from './MediaGallerySelectionToolbar'
+import { XDriveMediaGalleryAlbumOrganizer } from './MediaGalleryAlbumOrganizer'
 import {
   XDriveMediaGalleryCollageDialog,
   xDriveMediaItemSupportsCollage,
@@ -425,6 +425,7 @@ export type XDriveMediaGalleryShareDialogOptions = {
 
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
+  preferenceScope?: string
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
   initialSection?: MediaGallerySection
@@ -435,6 +436,7 @@ export interface XDriveMediaGalleryPageProps {
 
 export function XDriveMediaGalleryPage({
   source,
+  preferenceScope = '',
   pageSize = 100,
   shareDialog,
   initialSection,
@@ -1845,6 +1847,8 @@ export function XDriveMediaGalleryPage({
   return (
     <XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>
       <XDriveMediaGallery
+        key={preferenceScope || 'gallery-default'}
+        preferenceScope={preferenceScope}
         items={items}
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
@@ -2144,6 +2148,7 @@ export type XDriveMediaGalleryVirtualCollection = {
 }
 
 export interface XDriveMediaGalleryProps {
+  preferenceScope?: string
   items: MediaItem[]
   virtualCollection?: XDriveMediaGalleryVirtualCollection
   collectionKey?: string
@@ -3467,6 +3472,7 @@ function MediaVirtualTimeline({
 }
 
 export function XDriveMediaGallery({
+  preferenceScope = '',
   items,
   virtualCollection,
   collectionKey = '',
@@ -4599,82 +4605,14 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {showAlbumIndex && albums.length > 0 ? (
-        <Box>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
-            相册
-          </Typography>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: 1.5,
-            }}
-          >
-            {albums.map((album) => (
-              <Paper
-                key={album.id}
-                variant="outlined"
-                role={onOpenAlbum ? 'button' : undefined}
-                tabIndex={onOpenAlbum ? 0 : undefined}
-                onClick={() => onOpenAlbum?.(album)}
-                onKeyDown={(event) => {
-                  if (onOpenAlbum) keyboardActivate(event, () => onOpenAlbum(album))
-                }}
-                sx={{
-                  overflow: 'hidden',
-                  cursor: onOpenAlbum ? 'pointer' : 'default',
-                  transition: 'transform 120ms ease, box-shadow 120ms ease',
-                  '&:hover': onOpenAlbum
-                    ? { transform: 'translateY(-1px)', boxShadow: 2 }
-                    : undefined,
-                  '&:focus-visible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: 2,
-                  },
-                }}
-              >
-                <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-                  <XDriveMediaAsyncThumbnail
-                    nodeID={album.cover_node_id}
-                    alt={album.name}
-                    loadThumbnail={loadThumbnail}
-                    fallback={(
-                      <Box
-                        sx={{
-                          width: '100%',
-                          height: '100%',
-                          display: 'grid',
-                          placeItems: 'center',
-                          bgcolor: 'action.hover',
-                          color: 'text.secondary',
-                        }}
-                      >
-                        <CollectionsIcon sx={{ fontSize: 44 }} />
-                      </Box>
-                    )}
-                  />
-                </Box>
-                <Box sx={{ px: 1.5, py: 1.2 }}>
-                  <Typography variant="body2" fontWeight={650} noWrap>
-                    {album.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {album.item_count.toLocaleString('zh-CN')} 个项目
-                    {album.kind === 'imported'
-                      ? ' · 导入相册'
-                      : album.kind === 'manual'
-                        ? ' · 手动相册'
-                        : album.kind === 'smart'
-                          ? ' · 智能相册'
-                          : ''}
-                  </Typography>
-                </Box>
-              </Paper>
-            ))}
-          </Box>
-        </Box>
+      {showAlbumIndex ? (
+        <XDriveMediaGalleryAlbumOrganizer
+          key={preferenceScope || 'gallery-default'}
+          albums={albums}
+          accountScope={preferenceScope}
+          loadThumbnail={loadThumbnail}
+          onOpenAlbum={onOpenAlbum}
+        />
       ) : null}
 
       {showPlacesIndex && places.length > 0 ? (

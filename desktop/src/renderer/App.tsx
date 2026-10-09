@@ -1996,6 +1996,7 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
             shareDialog={{
               adapter: desktopShareDialogAdapter,
               expiryMode: 'days',
