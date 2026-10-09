@@ -1,0 +1,704 @@
+{
+  "title": "P4 actual xDrive Go authenticated signed Preview Engine & warm persisted poster transport baseline",
+  "date": "2026-10-09",
+  "gitHead": "aa6982ebd6a4276c8c4a2ee60e9ae3fa5b98cbf4",
+  "ciRun": 37928037275,
+  "job": 113811627049,
+  "schema": "isolated PostgreSQL 17, local Store, Gin/Go signed Preview Engine, HTTP/206, paced cancellation",
+  "sourceSizes": "identical file sizes to real 4K prior ffmpeg-generation report; deterministic pseudo bytes, not decodable MP4 or video first frame",
+  "workload": {
+    "objects": 12,
+    "posterReads": 12,
+    "signedRanges": 36,
+    "cancelSamples": 6,
+    "rangeRequestBytes": 1048576,
+    "posterRevision": 1,
+    "posterSizeNote": "valid JPEG tiny fixture; poster byte size not part of codec original"
+  },
+  "samples": [
+    {
+      "asset": "h264-4k-6s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 21.157,
+      "originalEncodedFixtureSize": 10204316,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-6s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.933,
+      "originalEncodedFixtureSize": 10204316,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-6s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.761,
+      "originalEncodedFixtureSize": 10204316,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-6s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 20.605,
+      "originalEncodedFixtureSize": 11290579,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-6s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 20.296,
+      "originalEncodedFixtureSize": 11290579,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-6s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 21.756,
+      "originalEncodedFixtureSize": 11290579,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-60s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 29.86,
+      "originalEncodedFixtureSize": 102035663,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-60s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 22.593,
+      "originalEncodedFixtureSize": 102035663,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-60s-original",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 24.792,
+      "originalEncodedFixtureSize": 102035663,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-60s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 23.795,
+      "originalEncodedFixtureSize": 112875577,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-60s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 22.707,
+      "originalEncodedFixtureSize": 112875577,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "hevc-4k-60s-original",
+      "codecLabel": "hevc",
+      "httpElapsedMsDiagnostic": 22.812,
+      "originalEncodedFixtureSize": 112875577,
+      "profile": false,
+      "rangeBytes": 1048576,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 3,
+      "source": ""
+    },
+    {
+      "asset": "h264-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 22.455,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 22.342,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 25.06,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 23.6,
+      "originalEncodedFixtureSize": 312647,
+      "profile": true,
+      "rangeBytes": 312647,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 23.038,
+      "originalEncodedFixtureSize": 312647,
+      "profile": true,
+      "rangeBytes": 312647,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 23.455,
+      "originalEncodedFixtureSize": 312647,
+      "profile": true,
+      "rangeBytes": 312647,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 24.781,
+      "originalEncodedFixtureSize": 153430,
+      "profile": true,
+      "rangeBytes": 153430,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 24.559,
+      "originalEncodedFixtureSize": 153430,
+      "profile": true,
+      "rangeBytes": 153430,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 27.557,
+      "originalEncodedFixtureSize": 153430,
+      "profile": true,
+      "rangeBytes": 153430,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 24.704,
+      "originalEncodedFixtureSize": 307554,
+      "profile": true,
+      "rangeBytes": 307554,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.285,
+      "originalEncodedFixtureSize": 307554,
+      "profile": true,
+      "rangeBytes": 307554,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "hevc-4k-6s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.567,
+      "originalEncodedFixtureSize": 307554,
+      "profile": true,
+      "rangeBytes": 307554,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-6s-original"
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 28.472,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 33.261,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 23.765,
+      "originalEncodedFixtureSize": 155308,
+      "profile": true,
+      "rangeBytes": 155308,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "h264-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 24.368,
+      "originalEncodedFixtureSize": 312485,
+      "profile": true,
+      "rangeBytes": 312485,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "h264-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.783,
+      "originalEncodedFixtureSize": 312485,
+      "profile": true,
+      "rangeBytes": 312485,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "h264-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 21.491,
+      "originalEncodedFixtureSize": 312485,
+      "profile": true,
+      "rangeBytes": 312485,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "h264-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 21.613,
+      "originalEncodedFixtureSize": 153390,
+      "profile": true,
+      "rangeBytes": 153390,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.281,
+      "originalEncodedFixtureSize": 153390,
+      "profile": true,
+      "rangeBytes": 153390,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-480p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 26.409,
+      "originalEncodedFixtureSize": 153390,
+      "profile": true,
+      "rangeBytes": 153390,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 19.012,
+      "originalEncodedFixtureSize": 307759,
+      "profile": true,
+      "rangeBytes": 307759,
+      "repeat": 1,
+      "serverOriginalStoreOpens": 1,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.016,
+      "originalEncodedFixtureSize": 307759,
+      "profile": true,
+      "rangeBytes": 307759,
+      "repeat": 2,
+      "serverOriginalStoreOpens": 2,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    },
+    {
+      "asset": "hevc-4k-60s-720p",
+      "codecLabel": "h264",
+      "httpElapsedMsDiagnostic": 20.69,
+      "originalEncodedFixtureSize": 307759,
+      "profile": true,
+      "rangeBytes": 307759,
+      "repeat": 3,
+      "serverOriginalStoreOpens": 3,
+      "serverPosterStoreOpens": 0,
+      "source": "hevc-4k-60s-original"
+    }
+  ],
+  "canceled": [
+    {
+      "asset": "h264-4k-60s-original",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 1,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    },
+    {
+      "asset": "h264-4k-60s-original",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 2,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    },
+    {
+      "asset": "h264-4k-60s-original",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 3,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 1,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 2,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    },
+    {
+      "asset": "h264-4k-60s-480p",
+      "emittedAfterCancelSample": 32768,
+      "firstReadBytes": 1024,
+      "repeat": 3,
+      "serverActiveAt160Ms": 0,
+      "serverCancelledAt160Ms": 1
+    }
+  ],
+  "perAsset": [
+    {
+      "name": "h264-4k-6s-original",
+      "source": "",
+      "preview": false,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 10204316,
+      "medianRangeBytes": 1048576,
+      "medianDiagnosticElapsedMs": 20.933,
+      "posterOpensDuringAsset": 3
+    },
+    {
+      "name": "hevc-4k-6s-original",
+      "source": "",
+      "preview": false,
+      "codecLabel": "hevc",
+      "byteShapedObjectSize": 11290579,
+      "medianRangeBytes": 1048576,
+      "medianDiagnosticElapsedMs": 20.605,
+      "posterOpensDuringAsset": 3
+    },
+    {
+      "name": "h264-4k-60s-original",
+      "source": "",
+      "preview": false,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 102035663,
+      "medianRangeBytes": 1048576,
+      "medianDiagnosticElapsedMs": 24.792,
+      "posterOpensDuringAsset": 3
+    },
+    {
+      "name": "hevc-4k-60s-original",
+      "source": "",
+      "preview": false,
+      "codecLabel": "hevc",
+      "byteShapedObjectSize": 112875577,
+      "medianRangeBytes": 1048576,
+      "medianDiagnosticElapsedMs": 22.812,
+      "posterOpensDuringAsset": 3
+    },
+    {
+      "name": "h264-4k-6s-480p",
+      "source": "h264-4k-6s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 155308,
+      "medianRangeBytes": 155308,
+      "medianDiagnosticElapsedMs": 22.455,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "h264-4k-6s-720p",
+      "source": "h264-4k-6s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 312647,
+      "medianRangeBytes": 312647,
+      "medianDiagnosticElapsedMs": 23.455,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "hevc-4k-6s-480p",
+      "source": "hevc-4k-6s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 153430,
+      "medianRangeBytes": 153430,
+      "medianDiagnosticElapsedMs": 24.781,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "hevc-4k-6s-720p",
+      "source": "hevc-4k-6s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 307554,
+      "medianRangeBytes": 307554,
+      "medianDiagnosticElapsedMs": 20.567,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "h264-4k-60s-480p",
+      "source": "h264-4k-60s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 155308,
+      "medianRangeBytes": 155308,
+      "medianDiagnosticElapsedMs": 28.472,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "h264-4k-60s-720p",
+      "source": "h264-4k-60s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 312485,
+      "medianRangeBytes": 312485,
+      "medianDiagnosticElapsedMs": 21.491,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "hevc-4k-60s-480p",
+      "source": "hevc-4k-60s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 153390,
+      "medianRangeBytes": 153390,
+      "medianDiagnosticElapsedMs": 21.613,
+      "posterOpensDuringAsset": 0
+    },
+    {
+      "name": "hevc-4k-60s-720p",
+      "source": "hevc-4k-60s-original",
+      "preview": true,
+      "codecLabel": "h264",
+      "byteShapedObjectSize": 307759,
+      "medianRangeBytes": 307759,
+      "medianDiagnosticElapsedMs": 20.016,
+      "posterOpensDuringAsset": 0
+    }
+  ],
+  "pairedSourceCandidate": [
+    {
+      "candidate": "h264-4k-6s-480p",
+      "original": "h264-4k-6s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 155308,
+      "signedRangeByteReduction": 6.752
+    },
+    {
+      "candidate": "h264-4k-6s-720p",
+      "original": "h264-4k-6s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 312647,
+      "signedRangeByteReduction": 3.354
+    },
+    {
+      "candidate": "hevc-4k-6s-480p",
+      "original": "hevc-4k-6s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 153430,
+      "signedRangeByteReduction": 6.834
+    },
+    {
+      "candidate": "hevc-4k-6s-720p",
+      "original": "hevc-4k-6s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 307554,
+      "signedRangeByteReduction": 3.409
+    },
+    {
+      "candidate": "h264-4k-60s-480p",
+      "original": "h264-4k-60s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 155308,
+      "signedRangeByteReduction": 6.752
+    },
+    {
+      "candidate": "h264-4k-60s-720p",
+      "original": "h264-4k-60s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 312485,
+      "signedRangeByteReduction": 3.356
+    },
+    {
+      "candidate": "hevc-4k-60s-480p",
+      "original": "hevc-4k-60s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 153390,
+      "signedRangeByteReduction": 6.836
+    },
+    {
+      "candidate": "hevc-4k-60s-720p",
+      "original": "hevc-4k-60s-original",
+      "originalRangeBytes": 1048576,
+      "candidateRangeBytes": 307759,
+      "signedRangeByteReduction": 3.407
+    }
+  ],
+  "metrics": {
+    "sourceOriginalOpenOnWarmPosters": 0,
+    "posterOpens": 12,
+    "signedRange206": 36,
+    "contextCancelledWithin160Ms": 6,
+    "activeAfter160ms": 0,
+    "cancelEmittedBodyBytes": [
+      32768,
+      32768,
+      32768,
+      32768,
+      32768,
+      32768
+    ],
+    "allStaticBudgetsPassed": true
+  },
+  "limitations": [
+    "No actual movie decoding, FFmpeg worker, keyframe seeking, HEVC playback or native browser first frame; these belong to prior 24-FFmpeg/84-Chromium fixture.",
+    "Server-only synthetic-size transport; Desktop Agent signed proxy and real hardware remain unmeasured.",
+    "Elapsed times are diagnostics, not user performance improvement or production SLA.",
+    "No new transcode cache or media endpoint added."
+  ]
+}
