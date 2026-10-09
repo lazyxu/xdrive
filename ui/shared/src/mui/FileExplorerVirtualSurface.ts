@@ -35,6 +35,7 @@ export function xDriveFileExplorerDetailsVirtualWindow({
   rowHeight,
   headerHeight,
   overscan,
+  minViewportHeight,
 }: {
   itemCount: number
   scrollTop: number
@@ -42,6 +43,8 @@ export function xDriveFileExplorerDetailsVirtualWindow({
   rowHeight: number
   headerHeight: number
   overscan: number
+  /** Keep desktop's default eight-row admission; Mobile may request a 300px floor. */
+  minViewportHeight?: number
 }): XDriveFileExplorerVirtualWindow {
   const count = nonNegativeInteger(itemCount)
   const row = positiveInteger(rowHeight, 1)
@@ -49,7 +52,10 @@ export function xDriveFileExplorerDetailsVirtualWindow({
   const extra = nonNegativeInteger(overscan)
   if (count === 0) return { start: 0, end: 0, before: 0, after: 0 }
 
-  const effectiveHeight = Math.max(nonNegativeInteger(viewportHeight), row * 8)
+  const effectiveHeight = Math.max(
+    nonNegativeInteger(viewportHeight),
+    minViewportHeight === undefined ? row * 8 : nonNegativeInteger(minViewportHeight),
+  )
   const rawFirstVisible = Math.max(
     0,
     Math.floor(Math.max(0, scrollTop - header) / row),

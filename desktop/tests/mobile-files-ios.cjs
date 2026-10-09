@@ -14,8 +14,18 @@ const transpiled = ts.transpileModule(fs.readFileSync(stateFile, 'utf8'), {
   fileName: stateFile,
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
+const virtualSource = path.join(root, 'ui/shared/src/mui/FileExplorerVirtualSurface.ts')
+const virtualCompiled = ts.transpileModule(fs.readFileSync(virtualSource, 'utf8'), {
+  fileName: virtualSource,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const virtualPkg = { exports: {} }
+new Function('module', 'exports', virtualCompiled)(virtualPkg, virtualPkg.exports)
 const pkg = { exports: {} }
-new Function('module', 'exports', transpiled)(pkg, pkg.exports)
+new Function('module', 'exports', 'require', transpiled)(pkg, pkg.exports, moduleName => {
+  assert.equal(moduleName, '../../ui/shared/src/mui/FileExplorerVirtualSurface')
+  return virtualPkg.exports
+})
 const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved } = pkg.exports
 
 test('Mobile Files centralizes Apple-reference blue and document palette across views', () => {
@@ -65,6 +75,23 @@ test('10k/100k Mobile Files virtualizes only visible list/grid ranges', () => {
   }
   assert.deepEqual(mobileFilesWindow(0, 0, 650, 68),
     { start: 0, end: 0, before: 0, after: 0 })
+})
+
+test('10k/100k Mobile viewport delegates to the shared Desktop FileExplorer window kernel', () => {
+  const shared = virtualPkg.exports.xDriveFileExplorerDetailsVirtualWindow
+  for (const count of [0, 10_000, 100_000]) {
+    for (const rowHeight of [68, 150]) {
+      for (const height of [240, 390, 844]) {
+        const top = count * rowHeight * 0.8
+        assert.deepEqual(mobileFilesWindow(count, top, height, rowHeight), shared({
+          itemCount: count, scrollTop: top, viewportHeight: height,
+          rowHeight, headerHeight: 0, overscan: 5, minViewportHeight: 300,
+        }))
+      }
+    }
+  }
+  assert.match(read('web/src/mobileFilesState.ts'), /xDriveFileExplorerDetailsVirtualWindow\(\{/)
+  assert.match(read('ui/shared/src/mui/FileExplorerVirtualSurface.ts'), /minViewportHeight/)
 })
 
 test('hold threshold differentiates stationary menu, native scroll and drag', () => {
@@ -354,6 +381,36 @@ test('F-PARITY: AGENTS and canonical FileExplorer docs enforce wide Web / Mobile
   assert.match(canonical, /Every functional operation available in wide Web/)
   assert.match(canonical, /Only internal multi-tab UI/)
   assert.match(mobileSource, /path: entry\.subtitle, updatedAt: entry\.updatedAt/)
+})
+
+test('F-iOS27-02: target is explicitly iOS 27, while only internal file tabs are exempt', () => {
+  const agents = read('AGENTS.md')
+  const benchmark = read('docs/mobile-files-ios27.md')
+  assert.match(agents, /iOS 27 Files 1:1 reference contract/)
+  assert.match(agents, /52px global App Header/)
+  assert.match(benchmark, /iOS 27「文件」1:1/)
+  assert.match(benchmark, /Recents \/ Shared \/ Browse/)
+  assert.match(benchmark, /Only internal multiple file tabs/)
+  assert.match(benchmark, /shared MUI virtualization-window kernel/)
+  assert.match(mobileSource, /backdropFilter: 'blur\(18px\) saturate\(160%\)'/)
+  assert.match(mobileSource, /mb: 'max\(env\(safe-area-inset-bottom\), 6px\)'/)
+})
+
+test('F-PARITY-02: Mobile More, item menu, selection all reuse wide-Web undo, history and path-copy actions', () => {
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  const entrypoints = ['canUndo', 'onUndo', 'canRedo', 'onRedo',
+    'canHistoryBack', 'onHistoryBack', 'canHistoryForward',
+    'onHistoryForward', 'onCopyPaths']
+  for (const name of entrypoints) {
+    assert.ok(mobileSource.includes('props.' + name), 'missing Mobile action ' + name)
+    assert.ok(adapter.includes(name + '='), 'missing wide-Web adapter ' + name)
+  }
+  assert.match(mobileSource, /复制所选路径/)
+  assert.match(mobileSource, /data-mobile-files-copy-path/)
+  assert.match(mobileSource, /后退（浏览历史）/)
+  assert.match(mobileSource, /前进（浏览历史）/)
+  assert.match(mobileSource, /!props\.canUndo/)
+  assert.match(mobileSource, /!props\.canRedo/)
 })
 
 test('AGENTS continuation status contract is mandatory and distinguishes merged from planned', () => {

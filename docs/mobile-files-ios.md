@@ -1,4 +1,6 @@
-# Mobile Web Files · independent iOS-style presentation
+# Mobile Web Files · iOS 27 Files 1:1 target with shared xDrive architecture
+
+**2026-10-10 normative update:** The [iOS 27 Files 1:1 visual and interaction benchmark](mobile-files-ios27.md) now governs the Mobile Files presentation. Existing Q1–Q6 are historical functional/product constraints where compatible; the earlier iOS 26 blue icon visual reference is insufficient to claim iOS 27 pixel parity. Preserve full App Frame, independent 52px App Header, shared REST/controllers/virtualization and the sole Mobile internal-tab exception.
 
 Status: **Q1–Q6 implementation merged via [PR #1160](https://github.com/lazyxu/xdrive/pull/1160)** (full PR CI [#37935896054](https://github.com/lazyxu/xdrive/actions/runs/37935896054) passed). **Grouped visual labels and Q2 resume semantics are covered by the current follow-up correction; physical-device acceptance remains pending.**
 Decision date: 2026-10-09. The six user-approved choices are normative.
@@ -102,4 +104,6 @@ This document overrides older Mobile clauses in `docs/file-explorer.md` and the 
 - Closing the property inspector aborts stats work. The mounted React test covers the real shared stats hook and abort, plus count/source values. Native Safari interaction and a full server-backed end-to-end test remain outstanding.
 - Recent/Favorites properties pass their recorded path and timestamp through the same property projection, rather than substituting the directory currently open in Browse.
 - **Permanent product invariant:** wide Web and Mobile Web Files must have equal real end-user functionality, authorization, data state, errors/retries and cancellation. Only internal multi-tab UI and commands are exempt on Mobile; iOS-native chrome is solely a presentation difference. Maintain a paired feature matrix and tests for both layouts rather than counting menu visibility as implemented behavior.
-- Remaining parity steps include Web Undo/Redo, Copy Paths, saved-search editing, any additional browser-history shortcuts, and replacing Mobile's separate virtualization window helper with the shared window primitives. Multi-tab commands remain intentionally absent only on Mobile.
+- F-iOS27-02 adds wide-Web Undo/Redo, workspace Back/Forward and Copy Paths to reachable Mobile menus and delegates Mobile's 10k/100k virtual window to the same shared Details kernel, preserving Mobile's 300px admission floor. These are pending authoritative CI and must not be marked merged here.
+- Remaining parity includes saved-search editing/deletion/replacement, keyboard shortcuts, Multi-properties, Quick Look alternatives and true folder-inline list disclosure where an authoritative nested range API is available. Internal file tabs remain the only accepted permanent omission; missing behaviors are open bugs.
+
