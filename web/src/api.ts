@@ -287,6 +287,7 @@ function appendMediaGalleryQuery(
   }
   if (query.folder_id && Number.isSafeInteger(query.folder_id) && query.folder_id > 0) {
     values.set('folder_id', String(query.folder_id))
+    if (query.include_descendants) values.set('include_descendants', 'true')
   }
   if (query.captured_from) values.set('captured_from', query.captured_from)
   if (query.captured_to) values.set('captured_to', query.captured_to)

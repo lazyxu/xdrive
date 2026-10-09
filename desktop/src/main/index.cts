@@ -1380,6 +1380,11 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.folder_id = input.folder_id
   }
+  if (input.include_descendants !== undefined) {
+    if (typeof input.include_descendants !== 'boolean') throw new AgentIPCError('invalid_input', 0, 'Media include-descendants scope must be boolean.')
+    if (input.include_descendants && !out.folder_id) throw new AgentIPCError('invalid_input', 0, 'Media include-descendants scope requires a folder.')
+    out.include_descendants = input.include_descendants
+  }
   for (const key of ['captured_from', 'captured_to'] as const) {
     const raw = input[key]
     if (raw === undefined) continue
@@ -1447,6 +1452,12 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
   return out
 }
 
+
+function normalizeMediaGalleryQueryForAgent(hello: AgentHello, value: unknown): AgentMediaQuery {
+  const query = normalizeMediaGalleryQuery(value)
+  if (query.include_descendants) requireAgentCapability(hello, 'media-folder-recursive')
+  return query
+}
 
 function normalizeMediaRangeWindow(limit: unknown, offset: unknown) {
   const requestedLimit = limit === undefined ? 200 : limit
@@ -1989,7 +2000,7 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
     }
-    const mediaQuery = normalizeMediaGalleryQuery(query)
+    const mediaQuery = normalizeMediaGalleryQueryForAgent(hello, query)
     if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
       requireAgentCapability(hello, 'media-timezone')
     }
@@ -2019,7 +2030,7 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
       }
       const window = normalizeMediaRangeWindow(limit, offset)
-      const mediaQuery = normalizeMediaGalleryQuery(query)
+      const mediaQuery = normalizeMediaGalleryQueryForAgent(hello, query)
       if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
         requireAgentCapability(hello, 'media-timezone')
       }
@@ -2053,7 +2064,7 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media album id is invalid.')
     }
-    const mediaQuery = normalizeMediaGalleryQuery(query)
+    const mediaQuery = normalizeMediaGalleryQueryForAgent(hello, query)
     if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
       requireAgentCapability(hello, 'media-timezone')
     }
@@ -2518,7 +2529,7 @@ function registerIPCHandlers() {
         personID.trim(),
         requestedLimit,
         requestedOffset,
-        normalizeMediaGalleryQuery(query),
+        normalizeMediaGalleryQueryForAgent(hello, query),
       )
     }, false),
   )
@@ -2546,7 +2557,7 @@ function registerIPCHandlers() {
         personID.trim(),
         window.limit,
         window.offset,
-        normalizeMediaGalleryQuery(query),
+        normalizeMediaGalleryQueryForAgent(hello, query),
       )
     }, false),
   )
@@ -2603,7 +2614,7 @@ function registerIPCHandlers() {
         personID.trim(),
         limit,
         offset,
-        normalizeMediaGalleryQuery(query),
+        normalizeMediaGalleryQueryForAgent(hello, query),
       )
     }, false),
   )
@@ -2631,7 +2642,7 @@ function registerIPCHandlers() {
         personID.trim(),
         window.limit,
         window.offset,
-        normalizeMediaGalleryQuery(query),
+        normalizeMediaGalleryQueryForAgent(hello, query),
       )
     }, false),
   )
@@ -2870,7 +2881,7 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().createSmartMediaAlbum(
       name.trim(),
-      normalizeMediaGalleryQuery(query),
+      normalizeMediaGalleryQueryForAgent(hello, query),
     )
   }, false))
 
@@ -2897,7 +2908,7 @@ function registerIPCHandlers() {
       }
       const query = value.query === undefined
         ? undefined
-        : normalizeMediaGalleryQuery(value.query)
+        : normalizeMediaGalleryQueryForAgent(hello, value.query)
       if (name === undefined && query === undefined) {
         throw new AgentIPCError('invalid_input', 0, 'Smart album name or query is required.')
       }
@@ -2982,7 +2993,7 @@ function registerIPCHandlers() {
       albumID,
       requestedLimit,
       requestedOffset,
-      normalizeMediaGalleryQuery(query),
+      normalizeMediaGalleryQueryForAgent(hello, query),
     )
   }, false))
 
@@ -3006,7 +3017,7 @@ function registerIPCHandlers() {
       albumID,
       window.limit,
       window.offset,
-      normalizeMediaGalleryQuery(query),
+      normalizeMediaGalleryQueryForAgent(hello, query),
     )
   }, false))
 

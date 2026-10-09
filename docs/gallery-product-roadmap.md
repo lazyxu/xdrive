@@ -1209,3 +1209,11 @@ Go client → Server, without thumbnail, preview, original read or indexer work.
 recorded SourceItem paths remain distinct from current xDrive ancestry.
 Older Agents explicitly report the missing capability. This work is stacked
 on G06 Web phase 2a and requires its own complete PR CI before merge.
+
+### G06 phase 2c — explicit current folder vs descendants (candidate, 2026-10-09)
+
+- **Direct-only is the compatibility default.** Gallery synchronization-folder browsing presents a "包含子目录" toggle with a visible "仅当前目录"/"包含子目录" scope label; the selected Server query is propagated across search, sort, timezone, facets, counts, virtual pages and Viewer target.
+- Recursive filtering uses an **owner-scoped PostgreSQL recursive CTE** constrained to live directory Nodes, with cycle prevention and a depth limit. It does not hydrate all folder media IDs in Web, Desktop or Go.
+- `folder_id` and `include_descendants=true` travel together from shared MUI `MediaGalleryQuery` through Web HTTP or Desktop Agent/Main/Go client to the same query builder. Recursive requests without a folder ID are rejected. Older Desktop Agents without `media-folder-recursive` fail visibly rather than silently reducing scope.
+- Exact PostgreSQL fixture expectations: current folder `child.jpg`; recursive child `child.jpg` and `grand.mov`; recursive source `root.jpg`, `child.jpg`, `grand.mov`; another owner cannot enumerate the source. Facet values and regular counts must match the visible range. Go Client serialization and React/UI source contracts are separately tested.
+- This is an **unmerged candidate** stacked after G06 Phase 2b. Physical iOS/Android/Desktop interaction, the full CI run, PostgreSQL 10k/100k recursive-folder benchmark, and scope-preserving Viewer return behavior require separate acceptance evidence. G06 is not yet signed off.

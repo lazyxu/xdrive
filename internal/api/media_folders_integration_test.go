@@ -25,6 +25,11 @@ func TestGallerySyncFolderBrowserUsesLocalNodeTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	baseSQL, err := baseDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseSQL.Close()
 	schema := "media_folder_browser_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := baseDB.Exec(fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)).Error; err != nil {
 		t.Fatal(err)
@@ -42,6 +47,12 @@ func TestGallerySyncFolderBrowserUsesLocalNodeTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dbSQL, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dbSQL.Close()
+	dbSQL.SetMaxOpenConns(2)
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{},
 		&meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.PhotoMetadata{},
@@ -266,6 +277,52 @@ func TestGallerySyncFolderBrowserUsesLocalNodeTree(t *testing.T) {
 	sort.Slice(gotIDs, func(i, j int) bool { return gotIDs[i] < gotIDs[j] })
 	if fmt.Sprint(gotIDs) != fmt.Sprint([]uint64{files[1].ID}) {
 		t.Fatalf("folder scoped media=%v want=%v", gotIDs, []uint64{files[1].ID})
+	}
+
+	// Direct-only remains the default, while recursive scope is computed by
+	// the Server from its owner-scoped live directory tree, not client-loaded media.
+	for _, tc := range []struct {
+		name      string
+		ownerID   uint64
+		folderID  uint64
+		recursive bool
+		expected  []uint64
+	}{
+		{name: "direct child", ownerID: owner.ID, folderID: childA.ID, expected: []uint64{files[1].ID}},
+		{name: "descendants of child", ownerID: owner.ID, folderID: childA.ID, recursive: true, expected: []uint64{files[1].ID, files[2].ID}},
+		{name: "descendants of source root", ownerID: owner.ID, folderID: syncRoot.ID, recursive: true, expected: []uint64{files[0].ID, files[1].ID, files[2].ID}},
+		{name: "outside subtree", ownerID: owner.ID, folderID: outside.ID, recursive: true, expected: []uint64{files[3].ID}},
+		{name: "other owner cannot scope source", ownerID: other.ID, folderID: syncRoot.ID, recursive: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id := tc.folderID
+			scoped, err := server.mediaItemsBaseQuery(context.Background(), tc.ownerID,
+				mediaQueryOptions{FolderID: &id, IncludeDescendants: tc.recursive}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var matches []nodeRow
+			if err := scoped.Select("n.id AS id").Order("n.id ASC").Scan(&matches).Error; err != nil {
+				t.Fatal(err)
+			}
+			actual := make([]uint64, 0, len(matches))
+			for _, row := range matches {
+				actual = append(actual, row.ID)
+			}
+			if fmt.Sprint(actual) != fmt.Sprint(tc.expected) && !(len(actual) == 0 && len(tc.expected) == 0) {
+				t.Fatalf("scope=%s actual=%v expected=%v", tc.name, actual, tc.expected)
+			}
+		})
+	}
+
+	recursiveID := syncRoot.ID
+	recursiveFacets, err := server.queryMediaGalleryFacets(context.Background(),
+		owner.ID, mediaQueryOptions{FolderID: &recursiveID, IncludeDescendants: true}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recursiveFacets.Formats) != 2 || len(recursiveFacets.Cameras) != 2 {
+		t.Fatalf("recursive scoped facets should include all descendants: %+v", recursiveFacets)
 	}
 
 	facets, err := server.queryMediaGalleryFacets(

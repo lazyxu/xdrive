@@ -41,6 +41,7 @@ const agent = Object.freeze({
     asset_kind?: string
     category?: string
     folder_id?: number
+    include_descendants?: boolean
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -64,6 +65,7 @@ const agent = Object.freeze({
     asset_kind?: string
     category?: string
     folder_id?: number
+    include_descendants?: boolean
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -87,6 +89,7 @@ const agent = Object.freeze({
       cameras?: string[]
       formats?: string[]
       folder_id?: number
+    include_descendants?: boolean
       captured_from?: string
       captured_to?: string
       has_location?: boolean

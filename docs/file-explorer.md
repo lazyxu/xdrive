@@ -681,3 +681,6 @@ and returned breadcrumbs, never historical connector path guesses.
 Real Desktop Agent, native-device, short-screen and direct/recursive scope
 acceptance are not implied by TypeScript/Go source contracts.
 
+### G06 directory scoping in Gallery (candidate, 2026-10-09)
+
+FileExplorer "显示所在位置" continues to open the current owner-authorized **parent Node ID**, not a stale original synchronization path. When opening the same synchronization folder in Gallery, the default media scope covers files **directly within the current directory**. "包含子目录" explicitly enables the owner-scoped recursive Server query and composes with ordinary filters/sort. Folder breadcrumbs still identify the current directory; the scope switch never silently changes the tree root. Counts, facets and result ranges must agree. Desktop Agent advertises `media-folder-recursive`; clients missing it receive an explicit capability error. Tests: `TestGallerySyncFolderBrowserUsesLocalNodeTree`, `TestMediaQueryDescendantScopeValidation`, `TestMediaQueryDescendantsAreOptInAndParentBound` and the shared Desktop source contract. PR CI and physical-device QA pending.

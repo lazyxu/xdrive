@@ -103,6 +103,7 @@ var desktopIPCCapabilities = []string{
 	"server-update",
 	"media-gallery",
 	"media-index-status",
+	"media-folder-recursive",
 	"media-duplicate-organize-plan",
 	"media-album-folders",
 	"external-sources",
@@ -4392,6 +4393,18 @@ func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQ
 			return client.MediaQuery{}, false
 		}
 		out.FolderID = value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_descendants")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folder", "include_descendants must be true or false")
+			return client.MediaQuery{}, false
+		}
+		out.IncludeDescendants = value
+	}
+	if out.IncludeDescendants && out.FolderID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folder", "include_descendants requires folder_id")
+		return client.MediaQuery{}, false
 	}
 	if out.CapturedFrom, ok = desktopIPCMediaTime(w, r, "captured_from"); !ok {
 		return client.MediaQuery{}, false

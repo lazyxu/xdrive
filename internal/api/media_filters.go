@@ -22,29 +22,30 @@ const (
 )
 
 type mediaQueryOptions struct {
-	TimeZone       string
-	AnchorNodeID   uint64
-	FoldDuplicates bool
-	FoldMemberIDs  []uint64
-	foldIndex      *mediaVerifiedFoldIndex
-	SortBy         string
-	SortDir        string
-	MediaKind      string
-	Search         string
-	AssetKind      string
-	Category       string
-	FolderID       *uint64
-	CapturedFrom   *time.Time
-	CapturedTo     *time.Time
-	HasLocation    *bool
-	Favorite       *bool
-	Tag            string
-	Person         string
-	Cameras        []string
-	Formats        []string
-	Place          *mediaPlaceCell
-	PersonCluster  string
-	PersonIdentity string
+	TimeZone           string
+	AnchorNodeID       uint64
+	FoldDuplicates     bool
+	FoldMemberIDs      []uint64
+	foldIndex          *mediaVerifiedFoldIndex
+	SortBy             string
+	SortDir            string
+	MediaKind          string
+	Search             string
+	AssetKind          string
+	Category           string
+	FolderID           *uint64
+	IncludeDescendants bool
+	CapturedFrom       *time.Time
+	CapturedTo         *time.Time
+	HasLocation        *bool
+	Favorite           *bool
+	Tag                string
+	Person             string
+	Cameras            []string
+	Formats            []string
+	Place              *mediaPlaceCell
+	PersonCluster      string
+	PersonIdentity     string
 }
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
@@ -127,6 +128,18 @@ func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 			return mediaQueryOptions{}, false
 		}
 		out.FolderID = &value
+	}
+	if raw := strings.TrimSpace(c.Query("include_descendants")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "include_descendants must be true or false")
+			return mediaQueryOptions{}, false
+		}
+		out.IncludeDescendants = value
+	}
+	if out.IncludeDescendants && out.FolderID == nil {
+		fail(c, http.StatusBadRequest, "include_descendants requires folder_id")
+		return mediaQueryOptions{}, false
 	}
 	out.Cameras, err = normalizeMediaFacetValues("camera", c.QueryArray("camera"))
 	if err != nil {
@@ -306,7 +319,7 @@ func applyMediaSearchFilter(query *gorm.DB, search string) *gorm.DB {
 	)
 }
 
-func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB {
+func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID uint64) *gorm.DB {
 	if len(options.FoldMemberIDs) != 0 {
 		query = query.Where("n.id IN ?", options.FoldMemberIDs)
 	}
@@ -317,7 +330,25 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions) *gorm.DB 
 		query = query.Where("pa.kind = ?", options.AssetKind)
 	}
 	if options.FolderID != nil {
-		query = query.Where("n.parent_id = ?", *options.FolderID)
+		if options.IncludeDescendants {
+			// Postgres resolves the owner-scoped folder tree once, without
+			// materializing media bytes or generating an unbounded ID placeholder list.
+			query = query.Where(`n.parent_id IN (
+				WITH RECURSIVE folder_scope(id, depth, visited) AS (
+					SELECT seed.id, 0, ARRAY[seed.id]::bigint[]
+					FROM xd_nodes AS seed
+					WHERE seed.id = ? AND seed.owner_id = ? AND seed.type = ? AND seed.deleted_at IS NULL
+					UNION ALL
+					SELECT child.id, parent_scope.depth + 1, parent_scope.visited || child.id
+					FROM xd_nodes AS child
+					JOIN folder_scope AS parent_scope ON child.parent_id = parent_scope.id
+					WHERE child.owner_id = ? AND child.type = ? AND child.deleted_at IS NULL
+					AND parent_scope.depth < 256 AND NOT (child.id = ANY(parent_scope.visited))
+				) SELECT id FROM folder_scope
+			)`, *options.FolderID, ownerID, meta.NodeTypeDir, ownerID, meta.NodeTypeDir)
+		} else {
+			query = query.Where("n.parent_id = ?", *options.FolderID)
+		}
 	}
 	switch options.Category {
 	case "gif":

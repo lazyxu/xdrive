@@ -455,27 +455,28 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
-	TimeZone       string
-	AnchorNodeID   uint64
-	FoldDuplicates bool
-	FoldMemberIDs  []uint64
-	SortBy         string
-	SortDir        string
-	MediaKind      string
-	Search         string
-	AssetKind      string
-	Category       string
-	Cameras        []string
-	Formats        []string
-	FolderID       uint64
-	CapturedFrom   *time.Time
-	CapturedTo     *time.Time
-	HasLocation    *bool
-	Favorite       *bool
-	Tag            string
-	Person         string
-	PersonIdentity string
-	Place          string
+	TimeZone           string
+	AnchorNodeID       uint64
+	FoldDuplicates     bool
+	FoldMemberIDs      []uint64
+	SortBy             string
+	SortDir            string
+	MediaKind          string
+	Search             string
+	AssetKind          string
+	Category           string
+	Cameras            []string
+	Formats            []string
+	FolderID           uint64
+	IncludeDescendants bool
+	CapturedFrom       *time.Time
+	CapturedTo         *time.Time
+	HasLocation        *bool
+	Favorite           *bool
+	Tag                string
+	Person             string
+	PersonIdentity     string
+	Place              string
 }
 
 func (q MediaQuery) add(values url.Values) {
@@ -523,6 +524,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if q.FolderID > 0 {
 		values.Set("folder_id", strconv.FormatUint(q.FolderID, 10))
+	}
+	if q.FolderID > 0 && q.IncludeDescendants {
+		values.Set("include_descendants", "true")
 	}
 	if q.CapturedFrom != nil {
 		values.Set("captured_from", q.CapturedFrom.UTC().Format(time.RFC3339))

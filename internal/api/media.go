@@ -559,7 +559,7 @@ func (s *Server) mediaItemsBaseQuery(
 			uid,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		)
-	query = applyMediaQueryFilters(query, options)
+	query = applyMediaQueryFilters(query, options, uid)
 
 	if albumKey == "" {
 		return s.applyVerifiedMediaFolding(ctx, query, options), nil
@@ -583,7 +583,7 @@ func (s *Server) mediaItemsBaseQuery(
 		if err != nil {
 			return nil, err
 		}
-		return s.applyVerifiedMediaFolding(ctx, applyMediaQueryFilters(query, saved.options()), options), nil
+		return s.applyVerifiedMediaFolding(ctx, applyMediaQueryFilters(query, saved.options(), uid), options), nil
 	}
 
 	membership := s.DB.WithContext(ctx).

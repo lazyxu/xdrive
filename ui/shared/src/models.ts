@@ -654,6 +654,7 @@ export interface MediaGalleryQuery {
   cameras?: string[]
   formats?: string[]
   folder_id?: number
+  include_descendants?: boolean
   captured_from?: string
   captured_to?: string
   has_location?: boolean
