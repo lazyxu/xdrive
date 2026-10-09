@@ -775,6 +775,7 @@ export type AgentMediaTimelineGroupSets = {
 }
 
 export type AgentMediaItemRange = {
+  anchor_index?: number
   items: AgentMediaItem[]
   total_count: number
   offset: number
@@ -784,6 +785,7 @@ export type AgentMediaItemRange = {
 }
 
 export type AgentMediaQuery = {
+  anchor_node_id?: number
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'
   search?: string
@@ -806,6 +808,9 @@ function appendAgentMediaQuery(
   query: URLSearchParams,
   filters: AgentMediaQuery = {},
 ) {
+  if (Number.isSafeInteger(filters.anchor_node_id) && (filters.anchor_node_id ?? 0) > 0) {
+    query.set('anchor_node_id', String(filters.anchor_node_id))
+  }
   if (filters.sort_by) query.set('sort_by', filters.sort_by)
   if (filters.sort_dir) query.set('sort_dir', filters.sort_dir)
   if (filters.search?.trim()) query.set('q', filters.search.trim())

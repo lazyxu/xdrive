@@ -172,6 +172,7 @@ type MediaTimelineGroupSets struct {
 }
 
 type MediaItemRange struct {
+	AnchorIndex       *int64                    `json:"anchor_index,omitempty"`
 	Items             []MediaItem               `json:"items"`
 	TotalCount        int64                     `json:"total_count"`
 	Offset            int                       `json:"offset"`
@@ -368,6 +369,7 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
+	AnchorNodeID   uint64
 	SortBy         string
 	SortDir        string
 	MediaKind      string
@@ -388,6 +390,9 @@ type MediaQuery struct {
 }
 
 func (q MediaQuery) add(values url.Values) {
+	if q.AnchorNodeID > 0 {
+		values.Set("anchor_node_id", strconv.FormatUint(q.AnchorNodeID, 10))
+	}
 	if value := strings.TrimSpace(q.SortBy); value != "" {
 		values.Set("sort_by", value)
 	}

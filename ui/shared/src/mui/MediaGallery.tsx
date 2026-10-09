@@ -484,6 +484,9 @@ export function XDriveMediaGalleryPage({
     }
   })
   const gallerySortRef = useRef(gallerySort)
+  const pendingSortAnchorRef = useRef(0)
+  const [sortAnchorRestoration, setSortAnchorRestoration] =
+    useState<{ index: number; requestID: number } | null>(null)
   useEffect(() => {
     try { window.localStorage.setItem('xdrive.gallery.sort.v1', JSON.stringify(gallerySort)) } catch {
       // Browsing works without persisted preferences.
@@ -640,6 +643,9 @@ export function XDriveMediaGalleryPage({
     pet: MediaPetFacet | null = null,
   ) => {
     const request = ++requestID.current
+    const anchorNodeID = pendingSortAnchorRef.current
+    pendingSortAnchorRef.current = 0
+    setSortAnchorRestoration(null)
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
       ? { kind: 'trash', query: {}, requestID: request }
       : cleanupReview
@@ -662,6 +668,7 @@ export function XDriveMediaGalleryPage({
             ...nextQuery,
             sort_by: gallerySortRef.current.by,
             sort_dir: gallerySortRef.current.dir,
+            ...(anchorNodeID > 0 ? { anchor_node_id: anchorNodeID } : {}),
           },
           suggestedPerson,
           person,
@@ -704,6 +711,9 @@ export function XDriveMediaGalleryPage({
         setCurrentCleanupReview(null)
         setItems([...range.items])
         setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
+        setSortAnchorRestoration(typeof range.anchor_index === 'number'
+          ? { index: range.anchor_index, requestID: request }
+          : null)
         virtualCollection.primePage({
           items: range.items,
           totalCount: range.total_count,
@@ -758,6 +768,9 @@ export function XDriveMediaGalleryPage({
       )
       setItems([...range.items])
       setTimelineGroupSets(mediaTimelineGroupSetsFromRange(range))
+      setSortAnchorRestoration(typeof range.anchor_index === 'number'
+        ? { index: range.anchor_index, requestID: request }
+        : null)
       virtualCollection.primePage({
         items: range.items,
         totalCount: range.total_count,
@@ -1032,9 +1045,16 @@ export function XDriveMediaGalleryPage({
     source,
   ])
 
-  const changeGallerySort = useCallback((by: 'captured' | 'added', dir: 'asc' | 'desc') => {
+  const changeGallerySort = useCallback((
+    by: 'captured' | 'added',
+    dir: 'asc' | 'desc',
+    anchorNodeID?: number,
+  ) => {
     if (gallerySortRef.current.by === by && gallerySortRef.current.dir === dir) return
     const next = { by, dir }
+    pendingSortAnchorRef.current = Number.isSafeInteger(anchorNodeID) && (anchorNodeID ?? 0) > 0
+      ? anchorNodeID!
+      : 0
     gallerySortRef.current = next
     setGallerySort(next)
     // A new server range order owns a new sparse-collection generation.
@@ -1818,6 +1838,8 @@ export function XDriveMediaGalleryPage({
         sortBy={gallerySort.by}
         sortDir={gallerySort.dir}
         onSortChange={changeGallerySort}
+        sortAnchorIndex={sortAnchorRestoration?.index}
+        sortAnchorRevision={sortAnchorRestoration?.requestID}
         filtersActive={hasMediaGalleryFilters(draftFilters)}
         onClearFilters={clearFilters}
         filters={(
@@ -1875,8 +1897,9 @@ export function XDriveMediaGalleryPage({
           const target = collectionTargetRef.current
           if (!target) return
           const { requestID: _requestID, ...serializableTarget } = target
+          const { anchor_node_id: _anchor, ...viewerQuery } = serializableTarget.query
           onOpenViewer(item, {
-            target: serializableTarget,
+            target: { ...serializableTarget, query: viewerQuery },
             activeIndex,
             totalCount: galleryVirtualCollection.itemCount,
           })
@@ -2110,7 +2133,13 @@ export interface XDriveMediaGalleryProps {
   searchActive?: boolean
   sortBy?: 'captured' | 'added'
   sortDir?: 'asc' | 'desc'
-  onSortChange?: (by: 'captured' | 'added', dir: 'asc' | 'desc') => void
+  onSortChange?: (
+    by: 'captured' | 'added',
+    dir: 'asc' | 'desc',
+    anchorNodeID?: number,
+  ) => void
+  sortAnchorIndex?: number
+  sortAnchorRevision?: number
   filtersActive?: boolean
   onClearFilters?: () => void
   filters?: ReactNode
@@ -3409,6 +3438,8 @@ export function XDriveMediaGallery({
   sortBy = 'captured',
   sortDir = 'desc',
   onSortChange,
+  sortAnchorIndex,
+  sortAnchorRevision = 0,
   filtersActive = false,
   onClearFilters,
   filters,
@@ -3507,6 +3538,15 @@ export function XDriveMediaGallery({
     xDriveWriteMediaGalleryViewPreferences(viewPreferences)
   }, [viewPreferences])
 
+  // The existing virtual Grid/Timeline anchor restoration supports an external
+  // logical index; only a new sort generation should apply it.
+  useEffect(() => {
+    if (sortAnchorRevision <= 0 || sortAnchorIndex === undefined ||
+        !Number.isSafeInteger(sortAnchorIndex) || sortAnchorIndex < 0) return
+    viewAnchorIndexRef.current = sortAnchorIndex
+    setViewAnchorRevision((value) => value + 1)
+  }, [sortAnchorIndex, sortAnchorRevision])
+
   const [showHiddenPeople, setShowHiddenPeople] = useState(false)
   const [showDismissedSuggestions, setShowDismissedSuggestions] = useState(false)
   const [suggestionReviewBusyID, setSuggestionReviewBusyID] =
@@ -3599,6 +3639,12 @@ export function XDriveMediaGallery({
       viewAnchorIndexRef.current = Math.max(0, Math.trunc(index))
     }
   }, [])
+
+  const requestGallerySort = useCallback((by: 'captured' | 'added', dir: 'asc' | 'desc') => {
+    const index = viewAnchorIndexRef.current
+    const anchorNodeID = (virtualCollection?.itemAt(index) ?? items[index])?.node.id
+    onSortChange?.(by, dir, anchorNodeID)
+  }, [items, onSortChange, virtualCollection])
 
   const updateGalleryTimeScale = useCallback((nextScale: MediaGalleryTimeScale) => {
     if (nextScale === timeScale) return
@@ -4226,7 +4272,7 @@ export function XDriveMediaGallery({
                   size="small"
                   label="排序依据"
                   value={sortBy}
-                  onChange={(event) => onSortChange(event.target.value as 'captured' | 'added', sortDir)}
+                  onChange={(event) => requestGallerySort(event.target.value as 'captured' | 'added', sortDir)}
                   data-xdrive-gallery-sort-by
                   sx={{ minWidth: 112 }}
                 >
@@ -4238,7 +4284,7 @@ export function XDriveMediaGallery({
                   size="small"
                   label="排序方向"
                   value={sortDir}
-                  onChange={(event) => onSortChange(sortBy, event.target.value as 'asc' | 'desc')}
+                  onChange={(event) => requestGallerySort(sortBy, event.target.value as 'asc' | 'desc')}
                   data-xdrive-gallery-sort-dir
                   sx={{ minWidth: 100 }}
                 >

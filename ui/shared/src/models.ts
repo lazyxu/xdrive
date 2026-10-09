@@ -607,6 +607,7 @@ export interface MediaTimelineGroupSets {
 }
 
 export interface MediaItemRange {
+  anchor_index?: number
   items: MediaItem[]
   total_count: number
   offset: number
@@ -628,6 +629,7 @@ export interface MediaAlbum {
 }
 
 export interface MediaGalleryQuery {
+  anchor_node_id?: number
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'
   search?: string

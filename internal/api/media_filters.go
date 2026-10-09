@@ -22,6 +22,7 @@ const (
 )
 
 type mediaQueryOptions struct {
+	AnchorNodeID   uint64
 	SortBy         string
 	SortDir        string
 	MediaKind      string
@@ -44,6 +45,14 @@ type mediaQueryOptions struct {
 
 func mediaQueryFromRequest(c *gin.Context) (mediaQueryOptions, bool) {
 	var out mediaQueryOptions
+	if raw := strings.TrimSpace(c.Query("anchor_node_id")); raw != "" {
+		nodeID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || nodeID == 0 {
+			fail(c, http.StatusBadRequest, "anchor_node_id must be a positive integer")
+			return mediaQueryOptions{}, false
+		}
+		out.AnchorNodeID = nodeID
+	}
 	out.SortBy = strings.TrimSpace(c.Query("sort_by"))
 	if out.SortBy != "" && out.SortBy != "captured" && out.SortBy != "added" {
 		fail(c, http.StatusBadRequest, "sort_by must be captured or added")
