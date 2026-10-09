@@ -737,9 +737,43 @@ automated deletion. Subsequent transactional consolidation and safe undo
 need separate native PostgreSQL correctness gates including concurrent sync
 and reimport. This stage is not a full metadata merge.
 
+### G11 P4 phase 6 — CAS owner quota / Trash / global reference integrity (2026-10-09)
+
+**Test-only regression in progress, authoritative PostgreSQL CI pending.**
+Extend the native `TestGlobalContentDedupQuotaAndLastReferenceDeletion`
+through the actual HTTP upload, soft-delete, Trash permanent-delete and
+re-upload routes:
+
+- **Three identical original files for owner A plus one for owner B** share
+  exactly one globally content-addressed blob. Each owner's logical files
+  remain separately counted, and its **physical quota is unique per
+  storage key within that owner**, not the global `ref_count`.
+- After trashing one A copy, A's logical bytes move to Trash but physical
+  quota and global CAS references are unchanged. After permanently deleting
+  **two of A's three copies**, global CAS references fall from four to two,
+  but **A's physical used bytes remain one original-file size** because A
+  retains its keeper, and B's physical used bytes remain unchanged.
+- Only permanently deleting **A's last reference** frees the storage
+  quota of A; B's quota and the globally shared blob remain intact. A
+  subsequent identical upload uses a *new Node ID* and reacquires the
+  existing CAS object, and removing it again does not affect B. Only
+  removing B's final durable reference permits the physical object and
+  `ContentBlob` record to disappear.
+- The test must also validate real blob bytes, status and remaining reference
+  count throughout. This is a correctness gate for **existing deletion
+  behavior**, not a new duplicate clean-up or automatic merge API.
+
+**Crucial distinction:** this fixture tests a later **ordinary re-upload**,
+not a real remote-source `SourceItem` synchronization run. Source-cursor
+reimport and Backup/Mirror replay after delete still need dedicated,
+provider-scoped tests. The annotation-only P4 apply endpoint must continue
+to report **zero physical bytes reclaimed** and must not touch any Node,
+CAS ref, source link, Live/RAW resource or edit history. Do not enable
+destructive consolidation from this test alone.
+
 ### G11 P4 phase 5 — provenance-aware duplicate preservation (2026-10-09)
 
-**Pending authoritative CI.** Extend the already merged metadata-only
+**Merged as #1157 after complete GitHub CI.** Extend the already merged metadata-only
 preservation plan and the shared Web/Desktop review with a bounded, verified
 projection of existing **SourceItem → Source → PhotoResource(Node)** links.
 For every one of the selected 2–32 complete-asset-verified copies, report
