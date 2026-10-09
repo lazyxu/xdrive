@@ -80,6 +80,14 @@ func TestGlobalContentDedupQuotaAndLastReferenceDeletion(t *testing.T) {
 
 	aliceToken := createTestUser(t, db, router, "dedup-alice", "dedup-password-a")
 	bobToken := createTestUser(t, db, router, "dedup-bob", "dedup-password-b")
+	// Use a real finite account quota, so duplicate reference release must
+	// preserve not only physical used bytes but also remaining quota.
+	const accountQuota int64 = 1024
+	if err := db.Model(&meta.User{}).
+		Where("username IN ?", []string{"dedup-alice", "dedup-bob"}).
+		Update("quota_bytes", accountQuota).Error; err != nil {
+		t.Fatal(err)
+	}
 	var aliceUser meta.User
 	if err := db.Where("username = ?", "dedup-alice").First(&aliceUser).Error; err != nil {
 		t.Fatal(err)
@@ -113,13 +121,15 @@ func TestGlobalContentDedupQuotaAndLastReferenceDeletion(t *testing.T) {
 		t.Fatalf("repaired CAS content=%q err=%v", repairedBytes, err)
 	}
 
+	// Three independent references in one account share the one CAS object.
+	aliceThree := uploadTestFile(t, router, aliceToken, aliceRoot.ID, "a-three.bin", payload)
 	bobOne := uploadTestFile(t, router, bobToken, bobRoot.ID, "b-one.bin", payload)
 
 	var files []meta.File
-	if err := db.Where("node_id IN ?", []uint64{aliceOne.ID, aliceTwo.ID, bobOne.ID}).Order("node_id").Find(&files).Error; err != nil {
+	if err := db.Where("node_id IN ?", []uint64{aliceOne.ID, aliceTwo.ID, aliceThree.ID, bobOne.ID}).Order("node_id").Find(&files).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 3 {
+	if len(files) != 4 {
 		t.Fatalf("files=%+v", files)
 	}
 	key := files[0].StorageKey
@@ -136,41 +146,119 @@ func TestGlobalContentDedupQuotaAndLastReferenceDeletion(t *testing.T) {
 	if err := db.First(&blob, "storage_key = ?", key).Error; err != nil {
 		t.Fatal(err)
 	}
-	if blob.RefCount != 3 || blob.Size != int64(len(payload)) || blob.State != meta.ContentBlobStateReady {
+	if blob.RefCount != 4 || blob.Size != int64(len(payload)) || blob.State != meta.ContentBlobStateReady {
 		t.Fatalf("blob=%+v", blob)
 	}
 
 	aliceQuota := requestQuotaUsage(t, router, aliceToken)
-	if aliceQuota.LogicalFileBytes != 2*int64(len(payload)) || aliceQuota.PhysicalUsedBytes != int64(len(payload)) {
+	if aliceQuota.LogicalFileBytes != 3*int64(len(payload)) ||
+		aliceQuota.PhysicalUsedBytes != int64(len(payload)) ||
+		aliceQuota.QuotaBytes != accountQuota ||
+		aliceQuota.AvailableBytes != accountQuota-int64(len(payload)) {
 		t.Fatalf("alice quota=%+v", aliceQuota)
 	}
 	bobQuota := requestQuotaUsage(t, router, bobToken)
-	if bobQuota.LogicalFileBytes != int64(len(payload)) || bobQuota.PhysicalUsedBytes != int64(len(payload)) {
+	if bobQuota.LogicalFileBytes != int64(len(payload)) ||
+		bobQuota.PhysicalUsedBytes != int64(len(payload)) ||
+		bobQuota.QuotaBytes != accountQuota ||
+		bobQuota.AvailableBytes != accountQuota-int64(len(payload)) {
 		t.Fatalf("bob quota=%+v", bobQuota)
 	}
 
-	permanentlyDeleteTestNode(t, router, aliceToken, aliceOne)
-	if err := db.First(&blob, "storage_key = ?", key).Error; err != nil {
-		t.Fatal(err)
+	// Photo-dedup cleanup invariant: removing 2 of 3 same-owner copies
+	// decreases only the logical file byte count. The keeper still retains
+	// the original CAS object, and neither account's physical quota drops.
+	size := int64(len(payload))
+	assertUsage := func(token string, logical, trash, physical int64) {
+		t.Helper()
+		got := requestQuotaUsage(t, router, token)
+		if got.LogicalFileBytes != logical || got.TrashBytes != trash ||
+			got.PhysicalUsedBytes != physical || got.HistoryBytes != 0 ||
+			got.ReservedBytes != 0 || got.QuotaBytes != accountQuota ||
+			got.AvailableBytes != accountQuota-physical {
+			t.Fatalf(
+				"quota after duplicate cleanup: got=%+v want logical=%d trash=%d physical=%d remaining=%d",
+				got, logical, trash, physical, accountQuota-physical,
+			)
+		}
 	}
-	if blob.RefCount != 2 {
-		t.Fatalf("refcount after first delete=%d want=2", blob.RefCount)
+	assertBlobRef := func(want int64) {
+		t.Helper()
+		var current meta.ContentBlob
+		if err := db.Where("storage_key = ?", key).First(&current).Error; err != nil {
+			t.Fatal(err)
+		}
+		if current.RefCount != want || current.Size != size ||
+			current.State != meta.ContentBlobStateReady {
+			t.Fatalf("shared CAS blob refcount=%d want=%d blob=%+v",
+				current.RefCount, want, current)
+		}
+		readable, err := store.Open(context.Background(), key)
+		if err != nil {
+			t.Fatalf("prematurely deleted shared CAS: %v", err)
+		}
+		data, readErr := io.ReadAll(readable)
+		_ = readable.Close()
+		if readErr != nil || string(data) != payload {
+			t.Fatalf("shared CAS payload changed: size=%d err=%v", len(data), readErr)
+		}
 	}
-	if f, err := store.Open(context.Background(), key); err != nil {
-		t.Fatalf("shared blob deleted too early: %v", err)
-	} else {
-		_ = f.Close()
+
+	// Trash retains references; it is neither quota reclamation nor final GC.
+	requestWithHeaders(
+		t, router, http.MethodDelete, fmt.Sprintf("/api/v1/nodes/%d", aliceOne.ID),
+		aliceToken, nil, http.StatusNoContent,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", aliceOne.Revision)},
+	)
+	trashed, ok := quotaTrash(t, router, aliceToken)[aliceOne.ID]
+	if !ok {
+		t.Fatalf("first duplicate was not moved to Trash")
 	}
+	assertUsage(aliceToken, 2*size, size, size)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(4)
+	requestWithHeaders(
+		t, router, http.MethodDelete, fmt.Sprintf("/api/v1/trash/%d", aliceOne.ID),
+		aliceToken, nil, http.StatusNoContent,
+		map[string]string{"If-Match": fmt.Sprintf("\"%d\"", trashed.Revision)},
+	)
+	assertUsage(aliceToken, 2*size, 0, size)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(3)
 
 	permanentlyDeleteTestNode(t, router, aliceToken, aliceTwo)
-	if err := db.First(&blob, "storage_key = ?", key).Error; err != nil {
-		t.Fatal(err)
-	}
-	if blob.RefCount != 1 {
-		t.Fatalf("refcount after second delete=%d want=1", blob.RefCount)
-	}
+	assertUsage(aliceToken, size, 0, size)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(2)
 
+	// Only when Alice loses her final reference does Alice's physical quota
+	// decrease. Bob still owns a reference and the global CAS object survives.
+	permanentlyDeleteTestNode(t, router, aliceToken, aliceThree)
+	assertUsage(aliceToken, 0, 0, 0)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(1)
+
+	// A later upload of the exact bytes reuses the existing globally shared CAS,
+	// but remains a new, independent Node. This does not emulate source-sync
+	// reimport or authorize any automatic annotation merge.
+	reintroduced := uploadTestFile(
+		t, router, aliceToken, aliceRoot.ID, "a-later-import.bin", payload,
+	)
+	if reintroduced.ID == aliceOne.ID || reintroduced.ID == aliceTwo.ID ||
+		reintroduced.ID == aliceThree.ID {
+		t.Fatal("new import silently reused a deleted Node identity")
+	}
+	assertUsage(aliceToken, size, 0, size)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(2)
+	permanentlyDeleteTestNode(t, router, aliceToken, reintroduced)
+	assertUsage(aliceToken, 0, 0, 0)
+	assertUsage(bobToken, size, 0, size)
+	assertBlobRef(1)
+
+	// Only removal of Bob's final reference may delete the global blob.
 	permanentlyDeleteTestNode(t, router, bobToken, bobOne)
+	assertUsage(bobToken, 0, 0, 0)
 	if err := db.First(&meta.ContentBlob{}, "storage_key = ?", key).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("content blob row survived final delete: %v", err)
 	}
