@@ -1,0 +1,134 @@
+# GitHub Actions native PostgreSQL 17 Go pprof sampling
+# Run 37922007955, job 113791918307, measured head 7a8b9f1fef86766fa4c6097665d580a5a24b6475
+# Scope: full test process including seed; NOT per-ReconcileOwner exclusive
+
+## alloc_space
+File: api.test
+Build ID: 1ab21584bfb62439739f0785f28c45a28a86a982
+Type: alloc_space
+Time: 2026-10-09 11:15:52 UTC
+Showing nodes accounting for 10613MB, 98.33% of 10793.17MB total
+Dropped 338 nodes (cum <= 53.97MB)
+Showing top 30 nodes out of 68
+      flat  flat%   sum%        cum   cum%
+ 5990.51MB 55.50% 55.50%  5990.51MB 55.50%  reflect.growslice
+ 1720.23MB 15.94% 71.44%  1720.23MB 15.94%  reflect.New
+ 1058.95MB  9.81% 81.25%  7654.05MB 70.92%  github.com/lazyxu/xdrive/internal/photoasset.reconcileAssetsDB
+  294.73MB  2.73% 83.98%  3130.91MB 29.01%  github.com/lazyxu/xdrive/internal/photoasset.reconcileCollectionsDB
+  151.05MB  1.40% 85.38%   151.05MB  1.40%  github.com/jackc/pgx/v5/pgtype.Timestamptz.Value (inline)
+  145.83MB  1.35% 86.73%   216.18MB  2.00%  github.com/jackc/pgx/v5.(*ExtendedQueryBuilder).appendParam
+  138.45MB  1.28% 88.02%   190.86MB  1.77%  gorm.io/gorm/schema.GetIdentityFieldValuesMap
+  138.12MB  1.28% 89.30%   138.12MB  1.28%  github.com/jackc/pgx/v5/pgtype.scanPlanString.Scan
+  123.69MB  1.15% 90.44%   990.44MB  9.18%  github.com/lazyxu/xdrive/internal/photoasset.loadAndPruneStalePhotoAssets
+  122.83MB  1.14% 91.58%   260.94MB  2.42%  github.com/jackc/pgx/v5/stdlib.(*Rows).Next.func13
+  113.32MB  1.05% 92.63%   176.72MB  1.64%  gorm.io/gorm.(*Statement).AddVar
+   77.99MB  0.72% 93.35%    77.99MB  0.72%  strconv.formatBits
+   76.27MB  0.71% 94.06%  6066.78MB 56.21%  reflect.Value.extendSlice
+   71.12MB  0.66% 94.72%   107.41MB     1%  github.com/jackc/pgx/v5/pgproto3.(*Bind).Encode
+   66.01MB  0.61% 95.33%   409.14MB  3.79%  github.com/lazyxu/xdrive/internal/photoasset.loadGroups
+   63.70MB  0.59% 95.92%    63.70MB  0.59%  database/sql.driverArgsConnLocked
+   58.50MB  0.54% 96.46%    58.50MB  0.54%  github.com/jackc/pgx/v5/stdlib.(*Rows).Next.func9
+   58.29MB  0.54% 97.00%    58.29MB  0.54%  github.com/jackc/pgx/v5/internal/pgio.AppendUint64 (inline)
+   57.81MB  0.54% 97.54%    57.81MB  0.54%  reflect.packEface
+   44.78MB  0.41% 97.95%  1017.22MB  9.42%  github.com/lazyxu/xdrive/internal/photoasset.preloadPhotoAssetNodes
+   27.63MB  0.26% 98.21%   379.88MB  3.52%  github.com/jackc/pgx/v5/stdlib.(*Conn).QueryContext
+   12.05MB  0.11% 98.32%    70.35MB  0.65%  github.com/jackc/pgx/v5/pgtype.(*wrapUint64EncodePlan).Encode
+    0.41MB 0.0038% 98.32%   470.93MB  4.36%  github.com/jackc/pgx/v5/stdlib.(*Rows).Next
+    0.38MB 0.0035% 98.33%  8280.01MB 76.72%  gorm.io/gorm.Scan
+    0.11MB 0.001% 98.33%   177.05MB  1.64%  gorm.io/gorm/callbacks.BuildQuerySQL
+    0.11MB 0.001% 98.33%   443.73MB  4.11%  database/sql.(*DB).queryDC
+    0.06MB 0.00058% 98.33%   470.99MB  4.36%  database/sql.(*Rows).nextLocked
+    0.05MB 0.00043% 98.33%   147.35MB  1.37%  gorm.io/gorm/clause.Expr.Build
+    0.03MB 0.00029% 98.33%  9148.15MB 84.76%  gorm.io/gorm.(*processor).Execute
+    0.02MB 0.00014% 98.33%   498.35MB  4.62%  gorm.io/gorm/callbacks.preload
+
+## inuse_space
+File: api.test
+Build ID: 1ab21584bfb62439739f0785f28c45a28a86a982
+Type: inuse_space
+Time: 2026-10-09 11:15:52 UTC
+Showing nodes accounting for 305.39kB, 100% of 305.39kB total
+Showing top 30 nodes out of 66
+      flat  flat%   sum%        cum   cum%
+   64.88kB 21.24% 21.24%    64.88kB 21.24%  runtime.malg
+   43.58kB 14.27% 35.51%    43.58kB 14.27%  github.com/jackc/pgx/v5/pgtype.(*Map).RegisterDefaultPgType (inline)
+   32.84kB 10.75% 46.27%    32.84kB 10.75%  github.com/jackc/pgx/v5/pgtype.(*Map).buildReflectTypeToType (inline)
+   32.84kB 10.75% 57.02%    32.84kB 10.75%  golang.org/x/net/html.map.init.1
+   32.11kB 10.51% 67.54%    32.11kB 10.51%  regexp/syntax.(*parser).newRegexp (inline)
+   17.15kB  5.62% 73.15%    17.15kB  5.62%  runtime.allgadd
+   17.02kB  5.57% 78.73%    17.02kB  5.57%  runtime.allocm
+   16.44kB  5.38% 84.11%    16.44kB  5.38%  github.com/lazyxu/xdrive/internal/maintenance.map.init.0
+   16.25kB  5.32% 89.43%    16.25kB  5.32%  runtime.gcBgMarkWorker
+   16.25kB  5.32% 94.75%    16.25kB  5.32%  sync.(*Pool).pinSlow
+   16.02kB  5.25%   100%    16.02kB  5.25%  sync.OnceFunc (inline)
+         0     0%   100%    76.42kB 25.02%  database/sql.(*DB).Ping
+         0     0%   100%    76.42kB 25.02%  database/sql.(*DB).PingContext
+         0     0%   100%    76.42kB 25.02%  database/sql.(*DB).PingContext.func1
+         0     0%   100%    76.42kB 25.02%  database/sql.(*DB).conn
+         0     0%   100%    76.42kB 25.02%  database/sql.(*DB).retry
+         0     0%   100%    16.02kB  5.25%  github.com/gen2brain/avif.init
+         0     0%   100%    16.05kB  5.26%  github.com/go-playground/validator/v10.init
+         0     0%   100%    76.42kB 25.02%  github.com/jackc/pgx/v5.ConnectConfig
+         0     0%   100%    76.42kB 25.02%  github.com/jackc/pgx/v5.connect
+         0     0%   100%    76.42kB 25.02%  github.com/jackc/pgx/v5/pgtype.NewMap
+         0     0%   100%    76.42kB 25.02%  github.com/jackc/pgx/v5/pgtype.initDefaultMap
+         0     0%   100%    43.58kB 14.27%  github.com/jackc/pgx/v5/pgtype.registerDefaultPgTypeVariants[go.shape.[]github.com/jackc/pgx/v5/pgtype.Range[github.com/jackc/pgx/v5/pgtype.Float8]]
+         0     0%   100%    76.42kB 25.02%  github.com/jackc/pgx/v5/stdlib.connector.Connect
+         0     0%   100%    16.05kB  5.26%  github.com/jinzhu/inflection.compile
+         0     0%   100%    16.05kB  5.26%  github.com/jinzhu/inflection.init.0
+         0     0%   100%    92.67kB 30.35%  github.com/lazyxu/xdrive/internal/api.TestPhotoAssetOwnerReconcilePerformance100K
+         0     0%   100%    76.42kB 25.02%  github.com/lazyxu/xdrive/internal/api.fileExplorerMediaPerfDatabase
+         0     0%   100%    16.44kB  5.38%  github.com/lazyxu/xdrive/internal/maintenance.init
+         0     0%   100%    16.25kB  5.32%  github.com/lazyxu/xdrive/internal/photoasset.ReconcileOwner
+
+## cpu
+File: api.test
+Build ID: 1ab21584bfb62439739f0785f28c45a28a86a982
+Type: cpu
+Time: 2026-10-09 11:15:05 UTC
+Duration: 46.59s, Total samples = 16.23s (34.84%)
+Showing nodes accounting for 9.42s, 58.04% of 16.23s total
+Dropped 301 nodes (cum <= 0.08s)
+Showing top 30 nodes out of 215
+      flat  flat%   sum%        cum   cum%
+     1.30s  8.01%  8.01%      4.12s 25.39%  runtime.scanobject
+     0.94s  5.79% 13.80%      1.56s  9.61%  runtime.findObject
+     0.69s  4.25% 18.05%      0.69s  4.25%  runtime.memclrNoHeapPointers
+     0.68s  4.19% 22.24%      3.15s 19.41%  database/sql.convertAssignRows
+     0.48s  2.96% 25.20%      0.59s  3.64%  runtime.spanOf (inline)
+     0.46s  2.83% 28.03%      0.46s  2.83%  runtime.memmove
+     0.42s  2.59% 30.62%      5.32s 32.78%  gorm.io/gorm.(*DB).scanIntoStruct
+     0.31s  1.91% 32.53%      0.31s  1.91%  internal/runtime/maps.ctrlGroup.matchH2
+     0.31s  1.91% 34.44%      0.31s  1.91%  runtime.nextFreeFast (inline)
+     0.28s  1.73% 36.17%      0.28s  1.73%  internal/runtime/syscall.Syscall6
+     0.22s  1.36% 37.52%      0.27s  1.66%  runtime.(*gcBits).bitp (inline)
+     0.22s  1.36% 38.88%      0.26s  1.60%  runtime.typePointers.next
+     0.22s  1.36% 40.23%      0.22s  1.36%  runtime.typePointers.nextFast (inline)
+     0.20s  1.23% 41.47%      0.76s  4.68%  runtime.greyobject
+     0.20s  1.23% 42.70%      0.20s  1.23%  runtime.madvise
+     0.20s  1.23% 43.93%      3.27s 20.15%  runtime.mallocgc
+     0.20s  1.23% 45.16%      0.57s  3.51%  runtime.mallocgcTiny
+     0.19s  1.17% 46.33%      1.79s 11.03%  github.com/jackc/pgx/v5/stdlib.(*Rows).Next
+     0.19s  1.17% 47.50%      0.19s  1.17%  runtime.(*mspan).heapBitsSmallForAddr
+     0.19s  1.17% 48.68%      0.21s  1.29%  runtime.(*mspan).writeHeapBitsSmall
+     0.19s  1.17% 49.85%      0.19s  1.17%  runtime.duffcopy
+     0.18s  1.11% 50.96%      0.22s  1.36%  runtime.step
+     0.17s  1.05% 52.00%      0.19s  1.17%  reflect.Value.Elem
+     0.16s  0.99% 52.99%      0.16s  0.99%  strconv.ParseUint
+     0.15s  0.92% 53.91%      0.15s  0.92%  runtime.(*mspan).base (inline)
+     0.15s  0.92% 54.84%      0.15s  0.92%  runtime.arenaIndex (inline)
+     0.14s  0.86% 55.70%      0.14s  0.86%  runtime.getMCache (inline)
+     0.13s   0.8% 56.50%      0.20s  1.23%  reflect.packEface
+     0.13s   0.8% 57.30%      0.21s  1.29%  runtime.resolveTypeOff
+     0.12s  0.74% 58.04%      0.16s  0.99%  gorm.io/gorm/schema.(*Field).setupValuerAndSetter.func8
+with:
+  name: photoasset-owner-100k-profile
+  path: photoasset-profile/
+  if-no-files-found: warn
+  retention-days: 7
+  compression-level: 6
+  overwrite: false
+  include-hidden-files: false
+env:
+  XD_TEST_DATABASE_URL: ***localhost:5432/xdrive_test?sslmode=disable
+  XD_PHOTOASSET_OWNER_WRITE_DIAGNOSTIC: 1
