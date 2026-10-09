@@ -468,6 +468,7 @@ function mediaGalleryAdvancedFilterCount(draft: MediaGalleryFilterDraft) {
 
 export function XDriveMediaGalleryFilterToolbar({
   draft,
+  recentSearches = [],
   loading,
   applyLabel = '应用',
   clearLabel = '清除',
@@ -487,6 +488,7 @@ export function XDriveMediaGalleryFilterToolbar({
   onSaveSmart,
 }: {
   draft: MediaGalleryFilterDraft
+  recentSearches?: string[]
   loading: boolean
   applyLabel?: string
   clearLabel?: string
@@ -516,16 +518,34 @@ export function XDriveMediaGalleryFilterToolbar({
         alignItems="center"
         sx={{ minWidth: 0 }}
       >
-        <TextField
-          size="small"
+        <Autocomplete
+          freeSolo
           fullWidth
-          aria-label="搜索图库"
-          placeholder="搜索照片、对象、场景或文字"
-          value={draft.search}
-          onChange={(event) => onChange({ ...draft, search: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') onApply()
+          options={recentSearches.filter((text) => text !== draft.search)}
+          inputValue={draft.search}
+          onInputChange={(_event, value, reason) => {
+            if (reason === 'input' || reason === 'clear') {
+              onChange({ ...draft, search: value })
+            }
           }}
+          onChange={(_event, value) => {
+            if (typeof value === 'string') onChange({ ...draft, search: value })
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              size="small"
+              aria-label="搜索图库"
+              placeholder="搜索照片、对象、场景或文字"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') onApply()
+              }}
+              inputProps={{
+                ...params.inputProps,
+                'data-xdrive-gallery-recent-search': 'true',
+              }}
+            />
+          )}
           sx={{ maxWidth: 520 }}
         />
         <Button

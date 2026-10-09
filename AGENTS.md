@@ -89,6 +89,14 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G05 distinguish an editable filter/search draft from the last successfully
+  applied Server query. Active chips and counts must describe the applied query;
+  query changes invalidate the sparse range generation. The first image must
+  not await camera/format facets or an all-media index-status scan. Label
+  index coverage unknown until a separate, owner-scoped index readiness check
+  actually succeeds. Keep a per-account bounded recent-search history and
+  do not mix it across signed-in users or treat it as indexed suggestions.
+
 - G04 Gallery tile presentation may toggle square crop versus uncropped
   media within the same bounded, square virtual cell. Do not describe
   the latter as variable-height masonry or change VirtualGrid/Timeline
