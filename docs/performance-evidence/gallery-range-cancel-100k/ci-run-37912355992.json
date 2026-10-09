@@ -1,0 +1,62 @@
+{
+  "source": "ui/shared/src/mui/MediaGallery.tsx",
+  "run_id": 37912355992,
+  "job_id": 113760273012,
+  "measured_commit": "3bd7010a2f20382ad2f067a1dad9277da983d453",
+  "status": "reproduced-red-baseline",
+  "workload": "production-MediaGallery.loadVirtualRange-100k-logical",
+  "samples": [
+    {
+      "sample": 1,
+      "event": "viewport-scroll",
+      "logicalNamespaceItems": 100000,
+      "opened": 6,
+      "httpStillActiveAt160ms": 6,
+      "httpAbortedAt160ms": 0,
+      "bytesDeliveredAt160ms": 0,
+      "signalsReceived": 0,
+      "logicalSettledAt160ms": 0,
+      "finalHttpActive": 0,
+      "finalHttpCancelled": 0,
+      "finalDeliveredBytes": 49152,
+      "lastServerAbortMs": null
+    },
+    {
+      "sample": 2,
+      "event": "viewport-scroll",
+      "logicalNamespaceItems": 100000,
+      "opened": 6,
+      "httpStillActiveAt160ms": 6,
+      "httpAbortedAt160ms": 0,
+      "bytesDeliveredAt160ms": 0,
+      "signalsReceived": 0,
+      "logicalSettledAt160ms": 0,
+      "finalHttpActive": 0,
+      "finalHttpCancelled": 0,
+      "finalDeliveredBytes": 49152,
+      "lastServerAbortMs": null
+    },
+    {
+      "sample": 3,
+      "event": "view-unmount",
+      "logicalNamespaceItems": 100000,
+      "opened": 6,
+      "httpStillActiveAt160ms": 6,
+      "httpAbortedAt160ms": 0,
+      "bytesDeliveredAt160ms": 0,
+      "signalsReceived": 0,
+      "logicalSettledAt160ms": 0,
+      "finalHttpActive": 0,
+      "finalHttpCancelled": 0,
+      "finalDeliveredBytes": 49152,
+      "lastServerAbortMs": null
+    }
+  ],
+  "sample_count": 3,
+  "max_in_flight_requests": 6,
+  "server_delay_ms": 500,
+  "observed_after_ms": 160,
+  "bytes_per_response": 8192,
+  "errors": [],
+  "scope": "production Gallery hook loader extracted/transpiled + real localhost Node HTTP; NOT authenticated Web fetch, Electron Agent IPC, actual Go ctx.Done, full 100k network fanout or browser rendering"
+}

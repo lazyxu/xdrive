@@ -783,6 +783,34 @@ jobs:
       - name: Measure FileExplorer 100k sparse-range count cost
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  gallery-range-cancel-100k-performance:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/gallery-range-cancel-100k-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Gallery cancellation benchmark compiler
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure missing request-level abort in 100k Gallery virtual ranges
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          node scripts/gallery-range-request-cancel-performance.cjs
+          cat perf-results/gallery-range-cancel-100k-baseline.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-range-cancel-100k-baseline
+          path: desktop/perf-results/gallery-range-cancel-100k-baseline.json
+          if-no-files-found: warn
+          retention-days: 7
+
   file-explorer-viewport-cancel-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/viewport-cancel-request-baseline' || github.head_ref == 'perf/viewport-request-cancel-transport')
     runs-on: ubuntu-latest
