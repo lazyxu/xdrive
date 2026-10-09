@@ -76,6 +76,7 @@ type Props = {
   onCrumbClick: (index: number) => void
   onRestoreFolder: (id: number) => Promise<void>
   onOpenItem: (item: XDriveFileExplorerItem) => boolean | void | Promise<boolean | void>
+  onQuickLookItem?: (item: XDriveFileExplorerItem) => void
   onOpenError: (error: unknown) => void
   recentItems: SectionEntry[]
   favorites: SectionEntry[]
@@ -848,7 +849,7 @@ export default function MobileFiles(props: Props) {
   }
 
   const menuFor = (item: XDriveFileExplorerItem) =>
-    props.getItemMenuItems(item).filter(action => !['open-new-tab', 'open-browser-tab'].includes(action.id))
+    props.getItemMenuItems(item).filter(action => action.id !== 'open-new-tab')
   // The shared menu adapter already supplies genuine action icons and danger/
   // separator metadata. Preserve that semantic structure in Mobile Files.
   const mobileContextAction = (action: XDriveFileExplorerMenuItem) => (
@@ -980,6 +981,10 @@ export default function MobileFiles(props: Props) {
             event.preventDefault()
             const rect = event.currentTarget.getBoundingClientRect()
             setItemMenu({ item, x: rect.left + 14, y: rect.top + 28 })
+          } else if (event.key === ' ' && !selectionMode && !props.trashActive && props.onQuickLookItem) {
+            // Desktop Space uses Quick Look. Retain Enter/tap Open and explicit selection.
+            event.preventDefault()
+            props.onQuickLookItem(item)
           } else if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             onOpenEntry(item)
@@ -1650,6 +1655,16 @@ export default function MobileFiles(props: Props) {
           )) : null}
           {itemMenu && !props.trashActive ? (
             <Divider data-mobile-files-context-separator="edit" sx={{ my: 0.5 }}/>
+          ) : null}
+          {itemMenu && !props.trashActive && props.onQuickLookItem ? (
+            <MenuItem data-mobile-files-quick-look sx={{ minHeight: MIN_TOUCH }}
+              onClick={() => {
+                const item = itemMenu.item
+                setItemMenu(null)
+                props.onQuickLookItem?.(item)
+              }}>
+              <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>快速预览
+            </MenuItem>
           ) : null}
           {itemMenu && !props.trashActive ? <MenuItem onClick={() => beginRename(itemMenu.item)}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
