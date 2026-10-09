@@ -1,0 +1,180 @@
+{
+  "status": "rejected_threshold_not_met",
+  "timestamp_utc": "2026-10-09",
+  "repository": "lazyxu/xdrive",
+  "pull_request": 1186,
+  "benchmark_workflow_run": 37955358474,
+  "job_id": 113904370690,
+  "benchmark_workflow_url": "https://github.com/lazyxu/xdrive/actions/runs/37955358474/job/113904370690",
+  "measured_experiment_head": "e7306a28ffea1ca687107f69655eefc3ae9fd4cc",
+  "environment": "single ubuntu-latest GitHub Actions runner; native PostgreSQL 17-alpine; Go 1.25",
+  "methodology": "3 pairs, each arm 10k/100k fresh schema and same test; alternating before/after",
+  "acceptance_gate": {
+    "enqueue_100k_p50_max_ms": 3000,
+    "enqueue_100k_improvement_min_pct": 25,
+    "worker_100k_p50_max_ms": 60000,
+    "worker_regression_max_pct": 10,
+    "enqueue_10k_p50_max_ms": 750
+  },
+  "decisions": {
+    "candidate_1000_row_gorm": "rejected",
+    "candidate_2000_row_raw_sql": "rejected",
+    "reason": "100k enqueue p50 3134ms exceeds predeclared 3000ms absolute gate; worker control high variance; not production retained"
+  },
+  "medians": {
+    "enqueue_10k_before_ms": 408,
+    "enqueue_10k_candidate_ms": 326,
+    "worker_10k_before_ms": 3755,
+    "worker_10k_candidate_ms": 3794,
+    "enqueue_100k_before_ms": 5537,
+    "enqueue_100k_candidate_ms": 3134,
+    "worker_100k_before_ms": 163921,
+    "worker_100k_candidate_ms": 34886
+  },
+  "all_validated_run_rows": [
+    {
+      "arm": "before",
+      "sample": 1,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 952,
+      "enqueue_ms": 419,
+      "worker_ms": 3835,
+      "chunks": 100,
+      "heap_before_bytes": 2685512,
+      "heap_after_bytes": 2969176
+    },
+    {
+      "arm": "before",
+      "sample": 1,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9480,
+      "enqueue_ms": 5686,
+      "worker_ms": 45734,
+      "chunks": 1000,
+      "heap_before_bytes": 6548992,
+      "heap_after_bytes": 3042424
+    },
+    {
+      "arm": "after",
+      "sample": 1,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 950,
+      "enqueue_ms": 326,
+      "worker_ms": 3794,
+      "chunks": 100,
+      "heap_before_bytes": 2685768,
+      "heap_after_bytes": 2573888
+    },
+    {
+      "arm": "after",
+      "sample": 1,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9326,
+      "enqueue_ms": 3134,
+      "worker_ms": 34886,
+      "chunks": 1000,
+      "heap_before_bytes": 6649440,
+      "heap_after_bytes": 3070992
+    },
+    {
+      "arm": "after",
+      "sample": 2,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 937,
+      "enqueue_ms": 328,
+      "worker_ms": 3861,
+      "chunks": 100,
+      "heap_before_bytes": 2685200,
+      "heap_after_bytes": 3226944
+    },
+    {
+      "arm": "after",
+      "sample": 2,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9385,
+      "enqueue_ms": 3326,
+      "worker_ms": 39636,
+      "chunks": 1000,
+      "heap_before_bytes": 6651104,
+      "heap_after_bytes": 2605960
+    },
+    {
+      "arm": "before",
+      "sample": 2,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 923,
+      "enqueue_ms": 408,
+      "worker_ms": 3755,
+      "chunks": 100,
+      "heap_before_bytes": 2685728,
+      "heap_after_bytes": 3154808
+    },
+    {
+      "arm": "before",
+      "sample": 2,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9203,
+      "enqueue_ms": 5537,
+      "worker_ms": 169583,
+      "chunks": 1000,
+      "heap_before_bytes": 6560432,
+      "heap_after_bytes": 3805752
+    },
+    {
+      "arm": "before",
+      "sample": 3,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 920,
+      "enqueue_ms": 402,
+      "worker_ms": 3746,
+      "chunks": 100,
+      "heap_before_bytes": 2685440,
+      "heap_after_bytes": 3741528
+    },
+    {
+      "arm": "before",
+      "sample": 3,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9418,
+      "enqueue_ms": 5488,
+      "worker_ms": 163921,
+      "chunks": 1000,
+      "heap_before_bytes": 6587112,
+      "heap_after_bytes": 3383464
+    },
+    {
+      "arm": "after",
+      "sample": 3,
+      "scale": 10000,
+      "samples": 1,
+      "fixture_ms": 942,
+      "enqueue_ms": 326,
+      "worker_ms": 3734,
+      "chunks": 100,
+      "heap_before_bytes": 2685880,
+      "heap_after_bytes": 2907040
+    },
+    {
+      "arm": "after",
+      "sample": 3,
+      "scale": 100000,
+      "samples": 1,
+      "fixture_ms": 9177,
+      "enqueue_ms": 3014,
+      "worker_ms": 26021,
+      "chunks": 1000,
+      "heap_before_bytes": 6655840,
+      "heap_after_bytes": 4202640
+    }
+  ]
+}
