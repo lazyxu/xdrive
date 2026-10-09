@@ -1575,3 +1575,41 @@ gallery-video-signed-range-server:
     - |
       set -euo pipefail
       go test -run '^TestGalleryVideoSignedPreviewRangeRealServerBaseline$' -count=1 -timeout=12m -v ./internal/api
+
+gallery-desktop-signed-video-proxy:
+  image: $XDRIVE_CI_GO_IMAGE
+  stage: test
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-desktop-signed-video-proxy"'
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y --no-install-recommends xvfb xauth libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 libgbm1 libx11-xcb1 libxss1 libdrm2 fonts-liberation
+      bash scripts/ci/install-node22.sh
+      go build -o "$CI_PROJECT_DIR/.cache/xdrive-agent-proxy-fixture" ./cmd/xdrive-agent
+      export XD_GALLERY_AGENT_BINARY="$CI_PROJECT_DIR/.cache/xdrive-agent-proxy-fixture"
+      cd desktop
+      npm install --no-audit --no-fund
+      npm run build:main
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-desktop-signed-video-proxy-main.cjs
+  artifacts:
+    name: gallery-desktop-signed-proxy-$CI_COMMIT_SHORT_SHA
+    when: always
+    expire_in: 7 days
+    paths:
+      - desktop/perf-results/gallery-desktop-signed-video-proxy.json
+      - desktop/perf-results/gallery-real-gin.log
+      - desktop/perf-results/real-production-agent.log

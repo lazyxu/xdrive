@@ -1872,6 +1872,103 @@ Accept current signed Preview Engine unchanged if all 36 Range,
 12 poster and 6 cancellation gates pass. No ordinary-video hover,
 transcode worker or permanent preview cache is authorized by this test.
 
+
+## P4 Desktop Renderer/Main signed video Range transport baseline (2026-10-09)
+
+Status: **Accepted native Desktop signed Range and actual cancellation / safe CORS metadata fix / evidence-amended final CI pending**.
+
+P4's previous 24 FFmpeg generation and 84 native Chromium source trials,
+and 36 signed Gin/PostgreSQL 17 Range reads + 12 persisted poster GETs + 6
+Go HTTP cancellation samples, are independently accepted. They do **not**
+exercise a signed Preview Engine request through the actual Desktop
+Renderer → Electron Main loopback proxy → actual Agent IPC ticket
+→ authenticated Gin/Store Range transport. This benchmark fills exactly
+that missing path, using one shared signed Preview Engine. It does not
+create or enable another playback, poster or transcode service.
+
+**Fixed 12 assets:** 4 original-size files:
+H.264/HEVC 6s and 60s (10,204,316 / 11,290,579 /
+102,035,663 / 112,875,577 B); 8 bounded 3s candidate-size files:
+480p (153,390–155,308 B) and 720p (307,554–312,647 B), using exact
+byte lengths from the accepted real-encoded 4K P4 comparison. This new
+fixture writes pseudo-byte payloads into the genuine local Go Store.
+**They are not decodable MP4 video** despite using names with the
+previously measured codec labels. No 4K decode, actual first-frame,
+HEVC compatibility, seek, image quality or FFmpeg CPU may be inferred.
+
+**Named complete transport workload:**
+
+- Real PostgreSQL 17 isolated schema, Gin authenticated Server, 12
+  owner-scoped Node/File/SHA records and current signed Preview Engine
+  POST tickets, including four persistently cached JPEG posters.
+- Start an actual compiled `xdrive-agent`, log in with the fixture
+  account through current Agent IPC protocol, pause sync for isolation,
+  and use the production `AgentIPCClient` and
+  `DesktopFilePreviewProxy` in an Electron Main process with the
+  actual `net.fetch` transport. Chromium Renderer issues the Range GET.
+- **3 × 12 = 36** authenticated, byte-exact 206 Range reads with
+  `Range: bytes=0-1048575`; status, response length, Content-Range,
+  video/mp4, no-store, nosniff and masked upstream ticket must match
+  the existing Preview Engine contract.
+- **4 × 3 = 12** warm poster Agent IPC thumbnail reads.
+  Expected **zero original Store.Open**, exactly four first cached-poster
+  Server Store.Open followed by Agent warm memory hits.
+- **2 × 3 = 6** abandoned HTTP Range reads through the real
+  Renderer/Main/net.fetch proxy: long H.264 original and 480p
+  candidate, first renderer chunk read then abort and release.
+  By **+160ms**, six Server Context cancellations, zero active
+  delayed streams and under 1 MiB emitted for each abandoned Range.
+- Record requested/uploaded bytes, per-read wall-time diagnostic,
+  separate Server Store.Open attribution, and Agent process RSS before
+  and after. Three repeats are paired on the same fixture and current
+  implementation; this is a transport structural baseline rather
+  than a BEFORE/AFTER latency optimization.
+
+**Command and environment:**
+`XD_TEST_DATABASE_URL=postgres://... XD_GALLERY_AGENT_BINARY=<go build binary>
+xvfb-run -a ./desktop/node_modules/.bin/electron --no-sandbox
+desktop/scripts/gallery-desktop-signed-video-proxy-main.cjs`,
+after `cd desktop && npm install && npm run build:main`.
+The Electron benchmark starts
+`go test -run '^TestGalleryDesktopSignedVideoProxyFixture$'
+-count=1 -timeout=10m -v ./internal/api` using the existing
+Server signed-Range helper and one ephemeral HTTP fixture. GitHub
+scoped job `gallery-desktop-signed-video-proxy`; GitLab job is
+defined for the same branch but no connected GitLab push/CI is claimed.
+
+**Frozen predeclared acceptance:** 36/36 exact 206 Range,
+12/12 poster reads with 0 original opens,
+6/6 actual upstream cancellation by +160 ms, no stale 1 MiB body,
+and successful secret-bearing upstream ticket masking and cleanup.
+Do not enable ordinary-video hover, create a cache/transcode worker,
+alter signed ticket semantics or increase producer concurrency.
+If the original implementation satisfies all gates, the measured
+decision is **ACCEPT existing path unchanged**. If not, differentiate
+test environment/fixture error from a genuine application
+transport/resource defect before any scoped optimization.
+**BEFORE:** signed 206 / 1,048,576 B Range succeeded in the real Renderer/Agent path, but Chromium could not access the Content-Range header because Main proxy did not expose safe CORS metadata (actual first-red run 37937206834).
+**AFTER:** original Range/metadata assertion now passes after the smallest Main proxy response-header visibility correction, with no changed signed ticket, stream API, codec, poster storage or hover UI.
+Persistent raw JSON must be committed into `docs/performance-evidence/`
+and this section updated with exact sample values before merge,
+followed by fresh full PR CI for the evidence-amended one-work-commit head.
+
+**Next after measurement:** combine this real signed proxy path with
+decodable FFmpeg-generated 4K H.264/HEVC, real first-frame/seek,
+worker peak CPU/RSS/queue latency and eventual preview retention/GC.
+The latter experiments require their own named BEFORE/AFTER workloads;
+no current plan authorizes enabling hover on the basis of synthetic
+video-size HTTP tests.
+
+**First scoped CI harness result (2026-10-09):** [run 37936409503](https://github.com/lazyxu/xdrive/actions/runs/37936409503), native job [113839460732](https://github.com/lazyxu/xdrive/actions/runs/37936409503/job/113839460732) exercised the actual Go PostgreSQL/Gin fixture, production xdrive-agent IPC authentication, and **all 12/12** existing persisted poster calls (4 original-size media assets × 3 warm repeats) returning 609-byte JPEG each. First calls were **30–37ms**, subsequent warm calls **~0.74–2.73ms** within the same fixture; these are individual diagnostic IPC times, not a product BEFORE/AFTER gain. The Electron process exited **before the first signed Range sample** and did not create its mandatory JSON result. Therefore **36 Range and 6 cancellation remain UNMEASURED**, and this run cannot be Accepted. The failure was not evidence of incorrect media transport: the native benchmark runner did not surface a Range failure assertion. Added Renderer/window auto-quit lifecycle diagnostics and an explicit 30s timeout around each renderer read; kept all workload targets intact. Full CI also found gofmt-only differences in this new Go fixture; replayed all four exact gofmt hunks from the CI log. Run the same real 36/12/6 fixture again on the amended one-work-commit head. No media production changes.
+
+**Second scoped CI source-backed first red (2026-10-09):** [run 37937206834](https://github.com/lazyxu/xdrive/actions/runs/37937206834), actual native [job 113842582696](https://github.com/lazyxu/xdrive/actions/runs/37937206834/job/113842582696): actual Agent/Gin persisted poster warm requests **12/12** worked, the first Chromium Renderer signed Range request returned valid status **206** and **1,048,576 bytes**, but `response.headers.get('content-range')` returned **null**, contradicting the existing signed Preview Engine `bytes 0-1048575/10204316` source response. The Main `DesktopFilePreviewProxy` was already forwarding Content-Range but lacked a CORS `Access-Control-Expose-Headers` list, so Chromium deliberately hid this metadata from Renderer JavaScript. This is a confirmed **transport metadata visibility defect**, not slow video decoding or a race. The current patch exposes only bounded response metadata headers (`Content-Range`, `Content-Length`, `Accept-Ranges`, `ETag`, `Last-Modified`, `Cache-Control`, `X-Content-Type-Options`); no signed ticket or authorization secret is exposed and no streaming/proxy route or player behavior changes. Run the original unaltered Chromium status, body and Range assertion again, plus an explicit existing proxy test guarding the safe exposed header list. The first red stopped on sample 1, so 36 signed Range and 6 server cancellation acceptance are still **UNMEASURED**. `desktop/tests/gallery-desktop-signed-proxy-contract.cjs` also had a whitespace-only Go source token assertion which failed after correct gofmt alignment; updated that assertion to match the intended `decodable_video:false` meaning with arbitrary whitespace, without weakening any runtime measurement. The branch now contains the smallest scoped production fix justified by a real first red, rather than only an observational benchmark.
+
+**Third full native CI — valid measured first-red-to-green:** [run 37938095695](https://github.com/lazyxu/xdrive/actions/runs/37938095695), [job 113845675365](https://github.com/lazyxu/xdrive/actions/runs/37938095695/job/113845675365), original first-success candidate e3b2d43f53ff5e60f886c2f77e24649eb5317db7. Real Electron Chromium Renderer → Main DesktopFilePreviewProxy/net.fetch → authenticated Agent IPC + signed tickets → Gin/PostgreSQL 17/Store completed **36/36 byte-exact signed HTTP 206 Range**, **12/12 persistent poster Agent thumbnail IPC GET**, **6/6 upstream Go Context cancellations**. All poster bodies were **609 B** JPEG-shaped data and had **zero canonical original Store.Open**. All six cancel rows recorded **32,768 B initially read**, **65,536 B emitted upstream**, canceled=1, and **zero active Server connections after +160ms**.
+
+**Capped Range bytes, not a decodable codec benchmark:** 1,048,576 B median for the 1MiB-capped original, 155,308 B median for 3-second 480p candidate-size file (~6.75x lower), 312,485 B median for 720p candidate-size (~3.36x lower). All 12 media payloads are pseudo-bytes sized like actual earlier encoded 4K files, **not decodable H.264/HEVC footage**. Do not infer full-file hover savings, first-frame timing, HEVC compatibility, video seek, real FFmpeg worker CPU/RSS or network WAN user latency. Production hover, short-preview persisted transcode, storage GC and mobile/GPU acceptance remain disabled/unmeasured.
+
+**Durable evidence:** [all 36 Range, 12 poster, six cancellation raw rows and runtime diagnostics](performance-evidence/gallery-desktop-signed-video-proxy/ci-run-37938095695.json). Exposed CORS headers are limited to Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Cache-Control and X-Content-Type-Options; no signed ticket, token or user credentials are exposed. Because merged #1163 and #1171 changed the shared media/CI/doc tree, rebuild exactly one P4 work commit on the current master preserving every unrelated change, and require a **new complete exact-head PR CI** before linear merge. A good source-head CI is not sufficient to validate the evidence and reconstruction.
+
 ## P0-C — shared media loading progress (2026-10-09)
 
 **Status: In progress / first Web+Desktop implementation candidate / authoritative CI and real browser+Agent benchmark pending.** Dependency #1153 (Server 512px poster/thumbnail and 1280px RAW derivative revision guards) has passed full CI and merged at `9149a0b7dccfae26d7ea9e274aab5767d670838c`. This stage keeps known-revision GET URLs/409 conflicts and unknown-revision ETag revalidation; it introduces no new media endpoint or cache class.

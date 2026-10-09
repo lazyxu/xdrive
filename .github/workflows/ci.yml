@@ -73,6 +73,63 @@ jobs:
       - name: Agent real HTTP 3600s-cache overwrite test (baseline first)
         run: |
           go test -run '^TestAgentCloudMediaThumbnailOverwriteRevalidatesUnknownRevision$' -count=1 -v ./cmd/xdrive-agent
+  gallery-desktop-signed-video-proxy:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-desktop-signed-video-proxy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Desktop Electron and compile real Main/Agent IPC client
+        working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npm run build:main
+      - name: Build actual production Agent binary
+        run: go build -o "$RUNNER_TEMP/xdrive-agent-proxy-fixture" ./cmd/xdrive-agent
+      - name: Measure 36 signed Desktop Renderer Range, 12 posters and 6 cancellations
+        working-directory: desktop
+        env:
+          XD_GALLERY_AGENT_BINARY: ${{ runner.temp }}/xdrive-agent-proxy-fixture
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-desktop-signed-video-proxy-main.cjs
+          cat perf-results/gallery-desktop-signed-video-proxy.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-desktop-signed-video-proxy
+          path: |
+            desktop/perf-results/gallery-desktop-signed-video-proxy.json
+            desktop/perf-results/gallery-real-gin.log
+            desktop/perf-results/real-production-agent.log
+          if-no-files-found: warn
+          retention-days: 7
   desktop-tests:
     runs-on: ubuntu-latest
     steps:
