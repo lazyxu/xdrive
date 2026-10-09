@@ -31,6 +31,7 @@ import {
   xDriveFileExplorerSearchKindLabels as kindLabels,
   xDriveFileExplorerSearchSizeLabel as sizeLabel,
 } from '../file-explorer-search'
+import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 
 type FilterMenu = 'kind' | 'modified' | 'size' | 'availability' | 'source' | 'tag'
 
@@ -72,6 +73,7 @@ export function XDriveFileExplorerSearchFilters({
   const [menu, setMenu] = useState<FilterMenu | null>(null)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const panelOpen = Boolean(panelAnchor) && panelCompactViewport === compactViewport
+  const panelViewport = useXDriveMobilePanelViewport(compactViewport && panelOpen)
   const filterCount = xDriveFileExplorerSearchFilterCount(filters)
   const filterLabels = useMemo(
     () => xDriveFileExplorerSearchFilterFieldLabels(filters, { sourceOptions, tagOptions, availabilityOptions }),
@@ -165,8 +167,8 @@ export function XDriveFileExplorerSearchFilters({
     disableRestoreFocus: !panelOpen,
     slotProps: { paper: { sx: compactViewport ? {
       maxWidth: 'calc(100vw - 32px)',
-      maxHeight: 'calc(100vh - 32px)',
-      '@supports (height: 100dvh)': { maxHeight: 'calc(100dvh - 32px)' },
+      maxHeight: panelViewport ? Math.max(0, panelViewport.height - 32) + 'px' : 'calc(100vh - 32px)',
+      '@supports (height: 100dvh)': panelViewport ? {} : { maxHeight: 'calc(100dvh - 32px)' },
       '& .MuiMenuItem-root': { minHeight: 44, whiteSpace: 'normal', overflowWrap: 'anywhere' },
     } : undefined } },
   }
@@ -212,8 +214,11 @@ export function XDriveFileExplorerSearchFilters({
             'aria-label': '文件筛选',
             'aria-modal': true,
             sx: {
-              maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px))',
-              '@supports (height: 100dvh)': {
+              bottom: panelViewport ? panelViewport.bottom + 'px' : undefined,
+              maxHeight: panelViewport
+                ? panelViewport.height + 'px'
+                : 'calc(100vh - env(safe-area-inset-top, 0px))',
+              '@supports (height: 100dvh)': panelViewport ? {} : {
                 maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))',
               },
               minHeight: 0,

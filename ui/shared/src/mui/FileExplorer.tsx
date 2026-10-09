@@ -114,6 +114,7 @@ import type {
   XDriveFileExplorerGrouping,
 } from '../file-explorer-grouping'
 import { XDriveStatePanel } from './StatePanel'
+import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 import { xDriveMediaFormatDuration } from './MediaGalleryUtils'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
@@ -1123,6 +1124,7 @@ export function XDriveFileExplorer({
   }
   const [touchSearchOpen, setTouchSearchOpen] = useState(false)
   const [navigationDrawerOpen, setNavigationDrawerOpen] = useState(false)
+  const navigationViewport = useXDriveMobilePanelViewport(compactViewport && navigationDrawerOpen)
   const lastPointerTypeRef = useRef<string | null>(null)
   const suppressTouchClickRef = useRef(false)
   const touchPressRef = useRef<{
@@ -6074,6 +6076,10 @@ export function XDriveFileExplorer({
             sx: {
               width: 'min(86vw, 320px)',
               maxWidth: '100%',
+              top: navigationViewport ? navigationViewport.top + 'px' : undefined,
+              bottom: navigationViewport ? 'auto' : undefined,
+              height: navigationViewport ? navigationViewport.height + 'px' : '100%',
+              maxHeight: navigationViewport ? navigationViewport.height + 'px' : '100dvh',
               pt: 'env(safe-area-inset-top)',
               pb: 'env(safe-area-inset-bottom)',
             },
