@@ -26,6 +26,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform,
   viewportTransition,
   mediaTransform,
+  onReadySize,
   children,
 }: {
   target: T
@@ -38,6 +39,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform?: string
   viewportTransition?: string
   mediaTransform?: XDriveFilePreviewMediaTransform
+  onReadySize?: (width: number, height: number) => void
   children?: (still: ReactNode, ready: boolean) => ReactNode
 }) {
   const [sources, setSources] = useState<Record<ImageRole, ImageSource>>({
@@ -142,6 +144,11 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     : sources.thumbnail.status === 'ready' ? 'thumbnail' : null
   const readySource = readyRole ? sources[readyRole] : null
   const readyURL = readySource?.url || ''
+  const readyImage = readySource?.image
+  useEffect(() => {
+    if (!readyImage) return
+    onReadySize?.(readyImage.naturalWidth, readyImage.naturalHeight)
+  }, [onReadySize, readyImage])
   const handleTransformError = useCallback(() => {
     if (readyRole) failImage(readyRole, readyURL)
   }, [failImage, readyRole, readyURL])

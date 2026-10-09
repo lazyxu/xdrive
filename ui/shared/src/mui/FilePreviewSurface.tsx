@@ -18,6 +18,12 @@ import type {
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveDecodedImagePreview } from './FilePreviewImage'
 import {
+  xDriveAnchoredImageOffset,
+  xDriveClampImageOffset,
+  xDriveClampImageScale,
+  xDriveImagePanBounds,
+} from './FilePreviewImageViewport'
+import {
   XDriveTransformedVideoPreview,
 } from './FilePreviewTransformedMedia'
 
@@ -112,6 +118,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const previewTargetID = target?.id
   const previewTargetRevision = target?.revision
   const coarsePointer = useMediaQuery('(pointer: coarse)')
+  const imageViewportRef = useRef<HTMLDivElement | null>(null)
   const imageDragRef = useRef<{
     pointerID: number
     startX: number
@@ -120,7 +127,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     originY: number
   } | null>(null)
   const imagePointersRef = useRef(new Map<number, { x: number; y: number }>())
-  const imagePinchRef = useRef<{ distance: number; scale: number } | null>(null)
+  const imagePinchRef = useRef<{
+    distance: number
+    scale: number
+    centerX: number
+    centerY: number
+    originX: number
+    originY: number
+  } | null>(null)
   const imageSwipeRef = useRef<{
     pointerID: number
     startX: number
@@ -131,6 +145,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const touchDoubleTapAtRef = useRef(0)
   const [imageScale, setImageScale] = useState(1)
   const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 })
 
   const resetImageViewport = useCallback(() => {
     imageDragRef.current = null
@@ -142,15 +157,81 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     setImageOffset({ x: 0, y: 0 })
   }, [])
 
-  const setImageZoom = useCallback((value: number) => {
-    const next = Math.min(6, Math.max(1, Math.round(value * 100) / 100))
+  const imageBounds = useCallback((scale: number) => {
+    const viewport = imageViewportRef.current
+    if (!viewport) return { x: 0, y: 0 }
+    const rect = viewport.getBoundingClientRect()
+    return xDriveImagePanBounds({
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      imageWidth: imageNaturalSize.width,
+      imageHeight: imageNaturalSize.height,
+      imageFit,
+      scale,
+      mediaTransform,
+    })
+  }, [
+    imageFit,
+    imageNaturalSize.height,
+    imageNaturalSize.width,
+    mediaTransform,
+  ])
+
+  const clampImageOffset = useCallback((offset: { x: number; y: number }, scale: number) =>
+    xDriveClampImageOffset(offset, imageBounds(scale)), [imageBounds])
+
+  const setImageZoomAt = useCallback((
+    value: number,
+    anchor?: { x: number; y: number },
+  ) => {
+    const next = xDriveClampImageScale(value)
+    if (next === 1) {
+      setImageScale(1)
+      setImageOffset({ x: 0, y: 0 })
+      return
+    }
+    const viewport = imageViewportRef.current
+    setImageOffset((current) => {
+      if (!viewport) return clampImageOffset(current, next)
+      const rect = viewport.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      const anchorX = (anchor?.x ?? centerX) - centerX
+      const anchorY = (anchor?.y ?? centerY) - centerY
+      return clampImageOffset(xDriveAnchoredImageOffset({
+        offset: current,
+        oldScale: imageScale,
+        newScale: next,
+        anchorX,
+        anchorY,
+      }), next)
+    })
     setImageScale(next)
-    if (next === 1) setImageOffset({ x: 0, y: 0 })
+  }, [clampImageOffset, imageScale])
+
+  const handleImageReadySize = useCallback((width: number, height: number) => {
+    setImageNaturalSize((current) => (
+      current.width === width && current.height === height
+        ? current
+        : { width, height }
+    ))
   }, [])
 
   useEffect(() => {
+    setImageNaturalSize({ width: 0, height: 0 })
     resetImageViewport()
   }, [resetImageViewport, target?.id, target?.revision])
+
+  useEffect(() => {
+    setImageOffset((current) => clampImageOffset(current, imageScale))
+    const viewport = imageViewportRef.current
+    if (!viewport || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      setImageOffset((current) => clampImageOffset(current, imageScale))
+    })
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [clampImageOffset, imageScale])
 
   const captureImagePointer = (event: ReactPointerEvent<HTMLElement>) => {
     try {
@@ -184,6 +265,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         imagePinchRef.current = {
           distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
           scale: imageScale,
+          centerX: (first.x + second.x) / 2,
+          centerY: (first.y + second.y) / 2,
+          originX: imageOffset.x,
+          originY: imageOffset.y,
         }
         imageDragRef.current = null
         imageSwipeRef.current = null
@@ -231,7 +316,27 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         event.preventDefault()
         const [first, second] = points
         const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
-        setImageZoom(pinch.scale * distance / pinch.distance)
+        const nextScale = xDriveClampImageScale(pinch.scale * distance / pinch.distance)
+        const currentCenterX = (first.x + second.x) / 2
+        const currentCenterY = (first.y + second.y) / 2
+        const viewport = imageViewportRef.current
+        let nextOffset = { x: pinch.originX, y: pinch.originY }
+        if (viewport) {
+          const rect = viewport.getBoundingClientRect()
+          const viewportCenterX = rect.left + rect.width / 2
+          const viewportCenterY = rect.top + rect.height / 2
+          nextOffset = xDriveAnchoredImageOffset({
+            offset: { x: pinch.originX, y: pinch.originY },
+            oldScale: pinch.scale,
+            newScale: nextScale,
+            anchorX: pinch.centerX - viewportCenterX,
+            anchorY: pinch.centerY - viewportCenterY,
+          })
+          nextOffset.x += currentCenterX - pinch.centerX
+          nextOffset.y += currentCenterY - pinch.centerY
+        }
+        setImageScale(nextScale)
+        setImageOffset(clampImageOffset(nextOffset, nextScale))
         return
       }
     }
@@ -239,11 +344,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const drag = imageDragRef.current
     if (!drag || drag.pointerID !== event.pointerId) return
     event.preventDefault()
-    setImageOffset({
+    setImageOffset(clampImageOffset({
       x: drag.originX + event.clientX - drag.startX,
       y: drag.originY + event.clientY - drag.startY,
-    })
-  }, [setImageZoom])
+    }, imageScale))
+  }, [clampImageOffset, imageScale])
 
   const handleImagePointerRelease = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const touch = event.pointerType === 'touch'
@@ -276,7 +381,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           ) {
             lastTouchTapRef.current = null
             touchDoubleTapAtRef.current = now
-            setImageZoom(imageScale > 1 ? 1 : 2)
+            setImageZoomAt(imageScale > 1 ? 1 : 2, { x: event.clientX, y: event.clientY })
           } else {
             lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
           }
@@ -288,7 +393,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const drag = imageDragRef.current
     if (drag?.pointerID === event.pointerId) imageDragRef.current = null
     releaseImagePointer(event)
-  }, [imageScale, onSwipeNext, onSwipePrevious, setImageZoom])
+  }, [imageScale, onSwipeNext, onSwipePrevious, setImageZoomAt])
 
   const handleImagePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     imagePointersRef.current.delete(event.pointerId)
@@ -309,8 +414,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const handleImageWheel = useCallback((event: WheelEvent<HTMLElement>) => {
     if (!interactiveImage) return
     event.preventDefault()
-    setImageZoom(imageScale * (event.deltaY < 0 ? 1.15 : 1 / 1.15))
-  }, [imageScale, interactiveImage, setImageZoom])
+    setImageZoomAt(
+      imageScale * (event.deltaY < 0 ? 1.15 : 1 / 1.15),
+      { x: event.clientX, y: event.clientY },
+    )
+  }, [imageScale, interactiveImage, setImageZoomAt])
 
   const assignPreviewURL = useCallback((value: string) => {
     const previous = previewURLRef.current
@@ -457,13 +565,20 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (target && previewKind === 'image') {
       return (
         <Box
+          ref={imageViewportRef}
           data-xdrive-preview-zoom={interactiveImage || undefined}
+          data-xdrive-preview-scale={interactiveImage ? imageScale : undefined}
+          data-xdrive-preview-offset-x={interactiveImage ? imageOffset.x : undefined}
+          data-xdrive-preview-offset-y={interactiveImage ? imageOffset.y : undefined}
           data-xdrive-preview-pinch={interactiveImage || undefined}
           data-xdrive-preview-swipe={interactiveImage && Boolean(onSwipePrevious || onSwipeNext) || undefined}
           onWheel={handleImageWheel}
-          onDoubleClick={() => {
+          onDoubleClick={(event) => {
             if (!interactiveImage || Date.now() - touchDoubleTapAtRef.current < 500) return
-            setImageZoom(imageScale > 1 ? 1 : 2)
+            setImageZoomAt(
+              imageScale > 1 ? 1 : 2,
+              { x: event.clientX, y: event.clientY },
+            )
           }}
           onPointerDown={handleImagePointerDown}
           onPointerMove={handleImagePointerMove}
@@ -491,6 +606,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             imageFit={imageFit}
             minHeight={minHeight}
             mediaTransform={mediaTransform}
+            onReadySize={handleImageReadySize}
             viewportTransform={`translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`}
             viewportTransition={imageDragRef.current ? 'none' : 'transform 100ms ease-out'}
           />
@@ -518,7 +634,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
                     size="small"
                     aria-label="缩小预览"
                     disabled={imageScale <= 1}
-                    onClick={() => setImageZoom(imageScale / 1.25)}
+                    onClick={() => setImageZoomAt(imageScale / 1.25)}
                     sx={{ color: 'inherit' }}
                   >
                     <ZoomOutRoundedIcon fontSize="small" />
@@ -534,7 +650,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
                     size="small"
                     aria-label="放大预览"
                     disabled={imageScale >= 6}
-                    onClick={() => setImageZoom(imageScale * 1.25)}
+                    onClick={() => setImageZoomAt(imageScale * 1.25)}
                     sx={{ color: 'inherit' }}
                   >
                     <ZoomInRoundedIcon fontSize="small" />

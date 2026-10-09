@@ -28,6 +28,9 @@ test('shared image preview supports pinch, double-tap and scale-aware swipe navi
     'data-xdrive-preview-swipe',
     'Math.hypot(second.x - first.x, second.y - first.y)',
     'pinch.scale * distance / pinch.distance',
+    'xDriveAnchoredImageOffset',
+    'clampImageOffset',
+    'imageViewportRef',
     'absX >= 56 && absX > absY * 1.25',
     'onSwipeNext?.()',
     'onSwipePrevious?.()',
@@ -35,7 +38,7 @@ test('shared image preview supports pinch, double-tap and scale-aware swipe navi
     'handleImagePointerLostCapture',
     'onPointerCancel={handleImagePointerCancel}',
     'now - previous.at <= 320',
-    'setImageZoom(imageScale > 1 ? 1 : 2)',
+    'setImageZoomAt(imageScale > 1 ? 1 : 2',
   ]) {
     assert.ok(preview.includes(token), 'touch image gesture contract missing: ' + token)
   }
