@@ -213,7 +213,7 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		COALESCE(child_file.size, 0) AS file_size,
 		COALESCE(child_file.sha256, '') AS file_sha256`
 	newChildrenQuery := func() *gorm.DB {
-		query := s.DB.
+		query := s.DB.WithContext(c.Request.Context()).
 			Table("xd_nodes").
 			Joins("LEFT JOIN xd_files AS child_file ON child_file.node_id = xd_nodes.id").
 			Joins(`JOIN xd_nodes AS parent_node

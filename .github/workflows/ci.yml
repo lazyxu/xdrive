@@ -1151,6 +1151,75 @@ jobs:
       - name: Measure FileExplorer 100k sparse-range count cost
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-explorer-go-context-cancel-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-go-context-cancel-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_GO_CONTEXT_CANCEL_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure same-runner before-after native PostgreSQL cancellation (3 pairs)
+        run: |
+          set -euo pipefail
+          original_dir="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-file-explorer-cancel-before.XXXXXX")"
+          trap 'rm -rf -- "$original_dir"' EXIT
+          git archive HEAD^ | tar -x -C "$original_dir"
+          # Identical opt-in benchmark-only source in both worktrees; do not overlay any production code.
+          cp internal/api/file_explorer_go_context_cancel_performance_integration_test.go "$original_dir/internal/api/file_explorer_go_context_cancel_performance_integration_test.go"
+          mkdir -p performance-results
+          git rev-parse HEAD^ > performance-results/before-source.txt
+          git rev-parse HEAD > performance-results/after-source.txt
+          sha256sum internal/api/file_explorer_go_context_cancel_performance_integration_test.go > performance-results/test-harness-sha256.txt
+          for sample in 1 2 3; do
+            arms=(before after)
+            if (( sample % 2 == 0 )); then arms=(after before); fi
+            for arm in "${arms[@]}"; do
+              source_dir="$GITHUB_WORKSPACE"
+              expected_fixed="1"
+              if [[ "$arm" == before ]]; then
+                source_dir="$original_dir"
+                expected_fixed="0"
+              fi
+              echo "=== $arm sample=$sample fixed=$expected_fixed source=$source_dir ==="
+              (
+                cd "$source_dir"
+                XD_FILEEXPLORER_GO_CONTEXT_CANCEL_EXPECT_FIXED="$expected_fixed"                   go test -run '^TestFileExplorerRequestContextCancellation100K$' -count=1 -timeout=8m -v ./internal/api
+              ) | tee "performance-results/$arm-sample-$sample.log"
+            done
+          done
+          test "$(grep -l FILEEXPLORER_GO_CONTEXT_CANCEL_100K performance-results/before-sample-*.log | wc -l)" -eq 3
+          test "$(grep -l FILEEXPLORER_GO_CONTEXT_CANCEL_100K performance-results/after-sample-*.log | wc -l)" -eq 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-go-context-cancel-100k-paired
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 7
+
   gallery-go-context-cancel-100k-performance:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/gallery-go-context-cancel-100k-')
     runs-on: ubuntu-latest
