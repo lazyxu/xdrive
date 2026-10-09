@@ -1599,6 +1599,54 @@ jobs:
           retention-days: 7
 
 
+  gallery-fold-stage-profile-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-fold-stage-profile-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_FOLD_STAGE_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Profile real 100k Gallery fold SQL stages
+        run: |
+          set -euo pipefail
+          if [ -n "$(gofmt -l internal/api/gallery_fold_stage_profile_performance_integration_test.go)" ]; then
+            gofmt -d internal/api/gallery_fold_stage_profile_performance_integration_test.go
+            exit 1
+          fi
+          mkdir -p gallery-fold-stage-profile-100k-results
+          go test -run '^TestGalleryFoldStagesPerformance100K$' -count=1 -timeout=22m -v ./internal/api | tee gallery-fold-stage-profile-100k-results/native-postgres17.log
+          grep 'GALLERY_FOLD_STAGE_100K_REPORT' gallery-fold-stage-profile-100k-results/native-postgres17.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-fold-stage-profile-100k
+          path: gallery-fold-stage-profile-100k-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   gallery-renderer-first-paint-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-media-first-paint-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest

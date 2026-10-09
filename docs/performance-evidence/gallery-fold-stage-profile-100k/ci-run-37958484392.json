@@ -1,0 +1,254 @@
+{
+  "provenance": {
+    "repository": "lazyxu/xdrive",
+    "pr_number": 1191,
+    "run_id": 37958484392,
+    "job_id": 113915577958,
+    "source_commit": "a006c1a7ab9404e796ba8e906d939e7cafd62ada",
+    "job_url": "https://github.com/lazyxu/xdrive/actions/runs/37958484392/job/113915577958",
+    "environment": "GitHub Actions ubuntu-latest; native PostgreSQL 17; Go 1.25; same exact #1178 100k logical/115k physical/15k Live/2000 synthetic digest group fixture",
+    "samples": 3,
+    "note": "Test-only SQL/Go stage profiler. Stages run in separate prepared queries after production ON and OFF measurements; not Chromium, Agent, real byte-dedup, GPU presentation or CPU peak."
+  },
+  "report": {
+    "workload": "real-browser-equivalent-100k-fold-sql-stage-profile",
+    "logical_assets": 100000,
+    "physical_media_nodes": 115000,
+    "live_photo_groups": 15000,
+    "duplicate_groups": 2000,
+    "folded_visible": 92000,
+    "seed_ms": 39566.581,
+    "production_on_ms": [
+      1562.808,
+      1619.698,
+      1572.629
+    ],
+    "production_off_ms": [
+      632.932,
+      645.375,
+      635.782
+    ],
+    "production_on_p50_ms": 1572.629,
+    "production_off_p50_ms": 635.782,
+    "split": [
+      {
+        "sample": 1,
+        "stages": [
+          {
+            "name": "verified_full_resource_index",
+            "elapsed_ms": 602.4,
+            "allocated_bytes": 82088760
+          },
+          {
+            "name": "build_filtered_ranked_sql",
+            "elapsed_ms": 0.064,
+            "allocated_bytes": 48752
+          },
+          {
+            "name": "authoritative_distinct_count",
+            "elapsed_ms": 246.856,
+            "allocated_bytes": 2361360
+          },
+          {
+            "name": "full_timeline_group_sets",
+            "elapsed_ms": 434.846,
+            "allocated_bytes": 3639120
+          },
+          {
+            "name": "first_100_materialize",
+            "elapsed_ms": 336.135,
+            "allocated_bytes": 4307032
+          }
+        ],
+        "split_total_ms": 1620.301,
+        "folded_visible": 92000,
+        "returned_items": 100,
+        "fold_index_nodes": 10000,
+        "timeline_days": 3650
+      },
+      {
+        "sample": 2,
+        "stages": [
+          {
+            "name": "verified_full_resource_index",
+            "elapsed_ms": 588.936,
+            "allocated_bytes": 82057624
+          },
+          {
+            "name": "build_filtered_ranked_sql",
+            "elapsed_ms": 0.039,
+            "allocated_bytes": 11192
+          },
+          {
+            "name": "authoritative_distinct_count",
+            "elapsed_ms": 217.689,
+            "allocated_bytes": 2398952
+          },
+          {
+            "name": "full_timeline_group_sets",
+            "elapsed_ms": 386.958,
+            "allocated_bytes": 3636160
+          },
+          {
+            "name": "first_100_materialize",
+            "elapsed_ms": 323.161,
+            "allocated_bytes": 4303360
+          }
+        ],
+        "split_total_ms": 1516.7830000000001,
+        "folded_visible": 92000,
+        "returned_items": 100,
+        "fold_index_nodes": 10000,
+        "timeline_days": 3650
+      },
+      {
+        "sample": 3,
+        "stages": [
+          {
+            "name": "verified_full_resource_index",
+            "elapsed_ms": 585.565,
+            "allocated_bytes": 82083344
+          },
+          {
+            "name": "build_filtered_ranked_sql",
+            "elapsed_ms": 0.044,
+            "allocated_bytes": 11616
+          },
+          {
+            "name": "authoritative_distinct_count",
+            "elapsed_ms": 231.411,
+            "allocated_bytes": 2324256
+          },
+          {
+            "name": "full_timeline_group_sets",
+            "elapsed_ms": 408.233,
+            "allocated_bytes": 3637136
+          },
+          {
+            "name": "first_100_materialize",
+            "elapsed_ms": 322.027,
+            "allocated_bytes": 4262400
+          }
+        ],
+        "split_total_ms": 1547.28,
+        "folded_visible": 92000,
+        "returned_items": 100,
+        "fold_index_nodes": 10000,
+        "timeline_days": 3650
+      }
+    ],
+    "scope": "Native PostgreSQL 17 actual production Go fold index/count/timeline/materialize. No Chromium, HTTP, decoder, WAN, GPU or source-byte verification for synthetic offscreen SHA groups."
+  },
+  "derived_medians": [
+    {
+      "name": "verified_full_resource_index",
+      "samples": [
+        {
+          "name": "verified_full_resource_index",
+          "elapsed_ms": 602.4,
+          "allocated_bytes": 82088760
+        },
+        {
+          "name": "verified_full_resource_index",
+          "elapsed_ms": 588.936,
+          "allocated_bytes": 82057624
+        },
+        {
+          "name": "verified_full_resource_index",
+          "elapsed_ms": 585.565,
+          "allocated_bytes": 82083344
+        }
+      ],
+      "medianMs": 588.936,
+      "medianAllocB": 82083344
+    },
+    {
+      "name": "build_filtered_ranked_sql",
+      "samples": [
+        {
+          "name": "build_filtered_ranked_sql",
+          "elapsed_ms": 0.064,
+          "allocated_bytes": 48752
+        },
+        {
+          "name": "build_filtered_ranked_sql",
+          "elapsed_ms": 0.039,
+          "allocated_bytes": 11192
+        },
+        {
+          "name": "build_filtered_ranked_sql",
+          "elapsed_ms": 0.044,
+          "allocated_bytes": 11616
+        }
+      ],
+      "medianMs": 0.044,
+      "medianAllocB": 11616
+    },
+    {
+      "name": "authoritative_distinct_count",
+      "samples": [
+        {
+          "name": "authoritative_distinct_count",
+          "elapsed_ms": 246.856,
+          "allocated_bytes": 2361360
+        },
+        {
+          "name": "authoritative_distinct_count",
+          "elapsed_ms": 217.689,
+          "allocated_bytes": 2398952
+        },
+        {
+          "name": "authoritative_distinct_count",
+          "elapsed_ms": 231.411,
+          "allocated_bytes": 2324256
+        }
+      ],
+      "medianMs": 231.411,
+      "medianAllocB": 2361360
+    },
+    {
+      "name": "full_timeline_group_sets",
+      "samples": [
+        {
+          "name": "full_timeline_group_sets",
+          "elapsed_ms": 434.846,
+          "allocated_bytes": 3639120
+        },
+        {
+          "name": "full_timeline_group_sets",
+          "elapsed_ms": 386.958,
+          "allocated_bytes": 3636160
+        },
+        {
+          "name": "full_timeline_group_sets",
+          "elapsed_ms": 408.233,
+          "allocated_bytes": 3637136
+        }
+      ],
+      "medianMs": 408.233,
+      "medianAllocB": 3637136
+    },
+    {
+      "name": "first_100_materialize",
+      "samples": [
+        {
+          "name": "first_100_materialize",
+          "elapsed_ms": 336.135,
+          "allocated_bytes": 4307032
+        },
+        {
+          "name": "first_100_materialize",
+          "elapsed_ms": 323.161,
+          "allocated_bytes": 4303360
+        },
+        {
+          "name": "first_100_materialize",
+          "elapsed_ms": 322.027,
+          "allocated_bytes": 4262400
+        }
+      ],
+      "medianMs": 323.161,
+      "medianAllocB": 4303360
+    }
+  ]
+}
