@@ -146,6 +146,9 @@ test('Gallery collection scope change fences stale selection actions', async () 
       clearMediaSelection: () => clearWrites.push('scope-change'),
       setCollageDialogItems: () => {},
       setMovieDialogItems: () => {},
+      setMediaContextMenu: (value) => {
+        assert.equal(value, null, 'collection switch must close a stale right-click menu')
+      },
       section: 'library',
       setSelected: () => {},
       setPreviewItem: () => {},

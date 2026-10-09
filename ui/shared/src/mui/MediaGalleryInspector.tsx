@@ -44,13 +44,13 @@ function MediaInspectorHeader({
     >
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Typography variant="subtitle1" fontWeight={700}>
-          信息
+          属性
         </Typography>
         <Typography variant="caption" color="text.secondary" noWrap display="block">
           {name}
         </Typography>
       </Box>
-      <IconButton size="small" aria-label="关闭媒体信息" onClick={onClose}>
+      <IconButton size="small" aria-label="关闭属性" onClick={onClose}>
         <CloseRoundedIcon fontSize="small" />
       </IconButton>
     </Stack>
@@ -72,6 +72,30 @@ export function XDriveMediaDetailsInspector({
       <XDriveMediaDetailsContent item={item} {...contentProps} />
     </Box>
   )
+
+  if (desktop && overlayZIndex !== undefined && overlayZIndex > theme.zIndex.modal) {
+    return (
+      <Drawer
+        anchor="right"
+        open
+        onClose={onClose}
+        sx={{ zIndex: overlayZIndex }}
+        slotProps={{ paper: { sx: {
+          width: 360,
+          maxWidth: '100vw',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          backgroundImage: 'none',
+        } } }}
+        data-xdrive-media-details-viewer-drawer
+      >
+        <MediaInspectorHeader name={item.node.name} onClose={onClose} />
+        {content}
+      </Drawer>
+    )
+  }
 
   if (desktop) {
     return (
@@ -107,6 +131,7 @@ export function XDriveMediaDetailsInspector({
       anchor="bottom"
       open
       onClose={onClose}
+      sx={overlayZIndex === undefined ? undefined : { zIndex: overlayZIndex }}
       data-xdrive-media-details-drawer
       slotProps={{
         paper: {

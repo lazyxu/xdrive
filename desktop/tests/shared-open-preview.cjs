@@ -68,16 +68,14 @@ test('Desktop FileExplorer ordinary Open uses the OS while Quick Look stays shar
   assert.ok(actions.includes("id: 'system-open'"), 'shared menu primitive may retain optional system-open support for other adapters')
 })
 
-test('Gallery single click keeps media details while selection gestures stay distinct', () => {
+test('Gallery single click immediately opens Viewer while modifiers still select', () => {
   for (const token of [
-    'const clickTimerRef = useRef<number | null>(null)',
-    'const openDetails = () =>',
-    'const openPreview = () =>',
+    'const openPreview = () => onPreview(item)',
     'onClick={(event) =>',
     'if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey)',
-    'openDetails()',
-    'onDoubleClick={(event) =>',
-    'if (!selectionMode) openPreview()',
+    'if (event.detail > 1) return',
+    'openPreview()',
+    'onDoubleClick={(event) => event.preventDefault()}',
     'onPreview(item)',
     'const [selected, setSelected] = useState<MediaItem | null>(null)',
     'const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)',
@@ -86,8 +84,10 @@ test('Gallery single click keeps media details while selection gestures stay dis
     '<XDriveMediaDetailsInspector',
     '<XDriveMediaGalleryViewer',
   ]) {
-    assert.ok(gallery.includes(token), 'Gallery open/details split missing: ' + token)
+    assert.ok(gallery.includes(token), 'Gallery direct-open contract missing: ' + token)
   }
+  assert.equal(gallery.includes('clickTimerRef'), false, 'Viewer must not wait for a details-click timer')
+  assert.match(gallery, /keyboardActivate\(event, \(\) => onPreview\(item\)\)/)
 })
 
 test('Gallery Live Photo keeps semantic motion inside the shared open-preview shell', () => {
@@ -155,7 +155,7 @@ test('Gallery Viewer 2.0 adds immersive chrome, fullscreen, bounded filmstrip an
     '<XDriveMediaGalleryFilmstrip',
     'interactiveImage',
     '收藏',
-    '媒体信息',
+    '查看属性',
     '下载媒体',
     '分享媒体',
     '删除媒体',

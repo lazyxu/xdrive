@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
   Collections as CollectionsIcon,
@@ -23,6 +23,7 @@ import {
   DialogActions,
   FormControlLabel,
   IconButton,
+  Menu,
   MenuItem,
   Paper,
   Slider,
@@ -2426,28 +2427,7 @@ function MediaTile({
   const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
   const mediaBadgeLabel = mediaAssetChipLabel(item)
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
-  const clickTimerRef = useRef<number | null>(null)
-  const lastPointerTypeRef = useRef<string | null>(null)
-
-  useEffect(() => () => {
-    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
-  }, [])
-
-  const openDetails = () => {
-    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
-    clickTimerRef.current = window.setTimeout(() => {
-      clickTimerRef.current = null
-      onOpen(item)
-    }, 350)
-  }
-
-  const openPreview = () => {
-    if (clickTimerRef.current !== null) {
-      window.clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-    }
-    onPreview(item)
-  }
+  const openPreview = () => onPreview(item)
 
   const effectiveThumbnailLoader = useCallback(
     (nodeID: number) => thumbnailScheduler
@@ -2463,17 +2443,8 @@ function MediaTile({
       data-xdrive-media-index={logicalIndex}
       role="button"
       tabIndex={0}
-      onPointerDown={(event) => {
-        lastPointerTypeRef.current = event.pointerType
-      }}
       onClick={(event) => {
-        const pointerType = lastPointerTypeRef.current
-        lastPointerTypeRef.current = null
         if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey) {
-          if (clickTimerRef.current !== null) {
-            window.clearTimeout(clickTimerRef.current)
-            clickTimerRef.current = null
-          }
           onSelect(item, logicalIndex, {
             ctrlKey: event.ctrlKey,
             metaKey: event.metaKey,
@@ -2481,18 +2452,13 @@ function MediaTile({
           })
           return
         }
-        if (compactTouch && pointerType === 'touch') {
-          openPreview()
-          return
-        }
-        openDetails()
+        // First click already opened Viewer; ignore a double-click's second click.
+        if (event.detail > 1) return
+        openPreview()
       }}
-      onDoubleClick={(event) => {
-        event.preventDefault()
-        if (!selectionMode) openPreview()
-      }}
+      onDoubleClick={(event) => event.preventDefault()}
       onKeyDown={(event) => {
-        if (selectionMode && (event.key === ' ' || event.key === 'Enter')) {
+        if (event.key === ' ' || (selectionMode && event.key === 'Enter')) {
           event.preventDefault()
           onSelect(item, logicalIndex, {
             ctrlKey: event.ctrlKey,
@@ -2501,7 +2467,7 @@ function MediaTile({
           })
           return
         }
-        keyboardActivate(event, () => onOpen(item))
+        keyboardActivate(event, () => onPreview(item))
       }}
       sx={{
         position: 'relative',
@@ -2579,21 +2545,14 @@ function MediaTile({
         />
       ) : null}
       {compactTouch && !selectionMode ? (
-        <Tooltip title="媒体信息">
+        <Tooltip title="属性">
           <IconButton
             data-xdrive-gallery-touch-info
-            aria-label="媒体信息"
-            onPointerDown={(event) => {
-              event.stopPropagation()
-              lastPointerTypeRef.current = null
-            }}
+            aria-label="查看属性"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
-              if (clickTimerRef.current !== null) {
-                window.clearTimeout(clickTimerRef.current)
-                clickTimerRef.current = null
-              }
               onOpen(item)
             }}
             onDoubleClick={(event) => event.stopPropagation()}
@@ -3466,6 +3425,7 @@ export function XDriveMediaGallery({
   }, [thumbnailScheduler])
 
   const [selected, setSelected] = useState<MediaItem | null>(null)
+  const [mediaContextMenu, setMediaContextMenu] = useState<{ item: MediaItem; index: number; top: number; left: number } | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
@@ -3647,8 +3607,25 @@ export function XDriveMediaGallery({
   }, [effectiveTimeScale, minTileWidth, viewAnchorRevision, virtualCollection])
 
   const openMediaItem = useCallback((item: MediaItem) => setSelected(item), [])
+  const handleMediaContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    // Delegated to the Gallery root: 100k logical media never create 100k menus.
+    const tile = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-xdrive-media-tile]')
+      : null
+    if (!tile) return
+    const index = Number(tile.dataset.xdriveMediaIndex)
+    if (!Number.isSafeInteger(index) || index < 0) return
+    const item = virtualCollection?.itemAt(index) ?? items[index]
+    if (!item) return
+    event.preventDefault()
+    setMediaContextMenu({ item, index, top: event.clientY, left: event.clientX })
+  }, [items, virtualCollection])
   const openMediaPreview = useCallback((item: MediaItem, index?: number) => {
-    if (section === 'trash') return
+    // Deleted media cannot be previewed; the same tile click must still work.
+    if (section === 'trash') {
+      setSelected(item)
+      return
+    }
     const activeIndex = index ?? items.findIndex((candidate) => candidate.node.id === item.node.id)
     if (onOpenViewer && activeIndex >= 0) {
       onOpenViewer(item, activeIndex)
@@ -3669,6 +3646,7 @@ export function XDriveMediaGallery({
     const item = virtualCollection?.itemAt(index) ?? items[index]
     if (item) {
       setPreviewItem(item)
+      setSelected((current) => current ? item : null)
       setPreviewLogicalIndex(index)
       setPendingPreviewIndex(null)
       return
@@ -3683,6 +3661,7 @@ export function XDriveMediaGallery({
     const item = virtualCollection.itemAt(pendingPreviewIndex)
     if (!item) return
     setPreviewItem(item)
+    setSelected((current) => current ? item : null)
     setPreviewLogicalIndex(pendingPreviewIndex)
     setPendingPreviewIndex(null)
   }, [pendingPreviewIndex, virtualCollection, virtualCollection?.loadedItems])
@@ -3711,15 +3690,15 @@ export function XDriveMediaGallery({
   ])
 
   const closeMediaPreview = useCallback(() => {
+    setSelected(null)
     setPreviewItem(null)
     setPreviewLogicalIndex(null)
     setPendingPreviewIndex(null)
   }, [])
 
   const openPreviewInfo = useCallback((item: MediaItem) => {
-    closeMediaPreview()
-    setSelected(item)
-  }, [closeMediaPreview])
+    setSelected((current) => current?.node.id === item.node.id ? null : item)
+  }, [])
 
   const toggleMediaFavorite = useCallback((item: MediaItem) => {
     void toggleFavorite(item).catch(() => undefined)
@@ -3818,6 +3797,7 @@ export function XDriveMediaGallery({
     clearMediaSelection()
     setCollageDialogItems(null)
     setMovieDialogItems(null)
+    setMediaContextMenu(null)
     if (section === 'trash') {
       setSelected(null)
       setPreviewItem(null)
@@ -4017,9 +3997,10 @@ export function XDriveMediaGallery({
     <Stack
       ref={galleryRootRef}
       spacing={2}
+      onContextMenu={handleMediaContextMenu}
       sx={{
         minWidth: 0,
-        pr: { lg: selected ? '380px' : 0 },
+        pr: { lg: selected && !previewItem ? '380px' : 0 },
         transition: 'padding-right 160ms ease',
       }}
     >
@@ -5221,6 +5202,29 @@ export function XDriveMediaGallery({
         onClose={() => setMovieDialogItems(null)}
       />
 
+      <Menu
+        open={Boolean(mediaContextMenu)}
+        onClose={() => setMediaContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={mediaContextMenu ? { top: mediaContextMenu.top, left: mediaContextMenu.left } : undefined}
+        data-xdrive-gallery-media-context-menu
+      >
+        {!isTrashSection ? (
+          <MenuItem onClick={() => {
+            if (mediaContextMenu) openMediaPreview(mediaContextMenu.item, mediaContextMenu.index)
+            setMediaContextMenu(null)
+          }}>
+            打开
+          </MenuItem>
+        ) : null}
+        <MenuItem onClick={() => {
+          if (mediaContextMenu) openMediaItem(mediaContextMenu.item)
+          setMediaContextMenu(null)
+        }}>
+          属性
+        </MenuItem>
+      </Menu>
+
       <XDriveMediaGalleryViewer
         item={previewItem}
         positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
@@ -5256,6 +5260,8 @@ export function XDriveMediaGallery({
 
       <XDriveMediaDetailsInspector
         item={selected}
+        overlayZIndex={previewItem ? 1400 : undefined}
+        showPreview={!previewItem}
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={isTrashSection ? undefined : loadLivePhotoMotion}
         loadPreviewURL={isTrashSection ? undefined : loadPreviewURL}

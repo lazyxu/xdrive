@@ -196,6 +196,7 @@ function MediaDetailsRows({ rows }: { rows: readonly MediaDetailRow[] }) {
 
 export interface XDriveMediaDetailsContentProps {
   item: MediaItem | null
+  showPreview?: boolean
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
@@ -211,6 +212,7 @@ export interface XDriveMediaDetailsContentProps {
 
 export function XDriveMediaDetailsContent({
   item,
+  showPreview = true,
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
@@ -304,6 +306,7 @@ export function XDriveMediaDetailsContent({
 
   return (
     <Stack spacing={2} sx={{ p: 1.5 }}>
+      {showPreview ? (
       <Box
         sx={{
           height: 184,
@@ -350,6 +353,7 @@ export function XDriveMediaDetailsContent({
           />
         )}
       </Box>
+      ) : null}
       <Box component="section" aria-label="照片信息" data-xdrive-media-details-info>
         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>照片信息</Typography>
         <MediaDetailsRows rows={sectionRows.photoInfo} />
