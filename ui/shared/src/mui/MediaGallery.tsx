@@ -2028,7 +2028,10 @@ export function XDriveMediaGalleryPage({
       onError?.(deleteError)
       throw deleteError
     }
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, onError, query, source])
+  }, [
+    currentAlbum, currentCleanupReview, currentPerson, currentSuggestedPerson,
+    loadCleanup, loadFirstPage, onError, query, source,
+  ])
 
   const exportLivePhoto = useCallback(async (item: MediaItem) => {
     if (!source.exportLivePhoto) return

@@ -711,6 +711,27 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 Cleanup Burst review deletion refresh scope (2026-10-09)
+
+**In progress / PR validation pending.** The shared Web/Desktop Gallery deletion
+callback must depend on both the currently opened Burst cleanup review and its
+Cleanup reload function. When the user opens or leaves a review without changing
+other Gallery query state, the callback must not retain a stale closure from
+the previous surface. A successfully submitted delete from the Burst review
+refreshes the Cleanup overview route; a normal Gallery delete refreshes the
+active sparse collection, and a rejected submission does not refresh either.
+A regression test executes the actual extracted TSX callback with React-style
+memoized dependency comparison across these scope transitions.
+
+**Important boundary:** The shared deletion adapter currently submits a durable
+file-operation task and returns on acceptance, not terminal completion.
+This is a narrow stale-closure/refresh-routing correction, not a guarantee
+that eventual cleanup group counts or members have converged after a queued
+job finishes. Final completion-driven refresh requires separate Task Center
+terminal-state wiring and actual Web/Desktop plus PostgreSQL verification.
+Nothing here implements automatic SHA duplicate deletion, changes Live/RAW
+resource boundaries, or weakens the source Mirror keeper safety guard.
+
 ### G11 P4 phase 8 — protect annotations from a Mirror-managed keeper (2026-10-09)
 
 **Merged #1181 — CI verified.** Previous native
