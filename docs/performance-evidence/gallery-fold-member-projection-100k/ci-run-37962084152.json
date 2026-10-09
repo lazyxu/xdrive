@@ -1,0 +1,65 @@
+{
+  "provenance": {
+    "source_commit": "33a3e7f156784a627cc032f6e1d9c3192642f1a2",
+    "github_run_id": 37962084152,
+    "github_job_id": 113927857331,
+    "github_job_url": "https://github.com/lazyxu/xdrive/actions/runs/37962084152/job/113927857331",
+    "rejection": "30% AND 100ms mandatory; measured 10.163% AND 58.942ms; revert all production changes",
+    "scope": "Native PostgreSQL 17 same-fixture full SHA/resource/recipe index paired, 100k logical 115k physical 15k genuine Live 2k SHA metadata groups; no real physical offscreen duplicate bytes, browser, WAN or peak RSS",
+    "status": "rejected-below-material-gain-gate",
+    "one_commit_final_kind": "documentation-only-after-reverting-candidate"
+  },
+  "report": {
+    "Workload": "100k-real-postgres-same-fixture-full-resource-fold-member-query-ab",
+    "LogicalAssets": 100000,
+    "PhysicalMediaNodes": 115000,
+    "LiveGroups": 15000,
+    "RepeatedDigestGroups": 2000,
+    "VerifiedNodeCount": 10000,
+    "ExpectedVisible": 92000,
+    "SeedMS": 42441.254,
+    "Samples": [
+      {
+        "Sample": 1,
+        "Order": "legacy-then-candidate",
+        "LegacyMS": 587.655,
+        "CandidateMS": 511.84,
+        "LegacyAllocB": 82191224,
+        "CandidateAllocB": 80519104,
+        "LegacyIndexSize": 10000,
+        "EqualMap": true,
+        "EqualJSON": true
+      },
+      {
+        "Sample": 2,
+        "Order": "candidate-then-legacy",
+        "LegacyMS": 558.298,
+        "CandidateMS": 524.006,
+        "LegacyAllocB": 81724904,
+        "CandidateAllocB": 80621456,
+        "LegacyIndexSize": 10000,
+        "EqualMap": true,
+        "EqualJSON": true
+      },
+      {
+        "Sample": 3,
+        "Order": "legacy-then-candidate",
+        "LegacyMS": 579.974,
+        "CandidateMS": 521.032,
+        "LegacyAllocB": 81983960,
+        "CandidateAllocB": 80441864,
+        "LegacyIndexSize": 10000,
+        "EqualMap": true,
+        "EqualJSON": true
+      }
+    ],
+    "LegacyMedianMS": 579.974,
+    "CandidateMedianMS": 521.032,
+    "ReductionMS": 58.94200000000001,
+    "ReductionPercent": 10.162869370006241,
+    "LegacyMedianAllocB": 81983960,
+    "CandidateMedianAllocB": 80519104,
+    "TargetAccepted": false,
+    "Scope": "Native PostgreSQL17/GORM full SHA+resource+recipe fold index; legacy cleanup member projection compared against fold-only member projection; no browser/HTTP/physical camera bytes/peak RSS."
+  }
+}
