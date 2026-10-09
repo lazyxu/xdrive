@@ -228,24 +228,34 @@ native runtime support.
 
 ### Video
 
-Video uses the shared HTML media renderer and the generic preview URL.
+Video uses the shared HTML media renderer and the generic preview URL. A returned signed
+URL is only source readiness: the shared surface remains busy until the media element has
+loaded a current frame (`loadeddata` / `canplay`). The video stays mounted while that
+presentation gate is pending so native Range/buffering can progress.
 
 A decode/playback error must fall back to the consumer-provided fallback state rather
-than creating a video-specific transport path.
+than creating a video-specific transport path. A stale readiness/error event from a
+replaced URL must not change the newer preview state.
 
 If a format eventually requires transcoding, expose a derived preview resource through
 the Preview Engine source model; do not recreate a Gallery-only playback API.
 
 ### Audio
 
-Audio uses the shared HTML media renderer and the generic preview URL.
+Audio uses the shared HTML media renderer and the generic preview URL. URL acquisition
+and media readiness are distinct: the surface remains busy until metadata/can-play is
+available, while native controls stay mounted. Decode/transport errors use the same
+shared fallback contract as video.
 
 Unsupported-codec behavior follows the same rule as video: improve the Preview Engine
 or provide a derived resource instead of adding a parallel transport.
 
 ### PDF
 
-PDF uses the shared PDF renderer over the generic signed preview URL.
+PDF uses the shared PDF renderer over the generic signed preview URL. The iframe is
+mounted as soon as the signed source is available, while the surface remains busy until
+its load event; ticket failure and best-effort frame error fall back through the same
+shared failure state. PDF does not gain directory previous/next navigation.
 
 Desktop PDF access remains restricted to the loopback preview proxy.
 
@@ -333,8 +343,12 @@ plus a resource fingerprint containing parent SHA and validated byte offset/size
 GET/HEAD + Range support. Desktop hides the upstream still ticket behind the existing
 loopback-only preview proxy; Web uses the signed same-origin URL directly.
 
-The existing `XDriveLivePhotoSurface` overlays motion on that still. The static Live Photo
-badge is shown only after a real still image is available; a generic fallback icon must never
+The existing `XDriveLivePhotoSurface` overlays motion on that still. Its lifecycle is
+keyed by stable media identity (node/revision), not by the JavaScript identity of the
+`loadMotion` callback. Recreating an equivalent adapter callback must not stop playback,
+discard a resolved motion source, or refetch it; changing media identity must stop playback,
+dispose the owned source, and fence/dispose any late completion from the old identity.
+The static Live Photo badge is shown only after a real still image is available; a generic fallback icon must never
 be decorated as though motion preview were ready. This is file-format
 presentation, not Gallery grouping. Do not infer standalone JPG/HEIC + MOV relationships
 inside FileExplorer.
