@@ -13,6 +13,8 @@ import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRound
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined'
@@ -23,7 +25,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import {
   Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, InputAdornment, Menu, MenuItem, Stack, TextField, Typography,
+  Divider, IconButton, InputAdornment, ListItemIcon, Menu, MenuItem, Stack, TextField, Typography,
 } from '@mui/material'
 import { formatBytes, xDriveFileExplorerDragAutoScrollDelta } from '../../ui/shared/src'
 import type { MediaItem, NodeLocation, XDriveFileExplorerGrouping } from '../../ui/shared/src'
@@ -220,6 +222,10 @@ function MobileDocumentIcon({ item, size = 32 }: {
 }
 
 const MIN_TOUCH = 44
+// Only Mobile Files uses the iOS-like type scale and surfaces. Shared Web and
+// Desktop themes remain unchanged; these tokens are not copied Apple assets.
+const IOS_FILES_MOBILE_BLUE = '#007aff'
+const IOS_FILES_MOBILE_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif'
 const labelOf = (item: XDriveFileExplorerItem) => (
   item.kind === 'dir' ? '文件夹' : xDriveFileTypeLabel(item.name, item.kind)
 )
@@ -731,10 +737,23 @@ export default function MobileFiles(props: Props) {
     }
   }
 
-  const menuFor = (item: XDriveFileExplorerItem) => {
-    const common = props.getItemMenuItems(item).filter(action => !['open-new-tab', 'open-browser-tab'].includes(action.id))
-    return common
-  }
+  const menuFor = (item: XDriveFileExplorerItem) =>
+    props.getItemMenuItems(item).filter(action => !['open-new-tab', 'open-browser-tab'].includes(action.id))
+  // The shared menu adapter already supplies genuine action icons and danger/
+  // separator metadata. Preserve that semantic structure in Mobile Files.
+  const mobileContextAction = (action: XDriveFileExplorerMenuItem) => (
+    <MenuItem key={action.id} data-mobile-files-context-action={action.id}
+      disabled={action.disabled}
+      sx={{ color: action.danger ? 'error.main' : undefined, minHeight: MIN_TOUCH }}
+      onClick={() => { setItemMenu(null); action.onSelect() }}>
+      {action.icon ? (
+        <ListItemIcon sx={{ minWidth: 34, color: action.danger ? 'error.main' : 'inherit' }}>
+          {action.icon}
+        </ListItemIcon>
+      ) : null}
+      {action.id === 'share' ? '分享链接' : action.label}
+    </MenuItem>
+  )
   const openProperties = (item: XDriveFileExplorerItem) => { setItemMenu(null); setProperties(item) }
   const closeNativeShare = () => {
     nativeShareInvocationRef.current = false
@@ -860,11 +879,16 @@ export default function MobileFiles(props: Props) {
           minWidth: 0, minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           display: 'flex', flexDirection: effectiveGrid ? 'column' : 'row', alignItems: 'center',
           gap: effectiveGrid ? 0.5 : 1.5, py: effectiveGrid ? 1 : 0.6, px: effectiveGrid ? 0.5 : 2,
-          borderBottom: effectiveGrid ? 0 : 1, borderColor: 'divider', cursor: 'pointer',
-          bgcolor: chosen || dropFolderID === String(item.id) ? 'action.selected' : 'transparent',
+          position: 'relative', cursor: 'pointer',
+          bgcolor: chosen || dropFolderID === String(item.id) ? 'action.selected' :
+            effectiveGrid ? 'transparent' : (theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff'),
           outline: dropFolderID === String(item.id) ? '2px solid' : 'none',
-          outlineColor: 'primary.main', outlineOffset: -2,
-          '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+          outlineColor: IOS_FILES_MOBILE_BLUE, outlineOffset: -2,
+          '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE },
+          ...(!effectiveGrid ? { '&:not(:last-child)::after': {
+            content: '""', position: 'absolute', bottom: 0, left: 60, right: 0,
+            borderBottom: '1px solid', borderColor: 'divider', pointerEvents: 'none',
+          } } : {}),
         }}
       >
         {selectionMode ? (
@@ -943,8 +967,13 @@ export default function MobileFiles(props: Props) {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action() }
       }}
       sx={{ display: 'flex', alignItems: 'center', minHeight: 64, px: 2, gap: 1.5,
-        borderBottom: 1, borderColor: 'divider',
-        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
+        position: 'relative',
+        bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff',
+        '&:not(:last-child)::after': {
+          content: '""', position: 'absolute', bottom: 0, left: 60, right: 0,
+          borderBottom: '1px solid', borderColor: 'divider', pointerEvents: 'none',
+        },
+        '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE } }}>
       <Box sx={{ flexShrink: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {locationKind === 'cloud'
           ? <CloudRoundedIcon sx={{ color: 'primary.main', fontSize: 32 }} />
@@ -1006,6 +1035,9 @@ export default function MobileFiles(props: Props) {
   }
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
     showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
+  const editTitle = editBrowseHome && section === 'browse' && !showDirectory
+  const compactTitleVisible = scrollTop > 48 || selectionActive || editTitle
+  const compactTitle = selectionActive ? `已选 ${selection.length} 项` : editTitle ? '整理浏览' : heading
   const overflowAction = (label: string, action: () => void, disabled = false) => (
     <MenuItem key={label} disabled={disabled} onClick={() => { setMoreAnchor(null); action() }} sx={{ minHeight: MIN_TOUCH }}>{label}</MenuItem>
   )
@@ -1014,15 +1046,26 @@ export default function MobileFiles(props: Props) {
     <XDriveFileExplorerThumbnailProvider lifecycleKey={props.lifecycleKey} loadThumbnail={props.loadThumbnail}>
       <Box ref={ownerRef} data-xdrive-mobile-files sx={{
         minHeight: 0, minWidth: 0, height: '100%', flex: 1,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.paper',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#f2f2f7',
+        fontFamily: IOS_FILES_MOBILE_FONT,
+        '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
       }}>
-        <Stack direction="row" alignItems="center" sx={{ px: 1.5, flexShrink: 0, minHeight: 56, gap: 1 }}>
+        <Stack data-mobile-files-navigation-bar direction="row" alignItems="center" sx={{
+          px: 1.5, flexShrink: 0, minHeight: 52, gap: 1,
+          bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#f2f2f7',
+          borderBottom: compactTitleVisible ? 1 : 0,
+          borderColor: 'divider',
+        }}>
           {showDirectory ? (
             <Button size="small" onClick={navigateUp} startIcon={<ArrowBackIosNewRoundedIcon sx={{ fontSize: 15 }}/>}
-              sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, px: 1 }}>返回</Button>
+              sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, px: 1, color: IOS_FILES_MOBILE_BLUE }}>返回</Button>
           ) : null}
-          <Typography variant="h5" fontWeight={750} noWrap sx={{ flex: 1, minWidth: 0 }}>
-            {selectionActive ? `已选 ${selection.length} 项` : editBrowseHome && section === 'browse' && !showDirectory ? '整理浏览' : heading}
+          <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
+            aria-hidden={!compactTitleVisible}
+            sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
+              visibility: compactTitleVisible ? 'visible' : 'hidden' }}>
+            {compactTitle}
           </Typography>
           {selectionActive ? (
             <>
@@ -1040,7 +1083,7 @@ export default function MobileFiles(props: Props) {
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
           ) : (
             <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
-              sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}><MoreHorizRoundedIcon/></IconButton>
+              sx={{ width: MIN_TOUCH, height: MIN_TOUCH, color: IOS_FILES_MOBILE_BLUE }}><MoreHorizRoundedIcon/></IconButton>
           )}
         </Stack>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
@@ -1058,7 +1101,14 @@ export default function MobileFiles(props: Props) {
             }
           }}
           sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehaviorY: 'contain' }}>
-          <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.paper', px: 2,
+          {!selectionActive && !editTitle ? (
+            <Box data-mobile-files-large-title sx={{ px: 2, pt: 1.75, pb: 0.5 }}>
+              <Typography component="h2" sx={{ fontSize: 34, fontWeight: 730,
+                lineHeight: 1.22, letterSpacing: '-0.5px' }}>{heading}</Typography>
+            </Box>
+          ) : null}
+          <Box sx={{ position: 'sticky', top: 0, zIndex: 1,
+            bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#f2f2f7', px: 2,
             py: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1.5,
             maxHeight: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 198,
             opacity: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
@@ -1074,7 +1124,11 @@ export default function MobileFiles(props: Props) {
                   launchGlobalSearch(() => props.onSearch(props.searchValue))
                 }
               }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'action.hover', borderRadius: 2, minHeight: MIN_TOUCH } }}
+              sx={{ '& .MuiOutlinedInput-root': {
+                bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#e3e3e8',
+                borderRadius: 2.5, minHeight: MIN_TOUCH,
+                '& fieldset': { border: 0 },
+              } }}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small"/></InputAdornment>,
                 endAdornment: props.searchValue ? <InputAdornment position="end"><IconButton size="small" aria-label="清除搜索文本" onClick={() => props.onSearchValueChange('')}><CloseRoundedIcon fontSize="small"/></IconButton></InputAdornment> : null }}}/>
             {props.filtersControl}
@@ -1096,7 +1150,10 @@ export default function MobileFiles(props: Props) {
           </Box>
           {section === 'browse' && !showDirectory ? (
             <Box data-xdrive-mobile-files-home>
-              <Typography variant="overline" sx={{ px: 2, color: 'text.secondary' }}>位置</Typography>
+              <Typography variant="overline" sx={{ px: 2, color: 'text.secondary',
+                display: 'block', pt: 1.5, pb: 0.5 }}>位置</Typography>
+              <Box data-mobile-files-group="locations" sx={{ mx: 2, borderRadius: '13px',
+                overflow: 'hidden', bgcolor: 'background.paper' }}>
               {mobileRow({ id: -1, name: '云端文件', kind: 'dir' }, () => {
                 props.onCloseTrash()
                 props.onBrowseRoot()
@@ -1106,6 +1163,7 @@ export default function MobileFiles(props: Props) {
               {mobileRow({ id: -2, name: '最近删除', kind: 'dir' }, () => {
                 props.onOpenTrash(); beginBrowse(null)
               }, true, undefined, 'trash')}
+              </Box>
               {props.quickAccess.length > 0 ? (
                 <>
                   <Button data-mobile-files-home-section="quick" aria-expanded={browseSections.quick}
@@ -1115,12 +1173,17 @@ export default function MobileFiles(props: Props) {
                       color: 'text.secondary', textTransform: 'none' }}>
                     个人收藏文件夹 · {props.quickAccess.length}
                   </Button>
-                  {browseSections.quick ? props.quickAccess.map((entry, index) => editableHomeRow(entry, () => {
-                    const intent = ++navigationIntentRef.current
-                    void props.onOpenQuickAccess(entry.id).then(accepted => {
-                      if (accepted && intent === navigationIntentRef.current) beginBrowse(entry.id)
-                    }).catch(props.onOpenError)
-                  }, 'quick', index)) : null}
+                  {browseSections.quick ? (
+                    <Box data-mobile-files-group="quick" sx={{ mx: 2, borderRadius: '13px',
+                      overflow: 'hidden', bgcolor: 'background.paper' }}>
+                      {props.quickAccess.map((entry, index) => editableHomeRow(entry, () => {
+                        const intent = ++navigationIntentRef.current
+                        void props.onOpenQuickAccess(entry.id).then(accepted => {
+                          if (accepted && intent === navigationIntentRef.current) beginBrowse(entry.id)
+                        }).catch(props.onOpenError)
+                      }, 'quick', index))}
+                    </Box>
+                  ) : null}
                 </>
               ) : null}
               {props.savedSearches.length > 0 || props.tags.length > 0 ? (
@@ -1133,14 +1196,15 @@ export default function MobileFiles(props: Props) {
                     整理 · {props.savedSearches.length + props.tags.length}
                   </Button>
                   {browseSections.organization ? (
-                    <>
+                    <Box data-mobile-files-group="organization" sx={{ mx: 2, borderRadius: '13px',
+                      overflow: 'hidden', bgcolor: 'background.paper' }}>
                       {props.savedSearches.map((entry, index) => editableHomeRow({
                         ...entry, kind: 'dir', subtitle: '智能文件夹',
                       }, () => launchGlobalSearch(() => props.onOpenSavedSearch(entry.id)), 'saved', index))}
                       {props.tags.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '标签' }, () => {
                         if (!editBrowseHome) launchGlobalSearch(() => props.onOpenTag(entry.id))
                       }, false, undefined, 'tag'))}
-                    </>
+                    </Box>
                   ) : null}
                 </>
               ) : null}
@@ -1204,7 +1268,10 @@ export default function MobileFiles(props: Props) {
                   ))}
                 </Box>
               ) : (
-                <>
+                <Box data-mobile-files-group="directory" sx={{
+                  mx: effectiveGrid ? 0 : 2, borderRadius: effectiveGrid ? 0 : '13px',
+                  overflow: 'hidden', bgcolor: effectiveGrid ? 'transparent' : 'background.paper',
+                }}>
                   <Box sx={{ height: windowRows.before }} />
                   <Box sx={effectiveGrid ? {
                     display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
@@ -1212,23 +1279,26 @@ export default function MobileFiles(props: Props) {
                     {Array.from({ length: end - start }, (_, offset) => renderLogicalCell(start + offset))}
                   </Box>
                   <Box sx={{ height: windowRows.after }}/>
-                </>
+                </Box>
               )}
             </>
           ) : (
             <Box data-xdrive-mobile-files-collection>
               {sectionItems.length === 0 ? <Typography color="text.secondary" sx={{ p: 3 }}>暂无{section === 'recent' ? '最近打开的项目' : '收藏的文件'}</Typography> : null}
-              <Box sx={{ height: sectionWindow.before }}/>
-              {sectionItems.slice(sectionWindow.start, sectionWindow.end).map(entry => mobileRow(entry, () => {
-                const intent = ++navigationIntentRef.current
-                const open = section === 'recent'
-                  ? props.onOpenRecent(entry.id)
-                  : props.onOpenFavorite(entry.id)
-                void open.then(accepted => {
-                  if (accepted && intent === navigationIntentRef.current && entry.kind === 'dir') beginBrowse(entry.id)
-                }).catch(props.onOpenError)
-              }, false, section === 'recent' ? 'recent' : 'favorites'))}
-              <Box sx={{ height: sectionWindow.after }}/>
+              <Box data-mobile-files-group="collection" sx={{ mx: 2, mt: 1.5,
+                borderRadius: '13px', overflow: 'hidden', bgcolor: 'background.paper' }}>
+                <Box sx={{ height: sectionWindow.before }}/>
+                {sectionItems.slice(sectionWindow.start, sectionWindow.end).map(entry => mobileRow(entry, () => {
+                  const intent = ++navigationIntentRef.current
+                  const open = section === 'recent'
+                    ? props.onOpenRecent(entry.id)
+                    : props.onOpenFavorite(entry.id)
+                  void open.then(accepted => {
+                    if (accepted && intent === navigationIntentRef.current && entry.kind === 'dir') beginBrowse(entry.id)
+                  }).catch(props.onOpenError)
+                }, false, section === 'recent' ? 'recent' : 'favorites'))}
+                <Box sx={{ height: sectionWindow.after }}/>
+              </Box>
             </Box>
           )}
         </Box>
@@ -1275,7 +1345,7 @@ export default function MobileFiles(props: Props) {
               <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
                 onClick={() => changeSection(value)} sx={{
                   flex: 1, flexDirection: 'column', minHeight: 52, gap: 0,
-                  color: section === value ? 'primary.main' : 'text.secondary',
+                  color: section === value ? IOS_FILES_MOBILE_BLUE : 'text.secondary',
                   fontSize: 11, borderRadius: 0,
                 }}>
                 {icon}{label}
@@ -1338,22 +1408,35 @@ export default function MobileFiles(props: Props) {
         </Menu>
         <Menu open={Boolean(itemMenu)} onClose={() => setItemMenu(null)}
           anchorReference="anchorPosition"
-          anchorPosition={itemMenu ? { top: itemMenu.y, left: itemMenu.x } : undefined}>
-          {itemMenu ? menuFor(itemMenu.item).map(item => (
-            <MenuItem key={item.id} disabled={item.disabled}
-              sx={{ color: item.danger ? 'error.main' : undefined, minHeight: 44 }}
-              onClick={() => { setItemMenu(null); item.onSelect() }}>{item.label}</MenuItem>
+          anchorPosition={itemMenu ? { top: itemMenu.y, left: itemMenu.x } : undefined}
+          slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
+            maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)' } } }}>
+          {itemMenu ? menuFor(itemMenu.item).filter(item => !item.danger).flatMap(item => (
+            item.dividerBefore
+              ? [<Divider key={`${item.id}-separator`} sx={{ my: 0.5 }}/>, mobileContextAction(item)]
+              : [mobileContextAction(item)]
           )) : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => beginRename(itemMenu.item)}>重命名</MenuItem> : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onMove([itemMenu.item]); setItemMenu(null) }}>移动到…</MenuItem> : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onCopyTo([itemMenu.item]); setItemMenu(null) }}>复制到…</MenuItem> : null}
-          {itemMenu ? <MenuItem onClick={() => openProperties(itemMenu.item)}>属性</MenuItem> : null}
+          {itemMenu && !props.trashActive ? (
+            <Divider data-mobile-files-context-separator="edit" sx={{ my: 0.5 }}/>
+          ) : null}
+          {itemMenu && !props.trashActive ? <MenuItem onClick={() => beginRename(itemMenu.item)}
+            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
+          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onMove([itemMenu.item]); setItemMenu(null) }}
+            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><DriveFileMoveOutlinedIcon fontSize="small"/></ListItemIcon>移动到…</MenuItem> : null}
+          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onCopyTo([itemMenu.item]); setItemMenu(null) }}
+            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><ContentCopyOutlinedIcon fontSize="small"/></ListItemIcon>复制到…</MenuItem> : null}
           {itemMenu?.item.kind === 'file' && !props.trashActive && canNativeShareFile ? (
             <MenuItem data-mobile-files-native-share-entry="directory"
-              onClick={() => prepareNativeShare(itemMenu.item)}>
-              <ShareRoundedIcon fontSize="small" sx={{ mr: 1 }}/>系统分享文件
+              onClick={() => prepareNativeShare(itemMenu.item)} sx={{ minHeight: MIN_TOUCH }}>
+              <ListItemIcon><ShareRoundedIcon fontSize="small"/></ListItemIcon>系统分享文件
             </MenuItem>
           ) : null}
+          {itemMenu ? <MenuItem onClick={() => openProperties(itemMenu.item)}
+            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><InfoOutlinedIcon fontSize="small"/></ListItemIcon>属性</MenuItem> : null}
+          {itemMenu && menuFor(itemMenu.item).some(item => item.danger) ? (
+            <Divider data-mobile-files-context-separator="danger" sx={{ my: 0.5 }}/>
+          ) : null}
+          {itemMenu ? menuFor(itemMenu.item).filter(item => item.danger).map(mobileContextAction) : null}
         </Menu>
         <Menu open={Boolean(collectionMenu)} onClose={() => setCollectionMenu(null)}
           anchorReference="anchorPosition"

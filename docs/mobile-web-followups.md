@@ -1,5 +1,7 @@
 # Mobile Web：已批准的逐项完善与验收
 
+**2026-10-10 Mobile Files F-iOS-01A status:** A Mobile-only iOS-like scroll-owned large title, grouped card/list surfaces and shared context-action icon/divider/danger rendering are under PR validation. Preserve the accepted App Frame Header and Recent/Browse/Favorites choices; this is **not** a claim of native iOS 1:1 pixel verification. See [Mobile Files](mobile-files-ios.md). Full desktop/Web CI and real iOS device acceptance remain separate.
+
 
 **2026-10-10 新批准 Gallery 专项：** 用户明确指定 [iOS 27「照片」1:1 Gallery 视觉与交互合同](mobile-gallery-ios27.md) 为 Mobile Web 图库的新基准。它授权 Gallery 内部展示层按 iOS 27 对齐，并覆盖此前「分类 Drawer / 年月日全部底栏」作为最终目标的旧约定；不解除全屏 App Frame + 52px 标题栏、共享后端、既有业务、生命周期/安全区/100k 规定。此项设计已批准，**代码实现与 iOS 27 真机验收未因此自动变为已完成**；原先未批准的 iOS 功能后端增强仍需单独评估。
 

@@ -70,6 +70,17 @@ Follow-up to #1183; this phase reuses the existing Server-owned order of Quick A
 - **Abort/lifecycle:** Modal dismissal, Mobile directory/tab switches, account transition and component unmount abort outstanding preparation. Prevent double share-sheet submissions. Keep the resulting `File` only until the modal closes; do not persist it in localStorage, thumbnail caches, Service Workers or logs.
 - **Acceptance:** Pure reader tests prove bounded memory, partial rejection and cancellation; mounted React tests prove preparation never auto-launches OS share and the confirmation is a separate click. Real iOS Safari/Android Chrome testing of Web Share targets, cancellation and received-file bytes remains **not run** until a physical device is available.
 
+## 2026-10-10 F-iOS-01A · native-look chrome and menu metadata
+
+**Status: implemented on a one-work-commit GitHub PR; merge and physical-device acceptance are separately gated.** This is a Mobile-only presentation increment after merged PRs #1183, #1196 and #1198, not a claim that iOS Files has been pixel-for-pixel cloned.
+
+- Use a scroll-owned **34px large section title** above the existing all-files search, while the small 17px title in the Files-internal navigation row is visually hidden initially and appears only once the user scrolls 48px or enters Select / Edit. Keep exactly one scroll owner and the outer **52px App Frame Header** with upload/download and app switch untouched.
+- Define Mobile-only iOS-like system font stack, light/dark page backgrounds and neutral search-field surfaces. Group Browse Locations / Quick Access / Organization, Recent/Favorites and regular directory rows in inset **13px rounded section surfaces**. File list keeps its existing 68px virtual row / 150px grid-row geometry, thumbnail admission, Server grouping and 10k/100k bounded page loading. Use inset separators inside list cards instead of full-bleed row borders.
+- Surface the **existing shared FileExplorer context action icons, dividers and danger flags** with native-like grouped menu paper. Render ordinary Copy To / Move / Rename / Properties above the destructive group; preserve Web Share's distinct link-share and OS-file-share controls and all existing callbacks. Do not add a new file mutation path.
+- Scope style overrides to Mobile Files; do not change the canonical Web/Desktop MUI theme, iOS proprietary icon binaries, Desktop context menu, Server search behavior or full-screen outer App Header.
+- Contract + mounted React tests cover expanding/compact titles, one scroll owner, location/list shells, shared icon and destructive menu metadata, native-file-share preservation and desktop preference isolation.
+- **Not yet implemented:** Recent 2.0 full pagination/date groups, precise Apple-specific glyph assets, native drag reorder, PDF page-1 persistent thumbnail, content-aware file icons, native scanning, cross-account shared-to-me collection, tag sort/folder-inline expansion. No native iPhone/iPad Safari screenshots, assistive-technology pass or numeric pixel error measurement are claimed.
+
 ## Acceptance requirements
 
 1. Web build and typecheck, Desktop full tests, required PR CI / final gate; no change to Desktop or wide-Web FileExplorer. Mobile App Header must reuse the exact same noncompact `XDriveTransferPopover` as wide Web at **all mobile widths**, including real-time upload/download rates, active/history, retry and clearing; never move or duplicate it in the sidebar. The App title can truncate before the transfer trigger.
