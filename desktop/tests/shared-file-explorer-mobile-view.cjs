@@ -124,3 +124,61 @@ test('presentation status names the sort field, direction, grouping and effectiv
   assert.ok(html.includes('文件夹优先'))
   assert.ok(html.includes('当前视图：列表'))
 })
+
+test('desktop selection has no duplicate selection-scope banner beneath the command bar', () => {
+  const html = renderView('grid', false, { selectedIDs: [2] })
+  assert.ok(html.includes('data-xdrive-file-explorer-command-bar'),
+    'retain the normal desktop file operation command bar')
+  assert.ok(html.includes('data-xdrive-file-explorer-status-bar'),
+    'retain the native compact status bar')
+  assert.ok(html.includes('已选择 1 项'),
+    'the status bar still conveys the current selection count')
+  assert.ok(!html.includes('data-xdrive-file-explorer-selection-scope'),
+    'selecting a file must not insert a second toolbar row or reduce viewport height')
+  assert.ok(!html.includes('选择范围：'), 'remove redundant selection scope prose')
+  assert.ok(!html.includes('全选当前目录'), 'no duplicate desktop select-all button')
+  assert.ok(!html.includes('清除选择'), 'no duplicate desktop clear-selection button')
+})
+
+test('desktop search selection also remains in status bar, not a scope panel', () => {
+  const html = renderView('details', false, {
+    selectedIDs: [2],
+    searchSummary: {
+      query: 'photo', conditions: [], resultCount: 2, onClear() {},
+    },
+  })
+  assert.ok(!html.includes('data-xdrive-file-explorer-selection-scope'),
+    'active search must not reintroduce the desktop selection banner')
+  assert.ok(html.includes('已选择 1 项'))
+  assert.ok(html.includes('范围：全部文件'), 'real active search scope remains independently visible')
+  assert.ok(html.includes('清除搜索与筛选'), 'search clearing is independent of selected files')
+})
+
+test('compact selection retains actual selection commands without redundant selection scope prose', () => {
+  const html = renderView('grid', true, { selectedIDs: [2] })
+  assert.ok(html.includes('data-xdrive-file-explorer-selection-scope'),
+    'compact selection still exposes touch-accessible actions')
+  assert.ok(html.includes('全选当前目录'),
+    'touch users must retain logical all-items selection without a keyboard')
+  assert.ok(html.includes('清除选择'),
+    'touch users must be able to clear selection without a keyboard')
+  assert.ok(!html.includes('选择范围：'), 'do not waste touch viewport height on duplicate scope prose')
+})
+
+test('removing desktop scope panel keeps 100k selection loading cancellable from the status bar', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '../../ui/shared/src/mui/FileExplorer.tsx'), 'utf8',
+  )
+  assert.ok(source.includes('compactViewport && (touchSelectionMode || selectedCount > 0 || selectionLoad || selectionLoadFeedback)'),
+    'selection scope controls must be compact-only')
+  assert.ok(source.includes('!compactViewport && selectionLoad ? ('),
+    'desktop must show async selection progress in its existing status bar')
+  assert.ok(source.includes('!compactViewport && selectionLoadFeedback ? ('),
+    'desktop must retain selection failure/cancellation feedback')
+  assert.ok(source.includes('onClick={cancelSelectionLoad}'),
+    'desktop users must still cancel 100k logical-range collection')
+  assert.ok(source.includes("if (command === 'select-all')"),
+    'Ctrl/Cmd+A still selects the full logical collection')
+  assert.ok(source.includes("if (event.key === 'Escape')"),
+    'Escape still clears selection or cancels the async select-all intent')
+})

@@ -4993,6 +4993,21 @@ export function XDriveFileExplorer({
               {selectionStatusText}
             </Typography>
           ) : null}
+          {!compactViewport && selectionLoad ? (
+            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+              <Typography role="status" variant="caption" noWrap>
+                正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项
+              </Typography>
+              <Button size="small" onClick={cancelSelectionLoad} sx={{ minHeight: 28, px: 0.5, flexShrink: 0 }}>
+                取消
+              </Button>
+            </Stack>
+          ) : null}
+          {!compactViewport && selectionLoadFeedback ? (
+            <Typography role="status" variant="caption" noWrap title={selectionLoadFeedback}>
+              {selectionLoadFeedback}
+            </Typography>
+          ) : null}
         </Stack>
         <Stack direction="row" spacing={1.25} alignItems="center" minWidth={0} sx={{ flexWrap: 'wrap' }}>
           {statusText && !searchSummary ? (
@@ -5884,7 +5899,7 @@ export function XDriveFileExplorer({
           overscrollBehavior: 'contain',
         } : { display: 'contents' }}
       >
-      {(compactViewport && touchSelectionMode) || selectedCount > 0 || selectionLoad || selectionLoadFeedback ? (
+      {compactViewport && (touchSelectionMode || selectedCount > 0 || selectionLoad || selectionLoadFeedback) ? (
         <Box data-xdrive-file-explorer-selection-scope sx={{ flexShrink: 0, px: 1.25, py: 0.5, borderBottom: 1, borderColor: 'divider' }}>
           {compactViewport && (onMoveItemsTo || onCopyItemsTo) ? (
             <Stack data-xdrive-file-explorer-destination-actions direction="row" gap={1} sx={{ flexWrap: 'wrap', mb: 0.5 }}>
@@ -5908,11 +5923,6 @@ export function XDriveFileExplorer({
               ) : null}
             </Stack>
           ) : null}
-          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-            {searchSummary
-              ? `选择范围：当前搜索的全部 ${logicalItemCount} 个结果，包含未加载结果。`
-              : `选择范围：当前目录“${crumbs.at(-1)?.name ?? derivedPath}”的 ${logicalItemCount} 个项目，不包含子目录内容。`}
-          </Typography>
           <Stack direction="row" alignItems="center" gap={1} sx={{ flexWrap: 'wrap' }}>
             {selectionLoad ? (
               <>
