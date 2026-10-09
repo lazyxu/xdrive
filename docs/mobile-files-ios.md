@@ -107,3 +107,9 @@ This document overrides older Mobile clauses in `docs/file-explorer.md` and the 
 - F-iOS27-02 adds wide-Web Undo/Redo, workspace Back/Forward and Copy Paths to reachable Mobile menus and delegates Mobile's 10k/100k virtual window to the same shared Details kernel, preserving Mobile's 300px admission floor. These are pending authoritative CI and must not be marked merged here.
 - Remaining parity includes saved-search editing/deletion/replacement, keyboard shortcuts, Multi-properties, Quick Look alternatives and true folder-inline list disclosure where an authoritative nested range API is available. Internal file tabs remain the only accepted permanent omission; missing behaviors are open bugs.
 
+
+## 2026-10-10 F-PARITY-03 · saved searches in Mobile Browse
+
+**Status: implemented on a one-work-commit GitHub branch; full CI/merge pending.** Wide Web already supports saved-search Rename, Replace and Delete. Mobile Browse's explicit Edit mode now reaches these exact Web-owned operations from a 44px Smart Folder options trigger and shared `XDriveFileNameDialog`. Update Existing Smart Folder is additionally accessible while the **committed Server all-files Search** is active; an explicit target picker prevents replacing a rule with an empty non-search Home state.
+
+A modal confirms that deleting a saved rule does not remove matching files, guards double-clicks, and retains the draft and error after failure. Loading/failed organization reads are not mislabeled as an empty list; a Retry uses the existing `organization.refresh` controller. The subtitle derives from the same shared readable search-rule labels as wide Web. One owner-scoped `XDriveApi`, operation controller and virtual collection remain unchanged. Add mounted behavior tests plus source contract, and retain physical-device iOS 27 acceptance as not-run.
