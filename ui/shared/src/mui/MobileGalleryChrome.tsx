@@ -10,15 +10,14 @@ import {
   Slider, Stack, TextField, Typography,
 } from '@mui/material'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
-import { XDriveMediaGalleryNavigation } from './MediaGalleryNavigation'
-import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { xDriveMediaTimeZoneChoices } from '../media-timezone'
 
 export type MobileGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
+export type MobileGalleryPrimaryTab = 'library' | 'collections'
 
 export interface XDriveMobileGalleryChromeProps {
-  section: MediaGallerySection
-  onSectionChange?: (section: MediaGallerySection) => void
+  primaryTab: MobileGalleryPrimaryTab
+  onPrimaryTabChange: (tab: MobileGalleryPrimaryTab) => void
   collectionTitle: string
   canGoBack: boolean
   onGoBack?: () => void
@@ -29,6 +28,7 @@ export interface XDriveMobileGalleryChromeProps {
   sortDir: 'asc' | 'desc'
   onSort: (by: 'captured' | 'added', dir: 'asc' | 'desc') => void
   filterContent?: ReactNode
+  onSearchRequested?: () => void
   timeScale: MobileGalleryTimeScale
   onTimeScale: (scale: MobileGalleryTimeScale) => void
   currentDateLabel?: string
@@ -57,30 +57,34 @@ export interface XDriveMobileGalleryChromeProps {
  * app, transfers and the single global app-switcher, and is never duplicated.
  */
 export function XDriveMobileGalleryChrome({
-  section, onSectionChange, collectionTitle, canGoBack, onGoBack,
+  primaryTab, onPrimaryTabChange, collectionTitle, canGoBack, onGoBack,
   showCollection, selectionMode, onToggleSelection, sortBy, sortDir, onSort,
-  filterContent, timeScale, onTimeScale, currentDateLabel, timeZone,
+  filterContent, onSearchRequested, timeScale, onTimeScale, currentDateLabel, timeZone,
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
   canReturnToPosition, onReturnToPosition, onRefresh, extraActions,
 }: XDriveMobileGalleryChromeProps) {
-  const [categoryOpen, setCategoryOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchFocus, setSearchFocus] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [jumpDay, setJumpDay] = useState('')
   const searchHost = useRef<HTMLDivElement>(null)
-  const panelViewport = useXDriveMobilePanelViewport(searchOpen || categoryOpen || moreOpen)
+  const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
 
   useEffect(() => {
     if (!searchOpen || !searchFocus) return
     // Focus the existing search input in the shared filter form. The Gallery
     // does not create another query state or duplicate a search request.
-    const frame = requestAnimationFrame(() => {
+    const focusSearch = () => {
       searchHost.current?.querySelector<HTMLInputElement>('input[aria-label="搜索"]')?.focus()
-    })
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      focusSearch()
+      return
+    }
+    const frame = requestAnimationFrame(focusSearch)
     return () => cancelAnimationFrame(frame)
   }, [searchOpen, searchFocus])
 
@@ -118,34 +122,60 @@ export function XDriveMobileGalleryChrome({
               <ArrowBackRoundedIcon fontSize="small" />
             </IconButton>
           ) : null}
-          {canGoBack ? (
+          {canGoBack || primaryTab === 'collections' ? (
             <Typography variant="body2" fontWeight={650} noWrap sx={{ minWidth: 0 }}>
-              {collectionTitle}
+              {canGoBack ? collectionTitle : '精选集'}
             </Typography>
           ) : null}
         </Stack>
         <Stack direction="row" alignItems="center" spacing={0}
           sx={{ flexShrink: 0, '& .MuiButton-root, & .MuiIconButton-root': { minHeight: 44, minWidth: 44 } }}>
-          <Button size="small" disabled={!showCollection}
-            aria-pressed={selectionMode} data-xdrive-mobile-gallery-select
-            onClick={onToggleSelection}>
-            {selectionMode ? '完成' : '选择'}
-          </Button>
-          <IconButton aria-label="图库排序" disabled={!showCollection}
-            onClick={(event) => setSortAnchor(event.currentTarget)}
-            data-xdrive-mobile-gallery-sort>
-            <SortRoundedIcon fontSize="small" />
-          </IconButton>
-          <IconButton aria-label="图库筛选" disabled={!filterContent}
-            onClick={() => openFilter(false)} data-xdrive-mobile-gallery-filter>
-            <FilterAltOutlinedIcon fontSize="small" />
-          </IconButton>
-          <IconButton aria-label="图库更多操作"
-            onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more>
-            <MoreHorizRoundedIcon />
-          </IconButton>
+          {showCollection ? (
+            <>
+              <Button size="small" aria-pressed={selectionMode}
+                data-xdrive-mobile-gallery-select onClick={onToggleSelection}>
+                {selectionMode ? '完成' : '选择'}
+              </Button>
+              <IconButton aria-label="图库排序"
+                onClick={(event) => setSortAnchor(event.currentTarget)}
+                data-xdrive-mobile-gallery-sort>
+                <SortRoundedIcon fontSize="small" />
+              </IconButton>
+              <IconButton aria-label="图库筛选" disabled={!filterContent}
+                onClick={() => openFilter(false)} data-xdrive-mobile-gallery-filter>
+                <FilterAltOutlinedIcon fontSize="small" />
+              </IconButton>
+            </>
+          ) : null}
+          {primaryTab !== 'collections' || showCollection || canGoBack ? (
+            <IconButton aria-label="图库更多操作"
+              onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more>
+              <MoreHorizRoundedIcon />
+            </IconButton>
+          ) : null}
         </Stack>
       </Stack>
+
+      {!selectionMode && primaryTab === 'library' && showCollection ? (
+        <Stack data-xdrive-mobile-gallery-time-scale
+          direction="row" role="group" aria-label="图库时间尺度"
+          justifyContent="center" spacing={0.5}
+          sx={{ position: 'sticky', top: 48, zIndex: 5, py: 0.25,
+            bgcolor: 'background.paper', mx: -0.5 }}>
+          {([
+            ['year', '年'], ['month', '月'], ['all', '全部'],
+          ] as const).map(([value, label]) => (
+            <Button key={value} size="small"
+              variant={timeScale === value ? 'contained' : 'text'}
+              aria-pressed={timeScale === value}
+              data-xdrive-mobile-gallery-scale={value}
+              onClick={() => onTimeScale(value)}
+              sx={{ minWidth: 58, minHeight: 44, borderRadius: 99 }}>
+              {label}
+            </Button>
+          ))}
+        </Stack>
+      ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
         onClose={() => setSortAnchor(null)} aria-label="图库排序方式">
@@ -163,55 +193,54 @@ export function XDriveMobileGalleryChrome({
 
       {!selectionMode ? (
         <Stack data-xdrive-mobile-gallery-bottom direction="row"
-          alignItems="center" justifyContent="space-between" spacing={0.25}
+          alignItems="center" justifyContent="space-between" spacing={0.75}
           sx={{
             position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 7,
-            minHeight: 56, px: 1,
+            minHeight: 56, px: 1.5,
             pb: 'env(safe-area-inset-bottom, 0px)',
-            borderTop: 1, borderColor: 'divider',
-            bgcolor: 'background.paper',
             boxSizing: 'content-box',
+            bgcolor: 'transparent',
+            pointerEvents: 'none',
           }}>
-          <Button size="small" aria-label="图库分类" onClick={() => setCategoryOpen(true)}
-            data-xdrive-mobile-gallery-category sx={{ minWidth: 54, minHeight: 44 }}>
-            分类
-          </Button>
-          <Stack direction="row" spacing={0} role="group" aria-label="图库时间尺度"
-            sx={{ minWidth: 0, flex: '0 1 auto', '& .MuiButton-root': {
-              minWidth: 35, minHeight: 44, px: 0.6, borderRadius: 99,
-            } }}>
+          <Stack direction="row" role="tablist" aria-label="照片主导航"
+            spacing={0.25} data-xdrive-mobile-gallery-primary-tabs
+            sx={{
+              flex: 1, minWidth: 0, maxWidth: 288, py: 0.5, px: 0.5,
+              borderRadius: 99, border: '1px solid',
+              borderColor: 'divider', boxShadow: 2,
+              backgroundColor: (theme) => theme.palette.mode === 'dark'
+                ? 'rgba(37,37,41,0.84)' : 'rgba(250,250,252,0.84)',
+              backdropFilter: 'blur(22px) saturate(1.45)',
+              WebkitBackdropFilter: 'blur(22px) saturate(1.45)',
+              pointerEvents: 'auto',
+            }}>
             {([
-              ['year', '年'], ['month', '月'], ['day', '日'], ['all', '全部'],
-            ] as const).map(([value, label]) => (
-              <Button key={value} size="small"
-                variant={timeScale === value ? 'contained' : 'text'}
-                aria-pressed={timeScale === value} disabled={!showCollection}
-                data-xdrive-mobile-gallery-scale={value}
-                onClick={() => onTimeScale(value)}>{label}</Button>
+              ['library', '图库'], ['collections', '精选集'],
+            ] as const).map(([tab, label]) => (
+              <Button key={tab} role="tab" size="small"
+                aria-selected={primaryTab === tab}
+                aria-controls="xdrive-mobile-gallery-main"
+                data-xdrive-mobile-gallery-tab={tab}
+                variant={primaryTab === tab ? 'contained' : 'text'}
+                onClick={() => onPrimaryTabChange(tab)}
+                sx={{ flex: 1, minWidth: 84, minHeight: 44, borderRadius: 99 }}>
+                {label}
+              </Button>
             ))}
           </Stack>
           <IconButton aria-label="搜索图库" disabled={!filterContent}
-            onClick={() => openFilter(true)} data-xdrive-mobile-gallery-search
-            sx={{ minWidth: 44, minHeight: 44 }}>
+            onClick={() => { onSearchRequested?.(); openFilter(true) }}
+            data-xdrive-mobile-gallery-search
+            sx={{
+              minWidth: 50, minHeight: 50, pointerEvents: 'auto',
+              bgcolor: 'background.paper', border: '1px solid',
+              borderColor: 'divider', boxShadow: 2,
+              backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)',
+            }}>
             <SearchRoundedIcon />
           </IconButton>
         </Stack>
       ) : null}
-
-      <Drawer anchor="bottom" open={categoryOpen}
-        onClose={() => setCategoryOpen(false)}
-        slotProps={{ paper: { sx: sheetSx('min(52dvh, 460px)') } }}>
-        <Typography variant="subtitle1" fontWeight={700} sx={{ p: 2, pb: 1 }}>
-          图库分类
-        </Typography>
-        <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1,
-          pb: 'env(safe-area-inset-bottom, 0px)' }}>
-          {onSectionChange ? (
-            <XDriveMediaGalleryNavigation value={section} layout="drawer"
-              onChange={(next) => { onSectionChange(next); setCategoryOpen(false) }} />
-          ) : null}
-        </Box>
-      </Drawer>
 
       <Drawer anchor="bottom" open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -247,6 +276,13 @@ export function XDriveMobileGalleryChrome({
             </Typography>
           ) : null}
           <Stack spacing={1.5} sx={{ py: 1.5 }}>
+            {showCollection ? (
+              <Button variant={timeScale === 'day' ? 'contained' : 'outlined'}
+                data-xdrive-mobile-gallery-day-mode
+                onClick={() => { onTimeScale('day'); setMoreOpen(false) }}>
+                按日浏览
+              </Button>
+            ) : null}
             {canReturnToPosition && onReturnToPosition ? (
               <Button variant="outlined" onClick={() => { onReturnToPosition(); setMoreOpen(false) }}>
                 返回刚才位置

@@ -110,6 +110,7 @@ import {
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
+import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import type { XDriveMediaPlacesMapViewport } from './MediaGalleryPlacesMapModel'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
@@ -597,6 +598,7 @@ export function XDriveMediaGalleryPage({
     useState<MediaCleanupReviewTarget | null>(null)
   const routeSectionAppliedRef = useRef<MediaGallerySection | null>(null)
   const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
+  const [mobileCollectionsOverview, setMobileCollectionsOverview] = useState(false)
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
@@ -1240,6 +1242,47 @@ export function XDriveMediaGalleryPage({
     }
   }, [onError, source])
 
+  // Collections is only a mobile presentation of the canonical Gallery.
+  // Fetch a bounded preview through the same source methods as wide Web,
+  // without clearing the current 100k VirtualCollection or changing its query.
+  const collectionsPreviewRef = useRef({ key: '', request: 0 })
+  const collectionsSourcesLoadedRef = useRef(false)
+  useEffect(() => {
+    collectionsPreviewRef.current.request += 1
+    collectionsPreviewRef.current.key = ''
+    collectionsSourcesLoadedRef.current = false
+    setMobileCollectionsOverview(false)
+    setMemories([])
+    setSyncFolders([])
+    return () => { collectionsPreviewRef.current.request += 1 }
+  }, [preferenceScope, source])
+  const warmMobileCollectionsPreview = useCallback(() => {
+    if (!mobileGalleryViewport) return
+    const timeZone = mediaTimeZoneRef.current
+    const day = xDriveMediaDayKey(new Date(), timeZone)
+    const key = preferenceScope + '|' + timeZone + '|' + day
+    if (source.listMemories && collectionsPreviewRef.current.key !== key) {
+      collectionsPreviewRef.current.key = key
+      const request = ++collectionsPreviewRef.current.request
+      void source.listMemories(day, 8, timeZone)
+        .then((result) => {
+          if (request === collectionsPreviewRef.current.request) setMemories(result)
+        })
+        .catch(() => {
+          // Retain the visible Memories entry so it can retry using the
+          // existing shared collection flow; never show invented cards.
+          if (request === collectionsPreviewRef.current.request) {
+            collectionsPreviewRef.current.key = ''
+          }
+        })
+    }
+    if (source.listSyncFolders && !collectionsSourcesLoadedRef.current &&
+        syncFolders.length === 0) {
+      collectionsSourcesLoadedRef.current = true
+      void loadSyncFolders()
+    }
+  }, [loadSyncFolders, mobileGalleryViewport, preferenceScope, source, syncFolders.length])
+
   const openSyncFolderDirectory = useCallback(async (
     sourceID: number,
     folderID: number,
@@ -1592,7 +1635,7 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, {}, null, null, 'default', null, review)
   }, [loadFirstPage])
 
-  const openAlbum = useCallback((album: MediaAlbum) => {
+  const openAlbum = useCallback((album: MediaAlbum, fromCollections = false) => {
     syncFolderRequestID.current += 1
     setCurrentFolderView(null)
     setSection('albums')
@@ -1603,15 +1646,21 @@ export function XDriveMediaGalleryPage({
       void loadFirstPage(album, {})
       return
     }
-    void loadFirstPage(album, query)
+    if (fromCollections) {
+      // Gallery Collections are navigation, not an implicit filter on the
+      // previously visited Favorites / folder / Search result.
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+    }
+    void loadFirstPage(album, fromCollections ? {} : query)
   }, [loadFirstPage, query])
 
-  const openPlace = useCallback((place: MediaPlaceFacet) => {
+  const openPlace = useCallback((place: MediaPlaceFacet, fromCollections = false) => {
     placesExpandedRef.current = true
     setSection('places')
     setActiveMediaType('')
     const nextDraft: MediaGalleryFilterDraft = {
-      ...draftFilters,
+      ...(fromCollections ? emptyMediaGalleryFilterDraft : draftFilters),
       location: 'with',
       place: place.id,
     }
@@ -2258,6 +2307,7 @@ export function XDriveMediaGalleryPage({
     const nextSection = initialSection ?? 'library'
     if (routeSectionAppliedRef.current === nextSection) return
     routeSectionAppliedRef.current = nextSection
+    setMobileCollectionsOverview(false)
     if (nextSection === 'library') void loadFirstPage(null, {})
     else selectSection(nextSection)
   }, [initialSection, loadFirstPage, selectSection])
@@ -2334,6 +2384,17 @@ export function XDriveMediaGalleryPage({
         key={preferenceScope || 'gallery-default'}
         preferenceScope={preferenceScope}
         mobileWebChrome={mobileWebChrome}
+        mobileCollectionsOverview={mobileCollectionsOverview}
+        onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
+        onMobilePrimaryTabChange={(tab) => {
+          if (tab === 'collections') {
+            warmMobileCollectionsPreview()
+            setMobileCollectionsOverview(true)
+          } else {
+            setMobileCollectionsOverview(false)
+            if (section !== 'library') selectSection('library')
+          }
+        }}
         onVisibleAnchorNode={rememberMobileGalleryAnchor}
         items={items}
         virtualCollection={galleryVirtualCollection}
@@ -2535,11 +2596,12 @@ export function XDriveMediaGalleryPage({
         onSetAlbumCover={source.setAlbumCover ? setAlbumCover : undefined}
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
-        onSectionChange={selectSection}
+        onSectionChange={(next) => { setMobileCollectionsOverview(false); selectSection(next) }}
         onOpenMediaType={openMediaType}
-        onOpenAlbum={openAlbum}
+        onOpenAlbum={(album) => { openAlbum(album, mobileCollectionsOverview); setMobileCollectionsOverview(false) }}
         onOpenSyncFolder={source.getSyncFolder
           ? (folder) => {
+              setMobileCollectionsOverview(false)
               void openSyncFolderDirectory(folder.source_id, folder.target_node_id, true)
             }
           : undefined}
@@ -2553,14 +2615,14 @@ export function XDriveMediaGalleryPage({
               void openSyncFolderDirectory(currentFolderView.source.source_id, breadcrumb.id)
             }
           : undefined}
-        onOpenPlace={openPlace}
-        onOpenMemory={openMemory}
+        onOpenPlace={(place) => { openPlace(place, mobileCollectionsOverview); setMobileCollectionsOverview(false) }}
+        onOpenMemory={(memory) => { setMobileCollectionsOverview(false); openMemory(memory) }}
         onOpenBurstReview={openBurstReview}
         onLoadMoreBurst={() => void loadMoreCleanupGroups()}
         cleanupMoreLoading={cleanupMoreLoading}
-        onOpenPet={openPet}
+        onOpenPet={(pet) => { setMobileCollectionsOverview(false); openPet(pet) }}
         onOpenSuggestedPerson={openSuggestedPerson}
-        onOpenPerson={openPerson}
+        onOpenPerson={(person) => { setMobileCollectionsOverview(false); openPerson(person) }}
         onReviewSuggestedPerson={
           source.reviewSuggestedPerson ? reviewSuggestedPerson : undefined
         }
@@ -2748,6 +2810,9 @@ export type XDriveMediaGalleryVirtualCollection = {
 
 export interface XDriveMediaGalleryProps {
   mobileWebChrome?: boolean
+  mobileCollectionsOverview?: boolean
+  onMobileCollectionsOverviewChange?: (overview: boolean) => void
+  onMobilePrimaryTabChange?: (tab: 'library' | 'collections') => void
   onVisibleAnchorNode?: (nodeID: number) => void
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
@@ -4130,6 +4195,9 @@ const personDialogDescriptions = {
 
 export function XDriveMediaGallery({
   mobileWebChrome = false,
+  mobileCollectionsOverview = false,
+  onMobileCollectionsOverviewChange,
+  onMobilePrimaryTabChange,
   onVisibleAnchorNode,
   preferenceScope = '',
   items,
@@ -4264,6 +4332,17 @@ export function XDriveMediaGallery({
     xDriveReadMediaGalleryViewPreferences,
   )
   const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
+  const overviewTransitionRef = useRef({ showing: mobileCollectionsOverview, section })
+  useEffect(() => {
+    const previous = overviewTransitionRef.current
+    if (previous.showing && !mobileCollectionsOverview &&
+      previous.section === 'library' && section === 'library') {
+      // The virtual grid was unmounted for the Collections overview; reuse
+      // its last visible index, not the top of the 100k media collection.
+      setViewAnchorRevision((revision) => revision + 1)
+    }
+    overviewTransitionRef.current = { showing: mobileCollectionsOverview, section }
+  }, [mobileCollectionsOverview, section])
   const viewAnchorIndexRef = useRef(0)
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
   const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
@@ -5290,6 +5369,7 @@ export function XDriveMediaGallery({
 
   return (
     <Stack
+      id="xdrive-mobile-gallery-main"
       ref={galleryRootRef}
       spacing={2}
       onContextMenu={handleMediaContextMenu}
@@ -5316,12 +5396,12 @@ export function XDriveMediaGallery({
     >
       {compactGallery ? (
         <XDriveMobileGalleryChrome
-          section={section}
-          onSectionChange={onSectionChange}
+          primaryTab={mobileCollectionsOverview || section !== 'library' ? 'collections' : 'library'}
+          onPrimaryTabChange={(tab) => onMobilePrimaryTabChange?.(tab)}
           collectionTitle={galleryTitle}
-          canGoBack={canBack}
-          onGoBack={onBack}
-          showCollection={showPhotoCollection}
+          canGoBack={!mobileCollectionsOverview && (canBack || section !== 'library')}
+          onGoBack={canBack ? onBack : () => onMobileCollectionsOverviewChange?.(true)}
+          showCollection={!mobileCollectionsOverview && showPhotoCollection}
           selectionMode={selectionMode}
           onToggleSelection={() => {
             if (selectionMode) clearMediaSelection()
@@ -5330,7 +5410,16 @@ export function XDriveMediaGallery({
           sortBy={sortBy}
           sortDir={sortDir}
           onSort={requestGallerySort}
-          filterContent={showCollectionFilters ? filters : undefined}
+          filterContent={showCollectionFilters || mobileCollectionsOverview ? filters : undefined}
+          onSearchRequested={() => {
+            // Search from a specific album, person or media collection retains
+            // that collection's shared Server query and available operations.
+            // Only the Collections *overview* starts a library-wide search.
+            if (mobileCollectionsOverview) {
+              onMobileCollectionsOverviewChange?.(false)
+              if (section !== 'library') onSectionChange?.('library')
+            }
+          }}
           timeScale={effectiveTimeScale}
           onTimeScale={updateGalleryTimeScale}
           currentDateLabel={currentTimelineGroupKey
@@ -5364,6 +5453,43 @@ export function XDriveMediaGallery({
           </>}
         />
       ) : null}
+
+      {compactGallery && mobileCollectionsOverview ? (
+        <XDriveMobileGalleryCollections
+          albums={albums} memories={memories} people={people}
+          pets={pets} places={places} syncFolders={syncFolders}
+          loadThumbnail={loadThumbnail}
+          onOpenSection={(next) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onSectionChange?.(next)
+          }}
+          onOpenAlbum={onOpenAlbum ? (album) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenAlbum(album)
+          } : undefined}
+          onOpenMemory={onOpenMemory ? (memory) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenMemory(memory)
+          } : undefined}
+          onOpenPerson={onOpenPerson ? (person) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenPerson(person)
+          } : undefined}
+          onOpenPet={onOpenPet ? (pet) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenPet(pet)
+          } : undefined}
+          onOpenPlace={onOpenPlace ? (place) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenPlace(place)
+          } : undefined}
+          onOpenSyncFolder={onOpenSyncFolder ? (folder) => {
+            onMobileCollectionsOverviewChange?.(false)
+            onOpenSyncFolder(folder)
+          } : undefined}
+        />
+      ) : (
+        <>
 
       <Stack
         direction={{ xs: 'column', lg: 'row' }}
@@ -7202,6 +7328,8 @@ export function XDriveMediaGallery({
           </DialogActions>
         </Box>
       </Dialog>
+        </>
+      )}
 
     </Stack>
   )
