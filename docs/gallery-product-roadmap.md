@@ -630,9 +630,26 @@ second relationship database and no automatic permanent-delete path.
 - No fuzzy filename/time similarity is used for exact duplicates.
 - The recommended copy to keep preserves user intent first: Favorite, manual-album
   membership, description/tags/people metadata, then the earlier imported Node.
-- xDrive CAS already stores identical SHA256 content once. Therefore exact duplicate
+- xDrive CAS already stores identical SHA256 content once. Therefore original-hash duplicate
   cards report **logical duplicate bytes** separately from **physical reclaimable
   bytes**; while one copy is kept, physical reclaimable bytes are intentionally 0.
+- **2026-10-09, G11 incremental safety contract:** an equal primary SHA-256 is
+  only an original-file candidate, not proof that full PhotoAsset resources or
+  active edit recipes match. The read-only cleanup card now labels each shown
+  group `identical` (same asset kind, complete mandatory Live/RAW resource roles,
+  matching resource digests/ordinals/bytes/offsets,
+  same active recipe), `different` (a proven mismatch), or `unverified` (missing
+  resource/digest/stale edit or oversized group). Comparison is bounded to 512
+  assets per landing-page request; incomplete groups fail closed. These labels
+  do **not** authorize automatic merging or deletion. A recommended keeper is
+  emitted and highlighted only for fully verified `identical` assets; otherwise
+  it is zero, and the review UI omits the recommendation (also for old Agents
+  that do not return comparison status). Existing deletion still
+  moves only explicitly selected Node IDs to Trash; it does not automatically
+  collect other Live/RAW resources or merge favorite, album, tag, person and edit
+  intent. Gallery folding and metadata-preserving consolidation remain future
+  separately validated features. Older clients missing the new field show an
+  unverified, conservative message rather than asserting full equivalence.
 
 ### Burst Best Shot
 

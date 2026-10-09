@@ -4114,7 +4114,9 @@ export function XDriveMediaGallery({
       : '上传文件或添加同步文件夹后，媒体会自动出现在图库中。'
   const cleanupRecommendedNodeID = currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
-      ? currentCleanupReview.group.recommended_keep_node_id
+      ? currentCleanupReview.group.asset_comparison === 'identical'
+        ? currentCleanupReview.group.recommended_keep_node_id
+        : undefined
       : currentCleanupReview.group.recommended_node_id
     : undefined
   const pendingSuggestedPeople = suggestedPeople.filter(
@@ -4131,7 +4133,7 @@ export function XDriveMediaGallery({
     ? currentFolderView.current.name
     : currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
-      ? '完全重复项'
+      ? '主原文件重复'
       : '连拍精选'
     : currentPet?.name || currentMemory?.title || currentAlbum?.name ||
     (currentPerson
@@ -4161,7 +4163,7 @@ export function XDriveMediaGallery({
     ? `${currentFolderView.source.source_name} · ${currentFolderView.current.path} · 当前目录 ${currentFolderView.current.direct_media_count.toLocaleString('zh-CN')} 个媒体 · ${currentFolderView.current.child_folder_count.toLocaleString('zh-CN')} 个子目录`
     : currentCleanupReview
     ? currentCleanupReview.kind === 'duplicate'
-      ? `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 个完全相同副本 · ${currentCleanupReview.group.recommendation_reason}`
+      ? `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 个主原文件相同副本 · ${currentCleanupReview.group.recommendation_reason}`
       : `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 张连拍 · ${currentCleanupReview.group.recommendation_reason}`
     : currentPet
       ? `${currentPet.item_count.toLocaleString('zh-CN')} 张照片 · 本地视觉类型集合`
@@ -4178,7 +4180,7 @@ export function XDriveMediaGallery({
           : section === 'memories'
             ? '近期、往年今日与行程回忆'
             : section === 'cleanup'
-              ? '完全重复项与连拍精选；清理操作仍然先进入回收站'
+              ? '主原文件重复与连拍精选；清理操作仍然先进入回收站'
             : section === 'albums'
             ? '同步文件夹、手动相册、智能相册和导入相册'
             : section === 'people'
