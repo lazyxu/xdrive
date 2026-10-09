@@ -136,6 +136,46 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodDelete, filePath, tokenA,
 		nil, http.StatusNoContent, map[string]string{"If-Match": `"2"`})
 
+	// L01-A: the universal local-folder connector is server-recognized but
+	// deliberately fail-closed until an agent-bound root and executor exist.
+	localPull := fmt.Sprintf(`{"name":"Local invalid pull","kind":"local_folder","direction":"pull","target_node_id":%d}`, targetA.ID)
+	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(localPull), http.StatusBadRequest)
+	localCreateBody := fmt.Sprintf(`{"name":"Local Desktop Files","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, targetA.ID)
+	localCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(localCreateBody), http.StatusCreated)
+	var localCreated sourceDTO
+	if err := json.Unmarshal(localCreate.Body.Bytes(), &localCreated); err != nil {
+		t.Fatal(err)
+	}
+	if localCreated.ID == 0 || localCreated.Kind != meta.SourceKindLocalFolder ||
+		localCreated.Direction != meta.SourceDirectionPush || localCreated.Status != meta.SourceStatusPaused ||
+		localCreated.Revision != 1 || localCreated.TargetNodeID == nil || *localCreated.TargetNodeID != targetA.ID {
+		t.Fatalf("local folder must start paused and owner-bound: %+v", localCreated)
+	}
+	localURL := fmt.Sprintf("/api/v1/sources/%d", localCreated.ID)
+	requestWithHeaders(t, router, http.MethodPatch, localURL, tokenA,
+		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		map[string]string{"If-Match": `"1"`})
+	request(t, router, http.MethodPost, localURL+"/trigger", tokenA, nil, http.StatusConflict)
+	request(t, router, http.MethodPost, localURL+"/runs", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusConflict)
+	// Even an accidentally forced "active" status must not let a local-folder
+	// Source execute without the future device-bound authorization protocol.
+	if err := db.Model(&meta.Source{}).Where("id = ?", localCreated.ID).
+		Update("status", meta.SourceStatusActive).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(t, router, http.MethodPost, localURL+"/runs", tokenA,
+		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusConflict)
+	var localRunCount int64
+	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", localCreated.ID).Count(&localRunCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if localRunCount != 0 {
+		t.Fatalf("unbound local folder unexpectedly started %d runs", localRunCount)
+	}
+	requestWithHeaders(t, router, http.MethodDelete, localURL, tokenA, nil,
+		http.StatusNoContent, map[string]string{"If-Match": `"1"`})
+
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",
 		"kind":"synology_photos",

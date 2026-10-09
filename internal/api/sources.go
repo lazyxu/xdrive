@@ -283,6 +283,11 @@ func (s *Server) createSource(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	isLocalFolder := req.Kind == meta.SourceKindLocalFolder
+	if isLocalFolder && req.Direction != meta.SourceDirectionPush {
+		fail(c, http.StatusBadRequest, "local folder only supports push direction")
+		return
+	}
 	isYike := req.Kind == yikeSourceKind
 	isSynologyFiles := req.Kind == synologyFilesSourceKind
 	isSynologyPull := (req.Kind == synologySourceKind || isSynologyFiles) && req.Direction == meta.SourceDirectionPull
@@ -323,6 +328,12 @@ func (s *Server) createSource(c *gin.Context) {
 		if isSynologyPull {
 			// Pull mode is executed by the server worker and must not run until
 			// the encrypted DSM credential has been validated and stored.
+			status = meta.SourceStatusPaused
+		}
+		if isLocalFolder {
+			// Never activate a local directory Source without a verified device,
+			// locally authorized root, and the dedicated local-push executor.
+			// Device enrollment and binding are a separate guarded delivery phase.
 			status = meta.SourceStatusPaused
 		}
 		value := req.TargetNodeID
@@ -525,6 +536,8 @@ func (s *Server) updateSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
+		case errors.Is(err, errLocalFolderNotReady):
+			fail(c, http.StatusConflict, "local folder is awaiting device binding and an authorized local-push executor")
 		case errors.Is(err, errSourceCredentialRequired):
 			fail(c, http.StatusConflict, "source credential must be configured before activation")
 		case errors.Is(err, errSourceConnectorConfigRequired):

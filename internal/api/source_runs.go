@@ -165,6 +165,12 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			return err
 		}
 
+		// A stale/manual database status change must not bypass the local Source
+		// activation gate before a verified device-bound execution protocol exists.
+		if source.Kind == meta.SourceKindLocalFolder {
+			return errLocalFolderNotReady
+		}
+
 		var existing meta.SyncRun
 		if err := tx.Where("id = ?", runID).First(&existing).Error; err == nil {
 			if existing.SourceID != source.ID {
@@ -1314,6 +1320,8 @@ func writeSourceRunError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		fail(c, http.StatusNotFound, "source or source run not found")
+	case errors.Is(err, errLocalFolderNotReady):
+		fail(c, http.StatusConflict, "local folder has no authorized device-bound executor")
 	case errors.Is(err, errSourcePaused):
 		fail(c, http.StatusConflict, "source is paused")
 	case errors.Is(err, errSourceTargetUnavailable):

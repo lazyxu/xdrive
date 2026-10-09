@@ -8,7 +8,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// L01-A is intentionally fail-closed: ordinary local folders must not become
+// active until the device-binding and native execution protocol is implemented.
+// Synology and pull connector activation behavior remains unchanged.
+var errLocalFolderNotReady = errors.New("local folder device binding and executor unavailable")
+
 func requireSourceReadyForActivation(tx *gorm.DB, source meta.Source) error {
+	if source.Kind == meta.SourceKindLocalFolder {
+		return errLocalFolderNotReady
+	}
 	if !sourceUsesStoredCredential(source) {
 		return nil
 	}

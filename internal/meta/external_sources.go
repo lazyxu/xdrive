@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	// SourceKindLocalFolder is a regular device-authorized local directory push,
+	// not the xDrive CfAPI/FUSE mount or the Synology NAS Photos push connector.
+	SourceKindLocalFolder = "local_folder"
+
 	SourceDirectionPush = "push"
 	SourceDirectionPull = "pull"
 
