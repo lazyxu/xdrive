@@ -136,6 +136,32 @@ Still run the real application on iOS Safari and Android Chrome, both normal-tab
 
 Offline file pinning, Service Worker caching, incoming Web Share Target and touch drag/reorder remain subsequent enhancements rather than requirements of the merged adaptive-layout milestone.
 
+## Source settings scope and session follow-up — 2026-10-09
+
+**Status: Shared implementation updated; full real-browser/physical-device integration remains open.** This work starts from the merged Mobile Web baseline `a1f04f46` and follows the same Web REST/Desktop IPC adapter contract. It does not change Source APIs, server-side permissions, target-path semantics, or synchronization scheduling.
+
+The compact-touch form and File Station picker were previously checked as individual MUI components, but a complete "open settings → edit → browse/choose scope → save → reopen" flow had not been exercised. Reviewing the shared SourceManager revealed two concrete correctness gaps in that flow: the form initially projected default DSM scopes before the persisted connector configuration loaded, and an old configuration response could overwrite the form after the user closed or switched synchronization folders. A Cancel action also remained clickable while a save request was in flight, even though the dialog close affordance was blocked.
+
+### Behavioral contract
+
+- The settings session owns the pending connector-scope read. Opening a different synchronization folder, closing the dialog, or successfully saving invalidates prior reads. Late success/error/loading callbacks cannot hydrate a different form or restore stale credentials.
+- DSM Photo spaces and File Station roots appear only after the exact current connector configuration is loaded. Until then, **Save is disabled and native form submit is guarded in the shared controller**, so default `personal/shared` or empty roots are never silently written as a change to a persisted scope.
+- A failed scope read leaves the remaining unsaved form draft visible, reports the failure, and provides **重试加载配置** without closing the dialog. The retry reads the persisted scope again rather than filling the form with speculative defaults.
+- A settings save disables Cancel and dismiss/backdrop handling until the request settles. Explicitly changing File Station roots still uses the existing pause → update connector scope → reactivate sequence; changing only the name/schedule/ignore rules must not write a new connector scope or move the read-only xDrive target.
+- The compact-touch settings title no longer automatically focuses the name field on entry, avoiding an unnecessary initial software-keyboard request. Fine-pointer/desktop input continues to autofocus.
+
+### Deterministic controller coverage
+
+`desktop/tests/shared-source-manager-settings-session.cjs` extracts and executes the **actual TypeScript controller callbacks** with a fake Source port and state setters, rather than reproducing their logic in a separate mock. Its cases cover old Source A request arriving after Source B; closing mid-load; failure and retry with the edited name retained; forbidden submit while scope is pending or failed; name-only save without scope mutation; explicit roots change with paused → scope → active order and reopened persisted values; a blocked Cancel during save; and late credential-reveal suppression.
+
+Run as part of `npm --prefix desktop run test:main`; the normal Desktop typecheck and Web lint/build gates continue to validate shared renderer and Web source compatibility. The controller test is **not** a claim of mobile WebKit UI, real HTTP Server/CAS semantics, or a physical-phone keyboard test.
+
+### Remaining acceptance
+
+1. Complete the same full Source settings workflow in the actual rendered Web App with a populated API fixture or a test Server, including the nested picker, overlapping/invalid roots, save failure/retry, refresh, and short-height layout; then repeat on iOS Safari and Android Chrome.
+2. Continue the earlier native file/version/ZIP download, directory upload, populated Task Center/storage/Admin Audit, Viewer integration, background/foreground, standalone-mode and Range/resume checks.
+3. Validate real Synology authentication/credential replacement separately; this change deliberately does not echo stored secrets or supply test credentials.
+
 ## Compact forms and public-share follow-up — 2026-10-09
 
 **Status: Implemented and verified in Chromium; physical-device acceptance remains open.** The related Mobile Web branches and PRs were reconciled first; none remained open for this work. The fixed baseline is `24dac1f00214169c640d792299e24a2fa886bea2`. Viewer-specific work continues separately; this change preserves its media and gesture contracts.
