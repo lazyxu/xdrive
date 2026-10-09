@@ -1,0 +1,121 @@
+{
+  "name": "gallery-cover-transport-abort",
+  "date": "2026-10-09",
+  "status": "AFTER same-reproducer green; candidate full CI gate not yet claimed",
+  "work": "request-scoped thumbnail HTTP transport cancellation (not durable Task Center)",
+  "workload": {
+    "httpResponseDelayMs": 500,
+    "bodyBytes": 8192,
+    "observeAfterMs": 160,
+    "unmountSamples": 3,
+    "replaceSamples": 1,
+    "transport": "Node loopback HTTP fetch exercised through transpiled actual shared TSX mounted by React test renderer"
+  },
+  "before": {
+    "headSha": "a0af5fd3d847921ead93ed19141a5605a3512a0e",
+    "ciRun": 37912654910,
+    "desktopJob": 113761246790,
+    "unmount": [
+      {
+        "sample": 1,
+        "event": "unmount",
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      },
+      {
+        "sample": 2,
+        "event": "unmount",
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      },
+      {
+        "sample": 3,
+        "event": "unmount",
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      }
+    ],
+    "replace": {
+      "old": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      },
+      "current": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      }
+    },
+    "assertions": "both first-red cases failed: obsolete HTTP open at +160ms"
+  },
+  "after": {
+    "headSha": "5b20a6a6bab8ffe5aa8d5286bed48a708491492d",
+    "ciRun": 37913303677,
+    "desktopJob": 113763916122,
+    "unmount": [
+      {
+        "sample": 1,
+        "event": "unmount",
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "payloadBytes": 0
+      },
+      {
+        "sample": 2,
+        "event": "unmount",
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "payloadBytes": 0
+      },
+      {
+        "sample": 3,
+        "event": "unmount",
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "payloadBytes": 0
+      }
+    ],
+    "replace": {
+      "old": {
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "payloadBytes": 0
+      },
+      "current": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "payloadBytes": 0
+      }
+    },
+    "assertions": "both original first-red cases passed; Desktop total 1586 passed, 0 failed"
+  },
+  "decisions": {
+    "serverAbortRequirement": true,
+    "allUnmountsPass": true,
+    "oldTargetCancelled": true,
+    "newTargetRetained": true,
+    "zeroStaleBodyBytes": true,
+    "noTimingOrPercentSpeedupClaim": true,
+    "notClaimingRealGoServerOrPhysicalMobile": true,
+    "unchangedDurableTasks": true
+  },
+  "caveats": [
+    "This is the same exact reproducible workload on two separately scheduled GitHub CI hosts, not a same-host paired wall-clock benchmark.",
+    "The server counts early TCP response close, still-active HTTP at 160ms and emitted body bytes. Zero BEFORE body bytes were due to delayed response, not cancellation.",
+    "Authorization, Desktop Renderer/Main/Agent and actual Go context propagation are separately covered by existing subsystem tests rather than this narrow fixture."
+  ]
+}

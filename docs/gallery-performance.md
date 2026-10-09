@@ -1296,3 +1296,47 @@ First complete benchmark CI: [run 37909017887](https://github.com/lazyxu/xdrive/
 **Evidence source:** [full unrounded 4 original-asset descriptors, 24 generation runs, 84 native runs and four same-run ratios](performance-evidence/gallery-hover-short-preview-4k/ci-run-37909017887.json). CI logs also contain the 108 emitted individual record lines. Browser-side decoded video and HTTP Range are Node loopback, not authenticated xDrive Go Server/Agent. No real end-to-end Web/Desktop or device measurement is claimed.
 
 **Next action:** after merging this test-only branch, separately instrument signed-preview Server/Agent, prove real context cancellation and bounded background generation under mixed 10k/100k media. Measure true poster hits, 480p vs 720p hover reentry, CPU/RSS, disk retention, cache invalidation and selection quality before implementing production media derivatives. Every new persistent file class must update docs/storage-inventory.md and the storage inventory implementation in the same PR.
+
+## P1 Gallery cover transport cancellation — test-first (2026-10-09)
+
+Status: **Accepted measured transport cancellation / exact BEFORE and AFTER recorded / evidence-amended final CI pending**. This targets
+\`XDriveMediaAsyncThumbnail\`, consumed by Gallery album covers, Memories, filmstrip,
+person/place/pet covers and other non-virtual thumbnail displays. Gallery virtual
+item scheduler and the separate persisted-first video-poster scheduler already own
+independent AbortSignals; their in-flight ownership must not be interrupted by the
+cover component. Do not modify durable upload/download/sync/delete tasks.
+
+**Current implementation:** per-cover lifecycle sets \`active=false\` on cleanup,
+but invokes \`loadThumbnail(nodeID)\` without its available optional AbortSignal.
+The Web adapter supports \`fetch({ signal })\`; Desktop uses sender-scoped Agent
+viewport cancellation and HTTP request context. It is possible for the request
+owner to discard stale results without aborting the actual server request. This
+is a source-observed hypothesis, **not** a claimed measured first-red.
+
+**Frozen real transport reproducer:** \`cd desktop &&
+node --test tests/gallery-cover-transport-abort.cjs\`. React's actual shared
+thumbnail component is transpiled and mounted by react-test-renderer; a local
+HTTP server holds its 8192-byte body for 500ms. Exactly 3 independent
+mount → started GET → unmount samples observe 160ms after close; one
+node-201 → node-202 replacement verifies the obsolete GET ends while the
+new consumer remains alive. Log \`GALLERY_COVER_ABORT_SAMPLE\` and
+\`GALLERY_COVER_REPLACE_SAMPLE\` with started, server-observed early
+disconnect, active request count and emitted payload bytes.
+
+**Acceptance (set before changing production):** all three unmount samples
+and the superseded target must have \`started=1, earlyClosed=1, active=0,
+payloadBytes=0\` by +160ms. Replacing a cover must not prematurely abort
+the newer one. Intentional abort is not a user-visible failure; late
+returned blob URLs remain released exactly once by their current owner.
+Tests use the same node/response/delay/count semantics before and after,
+and fail on any breach. **BEFORE / first-red verified:** [CI run 37912654910](https://github.com/lazyxu/xdrive/actions/runs/37912654910), Desktop job [113761246790](https://github.com/lazyxu/xdrive/actions/runs/37912654910/job/113761246790), unchanged production implementation, real React source and local 500ms Node HTTP. Three independent unmount samples all produced `started=1, earlyClosed=0, active=1, payloadBytes=0` at +160ms: **3/3 failures** of the required real transport abort invariant. The node-201→202 replacement had **old started=1, old earlyClosed=0, old active=1**, while the new request independently remained active (`started=1, active=1`), proving an obsolete request survives target replacement. Both new tests failed on their exact server-close assertions; total Desktop runner report: 1,584 tests passed, two expected product-condition failures, one skipped. This is **real first-red evidence**, not test-harness or unrelated CI error. Original responses had 500ms delay, so 0 emitted bytes at 160ms is not evidence of cancellation when stale requests are still active.
+
+**AFTER / confirmed identical reproducer:** [CI run 37913303677](https://github.com/lazyxu/xdrive/actions/runs/37913303677), Desktop job [113763916122](https://github.com/lazyxu/xdrive/actions/runs/37913303677/job/113763916122), same source component, three unmount samples with 500ms HTTP delay and +160ms observation: **3/3** `started=1, earlyClosed=1, active=0, payloadBytes=0`. Target replacement: old request **`started=1, earlyClosed=1, active=0`** while new request remains **`started=1, earlyClosed=0, active=1`**, and neither emits bytes during that observation. The exact two original failing tests now pass. Desktop test summary: **1,586 passed, 0 failed** (one skipped). No separate UI failure fallback or redundant request is introduced.
+
+**Structural BEFORE→AFTER on this frozen fixture:** three obsolete unmount requests still active → zero, zero early disconnects → three, and old identity-switch request active → cancelled. Do **not** call this a wall-clock speedup, because first red and fixed versions ran on distinct CI runner instances. Full Web/Desktop/Go and exact evidence-amended PR CI still guard merge. Actual xDrive Server Go request context, real physical iOS and 100k simultaneous DOM are outside this fixture.
+
+**Exact machine evidence:** [four original-branch observations and four fixed-branch observations, including sample identity and no-body metrics](performance-evidence/gallery-cover-http-cancel/paired-ci-first-red-after-2026-10-09.json). Do not assert ms/% speedups
+from a CI source/HTTP test or pretend Node HTTP alone proves the full
+physical Web/Desktop/Go request context; those remain further evidence.
+
+**Next action:** rerun the exact original red reproducer, preserve all three unmount and one replacement sample outputs, and confirm unchanged supported Web/Desktop adapters. The Gallery thumbnail scheduler remains the owner of shared viewport requests; per-cover AbortSignals are only forwarded to direct per-cover loaders, and any scheduler wrapper that ignores a local signal retains its existing independent setRetention/dispose semantics. Measured AFTER is now recorded with the original first-red; require complete full PR CI on the evidence-amended **one-commit head** before a linear-history merge. No cancellation change is permitted to affect durable background tasks.

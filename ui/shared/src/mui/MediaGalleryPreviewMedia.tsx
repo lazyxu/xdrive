@@ -42,8 +42,9 @@ export function XDriveMediaAsyncThumbnail({
     setSrc('')
     setFailed(false)
     if (!nodeID) return () => undefined
+    const controller = new AbortController()
 
-    void loadThumbnail(nodeID)
+    void loadThumbnail(nodeID, controller.signal)
       .then((value) => {
         if (!value) {
           if (active) setFailed(true)
@@ -59,6 +60,7 @@ export function XDriveMediaAsyncThumbnail({
 
     return () => {
       active = false
+      controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
   }, [loadThumbnail, nodeID, revokeOnDispose])
