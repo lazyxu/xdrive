@@ -250,6 +250,8 @@ const agent = Object.freeze({
   ) => ipcRenderer.invoke('agent:split-media-person', personID, revision, nodeIDs, name),
   createMediaAlbum: (name: string) => ipcRenderer.invoke('agent:create-media-album', name),
   renameMediaAlbum: (albumID: string, revision: number, name: string) => ipcRenderer.invoke('agent:rename-media-album', albumID, revision, name),
+  setMediaAlbumCover: (albumID: string, revision: number, nodeID: number) =>
+    ipcRenderer.invoke('agent:set-media-album-cover', albumID, revision, nodeID),
   deleteMediaAlbum: (albumID: string, revision: number) => ipcRenderer.invoke('agent:delete-media-album', albumID, revision),
   createSmartMediaAlbum: (
     name: string,

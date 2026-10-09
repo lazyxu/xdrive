@@ -288,6 +288,11 @@ export interface XDriveMediaGalleryPort {
     albumID: string,
     revision: number,
   ) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  setAlbumCover?: (
+    albumID: string,
+    revision: number,
+    nodeID: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaAlbum>>
   addToAlbum?: (
     albumID: string,
     revision: number,
@@ -597,6 +602,11 @@ export function createXDriveMediaGalleryDataSource(
       ? async (albumID, revision) => {
           await resolveXDriveTransport(port.deleteAlbum!(albumID, revision))
         }
+      : undefined,
+    setAlbumCover: port.setAlbumCover
+      ? (albumID, revision, nodeID) => resolveXDriveTransport(
+          port.setAlbumCover!(albumID, revision, nodeID),
+        )
       : undefined,
     addToAlbum: port.addToAlbum
       ? (albumID, revision, nodeIDs) => resolveXDriveTransport(

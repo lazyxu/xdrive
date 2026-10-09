@@ -226,6 +226,7 @@ func (s *Server) Router() *gin.Engine {
 	)
 	authed.POST("/media/albums", s.createMediaAlbum)
 	authed.PATCH("/media/albums/:albumID", s.renameMediaAlbum)
+	authed.PUT("/media/albums/:albumID/cover", s.setMediaAlbumCover)
 	authed.DELETE("/media/albums/:albumID", s.deleteMediaAlbum)
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)
 	authed.POST("/media/albums/:albumID/items", s.addMediaAlbumItems)

@@ -276,6 +276,61 @@ func TestManualMediaAlbumsUseMembershipOnly(t *testing.T) {
 		t.Fatalf("album after remove=%+v", album)
 	}
 
+	// G04: a user-selected cover must be a current member of this owner-scoped
+	// manual album, optimistic revision fencing prevents stale writes, and
+	// clearing the preference restores the computed image cover.
+	readd := requestWithHeaders(
+		t, router, http.MethodPost,
+		"/api/v1/media/albums/"+url.PathEscape(album.ID)+"/items",
+		token,
+		strings.NewReader(fmt.Sprintf(`{"node_ids":[%d]}`, nodes[0].ID)),
+		http.StatusOK,
+		map[string]string{"If-Match": `"4"`},
+	)
+	if err := json.Unmarshal(readd.Body.Bytes(), &album); err != nil {
+		t.Fatal(err)
+	}
+	if album.Revision != 5 || album.ItemCount != 2 {
+		t.Fatalf("album after readd=%+v", album)
+	}
+	setCoverPath := "/api/v1/media/albums/" + url.PathEscape(album.ID) + "/cover"
+	customCover := requestWithHeaders(
+		t, router, http.MethodPut, setCoverPath, token,
+		strings.NewReader(fmt.Sprintf(`{"node_id":%d}`, nodes[1].ID)),
+		http.StatusOK,
+		map[string]string{"If-Match": `"5"`},
+	)
+	if err := json.Unmarshal(customCover.Body.Bytes(), &album); err != nil {
+		t.Fatal(err)
+	}
+	if album.Revision != 6 || album.CoverNodeID == nil || *album.CoverNodeID != nodes[1].ID {
+		t.Fatalf("custom album cover=%+v", album)
+	}
+	requestWithHeaders(
+		t, router, http.MethodPut, setCoverPath, token,
+		strings.NewReader(fmt.Sprintf(`{"node_id":%d}`, nodes[0].ID)),
+		http.StatusConflict,
+		map[string]string{"If-Match": `"5"`},
+	)
+	requestWithHeaders(
+		t, router, http.MethodPut, setCoverPath, token,
+		strings.NewReader(fmt.Sprintf(`{"node_id":%d}`, folder.ID)),
+		http.StatusConflict,
+		map[string]string{"If-Match": `"6"`},
+	)
+	autoCover := requestWithHeaders(
+		t, router, http.MethodPut, setCoverPath, token,
+		strings.NewReader(`{"node_id":0}`),
+		http.StatusOK,
+		map[string]string{"If-Match": `"6"`},
+	)
+	if err := json.Unmarshal(autoCover.Body.Bytes(), &album); err != nil {
+		t.Fatal(err)
+	}
+	if album.Revision != 7 || album.CoverNodeID == nil || *album.CoverNodeID != nodes[0].ID {
+		t.Fatalf("automatic album cover=%+v", album)
+	}
+
 	var manualCollection meta.PhotoCollection
 	if err := db.Where(
 		"owner_id = ? AND external_key = ? AND kind = ?",
@@ -295,7 +350,7 @@ func TestManualMediaAlbumsUseMembershipOnly(t *testing.T) {
 		t, router, http.MethodDelete,
 		"/api/v1/media/albums/"+url.PathEscape(album.ID),
 		token, nil, http.StatusNoContent,
-		map[string]string{"If-Match": `"4"`},
+		map[string]string{"If-Match": `"7"`},
 	)
 
 	var nodeCountAfter, fileCountAfter, assetCountAfter, manualMembershipCount, manualCollectionCount int64

@@ -126,6 +126,8 @@ export function createDesktopMediaGalleryDataSource(
     renameAlbum: (albumID, revision, name) =>
       agent.renameMediaAlbum(albumID, revision, name),
     deleteAlbum: (albumID, revision) => agent.deleteMediaAlbum(albumID, revision),
+    setAlbumCover: (albumID, revision, nodeID) =>
+      agent.setMediaAlbumCover(albumID, revision, nodeID),
     addToAlbum: (albumID, revision, nodeIDs) =>
       agent.addMediaAlbumItems(albumID, revision, nodeIDs),
     removeFromAlbum: (albumID, revision, nodeID) =>

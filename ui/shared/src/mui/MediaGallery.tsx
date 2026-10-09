@@ -314,6 +314,7 @@ export interface MediaGalleryDataSource {
   deleteSmartAlbum?: (albumID: string, revision: number) => Promise<void>
   renameAlbum?: (albumID: string, revision: number, name: string) => Promise<MediaAlbum>
   deleteAlbum?: (albumID: string, revision: number) => Promise<void>
+  setAlbumCover?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
   addToAlbum?: (albumID: string, revision: number, nodeIDs: number[]) => Promise<MediaAlbum>
   removeFromAlbum?: (albumID: string, revision: number, nodeID: number) => Promise<MediaAlbum>
 }
@@ -1174,6 +1175,19 @@ export function XDriveMediaGalleryPage({
     return updated
   }, [replaceAlbum, source])
 
+  const setAlbumCover = useCallback(async (album: MediaAlbum, item?: MediaItem) => {
+    if (!source.setAlbumCover || !album.revision) throw new Error('当前客户端不支持设置相册封面')
+    try {
+      const updated = await source.setAlbumCover(album.id, album.revision, item?.node.id ?? 0)
+      replaceAlbum(updated)
+      return updated
+    } catch (error) {
+      setError(xDriveMediaGalleryErrorMessage(error))
+      onError?.(error)
+      throw error
+    }
+  }, [onError, replaceAlbum, source])
+
   const removeFromAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
     if (!source.removeFromAlbum || !album.revision) throw new Error('当前相册不可编辑')
     const updated = await source.removeFromAlbum(album.id, album.revision, item.node.id)
@@ -1977,6 +1991,7 @@ export function XDriveMediaGalleryPage({
             ? deleteAlbum
             : undefined
         }
+        onSetAlbumCover={source.setAlbumCover ? setAlbumCover : undefined}
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
         onSectionChange={selectSection}
@@ -2232,6 +2247,7 @@ export interface XDriveMediaGalleryProps {
   onCreateAlbum?: (name: string) => Promise<MediaAlbum>
   onRenameAlbum?: (album: MediaAlbum, name: string) => Promise<MediaAlbum>
   onDeleteAlbum?: (album: MediaAlbum) => Promise<void>
+  onSetAlbumCover?: (album: MediaAlbum, item?: MediaItem) => Promise<MediaAlbum>
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onSectionChange?: (section: MediaGallerySection) => void
@@ -3539,6 +3555,7 @@ export function XDriveMediaGallery({
   onCreateAlbum,
   onRenameAlbum,
   onDeleteAlbum,
+  onSetAlbumCover,
   onAddToAlbum,
   onRemoveFromAlbum,
   onSectionChange,
@@ -4009,6 +4026,13 @@ export function XDriveMediaGallery({
     !activePlaceID
   const showMemoriesIndex = isRootSection && section === 'memories'
   const showCleanupIndex = isRootSection && section === 'cleanup'
+  const onChooseCollectionCover = currentPerson && onSetPersonCover
+    ? (item: MediaItem) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
+    : currentAlbum?.kind === 'manual' && onSetAlbumCover
+      ? (item: MediaItem) => {
+          void onSetAlbumCover(currentAlbum, item).catch(() => undefined)
+        }
+      : undefined
   const showAlbumIndex = isRootSection && section === 'albums'
   const showPlacesIndex = isRootSection && section === 'places'
   const showPeopleIndex = isRootSection && section === 'people'
@@ -4215,6 +4239,13 @@ export function XDriveMediaGallery({
           {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onRenameAlbum ? (
             <Button size="small" variant="text" onClick={() => openAlbumDialog('rename', currentAlbum)}>
               重命名
+            </Button>
+          ) : null}
+          {currentAlbum?.kind === 'manual' && onSetAlbumCover ? (
+            <Button size="small" variant="text" onClick={() => {
+              void onSetAlbumCover(currentAlbum).catch(() => undefined)
+            }}>
+              恢复自动封面
             </Button>
           ) : null}
           {(currentAlbum?.kind === 'manual' || currentAlbum?.kind === 'smart') && onDeleteAlbum ? (
@@ -5180,11 +5211,7 @@ export function XDriveMediaGallery({
               loadPreviewURL={collectionPreviewURL}
               saveVideoPoster={saveVideoPoster}
               onSetFavorite={collectionSetFavorite}
-              onSetCover={
-                currentPerson && onSetPersonCover
-                  ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
-                  : undefined
-              }
+              onSetCover={onChooseCollectionCover}
               selectionMode={selectionMode}
               selectedNodeIDs={selectedNodeIDs}
               onSelect={handleMediaSelect}
@@ -5230,11 +5257,7 @@ export function XDriveMediaGallery({
                     loadPreviewURL={collectionPreviewURL}
                     saveVideoPoster={saveVideoPoster}
                     onSetFavorite={collectionSetFavorite}
-                    onSetCover={
-                      currentPerson && onSetPersonCover
-                        ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
-                        : undefined
-                    }
+                    onSetCover={onChooseCollectionCover}
                     onOpen={openMediaItem}
                     onPreview={openMediaPreview}
                     onToggleFavorite={toggleMediaFavorite}
@@ -5255,11 +5278,7 @@ export function XDriveMediaGallery({
             loadPreviewURL={collectionPreviewURL}
             saveVideoPoster={saveVideoPoster}
             onSetFavorite={collectionSetFavorite}
-            onSetCover={
-              currentPerson && onSetPersonCover
-                ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
-                : undefined
-            }
+            onSetCover={onChooseCollectionCover}
             onOpen={openMediaItem}
             onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}
@@ -5279,11 +5298,7 @@ export function XDriveMediaGallery({
             loadPreviewURL={collectionPreviewURL}
             saveVideoPoster={saveVideoPoster}
             onSetFavorite={collectionSetFavorite}
-            onSetCover={
-              currentPerson && onSetPersonCover
-                ? (item) => { void onSetPersonCover(currentPerson, item).catch(() => undefined) }
-                : undefined
-            }
+            onSetCover={onChooseCollectionCover}
             onOpen={openMediaItem}
             onPreview={openMediaPreview}
             onToggleFavorite={toggleMediaFavorite}

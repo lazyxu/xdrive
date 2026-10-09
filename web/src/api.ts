@@ -1111,6 +1111,17 @@ export class XDriveApi {
     )
   }
 
+  setMediaAlbumCover(albumID: string, revision: number, nodeID: number) {
+    return this.request<MediaAlbum>(
+      `/api/v1/media/albums/${encodeURIComponent(albumID)}/cover`,
+      {
+        method: 'PUT',
+        headers: { 'If-Match': `"${revision}"` },
+        body: JSON.stringify({ node_id: nodeID }),
+      },
+    )
+  }
+
   deleteMediaAlbum(albumID: string, revision: number) {
     return this.request<void>(
       `/api/v1/media/albums/${encodeURIComponent(albumID)}`,

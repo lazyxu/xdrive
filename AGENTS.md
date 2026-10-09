@@ -89,6 +89,11 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G04 manual-album cover updates require owner-scoped active collection
+  and actual media membership verification; optimistic If-Match revision,
+  transparent automatic-cover fallback when source media goes missing or is
+  removed, and shared Web/Desktop transport. Never treat a selected cover as
+  copied media bytes or allow cross-user images as covers.
 - G04 UI album pins, sorting and search operate on existing logical album
   records and must not create duplicate media membership. Account-scoped
   client preferences are local to each device; durable album cover and

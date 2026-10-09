@@ -642,6 +642,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/media/person/split", h.splitMediaPerson)
 	mux.HandleFunc("POST /v1/media/albums", h.createMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/album", h.renameMediaAlbum)
+	mux.HandleFunc("PUT /v1/media/album/cover", h.setMediaAlbumCover)
 	mux.HandleFunc("DELETE /v1/media/album", h.deleteMediaAlbum)
 	mux.HandleFunc("POST /v1/media/smart-albums", h.createSmartMediaAlbum)
 	mux.HandleFunc("PATCH /v1/media/smart-album", h.updateSmartMediaAlbum)
@@ -3402,6 +3403,34 @@ func (h *desktopIPCHandler) renameMediaAlbum(w http.ResponseWriter, r *http.Requ
 	album, err := h.ctrl.CloudRenameMediaAlbum(
 		r.Context(), input.AlbumID, input.Revision, input.Name,
 	)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, album)
+}
+
+func (h *desktopIPCHandler) setMediaAlbumCover(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AlbumID  string  `json:"album_id"`
+		Revision uint64  `json:"revision"`
+		NodeID   *uint64 `json:"node_id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !desktopIPCValidMediaAlbumID(input.AlbumID, true) || input.Revision == 0 || input.NodeID == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_album_cover", "manual album id, revision, and node_id (0 for automatic) are required")
+		return
+	}
+	controller, ok := h.ctrl.(interface {
+		CloudSetMediaAlbumCover(context.Context, string, uint64, uint64) (client.MediaAlbum, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_album_cover_unavailable", "upgrade Agent to set custom album covers")
+		return
+	}
+	album, err := controller.CloudSetMediaAlbumCover(r.Context(), input.AlbumID, input.Revision, *input.NodeID)
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

@@ -559,6 +559,7 @@ declare global {
         ) => Promise<DesktopResult<MediaPersonSplit>>
         createMediaAlbum: (name: string) => Promise<DesktopResult<AgentMediaAlbum>>
         renameMediaAlbum: (albumID: string, revision: number, name: string) => Promise<DesktopResult<AgentMediaAlbum>>
+        setMediaAlbumCover: (albumID: string, revision: number, nodeID: number) => Promise<DesktopResult<AgentMediaAlbum>>
         deleteMediaAlbum: (albumID: string, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         createSmartMediaAlbum: (name: string, query: MediaGalleryQuery) => Promise<DesktopResult<AgentMediaAlbum>>
         updateSmartMediaAlbum: (

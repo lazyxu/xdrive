@@ -2670,6 +2670,21 @@ function registerIPCHandlers() {
     return requireAgentClient().renameMediaAlbum(albumID, revision, name.trim())
   }, false))
 
+  ipcMain.handle('agent:set-media-album-cover', (
+    _event, albumID: unknown, revision: unknown, nodeID: unknown,
+  ) => runAgentAction<AgentMediaAlbum>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' || !albumID.startsWith('manual:') ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID < 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Manual album id, revision and nonnegative cover Node ID are required.')
+    }
+    return requireAgentClient().setMediaAlbumCover(albumID, revision, nodeID)
+  }, false))
+
   ipcMain.handle('agent:delete-media-album', (_event, albumID: unknown, revision: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')

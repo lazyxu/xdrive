@@ -107,6 +107,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     renameAlbum: (albumID, revision, name) =>
       api.renameMediaAlbum(albumID, revision, name),
     deleteAlbum: (albumID, revision) => api.deleteMediaAlbum(albumID, revision),
+    setAlbumCover: (albumID, revision, nodeID) =>
+      api.setMediaAlbumCover(albumID, revision, nodeID),
     addToAlbum: (albumID, revision, nodeIDs) =>
       api.addMediaAlbumItems(albumID, revision, nodeIDs),
     removeFromAlbum: (albumID, revision, nodeID) =>

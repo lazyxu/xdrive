@@ -1064,6 +1064,23 @@ func (c *Client) RenameMediaAlbum(
 	return out, err
 }
 
+func (c *Client) SetMediaAlbumCover(
+	ctx context.Context,
+	albumID string,
+	revision, nodeID uint64,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.jsonRevision(
+		ctx,
+		http.MethodPut,
+		"/api/v1/media/albums/"+url.PathEscape(albumID)+"/cover",
+		revision,
+		map[string]uint64{"node_id": nodeID},
+		&out,
+	)
+	return out, err
+}
+
 func (c *Client) DeleteMediaAlbum(
 	ctx context.Context,
 	albumID string,

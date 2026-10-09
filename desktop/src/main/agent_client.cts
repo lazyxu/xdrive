@@ -1905,6 +1905,12 @@ export class AgentIPCClient {
     })
   }
 
+  setMediaAlbumCover(albumID: string, revision: number, nodeID: number) {
+    return this.request<AgentMediaAlbum>('PUT', '/v1/media/album/cover', {
+      album_id: albumID, revision, node_id: nodeID,
+    })
+  }
+
   deleteMediaAlbum(albumID: string, revision: number) {
     return this.request<null>('DELETE', '/v1/media/album', {
       album_id: albumID,
