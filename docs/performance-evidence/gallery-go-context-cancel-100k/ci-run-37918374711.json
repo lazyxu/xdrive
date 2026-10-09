@@ -1,0 +1,29 @@
+{
+  "source": "GitHub Actions / native PostgreSQL 17 / authenticated production Gin Gallery GET",
+  "run_id": 37918374711,
+  "job_id": 113780024040,
+  "measured_commit": "2fe9b21c01196d0a644f53f3342bb50d9e99d21c",
+  "metric_label": "GALLERY_GO_CONTEXT_CANCEL_100K",
+  "client_payload_bytes_at_160ms": 0,
+  "context_done_at_160ms": 6,
+  "handler_active_at_160ms": 0,
+  "live_photo_groups": 15000,
+  "logical_assets": 100000,
+  "max_server_context_done_ms": 0.329,
+  "observation_ms": 160,
+  "physical_media_nodes": 115000,
+  "postgres_lock_waiters_at_160ms": 0,
+  "requests": 6,
+  "scope": "authenticated production Gin Gallery route, native PostgreSQL real lock wait; no Electron IPC, codec, persistent tasks, remote network or browser paint",
+  "seed_ms": 32947.392,
+  "server_context_latency_ms": [
+    0.109,
+    0.115,
+    0.12,
+    0.126,
+    0.131,
+    0.329
+  ],
+  "started_sql_waits": 6,
+  "workload": "gallery-real-go-postgresql-cancel-100k"
+}
