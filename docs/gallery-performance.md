@@ -1002,3 +1002,56 @@ parallel React viewer is introduced. Paired runtime timings (TTFI, 1280px
 final decode, loaded bytes, CPU, RSS, abort/disconnects) for JPEG/HEIC/DNG/
 NEF/ARW/CR3 and missing embedded JPEG are **not yet measured**. This is
 a correctness/transport delivery only; no speedup claim or 2048px Viewer support.
+
+## P3 native original-video hover feasibility probe (2026-10-09)
+
+Status: **Accepted limited native feasibility probe / no product change**. The user requested optional,
+bounded normal-video hover only after persistent poster reuse and real request
+cancellation were delivered. Before introducing an automatic hover player,
+the current implementation has **0 original media preview requests caused by
+hover** (still poster only); the proposed original-file video element adds new
+decoding/network work. This test-only PR deliberately leaves all Gallery
+UI, ordinary thumbnails, Live Photo first-hold, Web/Desktop adapter and
+cache behavior unchanged.
+
+A native Electron/Chromium experiment uses the **existing 96×64 H.264 MP4
+fixture from `gallery-video-poster-performance-main.cjs`**, served by a
+real local HTTP Range-capable Node server. A simulated 100k logical video
+namespace is declared but **only one video per trial actually enters the
+native renderer**: not a 100k DOM stress claim. Three identical iterations
+per mode execute:
+- *Quick pointer pass*: 150ms (<400ms hover threshold), no source assignment.
+- *Deliberate hover*: wait 400ms; create one muted, inline native
+  HTMLVideoElement, load original MP4, record first-frame and actual video
+  frames, play briefly, then remove the source and release the element.
+- *Abandoned hover*: assign original MP4 after threshold, hold only 125ms
+  while the HTTP server withholds the body for 900ms, then pause/remove
+  source and observe Server connections/late bytes after 160ms.
+
+**Predeclared resource thresholds:** all three quick passes yield **0**
+HTTP video requests; there is **at most one** active video element per
+simulation; all three supported-codec trials load a frame, and all three
+deliberately abandoned requests disconnect by 160ms with **0** late
+response bytes. Report every loopback Range/request/byte/abort counter,
+time-to-first-frame, `getVideoPlaybackQuality` frame count and elapsed
+wall time. Native process/codec warmup times are diagnostic.
+
+The experiment is **not a production hover**, does not prove real
+Web/Desktop Gallery handler wiring or actual signed ticket/Agent IPC,
+does not validate 4K, HEVC, long GOP, real bitrate or mobile touch.
+A trial passing on a 96×64 compressed clip **does not authorize default-on
+hover**: actual source-bitrate traffic, memory, and failure behavior
+must be compared against the same higher-bitrate clips before promotion.
+**Measured on the fixed native H.264 loopback fixture:** [CI run 37901388380](https://github.com/lazyxu/xdrive/actions/runs/37901388380), [native job 113724527946](https://github.com/lazyxu/xdrive/actions/runs/37901388380/job/113724527946); **three samples per mode**; the unchanged original-file trial source was exercised. All four narrow resource checks passed. The 100k number is the *logical namespace* only, not mounted video elements.
+
+| Mode | n | Video HTTP GETs per sample | Response bytes per sample | Decode/abort result |
+| --- | ---: | ---: | ---: | --- |
+| 150ms quick pass | 3 | **0** | **0 B** | No video source assigned |
+| 400ms threshold, original MP4 play | 3 | **1** | **2,958 B** | 3/3 loaded, **12 decoded frames** per sample; at most one element |
+| 400ms threshold, leave 125ms after load begins | 3 | **1** pending | **0 B** | 3/3 server-observed early disconnects; **0 active HTTP** by +160ms |
+
+Native first-frame latency (after assigning the original source): **2,693.7 ms first process cold**, then **5.0 / 4.8 ms** in the two warmed samples. Those are hosted-runner process/codec initialization observations, not a guaranteed user first-frame SLA. The 2,958 B sample is a tiny 96×64 test clip; the cost of a real high-bitrate 4K/HEVC hover cannot be inferred from it. The existing Gallery had **0 original-video GETs from hover**; this opt-in simulation adds **1 GET / 2,958 B** for each deliberate hover and is not a production performance speedup.
+
+The actual server-side trial observed the request disconnections and full-body suppression; it does **not** prove that a real Viewer/Gallery autoplay has correct signed-ticket lifetimes, mobile pointer behavior, browser energy consumption or decoder/RSS peak. [Raw per-sample evidence](performance-evidence/gallery-hover-original-video/ci-run-37901388380.json) records unrounded first-frame times, HTTP Range headers, bytes and status.
+
+**Decision: accept only the small native feasibility result, with NO production hover change.** Keep default Gallery poster/static behavior unchanged. Next step is to repeat the test using representative 4K H.264, HEVC, long-GOP and high-bitrate footage through both Web and Desktop proxies; then add a limited, user-switchable hover only if measured memory/bandwidth/abort budgets support it. The final whole-PR CI must rerun after the evidence is committed.

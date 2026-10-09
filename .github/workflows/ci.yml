@@ -439,6 +439,35 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  gallery-hover-original-video-trial:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-hover-original-video-trial'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Electron trial dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Measure native original-video hover feasibility and abandoned byte delivery
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-original-video-trial-main.cjs
+          cat perf-results/gallery-hover-original-video-trial.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-hover-original-video-trial
+          path: desktop/perf-results/gallery-hover-original-video-trial.json
+          if-no-files-found: error
+          retention-days: 7
+
   gallery-video-poster-viewport-cancel-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-video-poster-viewport-cancel-100k'
     runs-on: ubuntu-latest

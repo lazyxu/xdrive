@@ -1,0 +1,239 @@
+{
+  "status": "Accepted limited H.264 probe / no product change",
+  "job_url": "https://github.com/lazyxu/xdrive/actions/runs/37901388380/job/113724527946",
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/37901388380",
+  "input_commit": "66cd3d163aee6b00274a634bf7e2b88056fdfc65",
+  "input_parent": "dfc2d7c5794fd667a80f14fb87fdcf49ea28f13e",
+  "command": "cd desktop && xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-original-video-trial-main.cjs",
+  "runner": "native Electron/Chromium Linux xvfb; Node loopback HTTP 206 Range; 96x64 H.264 MP4",
+  "logicalVideoNamespace": 100000,
+  "actualVideoElementsPerSample": 1,
+  "fixtureBytes": 2958,
+  "modes": {
+    "quickPassMs": 150,
+    "hoverThresholdMs": 400,
+    "activePlayMs": 350,
+    "cancelAfterStartMs": 125,
+    "delayedServiceMs": 900,
+    "abortObserveMs": 160
+  },
+  "samples": [
+    {
+      "mode": "quick-pass",
+      "sourceAssigned": false,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 0,
+      "sample": 1,
+      "scenario": "quick-pass-1",
+      "elapsedMs": 314.92676700000004,
+      "network": {
+        "name": "quick-pass-1",
+        "requests": 0,
+        "bytes": 0,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 0,
+        "completed": 0,
+        "ranges": []
+      }
+    },
+    {
+      "mode": "quick-pass",
+      "sourceAssigned": false,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 0,
+      "sample": 2,
+      "scenario": "quick-pass-2",
+      "elapsedMs": 311.634403,
+      "network": {
+        "name": "quick-pass-2",
+        "requests": 0,
+        "bytes": 0,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 0,
+        "completed": 0,
+        "ranges": []
+      }
+    },
+    {
+      "mode": "quick-pass",
+      "sourceAssigned": false,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 0,
+      "sample": 3,
+      "scenario": "quick-pass-3",
+      "elapsedMs": 311.76696000000015,
+      "network": {
+        "name": "quick-pass-3",
+        "requests": 0,
+        "bytes": 0,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 0,
+        "completed": 0,
+        "ranges": []
+      }
+    },
+    {
+      "mode": "original-play",
+      "sourceAssigned": true,
+      "loaded": true,
+      "firstFrameMs": 2693.7000000000116,
+      "videoFrames": 12,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 1,
+      "scenario": "original-play-1",
+      "elapsedMs": 3606.929477,
+      "network": {
+        "name": "original-play-1",
+        "requests": 1,
+        "bytes": 2958,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 1,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    },
+    {
+      "mode": "original-play",
+      "sourceAssigned": true,
+      "loaded": true,
+      "firstFrameMs": 5,
+      "videoFrames": 12,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 2,
+      "scenario": "original-play-2",
+      "elapsedMs": 918.4556059999995,
+      "network": {
+        "name": "original-play-2",
+        "requests": 1,
+        "bytes": 2958,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 1,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    },
+    {
+      "mode": "original-play",
+      "sourceAssigned": true,
+      "loaded": true,
+      "firstFrameMs": 4.7999999999883585,
+      "videoFrames": 12,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 3,
+      "scenario": "original-play-3",
+      "elapsedMs": 918.6953810000005,
+      "network": {
+        "name": "original-play-3",
+        "requests": 1,
+        "bytes": 2958,
+        "closedBeforeBody": 0,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 1,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    },
+    {
+      "mode": "abandon",
+      "sourceAssigned": true,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 1,
+      "scenario": "abandon-1",
+      "elapsedMs": 687.9377990000003,
+      "network": {
+        "name": "abandon-1",
+        "requests": 1,
+        "bytes": 0,
+        "closedBeforeBody": 1,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 0,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    },
+    {
+      "mode": "abandon",
+      "sourceAssigned": true,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 2,
+      "scenario": "abandon-2",
+      "elapsedMs": 688.6280729999999,
+      "network": {
+        "name": "abandon-2",
+        "requests": 1,
+        "bytes": 0,
+        "closedBeforeBody": 1,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 0,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    },
+    {
+      "mode": "abandon",
+      "sourceAssigned": true,
+      "loaded": false,
+      "firstFrameMs": null,
+      "videoFrames": 0,
+      "error": "",
+      "mediaElementsPeak": 1,
+      "sample": 3,
+      "scenario": "abandon-3",
+      "elapsedMs": 687.7664420000001,
+      "network": {
+        "name": "abandon-3",
+        "requests": 1,
+        "bytes": 0,
+        "closedBeforeBody": 1,
+        "active": 0,
+        "maxActive": 1,
+        "completed": 0,
+        "ranges": [
+          "bytes=0-"
+        ]
+      }
+    }
+  ],
+  "verdict": {
+    "noRequestOnQuickPass": true,
+    "oneMediaElement": true,
+    "playableH264": true,
+    "abortsDelayedHTTP": true
+  },
+  "conclusion": "This is a feasibility probe only; does not justify enabling original-video hover in production or claims for 4K HEVC/long-GOP/actual user latency."
+}
