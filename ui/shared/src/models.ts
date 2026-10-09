@@ -707,6 +707,10 @@ export interface MediaAlbum {
 
 export interface MediaGalleryQuery {
   time_zone?: string
+  /** Only the initial ranged request; not part of persistent Viewer scope. */
+  initial_position?: 'latest'
+  /** Mobile opt-in: unknown capture dates precede valid dates in asc mode. */
+  unknown_first?: boolean
   anchor_node_id?: number
   fold_duplicates?: boolean
   fold_member_ids?: number[]

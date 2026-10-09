@@ -602,8 +602,12 @@ func mediaGallerySortClauses(options mediaQueryOptions) []string {
 	if options.SortBy == "added" {
 		return []string{"n.created_at " + direction, "n.id " + direction}
 	}
+	unknownOrder := "ASC"
+	if options.UnknownFirst && options.SortDir == "asc" {
+		unknownOrder = "DESC"
+	}
 	return []string{
-		"CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END ASC",
+		"CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END " + unknownOrder,
 		"xd_media_metadata.captured_at " + direction,
 		"n.created_at " + direction,
 		"n.id " + direction,
@@ -790,6 +794,13 @@ func collapseMediaTimelineGroups(
 	return out
 }
 
+func mediaTimelineUnknownOrder(options mediaQueryOptions) string {
+	if options.SortBy != "added" && options.SortDir == "asc" && options.UnknownFirst {
+		return "unknown_rank DESC"
+	}
+	return "unknown_rank ASC"
+}
+
 func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (mediaTimelineGroupSetsDTO, error) {
 	var options mediaQueryOptions
 	if len(sorts) > 0 {
@@ -804,6 +815,12 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 	if options.SortDir == "asc" {
 		direction = "group_key ASC"
 	}
+	unknownRankSQL := "MAX(CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END)"
+	// Added-date groups have no unknown date: avoid re-ordering them by
+	// unrelated missing capture EXIF from one member.
+	if options.SortBy == "added" {
+		unknownRankSQL = "0"
+	}
 	type groupRow struct {
 		Key         string `gorm:"column:group_key"`
 		ItemCount   int64  `gorm:"column:item_count"`
@@ -816,10 +833,10 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 		Select(
 			expression +
 				" AS group_key, COUNT(DISTINCT xd_media_metadata.node_id) AS item_count, " +
-				"MAX(CASE WHEN xd_media_metadata.captured_at IS NULL THEN 1 ELSE 0 END) AS unknown_rank",
+				unknownRankSQL + " AS unknown_rank",
 		).
 		Group(expression).
-		Order("unknown_rank ASC").
+		Order(mediaTimelineUnknownOrder(options)).
 		Order(direction).
 		Scan(&rows).Error; err != nil {
 		return mediaTimelineGroupSetsDTO{}, err
@@ -925,6 +942,39 @@ func (s *Server) queryMediaItemRange(
 		timelineGroupSets = &sets
 	}
 
+	// Mobile chronological first-open: fetch the last sparse page in reverse
+	// index order instead of walking from offset 0 or scanning 100k in Go.
+	// The returned offset is aligned to the requested pageSize so primePage()
+	// and later viewport ranges share the same sparse-page identity.
+	if options.InitialPosition == "latest" && offset == 0 &&
+		options.AnchorNodeID == 0 && options.SortDir == "asc" &&
+		(options.SortBy == "added" || options.UnknownFirst) && totalCount > 0 {
+		reverseOptions := options
+		reverseOptions.SortDir = "desc"
+		reverseOptions.UnknownFirst = false
+		tailCount := int(totalCount % int64(limit))
+		if tailCount == 0 {
+			tailCount = limit
+		}
+		items, tailErr := s.materializeMediaItems(ctx, uid, query, tailCount, 0, reverseOptions)
+		if tailErr != nil {
+			return mediaItemRangeDTO{}, tailErr
+		}
+		for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+			items[i], items[j] = items[j], items[i]
+		}
+		tailOffset := int(totalCount) - len(items)
+		lastIndex := totalCount - 1
+		return mediaItemRangeDTO{
+			AnchorIndex:       &lastIndex,
+			Items:             items,
+			TotalCount:        totalCount,
+			Offset:            tailOffset,
+			Limit:             limit,
+			TimelineGroups:    timelineGroups,
+			TimelineGroupSets: timelineGroupSets,
+		}, nil
+	}
 	items, err := s.materializeMediaItems(ctx, uid, query, limit, offset, options)
 	if err != nil {
 		return mediaItemRangeDTO{}, err

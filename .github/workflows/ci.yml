@@ -423,6 +423,11 @@ jobs:
           cache: true
       - name: Race test internal/api
         run: bash scripts/ci/test-go-api-race.sh
+      - name: Measure real PostgreSQL 100k Mobile Gallery sparse first range
+        if: github.event_name == 'pull_request' && github.head_ref == 'feat/mobile-gallery-tail-first-p0b'
+        env:
+          XD_MOBILE_GALLERY_TAIL_100K: "1"
+        run: go test -mod=readonly ./internal/api -run '^TestMobileGalleryTailReal100K$' -count=1 -timeout=25m -v
 
   gallery-first-open-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-100k-thumbnail-baseline'

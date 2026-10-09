@@ -26,10 +26,16 @@ func mediaAnchorBeforeClause(options mediaQueryOptions, anchor mediaAnchorRow) (
 		return created, args
 	}
 	if anchor.CapturedAt == nil {
+		if options.SortDir == "asc" && options.UnknownFirst {
+			return "(xd_media_metadata.captured_at IS NULL AND " + created + ")", args
+		}
 		return "(xd_media_metadata.captured_at IS NOT NULL OR (xd_media_metadata.captured_at IS NULL AND " + created + "))", args
 	}
 	captured := "(xd_media_metadata.captured_at IS NOT NULL AND (xd_media_metadata.captured_at " +
 		operator + " ? OR (xd_media_metadata.captured_at = ? AND " + created + ")))"
+	if options.SortDir == "asc" && options.UnknownFirst {
+		return "(xd_media_metadata.captured_at IS NULL OR " + captured + ")", append([]interface{}{*anchor.CapturedAt, *anchor.CapturedAt}, args...)
+	}
 	return captured, append([]interface{}{*anchor.CapturedAt, *anchor.CapturedAt}, args...)
 }
 
