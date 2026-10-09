@@ -731,6 +731,14 @@ function FileManager({
       api.controlBackgroundTask(id, action, global),
   }), [api, profile?.role])
 
+  const mediaSelectionJobPort = useMemo(() => ({
+    list: () => api.listMediaSelectionJobs(),
+    cancel: (id: string) => api.cancelMediaSelectionJob(id),
+    retry: (id: string) => api.retryMediaSelectionJob(id),
+    failures: (id: string, offset: number, limit: number) =>
+      api.mediaSelectionJobFailures(id, offset, limit),
+  }), [api])
+
   const taskCenter = useXDriveTaskCenterController({
     transfers,
     operations: fileOperations,
@@ -1372,6 +1380,7 @@ function FileManager({
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            mediaSelectionJobPort={appView === 'transfers' ? mediaSelectionJobPort : undefined}
             operationFocusID={filesOperationFocus?.operationID}
             operationFocusRequestID={filesOperationFocus?.requestID}
             backgroundFocusTaskID={taskCenterFocus?.taskID}

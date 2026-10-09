@@ -1464,3 +1464,13 @@ cancel, retry frozen failed/unprocessed items, and page failure codes without
 loading 100k MediaItems. Closing the view does not cancel a durable job.
 A persistent Task Center listing and Desktop Agent job protocol are further
 delivery stages; this branch alone does not claim those capabilities.
+
+### G07 Phase 3c — Web Task Center persistence visibility (candidate)
+
+Web Task Center now loads the authenticated durable media-selection job
+history only when that page is mounted. It displays the server's true
+processed/total/succeeded/failed/cancelled counters and bounded failure pages,
+supports explicit cancel and immutable-revision retry, and does not poll or
+hydrate 100k MediaItems on Gallery first paint. The shared component uses an
+optional Port; Desktop needs the Agent job-protocol extension before showing
+the same section. Physical device and end-to-end timing remain outstanding.

@@ -106,6 +106,7 @@ function renderTaskPage(props) {
     './ActionButton': { XDriveActionButton: 'ActionButton' },
     './BackgroundTaskCenter': { XDriveBackgroundTaskList: 'BackgroundTaskList', XDriveBackgroundTaskTable: 'BackgroundTaskTable' },
     './FileOperationCenter': { XDriveFileOperationCenter: 'FileOperationCenter' },
+    './MediaSelectionJobCenter': { XDriveMediaSelectionJobCenter: 'MediaSelectionJobCenter' },
     './TransferCenter': { XDriveTransferCenter: 'TransferCenter' },
     './WorkspaceSurface': { XDriveWorkspaceSurface: 'WorkspaceSurface' },
   }).XDriveTaskCenterPage({ transfers: [], operations: [], ...props })
