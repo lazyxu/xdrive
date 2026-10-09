@@ -1272,3 +1272,29 @@ partial-failure/undo semantics before the relevant buttons may be enabled.
 Do not materialize 100k MediaItem objects in Web/Desktop or pretend 100
 review rows represent every search hit. On-device and 100k verification
 are independent acceptance gates.
+
+### G07 phase 2a — owner-scoped 100k query selection snapshot (candidate, 2026-10-09)
+
+**Backend-only / full CI pending.** A deliberate `POST /api/v1/media/selection-snapshots`
+freezes up to **100,000** owner-visible **known indexed PhotoAsset primary Node
+IDs and revisions** in one bounded SQL read, not 100k hydrated MediaItem
+objects or thumbnails. A query with more than 100k matching rows is rejected
+rather than silently selecting only its first page. Ordinary gallery first-paint
+paths do not build snapshots. The optional `day=YYYY-MM-DD` uses the selected
+capture/added time axis and a validated IANA time zone; day boundaries respect
+23/25-hour DST transitions. It reuses server-side folder scope, filters,
+collection authorization, and excludes ambiguous duplicate-fold mode.
+
+Snapshots are **ephemeral**, owner-bound, versioned, at most one active per
+owner, and expire after 15 minutes; server restart/reconnect requires explicit
+reselection. The API pages at most 200 minimal Node identities, marks stale
+versions/deleted Nodes, and supports optimistic-version exclusion/unexclude
+without editing the underlying file. Clients must not claim durable selection
+or execute destructive/batch operations from this token yet. The next phases
+must wire Web/Desktop clients to this backend, then add bounded durable Task
+Center batch operations with per-file authorization/revision rechecks, progress,
+cancel, retry, partial failure details, and 10k/100k DB/physical-device tests.
+
+This phase does **not** complete G07. PostgreSQL tenant-isolation/day filtering,
+DST, optimistic concurrency, exclusions, and 100k bounded-page contracts are
+covered by tests, but full CI and actual runtime metrics are still pending.
