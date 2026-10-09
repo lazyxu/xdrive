@@ -1,0 +1,120 @@
+{
+  "workload": "gallery-entry-native-postgres-100k",
+  "before_valid_success": false,
+  "after_valid_success": true,
+  "same_host_paired_ci": true,
+  "before_medians_ms": {
+    "cleanup-bursts": 55.955,
+    "cleanup-duplicates": 604.042,
+    "gallery-index-probe": 356.083,
+    "http-cleanup-bursts": 1552.006,
+    "http-cleanup-duplicates": 1572.987,
+    "http-memories": 1588.505,
+    "http-sync-folder-open": 510.959,
+    "http-sync-folders": 504.703,
+    "memories-index": 180.973,
+    "memories-trip-days": 55.501,
+    "owner-index-refresh": 1599.453,
+    "sync-folder-open": 168.31,
+    "sync-folders-index": 148.777
+  },
+  "after_medians_ms": {
+    "cleanup-bursts": 59.25,
+    "cleanup-duplicates": 599.261,
+    "gallery-index-probe": 353.911,
+    "http-cleanup-bursts": 418.468,
+    "http-cleanup-duplicates": 971.078,
+    "http-memories": 531.442,
+    "http-sync-folder-open": 524.37,
+    "http-sync-folders": 514.896,
+    "memories-index": 173.034,
+    "memories-trip-days": 52.684,
+    "owner-index-refresh": 1701.099,
+    "sync-folder-open": 164.241,
+    "sync-folders-index": 145.477
+  },
+  "route_outcomes": {
+    "http-memories": {
+      "before_ms": 1588.505,
+      "after_ms": 531.442,
+      "observed_elapsed_saved_ms": 1057.063,
+      "observed_elapsed_reduction_percent": 66.54451827347097,
+      "before_http_500": true,
+      "after_http_200": true,
+      "after_bytes": [
+        4661,
+        4661,
+        4661
+      ]
+    },
+    "http-cleanup-duplicates": {
+      "before_ms": 1572.987,
+      "after_ms": 971.078,
+      "observed_elapsed_saved_ms": 601.9090000000001,
+      "observed_elapsed_reduction_percent": 38.26535120760693,
+      "before_http_500": true,
+      "after_http_200": true,
+      "after_bytes": [
+        17727,
+        17727,
+        17727
+      ]
+    },
+    "http-cleanup-bursts": {
+      "before_ms": 1552.006,
+      "after_ms": 418.468,
+      "observed_elapsed_saved_ms": 1133.538,
+      "observed_elapsed_reduction_percent": 73.03695990866015,
+      "before_http_500": true,
+      "after_http_200": true,
+      "after_bytes": [
+        13800,
+        13800,
+        13800
+      ]
+    },
+    "http-sync-folders": {
+      "before_ms": 504.703,
+      "after_ms": 514.896,
+      "observed_elapsed_saved_ms": -10.192999999999984,
+      "observed_elapsed_reduction_percent": -2.019603608458833,
+      "before_http_500": false,
+      "after_http_200": true,
+      "after_bytes": [
+        267,
+        267,
+        267
+      ]
+    },
+    "http-sync-folder-open": {
+      "before_ms": 510.959,
+      "after_ms": 524.37,
+      "observed_elapsed_saved_ms": -13.411000000000001,
+      "observed_elapsed_reduction_percent": -2.6246724296861395,
+      "before_http_500": false,
+      "after_http_200": true,
+      "after_bytes": [
+        35610,
+        35610,
+        35610
+      ]
+    }
+  },
+  "errors": [],
+  "remaining_background_reconciliation_issue": {
+    "before": [
+      {
+        "elapsed_ms": 1599.453,
+        "error": "extended protocol limited to 65535 parameters"
+      }
+    ],
+    "after": [
+      {
+        "elapsed_ms": 1701.099,
+        "error": "extended protocol limited to 65535 parameters"
+      }
+    ],
+    "scope": "Full-owner background reconcile is NOT fixed by read-only handler fast path"
+  },
+  "passed": true
+}

@@ -1,0 +1,266 @@
+{
+  "logical_media_assets": 100000,
+  "medians_ms": {
+    "cleanup-bursts": 55.955,
+    "cleanup-duplicates": 604.042,
+    "gallery-index-probe": 356.083,
+    "http-cleanup-bursts": 1552.006,
+    "http-cleanup-duplicates": 1572.987,
+    "http-memories": 1588.505,
+    "http-sync-folder-open": 510.959,
+    "http-sync-folders": 504.703,
+    "memories-index": 180.973,
+    "memories-trip-days": 55.501,
+    "owner-index-refresh": 1599.453,
+    "sync-folder-open": 168.31,
+    "sync-folders-index": 148.777
+  },
+  "owner_refresh_samples": 1,
+  "physical_media_nodes": 115000,
+  "samples": [
+    {
+      "phase": "gallery-index-probe",
+      "sample": 1,
+      "elapsed_ms": 372.653,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 1,
+      "elapsed_ms": 55.501,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 1,
+      "elapsed_ms": 183.834,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 1,
+      "elapsed_ms": 154.279,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 1,
+      "elapsed_ms": 168.31,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 1,
+      "elapsed_ms": 603.311,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 1,
+      "elapsed_ms": 60.294,
+      "result_rows": 2000
+    },
+    {
+      "phase": "gallery-index-probe",
+      "sample": 2,
+      "elapsed_ms": 356.083,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 2,
+      "elapsed_ms": 63.113,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 2,
+      "elapsed_ms": 172.43,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 2,
+      "elapsed_ms": 148.207,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 2,
+      "elapsed_ms": 171.626,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 2,
+      "elapsed_ms": 604.042,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 2,
+      "elapsed_ms": 54.686,
+      "result_rows": 2000
+    },
+    {
+      "phase": "gallery-index-probe",
+      "sample": 3,
+      "elapsed_ms": 351.629,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 3,
+      "elapsed_ms": 52.855,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 3,
+      "elapsed_ms": 180.973,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 3,
+      "elapsed_ms": 148.777,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 3,
+      "elapsed_ms": 167.317,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 3,
+      "elapsed_ms": 604.621,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 3,
+      "elapsed_ms": 55.955,
+      "result_rows": 2000
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 1,
+      "elapsed_ms": 504.703,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 1,
+      "elapsed_ms": 507.432,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 1,
+      "elapsed_ms": 1714.899,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 1,
+      "elapsed_ms": 1581.805,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 1,
+      "elapsed_ms": 1589.114,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 2,
+      "elapsed_ms": 493.229,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 2,
+      "elapsed_ms": 510.959,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 2,
+      "elapsed_ms": 1588.505,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 2,
+      "elapsed_ms": 1572.987,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 2,
+      "elapsed_ms": 1544.798,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 3,
+      "elapsed_ms": 519.739,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 3,
+      "elapsed_ms": 557.1,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 3,
+      "elapsed_ms": 1560.112,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 3,
+      "elapsed_ms": 1561.254,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 3,
+      "elapsed_ms": 1552.006,
+      "result_rows": 0,
+      "error": "HTTP 500, response={\"error\":\"refresh media projection failed\"}"
+    },
+    {
+      "phase": "owner-index-refresh",
+      "sample": 1,
+      "elapsed_ms": 1599.453,
+      "result_rows": 0,
+      "error": "extended protocol limited to 65535 parameters"
+    }
+  ],
+  "samples_per_phase": 3,
+  "scope": "real PostgreSQL plus Gin/loopback; no thumbnails, codec, remote network or browser paint",
+  "seed_ms": 39826.766,
+  "synthetic_burst_groups": 2000,
+  "synthetic_child_folders": 256,
+  "workload": "gallery-entry-native-postgres-100k"
+}

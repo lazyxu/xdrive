@@ -231,7 +231,7 @@ func (s *Server) listMediaMemories(c *gin.Context) {
 		fail(c, 400, zoneErr.Error())
 		return
 	}
-	if err := s.refreshMediaIndexForOwner(
+	if err := s.refreshMediaIndexForGalleryRead(
 		c.Request.Context(),
 		userID(c),
 		mediaRequestIndexBatch,

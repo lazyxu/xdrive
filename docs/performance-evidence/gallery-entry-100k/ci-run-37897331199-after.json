@@ -1,0 +1,266 @@
+{
+  "logical_media_assets": 100000,
+  "medians_ms": {
+    "cleanup-bursts": 59.25,
+    "cleanup-duplicates": 599.261,
+    "gallery-index-probe": 353.911,
+    "http-cleanup-bursts": 418.468,
+    "http-cleanup-duplicates": 971.078,
+    "http-memories": 531.442,
+    "http-sync-folder-open": 524.37,
+    "http-sync-folders": 514.896,
+    "memories-index": 173.034,
+    "memories-trip-days": 52.684,
+    "owner-index-refresh": 1701.099,
+    "sync-folder-open": 164.241,
+    "sync-folders-index": 145.477
+  },
+  "owner_refresh_samples": 1,
+  "physical_media_nodes": 115000,
+  "samples": [
+    {
+      "phase": "gallery-index-probe",
+      "sample": 1,
+      "elapsed_ms": 386.454,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 1,
+      "elapsed_ms": 50.753,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 1,
+      "elapsed_ms": 173.647,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 1,
+      "elapsed_ms": 152.704,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 1,
+      "elapsed_ms": 165.814,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 1,
+      "elapsed_ms": 608.371,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 1,
+      "elapsed_ms": 60.204,
+      "result_rows": 2000
+    },
+    {
+      "phase": "gallery-index-probe",
+      "sample": 2,
+      "elapsed_ms": 353.13,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 2,
+      "elapsed_ms": 53.053,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 2,
+      "elapsed_ms": 173.034,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 2,
+      "elapsed_ms": 144.187,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 2,
+      "elapsed_ms": 164.241,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 2,
+      "elapsed_ms": 599.261,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 2,
+      "elapsed_ms": 57.218,
+      "result_rows": 2000
+    },
+    {
+      "phase": "gallery-index-probe",
+      "sample": 3,
+      "elapsed_ms": 353.911,
+      "result_rows": 0
+    },
+    {
+      "phase": "memories-trip-days",
+      "sample": 3,
+      "elapsed_ms": 52.684,
+      "result_rows": 180
+    },
+    {
+      "phase": "memories-index",
+      "sample": 3,
+      "elapsed_ms": 171.869,
+      "result_rows": 20
+    },
+    {
+      "phase": "sync-folders-index",
+      "sample": 3,
+      "elapsed_ms": 145.477,
+      "result_rows": 1
+    },
+    {
+      "phase": "sync-folder-open",
+      "sample": 3,
+      "elapsed_ms": 160.537,
+      "result_rows": 256
+    },
+    {
+      "phase": "cleanup-duplicates",
+      "sample": 3,
+      "elapsed_ms": 598.629,
+      "result_rows": 2000
+    },
+    {
+      "phase": "cleanup-bursts",
+      "sample": 3,
+      "elapsed_ms": 59.25,
+      "result_rows": 2000
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 1,
+      "elapsed_ms": 498.925,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 1,
+      "elapsed_ms": 524.37,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 1,
+      "elapsed_ms": 531.442,
+      "result_rows": 1,
+      "bytes": 4661
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 1,
+      "elapsed_ms": 957.556,
+      "result_rows": 1,
+      "bytes": 17727
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 1,
+      "elapsed_ms": 417.141,
+      "result_rows": 1,
+      "bytes": 13800
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 2,
+      "elapsed_ms": 514.896,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 2,
+      "elapsed_ms": 522.069,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 2,
+      "elapsed_ms": 530.275,
+      "result_rows": 1,
+      "bytes": 4661
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 2,
+      "elapsed_ms": 971.078,
+      "result_rows": 1,
+      "bytes": 17727
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 2,
+      "elapsed_ms": 436.873,
+      "result_rows": 1,
+      "bytes": 13800
+    },
+    {
+      "phase": "http-sync-folders",
+      "sample": 3,
+      "elapsed_ms": 525.42,
+      "result_rows": 1,
+      "bytes": 267
+    },
+    {
+      "phase": "http-sync-folder-open",
+      "sample": 3,
+      "elapsed_ms": 548.77,
+      "result_rows": 1,
+      "bytes": 35610
+    },
+    {
+      "phase": "http-memories",
+      "sample": 3,
+      "elapsed_ms": 557.721,
+      "result_rows": 1,
+      "bytes": 4661
+    },
+    {
+      "phase": "http-cleanup-duplicates",
+      "sample": 3,
+      "elapsed_ms": 977.627,
+      "result_rows": 1,
+      "bytes": 17727
+    },
+    {
+      "phase": "http-cleanup-bursts",
+      "sample": 3,
+      "elapsed_ms": 418.468,
+      "result_rows": 1,
+      "bytes": 13800
+    },
+    {
+      "phase": "owner-index-refresh",
+      "sample": 1,
+      "elapsed_ms": 1701.099,
+      "result_rows": 0,
+      "error": "extended protocol limited to 65535 parameters"
+    }
+  ],
+  "samples_per_phase": 3,
+  "scope": "real PostgreSQL plus Gin/loopback; no thumbnails, codec, remote network or browser paint",
+  "seed_ms": 39199.677,
+  "synthetic_burst_groups": 2000,
+  "synthetic_child_folders": 256,
+  "workload": "gallery-entry-native-postgres-100k"
+}

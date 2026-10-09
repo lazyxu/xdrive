@@ -4,10 +4,78 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## Gallery entry performance — Memories, 同步文件夹, 清理建议 (2026-10-09)
+
+Status: **Accepted A/B / final full CI pending (#1100)**. Initial source commit `c55044b6e4c79cbf94da0acb75ced5e9bb588c48` failed all three affected HTTP endpoints. The measured minimal handler-only change uses the pre-existing Gallery stale-node probe before any owner-wide reconciliation; the unchanged stale-data path still runs original reconciliation. Three-pair same-host native PostgreSQL/Gin validation [run 37897331199](https://github.com/lazyxu/xdrive/actions/runs/37897331199) **passed**; final updated-source CI and merge remain pending.
+
+### Fixed named workload
+
+- **100,000 logical Gallery assets**, **115,000 physical media nodes** (70k photos, 15k videos, 15k Live Photos paired with 15k motion resources), from the existing native Gallery first-open fixture; add 256 child directories and one owned synchronization folder rooted at the 100k media directory. This is a synthetic owner-scoped PostgreSQL schema, not a real production account.
+- Add 8,000 geotagged still items spread over 180 captured days and two 5° geographic cells to exercise trip classification; add 10,000 photo file references sharing 2,000 SHA-256 hashes for duplicate cleanup, and 2,000 three-frame burst groups for cleanup. Media provenance and logical-photo identity continue to come from local canonical tables.
+- Execute each **three times** in one native PostgreSQL 17 environment: steady Gallery stale-node probe, trip-day enumeration, Memories aggregate, synchronization-folder list, one folder-open aggregate, duplicate groups, burst reviews; then measure five authenticated real Gin/loopback GET endpoints individually with full response-body reads. Owner-wide indexing refresh is probed **once at the end**, after read-only fixture validation, to avoid its destructive side effects on synthetic Burst grouping. The CI job runs BEFORE and AFTER in isolated PostgreSQL schemas on the same runner; record timings (ms), result counts, response bytes, and seed time.
+- This measures live Go code and real PostgreSQL/loopback HTTP including handler-side projection refresh. It does **not** measure remote HTTP throughput, Viewer/media decoding, thumbnail requests, actual browser painting or simultaneous user clicks. Cleanup UI fires duplicate/burst calls concurrently; these tests isolate them to distinguish their costs without attributing concurrent DB contention to one endpoint.
+
+### Decision gates
+
+- First CI creates the frozen **BEFORE/current** baseline. Treat an endpoint median over **1,000 ms** or one isolated query stage over **500 ms** as a performance investigation trigger (not as proof that production hardware is slow). Any proposed change must preserve owner isolation, exact grouping/counters, source-folder scope, output ordering, non-destructive cleanup recommendations and existing direct-asset rules.
+- Optimize only a reproduced high-cost stage, using at least three paired same-run BEFORE/AFTER samples of the **identical workload**. Retain only if the attempted endpoint elapsed time decreases at least **30% and 100 ms absolute**, the previous HTTP 500 becomes **HTTP 200** with correct counts, and neither Sync Folder latency nor the direct query stages materially regress. The BEFORE times ended in HTTP 500, so these percentages are diagnostic elapsed-time reductions, not a successful-request speedup claim. Failed experiments must be documented.
+- Benchmark: `XD_GALLERY_ENTRY_PERF=1 XD_TEST_DATABASE_URL=postgres://... go test -run '^TestGalleryEntryEndpointsPerformance100K$' -count=1 -timeout=25m -v ./internal/api`. GitHub/GitLab scoped job: `gallery-entry-100k-performance`. The GitHub job checks out the exact one-work-commit PR head with parent `c55044b6e4c79cbf94da0acb75ced5e9bb588c48`, runs both using the **identical fixture source** on one runner, and enforces the frozen acceptance in `scripts/ci/validate-gallery-entry-paired.mjs`. Paired A/B acceptance passed in run 37897331199; the amended performance evidence and formatting must pass the final full PR CI before merge.
+
+### Measured causes and remaining hypotheses
+
+- Memories currently computes yearly-date, 14-day and all-history geotagged trip grouping; each derived trip segment invokes an additional date-range summary. The requested 48-item limit is applied **after** trip enumeration/summary, so more total history can cost more even with few visible cards.
+- Cleanup loads exact-duplicate and burst-review endpoints in parallel. BEFORE, both handlers invoke the owner refresh path before their own aggregation; the refresh executes media-group and photo-asset reconciliation even without stale media, reproducing a PostgreSQL parameter overflow at 100k. After change, the three affected handlers share the existing conditional Gallery-read refresh. The duplicate aggregate still runs separately for visible groups and totals; no speculative SQL rewrite is included.
+- Synchronization-folder root/view reads aggregate media counts and covers over folder contents and directory children. Root paths may also require multiple parent lookups. Measure query stage before considering caching, pagination or data model changes.
+
+**BEFORE measured / source d28018a8393e4456c9fb73cdc1b1895f97c163fc:** [CI 37896354525](https://github.com/lazyxu/xdrive/actions/runs/37896354525), [job 113708859022](https://github.com/lazyxu/xdrive/actions/runs/37896354525/job/113708859022), n=3 for direct/HTTP stages, except owner refresh probed once after the read-only samples. The fixture supplied stable 2,000 burst groups and 2,000 duplicate groups. The original benchmark was rejected because refresh side effects changed synthetic Burst groups mid-run; it was moved after the read-only phases. Corrected data: [raw JSON](performance-evidence/gallery-entry-100k/ci-run-37896354525-before.json).
+
+| Current BEFORE phase | Median ms | Outcome |
+| --- | ---: | --- |
+| cleanup-bursts | 61.625 | OK |
+| cleanup-duplicates | 584.275 | OK |
+| gallery-index-probe | 355.095 | OK |
+| http-cleanup-bursts | 1608.976 | ERROR / HTTP 500 |
+| http-cleanup-duplicates | 1633.575 | ERROR / HTTP 500 |
+| http-memories | 1578.887 | ERROR / HTTP 500 |
+| http-sync-folder-open | 517.828 | OK |
+| http-sync-folders | 530.116 | OK |
+| memories-index | 180.869 | OK |
+| memories-trip-days | 46.733 | OK |
+| sync-folder-open | 160.772 | OK |
+| sync-folders-index | 146.653 | OK |
+| owner-index-refresh | 1603.581 (n=1) | ERROR: PostgreSQL bind parameters >65535 |
+
+- Root cause confirmed in BEFORE: three read-only route handlers call `refreshMediaIndexForOwner`; even on zero stale media, that function runs owner-wide media-group/PhotoAsset reconciliation. 100k logical assets / 115k media nodes trigger `extended protocol limited to 65535 parameters` in existing `internal/photoasset/assets.go` reconciliation. This is distinct from normal Gallery `refreshMediaIndexForGalleryRead` that probes for stale media and avoids reconciliation on clean reads. **The underlying full-owner background reconcile bug is not addressed by this read-handler-only performance fix.**
+- **Current decision: optimize the three read-only handlers only.** Swap to the existing `refreshMediaIndexForGalleryRead` helper for Memories, duplicate groups, burst reviews; keep owner refresh if stale rows are found and retain original background owner reconciliation semantics. Sync folders remain unchanged (their GET endpoints return 200 and the time-to-load is below the predeclared 1000 ms warning budget).
+- The same-host paired AFTER values are recorded below and accepted; the final documentation commit and full CI remain pending. The BEFORE requests failed with HTTP 500, so the reductions describe failed-request versus successful-request elapsed time, not an apples-to-apples successful-loading speedup. The full-owner projection refresh failure is explicitly retained.
+### Same-host paired native CI acceptance — PR #1100 (2026-10-09)
+
+**Scope and provenance:** [CI run 37897331199](https://github.com/lazyxu/xdrive/actions/runs/37897331199), job `113711565521`, PostgreSQL 17 + production Gin localhost HTTP, 100k logical assets / 115k physical media nodes. Original owner refresh code is parent `c55044b6e4c79cbf94da0acb75ced5e9bb588c48`; optimized one-work-commit source was `84b1296cfb46e2ef35242c81d3a4144204f54854`. The identical frozen Go fixture was run in isolated schemas on the **same CI host**; n=3 for HTTP and direct-query phases. The initial `go-linux` check failed only because of three `gofmt` alignments in the new benchmark test. These have been corrected before the final CI. The browser/mobile/IPC path has not been measured here.
+
+| Stage | BEFORE p50 (ms) | AFTER p50 (ms) | Response / assessment |
+| --- | ---: | ---: | --- |
+| Memories HTTP | 1588.505 | **531.442** | **500 → 200**; failed-request elapsed -66.5% |
+| Cleanup duplicates HTTP | 1572.987 | **971.078** | **500 → 200**; failed-request elapsed -38.3% |
+| Cleanup burst suggestions HTTP | 1552.006 | **418.468** | **500 → 200**; failed-request elapsed -73.0% |
+| Sync Folder list HTTP (unchanged code) | 504.703 | 514.896 | **200 → 200**, +2.0%, within 25%/150 ms non-regression gate |
+| Sync Folder open HTTP (unchanged code) | 510.959 | 524.370 | **200 → 200**, +2.6%, within gate |
+| Memories direct aggregate | 180.973 | 173.034 | 20 rows; no meaningful regression |
+| Duplicate direct aggregate | 604.042 | 599.261 | 2000 groups; no meaningful regression |
+| Burst direct aggregate | 55.955 | 59.250 | 2000 groups; no meaningful regression |
+| Gallery clean index probe | 356.083 | 353.911 | No stale media, no owner-wide reconcile from three affected read routes |
+| Sync Folder list direct SQL | 148.777 | 145.477 | 1 folder |
+| Sync Folder directory direct SQL | 168.310 | 164.241 | 256 child folders |
+| Full-owner media asset reconciliation (diagnostic only, n=1) | 1599.453 | 1701.099 | **Still fails**: PostgreSQL extended protocol limited to 65,535 parameters |
+
+Each affected AFTER HTTP call returned three **HTTP 200** responses of identical response length: Memories **4661 bytes**, duplicates **17727 bytes**, bursts **13800 bytes**. Unchanged Sync Folder list/open returned **267/35610 bytes** respectively in both conditions. The benchmark validator reported `passed=true`, all error arrays empty; no direct result count drift. No successful-response speedup percentage is asserted because the BEFORE routes failed. **Decision: accept the narrow read-handler fast path** and preserve the separate full-owner reconciliation issue for a measurement-first follow-up.
+
+**Durable raw evidence:** [BEFORE per-sample JSON](performance-evidence/gallery-entry-100k/ci-run-37897331199-before.json), [AFTER per-sample JSON](performance-evidence/gallery-entry-100k/ci-run-37897331199-after.json), and [acceptance report](performance-evidence/gallery-entry-100k/ci-run-37897331199-acceptance.json), as returned by the linked Actions artifact. AFTER values were obtained without altering the original direct aggregation SQL or the Sync Folder handlers. The remaining photoasset owner-wide reconciliation bug should be addressed separately with a 100k clean/stale fixture and batch-bound DB parameter regression before considering additional endpoint caching or schema changes.
+
 ## Status index
 
 | Area | Status | Evidence |
 | --- | --- | --- |
+| Gallery entry tabs: Memories, 同步文件夹 and 清理建议 | **Accepted A/B / final CI pending (#1100)** | PostgreSQL 17 / Gin loopback / 100k logical, 115k physical; 3 matched samples. Memories/duplicates/bursts HTTP **500 → 200**, elapsed **1588.5 → 531.4 / 1573.0 → 971.1 / 1552.0 → 418.5 ms**. Sync-folder list/open **504.7 → 514.9 / 511.0 → 524.4 ms** (no meaningful regression). No browser first-paint claim; full-owner 65,535-parameter path remains broken. |
 | Video poster viewport cancellation (100k logical videos) | **A/B accepted / complete regression pending (#1088)** | Persisted-first helper + 3-active/3-queued real Node HTTP workload; three paired samples each for warm GET and cold preview | BEFORE **3/3 stale HTTP active, 24,576 B late data**; AFTER **3/3 early abort, 0 old active/bytes**. Warm last-abort 1.73–2.88 ms; cold 0.97–1.28 ms. Cold stale backfill **3 → 0 per sample**. No codec/Go end-to-end claim. |
 | Gallery viewport HTTP abort optimization | **Paired HTTP A/B passed / full regression pending (#1083)** | BEFORE: 0/6 abort; AFTER: 6/6 abort and zero stale payload at +160 ms, n=3; abort latency 1.638–3.863 ms. Real Gin/derivative and Gallery video poster require independent coverage. |
 | Gallery stale thumbnail transport cancellation | **Measured baseline / structural breach (#1077)** | Three 6-request parent/current HTTP tests: **6/6 still active at +160 ms, 0/6 transport aborted, 6/6 late responses** after viewport eviction or view unmount. Logical Promise cancel is not transport cancel; production fix warranted separately. |
