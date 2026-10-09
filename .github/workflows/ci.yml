@@ -1486,6 +1486,62 @@ jobs:
           retention-days: 7
 
 
+
+  gallery-web-real-fold-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-web-fold-browser-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build only the opt-in real 100k browser fold harness
+        env:
+          VITE_XDRIVE_GALLERY_REAL_FOLD_PERF: "1"
+        run: |
+          set -euo pipefail
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          node --check desktop/scripts/gallery-web-real-fold-main.cjs
+      - name: Measure 100k verified fold actual browser ON/OFF with real Gin and CAS
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-web-real-fold-main.cjs
+          cat gallery-web-real-fold-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-web-real-fold-100k
+          path: desktop/gallery-web-real-fold-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   gallery-renderer-first-paint-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-media-first-paint-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest

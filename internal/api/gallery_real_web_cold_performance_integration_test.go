@@ -101,6 +101,10 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
 			len(images), len(videos), liveCount)
 	}
+	foldEnabled := os.Getenv("XD_GALLERY_REAL_WEB_FOLD_PERF") == "1"
+	if foldEnabled {
+		galleryRealWebFoldSeed100K(t, db, ownerRoot.OwnerID, page.Items)
+	}
 	seedMS := float64(time.Since(started).Microseconds()) / 1000
 	countingStore.Reset()
 	stopped := make(chan struct{})
@@ -112,11 +116,14 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"token":             token,
-				"logical_assets":    mediaGalleryFirstOpenLogicalCount,
-				"physical_nodes":    mediaGalleryFirstOpenPhysical,
-				"live_photo_groups": mediaGalleryFirstOpenLivePhotos,
-				"seed_ms":           seedMS,
+				"token":              token,
+				"logical_assets":     mediaGalleryFirstOpenLogicalCount,
+				"physical_nodes":     mediaGalleryFirstOpenPhysical,
+				"live_photo_groups":  mediaGalleryFirstOpenLivePhotos,
+				"seed_ms":            seedMS,
+				"fold_enabled":       foldEnabled,
+				"fold_groups":        map[bool]int{true: galleryRealWebFoldGroups, false: 0}[foldEnabled],
+				"fold_visible_count": map[bool]int{true: galleryRealWebFoldVisible, false: mediaGalleryFirstOpenLogicalCount}[foldEnabled],
 			})
 		case "/__perf/stats":
 			w.Header().Set("Content-Type", "application/json")
@@ -139,13 +146,16 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	httpServer := httptest.NewServer(httpHandler)
 	defer httpServer.Close()
 	ready := map[string]any{
-		"url":               httpServer.URL,
-		"seed_ms":           seedMS,
-		"first_image_nodes": len(images),
-		"first_video_nodes": len(videos),
-		"first_live_assets": liveCount,
-		"logical_assets":    mediaGalleryFirstOpenLogicalCount,
-		"physical_nodes":    mediaGalleryFirstOpenPhysical,
+		"url":                httpServer.URL,
+		"seed_ms":            seedMS,
+		"first_image_nodes":  len(images),
+		"first_video_nodes":  len(videos),
+		"first_live_assets":  liveCount,
+		"logical_assets":     mediaGalleryFirstOpenLogicalCount,
+		"physical_nodes":     mediaGalleryFirstOpenPhysical,
+		"fold_enabled":       foldEnabled,
+		"fold_groups":        map[bool]int{true: galleryRealWebFoldGroups, false: 0}[foldEnabled],
+		"fold_visible_count": map[bool]int{true: galleryRealWebFoldVisible, false: mediaGalleryFirstOpenLogicalCount}[foldEnabled],
 	}
 	if err := os.MkdirAll(filepath.Dir(readyFile), 0700); err != nil {
 		t.Fatal(err)
