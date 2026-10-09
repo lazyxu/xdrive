@@ -136,7 +136,10 @@ test('long file dialogs use compact-touch full-screen presentation', () => {
   ]) {
     assert.ok(source.includes('useXDriveCompactTouchDialog()'), name + ' dialog must use shared compact-touch Dialog hook')
     assert.ok(source.includes('fullScreen={compactTouch}'), name + ' dialog must become full-screen on compact touch')
-    assert.ok(source.includes('slotProps={{ paper: dialogPaper }}'), name + ' dialog must use shared responsive paper')
+    assert.match(source, /slotProps=\{\{\s*paper:\s*(?:dialogPaper|\{\s*\.\.\.dialogPaper,)/, name + ' dialog must use shared responsive paper')
+    if (source.includes('paper: { ...dialogPaper, sx: {')) {
+      assert.ok(source.includes('...dialogPaper.sx'), name + ' local paper styles must retain shared responsive styles')
+    }
   }
 
   assert.ok(versions.includes('data-xdrive-version-history-mobile-list'))

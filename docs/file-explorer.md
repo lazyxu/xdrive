@@ -349,7 +349,7 @@ Virtualization must not weaken ordinary FileExplorer interaction semantics. The 
 
 Required behavior:
 
-- `Ctrl/Cmd+A` selects the entire logical collection, not only currently loaded pages.
+- `Ctrl/Cmd+A` and the compact **全选当前目录 / 全选搜索结果** command select the entire logical collection, not only currently loaded pages. The current-directory scope excludes descendants; Search uses all matching results under its displayed query and predicates. Loading a complete selection exposes resolved/total progress and **取消选择加载**. Commit the complete identity set only after every bounded chunk succeeds; cancellation or failure preserves the preceding complete selection.
 - Shift-click and Shift+keyboard selection load missing logical indexes before committing the range. Results from an older selection intent must never overwrite a newer selection.
 - Type-to-select remains available in virtual collections. It scans bounded logical ranges on demand and stops at the first matching item; it must not require preloading the entire collection.
 - Quick Look previous/next follows logical collection order, loads missing ranges on demand, and skips folders.
@@ -358,6 +358,28 @@ Required behavior:
 - Directory/search/tab/sort/grouping generation changes invalidate in-flight interaction resolution so stale results cannot change current selection or Quick Look state.
 
 These are correctness requirements, not a FileExplorer performance specialization. Performance work remains governed separately by `docs/file-explorer-performance.md`.
+
+## Selection and action feedback
+
+Count unique selected identities even when an item's metadata is temporarily unavailable. Explain the unavailable subset and refuse operations that would silently submit only the resolved portion. Keep retained node IDs and revisions for valid selections across render-page eviction.
+
+Below 900 CSS px, a compact selection summary keeps its count and **完成选择** separate from direct Copy, Cut, Download, Delete and More actions. Targets are at least 44 × 44 CSS px. Clear keeps selection mode open; Finish clears the selection, exits the mode and returns focus to its trigger. Escape cancels pending All first, then exits compact selection. Widening preserves selected identities. Selection/search/outcome details share a bounded scrollable region inside Files so a long error at 200% text cannot push its actions outside a short viewport; the main Files scroll host remains mounted.
+
+Operation eligibility is independent of selection capacity. Adapters supply the actual limits and capabilities: atomic Copy/Move/Delete accept 200 selected roots, Tags accept 500, archive downloads accept 1,000 roots, and Desktop's file-by-file fallback accepts 1,000 files with explicitly counted skipped folders. Do not cap the logical selection, truncate a submission or split an atomic mutation without user choice. Visible buttons, keyboard commands and selection menus use the same eligibility rules; clipboard Paste also validates a snapshot originating in another context.
+
+The App owns the current feedback pointer and existing durable-operation lifecycle. Files can show queued/running/cancel-requested/terminal status, actual failure details and a Task Center entry without another poller. Failed or cancelled atomic mutations did not partially commit; progress is not a success count. Completed skip-policy operations keep the exact skipped count unknown. Desktop download summaries use only the actual returned downloaded/failed/skipped counts and named errors. A download captures feedback ownership when it begins, so a delayed result cannot replace a newer operation's feedback; a later initiated download can present its own result. Dismissal clears the presentation without deleting the task.
+
+## Destination choice, rename and operation continuation
+
+**移动到… / 复制到…** use the same complete-selection eligibility as the existing clipboard operations. Compact selected contexts show labeled buttons without reopening More; wide contexts retain their existing menu affordance. Choosing a destination never changes the clipboard or the main Files directory, history or selection just to browse a target. At short heights and enlarged text, Details retains room for its sticky header and one complete row; the action context scrolls inside its own bounded region.
+
+The shared destination dialog takes an immutable source ID/revision snapshot and authoritative initial crumbs. It loads directory-only pages through the existing adapter, retains the current page and opaque page cursors, and follows only observed child IDs or known ancestors. Show the source count, target path, loading/error/retry, Cancel and the explicit submit action. Block a known source directory or descendant target and any move containing a source already in that parent; do not silently submit the remaining subset. Same-parent copy follows the Server's existing copy contract. Server remains authoritative for permissions, managed paths, revision and namespace changes.
+
+Cancel before submission dismisses the picker; it does not claim to cancel a previously accepted Server job. A rejected submission preserves the target and immutable source snapshot for a deliberate retry. Once queue acceptance is pending, duplicate submission and dismissal are disabled. The existing durable FileOperation owns cancellation after acceptance, retryability, conflict resolution, and Undo/Redo. **查看任务** opens the owner's task scope and focuses the accepted operation through a distinct focus request; it does not create a second operation store or poller. Leaving Tasks expires that request, so ordinary navigation back does not replay its focus. A continuation disables redundant actions on its predecessor. Conflict controls remain readable and reachable below 900 CSS px, including with a mouse attached.
+
+Compact rename uses the shared name-editor presentation with explicit Save, Cancel and an in-panel error. The FileExplorer retains its existing draft and submission owner, so crossing 899/900 px changes presentation without submitting or discarding the draft; wide rename remains inline with Enter/Escape and extension-aware initial selection. A rejected rename keeps its draft for retry, and successful or cancelled editing restores file focus. A pending rename has no Server cancellation contract, so the compact dialog disables dismissal until the request settles.
+
+File and folder names are limited to **255 UTF-8 bytes**; saved-search names use **128 UTF-8 bytes**. Validate the trimmed name without silently truncating multibyte text. The generic name dialog also retains a failed draft and owns synchronous submission and target-lifecycle identity: two submit events cannot issue two writes, and an old completion cannot close a newer target. Returning to identical Search text after another Search is a new intent; completion of an earlier Paste or rename cannot clear that later intent.
 
 ## Async scope rule
 
@@ -517,15 +539,21 @@ FileExplorer keeps one cross-platform Web/Desktop implementation. The following 
 - Tags are owner-scoped Server entities and can be attached many-to-many to both files and folders without moving or copying nodes.
 - A tag has a stable id, user-visible name and optional color. Name is semantic; color is only a visual aid.
 - The shared Tag dialog supports create, rename/color edit, delete, single-item assignment and multi-selection assignment.
+- The Sidebar exposes **管理标签** even when no file is selected. Management edits owner-scoped definitions only; it must not query or write selected-node assignments. The existing Files **标签…** action opens assignment mode for the complete unique selection.
+- Assignment mode shows the selected scope and each tag's known assigned count within it. A failed membership read is **unknown**, not an unchecked result, and has a deliberate retry. The Server's valid `tags: null` value for an untagged node is known empty. A selection above 500 identities or containing invalid/unavailable identities cannot silently submit a subset. Tag names are limited to 64 UTF-8 bytes without truncation.
 - Tag assignment must be queryable in bounded batches and must not widen ordinary directory-range payloads.
 - Structured Search accepts `tag_id` and applies it Server-side. Sidebar tag activation is the same Search contract, not a client-side filter over loaded rows.
 - Tag deletion removes its node associations. Owner isolation applies to tag definitions, assignments and Search.
+- Distinguish removing a tag from the current selection from deleting its definition and all associations. Keep definition and assignment write errors in the dialog, retain the draft for retry, and prevent duplicate pending submissions. Compact actions remain at least 44px with touch or mouse input; short-height forms scroll while completion and cancellation remain reachable.
 
 ### Smart Folder / saved Search
 
 - A Smart Folder is a persisted owner-scoped Search definition: display name + query + Server-backed structured filters.
 - Saved filters persist portable Server predicates such as kind, modified time, size, synchronization folder and tag. Device-local availability is intentionally not persisted.
 - Smart Folders appear as a first-class Sidebar section and support activate, rename, replace with the current Search, delete and drag reorder.
+- The Sidebar exposes **保存当前搜索** and explains when a keyword or portable filter is required. Show each saved query and structured predicates, explain dynamic matching and the files' original location, and distinguish any device-only availability condition from saved rules. Quick Access empty guidance identifies folder pinning, while Favorites identifies the existing file action.
+- Tags and Smart Folders distinguish pending, confirmed empty, failed and refreshed definitions. A failed refresh retains known rows with an explicit previous-read notice and retry; account changes cannot expose the previous owner's rows on the first render. Reuse the Organization controller's authoritative read state and existing mutation/refresh ownership.
+- Match saved rules against the actual active Search query and portable filters, including ordinary edits and restored history. An active tag marker reflects the actual tag predicate, including combined conditions. Directory/Trash contexts have no active Search markers. Labels are derived from existing Search state, with no second history store, per-rule result-count requests or client-side result filtering.
 - Activating a Smart Folder calls the existing shared Search controller (`applySearch`) and keeps range loading, sort/group identity and stale-request fencing unchanged.
 - Smart Folders never copy nodes and never materialize a directory tree.
 - The shared Tags / Smart Folder Organization controller treats a successful create, update, delete, tag assignment or saved-search reorder as a newer state revision than any overlapping list refresh started before the write commits. A late older refresh must not erase newly created rows, resurrect deleted rows, revert accepted order, or regress tag membership counts. The optimistic saved-search order also invalidates a preexisting refresh, and a refresh started after a confirmed mutation remains free to update the list. Failed mutations must not invalidate a legitimate pending refresh; lifecycle/session reset continues to invalidate both mutations and refreshes.

@@ -158,8 +158,8 @@ export function xDriveFileExplorerClipboardFromItems<
   selected: XDriveFileExplorerSelectionItem[],
   nodeByID: ReadonlyMap<number, TNode>,
 ): XDriveFileExplorerClipboard<TNode> | null {
-  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-  return nodes.length > 0 ? { mode, nodes } : null
+  const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+  return nodes?.length ? { mode, nodes } : null
 }
 
 export function xDriveFileExplorerCanPaste<
@@ -172,6 +172,36 @@ export function xDriveFileExplorerCanPaste<
 }
 export type XDriveFileExplorerCopyMoveOperation = 'copy' | 'move'
 
+export type XDriveFileExplorerDestinationSource = Readonly<
+  Pick<Node, 'id' | 'revision' | 'name' | 'type' | 'parent_id'>
+>
+export type XDriveFileExplorerDestinationCrumb = Readonly<{ id: number; name: string }>
+export type XDriveFileExplorerDestinationRequest = Readonly<{
+  operation: XDriveFileExplorerCopyMoveOperation
+  sources: readonly XDriveFileExplorerDestinationSource[]
+  initialCrumbs: readonly XDriveFileExplorerDestinationCrumb[]
+}>
+
+export function xDriveFileExplorerDestinationTargetDisabledReason(
+  operation: XDriveFileExplorerCopyMoveOperation,
+  sources: readonly XDriveFileExplorerDestinationSource[],
+  targetCrumbs: readonly XDriveFileExplorerDestinationCrumb[],
+): string | null {
+  if (!sources.length) return '请先选择需要操作的项目。'
+  if (!targetCrumbs.length || targetCrumbs.some((crumb) => !Number.isSafeInteger(crumb.id) || crumb.id <= 0)) {
+    return '请选择有效的目标文件夹。'
+  }
+  const directoryIDs = new Set(sources.filter((source) => source.type === 'dir').map((source) => source.id))
+  if (targetCrumbs.some((crumb) => directoryIDs.has(crumb.id))) {
+    return '不能将文件夹复制或移动到自身或其子文件夹中。'
+  }
+  const parentID = targetCrumbs.at(-1)!.id
+  if (operation === 'move' && sources.some((source) => source.parent_id === parentID)) {
+    return '所选项目中有项目已在此文件夹中，请选择其他目标。'
+  }
+  return null
+}
+
 export function xDriveFileExplorerNodesForItems<TNode extends Pick<Node, 'id'>>(
   selected: XDriveFileExplorerSelectionItem[],
   nodeByID: ReadonlyMap<number, TNode>,
@@ -179,6 +209,52 @@ export function xDriveFileExplorerNodesForItems<TNode extends Pick<Node, 'id'>>(
   return selected
     .map((item) => nodeByID.get(Number(item.id)))
     .filter((node): node is TNode => Boolean(node))
+}
+
+// An operation needs the complete unique selection, including metadata retained
+// after a render page was evicted. A partial lookup is never an operation plan.
+export function xDriveFileExplorerResolveSelectionNodes<TNode extends Pick<Node, 'id'>>(
+  selected: readonly XDriveFileExplorerSelectionItem[],
+  nodeByID: ReadonlyMap<number, TNode>,
+): TNode[] | null {
+  const nodes = new Map<number, TNode>()
+  for (const item of selected) {
+    const id = Number(item.id)
+    if (!Number.isSafeInteger(id) || id <= 0) return null
+    const node = nodeByID.get(id)
+    if (!node || node.id !== id) return null
+    nodes.set(id, node)
+  }
+  return [...nodes.values()]
+}
+
+export function xDriveFileExplorerSelectionActionDisabledReason<
+  TNode extends Pick<Node, 'id'> & Partial<Pick<Node, 'revision'>>,
+>({
+  selected,
+  selectedCount,
+  nodeByID,
+  maxItems,
+  requireRevision = false,
+}: {
+  selected: readonly XDriveFileExplorerSelectionItem[]
+  selectedCount: number
+  nodeByID: ReadonlyMap<number, TNode>
+  maxItems?: number
+  requireRevision?: boolean
+}): string | null {
+  if (selectedCount <= 0) return '请先选择项目。'
+  const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+  if (!nodes || nodes.length !== selectedCount) {
+    return '所选项目信息尚未完整加载，请稍后重试。'
+  }
+  if (requireRevision && nodes.some((node) => !Number.isSafeInteger(node.revision) || Number(node.revision) <= 0)) {
+    return '所选项目版本信息不可用，请刷新后重新选择。'
+  }
+  if (maxItems !== undefined && nodes.length > maxItems) {
+    return `一次操作最多 ${maxItems} 个项目，请缩小选择范围。`
+  }
+  return null
 }
 
 export function xDriveFileExplorerClipboardOperationPlan<
@@ -231,7 +307,8 @@ export function xDriveFileExplorerDropItemsToParentPlan<
   targetParentID: number,
   nodeByID: ReadonlyMap<number, TNode>,
 ) {
-  const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+  const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+  if (!nodes) return null
   const plan = xDriveFileExplorerDropOperationPlan(operation, nodes, targetParentID)
   return plan.count > 0 ? plan : null
 }

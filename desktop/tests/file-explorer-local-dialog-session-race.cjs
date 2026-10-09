@@ -77,10 +77,9 @@ test('Desktop FileExplorer account lifecycle change closes stale local dialogs',
     setActionBusy: (value) => actionBusyWrites.push(value),
     setCreateOpen: (value) => createOpenWrites.push(value),
     setTagDialogItems: () => {},
+    setTagDialogMode: () => {},
     setSaveSearchOpen: () => {},
     setRenameSavedSearch: () => {},
-    setActiveSavedSearchID: () => {},
-    setActiveTagID: () => {},
   })
 
   const cleanup = effect()

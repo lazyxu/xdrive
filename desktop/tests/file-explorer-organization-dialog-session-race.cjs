@@ -65,10 +65,9 @@ test('Desktop FileExplorer account lifecycle closes stale organization dialogs a
   const { filename, callback } = extractLifecycleEffect()
   const writes = {
     tagDialogItems: [],
+    tagDialogMode: [],
     saveSearchOpen: [],
     renameSavedSearch: [],
-    activeSavedSearchID: [],
-    activeTagID: [],
   }
 
   const effect = compileEffect(filename, callback, {
@@ -81,10 +80,9 @@ test('Desktop FileExplorer account lifecycle closes stale organization dialogs a
     setCreateOpen: () => {},
     setOpenPreviewItem: () => {},
     setTagDialogItems: (value) => writes.tagDialogItems.push(value),
+    setTagDialogMode: (value) => writes.tagDialogMode.push(value),
     setSaveSearchOpen: (value) => writes.saveSearchOpen.push(value),
     setRenameSavedSearch: (value) => writes.renameSavedSearch.push(value),
-    setActiveSavedSearchID: (value) => writes.activeSavedSearchID.push(value),
-    setActiveTagID: (value) => writes.activeTagID.push(value),
   })
 
   const cleanup = effect()
@@ -105,14 +103,9 @@ test('Desktop FileExplorer account lifecycle closes stale organization dialogs a
     'account-A saved-search rename target must not survive into account B',
   )
   assert.deepEqual(
-    writes.activeSavedSearchID,
+    writes.tagDialogMode,
     [null],
-    'account-A saved-search selection must not select an unrelated same-id search in account B',
-  )
-  assert.deepEqual(
-    writes.activeTagID,
-    [null],
-    'account-A tag selection must not select an unrelated same-id tag in account B',
+    'account-A tag management or assignment dialog must close before account B becomes current',
   )
 
   if (typeof cleanup === 'function') cleanup()

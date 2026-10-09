@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
@@ -17,13 +18,15 @@ import {
   xDriveFileExplorerNodeForItem,
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerEnsureUploadDirectory,
-  xDriveFileExplorerNodesForItems,
+  xDriveFileExplorerResolveSelectionNodes,
+  xDriveFileExplorerSelectionActionDisabledReason,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
   xDriveFileExplorerAvailabilityFromSnapshot,
   xDriveFileExplorerPersistedSearchFilters,
-  xDriveFileExplorerSearchFiltersActive,
+  xDriveFileExplorerOrganizationSearchState,
+  xDriveFileExplorerSavedSearchRuleLabels,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
 } from '@xdrive/shared'
@@ -32,6 +35,7 @@ import {
   XDriveFileExplorerNavigationPane,
   XDriveFileExplorerTabs,
   XDriveFileExplorerSearchFilters,
+  XDriveFileExplorerDestinationDialog,
   XDriveFileTagDialog,
   XDriveFileNameDialog,
   XDriveFileExplorerTrashDeleteDialog,
@@ -55,6 +59,7 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerItem,
+  XDriveFileExplorerSelectionAction,
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerNavigationState,
   XDriveFileExplorerSort,
@@ -63,6 +68,7 @@ import type {
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerGrouping,
+  XDriveFileExplorerDownloadResult,
   XDriveFileExplorerSearchAvailabilityOption,
   XDriveFileExplorerSearchSourceOption,
   XDriveFileExplorerMediaDetailsRef,
@@ -158,6 +164,8 @@ export default function DesktopFileExplorer({
   onDelete,
   onDeleteMany,
   onOperationQueued,
+  actionFeedback,
+  onDownloadStart,
   canUndo = false,
   onUndo,
   canRedo = false,
@@ -215,6 +223,8 @@ export default function DesktopFileExplorer({
   onDelete: (node: AgentCloudNode) => void
   onDeleteMany: (nodes: AgentCloudNode[]) => void
   onOperationQueued: (operation: AgentCloudFileOperation) => void
+  actionFeedback?: ReactNode
+  onDownloadStart?: () => (result: XDriveFileExplorerDownloadResult) => void
   canUndo?: boolean
   onUndo?: () => void
   canRedo?: boolean
@@ -261,10 +271,9 @@ export default function DesktopFileExplorer({
     folderUploadPickerParentIDRef.current = null
     setCreateOpen(false)
     setTagDialogItems([])
+    setTagDialogMode(null)
     setSaveSearchOpen(false)
     setRenameSavedSearch(null)
-    setActiveSavedSearchID(null)
-    setActiveTagID(null)
     return () => {
       actionGenerationRef.current += 1
       actionBusyRef.current = null
@@ -371,8 +380,8 @@ export default function DesktopFileExplorer({
     searchByID,
     explorerItems,
     explorerCrumbs,
-    copyItems,
-    cutItems,
+    copyItems: copyWorkspaceItems,
+    cutItems: cutWorkspaceItems,
     planPaste,
     completePaste,
     canPaste,
@@ -577,17 +586,21 @@ export default function DesktopFileExplorer({
   const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const [tagDialogItems, setTagDialogItems] = useState<XDriveFileExplorerItem[]>([])
+  const [tagDialogMode, setTagDialogMode] = useState<'manage' | 'assign' | null>(null)
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [renameSavedSearch, setRenameSavedSearch] = useState<AgentFileSavedSearch | null>(null)
-  const [activeSavedSearchID, setActiveSavedSearchID] = useState<number | null>(null)
-  const [activeTagID, setActiveTagID] = useState<number | null>(null)
+  const organizationSearchState = xDriveFileExplorerOrganizationSearchState({
+    active: !trashActive && searchState.results !== null,
+    query: searchState.query,
+    filters: searchFilters,
+    savedSearches: organization.savedSearches,
+  })
+  const { activeSavedSearchID, activeTagID } = organizationSearchState
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
   const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
   const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
   organizationSearchScopeKeyRef.current = organizationSearchScopeKey
-  const canSaveSmartFolder = Boolean(
-    searchState.query || xDriveFileExplorerSearchFiltersActive(persistedSearchFilters),
-  )
+  const canSaveSmartFolder = organizationSearchState.canSaveCurrentSearch
 
   const loadColumnPage = useCallback(async (
     parentID: string | number,
@@ -787,8 +800,13 @@ export default function DesktopFileExplorer({
     pasteClipboard,
     dropItemsToFolder,
     dropItemsToCrumb,
+    destinationRequest,
+    openDestination,
+    closeDestination,
+    submitDestination,
   } = useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>({
     lifecycleKey: navigationSessionStorageKey ?? '',
+    maxItems: 200,
     nodeByID,
     currentID: current?.id,
     disabled: Boolean(actionBusy) || uploadBusy,
@@ -810,6 +828,50 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
   const explorerActionBusy = Boolean(actionBusy) || fileOperationBusy || uploadBusy
+
+  const getSelectionActionDisabledReason = (
+    action: XDriveFileExplorerSelectionAction,
+    selected: readonly XDriveFileExplorerItem[],
+    selectedCount: number,
+  ) => {
+    const mutation = ['copy', 'cut', 'delete', 'move-to', 'copy-to'].includes(action)
+    const reason = xDriveFileExplorerSelectionActionDisabledReason({
+      selected,
+      selectedCount,
+      nodeByID,
+      maxItems: mutation ? 200 : action === 'manage-tags' ? 500 : undefined,
+      requireRevision: mutation,
+    })
+    if (reason) return reason
+    if (action === 'manage-tags' && !fileTagsSupported) return '当前客户端不支持标签，请更新客户端核心组件。'
+    if (action === 'download') {
+      const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID) ?? []
+      const fileCount = nodes.filter((node) => node.type === 'file').length
+      if ((archiveDownloadSupported ? selectedCount : fileCount) > 1000) {
+        return archiveDownloadSupported
+          ? '一次下载最多 1000 个项目，请缩小选择范围。'
+          : '一次下载最多 1000 个文件，请缩小选择范围。'
+      }
+      if (!archiveDownloadSupported && !(folderTreeDownloadSupported && selectedCount === 1) && fileCount === 0) {
+        return '当前客户端不支持下载所选文件夹，请选择文件或更新客户端核心组件。'
+      }
+    }
+    return null
+  }
+  const allowSelectionAction = (
+    action: XDriveFileExplorerSelectionAction,
+    selected: readonly XDriveFileExplorerItem[],
+  ) => {
+    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
+    if (reason) onError(reason)
+    return !reason
+  }
+  const copyItems = (selected: XDriveFileExplorerItem[]) => {
+    if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
+  }
+  const cutItems = (selected: XDriveFileExplorerItem[]) => {
+    if (allowSelectionAction('cut', selected)) cutWorkspaceItems(selected)
+  }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem) => {
     if (!textPreviewSupported || item.kind !== 'file') return null
@@ -1568,9 +1630,10 @@ const desktopTransferLifecycleChildBatchSize = 1000
   }
 
   async function downloadSelected(selected: XDriveFileExplorerItem[]) {
-    const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
+    if (!allowSelectionAction('download', selected)) return
+    const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
     if (
-      nodes.length === 0 ||
+      !nodes?.length ||
       actionBusyRef.current ||
       fileOperationBusy ||
       uploadBusy
@@ -1588,6 +1651,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
       }
       const busyToken = beginActionBusy('download-folder')
       if (!busyToken) return
+      const reportDownloadResult = onDownloadStart?.()
       try {
         const result = await window.xdriveDesktop.agent.cloudDownloadFolder(
           folder.id,
@@ -1598,6 +1662,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
           onError(result.error.message)
           return
         }
+        reportDownloadResult?.({
+          downloaded: result.data.downloaded,
+          failed: result.data.failed,
+          skippedFolders: 0,
+          canceled: result.data.canceled,
+        })
         if (result.data.canceled) return
         if (result.data.failed > 0) {
           onFeedback('warning', `已下载 ${result.data.downloaded} 个文件，${result.data.failed} 个失败。`)
@@ -1639,6 +1709,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
     if (plan.files.length === 0) return
     const busyToken = beginActionBusy('download-many')
     if (!busyToken) return
+    const reportDownloadResult = onDownloadStart?.()
     try {
       const result = await window.xdriveDesktop.agent.cloudDownloadFiles(plan.items)
       if (!isActionBusyCurrent(busyToken)) return
@@ -1646,6 +1717,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onError(result.error.message)
         return
       }
+      reportDownloadResult?.({
+        downloaded: result.data.downloaded.length,
+        failed: result.data.failures.length,
+        skippedFolders: plan.skippedFolders,
+        failures: result.data.failures,
+        canceled: result.data.canceled,
+      })
       if (result.data.canceled) return
       const feedback = xDriveFileExplorerDesktopDownloadFeedback({
         downloaded: result.data.downloaded.length,
@@ -1816,12 +1894,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
           resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
           loading: searchLoading,
           error: searchError,
-          onClear: () => {
-            if (clearSearch()) {
-              setActiveSavedSearchID(null)
-              setActiveTagID(null)
-            }
-          },
+          onClear: () => { clearSearch() },
           onRetry: () => { void retrySearch() },
         } : undefined}
         canGoBack={!trashActive && canGoBack}
@@ -1865,7 +1938,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
           if (node.type === 'file') void openLocalNode(node)
           else void openWorkspaceItem(item, () => undefined)
         }}
-        onManageTags={!trashActive && fileTagsSupported ? (selected) => setTagDialogItems(selected) : undefined}
+        onManageTags={!trashActive && fileTagsSupported ? (selected) => {
+          if (!allowSelectionAction('manage-tags', selected)) return
+          setTagDialogItems(selected)
+          setTagDialogMode('assign')
+        } : undefined}
+        getSelectionActionDisabledReason={getSelectionActionDisabledReason}
+        actionFeedback={actionFeedback}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}
@@ -1879,6 +1958,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onCopyItems={trashActive ? undefined : copyItems}
         onCopyPaths={trashActive ? undefined : copyItemPaths}
         onCutItems={trashActive ? undefined : cutItems}
+        onMoveItemsTo={trashActive ? undefined : (selected) => openDestination('move', selected, crumbs)}
+        onCopyItemsTo={trashActive ? undefined : (selected) => openDestination('copy', selected, crumbs)}
         onPaste={trashActive ? undefined : (operationOverride) => { void pasteClipboard(operationOverride) }}
         canPaste={!trashActive && fileOperationCanPaste}
         canUndo={!trashActive && canUndo}
@@ -1888,8 +1969,9 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onDownloadItems={trashActive ? undefined : (selected) => { void downloadSelected(selected) }}
         folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}
         onDeleteItems={trashActive ? undefined : (selected) => {
-          const nodes = xDriveFileExplorerNodesForItems(selected, nodeByID)
-          if (nodes.length > 0) onDeleteMany(nodes)
+          if (!allowSelectionAction('delete', selected)) return
+          const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
+          if (nodes?.length) onDeleteMany(nodes)
         }}
         onRenameItem={trashActive ? undefined : renameItem}
         renameDisabled={trashActive || explorerActionBusy}
@@ -1945,11 +2027,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
             availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}
             canSaveSearch={savedSearchesSupported && canSaveSmartFolder}
             onSaveSearch={savedSearchesSupported ? () => setSaveSearchOpen(true) : undefined}
-            onChange={(next) => {
-              setActiveSavedSearchID(null)
-              setActiveTagID(next.tagID ?? null)
-              changeSearchFilters(next)
-            }}
+            onChange={changeSearchFilters}
           />
         )}
         navigationPane={(
@@ -2000,36 +2078,44 @@ const desktopTransferLifecycleChildBatchSize = 1000
             }}
             onUnpinQuickAccess={(nodeID) => { void quickAccess.unpin(nodeID) }}
             onReorderQuickAccess={quickAccessSupported ? (nodeIDs) => { void quickAccess.reorder(nodeIDs) } : undefined}
+            organizationLoading={organization.loading}
+            organizationError={organization.error}
+            onRetryOrganization={() => { void organization.refresh() }}
+            onManageTags={fileTagsSupported ? () => {
+              setTagDialogItems([])
+              setTagDialogMode('manage')
+            } : undefined}
+            onSaveCurrentSearch={savedSearchesSupported ? () => setSaveSearchOpen(true) : undefined}
+            canSaveCurrentSearch={canSaveSmartFolder}
+            savedSearchRuleLabels={(saved) => xDriveFileExplorerSavedSearchRuleLabels(saved, {
+              sourceOptions: searchSourceOptions,
+              tagOptions: organization.tagOptions,
+            })}
+            currentSearchNotice={organizationSearchState.currentSearchNotice}
             savedSearchesEnabled={savedSearchesSupported}
             savedSearches={organization.savedSearches}
             activeSavedSearchID={activeSavedSearchID}
+            matchingSavedSearchIDs={organizationSearchState.matchingSavedSearchIDs}
             onActivateSavedSearch={(savedSearch) => {
               onCloseTrash()
-              setActiveSavedSearchID(savedSearch.id)
-              setActiveTagID(savedSearch.filters.tagID ?? null)
               void applySearch(savedSearch.query, savedSearch.filters)
             }}
             onRenameSavedSearch={(savedSearch) => setRenameSavedSearch(savedSearch as AgentFileSavedSearch)}
             onReplaceSavedSearch={(savedSearch) => {
               if (!canSaveSmartFolder) return
               const lifecycleKey = organizationLifecycleKeyRef.current
-              const searchScopeKey = organizationSearchScopeKeyRef.current
               void organization.updateSavedSearch(savedSearch.id, {
                 name: savedSearch.name,
                 query: searchState.query,
                 filters: persistedSearchFilters,
               }).then(() => {
                 if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-                if (organizationSearchScopeKeyRef.current === searchScopeKey) {
-                  setActiveSavedSearchID(savedSearch.id)
-                }
                 onFeedback('good', '智能文件夹已更新。')
-              })
+              }, () => undefined)
             }}
             canReplaceSavedSearch={canSaveSmartFolder}
             onDeleteSavedSearch={(id) => {
-              if (activeSavedSearchID === id) setActiveSavedSearchID(null)
-              void organization.deleteSavedSearch(id)
+              void organization.deleteSavedSearch(id).catch(() => undefined)
             }}
             onReorderSavedSearches={(ids) => { void organization.reorderSavedSearches(ids) }}
             tagsEnabled={fileTagsSupported}
@@ -2037,8 +2123,6 @@ const desktopTransferLifecycleChildBatchSize = 1000
             activeTagID={activeTagID}
             onActivateTag={(tag) => {
               onCloseTrash()
-              setActiveSavedSearchID(null)
-              setActiveTagID(tag.id)
               void applySearch('', { tagID: tag.id })
             }}
             favoritesEnabled={favoritesSupported}
@@ -2111,10 +2195,26 @@ const desktopTransferLifecycleChildBatchSize = 1000
         )}
       />
 
+      {destinationRequest && (
+        <XDriveFileExplorerDestinationDialog
+          open
+          lifecycleKey={navigationSessionStorageKey ?? ''}
+          operation={destinationRequest.operation}
+          sources={destinationRequest.sources}
+          initialCrumbs={destinationRequest.initialCrumbs}
+          loadDirectoryPage={loadTreeDirectoryPage}
+          onSubmit={submitDestination}
+          onClose={closeDestination}
+        />
+      )}
       <XDriveFileTagDialog
-        open={tagDialogItems.length > 0}
-        nodeIDs={tagDialogItems.map((item) => Number(item.id)).filter((id) => Number.isSafeInteger(id) && id > 0)}
+        open={tagDialogMode !== null}
+        mode={tagDialogMode ?? 'assign'}
+        nodeIDs={tagDialogItems.map((item) => Number(item.id))}
         tags={organization.tags}
+        tagsLoading={organization.loading}
+        tagsError={organization.error}
+        onRetryTags={() => { void organization.refresh() }}
         busy={Boolean(organization.busyKey)}
         queryNodeTags={organization.queryNodeTags}
         onSetTag={async (tagID, nodeIDs, assigned) => {
@@ -2140,11 +2240,13 @@ const desktopTransferLifecycleChildBatchSize = 1000
             organizationSearchScopeKeyRef.current !== searchScopeKey
           ) return
           if (searchFilters.tagID === tagID) {
-            setActiveTagID(null)
             clearSearch()
           }
         }}
-        onClose={() => setTagDialogItems([])}
+        onClose={() => {
+          setTagDialogItems([])
+          setTagDialogMode(null)
+        }}
       />
       <XDriveFileNameDialog
         open={saveSearchOpen}
@@ -2153,16 +2255,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
         onSubmit={async (name) => {
           const lifecycleKey = organizationLifecycleKeyRef.current
-          const searchScopeKey = organizationSearchScopeKeyRef.current
-          const created = await organization.createSavedSearch({
+          await organization.createSavedSearch({
             name,
             query: searchState.query,
             filters: persistedSearchFilters,
           })
           if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          if (organizationSearchScopeKeyRef.current === searchScopeKey) {
-            setActiveSavedSearchID(created.id)
-          }
           if (searchFilters.availability) {
             onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
           } else {

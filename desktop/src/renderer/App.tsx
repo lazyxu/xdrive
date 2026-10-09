@@ -59,6 +59,7 @@ import {
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
   XDriveTaskCenterPage,
+  XDriveFileExplorerActionFeedback,
   XDriveTransferPopover,
   XDriveWorkspaceShell,
   XDriveStatePanel,
@@ -88,6 +89,7 @@ import {
   xDriveLoginCredentialsReady,
   xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
+import type { XDriveFileExplorerDownloadResult } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -436,6 +438,36 @@ export default function App({
     },
   })
 
+  const filesFeedbackLifecycleKey = `${status?.server ?? ''}\n${status?.username ?? ''}`
+  const [filesActionFeedback, setFilesActionFeedback] = useState<{
+    lifecycleKey: string
+    operationID?: string
+    downloadResult?: XDriveFileExplorerDownloadResult
+  } | null>(null)
+  const filesActionFeedbackIntentRef = useRef(0)
+  useEffect(() => {
+    filesActionFeedbackIntentRef.current += 1
+    setFilesActionFeedback(null)
+  }, [filesFeedbackLifecycleKey])
+  const rememberFilesOperation = useCallback((operation: AgentCloudFileOperation) => {
+    rememberCloudFileOperation(operation)
+    filesActionFeedbackIntentRef.current += 1
+    setFilesActionFeedback({ lifecycleKey: filesFeedbackLifecycleKey, operationID: operation.id })
+  }, [filesFeedbackLifecycleKey, rememberCloudFileOperation])
+  const beginFilesDownloadFeedback = useCallback(() => {
+    const intent = ++filesActionFeedbackIntentRef.current
+    return (result: XDriveFileExplorerDownloadResult) => {
+      if (filesActionFeedbackIntentRef.current !== intent) return
+      setFilesActionFeedback({ lifecycleKey: filesFeedbackLifecycleKey, downloadResult: result })
+    }
+  }, [filesFeedbackLifecycleKey])
+  const currentFilesActionFeedback = filesActionFeedback?.lifecycleKey === filesFeedbackLifecycleKey
+    ? filesActionFeedback
+    : null
+  const filesFeedbackOperation = currentFilesActionFeedback?.operationID
+    ? cloudFileOperations.find((operation) => operation.id === currentFilesActionFeedback.operationID)
+    : undefined
+
   const fileOperationConflictResolveSupported =
     agent.hello?.capabilities.includes('file-operation-conflict-resolution') ?? false
   const fileOperationUndoSupported =
@@ -531,11 +563,12 @@ export default function App({
     removeMany: removeCloudNodes,
   } = useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>({
     lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
+    maxItems: 200,
     submitOperation: (operation, items) => {
       setError('')
       return window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)
     },
-    onQueued: rememberCloudFileOperation,
+    onQueued: rememberFilesOperation,
     confirmationIntent: 'warning',
     requestConfirmation: (confirmation) => requestConfirmation(
       confirmation.title,
@@ -608,6 +641,19 @@ export default function App({
       taskError instanceof Error ? taskError.message : String(taskError),
     ),
   })
+
+  const filesOperationFocusSequenceRef = useRef(0)
+  const [filesOperationFocus, setFilesOperationFocus] = useState<{ operationID: string; requestID: number } | null>(null)
+  useEffect(() => { setFilesOperationFocus(null) }, [filesFeedbackLifecycleKey])
+  useEffect(() => {
+    if (view !== 'transfers') setFilesOperationFocus(null)
+  }, [view])
+  const openFilesOperationTask = useCallback((operationID: string) => {
+    taskCenter.pageProps.onBackgroundScopeChange?.('mine')
+    filesOperationFocusSequenceRef.current += 1
+    setFilesOperationFocus({ operationID, requestID: filesOperationFocusSequenceRef.current })
+    setView('transfers')
+  }, [taskCenter.pageProps.onBackgroundScopeChange])
 
   const updateSupported = agent.hello?.capabilities.includes('client-update') ?? false
   const updateCancelSupported = agent.hello?.capabilities.includes('client-update-cancel') ?? false
@@ -2044,7 +2090,17 @@ export default function App({
               onOpenShares: openCloudShares,
               onDelete: removeCloudNode,
               onDeleteMany: removeCloudNodes,
-              onOperationQueued: rememberCloudFileOperation,
+              onOperationQueued: rememberFilesOperation,
+              onDownloadStart: beginFilesDownloadFeedback,
+              actionFeedback: (
+                <XDriveFileExplorerActionFeedback
+                  value={currentFilesActionFeedback?.downloadResult
+                    ? { kind: 'download', result: currentFilesActionFeedback.downloadResult }
+                    : filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
+                  onViewTask={openFilesOperationTask}
+                  onDismiss={() => setFilesActionFeedback(null)}
+                />
+              ),
               canUndo: fileOperationUndoSupported && Boolean(latestUndoableCloudFileOperation) && !fileOperationActions.busy,
               onUndo: () => {
                 if (latestUndoableCloudFileOperation) void fileOperationActions.undoOperation(latestUndoableCloudFileOperation.id)
@@ -2117,6 +2173,8 @@ export default function App({
         {(view === 'transfers' || view === 'global-tasks') && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            operationFocusID={filesOperationFocus?.operationID}
+            operationFocusRequestID={filesOperationFocus?.requestID}
             clearHistory={{
               ...taskCenter.pageProps.clearHistory!,
               disabled: taskCenter.pageProps.clearHistory?.disabled || !agent.hello?.capabilities.includes('transfer-history-scope'),

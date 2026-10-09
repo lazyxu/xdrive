@@ -6,6 +6,18 @@
     "M05"
   ],
   "recordedAt": "2026-10-09T05:55:55.695408+00:00",
+  "delivery": {
+    "provider": "GitHub",
+    "pullRequest": 1093,
+    "headCommit": "5d048aeba72e6a2f5fe32d166a68c7c1c387aed8",
+    "headTree": "29a9dc53983d6d159889a8486f9f919d1ac41a50",
+    "ciRun": 37891182368,
+    "ciConclusion": "success",
+    "mergeMethod": "rebase",
+    "mergeCommit": "b2e1d8d122e0513944d59e2e36d6569ee787f7a0",
+    "remoteBranchRemoved": true,
+    "note": "Unrelated Gallery timezone work landed before the merge. GitHub kept this PR mergeable and linearly rebased the already-green head; no post-merge master CI was polled."
+  },
   "source": {
     "baselineCommit": "daf35bced5f8ebb56055572c27e9ac52005f19d8",
     "originalStackBase": "09bf8bdeb06382573ed03d17a680e2d43890c321",

@@ -17,6 +17,9 @@ function createHookRuntime() {
   let pendingEffects = []
 
   const react = {
+    useId() {
+      return react.useRef(`navigation-test-${cursor}`).current
+    },
     useState(initialValue) {
       const index = cursor++
       if (!slots[index]) {

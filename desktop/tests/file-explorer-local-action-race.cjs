@@ -275,10 +275,9 @@ test('Desktop FileExplorer unmount invalidates pending local action completion',
     setCreateOpen: () => {},
     setOpenPreviewItem: () => {},
     setTagDialogItems: () => {},
+    setTagDialogMode: () => {},
     setSaveSearchOpen: () => {},
     setRenameSavedSearch: () => {},
-    setActiveSavedSearchID: () => {},
-    setActiveTagID: () => {},
   })
   const cleanup = lifecycleEffect()
 

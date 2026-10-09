@@ -18,7 +18,15 @@ function extractInteractionScopeEffect() {
   )
 
   let callback = null
+  let selectionLoadCallback = null
   const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.name.getText(sourceFile) === 'updateSelectionLoad' &&
+      node.initializer
+    ) {
+      selectionLoadCallback = node.initializer.getText(sourceFile)
+    }
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -35,7 +43,8 @@ function extractInteractionScopeEffect() {
   visit(sourceFile)
 
   assert.ok(callback, 'missing FileExplorer interaction-scope effect')
-  return { filename, callback }
+  assert.ok(selectionLoadCallback, 'missing FileExplorer selection-load state updater')
+  return { filename, callback, selectionLoadCallback }
 }
 
 function compileEffect(filename, callback, dependencies) {
@@ -57,7 +66,7 @@ function compileEffect(filename, callback, dependencies) {
 }
 
 test('FileExplorer interaction scope change clears stale Properties session and media cache', () => {
-  const { filename, callback } = extractInteractionScopeEffect()
+  const { filename, callback, selectionLoadCallback } = extractInteractionScopeEffect()
 
   const propertiesWrites = []
   const quickLookSessionWrites = []
@@ -69,6 +78,9 @@ test('FileExplorer interaction scope change clears stale Properties session and 
   const propertiesMediaDetailsRequestRef = { current: 4 }
   const mediaDetailsRequestRef = { current: 8 }
   const mediaDetailsRevisionWrites = []
+  let selectionLoad = { intent: 3, scope: 'account-a:/same', loaded: 200, total: 1024 }
+  let selectionLoadFeedback = 'previous scope selection feedback'
+  const selectionLoadRef = { current: selectionLoad }
 
   const dependencies = {
     interactionScopeKeyRef: { current: 'account-a:/same' },
@@ -98,6 +110,11 @@ test('FileExplorer interaction scope change clears stale Properties session and 
     typeSelectRef: { current: { query: 'x', updatedAt: 1 } },
     typeSelectIntentRef: { current: 2 },
     selectionIntentRef: { current: 3 },
+    updateSelectionLoad: compileEffect(filename, selectionLoadCallback, {
+      selectionLoadRef,
+      setSelectionLoad: (value) => { selectionLoad = value },
+    }),
+    setSelectionLoadFeedback: (value) => { selectionLoadFeedback = value },
     quickLookIntentRef: { current: 4 },
     selectionItemCacheRef: { current: new Map([[1, { id: 1 }]]) },
     setSelectionAnchorID: () => {},
@@ -121,6 +138,10 @@ test('FileExplorer interaction scope change clears stale Properties session and 
 
   const effect = compileEffect(filename, callback, dependencies)
   effect()
+
+  assert.equal(selectionLoad, null, 'scope change must clear the old selection-load state')
+  assert.equal(selectionLoadRef.current, null, 'scope change must release the old selection-load owner')
+  assert.equal(selectionLoadFeedback, '', 'scope change must clear selection feedback from the previous scope')
 
   assert.deepEqual(
     propertiesWrites,

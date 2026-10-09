@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Box, LinearProgress, Stack, Typography } from '@mui/material'
 import {
   formatBytes,
@@ -9,6 +10,7 @@ import {
   xDriveFileOperationElapsedMs,
   xDriveFileOperationEtaMs,
   xDriveFileOperationCanResolveConflict,
+  xDriveFileOperationConflictPolicyLabel,
   xDriveFileOperationContinuationParentIDs,
   xDriveFileOperationFailureItemLabel,
   xDriveFileOperationFailureMessage,
@@ -100,7 +102,16 @@ function OperationItem({
     Boolean(onResolveConflict)
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+    <Box
+      data-xdrive-file-operation-id={operation.id}
+      tabIndex={-1}
+      role="group"
+      aria-label={`${xDriveFileOperationTypeLabel(operation.type)}任务 ${operation.id}`}
+      sx={{
+        border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden',
+        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+      }}
+    >
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         spacing={1.5}
@@ -123,7 +134,18 @@ function OperationItem({
             </Typography>
           ) : null}
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{
+            flexWrap: 'wrap',
+            minWidth: 0,
+            '@media (max-width:899.95px)': {
+              '& .MuiButton-root': { minHeight: 44, minWidth: 44, whiteSpace: 'normal', fontSize: '0.8125rem' },
+            },
+          }}
+        >
           {active && operation.status !== 'cancel_requested' && onCancel ? (
             <XDriveActionButton
               compact
@@ -219,6 +241,9 @@ function OperationItem({
 
         <XDriveDescriptionGrid columns={4}>
           <XDriveDescriptionItem label="状态">{xDriveFileOperationStatusLabel(operation.status)}</XDriveDescriptionItem>
+          {operation.conflict_policy ? (
+            <XDriveDescriptionItem label="冲突策略">{xDriveFileOperationConflictPolicyLabel(operation.conflict_policy)}</XDriveDescriptionItem>
+          ) : null}
           <XDriveDescriptionItem label="项目进度">
             {operation.processed_items.toLocaleString('zh-CN')} / {operation.total_items.toLocaleString('zh-CN')}
           </XDriveDescriptionItem>
@@ -238,6 +263,11 @@ function OperationItem({
           ) : null}
           <XDriveDescriptionItem label="任务 ID">{operation.id}</XDriveDescriptionItem>
         </XDriveDescriptionGrid>
+        {canResolveConflict ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25, overflowWrap: 'anywhere' }}>
+            “替换或合并”会替换同名文件，并合并同名文件夹。
+          </Typography>
+        ) : null}
         {failureMessage ? (
           <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>
             <Stack spacing={0.25}>
@@ -265,6 +295,8 @@ export function XDriveFileOperationCenter({
   resolvingID = '',
   resolvingPolicy = '',
   disabled = false,
+  operationFocusID = '',
+  operationFocusRequestID = 0,
   onCancel,
   onRetry,
   onUndo,
@@ -280,12 +312,34 @@ export function XDriveFileOperationCenter({
   resolvingID?: string
   resolvingPolicy?: XDriveFileOperationConflictResolution | ''
   disabled?: boolean
+  operationFocusID?: string
+  operationFocusRequestID?: number
   onCancel?: (id: string) => void
   onRetry?: (id: string) => void
   onUndo?: (id: string) => void
   onRedo?: (id: string) => void
   onResolveConflict?: (id: string, policy: XDriveFileOperationConflictResolution) => void
 }) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const focusedRequestRef = useRef<{ id: string; request: number } | null>(null)
+  useEffect(() => {
+    if (!operationFocusID || operationFocusRequestID <= 0) {
+      focusedRequestRef.current = null
+      return
+    }
+    if (
+      focusedRequestRef.current?.id === operationFocusID &&
+      focusedRequestRef.current.request === operationFocusRequestID
+    ) return
+    const target = Array.from(
+      contentRef.current?.querySelectorAll<HTMLElement>('[data-xdrive-file-operation-id]') ?? [],
+    ).find((element) => element.dataset.xdriveFileOperationId === operationFocusID)
+    if (!target) return
+    focusedRequestRef.current = { id: operationFocusID, request: operationFocusRequestID }
+    target.scrollIntoView({ behavior: 'auto', block: 'start' })
+    target.focus({ preventScroll: true })
+  }, [operationFocusID, operationFocusRequestID, operations])
+
   const active = operations.filter((item) => xDriveFileOperationActive(item.status))
   const completed = operations.filter((item) => item.status === 'completed')
   const stopped = operations.filter((item) => item.status === 'failed' || item.status === 'cancelled')
@@ -300,7 +354,7 @@ export function XDriveFileOperationCenter({
   ]
 
   return (
-    <Stack spacing={2}>
+    <Stack ref={contentRef} data-xdrive-file-operation-center spacing={2}>
       <Stack direction="row" spacing={2} flexWrap="wrap">
         <Typography variant="body2"><strong>{active.length}</strong> 进行中</Typography>
         <Typography variant="body2"><strong>{completed.length}</strong> 已完成</Typography>

@@ -535,3 +535,128 @@ test('evicting an old closed tab also prunes its transient Search return snapsho
   } finally { await h.dispose() }
 })
 
+
+
+function registerMutationSearchIntentCases() {
+  const { useXDriveFileExplorerOperationController } = loadSource('ui/shared/src/mui/FileExplorerOperationController.ts')
+  const shared = loadSource('ui/shared/src/file-explorer-controller.ts')
+
+  function adapterFunction(platform, name, dependencies) {
+    const file = path.join(repo, platform === 'Web' ? 'web/src/WebFileExplorer.tsx' : 'desktop/src/renderer/DesktopFileExplorer.tsx')
+    const ast = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    let expression
+    function visit(current) {
+      if (ts.isVariableDeclaration(current) && current.name.getText(ast) === name && current.initializer) expression = current.initializer.getText(ast)
+      ts.forEachChild(current, visit)
+    }
+    visit(ast)
+    assert.ok(expression, `${platform} ${name} is available`)
+    const output = ts.transpileModule(`const callback = ${expression};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }, fileName: file,
+    }).outputText
+    return new Function(...Object.keys(dependencies), output + '\nreturn callback;')(...Object.values(dependencies))
+  }
+
+  for (const reapplyOriginal of [false, true]) {
+  const caseName = reapplyOriginal ? 'reapplied definition' : 'distinct definition'
+  test(`M07: late Paste acceptance must preserve a newer Search within the same history entry (${caseName})`, async () => {
+    const h = await createWorkspace()
+    const submission = deferred()
+    let operation, renderer, running
+    try {
+      await h.run(workspace => workspace.applySearch('old-query', { kind: 'image' }))
+      await h.run(workspace => workspace.copyItems([workspace.explorerVirtualCollection.itemAt(1)]))
+      const original = h.current
+      const originalKey = original.explorerViewState.stateKey
+      const queued = []
+      function OperationHarness() {
+        operation = useXDriveFileExplorerOperationController({
+          lifecycleKey: 'account-a', currentID: original.current.id,
+          nodeByID: original.nodeByID, maxItems: 200,
+          planPaste: original.planPaste, completePaste: original.completePaste,
+          canPaste: original.canPaste, clearSearch: original.clearSearch,
+          submitOperation: () => submission.promise, onQueued: value => queued.push(value),
+          onFeedback: () => {}, onError: error => { throw error },
+        })
+        return null
+      }
+      await TestRenderer.act(async () => { renderer = TestRenderer.create(React.createElement(OperationHarness)) })
+      await TestRenderer.act(async () => { running = operation.pasteClipboard() })
+      await h.run(workspace => workspace.applySearch('new-query', { kind: 'video' }))
+      if (reapplyOriginal) await h.run(workspace => workspace.applySearch('old-query', { kind: 'image' }))
+      const expectedQuery = reapplyOriginal ? 'old-query' : 'new-query'
+      const expectedFilters = { kind: reapplyOriginal ? 'image' : 'video' }
+      assert.equal(h.current.explorerViewState.stateKey, originalKey, 'the newer Search intentionally shares the same history entry')
+      assert.equal(h.current.searchState.query, expectedQuery)
+      await TestRenderer.act(async () => { submission.resolve({ id: 'accepted-copy', status: 'queued' }); await running })
+      assert.equal(queued.length, 1, 'the durable operation itself remains accepted')
+      assert.equal(h.current.searchState.query, expectedQuery, 'old Paste completion must not clear a later submitted Search')
+      assert.deepEqual(h.current.searchFilters, expectedFilters)
+    } finally {
+      if (renderer) await TestRenderer.act(async () => renderer.unmount())
+      await h.dispose()
+    }
+  })
+
+  for (const platform of ['Web', 'Desktop']) {
+    test(`M07: ${platform} late Rename must preserve a newer Search within the same history entry (${caseName})`, async () => {
+      const h = await createWorkspace()
+      const submission = deferred()
+      try {
+        await h.run(workspace => workspace.applySearch('old-query', { kind: 'image' }))
+        const original = h.current
+        const originalKey = original.explorerViewState.stateKey
+        const selected = original.explorerVirtualCollection.itemAt(1)
+        const dependencies = {
+          ...shared, useCallback: callback => callback,
+          nodeByID: original.nodeByID, current: original.current,
+          renameLifecycleKeyRef: { current: 'account-a' },
+          clearSearch: original.clearSearch,
+          // App-owned directory refresh is a separate platform callback. This
+          // probe observes Search mutation; refreshing the raw directory does
+          // not directly dispatch Workspace navigation or Search actions.
+          refreshCurrentDirectory: async id => { assert.equal(id, original.current.id); return true },
+          refreshCurrentDirectoryIfCurrent: async id => { assert.equal(id, original.current.id); return true },
+          actionBusyRef: { current: null }, actionGenerationRef: { current: 1 },
+          setActionBusy: () => {}, fileOperationBusy: false, uploadBusy: false,
+          onFeedback: () => {}, onError: error => { throw error },
+          api: { rename: () => submission.promise },
+          window: { xdriveDesktop: { agent: { cloudRename: () => submission.promise } } },
+        }
+        if (platform === 'Desktop') {
+          dependencies.beginActionBusy = adapterFunction(platform, 'beginActionBusy', dependencies)
+          dependencies.isActionBusyCurrent = adapterFunction(platform, 'isActionBusyCurrent', dependencies)
+          dependencies.finishActionBusy = adapterFunction(platform, 'finishActionBusy', dependencies)
+        }
+        const rename = adapterFunction(platform, 'renameItem', dependencies)
+        let running
+        await TestRenderer.act(async () => { running = rename(selected, 'renamed.jpg') })
+        await h.run(workspace => workspace.applySearch('new-query', { kind: 'video' }))
+        if (reapplyOriginal) await h.run(workspace => workspace.applySearch('old-query', { kind: 'image' }))
+        const expectedQuery = reapplyOriginal ? 'old-query' : 'new-query'
+        const expectedFilters = { kind: reapplyOriginal ? 'image' : 'video' }
+        assert.equal(h.current.explorerViewState.stateKey, originalKey)
+        assert.equal(h.current.searchState.query, expectedQuery)
+        await TestRenderer.act(async () => { submission.resolve({ ok: true, data: {} }); await running })
+        assert.equal(h.current.searchState.query, expectedQuery, `${platform} old Rename completion must not clear a later submitted Search`)
+        assert.deepEqual(h.current.searchFilters, expectedFilters)
+      } finally { await h.dispose() }
+    })
+  }
+  }
+}
+
+registerMutationSearchIntentCases()
+
+test('M07: re-submitting an identical Search is a newer intent than an older pending clear', async () => {
+  const h = await createWorkspace()
+  try {
+    await h.run(workspace => workspace.applySearch('same-query', { kind: 'image' }))
+    const clearOlderSearch = h.current.clearSearch
+    await h.run(workspace => workspace.applySearch('same-query', { kind: 'image' }))
+    let cleared
+    await h.run(() => { cleared = clearOlderSearch() })
+    assert.equal(cleared, false, 'an older completion must not erase the explicitly resubmitted Search')
+    assert.equal(h.current.searchState.query, 'same-query')
+  } finally { await h.dispose() }
+})

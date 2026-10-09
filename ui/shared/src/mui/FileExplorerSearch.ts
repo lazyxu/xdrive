@@ -140,7 +140,15 @@ export function useXDriveFileExplorerSearch<
     sortSignature,
   ])
   const searchStateKeyRef = useRef(searchStateKey)
+  // Returning to the same definition does not restore an older action's intent.
+  const searchIntentRef = useRef(0)
+  if (searchStateKeyRef.current !== searchStateKey) searchIntentRef.current += 1
   searchStateKeyRef.current = searchStateKey
+  const searchIntent = searchIntentRef.current
+  const beginSearchIntent = useCallback(() => {
+    searchIntentRef.current += 1
+    onSearchIntentRef.current?.()
+  }, [])
 
   const updateEntry = useCallback((
     key: string,
@@ -281,8 +289,8 @@ export function useXDriveFileExplorerSearch<
   ])
 
   const clearSearch = useCallback(() => {
-    if (searchStateKeyRef.current !== searchStateKey) return false
-    onSearchIntentRef.current?.()
+    if (searchIntentRef.current !== searchIntent) return false
+    beginSearchIntent()
     nextRequestID(workspaceKey)
     if (targetRef.current?.workspaceKey === workspaceKey) {
       targetRef.current = null
@@ -292,8 +300,9 @@ export function useXDriveFileExplorerSearch<
     updateEntry(workspaceKey, () => idleWorkspaceSearchEntry())
     return true
   }, [
+    beginSearchIntent,
     nextRequestID,
-    searchStateKey,
+    searchIntent,
     updateEntry,
     virtualCollection.reset,
     workspaceKey,
@@ -305,7 +314,7 @@ export function useXDriveFileExplorerSearch<
         clearSearch()
         return
       }
-      onSearchIntentRef.current?.()
+      beginSearchIntent()
       nextRequestID(workspaceKey)
       updateEntry(workspaceKey, (current) => ({
         ...current,
@@ -316,9 +325,10 @@ export function useXDriveFileExplorerSearch<
       }))
       return
     }
-    onSearchIntentRef.current?.()
+    beginSearchIntent()
     updateEntry(workspaceKey, (current) => ({ ...current, value }))
   }, [
+    beginSearchIntent,
     clearSearch,
     filterActive,
     nextRequestID,
@@ -332,7 +342,7 @@ export function useXDriveFileExplorerSearch<
       clearSearch()
       return
     }
-    onSearchIntentRef.current?.()
+    beginSearchIntent()
     nextRequestID(workspaceKey)
     updateEntry(workspaceKey, (current) => ({
       ...current,
@@ -341,6 +351,7 @@ export function useXDriveFileExplorerSearch<
       loading: false,
     }))
   }, [
+    beginSearchIntent,
     clearSearch,
     entry.query,
     nextRequestID,
@@ -361,7 +372,7 @@ export function useXDriveFileExplorerSearch<
       onError(new Error('搜索至少需要 2 个字符'))
       return
     }
-    onSearchIntentRef.current?.()
+    beginSearchIntent()
     updateEntry(workspaceKey, (current) => ({
       ...current,
       value: query,
@@ -372,6 +383,7 @@ export function useXDriveFileExplorerSearch<
     }))
     await executeSearch(workspaceKey, query, filters, grouping, sort)
   }, [
+    beginSearchIntent,
     clearSearch,
     executeSearch,
     grouping,
@@ -385,7 +397,7 @@ export function useXDriveFileExplorerSearch<
     const trimmed = rawQuery.trim()
     if (!trimmed) {
       if (filterActive) {
-        onSearchIntentRef.current?.()
+        beginSearchIntent()
         await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
@@ -395,7 +407,7 @@ export function useXDriveFileExplorerSearch<
     const decision = xDriveFileExplorerSearchDecision(rawQuery)
     if (decision.kind === 'clear') {
       if (filterActive) {
-        onSearchIntentRef.current?.()
+        beginSearchIntent()
         await executeSearch(workspaceKey, '', entry.filters, grouping, sort)
       } else {
         clearSearch()
@@ -406,9 +418,10 @@ export function useXDriveFileExplorerSearch<
       onError(new Error(decision.message))
       return
     }
-    onSearchIntentRef.current?.()
+    beginSearchIntent()
     await executeSearch(workspaceKey, decision.query, entry.filters, grouping, sort)
   }, [
+    beginSearchIntent,
     clearSearch,
     entry.filters,
     executeSearch,
@@ -517,10 +530,10 @@ export function useXDriveFileExplorerSearch<
   }
 
   const retrySearch = useCallback(async () => {
-    if (searchStateKeyRef.current !== searchStateKey || !searchActive) return
-    onSearchIntentRef.current?.()
+    if (searchIntentRef.current !== searchIntent || !searchActive) return
+    beginSearchIntent()
     await executeSearch(workspaceKey, entry.query, entry.filters, grouping, sort)
-  }, [entry.filters, entry.query, executeSearch, grouping, searchActive, searchStateKey, sort, workspaceKey])
+  }, [beginSearchIntent, entry.filters, entry.query, executeSearch, grouping, searchActive, searchIntent, sort, workspaceKey])
 
   return {
     searchValue,

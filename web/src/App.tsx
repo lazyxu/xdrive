@@ -52,6 +52,7 @@ import {
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
+  XDriveFileExplorerActionFeedback,
   XDriveVersionHistoryDialog,
   XDriveWorkspaceShell,
   XDriveWorkspaceContent,
@@ -669,6 +670,20 @@ function FileManager({
     },
   })
 
+  const filesFeedbackLifecycleKey = username
+  const [filesActionFeedback, setFilesActionFeedback] = useState<{
+    lifecycleKey: string
+    operationID: string
+  } | null>(null)
+  useEffect(() => { setFilesActionFeedback(null) }, [filesFeedbackLifecycleKey])
+  const rememberFilesOperation = useCallback((operation: XDriveFileOperation) => {
+    rememberFileOperation(operation)
+    setFilesActionFeedback({ lifecycleKey: filesFeedbackLifecycleKey, operationID: operation.id })
+  }, [filesFeedbackLifecycleKey, rememberFileOperation])
+  const filesFeedbackOperation = filesActionFeedback?.lifecycleKey === filesFeedbackLifecycleKey
+    ? fileOperations.find((operation) => operation.id === filesActionFeedback.operationID)
+    : undefined
+
   const fileOperationActions = useXDriveFileOperationActions<XDriveFileOperation>({
     lifecycleKey: username,
     cancelOperation: (id) => api.cancelFileOperation(id),
@@ -692,8 +707,9 @@ function FileManager({
     removeMany,
   } = useXDriveFileExplorerDeleteController<Node, XDriveFileOperation>({
     lifecycleKey: username,
+    maxItems: 200,
     submitOperation: (operation, items) => api.createFileOperation(operation, items),
-    onQueued: rememberFileOperation,
+    onQueued: rememberFilesOperation,
     requestConfirmation: (confirmation) => setConfirmAction(confirmation),
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
     onError: handleError,
@@ -722,6 +738,20 @@ function FileManager({
     backgroundScope: appView === 'global-tasks' ? 'global' : 'mine',
     onBackgroundTaskError: handleError,
   })
+
+  const filesOperationFocusSequenceRef = useRef(0)
+  const [filesOperationFocus, setFilesOperationFocus] = useState<{ operationID: string; requestID: number } | null>(null)
+  useEffect(() => { setFilesOperationFocus(null) }, [filesFeedbackLifecycleKey])
+  useEffect(() => {
+    if (appView !== 'transfers') setFilesOperationFocus(null)
+  }, [appView])
+  const openFilesOperationTask = useCallback((operationID: string) => {
+    taskCenter.pageProps.onBackgroundScopeChange?.('mine')
+    setTaskCenterFocus(null)
+    filesOperationFocusSequenceRef.current += 1
+    setFilesOperationFocus({ operationID, requestID: filesOperationFocusSequenceRef.current })
+    setAppView('transfers')
+  }, [setAppView, taskCenter.pageProps.onBackgroundScopeChange])
 
   useEffect(() => {
     if (route.app === 'admin-storage' && route.params.task) {
@@ -1233,7 +1263,14 @@ function FileManager({
                 }}
                 onRemove={remove}
                 onRemoveMany={removeMany}
-                onOperationQueued={rememberFileOperation}
+                onOperationQueued={rememberFilesOperation}
+                actionFeedback={(
+                  <XDriveFileExplorerActionFeedback
+                    value={filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
+                    onViewTask={openFilesOperationTask}
+                    onDismiss={() => setFilesActionFeedback(null)}
+                  />
+                )}
                 canUndo={Boolean(latestUndoableFileOperation) && !fileOperationActions.busy}
                 onUndo={() => {
                   if (latestUndoableFileOperation) void fileOperationActions.undoOperation(latestUndoableFileOperation.id)
@@ -1304,6 +1341,8 @@ function FileManager({
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            operationFocusID={filesOperationFocus?.operationID}
+            operationFocusRequestID={filesOperationFocus?.requestID}
             backgroundFocusTaskID={taskCenterFocus?.taskID}
             backgroundFocusRequestID={taskCenterFocus?.requestID}
           />

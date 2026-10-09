@@ -1,4 +1,12 @@
-import type { XDriveFileExplorerSearchFilters } from './file-explorer-search'
+import {
+  xDriveFileExplorerSearchFilterLabels,
+  xDriveFileExplorerSearchFiltersActive,
+  xDriveFileExplorerSearchFiltersSignature,
+} from './file-explorer-search'
+import type {
+  XDriveFileExplorerSearchFilterLabelOptions,
+  XDriveFileExplorerSearchFilters,
+} from './file-explorer-search'
 
 export type XDriveFileTag = {
   id: number
@@ -11,7 +19,7 @@ export type XDriveFileTag = {
 
 export type XDriveFileNodeTags = {
   node_id: number
-  tags: XDriveFileTag[]
+  tags: XDriveFileTag[] | null
 }
 
 export type XDriveFileSavedSearch = {
@@ -53,4 +61,60 @@ export function xDriveFileExplorerPersistedSearchFilters(
     ...serverFilters
   } = filters
   return serverFilters
+}
+
+export function xDriveFileExplorerSavedSearchSignature(
+  query: string,
+  filters: XDriveFileExplorerSearchFilters,
+) {
+  return JSON.stringify([
+    query.trim(),
+    xDriveFileExplorerSearchFiltersSignature(xDriveFileExplorerPersistedSearchFilters(filters)),
+  ])
+}
+
+export function xDriveFileExplorerOrganizationSearchState({
+  active,
+  query,
+  filters,
+  savedSearches,
+}: {
+  active: boolean
+  query: string
+  filters: XDriveFileExplorerSearchFilters
+  savedSearches: readonly XDriveFileSavedSearch[]
+}) {
+  const portableFilters = xDriveFileExplorerPersistedSearchFilters(filters)
+  const canSaveCurrentSearch = active && Boolean(query.trim() || xDriveFileExplorerSearchFiltersActive(portableFilters))
+  const signature = xDriveFileExplorerSavedSearchSignature(query, portableFilters)
+  const matching = active ? savedSearches.filter((saved) => (
+    xDriveFileExplorerSavedSearchSignature(saved.query, saved.filters) === signature
+  )) : []
+  const notices: string[] = []
+  if (active && filters.availability) {
+    notices.push('可用性仅在此设备生效，不包含在保存规则中。')
+    if (!canSaveCurrentSearch) notices.push('请添加关键词或可跨设备筛选后再保存。')
+  }
+  if (canSaveCurrentSearch && !matching.length) {
+    notices.push(savedSearches.length
+      ? '当前条件与已保存规则不同，可保存为新规则或更新已有规则。'
+      : '当前搜索尚未保存，可保存为智能文件夹。')
+  }
+  return {
+    activeSavedSearchID: matching[0]?.id ?? null,
+    matchingSavedSearchIDs: matching.map((saved) => saved.id),
+    activeTagID: active ? filters.tagID ?? null : null,
+    canSaveCurrentSearch,
+    currentSearchNotice: notices.join(' '),
+  }
+}
+
+export function xDriveFileExplorerSavedSearchRuleLabels(
+  saved: Pick<XDriveFileSavedSearch, 'query' | 'filters'>,
+  options: XDriveFileExplorerSearchFilterLabelOptions = {},
+): string[] {
+  return [
+    ...(saved.query.trim() ? [`搜索：“${saved.query.trim()}”`] : []),
+    ...xDriveFileExplorerSearchFilterLabels(xDriveFileExplorerPersistedSearchFilters(saved.filters), options),
+  ]
 }

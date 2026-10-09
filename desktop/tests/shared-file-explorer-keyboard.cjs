@@ -137,7 +137,7 @@ test('shared FileExplorer exposes native shortcut labels in hover and context ch
   ]) assert.ok(explorer.includes(token), 'shared hover/shortcut affordance missing: ' + token)
 })
 
-test('shared FileExplorer owns inline rename and extension-aware selection', () => {
+test('shared FileExplorer owns responsive rename and extension-aware selection', () => {
   for (const token of [
     'xDriveFileExplorerRenameSelectionEnd',
     "kind === 'dir'",
@@ -152,8 +152,10 @@ test('shared FileExplorer owns inline rename and extension-aware selection', () 
     "event.key === 'Enter'",
     "event.key === 'Escape'",
     'onBlur={() =>',
-    "setRenameError('请填写名称')",
-    "setRenameError('名称不能超过 255 个字符')",
+    "xDriveFileNameValidationError(normalized, 'rename')",
+    'setRenameError(validationError)',
+    'if (renaming && !compactViewport)',
+    '<XDriveFileNameDialogView',
     "id: 'rename'",
     'onSelect: () => beginRename(item)',
   ]) assert.ok(explorer.includes(token), 'shared inline rename missing: ' + token)

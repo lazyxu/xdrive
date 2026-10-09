@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent } from 'react'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -13,6 +13,7 @@ import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import {
   Box,
+  Button,
   Checkbox,
   CircularProgress,
   Collapse,
@@ -49,6 +50,7 @@ import {
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import type { XDriveFileExplorerAvailability } from '../file-explorer-availability'
 import type { XDriveFileSavedSearch, XDriveFileTag } from '../file-explorer-organization'
+import { xDriveFileExplorerSavedSearchRuleLabels } from '../file-explorer-organization'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
   id: number
@@ -160,16 +162,25 @@ export function XDriveFileExplorerNavigationPane({
   savedSearchesEnabled = false,
   savedSearches = [],
   activeSavedSearchID = null,
+  matchingSavedSearchIDs,
   onActivateSavedSearch,
   onRenameSavedSearch,
   onReplaceSavedSearch,
   canReplaceSavedSearch = false,
   onDeleteSavedSearch,
   onReorderSavedSearches,
+  organizationLoading = false,
+  organizationError = '',
+  onRetryOrganization,
+  onSaveCurrentSearch,
+  canSaveCurrentSearch = false,
+  savedSearchRuleLabels,
+  currentSearchNotice = '',
   tagsEnabled = false,
   tags = [],
   activeTagID = null,
   onActivateTag,
+  onManageTags,
   favoritesEnabled = false,
   favoriteItems = [],
   favoritesLoading = false,
@@ -221,16 +232,25 @@ export function XDriveFileExplorerNavigationPane({
   savedSearchesEnabled?: boolean
   savedSearches?: readonly XDriveFileSavedSearch[]
   activeSavedSearchID?: number | null
+  matchingSavedSearchIDs?: readonly number[]
   onActivateSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
   onRenameSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
   onReplaceSavedSearch?: (search: XDriveFileSavedSearch) => void | Promise<void>
   canReplaceSavedSearch?: boolean
   onDeleteSavedSearch?: (id: number) => void | Promise<void>
   onReorderSavedSearches?: (ids: number[]) => void | Promise<void>
+  organizationLoading?: boolean
+  organizationError?: string
+  onRetryOrganization?: () => void | Promise<void>
+  onSaveCurrentSearch?: () => void
+  canSaveCurrentSearch?: boolean
+  savedSearchRuleLabels?: (search: XDriveFileSavedSearch) => string[]
+  currentSearchNotice?: string
   tagsEnabled?: boolean
   tags?: readonly XDriveFileTag[]
   activeTagID?: number | null
   onActivateTag?: (tag: XDriveFileTag) => void | Promise<void>
+  onManageTags?: () => void
   favoritesEnabled?: boolean
   favoriteItems?: readonly XDriveFileExplorerFavoriteNavigationEntry[]
   favoritesLoading?: boolean
@@ -333,6 +353,7 @@ export function XDriveFileExplorerNavigationPane({
     ]),
   )
   const compactViewport = useMediaQuery('(max-width:899.95px)')
+  const organizationDescriptionID = useId()
   const actionEdge = compactViewport ? 44 : 26
   const secondaryTrack = compactViewport ? 44 : 28
   const currentID = currentCrumbs.at(-1)?.id
@@ -706,6 +727,45 @@ export function XDriveFileExplorerNavigationPane({
   }
 
   const canPinCurrent = !trashActive && quickAccessEnabled && currentCrumbs.length > 1 && Boolean(onToggleCurrentQuickAccess)
+  const savedSearchMatches = (id: number) => matchingSavedSearchIDs
+    ? matchingSavedSearchIDs.includes(id)
+    : activeSavedSearchID === id
+  const organizationActionSx = {
+    minWidth: compactViewport ? 44 : 0,
+    minHeight: compactViewport ? 44 : 28,
+    px: 1,
+    py: 0.5,
+    fontSize: '0.75rem',
+    lineHeight: 1.4,
+    whiteSpace: 'normal',
+    overflowWrap: 'anywhere',
+  }
+  const organizationReadState = (label: string, knownCount: number) => (
+    organizationLoading ? (
+      <Stack direction="row" alignItems="center" spacing={0.75} role="status" sx={{ px: 0.75, py: 0.75 }}>
+        <CircularProgress size={14} sx={{ flexShrink: 0 }} />
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+          {`正在${knownCount > 0 ? '更新' : '加载'}${label}…`}
+        </Typography>
+      </Stack>
+    ) : organizationError ? (
+      <Box role="alert" sx={{ px: 0.75, py: 0.75 }}>
+        <Typography variant="caption" color="error.main" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+          {`${label}读取失败：${organizationError}`}
+        </Typography>
+        {knownCount > 0 ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            以下显示上次成功读取的内容。
+          </Typography>
+        ) : null}
+        {onRetryOrganization ? (
+          <Button size="small" aria-label={`重新加载${label}`} onClick={() => { void onRetryOrganization() }} sx={organizationActionSx}>
+            重试
+          </Button>
+        ) : null}
+      </Box>
+    ) : null
+  )
 
   return (
     <Box
@@ -848,7 +908,7 @@ export function XDriveFileExplorerNavigationPane({
             </Box>
           ) : quickAccessItems.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无固定文件夹
+              暂无固定文件夹。打开文件夹的“更多操作”，选择“固定到快速访问”；也可固定当前文件夹。
             </Typography>
           ) : (
             <Stack spacing={0.25}>
@@ -926,26 +986,49 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
-            <IconButton
-              size="small"
-              aria-label={expandedSections.savedSearches ? '折叠智能文件夹' : '展开智能文件夹'}
-              aria-expanded={expandedSections.savedSearches}
-              onClick={() => toggleSection('savedSearches')}
-              sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
-            >
-              {expandedSections.savedSearches
-                ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
-                : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
-            </IconButton>
-            <SearchRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
-            <Typography variant="caption" fontWeight={700} color="text.secondary">智能文件夹</Typography>
+          <Stack direction="row" alignItems="center" sx={{ minHeight: compactViewport ? 44 : 30, flexWrap: 'wrap', columnGap: 0.5 }}>
+            <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: 0, flex: '1 1 auto' }}>
+              <IconButton
+                size="small"
+                aria-label={expandedSections.savedSearches ? '折叠智能文件夹' : '展开智能文件夹'}
+                aria-expanded={expandedSections.savedSearches}
+                onClick={() => toggleSection('savedSearches')}
+                sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
+              >
+                {expandedSections.savedSearches
+                  ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                  : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+              </IconButton>
+              <SearchRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
+              <Typography variant="caption" fontWeight={700} color="text.secondary">智能文件夹</Typography>
+            </Stack>
+            {onSaveCurrentSearch ? (
+              <Button
+                size="small"
+                aria-label="保存当前搜索"
+                disabled={!canSaveCurrentSearch}
+                onClick={onSaveCurrentSearch}
+                sx={organizationActionSx}
+              >
+                保存当前搜索
+              </Button>
+            ) : null}
           </Stack>
-          {savedSearches.length === 0 ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
+            保存搜索规则，动态显示符合全部条件的文件；文件保留在原位置。
+            {onSaveCurrentSearch && !canSaveCurrentSearch ? '先搜索或设置筛选，再保存为智能文件夹。' : ''}
+          </Typography>
+          {currentSearchNotice ? (
+            <Typography variant="caption" role="status" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
+              {currentSearchNotice}
+            </Typography>
+          ) : null}
+          {organizationReadState('智能文件夹', savedSearches.length)}
+          {savedSearches.length === 0 && !organizationLoading && !organizationError ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
               暂无保存的搜索
             </Typography>
-          ) : (
+          ) : savedSearches.length > 0 ? (
             <Stack spacing={0.25}>
               {savedSearches.map((search) => (
                 <Box
@@ -953,7 +1036,10 @@ export function XDriveFileExplorerNavigationPane({
                   sx={{ display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${secondaryTrack}px`, alignItems: 'center' }}
                 >
                   <ListItemButton
-                    selected={activeSavedSearchID === search.id}
+                    selected={savedSearchMatches(search.id)}
+                    aria-label={search.name}
+                    aria-current={activeSavedSearchID === search.id ? 'page' : undefined}
+                    aria-describedby={`${organizationDescriptionID}-saved-${search.id}`}
                     draggable={Boolean(onReorderSavedSearches)}
                     aria-grabbed={draggedSavedSearchID === search.id}
                     onDragStart={(event) => {
@@ -979,8 +1065,26 @@ export function XDriveFileExplorerNavigationPane({
                     onClick={() => { void onActivateSavedSearch?.(search) }}
                     sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                   >
-                    <SearchRoundedIcon sx={{ fontSize: 18, color: activeSavedSearchID === search.id ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
-                    <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>{search.name}</Typography>
+                    <SearchRoundedIcon sx={{ fontSize: 18, color: savedSearchMatches(search.id) ? 'primary.main' : 'text.secondary', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{search.name}</Typography>
+                      <Box id={`${organizationDescriptionID}-saved-${search.id}`}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          data-xdrive-saved-search-rule={search.id}
+                          sx={{ display: 'block', overflowWrap: 'anywhere' }}
+                        >
+                          {(savedSearchRuleLabels?.(search)
+                            ?? xDriveFileExplorerSavedSearchRuleLabels(search, { tagOptions: tags })).join(' · ')}
+                        </Typography>
+                        {savedSearchMatches(search.id) ? (
+                          <Typography variant="caption" color="primary.main" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                            当前搜索匹配此规则
+                          </Typography>
+                        ) : null}
+                      </Box>
+                    </Box>
                   </ListItemButton>
                   {onRenameSavedSearch || onReplaceSavedSearch || onDeleteSavedSearch ? (
                     <Tooltip title="智能文件夹选项">
@@ -999,7 +1103,7 @@ export function XDriveFileExplorerNavigationPane({
                 </Box>
               ))}
             </Stack>
-          )}
+          ) : null}
         </Box>
       ) : null}
 
@@ -1007,6 +1111,11 @@ export function XDriveFileExplorerNavigationPane({
         anchorEl={savedSearchMenu?.anchor ?? null}
         open={Boolean(savedSearchMenu)}
         onClose={() => setSavedSearchMenu(null)}
+        slotProps={{ paper: { sx: {
+          maxWidth: 'calc(100vw - 16px)',
+          maxHeight: 'calc(100dvh - 16px)',
+          '& .MuiMenuItem-root': { minHeight: compactViewport ? 44 : undefined, whiteSpace: 'normal', overflowWrap: 'anywhere' },
+        } } }}
       >
         {onRenameSavedSearch ? (
           <MenuItem onClick={() => {
@@ -1038,7 +1147,7 @@ export function XDriveFileExplorerNavigationPane({
               if (search) void onDeleteSavedSearch(search.id)
             }}
           >
-            删除
+            删除智能文件夹
           </MenuItem>
         ) : null}
       </Menu>
@@ -1055,43 +1164,64 @@ export function XDriveFileExplorerNavigationPane({
             },
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minHeight: compactViewport ? 44 : 30 }}>
-            <IconButton
-              size="small"
-              aria-label={expandedSections.tags ? '折叠标签' : '展开标签'}
-              aria-expanded={expandedSections.tags}
-              onClick={() => toggleSection('tags')}
-              sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
-            >
-              {expandedSections.tags
-                ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
-                : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
-            </IconButton>
-            <LocalOfferRoundedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
-            <Typography variant="caption" fontWeight={700} color="text.secondary">标签</Typography>
+          <Stack direction="row" alignItems="center" sx={{ minHeight: compactViewport ? 44 : 30, flexWrap: 'wrap', columnGap: 0.5 }}>
+            <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: 0, flex: '1 1 auto' }}>
+              <IconButton
+                size="small"
+                aria-label={expandedSections.tags ? '折叠标签' : '展开标签'}
+                aria-expanded={expandedSections.tags}
+                onClick={() => toggleSection('tags')}
+                sx={{ width: actionEdge, height: actionEdge, flexShrink: 0, borderRadius: 0.5 }}
+              >
+                {expandedSections.tags
+                  ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} />
+                  : <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />}
+              </IconButton>
+              <LocalOfferRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
+              <Typography variant="caption" fontWeight={700} color="text.secondary">标签</Typography>
+            </Stack>
+            {onManageTags ? (
+              <Button size="small" aria-label="管理标签" onClick={onManageTags} sx={organizationActionSx}>
+                管理标签
+              </Button>
+            ) : null}
           </Stack>
-          {tags.length === 0 ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5, overflowWrap: 'anywhere' }}>
+            点击标签查找文件；选择文件后可通过“标签”分配或移除标签。数量为全部文件中的标签项数。
+          </Typography>
+          {organizationReadState('标签', tags.length)}
+          {tags.length === 0 && !organizationLoading && !organizationError ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
               暂无标签
             </Typography>
-          ) : (
+          ) : tags.length > 0 ? (
             <Stack spacing={0.25}>
               {tags.map((tag) => (
                 <ListItemButton
                   key={tag.id}
                   selected={activeTagID === tag.id}
+                  aria-label={tag.name}
+                  aria-current={activeTagID === tag.id ? 'page' : undefined}
+                  aria-describedby={`${organizationDescriptionID}-tag-${tag.id}`}
                   onClick={() => { void onActivateTag?.(tag) }}
                   sx={{ minWidth: 0, minHeight: compactViewport ? 44 : 30, py: 0.25, pl: compactViewport ? 6.75 : 4.5, pr: 0.75, borderRadius: 0.5, gap: 0.75 }}
                 >
                   <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: tag.color || 'text.disabled', flexShrink: 0 }} />
-                  <Typography variant="body2" noWrap sx={{ minWidth: 0, flex: 1 }}>{tag.name}</Typography>
-                  {tag.item_count > 0 ? (
-                    <Typography variant="caption" color="text.secondary">{tag.item_count}</Typography>
-                  ) : null}
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{tag.name}</Typography>
+                    <Typography
+                      id={`${organizationDescriptionID}-tag-${tag.id}`}
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: 'block', overflowWrap: 'anywhere' }}
+                    >
+                      {`共 ${tag.item_count} 项${activeTagID === tag.id ? ' · 已用于当前筛选' : ''}`}
+                    </Typography>
+                  </Box>
                 </ListItemButton>
               ))}
             </Stack>
-          )}
+          ) : null}
         </Box>
       ) : null}
 
@@ -1130,7 +1260,7 @@ export function XDriveFileExplorerNavigationPane({
             </Box>
           ) : favoriteItems.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无收藏文件
+              暂无收藏文件。打开文件的“更多操作”，选择“添加到收藏”。文件夹可固定到快速访问。
             </Typography>
           ) : (
             <Stack spacing={0.25}>

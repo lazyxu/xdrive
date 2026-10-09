@@ -210,7 +210,8 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(web.includes('useXDriveFileExplorerDeleteController<Node, XDriveFileOperation>'), 'Web delete must use the shared delete controller')
   assert.ok(web.includes('submitOperation: (operation, items) => api.createFileOperation(operation, items)'), 'Web delete transport is not queued')
   assert.ok(deleteController.includes('requestDelete([node])'), 'shared delete controller must reuse bulk orchestration for single delete')
-  assert.ok(web.includes('onQueued: rememberFileOperation'), 'Web delete must seed Task Center state')
+  assert.ok(web.includes('onQueued: rememberFilesOperation'), 'Web delete must keep the Files trace to its queued operation')
+  assert.ok(web.includes('rememberFileOperation(operation)'), 'Web Files trace must seed the existing App-owned Task Center state')
 
   assert.ok(desktopExplorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use the shared Explorer operation controller')
   assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste/drop transport is not queued')
@@ -221,7 +222,8 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(desktop.includes('useXDriveFileExplorerDeleteController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop delete must use the shared delete controller')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation(operation, items)'), 'Desktop delete transport is not queued')
   assert.ok(deleteController.includes('removeMany: requestDelete'), 'shared delete controller must reuse one bulk delete path')
-  assert.ok(desktop.includes('onQueued: rememberCloudFileOperation'), 'Desktop delete must seed Task Center state')
+  assert.ok(desktop.includes('onQueued: rememberFilesOperation'), 'Desktop delete must keep the Files trace to its queued operation')
+  assert.ok(desktop.includes('rememberCloudFileOperation(operation)'), 'Desktop Files trace must seed the existing App-owned Task Center state')
 })
 
 test('shared file-operation lifecycle owns list state, polling, upsert and terminal transitions', () => {

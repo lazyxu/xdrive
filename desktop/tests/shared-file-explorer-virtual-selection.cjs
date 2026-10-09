@@ -34,9 +34,17 @@ test('VirtualCollection Ctrl+A and Shift selection resolve unloaded logical item
     explorer.includes('collectRange?: (\n    startIndex: number,\n    endIndex: number,'),
     'FileExplorer virtual contract must expose collectRange',
   )
+  assert.match(
+    explorer,
+    /command === 'select-all'[\s\S]*?selectAllItems\(\)/,
+    'Ctrl/Cmd+A must reuse the complete logical selection used by touch',
+  )
+  const selectAllBlock = explorer.slice(explorer.indexOf('const selectAllItems ='), explorer.indexOf('const cancelSelectionLoad ='))
   assert.ok(
-    explorer.includes('void resolveLogicalRange(0, logicalItemCount - 1).then((resolved) =>'),
-    'Ctrl/Cmd+A must resolve the complete logical collection',
+    selectAllBlock.includes('start < total') &&
+      selectAllBlock.includes('await virtualCollection.collectRange(start, end)') &&
+      selectAllBlock.includes('commitSelectionIntent(intent, resolved.map'),
+    'complete selection must collect all bounded ranges before committing the full identity set',
   )
   assert.ok(
     explorer.includes('const anchorIndex = selectionAnchorIndex ?? logicalIndexOf(selectionAnchorID) ?? -1'),
