@@ -39,6 +39,8 @@ import type {
   MediaAlbum,
   MediaGalleryFacets,
   MediaGalleryQuery,
+  MediaSyncFolder,
+  MediaFolderView,
   MediaItem,
   MediaItemRange,
   MediaMemory,
@@ -75,6 +77,7 @@ import {
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
+import { XDriveMediaGallerySyncFolders } from './MediaGallerySyncFolders'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
@@ -147,6 +150,8 @@ export interface MediaGalleryDataSource {
     query?: MediaGalleryQuery,
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
+  listSyncFolders?: () => Promise<MediaSyncFolder[]>
+  getSyncFolder?: (sourceID: number, folderID: number) => Promise<MediaFolderView>
   listTrashItemRange?: (
     limit: number,
     offset: number,
@@ -425,6 +430,11 @@ export function XDriveMediaGalleryPage({
   const [facetsError, setFacetsError] = useState('')
   const facetRequestID = useRef(0)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
+  const [syncFolders, setSyncFolders] = useState<MediaSyncFolder[]>([])
+  const [folderView, setFolderView] = useState<MediaFolderView | null>(null)
+  const [folderLoading, setFolderLoading] = useState(false)
+  const [folderError, setFolderError] = useState('')
+  const folderRequestID = useRef(0)
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [duplicateGroups, setDuplicateGroups] =
@@ -746,6 +756,51 @@ export function XDriveMediaGalleryPage({
     virtualCollection.reset,
   ])
 
+  const loadSyncFolders = useCallback(async () => {
+    if (!source.listSyncFolders) return
+    const request = ++folderRequestID.current
+    setFolderLoading(true)
+    setFolderError('')
+    try {
+      const roots = await source.listSyncFolders()
+      if (request === folderRequestID.current) setSyncFolders(roots)
+    } catch (loadError) {
+      if (request !== folderRequestID.current) return
+      setFolderError(xDriveMediaGalleryErrorMessage(loadError))
+      onError?.(loadError)
+    } finally {
+      if (request === folderRequestID.current) setFolderLoading(false)
+    }
+  }, [onError, source])
+
+  const openSyncFolder = useCallback(async (sourceID: number, folderID: number) => {
+    if (!source.getSyncFolder) return
+    const request = ++folderRequestID.current
+    setFolderLoading(true)
+    setFolderError('')
+    try {
+      const nextView = await source.getSyncFolder(sourceID, folderID)
+      if (request !== folderRequestID.current) return
+      const nextDraft = folderView ? draftFilters : emptyMediaGalleryFilterDraft
+      const nextQuery: MediaGalleryQuery = {
+        ...mediaGalleryQueryFromDraft(nextDraft),
+        folder_id: nextView.current.id,
+      }
+      if (!folderView) setDraftFilters(nextDraft)
+      setFolderView(nextView)
+      setSection('albums')
+      setCurrentAlbum(null)
+      setQuery(nextQuery)
+      void loadFirstPage(null, nextQuery)
+    } catch (loadError) {
+      if (request !== folderRequestID.current) return
+      setFolderError(xDriveMediaGalleryErrorMessage(loadError))
+      onError?.(loadError)
+    } finally {
+      if (request === folderRequestID.current) setFolderLoading(false)
+    }
+  }, [draftFilters, folderView, loadFirstPage, onError, source])
+
   const loadMemories = useCallback(async () => {
     if (!source.listMemories) {
       setMemories([])
@@ -820,6 +875,11 @@ export function XDriveMediaGalleryPage({
   }, [reportError, source, virtualCollection.reset])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    folderRequestID.current += 1
+    setFolderLoading(false)
+    setFolderError('')
+    setFolderView(null)
+    if (nextSection === 'albums') void loadSyncFolders()
     onSectionRouteChange?.(nextSection)
     setCurrentPet(null)
     if (nextSection !== 'memories') setCurrentMemory(null)
@@ -854,7 +914,7 @@ export function XDriveMediaGalleryPage({
       return
     }
     void loadFirstPage(null, nextQuery)
-  }, [loadCleanup, loadFirstPage, loadMemories, onSectionRouteChange])
+  }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders, onSectionRouteChange])
 
   const requestFacets = useCallback(async (
     nextDraft: MediaGalleryFilterDraft = draftFilters,
@@ -865,7 +925,10 @@ export function XDriveMediaGalleryPage({
     setFacetsError('')
     setFacets({ cameras: [], formats: [] })
     try {
-      const facetQuery = mediaGalleryQueryFromDraft(nextDraft)
+      const baseQuery = mediaGalleryQueryFromDraft(nextDraft)
+      const facetQuery: MediaGalleryQuery = folderView
+        ? { ...baseQuery, folder_id: folderView.current.id }
+        : baseQuery
       const albumID = currentAlbum && currentAlbum.kind !== 'smart' ? currentAlbum.id : undefined
       const nextFacets = await source.listFacets(facetQuery, albumID)
       if (request !== facetRequestID.current) return
@@ -877,10 +940,13 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === facetRequestID.current) setFacetsLoading(false)
     }
-  }, [currentAlbum, currentCleanupReview, currentMemory, currentPet, currentSuggestedPerson, draftFilters, onError, source])
+  }, [currentAlbum, currentCleanupReview, currentMemory, currentPet, currentSuggestedPerson, draftFilters, folderView, onError, source])
 
   const applyFilters = useCallback(() => {
-    const nextQuery = mediaGalleryQueryFromDraft(draftFilters)
+    const baseQuery = mediaGalleryQueryFromDraft(draftFilters)
+    const nextQuery: MediaGalleryQuery = folderView
+      ? { ...baseQuery, folder_id: folderView.current.id }
+      : baseQuery
     if (currentAlbum?.kind === 'smart') {
       if (!source.updateSmartAlbum || !currentAlbum.revision) {
         setError('当前客户端不支持编辑智能相册')
@@ -914,6 +980,7 @@ export function XDriveMediaGalleryPage({
     currentPerson,
     currentSuggestedPerson,
     draftFilters,
+    folderView,
     loadFirstPage,
     onError,
     replaceAlbum,
@@ -931,7 +998,10 @@ export function XDriveMediaGalleryPage({
     const nextDraft = currentPerson
       ? { ...baseDraft, personIdentity: currentPerson.id }
       : baseDraft
-    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    const baseQuery = mediaGalleryQueryFromDraft(nextDraft)
+    const nextQuery: MediaGalleryQuery = folderView
+      ? { ...baseQuery, folder_id: folderView.current.id }
+      : baseQuery
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
@@ -940,6 +1010,7 @@ export function XDriveMediaGalleryPage({
     currentAlbum,
     currentPerson,
     currentSuggestedPerson,
+    folderView,
     loadFirstPage,
     section,
   ])
@@ -1044,6 +1115,9 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const openAlbum = useCallback((album: MediaAlbum) => {
+    folderRequestID.current += 1
+    setFolderLoading(false)
+    setFolderView(null)
     setSection('albums')
     setActiveMediaType('')
     if (album.kind === 'smart') {
@@ -1120,6 +1194,22 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const leaveCollection = useCallback(() => {
+    if (folderView) {
+      const parent = folderView.breadcrumbs[folderView.breadcrumbs.length - 2]
+      if (parent) {
+        void openSyncFolder(folderView.source.source_id, parent.id)
+      } else {
+        folderRequestID.current += 1
+        setFolderView(null)
+        setFolderLoading(false)
+        setFolderError('')
+        setDraftFilters(emptyMediaGalleryFilterDraft)
+        setQuery({})
+        void loadFirstPage(null, {})
+        void loadSyncFolders()
+      }
+      return
+    }
     if (currentPet) {
       setCurrentPet(null)
       void loadFirstPage(null, {})
@@ -1146,9 +1236,12 @@ export function XDriveMediaGalleryPage({
     currentCleanupReview,
     currentMemory,
     currentPet,
+    folderView,
     loadCleanup,
     loadFirstPage,
     loadMemories,
+    loadSyncFolders,
+    openSyncFolder,
     section,
   ])
 
@@ -1639,6 +1732,7 @@ export function XDriveMediaGalleryPage({
   useEffect(() => () => {
     requestID.current += 1
     facetRequestID.current += 1
+    folderRequestID.current += 1
   }, [])
 
   return (
@@ -1648,6 +1742,10 @@ export function XDriveMediaGalleryPage({
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         albums={albums}
+        syncFolders={syncFolders}
+        folderView={folderView}
+        folderLoading={folderLoading}
+        folderError={folderError}
         places={places}
         memories={memories}
         duplicateGroups={duplicateGroups}
@@ -1700,7 +1798,7 @@ export function XDriveMediaGalleryPage({
             onApply={applyFilters}
             onClear={clearFilters}
             onSaveSmart={
-              !currentAlbum && !currentSuggestedPerson && source.createSmartAlbum
+              !currentAlbum && !folderView && !currentSuggestedPerson && source.createSmartAlbum
                 ? () => {
                     setSmartAlbumName('')
                     setSmartDialogError('')
@@ -1764,6 +1862,10 @@ export function XDriveMediaGalleryPage({
         onSectionChange={selectSection}
         onOpenMediaType={openMediaType}
         onOpenAlbum={openAlbum}
+        onOpenSyncFolder={source.listSyncFolders && source.getSyncFolder ? (sourceID, folderID) => {
+          void openSyncFolder(sourceID, folderID)
+        } : undefined}
+        onReloadSyncFolders={source.listSyncFolders ? () => { void loadSyncFolders() } : undefined}
         onOpenPlace={openPlace}
         onOpenMemory={openMemory}
         onOpenDuplicateGroup={openDuplicateGroup}
@@ -1801,6 +1903,10 @@ export function XDriveMediaGalleryPage({
         onSplitPerson={source.splitPerson ? splitPerson : undefined}
         onBack={leaveCollection}
         onRefresh={() => {
+          if (folderView) {
+            void openSyncFolder(folderView.source.source_id, folderView.current.id)
+            return
+          }
           if (section === 'memories' && !currentMemory) {
             void loadMemories()
             return
@@ -1909,6 +2015,10 @@ export interface XDriveMediaGalleryProps {
   virtualCollection?: XDriveMediaGalleryVirtualCollection
   collectionKey?: string
   albums?: MediaAlbum[]
+  syncFolders?: MediaSyncFolder[]
+  folderView?: MediaFolderView | null
+  folderLoading?: boolean
+  folderError?: string
   places?: MediaPlaceFacet[]
   memories?: MediaMemory[]
   duplicateGroups?: MediaDuplicateGroupList | null
@@ -1977,6 +2087,8 @@ export interface XDriveMediaGalleryProps {
   onSectionChange?: (section: MediaGallerySection) => void
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
+  onOpenSyncFolder?: (sourceID: number, folderID: number) => void
+  onReloadSyncFolders?: () => void
   onOpenPlace?: (place: MediaPlaceFacet) => void
   onOpenMemory?: (memory: MediaMemory) => void
   onOpenDuplicateGroup?: (group: MediaDuplicateGroup) => void
@@ -3057,6 +3169,10 @@ export function XDriveMediaGallery({
   virtualCollection,
   collectionKey = '',
   albums = [],
+  syncFolders = [],
+  folderView = null,
+  folderLoading = false,
+  folderError = '',
   places = [],
   memories = [],
   duplicateGroups = null,
@@ -3112,6 +3228,8 @@ export function XDriveMediaGallery({
   onSectionChange,
   onOpenMediaType,
   onOpenAlbum,
+  onOpenSyncFolder,
+  onReloadSyncFolders,
   onOpenPlace,
   onOpenMemory,
   onOpenDuplicateGroup,
@@ -3471,6 +3589,7 @@ export function XDriveMediaGallery({
     : undefined
   const isRootSection =
     !currentAlbum &&
+    !folderView &&
     !currentSuggestedPerson &&
     !currentPerson &&
     !currentPet &&
@@ -3510,6 +3629,8 @@ export function XDriveMediaGallery({
   )
   const emptyCollectionTitle = isTrashSection
     ? '回收站为空'
+    : folderView
+      ? '当前目录没有媒体'
     : isRootSection && section === 'favorites'
       ? '还没有收藏的照片或视频'
       : isRootSection && section === 'media-types' && mediaTypeLabel
@@ -3519,6 +3640,8 @@ export function XDriveMediaGallery({
           : '还没有照片和视频'
   const emptyCollectionDescription = isTrashSection
     ? '删除的照片和视频会显示在这里。'
+    : folderView
+      ? '可以打开上方的子目录继续浏览。'
     : filtersActive
       ? '可以调整搜索或筛选条件后再试。'
       : '上传文件或添加同步文件夹后，媒体会自动出现在图库中。'
@@ -3541,7 +3664,7 @@ export function XDriveMediaGallery({
     ? currentCleanupReview.kind === 'duplicate'
       ? '完全重复项'
       : '连拍精选'
-    : currentPet?.name || currentMemory?.title || currentAlbum?.name ||
+    : folderView?.current.name || currentPet?.name || currentMemory?.title || currentAlbum?.name ||
     (currentPerson
       ? currentPerson.name || '未命名人物'
       : currentSuggestedPerson
@@ -3569,6 +3692,8 @@ export function XDriveMediaGallery({
     ? currentCleanupReview.kind === 'duplicate'
       ? `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 个完全相同副本 · ${currentCleanupReview.group.recommendation_reason}`
       : `${currentCleanupReview.group.item_count.toLocaleString('zh-CN')} 张连拍 · ${currentCleanupReview.group.recommendation_reason}`
+    : folderView
+      ? `${logicalItemCount.toLocaleString('zh-CN')} 个媒体 · ${folderView.current.path} · 不含子目录`
     : currentPet
       ? `${currentPet.item_count.toLocaleString('zh-CN')} 张照片 · 本地视觉类型集合`
     : currentMemory
@@ -3586,7 +3711,7 @@ export function XDriveMediaGallery({
             : section === 'cleanup'
               ? '完全重复项与连拍精选；清理操作仍然先进入回收站'
             : section === 'albums'
-            ? '手动相册、智能相册和导入相册'
+            ? '手动相册、智能相册、导入相册与同步文件夹'
             : section === 'people'
               ? '已确认人物、待审核建议与本地宠物类型集合'
               : section === 'places'
@@ -3609,6 +3734,7 @@ export function XDriveMediaGallery({
     currentPet ||
     currentMemory ||
     currentAlbum ||
+    folderView ||
     currentSuggestedPerson ||
     currentPerson ||
     activePlaceID ||
@@ -3912,6 +4038,18 @@ export function XDriveMediaGallery({
           loadThumbnail={loadThumbnail}
           onOpenDuplicate={onOpenDuplicateGroup}
           onOpenBurst={onOpenBurstReview}
+        />
+      ) : null}
+
+      {(showAlbumIndex || folderView) && onOpenSyncFolder ? (
+        <XDriveMediaGallerySyncFolders
+          roots={syncFolders}
+          view={folderView}
+          loading={folderLoading}
+          error={folderError}
+          loadThumbnail={loadThumbnail}
+          onOpen={onOpenSyncFolder}
+          onReloadRoots={showAlbumIndex ? onReloadSyncFolders : undefined}
         />
       ) : null}
 
@@ -4585,7 +4723,7 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {showAlbumIndex && albums.length === 0 && !loading ? (
+      {showAlbumIndex && albums.length === 0 && syncFolders.length === 0 && !loading && !folderLoading ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
           <Typography color="text.secondary">还没有相册</Typography>
         </Paper>

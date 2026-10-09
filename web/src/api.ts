@@ -23,6 +23,8 @@ import type {
   MediaAlbum,
   MediaGalleryFacets,
   MediaGalleryQuery,
+  MediaSyncFolder,
+  MediaFolderView,
   MediaItem,
   MediaItemRange,
   MediaMemory,
@@ -263,6 +265,7 @@ function appendMediaGalleryQuery(
   if (query.search?.trim()) values.set('q', query.search.trim())
   if (query.asset_kind) values.set('asset_kind', query.asset_kind)
   if (query.category?.trim()) values.set('category', query.category.trim())
+  if (query.folder_id) values.set('folder_id', String(query.folder_id))
   for (const camera of query.cameras ?? []) {
     if (camera.trim()) values.append('camera', camera.trim())
   }
@@ -783,6 +786,16 @@ export class XDriveApi {
     const encoded = query.toString()
     return this.request<MediaGalleryFacets>(
       `/api/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
+
+  mediaSyncFolders() {
+    return this.request<MediaSyncFolder[]>('/api/v1/media/sync-folders')
+  }
+
+  mediaSyncFolderView(sourceID: number, folderID: number) {
+    return this.request<MediaFolderView>(
+      `/api/v1/media/sync-folders/${sourceID}/folders/${folderID}`,
     )
   }
 

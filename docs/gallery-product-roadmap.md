@@ -173,8 +173,12 @@ import provider directory semantics.
   EXIF, and provider directory metadata are not required for Gallery folder browsing.
 
 The Server exposes synchronization-folder roots and one-directory-at-a-time navigation
-through dedicated Gallery endpoints. Web/Desktop wiring remains a later focused client
-slice so this Server PR cannot regress Gallery first-visible rendering.
+through dedicated Gallery endpoints. Web/Desktop share one MUI Sync Folder browser:
+the Albums destination lazily loads root cards, directory breadcrumbs and direct
+child folders; the chosen directory uses the same sparse VirtualCollection and
+Server-side `folder_id` filter, without fetching all photos. Directory metadata
+errors are separate from range-load failures. Desktop accesses these APIs through
+its authenticated Agent IPC adapter; it does not use a direct HTTP shortcut.
 
 
 ## Phase 3 — multi-select and shared Selection Toolbar

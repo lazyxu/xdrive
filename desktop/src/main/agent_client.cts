@@ -787,6 +787,7 @@ export type AgentMediaQuery = {
   search?: string
   asset_kind?: string
   category?: string
+  folder_id?: number
   cameras?: string[]
   formats?: string[]
   captured_from?: string
@@ -806,6 +807,7 @@ function appendAgentMediaQuery(
   if (filters.search?.trim()) query.set('q', filters.search.trim())
   if (filters.asset_kind) query.set('asset_kind', filters.asset_kind)
   if (filters.category?.trim()) query.set('category', filters.category.trim())
+  if (filters.folder_id) query.set('folder_id', String(filters.folder_id))
   for (const camera of filters.cameras ?? []) {
     if (camera.trim()) query.append('camera', camera.trim())
   }
@@ -837,6 +839,36 @@ export type AgentMediaFacetOption = {
 export type AgentMediaGalleryFacets = {
   cameras: AgentMediaFacetOption[]
   formats: AgentMediaFacetOption[]
+}
+
+export type AgentMediaSyncFolder = {
+  source_id: number
+  source_name: string
+  source_kind: string
+  source_status: string
+  target_node_id: number
+  target_name: string
+  target_path: string
+  direct_media_count: number
+  child_folder_count: number
+  cover_node_id?: number
+}
+
+export type AgentMediaFolderEntry = {
+  id: number
+  parent_id?: number
+  name: string
+  path: string
+  direct_media_count: number
+  child_folder_count: number
+  cover_node_id?: number
+}
+
+export type AgentMediaFolderView = {
+  source: AgentMediaSyncFolder
+  current: AgentMediaFolderEntry
+  breadcrumbs: Array<{ id: number; name: string; path: string }>
+  children: AgentMediaFolderEntry[]
 }
 
 export type AgentMediaAlbum = {
@@ -1469,6 +1501,17 @@ export class AgentIPCClient {
     return this.request<AgentMediaGalleryFacets>(
       'GET',
       `/v1/media/facets${encoded ? `?${encoded}` : ''}`,
+    )
+  }
+
+  mediaSyncFolders() {
+    return this.request<AgentMediaSyncFolder[]>('GET', '/v1/media/sync-folders')
+  }
+
+  mediaSyncFolderView(sourceID: number, folderID: number) {
+    return this.request<AgentMediaFolderView>(
+      'GET',
+      `/v1/media/sync-folder-view?source_id=${sourceID}&folder_id=${folderID}`,
     )
   }
 

@@ -135,6 +135,10 @@ type fakeDesktopIPCController struct {
 	cloudDeleteRev             uint64
 	cloudMediaItems            []client.MediaItem
 	cloudMediaFacets           client.MediaGalleryFacets
+	cloudMediaSyncFolders      []client.MediaSyncFolder
+	cloudMediaFolderView       client.MediaFolderView
+	cloudMediaSourceID         uint64
+	cloudMediaFolderID         uint64
 	cloudMediaAlbums           []client.MediaAlbum
 	cloudMediaPlaces           []client.MediaPlaceFacet
 	cloudMediaMemories         []client.MediaMemory
@@ -874,6 +878,18 @@ func (f *fakeDesktopIPCController) CloudMediaFacets(
 	f.cloudMediaQuery = query
 	f.cloudMediaAlbumID = albumID
 	return f.cloudMediaFacets, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSyncFolders(context.Context) ([]client.MediaSyncFolder, error) {
+	return append([]client.MediaSyncFolder(nil), f.cloudMediaSyncFolders...), f.err
+}
+
+func (f *fakeDesktopIPCController) CloudMediaSyncFolderView(
+	_ context.Context, sourceID, folderID uint64,
+) (client.MediaFolderView, error) {
+	f.cloudMediaSourceID = sourceID
+	f.cloudMediaFolderID = folderID
+	return f.cloudMediaFolderView, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudMediaTrash(
@@ -2273,6 +2289,18 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 			Cameras: []client.MediaFacetOption{{Value: "apple iphone 15 pro", Label: "Apple iPhone 15 Pro", ItemCount: 2}},
 			Formats: []client.MediaFacetOption{{Value: "image/jpeg", Label: "JPEG", ItemCount: 1}},
 		},
+		cloudMediaSyncFolders: []client.MediaSyncFolder{{
+			SourceID: 9, SourceName: "Phone", TargetNodeID: 42, TargetName: "Camera",
+			TargetPath: "Files/Camera", DirectMediaCount: 7, ChildFolderCount: 1,
+		}},
+		cloudMediaFolderView: client.MediaFolderView{
+			Source: client.MediaSyncFolder{SourceID: 9, TargetNodeID: 42, SourceName: "Phone"},
+			Current: client.MediaFolderEntry{ID: 43, Name: "2026", DirectMediaCount: 7},
+			Breadcrumbs: []client.MediaFolderBreadcrumb{
+				{ID: 42, Name: "Camera"}, {ID: 43, Name: "2026"},
+			},
+			Children: []client.MediaFolderEntry{},
+		},
 		cloudMediaAlbums: []client.MediaAlbum{{
 			ID: "folder:8", Kind: "folder", Name: "Camera Uploads", ItemCount: 1,
 			CoverNodeID: ptrUint64(31), UpdatedAt: &now,
@@ -2377,7 +2405,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t,
 		handler,
 		http.MethodGet,
-		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&camera=Sony%20ILCE-7M4&camera=APPLE%20IPHONE%2015%20PRO&camera=apple%20iphone%2015%20pro&format=IMAGE%2FJPEG&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
+		"/v1/media/items?kind=image&limit=25&offset=5&q=iPhone&asset_kind=live_photo&category=gif&folder_id=43&camera=Sony%20ILCE-7M4&camera=APPLE%20IPHONE%2015%20PRO&camera=apple%20iphone%2015%20pro&format=IMAGE%2FJPEG&captured_from=2026-09-01T00%3A00%3A00Z&captured_to=2026-10-01T00%3A00%3A00Z&has_location=true&tag=Travel&person_identity=person%3Av1%3A11111111-1111-1111-1111-111111111111&place=place%3A135%3A10381",
 		"",
 	)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"photo.jpg\"") {
@@ -2389,6 +2417,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		ctrl.cloudMediaQuery.Search != "iPhone" ||
 		ctrl.cloudMediaQuery.AssetKind != "live_photo" ||
 		ctrl.cloudMediaQuery.Category != "gif" ||
+		ctrl.cloudMediaQuery.FolderID == nil || *ctrl.cloudMediaQuery.FolderID != 43 ||
 		len(ctrl.cloudMediaQuery.Cameras) != 2 ||
 		strings.Join(ctrl.cloudMediaQuery.Cameras, ",") != "apple iphone 15 pro,sony ilce-7m4" ||
 		len(ctrl.cloudMediaQuery.Formats) != 1 ||
@@ -2435,6 +2464,22 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		t.Fatalf("media facets status=%d body=%s album=%q", res.Code, res.Body.String(), ctrl.cloudMediaAlbumID)
 	}
 
+	
+	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/sync-folders", "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "\"Phone\"") {
+		t.Fatalf("media sync folders status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet,
+		"/v1/media/sync-folder-view?source_id=9&folder_id=43", "")
+	if res.Code != http.StatusOK || ctrl.cloudMediaSourceID != 9 || ctrl.cloudMediaFolderID != 43 ||
+		!strings.Contains(res.Body.String(), "\"2026\"") {
+		t.Fatalf("media folder view status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = desktopIPCRequest(t, handler, http.MethodGet,
+		"/v1/media/sync-folder-view?source_id=0&folder_id=43", "")
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("invalid media folder scope status=%d", res.Code)
+	}
 	res = desktopIPCRequest(
 		t,
 		handler,

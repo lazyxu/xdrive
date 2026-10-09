@@ -19,6 +19,7 @@ func TestMediaItemRangeQueries(t *testing.T) {
 		Search: "marina", Category: "panorama",
 		Cameras: []string{"apple iphone 15 pro", "sony ilce-7m4"},
 		Formats: []string{"image/jpeg", "video/quicktime"},
+		FolderID: func() *uint64 { id := uint64(43); return &id }(),
 	}
 	cases := []requestCase{
 		{
@@ -75,6 +76,9 @@ func TestMediaItemRangeQueries(t *testing.T) {
 				}
 				if got := r.URL.Query().Get("category"); got != "panorama" {
 					t.Fatalf("category=%q", got)
+				}
+				if got := r.URL.Query().Get("folder_id"); got != "43" {
+					t.Fatalf("folder_id=%q", got)
 				}
 				if got := strings.Join(r.URL.Query()["camera"], ","); got != "apple iphone 15 pro,sony ilce-7m4" {
 					t.Fatalf("camera=%q", got)
@@ -633,5 +637,34 @@ func TestMediaCreativeCollageGenerationQuery(t *testing.T) {
 	}
 	if generation.ID != "creative-collage-1" || generation.Kind != "collage" {
 		t.Fatalf("created collage generation=%+v", generation)
+	}
+}
+
+func TestMediaSyncFoldersClient(t *testing.T) {
+	seen := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/media/sync-folders":
+			_, _ = w.Write([]byte(`[{"source_id":7,"source_name":"Camera","target_node_id":42,"target_path":"Files/Camera","direct_media_count":2,"child_folder_count":1}]`))
+		case "/api/v1/media/sync-folders/7/folders/43":
+			_, _ = w.Write([]byte(`{"source":{"source_id":7},"current":{"id":43,"name":"2026","direct_media_count":2},"breadcrumbs":[{"id":42,"name":"Camera"},{"id":43,"name":"2026"}],"children":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	c := New(server.URL, "token")
+	roots, err := c.MediaSyncFolders(context.Background())
+	if err != nil || len(roots) != 1 || roots[0].TargetNodeID != 42 {
+		t.Fatalf("sync folder roots=%+v err=%v", roots, err)
+	}
+	view, err := c.MediaSyncFolderView(context.Background(), 7, 43)
+	if err != nil || view.Current.ID != 43 || len(view.Breadcrumbs) != 2 {
+		t.Fatalf("media folder view=%+v err=%v", view, err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("expected two scoped requests, got %v", seen)
 	}
 }

@@ -34,6 +34,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -54,6 +55,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -84,6 +86,9 @@ const agent = Object.freeze({
     } = {},
     albumID = '',
   ) => ipcRenderer.invoke('agent:get-media-facets', query, albumID),
+  getMediaSyncFolders: () => ipcRenderer.invoke('agent:get-media-sync-folders'),
+  getMediaSyncFolderView: (sourceID: number, folderID: number) =>
+    ipcRenderer.invoke('agent:get-media-sync-folder-view', sourceID, folderID),
   getMediaTrash: (limit = 200, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-trash', limit, offset),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
@@ -119,6 +124,7 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
       captured_from?: string
@@ -145,6 +151,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -173,6 +180,7 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
       captured_from?: string
@@ -193,6 +201,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -247,6 +256,7 @@ const agent = Object.freeze({
       search?: string
       asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
       captured_from?: string
@@ -268,6 +278,7 @@ const agent = Object.freeze({
         search?: string
         asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
         captured_from?: string
@@ -293,6 +304,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string
@@ -313,6 +325,7 @@ const agent = Object.freeze({
     search?: string
     asset_kind?: string
     category?: string
+    folder_id?: number
     cameras?: string[]
     formats?: string[]
     captured_from?: string

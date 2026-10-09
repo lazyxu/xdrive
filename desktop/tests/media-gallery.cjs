@@ -1536,3 +1536,30 @@ test('Desktop Live Photo motion streams through the protected Range proxy instea
   assert.equal(agentClient.includes('Promise<AgentMediaMotion>'), false)
   assert.equal(desktopMain.includes('runAgentAction<AgentMediaMotion>'), false)
 })
+
+test('Gallery synchronization-folder browser is shared with Web and Desktop transports', () => {
+  const folderBrowser = read('ui', 'shared', 'src', 'mui', 'MediaGallerySyncFolders.tsx')
+  const models = read('ui', 'shared', 'src', 'models.ts')
+  const sharedPort = read('ui', 'shared', 'src', 'mui', 'MediaGalleryAdapter.ts')
+  const webAPI = read('web', 'src', 'api.ts')
+  const webPort = read('web', 'src', 'mediaGalleryAdapter.ts')
+  const desktopPort = read('desktop', 'src', 'renderer', 'mediaGalleryAdapter.ts')
+  const desktopAgent = read('desktop', 'src', 'main', 'agent_client.cts')
+  const desktopIPC = read('desktop', 'src', 'main', 'index.cts')
+  for (const token of [
+    'listSyncFolders?:', 'getSyncFolder?:', 'folderRequestID.current',
+    'folder_id: nextView.current.id', 'setFolderView(null)',
+    'folder_id: folderView.current.id', '<XDriveMediaGallerySyncFolders',
+  ]) assert.ok(sharedGalleryMain.includes(token), `Gallery folder browser controller missing: ${token}`)
+  for (const token of ['data-xdrive-gallery-folder-breadcrumbs', 'data-xdrive-gallery-folder-card', 'data-xdrive-gallery-sync-folder-browser']) {
+    assert.ok(folderBrowser.includes(token), `Folder browser missing: ${token}`)
+  }
+  assert.ok(models.includes('export interface MediaFolderView'))
+  assert.ok(models.includes('folder_id?: number'))
+  assert.ok(sharedPort.includes('getSyncFolder: port.getSyncFolder'))
+  assert.ok(webAPI.includes('/api/v1/media/sync-folders/'))
+  assert.ok(webPort.includes('getSyncFolder: (sourceID, folderID)'))
+  assert.ok(desktopPort.includes('agent.getMediaSyncFolderView'))
+  assert.ok(desktopAgent.includes('/v1/media/sync-folder-view?source_id='))
+  assert.ok(desktopIPC.includes("ipcMain.handle('agent:get-media-sync-folder-view'"))
+})

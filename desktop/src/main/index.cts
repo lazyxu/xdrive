@@ -110,6 +110,8 @@ import {
   type AgentMediaItem,
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
+  type AgentMediaSyncFolder,
+  type AgentMediaFolderView,
   type AgentMediaAlbum,
   type AgentMediaPlaceFacet,
   type AgentMediaMemory,
@@ -1296,6 +1298,16 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
     }
     out.category = input.category
   }
+  if (input.folder_id !== undefined) {
+    if (
+      typeof input.folder_id !== 'number' ||
+      !Number.isSafeInteger(input.folder_id) ||
+      input.folder_id <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media folder id must be a positive safe integer.')
+    }
+    out.folder_id = input.folder_id
+  }
   for (const [key, label] of [
     ['cameras', 'camera'],
     ['formats', 'format'],
@@ -1941,6 +1953,28 @@ function registerIPCHandlers() {
       normalizeMediaGalleryQuery(query),
       albumID.trim(),
     )
+  }, false))
+
+  ipcMain.handle('agent:get-media-sync-folders', () => runAgentAction<AgentMediaSyncFolder[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    return requireAgentClient().mediaSyncFolders()
+  }, false))
+
+  ipcMain.handle('agent:get-media-sync-folder-view', (
+    _event,
+    sourceID: unknown,
+    folderID: unknown,
+  ) => runAgentAction<AgentMediaFolderView>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof folderID !== 'number' || !Number.isSafeInteger(folderID) || folderID <= 0
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Media source and folder ids must be positive safe integers.')
+    }
+    return requireAgentClient().mediaSyncFolderView(sourceID, folderID)
   }, false))
 
   ipcMain.handle('agent:get-media-trash', (

@@ -231,6 +231,42 @@ type MediaGalleryFacets struct {
 	Formats []MediaFacetOption `json:"formats"`
 }
 
+type MediaSyncFolder struct {
+	SourceID         uint64  `json:"source_id"`
+	SourceName       string  `json:"source_name"`
+	SourceKind       string  `json:"source_kind"`
+	SourceStatus     string  `json:"source_status"`
+	TargetNodeID     uint64  `json:"target_node_id"`
+	TargetName       string  `json:"target_name"`
+	TargetPath       string  `json:"target_path"`
+	DirectMediaCount int64   `json:"direct_media_count"`
+	ChildFolderCount int64   `json:"child_folder_count"`
+	CoverNodeID      *uint64 `json:"cover_node_id,omitempty"`
+}
+
+type MediaFolderEntry struct {
+	ID               uint64  `json:"id"`
+	ParentID         *uint64 `json:"parent_id,omitempty"`
+	Name             string  `json:"name"`
+	Path             string  `json:"path"`
+	DirectMediaCount int64   `json:"direct_media_count"`
+	ChildFolderCount int64   `json:"child_folder_count"`
+	CoverNodeID      *uint64 `json:"cover_node_id,omitempty"`
+}
+
+type MediaFolderBreadcrumb struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type MediaFolderView struct {
+	Source      MediaSyncFolder         `json:"source"`
+	Current     MediaFolderEntry        `json:"current"`
+	Breadcrumbs []MediaFolderBreadcrumb `json:"breadcrumbs"`
+	Children    []MediaFolderEntry      `json:"children"`
+}
+
 type MediaMemory struct {
 	ID          string     `json:"id"`
 	Kind        string     `json:"kind"`
@@ -332,6 +368,7 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
+	FolderID       *uint64
 	MediaKind      string
 	Search         string
 	AssetKind      string
@@ -360,6 +397,9 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if value := strings.TrimSpace(q.Category); value != "" {
 		values.Set("category", value)
+	}
+	if q.FolderID != nil {
+		values.Set("folder_id", strconv.FormatUint(*q.FolderID, 10))
 	}
 	for _, camera := range q.Cameras {
 		if value := strings.TrimSpace(camera); value != "" {
@@ -469,6 +509,21 @@ func (c *Client) MediaFacets(
 	}
 	var out MediaGalleryFacets
 	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSyncFolders(ctx context.Context) ([]MediaSyncFolder, error) {
+	var out []MediaSyncFolder
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/sync-folders", nil, &out)
+	return out, err
+}
+
+func (c *Client) MediaSyncFolderView(
+	ctx context.Context, sourceID, folderID uint64,
+) (MediaFolderView, error) {
+	var out MediaFolderView
+	url := fmt.Sprintf("/api/v1/media/sync-folders/%d/folders/%d", sourceID, folderID)
+	err := c.json(ctx, http.MethodGet, url, nil, &out)
 	return out, err
 }
 
