@@ -665,6 +665,7 @@ export default function App({
     externalBusy: Boolean(busy) || deleteToTrashBusy,
     conflictResolutionEnabled: fileOperationConflictResolveSupported,
     backgroundTaskPort,
+    backgroundTasksLifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     backgroundTasksEnabled: agent.connected && configured && backgroundTasksSupported,
     backgroundTasksVisible: view === 'transfers' || view === 'global-tasks' || view === 'overview',
     globalTasksEnabled: status?.role === 'admin',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
   xDriveActiveFileOperationCount,
@@ -102,23 +102,53 @@ function appendBackgroundTaskHistory(
 function useXDriveBackgroundTaskActiveSummary({
   port,
   enabled,
+  lifecycleKey,
 }: {
   port?: XDriveBackgroundTaskPort
   enabled: boolean
+  lifecycleKey: string
 }) {
-  const [summary, setSummary] = useState<XDriveBackgroundTaskActiveSummary>()
+  // A summary belongs to the transport/auth scope that produced it. Keep
+  // the old result invisible on the first render of another account/Agent.
+  const [summaryState, setSummaryState] = useState<{
+    port?: XDriveBackgroundTaskPort
+    enabled: boolean
+    lifecycleKey: string
+    value?: XDriveBackgroundTaskActiveSummary
+  }>({ port, enabled, lifecycleKey })
+  const summarySourceRef = useRef({ port, enabled, lifecycleKey })
+  const summaryRequestRef = useRef(0)
+  if (
+    summarySourceRef.current.port !== port ||
+    summarySourceRef.current.enabled !== enabled ||
+    summarySourceRef.current.lifecycleKey !== lifecycleKey
+  ) {
+    summarySourceRef.current = { port, enabled, lifecycleKey }
+    summaryRequestRef.current += 1
+  }
+  const summary = summaryState.port === port &&
+    summaryState.enabled === enabled &&
+    summaryState.lifecycleKey === lifecycleKey
+    ? summaryState.value : undefined
 
   const refresh = useCallback(async () => {
+    const source = summarySourceRef.current
+    const request = ++summaryRequestRef.current
+    const valid = () => (
+      summarySourceRef.current === source &&
+      summaryRequestRef.current === request
+    )
     if (!enabled || !port?.loadActiveSummary) {
-      setSummary(undefined)
+      if (valid()) setSummaryState({ port, enabled, lifecycleKey })
       return
     }
     try {
-      setSummary(await port.loadActiveSummary())
+      const value = await port.loadActiveSummary()
+      if (valid()) setSummaryState({ port, enabled, lifecycleKey, value })
     } catch {
-      setSummary(undefined)
+      if (valid()) setSummaryState({ port, enabled, lifecycleKey })
     }
-  }, [enabled, port])
+  }, [enabled, lifecycleKey, port])
 
   const pollIntervalMs = useMemo(
     () => xDriveBackgroundTaskSummaryPollIntervalMs(summary),
@@ -127,12 +157,15 @@ function useXDriveBackgroundTaskActiveSummary({
 
   useEffect(() => {
     if (!enabled || !port?.loadActiveSummary) {
-      setSummary(undefined)
+      void refresh()
       return
     }
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
-    return () => window.clearInterval(timer)
+    return () => {
+      window.clearInterval(timer)
+      summaryRequestRef.current += 1
+    }
   }, [enabled, pollIntervalMs, port, refresh])
 
   return { summary, refresh }
@@ -144,6 +177,7 @@ function useXDriveBackgroundTasks({
   visible,
   globalEnabled,
   scope,
+  lifecycleKey,
   onError,
 }: {
   port?: XDriveBackgroundTaskPort
@@ -151,6 +185,7 @@ function useXDriveBackgroundTasks({
   visible: boolean
   globalEnabled: boolean
   scope: XDriveBackgroundTaskScope
+  lifecycleKey: string
   onError?: (error: unknown) => void
 }) {
   const [mine, setMine] = useState<XDriveBackgroundTaskPageState>(
@@ -163,20 +198,56 @@ function useXDriveBackgroundTasks({
   const [globalLoading, setGlobalLoading] = useState(false)
   const [mineLoadingMore, setMineLoadingMore] = useState(false)
   const [globalLoadingMore, setGlobalLoadingMore] = useState(false)
+  // Error feedback is not a polling input. Desktop callers create a new
+  // handler during render; keeping it in refresh dependencies restarts reads.
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
 
   const effectiveScope: XDriveBackgroundTaskScope =
     scope === 'global' && globalEnabled && port?.loadGlobalPage ? 'global' : 'mine'
-
-  const visibleState = effectiveScope === 'global' ? globalTasks : mine
+  const [listOwner, setListOwner] = useState({ port, enabled, lifecycleKey })
+  const ownerCurrent = listOwner.port === port &&
+    listOwner.enabled === enabled && listOwner.lifecycleKey === lifecycleKey
+  // Scope-bound presentation protects the very first new-account frame,
+  // before the reset effect has committed the empty page state.
+  const scopedMine = ownerCurrent ? mine : emptyBackgroundTaskPageState()
+  const scopedGlobal = ownerCurrent ? globalTasks : emptyBackgroundTaskPageState()
+  const visibleState = effectiveScope === 'global' ? scopedGlobal : scopedMine
   const visibleTasks = [...visibleState.current, ...visibleState.history]
   const pollIntervalMs = useMemo(
     () => xDriveBackgroundTaskPollIntervalMs(visibleTasks),
     [visibleTasks],
   )
 
+  const listSourceRef = useRef({
+    port, enabled, visible, lifecycleKey, effectiveScope,
+  })
+  const listRefreshRequestRef = useRef(0)
+  const listMoreRequestRef = useRef(0)
+  if (
+    listSourceRef.current.port !== port ||
+    listSourceRef.current.enabled !== enabled ||
+    listSourceRef.current.visible !== visible ||
+    listSourceRef.current.lifecycleKey !== lifecycleKey ||
+    listSourceRef.current.effectiveScope !== effectiveScope
+  ) {
+    listSourceRef.current = {
+      port, enabled, visible, lifecycleKey, effectiveScope,
+    }
+    listRefreshRequestRef.current += 1
+    listMoreRequestRef.current += 1
+  }
+
   const refresh = useCallback(async () => {
     if (!port || !enabled || !visible) return
-
+    const source = listSourceRef.current
+    const request = ++listRefreshRequestRef.current
+    // A fresh first page invalidates any older cursor continuation.
+    listMoreRequestRef.current += 1
+    const valid = () => (
+      listSourceRef.current === source &&
+      listRefreshRequestRef.current === request
+    )
     const global = effectiveScope === 'global'
     const load = global ? port.loadGlobalPage : port.loadMinePage
     if (!load) return
@@ -187,6 +258,7 @@ function useXDriveBackgroundTasks({
       const page = xDriveNormalizeBackgroundTaskPage(
         await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT),
       )
+      if (!valid()) return
       const update = (
         previous: XDriveBackgroundTaskPageState,
       ): XDriveBackgroundTaskPageState => ({
@@ -202,12 +274,14 @@ function useXDriveBackgroundTasks({
       if (global) setGlobalTasks(update)
       else setMine(update)
     } catch (error) {
-      onError?.(error)
+      if (valid()) onErrorRef.current?.(error)
     } finally {
-      if (global) setGlobalLoading(false)
-      else setMineLoading(false)
+      if (valid()) {
+        if (global) setGlobalLoading(false)
+        else setMineLoading(false)
+      }
     }
-  }, [effectiveScope, enabled, onError, port, visible])
+  }, [effectiveScope, enabled, port, visible])
 
   const loadMore = useCallback(async () => {
     if (!port || !enabled || !visible || !visibleState.nextCursor) return
@@ -218,6 +292,14 @@ function useXDriveBackgroundTasks({
 
     const loadingMore = global ? globalLoadingMore : mineLoadingMore
     if (loadingMore) return
+    const source = listSourceRef.current
+    const request = ++listMoreRequestRef.current
+    const originalRefresh = listRefreshRequestRef.current
+    const valid = () => (
+      listSourceRef.current === source &&
+      listMoreRequestRef.current === request &&
+      listRefreshRequestRef.current === originalRefresh
+    )
 
     if (global) setGlobalLoadingMore(true)
     else setMineLoadingMore(true)
@@ -228,6 +310,7 @@ function useXDriveBackgroundTasks({
           visibleState.nextCursor,
         ),
       )
+      if (!valid()) return
       const update = (
         previous: XDriveBackgroundTaskPageState,
       ): XDriveBackgroundTaskPageState => ({
@@ -242,32 +325,36 @@ function useXDriveBackgroundTasks({
       if (global) setGlobalTasks(update)
       else setMine(update)
     } catch (error) {
-      onError?.(error)
+      if (valid()) onErrorRef.current?.(error)
     } finally {
-      if (global) setGlobalLoadingMore(false)
-      else setMineLoadingMore(false)
+      if (valid()) {
+        if (global) setGlobalLoadingMore(false)
+        else setMineLoadingMore(false)
+      }
     }
   }, [
     effectiveScope,
     enabled,
     globalLoadingMore,
     mineLoadingMore,
-    onError,
     port,
     visible,
     visibleState.nextCursor,
   ])
 
   useEffect(() => {
-    if (!enabled || !port) {
-      setMine(emptyBackgroundTaskPageState())
-      setGlobalTasks(emptyBackgroundTaskPageState())
-      setMineLoading(false)
-      setGlobalLoading(false)
-      setMineLoadingMore(false)
-      setGlobalLoadingMore(false)
-      return
-    }
+    // A new auth identity or Agent capability means a new task collection.
+    setMine(emptyBackgroundTaskPageState())
+    setGlobalTasks(emptyBackgroundTaskPageState())
+    setMineLoading(false)
+    setGlobalLoading(false)
+    setMineLoadingMore(false)
+    setGlobalLoadingMore(false)
+    setListOwner({ port, enabled, lifecycleKey })
+  }, [enabled, lifecycleKey, port])
+
+  useEffect(() => {
+    if (!enabled || !port) return
     if (!visible) return
     void refresh()
     const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
@@ -275,17 +362,17 @@ function useXDriveBackgroundTasks({
   }, [enabled, pollIntervalMs, port, refresh, visible])
 
   return {
-    mine: [...mine.current, ...mine.history],
-    globalTasks: [...globalTasks.current, ...globalTasks.history],
-    mineLoading,
-    globalLoading,
+    mine: [...scopedMine.current, ...scopedMine.history],
+    globalTasks: [...scopedGlobal.current, ...scopedGlobal.history],
+    mineLoading: ownerCurrent ? mineLoading : false,
+    globalLoading: ownerCurrent ? globalLoading : false,
     effectiveScope,
     refresh,
     loadMore,
     hasMore: Boolean(visibleState.nextCursor),
-    loadingMore: effectiveScope === 'global'
-      ? globalLoadingMore
-      : mineLoadingMore,
+    loadingMore: ownerCurrent
+      ? effectiveScope === 'global' ? globalLoadingMore : mineLoadingMore
+      : false,
   }
 }
 
@@ -299,6 +386,7 @@ export function useXDriveTaskCenterController({
   onRetryTransfer,
   conflictResolutionEnabled = true,
   backgroundTaskPort,
+  backgroundTasksLifecycleKey = '',
   backgroundTasksEnabled = false,
   backgroundTasksVisible = false,
   globalTasksEnabled = false,
@@ -314,6 +402,7 @@ export function useXDriveTaskCenterController({
   onRetryTransfer?: (id: string) => void | Promise<void>
   conflictResolutionEnabled?: boolean
   backgroundTaskPort?: XDriveBackgroundTaskPort
+  backgroundTasksLifecycleKey?: string
   backgroundTasksEnabled?: boolean
   backgroundTasksVisible?: boolean
   globalTasksEnabled?: boolean
@@ -338,6 +427,7 @@ export function useXDriveTaskCenterController({
   const backgroundSummary = useXDriveBackgroundTaskActiveSummary({
     port: backgroundTaskPort,
     enabled: backgroundTasksEnabled,
+    lifecycleKey: backgroundTasksLifecycleKey,
   })
   const summaryFileOperationCount =
     backgroundSummary.summary?.file_operation ?? 0
@@ -351,6 +441,7 @@ export function useXDriveTaskCenterController({
   const background = useXDriveBackgroundTasks({
     port: backgroundTaskPort,
     enabled: backgroundTasksEnabled,
+    lifecycleKey: backgroundTasksLifecycleKey,
     visible: backgroundTasksVisible,
     globalEnabled: globalTasksEnabled,
     scope: requestedBackgroundScope ?? backgroundScope,

@@ -739,6 +739,7 @@ function FileManager({
     operations: fileOperations,
     operationActions: fileOperationActions,
     backgroundTaskPort,
+    backgroundTasksLifecycleKey: `${profile?.id ?? ''}:${username}`,
     backgroundTasksEnabled: Boolean(profile && !profile.must_change_password),
     backgroundTasksVisible: appView === 'transfers' || appView === 'global-tasks' || appView === 'overview',
     globalTasksEnabled: profile?.role === 'admin',

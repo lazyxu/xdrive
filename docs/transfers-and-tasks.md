@@ -49,3 +49,35 @@ Desktop 上传在请求体进行中按 250 毫秒节流发布字节样本，并�
 传输浮层中的“清除历史”仅清理已结束的上传/下载。任务页“清空历史”保留原有文件操作历史清理，并只清理本机非网络传输历史；两处均保留活动任务及其完整子任务树。
 
 Desktop 的 `DELETE /v1/transfers?scope=network|local` 和 `transfer-history-scope` capability 明确区分两个范围。不带 scope 的旧客户端仍保持原有 all 行为；新版 UI 只在 Agent 声明支持范围清理时启用对应清除按钮，避免旧 Agent 忽略 scope 后误清其他历史。
+
+## Task Center request ownership and race validation (2026-10-10)
+
+Background Task Center has three independent asynchronous read lanes: owner/admin
+page refresh, cursor history continuation, and active-summary badge counts.
+Previously all three could apply an older response after a newer query had
+already completed. Deterministic first-red on their **actual shared callbacks**
+reproduced `fresh-B -> slow-A` list regression, `1 -> 9` stale badge count,
+and appending an old cursor page into a new collection.
+
+Current candidate uses a current-request generation for summary and first-page
+reads; old errors and loading finalizers are ignored as well as old data.
+Starting a new page refresh also invalidates pending history continuations.
+Owner/transport/capability and collection scope changes invalidate in-flight
+reads; Web supplies its account identity and Desktop supplies Server/user
+identity to the same shared MUI Task Center lifecycle. A newly selected
+account does not show the previous account's loaded background tasks or
+summary on the first render. This does **not** cancel durable Server jobs,
+change their execution status, or poll more frequently.
+
+Acceptance requires the new executable real-callback interleaving regression
+suite plus existing task controller/role/transport tests, Web/Desktop builds,
+Go race, and the exact-head GitHub final CI gate. Native account switching
+and real remote Agent/browser device evidence remain separate.
+
+The real shared refresh callback additionally reproduced three unwanted page
+reads on three otherwise unchanged Desktop renders because an inline
+`onBackgroundTaskError` handler changed identity. Keep its latest error
+handler in a ref so only current requests report errors; replacing the
+handler must not restart the list polling effect. The executable regression
+uses React-style `useCallback` identity comparison on the real callback.
+
