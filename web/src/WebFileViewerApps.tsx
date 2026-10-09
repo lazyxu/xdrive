@@ -52,7 +52,7 @@ import {
   xDriveWriteWebAppBrowseSession,
 } from './webAppRuntime'
 import {
-  xDriveFindWebViewerNeighbor,
+  xDriveCreateWebViewerContextResolver,
   xDriveWebViewerAnyFile,
   xDriveWebViewerMediaFile,
 } from './webViewerContext'
@@ -446,6 +446,7 @@ function useViewerNode({
     [contextID],
   )
   const [node, setNode] = useState<Node | null>(null)
+  const [contextMediaItem, setContextMediaItem] = useState<MediaItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeIndex, setActiveIndex] = useState(context?.activeIndex ?? 0)
@@ -458,33 +459,79 @@ function useViewerNode({
         ? context.totalCount
         : 0,
   )
+  const currentCandidateRef = useRef<XDriveWebViewerCandidate | null>(null)
+  const resolver = useMemo(
+    () => context
+      ? xDriveCreateWebViewerContextResolver(api, gallerySource, context)
+      : null,
+    // A fresh resolver per active item keeps range reuse bounded to one Viewer step:
+    // current + previous + next can share pages, but long-lived sessions do not
+    // retain stale directory/Gallery pages indefinitely.
+    [activeIndex, api, context, gallerySource],
+  )
 
   useEffect(() => {
     let active = true
-    setLoading(true)
     setError('')
-    void api.node(nodeID).then((value) => {
-      if (active) setNode(value)
+
+    const preloaded = currentCandidateRef.current
+    if (
+      preloaded &&
+      preloaded.node.id === nodeID &&
+      preloaded.index === activeIndex
+    ) {
+      setNode(preloaded.node)
+      setContextMediaItem(preloaded.mediaItem ?? null)
+      setTotalCount(preloaded.totalCount)
+      setLoading(false)
+      return () => { active = false }
+    }
+
+    setLoading(true)
+    const fallbackTotalCount =
+      context?.kind === 'selection'
+        ? context.nodeIDs.length
+        : context?.kind === 'gallery'
+          ? context.totalCount
+          : 0
+
+    void (async () => {
+      if (resolver) {
+        const candidate = await resolver.resolveCandidateAt(activeIndex)
+        if (candidate?.node.id === nodeID) return candidate
+      }
+      return {
+        node: await api.node(nodeID),
+        index: activeIndex,
+        totalCount: fallbackTotalCount,
+      } satisfies XDriveWebViewerCandidate
+    })().then((candidate) => {
+      if (!active) return
+      currentCandidateRef.current = candidate
+      setNode(candidate.node)
+      setContextMediaItem(candidate.mediaItem ?? null)
+      if (candidate.totalCount > 0) setTotalCount(candidate.totalCount)
     }).catch((reason) => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason))
     }).finally(() => {
       if (active) setLoading(false)
     })
+
     return () => {
       active = false
     }
-  }, [api, nodeID])
+  }, [activeIndex, api, context, nodeID, resolver])
 
   useEffect(() => {
-    if (!context) {
+    if (!context || !resolver) {
       setPrevious(null)
       setNext(null)
       return
     }
     let active = true
     void Promise.all([
-      xDriveFindWebViewerNeighbor(api, gallerySource, context, activeIndex, -1, predicate),
-      xDriveFindWebViewerNeighbor(api, gallerySource, context, activeIndex, 1, predicate),
+      resolver.findNeighbor(activeIndex, -1, predicate),
+      resolver.findNeighbor(activeIndex, 1, predicate),
     ]).then(([prev, nextValue]) => {
       if (!active) return
       setPrevious(prev)
@@ -507,12 +554,14 @@ function useViewerNode({
     return () => {
       active = false
     }
-  }, [activeIndex, api, context, gallerySource, predicate])
+  }, [activeIndex, context, predicate, resolver])
 
   const navigate = (candidate: XDriveWebViewerCandidate | null) => {
     if (!candidate) return
+    currentCandidateRef.current = candidate
     setActiveIndex(candidate.index)
     setNode(candidate.node)
+    setContextMediaItem(candidate.mediaItem ?? null)
     setTotalCount(candidate.totalCount)
     if (context && contextID) {
       xDriveWriteWebAppBrowseSession(contextID, {
@@ -525,6 +574,8 @@ function useViewerNode({
 
   return {
     node,
+    contextMediaItem,
+    contextKind: context?.kind,
     loading,
     error,
     activeIndex,
@@ -774,9 +825,22 @@ function WebMediaViewerApp({
 
   useEffect(() => {
     let active = true
+    setMediaItemError('')
+
+    if (viewer.contextKind === 'gallery') {
+      if (viewer.loading || viewer.node?.id !== route.params.node) {
+        setMediaItemLoading(true)
+        return () => { active = false }
+      }
+      if (viewer.contextMediaItem?.node.id === route.params.node) {
+        setMediaItem(viewer.contextMediaItem)
+        setMediaItemLoading(false)
+        return () => { active = false }
+      }
+    }
+
     setMediaItem(null)
     setMediaItemLoading(true)
-    setMediaItemError('')
     void api.mediaItem(route.params.node)
       .then((item) => {
         if (active) setMediaItem(item)
@@ -790,7 +854,14 @@ function WebMediaViewerApp({
         if (active) setMediaItemLoading(false)
       })
     return () => { active = false }
-  }, [api, route.params.node])
+  }, [
+    api,
+    route.params.node,
+    viewer.contextKind,
+    viewer.contextMediaItem,
+    viewer.loading,
+    viewer.node?.id,
+  ])
 
   const openInfo = () => {
     setInfoOpen(true)

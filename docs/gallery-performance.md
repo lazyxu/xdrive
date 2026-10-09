@@ -597,3 +597,70 @@ The cold-video WebM fixture also stayed inside all renderer budgets, but that do
 
 Next action: move to **large-file Web/Desktop upload/download throughput and RSS**, beginning with a stable 1 GiB workload before considering 4 GiB.
 
+
+
+## Web Viewer browse-context range reuse (2026-10-09)
+
+Status: **Accepted / measured structural request reduction; no material wall-clock claim.**
+
+Named workload: **web-viewer-context-reuse-v1**.
+
+Scope: Web route-level Preview / Media Viewer browsing only. Text Viewer, PDF Viewer and
+Audio Player remain standalone and do not acquire neighboring range reads.
+
+Stable workload:
+
+- logical collection size: **10,000 items**;
+- Viewer active index: **64**;
+- range page size: **128**;
+- current item, previous item and next item are all on offset **0**;
+- Gallery range rows include the same `MediaItem` metadata the media viewer otherwise
+  requests again through `mediaItem(node)`;
+- Node 22.16.0 controller harness;
+- zero-latency controller sample: **n=1,000**;
+- equal-latency diagnostic sample: **n=30**, each mock transport call delayed by **5 ms**.
+
+Acceptance criteria declared before the production change:
+
+- same-page current / previous / next resolution performs **one** range request, not two
+  independent neighbor range requests;
+- Gallery Viewer reuses the current range row's `MediaItem` and therefore performs no
+  extra current-node or current-media metadata point request when the context row matches;
+- ordinary Preview reuses the current range row's `Node`;
+- resolved range reuse is bounded to one active Viewer step; the resolver keeps at most
+  four 128-item pages and a new active index creates a fresh resolver scope;
+- a rejected range promise is evicted so retry remains possible;
+- direct/no-context and mismatched-context fallback behavior remains available.
+
+Measured BEFORE on master `3a35c385ecc953d31a9ca2b81b75e9be4f569ea2`:
+
+| Metric | BEFORE |
+| --- | ---: |
+| same-page range requests | **2** |
+| current `node` point requests | **1** |
+| current Gallery `mediaItem` point requests | **1** |
+| total Viewer bootstrap data requests | **4** |
+| zero-latency controller median / p95 | **0.004 / 0.007 ms** |
+| 5 ms equal-latency mock median / p95 | **5.159 / 5.422 ms** |
+
+Measured AFTER with the same workload and sample counts:
+
+| Metric | AFTER | Delta |
+| --- | ---: | ---: |
+| same-page range requests | **1** | **-50%** |
+| current `node` point requests | **0** | **-100%** |
+| current Gallery `mediaItem` point requests | **0** | **-100%** |
+| total Viewer bootstrap data requests | **1** | **-75%** |
+| zero-latency controller median / p95 | **0.003 / 0.004 ms** | diagnostic |
+| 5 ms equal-latency mock median / p95 | **5.131 / 5.273 ms** | no material wall-clock change |
+
+The equal-latency result is expected: the old point/range requests were largely concurrent,
+so deleting redundant calls does not automatically shorten a synthetic critical path when
+every endpoint has identical latency. The accepted benefit is the repeatable **4 -> 1**
+request/DB-round-trip reduction for Gallery context and **3 -> 1** for ordinary range-backed
+Preview, plus reuse of metadata already returned by the Gallery range.
+
+Decision: **Accepted.** Keep the bounded per-active-item resolver and range metadata reuse.
+Do not claim a user-visible latency percentage from this microbenchmark. If Viewer opening
+is still slow on a real installation, measure the actual Server endpoints and browser
+navigation trace; only then optimize a measured wall-clock stage.
