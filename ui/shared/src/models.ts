@@ -633,6 +633,44 @@ export interface MediaSelectionSnapshot {
   scope?: 'known_photo_assets'
 }
 
+export type MediaSelectionJobStatus =
+  | 'queued' | 'running' | 'cancel_requested' | 'completed'
+  | 'partial' | 'cancelled'
+
+/** Durable owner-scoped Gallery batch task, independent of the temporary token. */
+export interface MediaSelectionJob {
+  id: string
+  action: 'favorite'
+  favorite: boolean
+  status: MediaSelectionJobStatus
+  retry_of_id?: string
+  total_items: number
+  processed_items: number
+  succeeded_items: number
+  failed_items: number
+  cancelled_items: number
+  started_at?: string
+  cancel_requested_at?: string
+  finished_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MediaSelectionJobFailure {
+  node_id: number
+  revision: number
+  status: 'failed'
+  failure_code: string
+}
+
+export interface MediaSelectionJobFailurePage {
+  items: MediaSelectionJobFailure[]
+  total: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export interface MediaSelectionSnapshotItem {
   node_id: number
   revision: number

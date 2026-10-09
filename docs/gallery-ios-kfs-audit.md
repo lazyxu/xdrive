@@ -505,3 +505,10 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   Agent loopback IPC, Electron Main/Preload and shared Gallery. Agent
   capability and boundary validation are explicit; bulk mutations remain
   disabled. Full CI and real Windows/macOS/Android/iOS evidence pending.
+
+- 2026-10-09 G07 Phase 3b Web candidate: a separate confirmation dialog
+  consumes the selected frozen revision into a durable favorite task.
+  Inline task progress, cancellation, retry and bounded failures preserve
+  owner isolation through the server API. Explicit 100k Original MediaItem[]
+  actions remain disabled. Desktop Task Center not yet wired, and no
+  real-device or 10k/100k execution timing is certified.

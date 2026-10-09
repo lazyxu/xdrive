@@ -26,6 +26,8 @@ import type {
   MediaGalleryIndexStatus,
   MediaSelectionSnapshot,
   MediaSelectionSnapshotPage,
+  MediaSelectionJob,
+  MediaSelectionJobFailurePage,
   NodeLocation,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -858,6 +860,46 @@ export class XDriveApi {
     return this.request<void>(
       `/api/v1/media/selection-snapshots/${encodeURIComponent(token)}`,
       { method: 'DELETE' },
+    )
+  }
+
+  submitMediaSelectionFavoriteJob(token: string, version: number, favorite: boolean) {
+    return this.request<MediaSelectionJob>(
+      `/api/v1/media/selection-snapshots/${encodeURIComponent(token)}/jobs`,
+      { method: 'POST', body: JSON.stringify({
+        version, action: 'favorite', favorite, confirm: true,
+      }) },
+    )
+  }
+
+  getMediaSelectionJob(jobID: string) {
+    return this.request<MediaSelectionJob>(
+      `/api/v1/media/selection-jobs/${encodeURIComponent(jobID)}`,
+    )
+  }
+
+  listMediaSelectionJobs() {
+    return this.request<MediaSelectionJob[]>('/api/v1/media/selection-jobs')
+  }
+
+  cancelMediaSelectionJob(jobID: string) {
+    return this.request<void>(
+      `/api/v1/media/selection-jobs/${encodeURIComponent(jobID)}/cancel`,
+      { method: 'POST' },
+    )
+  }
+
+  retryMediaSelectionJob(jobID: string) {
+    return this.request<MediaSelectionJob>(
+      `/api/v1/media/selection-jobs/${encodeURIComponent(jobID)}/retry`,
+      { method: 'POST' },
+    )
+  }
+
+  mediaSelectionJobFailures(jobID: string, offset = 0, limit = 100) {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+    return this.request<MediaSelectionJobFailurePage>(
+      `/api/v1/media/selection-jobs/${encodeURIComponent(jobID)}/failures?${params}`,
     )
   }
 
