@@ -548,3 +548,43 @@ test('Mobile Files status shows server sort direction and local view without cha
   })
 })
 
+
+test('Browse home folds are account-local and editing reorders server-owned pinned/smart entries', async () => {
+  const reorders = []
+  await withView(async h => {
+    const quick = find(h.view, 'data-mobile-files-home-section', 'quick')
+    assert.equal(quick.props['aria-expanded'], true)
+    await act(async () => { quick.props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-home-section', 'quick').props['aria-expanded'], false)
+    assert.match(h.window.values.get('xdrive.mobile.files.sections.v1:ios-files-userA'), /"quick":false/)
+    await act(async () => { find(h.view, 'data-mobile-files-home-section', 'quick').props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-home-section', 'quick').props['aria-expanded'], true)
+
+    await act(async () => {
+      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
+    })
+    const edit = h.view.root.findAll(node => node.props?.children === '整理浏览首页' && node.props?.onClick)
+    assert.equal(edit.length, 1)
+    await act(async () => { edit[0].props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-home-edit-item'), 4)
+    assert.equal(h.view.root.findAll(node => node.props?.['aria-label'] === '文件操作菜单').length, 0)
+    await act(async () => { find(h.view, 'aria-label', '下移 已固定 A').props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '下移 智能 A').props.onClick() })
+    assert.deepEqual(reorders, [
+      { kind: 'quick', ids: [3, 2] },
+      { kind: 'saved', ids: [18, 17] },
+    ])
+    const done = h.view.root.findAll(node => node.props?.children === '完成' && node.props?.onClick)
+    assert.equal(done.length, 1)
+    await act(async () => { done[0].props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-home-edit-item'), 0)
+    assert.equal(h.view.root.findAll(node => node.props?.['aria-label'] === '文件操作菜单').length, 1)
+  }, { props: {
+    quickAccess: [{ id: 2, name: '已固定 A', kind: 'dir' }, { id: 3, name: '已固定 B', kind: 'dir' }],
+    savedSearches: [{ id: 17, name: '智能 A' }, { id: 18, name: '智能 B' }],
+    tags: [{ id: 17, name: '红色标签' }], // Shares an ID with a saved search; UI keys must be type-scoped.
+    onReorderQuickAccess: async ids => { reorders.push({ kind: 'quick', ids }); return true },
+    onReorderSavedSearches: async ids => { reorders.push({ kind: 'saved', ids }) },
+  } })
+})
+

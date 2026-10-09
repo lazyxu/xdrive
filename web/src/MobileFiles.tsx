@@ -7,6 +7,10 @@ import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded'
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -76,6 +80,8 @@ type Props = {
   onOpenRecent: (id: number) => Promise<boolean>
   onOpenFavorite: (id: number) => Promise<boolean>
   onOpenQuickAccess: (id: number) => Promise<boolean>
+  onReorderQuickAccess?: (ids: number[]) => Promise<boolean>
+  onReorderSavedSearches?: (ids: number[]) => Promise<void>
   onClearRecent: () => void | boolean | Promise<void | boolean>
   onUnfavorite: (id: number) => void | boolean | Promise<void | boolean>
   onCollectionAction?: (entry: SectionEntry, action: MobileCollectionAction) => Promise<void>
@@ -243,6 +249,20 @@ export default function MobileFiles(props: Props) {
   // Recent/Favorites rail tab that happened to be visible before exit.
   const [section, setSection] = useState<MobileFilesSection>('browse')
   const [browseHome, setBrowseHome] = useState(initial.folderID === null)
+  const [editBrowseHome, setEditBrowseHome] = useState(false)
+  const browseSectionsKey = 'xdrive.mobile.files.sections.v1:' + props.lifecycleKey
+  const [browseSections, setBrowseSections] = useState<{ quick: boolean; organization: boolean }>(() => {
+    const defaults = { quick: true, organization: true }
+    if (typeof window === 'undefined') return defaults
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(browseSectionsKey) || 'null') as
+        { quick?: unknown; organization?: unknown } | null
+      return {
+        quick: typeof saved?.quick === 'boolean' ? saved.quick : true,
+        organization: typeof saved?.organization === 'boolean' ? saved.organization : true,
+      }
+    } catch { return defaults }
+  })
   const [viewPreference, setViewPreference] = useState<'details' | 'grid'>(initial.view)
   const [ready, setReady] = useState(initial.folderID === null || Boolean(props.requestedDirectoryID))
   const [scrollTop, setScrollTop] = useState(initial.scrollTop)
@@ -324,6 +344,26 @@ export default function MobileFiles(props: Props) {
   const groupedSegments = useMemo(() => groupedLayout
     ? xDriveFileExplorerVisibleGroupSegments(groupedLayout, scrollTop, Math.max(1, viewport.height), rowHeight * 4)
     : [], [groupedLayout, scrollTop, viewport.height, rowHeight])
+
+  const toggleBrowseSection = (sectionName: 'quick' | 'organization') => {
+    setBrowseSections(current => {
+      const next = { ...current, [sectionName]: !current[sectionName] }
+      try { window.localStorage.setItem(browseSectionsKey, JSON.stringify(next)) }
+      catch { /* Private browsing still allows in-memory folding. */ }
+      return next
+    })
+  }
+  const reorderHomeEntry = (kind: 'quick' | 'saved', from: number, offset: -1 | 1) => {
+    const entries = kind === 'quick' ? props.quickAccess : props.savedSearches
+    const destination = from + offset
+    if (destination < 0 || destination >= entries.length) return
+    const ids = entries.map(entry => entry.id)
+    ;[ids[from], ids[destination]] = [ids[destination], ids[from]]
+    const work = kind === 'quick'
+      ? props.onReorderQuickAccess?.(ids)
+      : props.onReorderSavedSearches?.(ids)
+    if (work) void work.catch(props.onOpenError)
+  }
 
   const persist = useCallback((next: Partial<{
     section: MobileFilesSection; folderID: number | null; scrollTop: number; view: 'details' | 'grid'
@@ -487,6 +527,7 @@ export default function MobileFiles(props: Props) {
   const beginBrowse = (id: number | null = null) => {
     flushBrowseScroll()
     navigationIntentRef.current += 1
+    setEditBrowseHome(false)
     setSection('browse')
     setBrowseHome(id === null)
     searchReturnHomeRef.current = id === null
@@ -782,7 +823,7 @@ export default function MobileFiles(props: Props) {
     owner?: 'recent' | 'favorites',
     locationKind?: 'cloud' | 'trash' | 'smart' | 'tag',
   ) => (
-    <Box key={String(entry.id)} role="button" tabIndex={0}
+    <Box key={`${locationKind ?? owner ?? 'home'}:${String(entry.id)}`} role="button" tabIndex={0}
       onClick={() => {
         if (cancelClickRef.current) { cancelClickRef.current = false; return }
         action()
@@ -852,6 +893,33 @@ export default function MobileFiles(props: Props) {
       </Box>
     </Box>
   )
+  const editableHomeRow = (
+    entry: SectionEntry,
+    action: () => void,
+    kind: 'quick' | 'saved',
+    index: number,
+  ) => {
+    const row = mobileRow(entry, editBrowseHome ? () => {} : action, true, undefined,
+      kind === 'saved' ? 'smart' : undefined)
+    if (!editBrowseHome) return row
+    const disabled = kind === 'quick'
+      ? !props.onReorderQuickAccess : !props.onReorderSavedSearches
+    const count = kind === 'quick' ? props.quickAccess.length : props.savedSearches.length
+    return (
+      <Stack key={`${kind}:${entry.id}`} data-mobile-files-home-edit-item={kind} direction="row" alignItems="center">
+        <Box sx={{ minWidth: 0, flex: 1 }}>{row}</Box>
+        <IconButton aria-label={`上移 ${entry.name}`} disabled={disabled || index === 0}
+          onClick={() => reorderHomeEntry(kind, index, -1)} sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}>
+          <KeyboardArrowUpRoundedIcon />
+        </IconButton>
+        <IconButton aria-label={`下移 ${entry.name}`} disabled={disabled || index === count - 1}
+          onClick={() => reorderHomeEntry(kind, index, 1)} sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}>
+          <KeyboardArrowDownRoundedIcon />
+        </IconButton>
+      </Stack>
+    )
+  }
+
   const renderLogicalCell = (index: number) => {
     const item = props.virtualCollection?.itemAt(index) ?? props.items[index]
     return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`) : (
@@ -880,7 +948,7 @@ export default function MobileFiles(props: Props) {
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, px: 1 }}>返回</Button>
           ) : null}
           <Typography variant="h5" fontWeight={750} noWrap sx={{ flex: 1, minWidth: 0 }}>
-            {selectionActive ? `已选 ${selection.length} 项` : heading}
+            {selectionActive ? `已选 ${selection.length} 项` : editBrowseHome && section === 'browse' && !showDirectory ? '整理浏览' : heading}
           </Typography>
           {selectionActive ? (
             <>
@@ -893,6 +961,9 @@ export default function MobileFiles(props: Props) {
                 setSelectionFeedback(''); setSelectionMoreAnchor(null)
               }} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
             </>
+          ) : editBrowseHome && section === 'browse' && !showDirectory ? (
+            <Button size="small" onClick={() => setEditBrowseHome(false)}
+              sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
           ) : (
             <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
               sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}><MoreHorizRoundedIcon/></IconButton>
@@ -963,24 +1034,40 @@ export default function MobileFiles(props: Props) {
               }, true, undefined, 'trash')}
               {props.quickAccess.length > 0 ? (
                 <>
-                  <Typography variant="overline" sx={{ px: 2, pt: 2, color: 'text.secondary' }}>个人收藏文件夹</Typography>
-                  {props.quickAccess.map(entry => mobileRow(entry, () => {
+                  <Button data-mobile-files-home-section="quick" aria-expanded={browseSections.quick}
+                    onClick={() => toggleBrowseSection('quick')}
+                    endIcon={browseSections.quick ? <ExpandLessRoundedIcon/> : <ExpandMoreRoundedIcon/>}
+                    sx={{ width: '100%', minHeight: MIN_TOUCH, justifyContent: 'space-between', px: 2,
+                      color: 'text.secondary', textTransform: 'none' }}>
+                    个人收藏文件夹 · {props.quickAccess.length}
+                  </Button>
+                  {browseSections.quick ? props.quickAccess.map((entry, index) => editableHomeRow(entry, () => {
                     const intent = ++navigationIntentRef.current
                     void props.onOpenQuickAccess(entry.id).then(accepted => {
                       if (accepted && intent === navigationIntentRef.current) beginBrowse(entry.id)
                     }).catch(props.onOpenError)
-                  }, true))}
+                  }, 'quick', index)) : null}
                 </>
               ) : null}
               {props.savedSearches.length > 0 || props.tags.length > 0 ? (
                 <>
-                  <Typography variant="overline" sx={{ px: 2, pt: 2, color: 'text.secondary' }}>整理</Typography>
-                  {props.savedSearches.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '智能文件夹' }, () => {
-                    launchGlobalSearch(() => props.onOpenSavedSearch(entry.id))
-                  }, true, undefined, 'smart'))}
-                  {props.tags.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '标签' }, () => {
-                    launchGlobalSearch(() => props.onOpenTag(entry.id))
-                  }, false, undefined, 'tag'))}
+                  <Button data-mobile-files-home-section="organization" aria-expanded={browseSections.organization}
+                    onClick={() => toggleBrowseSection('organization')}
+                    endIcon={browseSections.organization ? <ExpandLessRoundedIcon/> : <ExpandMoreRoundedIcon/>}
+                    sx={{ width: '100%', minHeight: MIN_TOUCH, justifyContent: 'space-between', px: 2,
+                      color: 'text.secondary', textTransform: 'none' }}>
+                    整理 · {props.savedSearches.length + props.tags.length}
+                  </Button>
+                  {browseSections.organization ? (
+                    <>
+                      {props.savedSearches.map((entry, index) => editableHomeRow({
+                        ...entry, kind: 'dir', subtitle: '智能文件夹',
+                      }, () => launchGlobalSearch(() => props.onOpenSavedSearch(entry.id)), 'saved', index))}
+                      {props.tags.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '标签' }, () => {
+                        if (!editBrowseHome) launchGlobalSearch(() => props.onOpenTag(entry.id))
+                      }, false, undefined, 'tag'))}
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </Box>
@@ -1131,6 +1218,7 @@ export default function MobileFiles(props: Props) {
         </Menu>
         <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 520px)' } } }}>
+          {section === 'browse' && !showDirectory ? overflowAction('整理浏览首页', () => setEditBrowseHome(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('选择', () => setSelectionMode(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('新建文件夹', props.onCreateFolder) : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件', props.onUpload) : null}
