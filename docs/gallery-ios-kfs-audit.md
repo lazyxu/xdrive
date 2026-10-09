@@ -459,3 +459,11 @@ Reused merged PR #1122's shared VisualViewport observer and in-app filter Drawer
 The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37 all pass after preserving merged M12bd96. FullDesktop1594pass/0fail/1existing skip, typecheck/lint/build pass. Exact scope and hashes are in [M11 evidence](validation/mobile-panels-short-viewport-2026-10-09.json). Updated PR1125 CI/merge are pending; physical keyboards, installed modes and screen readers are not-run. This does not certify later Gallery follow-up items.
 
 - 2026-10-09: G06 phase 2c candidate (unmerged): add explicit "仅当前目录"/"包含子目录" Gallery scope, using Server-side owner-scoped recursive Node ancestry, not client-side flattening; query composition carries it through actual Gallery ranges/facets/sort/filter and Web/Desktop Agent. Include-descendants without a folder is rejected; old Agent refusal is explicit. PostgreSQL owner/isolation, Go URL serialization and shared React source regressions included. Physical iOS/Android, Desktop, 100k recursive-folder benchmark and full CI not yet verified.
+
+- 2026-10-09: G07 phase-1 review candidate (unmerged): the real shared
+  Selection Toolbar gains **查看已选项**, listing the exact live selection
+  Map with bounded 100-row pages and search/removal, preserving all current
+  batch action paths and Viewer context. No thumbnail/media re-fetch or
+  silent all-query expansion. Query-wide frozen snapshots/exclusions, date
+  selection beyond loaded pages, partial batch failures, and 100k physical
+  acceptance are **not yet implemented**; do not mark G07 finished.
