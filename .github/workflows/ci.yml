@@ -1428,6 +1428,64 @@ jobs:
           retention-days: 7
 
 
+
+  gallery-desktop-real-first-paint-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-desktop-real-first-paint-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-desktop-agent-bin/xdrive-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build actual Desktop Main, preload, Renderer, Go Agent and Gallery fixture
+        run: |
+          set -euo pipefail
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          mkdir -p desktop/gallery-desktop-agent-bin
+          go build -o desktop/gallery-desktop-agent-bin/xdrive-agent ./cmd/xdrive-agent
+          node --check desktop/scripts/gallery-desktop-real-cold-electron-main.cjs
+          node --check desktop/scripts/gallery-desktop-real-cold-runner.cjs
+      - name: Measure native Desktop real Gallery 100k route to decoded paint
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-cold-runner.cjs
+          cat desktop/gallery-desktop-real-cold-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-desktop-real-first-paint-100k
+          path: desktop/gallery-desktop-real-cold-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
   gallery-renderer-first-paint-performance:
     if: github.event_name == 'pull_request' && (github.head_ref == 'perf/gallery-media-first-paint-100k' || github.head_ref == 'perf/gallery-renderer-first-paint-100k')
     runs-on: ubuntu-latest

@@ -4,6 +4,84 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## P0 Desktop 100k production Electron cold Gallery activation (2026-10-09)
+
+Status: **Measured native Desktop baseline / no production optimization**.
+Continue merged #1165 real Agent IPC baseline and #1156 Web cold first paint.
+Three *independent* fresh native PostgreSQL 17/Gin/CAS fixtures, each with
+exactly **100,000 logical PhotoAssets / 115,000 physical media nodes /
+15,000 genuine Live Photos**. Start a production Go Agent authenticated to
+that fixture in an isolated XDG session, then load **production Electron
+Main, preload and Desktop Renderer**, including the real shared Gallery
+and its actual Agent adapter. Activate Gallery through its existing
+sidebar navigation; no mock Main handlers or synthetic transport delay.
+
+Measure from the actual sidebar click to first visible tile, first
+\`HTMLImageElement.decode()\`, first image after two animation frames,
+and first **12 distinct decoded visible image URLs** after two frames.
+Capture Long Task start/duration/attribution (a task >100ms is a red
+diagnostic, not a speculative optimization), mounted virtual tiles
+(<1000 integrity guard), JavaScript heap snapshot, renderer working set,
+Go Agent start/end RSS snapshots, and CAS object-read/derivative counters
+both **before Gallery activation and after**. Fixture seeding, Go build,
+initial Electron App boot and earlier Overview prewarm are excluded from
+the Gallery-activation timer, explicitly not a whole-application cold
+launch. Two-rAF is a presentation proxy, **not** actual GPU presentation.
+
+Run three fresh processes/schema samples, not repeated warm navigations
+in one session. Test must fail if the 100k/115k dataset or mixed photo/
+video/Live sample is missing, production renderer fails, 12 distinct
+image decodes never finish, or the virtual grid mounts ≥1000 tiles.
+This first CI run is a **baseline** even if provisional 2-second paint
+target is missed. Do not measure a timing gain from the separately
+recorded Web baseline or the independent Agent-only cohort. Same-fixture
+BEFORE/AFTER with n≥3 and CPU/RSS/I/O/request correctness non-regression
+are mandatory before accepting a production optimization.
+
+Command after building Web fixture dist, real Desktop bundles and Agent:
+\`XD_TEST_DATABASE_URL=postgres://... XD_GALLERY_AGENT_BINARY=/path/to/xdrive-agent xvfb-run -a node desktop/scripts/gallery-desktop-real-cold-runner.cjs\`.
+Branch-scoped GitHub/GitLab CI job
+\`gallery-desktop-real-first-paint-100k-performance\`. Raw three-sample
+record, environment, source SHA and any failures must be amended into
+\`docs/performance-evidence/gallery-desktop-real-first-paint-100k/\`
+and this canonical document **within the same single work commit**
+before its final full PR CI. No new hot-path changes in this PR.
+
+Scope limits: Linux Xvfb/Electron only, no physical Windows/macOS,
+external WAN, physical 4K HEVC video decode, true app process cold boot,
+all-viewport decode, or peak memory. Durable uploads/downloads/sync/
+deletes must not be cancelled by Gallery view/window teardown.
+
+
+### Source-exact actual Desktop n=3 CI result (2026-10-09)
+
+Status: **Measured baseline / accepted without production optimization**. Valid [GitHub CI 37939861500](https://github.com/lazyxu/xdrive/actions/runs/37939861500), [100k production Desktop job 113851224465](https://github.com/lazyxu/xdrive/actions/runs/37939861500/job/113851224465), executed one-commit source head `6b40e99822dc52fbee5c99fef6553a64e043e3e9`. Prior first-red runs #37936826627/#37938008602/#37938968995 were **invalid harness startup** due to Electron app-root/tray icon path, not performance regressions. Runner entry was restored to the real Desktop app root; this exact run completed **3/3 true production Desktop samples**.
+
+| Measurement | Samples 1 / 2 / 3 | p50 |
+| --- | --- | ---: |
+| Click → first visible tile | 1547.100 / 1464.700 / 1575.800 | **1547.100 ms** |
+| Click → first image DOM | 1738.400 / 1697.200 / 1814.900 | **1738.400 ms** |
+| Click → first JPEG decode | 1763.200 / 1736.400 / 1850.700 | **1763.200 ms** |
+| Click → first image decoded + two-rAF paint proxy | 1793.600 / 1748.000 / 1869.400 | **1793.600 ms** |
+| Click → first 12 decoded + two-rAF | 1932.200 / 1896.800 / 2053.200 | **1932.200 ms** |
+| Longest activation Long Task | 50.000 / 83.000 / 55.000 | **55.000 ms** |
+| Mounted tiles | 42.000 / 42.000 / 35.000 | **42.000 items** |
+| Decoded images | 14.000 / 14.000 / 16.000 | **14.000 images** |
+| JS heap post-result snapshot | 19.550 / 22.030 / 18.406 | **19.550 MiB** |
+| Renderer working set post-result snapshot | 198.453 / 197.730 / 199.563 | **198.453 MiB** |
+| Agent VmRSS start/end delta | 5.453 / 5.047 / 4.367 | **5.047 MiB** |
+
+Every fresh PostgreSQL 17/Gin/CAS sample contains exactly **100,000 logical PhotoAssets, 115,000 physical media nodes, 15,000 genuine Live Photo pairs**. Initial CAS counters at Gallery activation were zero (no hidden thumbnail prewarming). Each sample decoded **14 / 14 / 16** images with **0 errors** and mounted **42 / 42 / 35** virtual Gallery tiles — never all 100k DOM nodes. Thumbnail generation and derivative reads were real, and the underlying actual Main/preload/Agent route was used. Counts from actual CAS:
+- CAS OriginalOpenSuccess: **21 / 20 / 20** per sample.
+- CAS DerivativeOpenSuccess: **32 / 24 / 24** per sample.
+- CAS DerivativePutSuccess: **16 / 13 / 12** per sample.
+
+Fixture seeds **40172.197 / 39016.399 / 38648.229 ms** were excluded. Post-result JS heap, Renderer WS, and Agent start/end VmRSS are snapshots, **not peaks**; CPU profile and step-by-step Main-IPC timings were not captured. The two animation frames proxy visual presentation but are not measured actual hardware GPU swaps.
+
+**Acceptance decision:** all 3 first decoded-image/two-rAF paint proxies were below the provisional **2,000 ms** threshold (1,793.6 / 1,748.0 / 1,869.4 ms); longest Long Task across all three samples was **83 ms**, below the **100 ms** diagnostic budget. First-12 proxy was **1,932.2 / 1,896.8 / 2,053.2 ms**; one sample exceeded 2s for 12 images, but the 2s predeclared budget applies to the **first image**, not 12 images. There is no demonstrated baseline breach sufficient to change production code; retain current Renderer/Agent/CAS implementation unchanged.
+
+**Raw unrounded n=3 evidence:** [ci-run-37939861500.json](performance-evidence/gallery-desktop-real-first-paint-100k/ci-run-37939861500.json). The historical 100k Web first paint p50 ~1,524.9 ms is a separate cohort and must **not** be subtracted as an IPC cost or described as a speedup/slowdown between platforms without a true paired same-host workload. Next P0: actual browser duplicate-fold ON/OFF and Web Long Task stack attribution; later Desktop literal cold process boot and physical device.
+
 ## Native 100k Gallery: production Agent IPC to Gin/PostgreSQL/CAS baseline (2026-10-09)
 
 Status: **Measured baseline / no production optimization (source-exact GitHub Actions n=3)**.
