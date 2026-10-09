@@ -64,6 +64,7 @@ import type {
   XDriveFileExplorerMenuItem,
   XDriveFileExplorerNavigationState,
   XDriveFileExplorerSort,
+  XDriveMediaLoadStage,
   XDriveFileExplorerWorkspaceVirtualDirectory,
   XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
@@ -960,13 +961,14 @@ export default function DesktopFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
     signal?: AbortSignal,
+    onProgress?: XDriveByteProgressHandler,
   ) => {
     if (!previewStreamSupported || item.kind !== 'file') return null
     if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
       try {
         const result = await xDriveDesktopViewportRequest(
           signal,
-          (requestID) => window.xdriveDesktop.agent.getMediaAnalysisPreview(Number(item.id), requestID),
+          (requestID) => window.xdriveDesktop.agent.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -986,7 +988,7 @@ export default function DesktopFileExplorer({
     return result.ok ? result.data : null
   }, [previewStreamSupported])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
     if (item.kind !== 'file' || signal?.aborted) return null
     const lifecycleGeneration = actionGenerationRef.current
     const isCurrentLifecycle = () => (
@@ -995,7 +997,7 @@ export default function DesktopFileExplorer({
 
     const result = await xDriveDesktopViewportRequest(
       signal,
-      (requestID) => window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id), requestID),
+      (requestID) => window.xdriveDesktop.agent.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
     )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
@@ -1004,9 +1006,11 @@ export default function DesktopFileExplorer({
       return URL.createObjectURL(blob)
     }
     if (!previewStreamSupported || xDriveFileKind(item.name, item.kind) !== 'video') return null
+    onStage?.('video_read')
 
     const preview = await window.xdriveDesktop.agent.cloudFilePreviewURL(Number(item.id))
     if (!isCurrentLifecycle() || !preview.ok) return null
+    onStage?.('poster_capture')
     const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
     if (!poster || !isCurrentLifecycle()) return null
     const revision = Number(item.revision)

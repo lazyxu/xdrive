@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
+import type { SyntheticEvent } from 'react'
 import { Box } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform } from '../file-preview'
 
@@ -153,12 +154,14 @@ export function XDriveTransformedVideoPreview({
   transform,
   onReady,
   onWaiting,
+  onBufferChange,
   onError,
 }: {
   src: string
   transform: XDriveFilePreviewMediaTransform
   onReady?: () => void
   onWaiting?: () => void
+  onBufferChange?: (event: SyntheticEvent<HTMLVideoElement>) => void
   onError?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -195,13 +198,15 @@ export function XDriveTransformedVideoPreview({
         controls
         playsInline
         preload="metadata"
-        onLoadedMetadata={() => {
+        onLoadedMetadata={(event) => {
           if (trimStart > 0 && videoRef.current) videoRef.current.currentTime = trimStart
+          onBufferChange?.(event)
         }}
         onLoadedData={onReady}
         onCanPlay={onReady}
         onPlaying={onReady}
         onWaiting={onWaiting}
+        onProgress={onBufferChange}
         onPlay={() => {
           const video = videoRef.current
           if (!video) return
@@ -213,7 +218,8 @@ export function XDriveTransformedVideoPreview({
           }
         }}
         onSeeking={clampToWindow}
-        onTimeUpdate={() => {
+        onTimeUpdate={(event) => {
+          onBufferChange?.(event)
           const video = videoRef.current
           if (!video || trimEnd <= trimStart) return
           if (video.currentTime >= trimEnd) {

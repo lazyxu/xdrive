@@ -5,10 +5,13 @@ import {
   Movie as MovieIcon,
 } from '@mui/icons-material'
 import { Box, Skeleton } from '@mui/material'
+import type { XDriveByteProgressHandler } from '../file-preview'
+import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import type { XDriveMediaLoadStage } from './MediaLoadProgress'
 import type { MediaMetadata } from '../models'
 import { xDriveCaptureVideoPosterBlob, xDriveResolveMediaVideoPoster } from './MediaGalleryVideoPoster'
 
-type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
+type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<string | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',
@@ -37,16 +40,20 @@ export function XDriveMediaAsyncThumbnail({
 }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
+  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
 
   useEffect(() => {
     let active = true
     let resolved = ''
     setSrc('')
     setFailed(false)
+    setProgress({ loadedBytes: 0 })
     if (!nodeID) return () => undefined
     const controller = new AbortController()
 
-    void loadThumbnail(nodeID, controller.signal, revision)
+    void loadThumbnail(nodeID, controller.signal, revision, (loadedBytes, totalBytes) => {
+      if (active && !controller.signal.aborted) setProgress({ loadedBytes, totalBytes })
+    })
       .then((value) => {
         if (!value) {
           if (active) setFailed(true)
@@ -70,13 +77,10 @@ export function XDriveMediaAsyncThumbnail({
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
     return (
-      <Skeleton
-        variant="rectangular"
-        animation={false}
-        width="100%"
-        height="100%"
-        sx={{ borderRadius: 0 }}
-      />
+      <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+        <Skeleton variant="rectangular" animation={false} width="100%" height="100%" sx={{ borderRadius: 0 }} />
+        <XDriveMediaLoadingProgress compact stage="transfer" {...progress} />
+      </Box>
     )
   }
   return (
@@ -170,12 +174,14 @@ async function captureVideoPoster(
   sourceWidth = 0,
   sourceHeight = 0,
   signal?: AbortSignal,
+  onCapturing?: () => void,
 ): Promise<Blob | null> {
   if (signal?.aborted) return null
   const source = await loadPreviewURL(nodeID, 'video', signal)
   if (!source) return null
   try {
     if (signal?.aborted) return null
+    onCapturing?.()
     return await xDriveCaptureVideoPosterBlob(
       source,
       rotationDegrees,
@@ -215,6 +221,8 @@ export function XDriveMediaAsyncVideoPoster({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState('')
+  const [posterStage, setPosterStage] = useState<XDriveMediaLoadStage>('poster_lookup')
+  const [posterProgress, setPosterProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
 
   useEffect(() => {
     setVisible(false)
@@ -238,6 +246,8 @@ export function XDriveMediaAsyncVideoPoster({
     let active = true
     let resolved = ''
     setSrc('')
+    setPosterStage('poster_lookup')
+    setPosterProgress({ loadedBytes: 0 })
     if (!visible) return () => { active = false }
 
     const scheduled = scheduleMediaPoster((signal) => xDriveResolveMediaVideoPoster({
@@ -246,13 +256,13 @@ export function XDriveMediaAsyncVideoPoster({
       loadCached: loadThumbnail,
       save: saveVideoPoster,
       signal,
-      capture: (signal) => captureVideoPoster(
-        nodeID,
-        loadPreviewURL,
-        rotationDegrees,
-        sourceWidth,
-        sourceHeight,
-        signal,
+      onStage: (stage) => { if (active) setPosterStage(stage) },
+      onProgress: (loadedBytes, totalBytes) => {
+        if (active) setPosterProgress({ loadedBytes, totalBytes })
+      },
+      capture: (signal, onCapturing) => captureVideoPoster(
+        nodeID, loadPreviewURL, rotationDegrees, sourceWidth, sourceHeight,
+        signal, onCapturing,
       ),
     }))
     void scheduled.promise
@@ -291,7 +301,10 @@ export function XDriveMediaAsyncVideoPoster({
           sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
         />
       ) : (
-        fallback
+        <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+          {fallback}
+          {visible ? <XDriveMediaLoadingProgress compact stage={posterStage} {...posterProgress} /> : null}
+        </Box>
       )}
     </Box>
   )

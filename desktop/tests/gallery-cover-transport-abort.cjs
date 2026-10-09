@@ -30,6 +30,9 @@ new Function('exports', 'module', 'require', compiled)(
     if (name === '@mui/icons-material') {
       return { Image: passthrough('span'), Movie: passthrough('span') }
     }
+    if (name === './MediaLoadProgress') {
+      return { XDriveMediaLoadingProgress: passthrough('div') }
+    }
     if (name === './MediaGalleryVideoPoster') {
       return { xDriveCaptureVideoPosterBlob: async () => null,
         xDriveResolveMediaVideoPoster: async () => null }

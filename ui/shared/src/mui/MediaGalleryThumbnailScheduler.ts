@@ -1,3 +1,5 @@
+import type { XDriveByteProgressHandler } from '../file-preview'
+
 export const XDRIVE_MEDIA_THUMBNAIL_CONCURRENCY = 6
 export const XDRIVE_MEDIA_THUMBNAIL_CACHE_SIZE = 512
 
@@ -7,7 +9,13 @@ export type XDriveMediaThumbnailSourceLoader = (
   nodeID: number,
   signal?: AbortSignal,
   revision?: number,
+  onProgress?: XDriveByteProgressHandler,
 ) => Promise<string | null>
+
+type ThumbnailProgressSubscriber = {
+  notify: XDriveByteProgressHandler
+  remove: () => void
+}
 
 type ThumbnailTask = {
   nodeID: number
@@ -20,6 +28,7 @@ type ThumbnailTask = {
   reject: (error: unknown) => void
   cancelled: boolean
   controller: AbortController
+  progressListeners: Set<ThumbnailProgressSubscriber>
 }
 
 function revokeThumbnailURL(url: string) {
@@ -64,8 +73,10 @@ export class XDriveMediaThumbnailScheduler {
     nodeID: number,
     priority: XDriveMediaThumbnailPriority = 1,
     revision = 0,
+    onProgress?: XDriveByteProgressHandler,
+    consumerSignal?: AbortSignal,
   ): Promise<string | null> => {
-    if (this.disposed || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+    if (this.disposed || consumerSignal?.aborted || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
       return Promise.resolve(null)
     }
     const currentRevision = Number.isSafeInteger(revision) && revision > 0 ? revision : 0
@@ -93,10 +104,14 @@ export class XDriveMediaThumbnailScheduler {
     }
 
     const active = this.inFlight.get(key)
-    if (active) return active.promise
+    if (active) {
+      this.trackProgress(active, onProgress, consumerSignal)
+      return active.promise
+    }
 
     const queued = this.queued.get(key)
     if (queued) {
+      this.trackProgress(queued, onProgress, consumerSignal)
       if (priority < queued.priority) {
         queued.priority = priority
         this.sortQueue()
@@ -121,7 +136,9 @@ export class XDriveMediaThumbnailScheduler {
       reject,
       cancelled: false,
       controller: new AbortController(),
+      progressListeners: new Set(),
     }
+    this.trackProgress(task, onProgress, consumerSignal)
     this.queued.set(key, task)
     this.queue.push(task)
     this.sortQueue()
@@ -153,9 +170,33 @@ export class XDriveMediaThumbnailScheduler {
     this.cache.clear()
   }
 
+  private trackProgress(
+    task: ThumbnailTask,
+    callback?: XDriveByteProgressHandler,
+    consumerSignal?: AbortSignal,
+  ) {
+    if (!callback || consumerSignal?.aborted) return
+    const subscription: ThumbnailProgressSubscriber = {
+      notify: callback,
+      remove: () => undefined,
+    }
+    const remove = () => {
+      task.progressListeners.delete(subscription)
+      consumerSignal?.removeEventListener('abort', remove)
+    }
+    subscription.remove = remove
+    task.progressListeners.add(subscription)
+    consumerSignal?.addEventListener('abort', remove, { once: true })
+  }
+
+  private clearProgress(task: ThumbnailTask) {
+    for (const subscription of [...task.progressListeners]) subscription.remove()
+  }
+
   private cancelTask(task: ThumbnailTask) {
     if (task.cancelled) return
     task.cancelled = true
+    this.clearProgress(task)
     task.controller.abort()
     if (this.queued.get(task.key) === task) this.queued.delete(task.key)
     if (this.inFlight.get(task.key) === task) this.inFlight.delete(task.key)
@@ -197,7 +238,18 @@ export class XDriveMediaThumbnailScheduler {
       if (task.cancelled) continue
       this.active += 1
       this.inFlight.set(task.key, task)
-      void this.loader(task.nodeID, task.controller.signal, task.revision || undefined)
+      // Prefetch-only work with no UI subscriber uses the native Blob fast path;
+      // subscribers arriving mid-request still get its final image, but do not
+      // retroactively turn a no-observer HTTP response into a counted stream.
+      const notify = task.progressListeners.size > 0
+        ? (loadedBytes: number, totalBytes?: number) => {
+            if (task.cancelled || this.disposed) return
+            for (const entry of [...task.progressListeners]) {
+              try { entry.notify(loadedBytes, totalBytes) } catch { /* UI does not own I/O */ }
+            }
+          }
+        : undefined
+      void this.loader(task.nodeID, task.controller.signal, task.revision || undefined, notify)
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)
@@ -210,6 +262,7 @@ export class XDriveMediaThumbnailScheduler {
           if (!task.cancelled && !this.disposed) task.reject(error)
         })
         .finally(() => {
+          this.clearProgress(task)
           if (this.inFlight.get(task.key) === task) {
             this.inFlight.delete(task.key)
           }

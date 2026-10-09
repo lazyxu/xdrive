@@ -92,7 +92,7 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaAlbumItems(albumID, limit, offset, query),
     listAlbumItemRange: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItemRange(albumID, limit, offset, query),
-    loadThumbnail: (nodeID, signal, revision) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID, revision)),
+    loadThumbnail: (nodeID, signal, revision, onProgress) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID, revision, onProgress)),
     saveVideoPoster: async (nodeID, revision, poster, signal) => {
       signal?.throwIfAborted()
       const bytes = await poster.arrayBuffer()
@@ -112,11 +112,11 @@ export function createDesktopMediaGalleryDataSource(
         },
       }
     },
-    loadPreviewURL: async (nodeID, kind, signal, fileName) => {
+    loadPreviewURL: async (nodeID, kind, signal, fileName, _revision, onProgress) => {
       if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(fileName ?? '')) {
         const result = await xDriveDesktopViewportRequest(
           signal,
-          (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID),
+          (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID, onProgress),
         )
         if (!result.ok) return result
         signal?.throwIfAborted()

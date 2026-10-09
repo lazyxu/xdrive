@@ -161,7 +161,7 @@ import type {
   XDriveMediaThumbnailPriority,
 } from './MediaGalleryThumbnailScheduler'
 
-export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
+export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<string | null>
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
@@ -172,6 +172,7 @@ export type MediaPreviewURLLoader = (
   signal?: AbortSignal,
   fileName?: string,
   revision?: number,
+  onProgress?: XDriveByteProgressHandler,
 ) => Promise<string | null>
 export type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
 
@@ -2949,9 +2950,9 @@ function MediaTile({
   const openPreview = () => onPreview(item)
 
   const effectiveThumbnailLoader = useCallback(
-    (nodeID: number, signal?: AbortSignal) => thumbnailScheduler
-      ? thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision)
-      : loadThumbnail(nodeID, signal, item.node.revision),
+    (nodeID: number, signal?: AbortSignal, _revision?: number, onProgress?: XDriveByteProgressHandler) => thumbnailScheduler
+      ? thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision, onProgress, signal)
+      : loadThumbnail(nodeID, signal, item.node.revision, onProgress),
     [loadThumbnail, thumbnailPriority, thumbnailScheduler, item.node.revision],
   )
 

@@ -1583,7 +1583,7 @@ test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler
   for (const token of [
     'XDriveMediaThumbnailScheduler',
     'thumbnailScheduler = useMemo(',
-    'thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision)',
+    'thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision, onProgress, signal)',
     'revokeOnDispose={!thumbnailScheduler}',
     'overscanRows: 0',
     'thumbnailPriority: XDriveMediaThumbnailPriority',

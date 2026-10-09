@@ -1,0 +1,37 @@
+{
+  "kind": "synthetic Node Response progress collector BEFORE",
+  "run_id": 37933504811,
+  "commit": "7645c610d8036605c3f825df1b5cd2aeda16859e",
+  "job": "desktop-tests",
+  "environment": "GitHub Actions ubuntu-latest Node.js 22, fixed 16 MiB 64 KiB streamed Response; not native Chromium/Gin/Agent",
+  "sample_count": 3,
+  "baseline_native_blob": {
+    "wall_ms": [
+      5.338465000000042,
+      5.583082999999988,
+      2.659402
+    ],
+    "median_ms": 5.338465000000042
+  },
+  "candidate_transform_stream": {
+    "wall_ms": [
+      21.856907000000092,
+      7.131990999999971,
+      10.991874999999936
+    ],
+    "median_ms": 10.991874999999936
+  },
+  "other_tests": {
+    "pass": 1667,
+    "fail": 1,
+    "skipped": 1,
+    "note": "The single failure is the new shape assertion requiring getReader/Blob(chunks); the then-current production helper was still TransformStream, so this is a legitimate candidate mismatch, not an upstream HTTP failure."
+  },
+  "decision": "Do not claim a speedup or accept TransformStream overhead without native measurements; replace observed-only collector with a tested direct reader and preserve native Response.blob without observers.",
+  "limitations": [
+    "Synthetic fixture, no decoded media paint",
+    "No CPU or peak RSS from this CI",
+    "n=3 high variance",
+    "No source revision/HTTP fixture in this isolated benchmark"
+  ]
+}

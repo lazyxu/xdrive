@@ -1,0 +1,44 @@
+{
+  "kind": "Candidate observed-only direct getReader -> Blob(chunks): source-exact CI first pass",
+  "run_id": 37934247525,
+  "head_sha": "20e652709767dffa415e953d64786d0456aea578",
+  "measured_at_utc": "2026-10-09T13:06:19Z",
+  "workload": {
+    "environment": "GitHub Actions ubuntu-latest Node.js 22; synthetic Response 16 MiB, 64 KiB chunks",
+    "samples_per_mode": 3
+  },
+  "native_response_blob": {
+    "wall_ms": [
+      10.148077999999941,
+      20.9671800000001,
+      10.561866999999893
+    ],
+    "median_ms": 10.561866999999893
+  },
+  "observed_direct_getReader_blob_chunks": {
+    "wall_ms": [
+      17.723682000000053,
+      8.76074299999982,
+      7.702762000000121
+    ],
+    "median_ms": 8.76074299999982
+  },
+  "full_ci_status": {
+    "desktop_tests": {
+      "passed": 1668,
+      "failed": 0
+    },
+    "web_build": {
+      "failed": true,
+      "error": "TS2345: Uint8Array<ArrayBufferLike>[] not assignable to BlobPart[] at mediaBinaryProgress.ts:60:27"
+    },
+    "other_jobs": "Run logs/source-exact checks; not represented as full-green validation."
+  },
+  "decision": "Fix DOM BlobPart type by narrowing fetch-returned byte chunks to Uint8Array<ArrayBuffer> without an extra copy. Re-run entire source-exact CI and independent native Electron/Chromium HTTP paired benchmark before acceptance.",
+  "caveats": [
+    "n3 high variance; not real browser/Agent/Gin",
+    "No CPU or RSS in Node test",
+    "Error is compile-time type, not an HTTP payload-integrity failure",
+    "Only the next CI measures the corrected production helper."
+  ]
+}
