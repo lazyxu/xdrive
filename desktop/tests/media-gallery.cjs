@@ -424,7 +424,7 @@ test('Gallery Viewer 2.0 is shared and reuses existing platform actions', () => 
     'fullScreen={fullScreen}',
     'immersive',
     '收藏',
-    '媒体信息',
+    '查看属性',
     '下载媒体',
     '分享媒体',
     '删除媒体',
@@ -537,7 +537,7 @@ test('Gallery Trash and reliable media collections stay shared and evidence-base
   assert.match(sharedGalleryMain, /collectionSetFavorite = isTrashSection \? undefined/)
   assert.match(sharedGalleryMain, /collectionPreviewURL = isTrashSection \? undefined/)
   assert.match(sharedGalleryMain, /loadLivePhotoMotion=\{isTrashSection \? undefined/)
-  assert.match(sharedGalleryMain, /if \(section === 'trash'\) return/)
+  assert.match(sharedGalleryMain, /if \(section === 'trash'\) \{\s*setSelected\(item\)\s*return\s*\}/, 'Trash click must open read-only Properties without launching Viewer')
   assert.match(sharedGalleryMain, /!isTrashSection && timeScale !== 'all'/)
 
   assert.match(webAPI, /values\.set\('category'/)
@@ -1371,7 +1371,8 @@ test('Gallery media details use shared responsive Inspector and Drawer instead o
   assert.ok(sharedGalleryDetails.includes('export function XDriveMediaDetailsContent'), 'missing reusable MediaGallery details content')
   assert.equal(sharedGalleryDetails.includes('<Dialog'), false, 'MediaGallery details content must not own a modal Dialog')
   assert.equal(sharedGalleryMain.includes('<XDriveMediaDetailsDialog'), false, 'legacy media-details Dialog must be removed')
-  assert.match(sharedGalleryMain, /pr: \{ lg: selected \? '380px' : 0 \}/)
+  assert.match(sharedGalleryMain, /pr: \{ lg: selected && !previewItem \? '380px' : 0 \}/)
+  assert.match(sharedGalleryMain, /overlayZIndex=\{previewItem \? 1400 : undefined\}/)
   assert.match(sharedGalleryMain, /onSetFavorite=\{!isTrashSection && onSetFavorite/)
 
   for (const token of [

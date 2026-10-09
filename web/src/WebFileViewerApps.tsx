@@ -677,8 +677,8 @@ function WebMediaViewerApp({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
 
   const openInfo = () => {
-    setInfoOpen(true)
-    void gallerySource.listAlbums().then(setAlbums).catch(onError)
+    setInfoOpen((current) => !current)
+    if (!infoOpen) void gallerySource.listAlbums().then(setAlbums).catch(onError)
   }
 
   if (viewer.loading) return <XDriveStatePanel variant="plain" loading message="正在打开媒体…" />
@@ -718,8 +718,8 @@ function WebMediaViewerApp({
         </Tooltip>
       ) : null}
       {mediaItem ? (
-        <Tooltip title="信息">
-          <IconButton size="small" aria-label="媒体信息" onClick={openInfo}>
+        <Tooltip title="属性">
+          <IconButton size="small" aria-label="查看属性" onClick={openInfo}>
             <InfoOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -772,6 +772,7 @@ function WebMediaViewerApp({
       <XDriveMediaDetailsInspector
         item={infoOpen ? mediaItem : null}
         overlayZIndex={1251}
+        showPreview={false}
         loadThumbnail={gallerySource.loadThumbnail}
         loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
         loadPreviewURL={gallerySource.loadPreviewURL}

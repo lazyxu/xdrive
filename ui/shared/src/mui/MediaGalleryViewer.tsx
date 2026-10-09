@@ -175,8 +175,8 @@ export function XDriveMediaGalleryViewer({
         </Tooltip>
       ) : null}
       {onInfo ? (
-        <Tooltip title="信息">
-          <IconButton size="small" aria-label="媒体信息" onClick={() => onInfo(item)}>
+        <Tooltip title="属性">
+          <IconButton size="small" aria-label="查看属性" onClick={() => onInfo(item)}>
             <InfoOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
