@@ -1574,9 +1574,25 @@ func (s *Server) executeQueuedBatchDelete(ctx context.Context, operation meta.Fi
 				return &batchMutationFailure{Index: index, ID: ref.ID, Status: http.StatusConflict, Code: "managed_source_target", Message: "managed Yike target path cannot be deleted"}
 			}
 			now := time.Now()
-			if err := tx.Model(&meta.Share{}).
-				Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", subtree.IDs, uid).
-				Update("revoked_at", &now).Error; err != nil {
+			shareQuery := tx.Model(&meta.Share{})
+			if len(subtree.IDs) > 32000 {
+				// Keep the same bounded PostgreSQL array contract as the subtree
+				// soft-delete UPDATE. Otherwise 100k IDs exceed PG's bind limit.
+				literal, arrayErr := fileOperationDeleteIDArrayLiteral(subtree.IDs)
+				if arrayErr != nil {
+					return arrayErr
+				}
+				shareQuery = shareQuery.Where(
+					"node_id = ANY(CAST(? AS bigint[])) AND owner_id = ? AND revoked_at IS NULL",
+					literal, uid,
+				)
+			} else {
+				shareQuery = shareQuery.Where(
+					"node_id IN ? AND owner_id = ? AND revoked_at IS NULL",
+					subtree.IDs, uid,
+				)
+			}
+			if err := shareQuery.Update("revoked_at", &now).Error; err != nil {
 				return err
 			}
 			rootUpdated, err := markFileOperationDeleteSubtreeTx(

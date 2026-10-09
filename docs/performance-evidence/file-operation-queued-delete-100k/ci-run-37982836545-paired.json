@@ -1,0 +1,170 @@
+{
+  "status": "accepted_native_postgresql17_real_100k_queued_delete_executor_matched_ab_n3",
+  "before_original_sha": "601131aee5602fb21d0af2a49605e7b4be92cf9e",
+  "after_experiment_sha": "963c4b01b5a372faceead930d9b5681a1ba1a5d2",
+  "ci_run_id": 37982836545,
+  "ci_job_id": 113997583486,
+  "ci_job_url": "https://github.com/lazyxu/xdrive/actions/runs/37982836545/job/113997583486",
+  "scenario": {
+    "logical_file_nodes": 100000,
+    "selected_directory_nodes": 1,
+    "total_subtree_ids": 100001,
+    "file_metadata_rows": 100000,
+    "byte_per_file": 1024,
+    "expected_processed_bytes": 102400000,
+    "in_scope_share_rows": 1,
+    "out_of_scope_share_rows": 1,
+    "native_postgresql": "17-alpine",
+    "worker": "real Server.executeQueuedBatchDelete",
+    "measurement": "transaction executor only; seeding excluded; no physical media contents/real browser"
+  },
+  "method": "Three same-runner alternating BEFORE/AFTER pairs: first BEFORE->AFTER, then AFTER->BEFORE, then BEFORE->AFTER; fresh DB schema and exact same test source in both production trees; untouched original HEAD^ vs candidate head.",
+  "frozen_acceptance": {
+    "after_status": "completed",
+    "after_trashed_nodes": 100001,
+    "after_in_scope_share_revoked": true,
+    "after_out_of_scope_share_revoked": false,
+    "after_root_revision_plus_one": true,
+    "after_all_children_trash_root_and_revision_correct": true,
+    "after_file_metadata_retained": true,
+    "after_undo_plan_present": true,
+    "after_processed_items": 1,
+    "after_processed_bytes": 102400000,
+    "max_after_executor_ms": 30000,
+    "max_after_go_total_alloc_delta_bytes": 134217728
+  },
+  "distributions": {
+    "before_failed_execute_ms": {
+      "samples": [
+        409.491,
+        422.046,
+        414.413
+      ],
+      "median": 414.413
+    },
+    "after_successful_execute_ms": {
+      "samples": [
+        1528.597,
+        1520.216,
+        1523.744
+      ],
+      "median": 1523.744
+    },
+    "before_failed_total_alloc_delta_bytes": {
+      "samples": [
+        75874632,
+        75911280,
+        75918512
+      ],
+      "median": 75911280
+    },
+    "after_successful_total_alloc_delta_bytes": {
+      "samples": [
+        41090888,
+        41088584,
+        41128048
+      ],
+      "median": 41090888
+    }
+  },
+  "rows": [
+    {
+      "arm": "before",
+      "sample": 1,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 409.491,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 4127.861,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75874632,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 1,
+      "error": "<nil>",
+      "execute_ms": 1528.597,
+      "expect_fixed": true,
+      "file_nodes": 100000,
+      "operation_status": "completed",
+      "seed_ms": 3900.83,
+      "share_inside_revoked": true,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 41090888,
+      "trashed_count": 100001,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 2,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 422.046,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 3885.95,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75911280,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 2,
+      "error": "<nil>",
+      "execute_ms": 1520.216,
+      "expect_fixed": true,
+      "file_nodes": 100000,
+      "operation_status": "completed",
+      "seed_ms": 3923.105,
+      "share_inside_revoked": true,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 41088584,
+      "trashed_count": 100001,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 3,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 414.413,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 3913.601,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75918512,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 3,
+      "error": "<nil>",
+      "execute_ms": 1523.744,
+      "expect_fixed": true,
+      "file_nodes": 100000,
+      "operation_status": "completed",
+      "seed_ms": 3900.327,
+      "share_inside_revoked": true,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 41128048,
+      "trashed_count": 100001,
+      "workload": "real-FileOperation-executor-delete-100k"
+    }
+  ],
+  "decision": "Accept bounded share-revocation SQL in the measured executor scope. BEFORE fails rather than completes, so no elapsed speedup percentage can be inferred. No exact peak RSS or CPU profile; no actual CAS physical bytes, Trash restore, 100k sync or Web/Desktop transport measured.",
+  "final_ci_status": "pending_revalidation_after_evidence_commit"
+}

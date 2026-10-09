@@ -1,0 +1,74 @@
+{
+  "status": "confirmed_real_full_worker_100k_share_revocation_parameter_overflow",
+  "initial_ci": {
+    "run_id": 37981553163,
+    "job_id": 113993673559,
+    "source_head": "ce8e042e56d825771929e57a2d50bb7b27ffcbba",
+    "url": "https://github.com/lazyxu/xdrive/actions/runs/37981553163/job/113993673559"
+  },
+  "workload": "100000 xd_nodes + 100000 xd_files under one parent, one running durable FileOperation, 2 share rows (in/out of selected subtree), actual executeQueuedBatchDelete, three fresh native PG17 schemas",
+  "rows": [
+    {
+      "sample": 1,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 422.936,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 3781.668,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75877424,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "sample": 2,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 437.898,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 4033.982,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75910368,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    },
+    {
+      "sample": 3,
+      "error": "extended protocol limited to 65535 parameters",
+      "execute_ms": 420.315,
+      "expect_fixed": false,
+      "file_nodes": 100000,
+      "operation_status": "running",
+      "seed_ms": 4011.266,
+      "share_inside_revoked": false,
+      "share_outside_revoked": false,
+      "subtree_nodes": 100001,
+      "total_alloc_delta_bytes": 75911472,
+      "trashed_count": 0,
+      "workload": "real-FileOperation-executor-delete-100k"
+    }
+  ],
+  "median_failed_execute_ms": 422.936,
+  "median_go_total_alloc_delta_bytes": 75910368,
+  "interpretation": "Each full executor fails extended protocol limited to 65535 parameters. All three rollback (no deleted Nodes, neither Share revoked); operation remains running. Failed timings cannot be compared to successful AFTER runtime as speedup. CPU, peak RSS, physical CAS, client event dispatch and undo/restore not measured.",
+  "acceptance_declaration": {
+    "samples_each_arm": 3,
+    "execution_p50_ms_max": 30000,
+    "execution_each_sample_ms_max": 30000,
+    "go_total_alloc_delta_bytes_max": 134217728,
+    "soft_deleted_nodes": 100001,
+    "scoped_inside_share_revoked": true,
+    "outside_share_not_revoked": true,
+    "operation_terminal_status": "completed",
+    "processed_items": 1,
+    "processed_bytes": 102400000,
+    "undo_plan_non_empty": true,
+    "correct_trash_assignment": true
+  }
+}
