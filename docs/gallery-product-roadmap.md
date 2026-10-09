@@ -316,6 +316,31 @@ There is no Web/Desktop details fork: both clients consume the same shared conte
 responsive container, while Preview transport remains platform-specific through the
 existing adapters.
 
+### Shared Inspector information hierarchy
+
+The same read-only data and permitted editing actions are grouped consistently for
+Web, Desktop and the mobile bottom Drawer, borrowing KFS's useful separation between
+media metadata and file resources without copying KFS's separate property windows:
+
+1. **照片信息** comes immediately after the preview: logical media type, canonical
+   capture time (never file modification/import fallback), dimensions/orientation,
+   video technical parameters, camera/lens and available GPS/altitude. Invalid or
+   absent capture time explicitly says **未记录**. Media index errors stay alongside
+   these technical fields.
+2. **整理** owns Favorite, tags, manually maintained people labels, description and
+   manual-album membership. When capabilities are absent (notably Trash), render
+   existing Favorite/tags/people/description as read-only facts; never expose a
+   disabled mutation as though it were permitted.
+3. **文件与资源** owns the true Node filename/size, MIME, generated thumbnail
+   details and existing logical-asset resource membership. A precise path, source
+   label, or jump-to-Explorer link is not inferred from Node parent IDs: it requires
+   an authoritative owner-scoped path/navigation contract and is deliberately
+   outside this UI-only slice.
+
+Sections do not issue their own metadata requests, eagerly enumerate directories,
+or introduce a second Preview Engine. The same data source, edit callbacks and
+responsive Inspector container remain unchanged.
+
 Gallery Trash keeps its Phase-4 capability boundary in the new Inspector. Deleted media
 may show thumbnails and indexed metadata, but Favorite/tag/people/description/album
 mutations and original Preview remain unavailable.

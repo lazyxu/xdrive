@@ -18,6 +18,7 @@ import type {
 } from '../file-preview'
 import { xDriveMediaEditPreviewTransform } from '../media-edit'
 import { formatBytes } from '../format'
+import { xDriveMediaCaptureTimeValue } from '../media-viewer'
 import { XDriveFilePreviewSurface } from './FilePreviewSurface'
 import type {
   XDriveFilePreviewImageLoader,
@@ -109,6 +110,88 @@ function mediaResourceRoleLabel(role: string) {
     default:
       return role || '资源'
   }
+}
+
+type MediaDetailRow = [label: string, value: string]
+
+/** Presentation-only groups over canonical local media metadata; no directory inference. */
+export function xDriveMediaInspectorFields(item: MediaItem) {
+  const metadata = item.metadata
+  const photoInfo: MediaDetailRow[] = [
+    ['类型', mediaAssetLabel(item)],
+    ['拍摄时间', xDriveMediaCaptureTimeValue(metadata.captured_at)],
+    [
+      '分辨率',
+      metadata.width && metadata.height
+        ? `${metadata.width} × ${metadata.height}`
+        : '—',
+    ],
+    ['方向', orientationLabel(metadata.orientation)],
+  ]
+  if (metadata.media_kind === 'video') {
+    photoInfo.push(
+      ['时长', xDriveMediaFormatDuration(metadata.duration_ms) || '—'],
+      ['视频旋转', metadata.rotation_degrees ? `${metadata.rotation_degrees}°` : '0°'],
+      ['帧率', metadata.frame_rate ? `${metadata.frame_rate.toFixed(2)} fps` : '—'],
+      ['码率', metadata.bit_rate ? `${(metadata.bit_rate / 1_000_000).toFixed(2)} Mbps` : '—'],
+      ['视频编码', metadata.video_codec || '—'],
+      ['音频编码', metadata.audio_codec || '—'],
+    )
+  }
+  if (metadata.camera_make || metadata.camera_model) {
+    photoInfo.push([
+      '相机',
+      [metadata.camera_make, metadata.camera_model].filter(Boolean).join(' '),
+    ])
+  }
+  if (metadata.lens_model) photoInfo.push(['镜头', metadata.lens_model])
+  if (metadata.latitude != null && metadata.longitude != null) {
+    photoInfo.push(['GPS', `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`])
+  }
+  if (metadata.altitude_m != null) photoInfo.push(['海拔', `${metadata.altitude_m.toFixed(1)} m`])
+
+  const organize: MediaDetailRow[] = [
+    ['收藏', item.favorite ? '已收藏' : '未收藏'],
+    ['标签', item.tags?.length ? item.tags.join('、') : '—'],
+    ['人物', item.people?.length ? item.people.join('、') : '—'],
+    ['备注', item.description?.trim() || '—'],
+  ]
+  const files: MediaDetailRow[] = [
+    ['文件名', item.node.name],
+    ['大小', formatMediaBytes(item.node.size)],
+    ['格式', metadata.mime_type || '—'],
+  ]
+  if (metadata.thumbnail_width && metadata.thumbnail_height) {
+    files.push([
+      '缩略图',
+      `${metadata.thumbnail_width} × ${metadata.thumbnail_height} · ${metadata.thumbnail_mime_type || 'image/jpeg'}`,
+    ])
+  }
+  if (item.resources && item.resources.length > 1) {
+    files.push(['资源数', String(item.resources.length)])
+  }
+  return { photoInfo, organize, files }
+}
+
+function MediaDetailsRows({ rows }: { rows: readonly MediaDetailRow[] }) {
+  if (rows.length === 0) return null
+  return (
+    <Stack spacing={1.1}>
+      {rows.map(([label, value]) => (
+        <Box
+          key={label}
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '88px minmax(0, 1fr)', sm: '112px minmax(0, 1fr)' },
+            gap: 2,
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">{label}</Typography>
+          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>
+        </Box>
+      ))}
+    </Stack>
+  )
 }
 
 export interface XDriveMediaDetailsContentProps {
@@ -212,366 +295,316 @@ export function XDriveMediaDetailsContent({
     setDescriptionError('')
   }, [item?.node.id, item?.description])
 
-  const rows = useMemo(() => {
-    if (!item) return []
-    const metadata = item.metadata
-    const result: Array<[string, string]> = [
-      ['类型', mediaAssetLabel(item)],
-      ['收藏', item.favorite ? '已收藏' : '未收藏'],
-      ['标签', item.tags?.length ? item.tags.join('、') : '—'],
-      ['人物', item.people?.length ? item.people.join('、') : '—'],
-      ['文件名', item.node.name],
-      ['大小', formatMediaBytes(item.node.size)],
-      ['格式', metadata.mime_type || '—'],
-      [
-        '分辨率',
-        metadata.width && metadata.height
-          ? `${metadata.width} × ${metadata.height}`
-          : '—',
-      ],
-      ['方向', orientationLabel(metadata.orientation)],
-      [
-        '拍摄时间',
-        metadata.captured_at
-          ? new Date(metadata.captured_at).toLocaleString()
-          : '—',
-      ],
-    ]
-    if (metadata.media_kind === 'video') {
-      result.push(
-        ['视频旋转', metadata.rotation_degrees ? `${metadata.rotation_degrees}°` : '0°'],
-        ['时长', xDriveMediaFormatDuration(metadata.duration_ms) || '—'],
-        ['帧率', metadata.frame_rate ? `${metadata.frame_rate.toFixed(2)} fps` : '—'],
-        ['码率', metadata.bit_rate ? `${(metadata.bit_rate / 1_000_000).toFixed(2)} Mbps` : '—'],
-        ['视频编码', metadata.video_codec || '—'],
-        ['音频编码', metadata.audio_codec || '—'],
-      )
-    }
-    if (metadata.camera_make || metadata.camera_model) {
-      result.push([
-        '相机',
-        [metadata.camera_make, metadata.camera_model].filter(Boolean).join(' '),
-      ])
-    }
-    if (metadata.lens_model) result.push(['镜头', metadata.lens_model])
-    if (metadata.latitude != null && metadata.longitude != null) {
-      result.push([
-        'GPS',
-        `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`,
-      ])
-    }
-    if (metadata.altitude_m != null) {
-      result.push(['海拔', `${metadata.altitude_m.toFixed(1)} m`])
-    }
-    if (metadata.thumbnail_width && metadata.thumbnail_height) {
-      result.push([
-        '缩略图',
-        `${metadata.thumbnail_width} × ${metadata.thumbnail_height} · ${metadata.thumbnail_mime_type || 'image/jpeg'}`,
-      ])
-    }
-    if (item.resources && item.resources.length > 1) {
-      result.push(['资源数', String(item.resources.length)])
-    }
-    return result
-  }, [item])
+  const sectionRows = useMemo(
+    () => item ? xDriveMediaInspectorFields(item) : null,
+    [item],
+  )
 
-  if (!item) return null
+  if (!item || !sectionRows) return null
 
   return (
     <Stack spacing={2} sx={{ p: 1.5 }}>
-            <Box
-              sx={{
-                height: 184,
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1.5,
-                overflow: 'hidden',
-              }}
-            >
-              {livePhoto && loadLivePhotoMotion ? (
-                <XDriveLivePhotoSurface
-                  key={item.node.id}
-                  label={item.node.name}
-                  loadMotion={loadSelectedLivePhotoMotion}
-                  sourceKey={`${item.node.id}:${item.node.revision}`}
-                  still={(
-                    <XDriveFilePreviewSurface
-                      target={previewTarget}
-                      loadPreviewURL={loadSelectedPreview}
-                      loadImagePreview={loadSelectedThumbnail}
-                      fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                      minHeight={160}
-                      maxHeight={240}
-                      mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
-                    />
-                  )}
-                />
-              ) : ordinaryPreview && loadPreviewURL ? (
-                <XDriveFilePreviewSurface
-                  target={previewTarget}
-                  loadPreviewURL={loadSelectedPreview}
-                  loadImagePreview={loadSelectedThumbnail}
-                  fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                  minHeight={160}
-                  maxHeight={240}
-                  mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
-                />
-              ) : (
-                <XDriveMediaAsyncThumbnail
-                  nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
-                  alt={item.node.name}
-                  loadThumbnail={loadThumbnail}
-                  fallback={xDriveMediaFallback(item.metadata.media_kind)}
-                />
-              )}
+      <Box
+        sx={{
+          height: 184,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1.5,
+          overflow: 'hidden',
+        }}
+      >
+        {livePhoto && loadLivePhotoMotion ? (
+          <XDriveLivePhotoSurface
+            key={item.node.id}
+            label={item.node.name}
+            loadMotion={loadSelectedLivePhotoMotion}
+            sourceKey={`${item.node.id}:${item.node.revision}`}
+            still={(
+              <XDriveFilePreviewSurface
+                target={previewTarget}
+                loadPreviewURL={loadSelectedPreview}
+                loadImagePreview={loadSelectedThumbnail}
+                fallback={xDriveMediaFallback(item.metadata.media_kind)}
+                minHeight={160}
+                maxHeight={240}
+                mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
+              />
+            )}
+          />
+        ) : ordinaryPreview && loadPreviewURL ? (
+          <XDriveFilePreviewSurface
+            target={previewTarget}
+            loadPreviewURL={loadSelectedPreview}
+            loadImagePreview={loadSelectedThumbnail}
+            fallback={xDriveMediaFallback(item.metadata.media_kind)}
+            minHeight={160}
+            maxHeight={240}
+            mediaTransform={xDriveMediaEditPreviewTransform(item.edit_recipe)}
+          />
+        ) : (
+          <XDriveMediaAsyncThumbnail
+            nodeID={item.metadata.has_thumbnail ? item.node.id : undefined}
+            alt={item.node.name}
+            loadThumbnail={loadThumbnail}
+            fallback={xDriveMediaFallback(item.metadata.media_kind)}
+          />
+        )}
+      </Box>
+      <Box component="section" aria-label="照片信息" data-xdrive-media-details-info>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>照片信息</Typography>
+        <MediaDetailsRows rows={sectionRows.photoInfo} />
+        {item.metadata.index_error ? (
+          <Box sx={{ mt: 1 }}>
+            <XDriveStatusAlert tone="warning">
+              部分媒体元数据未能解析：{item.metadata.index_error}
+            </XDriveStatusAlert>
+          </Box>
+        ) : null}
+      </Box>
+      <Box component="section" aria-label="整理" data-xdrive-media-details-organize>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>整理</Typography>
+        <Stack spacing={2}>
+          <MediaDetailsRows
+            rows={sectionRows.organize.filter(([label]) => (
+              (label === '收藏' && !onSetFavorite) ||
+              (label === '标签' && !onSetTags) ||
+              (label === '人物' && !onSetPeople) ||
+              (label === '备注' && !onSetDescription && Boolean(item.description?.trim()))
+            ))}
+          />
+          {onSetFavorite ? (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                size="small"
+                variant={item.favorite ? 'contained' : 'outlined'}
+                startIcon={item.favorite ? <StarIcon /> : <StarBorderIcon />}
+                onClick={() => {
+                  void onSetFavorite(item, !item.favorite).catch(() => undefined)
+                }}
+              >
+                {item.favorite ? '取消收藏' : '收藏'}
+              </Button>
             </Box>
-            {onSetFavorite ? (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
+          ) : null}
+          {onSetTags ? (
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.75 }}>标签</Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
                   size="small"
-                  variant={item.favorite ? 'contained' : 'outlined'}
-                  startIcon={item.favorite ? <StarIcon /> : <StarBorderIcon />}
+                  fullWidth
+                  label="标签"
+                  placeholder="家庭, 旅行, 工作"
+                  value={tagsInput}
+                  disabled={tagsBusy}
+                  onChange={(event) => {
+                    setTagsInput(event.target.value)
+                    setTagsError('')
+                  }}
+                  helperText="使用逗号分隔；最多 32 个标签。"
+                />
+                <Button
+                  variant="outlined"
+                  disabled={tagsBusy}
                   onClick={() => {
-                    void onSetFavorite(item, !item.favorite).catch(() => undefined)
+                    setTagsBusy(true)
+                    setTagsError('')
+                    void onSetTags(item, parseMediaTagsInput(tagsInput))
+                      .then((tags) => setTagsInput(tags.join(', ')))
+                      .catch((tagError) => setTagsError(xDriveMediaGalleryErrorMessage(tagError)))
+                      .finally(() => setTagsBusy(false))
                   }}
                 >
-                  {item.favorite ? '取消收藏' : '收藏'}
+                  保存标签
                 </Button>
-              </Box>
-            ) : null}
-            {onSetTags ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>标签</Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    label="标签"
-                    placeholder="家庭, 旅行, 工作"
-                    value={tagsInput}
-                    disabled={tagsBusy}
-                    onChange={(event) => {
-                      setTagsInput(event.target.value)
-                      setTagsError('')
-                    }}
-                    helperText="使用逗号分隔；最多 32 个标签。"
-                  />
+              </Stack>
+              {tagsError ? (
+                <Box sx={{ mt: 1 }}>
+                  <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+          {onSetPeople ? (
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.75 }}>人物标签</Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="人物"
+                  placeholder="Alice, Bob, 张三"
+                  value={peopleInput}
+                  disabled={peopleBusy}
+                  onChange={(event) => {
+                    setPeopleInput(event.target.value)
+                    setPeopleError('')
+                  }}
+                  helperText="用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。"
+                />
+                <Button
+                  variant="outlined"
+                  disabled={peopleBusy}
+                  onClick={() => {
+                    setPeopleBusy(true)
+                    setPeopleError('')
+                    void onSetPeople(item, parseMediaTagsInput(peopleInput))
+                      .then((people) => setPeopleInput(people.join(', ')))
+                      .catch((saveError) => setPeopleError(xDriveMediaGalleryErrorMessage(saveError)))
+                      .finally(() => setPeopleBusy(false))
+                  }}
+                >
+                  保存人物
+                </Button>
+              </Stack>
+              {peopleError ? (
+                <Box sx={{ mt: 1 }}>
+                  <XDriveStatusAlert tone="bad">{peopleError}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+          {onSetDescription ? (
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.75 }}>描述 / 备注</Typography>
+              <Stack spacing={1}>
+                <TextField
+                  multiline
+                  minRows={3}
+                  maxRows={8}
+                  fullWidth
+                  label="描述"
+                  placeholder="为这张照片或视频添加本地备注"
+                  value={descriptionInput}
+                  disabled={descriptionBusy}
+                  onChange={(event) => {
+                    setDescriptionInput(event.target.value)
+                    setDescriptionError('')
+                  }}
+                  helperText={`${Array.from(descriptionInput).length.toLocaleString('zh-CN')} / 4096 字符；仅保存在 xDrive 本地图库。`}
+                />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     variant="outlined"
-                    disabled={tagsBusy}
+                    disabled={descriptionBusy || Array.from(descriptionInput).length > 4096}
                     onClick={() => {
-                      setTagsBusy(true)
-                      setTagsError('')
-                      void onSetTags(item, parseMediaTagsInput(tagsInput))
-                        .then((tags) => setTagsInput(tags.join(', ')))
-                        .catch((tagError) => setTagsError(xDriveMediaGalleryErrorMessage(tagError)))
-                        .finally(() => setTagsBusy(false))
-                    }}
-                  >
-                    保存标签
-                  </Button>
-                </Stack>
-                {tagsError ? (
-                  <Box sx={{ mt: 1 }}>
-                    <XDriveStatusAlert tone="bad">{tagsError}</XDriveStatusAlert>
-                  </Box>
-                ) : null}
-              </Box>
-            ) : null}
-            {onSetPeople ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>人物标签</Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    label="人物"
-                    placeholder="Alice, Bob, 张三"
-                    value={peopleInput}
-                    disabled={peopleBusy}
-                    onChange={(event) => {
-                      setPeopleInput(event.target.value)
-                      setPeopleError('')
-                    }}
-                    helperText="用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。"
-                  />
-                  <Button
-                    variant="outlined"
-                    disabled={peopleBusy}
-                    onClick={() => {
-                      setPeopleBusy(true)
-                      setPeopleError('')
-                      void onSetPeople(item, parseMediaTagsInput(peopleInput))
-                        .then((people) => setPeopleInput(people.join(', ')))
-                        .catch((saveError) => setPeopleError(xDriveMediaGalleryErrorMessage(saveError)))
-                        .finally(() => setPeopleBusy(false))
-                    }}
-                  >
-                    保存人物
-                  </Button>
-                </Stack>
-                {peopleError ? (
-                  <Box sx={{ mt: 1 }}>
-                    <XDriveStatusAlert tone="bad">{peopleError}</XDriveStatusAlert>
-                  </Box>
-                ) : null}
-              </Box>
-            ) : null}
-            {onSetDescription ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>描述 / 备注</Typography>
-                <Stack spacing={1}>
-                  <TextField
-                    multiline
-                    minRows={3}
-                    maxRows={8}
-                    fullWidth
-                    label="描述"
-                    placeholder="为这张照片或视频添加本地备注"
-                    value={descriptionInput}
-                    disabled={descriptionBusy}
-                    onChange={(event) => {
-                      setDescriptionInput(event.target.value)
+                      setDescriptionBusy(true)
                       setDescriptionError('')
+                      void onSetDescription(item, descriptionInput)
+                        .then((description) => setDescriptionInput(description))
+                        .catch((saveError) => setDescriptionError(xDriveMediaGalleryErrorMessage(saveError)))
+                        .finally(() => setDescriptionBusy(false))
                     }}
-                    helperText={`${Array.from(descriptionInput).length.toLocaleString('zh-CN')} / 4096 字符；仅保存在 xDrive 本地图库。`}
-                  />
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button
-                      variant="outlined"
-                      disabled={descriptionBusy || Array.from(descriptionInput).length > 4096}
-                      onClick={() => {
-                        setDescriptionBusy(true)
-                        setDescriptionError('')
-                        void onSetDescription(item, descriptionInput)
-                          .then((description) => setDescriptionInput(description))
-                          .catch((saveError) => setDescriptionError(xDriveMediaGalleryErrorMessage(saveError)))
-                          .finally(() => setDescriptionBusy(false))
+                  >
+                    保存描述
+                  </Button>
+                </Box>
+              </Stack>
+              {descriptionError ? (
+                <Box sx={{ mt: 1 }}>
+                  <XDriveStatusAlert tone="bad">{descriptionError}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+          {(onAddToAlbum || (currentAlbum?.kind === 'manual' && onRemoveFromAlbum)) ? (
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.75 }}>相册</Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                {onAddToAlbum ? (
+                  <>
+                    <TextField
+                      select
+                      size="small"
+                      label="添加到手动相册"
+                      value={targetAlbumID}
+                      onChange={(event) => {
+                        setTargetAlbumID(event.target.value)
+                        setAlbumError('')
                       }}
+                      sx={{ minWidth: 220, flex: 1 }}
                     >
-                      保存描述
-                    </Button>
-                  </Box>
-                </Stack>
-                {descriptionError ? (
-                  <Box sx={{ mt: 1 }}>
-                    <XDriveStatusAlert tone="bad">{descriptionError}</XDriveStatusAlert>
-                  </Box>
-                ) : null}
-              </Box>
-            ) : null}
-            {(onAddToAlbum || (currentAlbum?.kind === 'manual' && onRemoveFromAlbum)) ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>相册</Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                  {onAddToAlbum ? (
-                    <>
-                      <TextField
-                        select
-                        size="small"
-                        label="添加到手动相册"
-                        value={targetAlbumID}
-                        onChange={(event) => {
-                          setTargetAlbumID(event.target.value)
-                          setAlbumError('')
-                        }}
-                        sx={{ minWidth: 220, flex: 1 }}
-                      >
-                        <MenuItem value="">选择相册</MenuItem>
-                        {albums.filter((album) => album.kind === 'manual').map((album) => (
-                          <MenuItem key={album.id} value={album.id}>
-                            {album.name}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                      <Button
-                        variant="outlined"
-                        disabled={!targetAlbumID || albumBusy}
-                        onClick={() => {
-                          const album = albums.find((value) => value.id === targetAlbumID)
-                          if (!album) return
-                          setAlbumBusy(true)
-                          setAlbumError('')
-                          void onAddToAlbum(album, item)
-                            .then(() => setTargetAlbumID(''))
-                            .catch((error) => setAlbumError(xDriveMediaGalleryErrorMessage(error)))
-                            .finally(() => setAlbumBusy(false))
-                        }}
-                      >
-                        添加
-                      </Button>
-                    </>
-                  ) : null}
-                  {currentAlbum?.kind === 'manual' && onRemoveFromAlbum ? (
+                      <MenuItem value="">选择相册</MenuItem>
+                      {albums.filter((album) => album.kind === 'manual').map((album) => (
+                        <MenuItem key={album.id} value={album.id}>
+                          {album.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
                     <Button
-                      color="error"
                       variant="outlined"
-                      disabled={albumBusy}
+                      disabled={!targetAlbumID || albumBusy}
                       onClick={() => {
+                        const album = albums.find((value) => value.id === targetAlbumID)
+                        if (!album) return
                         setAlbumBusy(true)
                         setAlbumError('')
-                        void onRemoveFromAlbum(currentAlbum, item)
+                        void onAddToAlbum(album, item)
+                          .then(() => setTargetAlbumID(''))
                           .catch((error) => setAlbumError(xDriveMediaGalleryErrorMessage(error)))
                           .finally(() => setAlbumBusy(false))
                       }}
                     >
-                      从当前相册移除
+                      添加
                     </Button>
-                  ) : null}
-                </Stack>
-                {albumError ? (
-                  <Box sx={{ mt: 1 }}>
-                    <XDriveStatusAlert tone="bad">{albumError}</XDriveStatusAlert>
-                  </Box>
+                  </>
                 ) : null}
-              </Box>
-            ) : null}
-            {item.metadata.index_error ? (
-              <XDriveStatusAlert tone="warning">
-                部分媒体元数据未能解析：{item.metadata.index_error}
-              </XDriveStatusAlert>
-            ) : null}
-            <Stack spacing={1.1}>
-              {rows.map(([label, value]) => (
+                {currentAlbum?.kind === 'manual' && onRemoveFromAlbum ? (
+                  <Button
+                    color="error"
+                    variant="outlined"
+                    disabled={albumBusy}
+                    onClick={() => {
+                      setAlbumBusy(true)
+                      setAlbumError('')
+                      void onRemoveFromAlbum(currentAlbum, item)
+                        .catch((error) => setAlbumError(xDriveMediaGalleryErrorMessage(error)))
+                        .finally(() => setAlbumBusy(false))
+                    }}
+                  >
+                    从当前相册移除
+                  </Button>
+                ) : null}
+              </Stack>
+              {albumError ? (
+                <Box sx={{ mt: 1 }}>
+                  <XDriveStatusAlert tone="bad">{albumError}</XDriveStatusAlert>
+                </Box>
+              ) : null}
+            </Box>
+          ) : null}
+        </Stack>
+      </Box>
+      <Box component="section" aria-label="文件与资源" data-xdrive-media-details-file-resources>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>文件与资源</Typography>
+        <MediaDetailsRows rows={sectionRows.files} />
+        {item.resources && item.resources.length > 1 ? (
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>资产资源</Typography>
+            <Stack spacing={0.75}>
+              {item.resources.map((resource, index) => (
                 <Box
-                  key={label}
+                  key={`${resource.kind}:${resource.node_id}:${resource.role}:${index}`}
                   sx={{
                     display: 'grid',
                     gridTemplateColumns: { xs: '88px minmax(0, 1fr)', sm: '112px minmax(0, 1fr)' },
                     gap: 2,
                   }}
                 >
-                  <Typography variant="body2" color="text.secondary">{label}</Typography>
-                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {mediaResourceRoleLabel(resource.role)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                    {resource.name}
+                    {resource.mime_type ? ` · ${resource.mime_type}` : ''}
+                    {resource.size > 0 ? ` · ${formatMediaBytes(resource.size)}` : ''}
+                  </Typography>
                 </Box>
               ))}
             </Stack>
-            {item.resources && item.resources.length > 1 ? (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>资产资源</Typography>
-                <Stack spacing={0.75}>
-                  {item.resources.map((resource, index) => (
-                    <Box
-                      key={`${resource.kind}:${resource.node_id}:${resource.role}:${index}`}
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '88px minmax(0, 1fr)', sm: '112px minmax(0, 1fr)' },
-                        gap: 2,
-                      }}
-                    >
-                      <Typography variant="body2" color="text.secondary">
-                        {mediaResourceRoleLabel(resource.role)}
-                      </Typography>
-                      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                        {resource.name}
-                        {resource.mime_type ? ` · ${resource.mime_type}` : ''}
-                        {resource.size > 0 ? ` · ${formatMediaBytes(resource.size)}` : ''}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              </Box>
-            ) : null}
+          </Box>
+        ) : null}
+      </Box>
     </Stack>
   )
 }
