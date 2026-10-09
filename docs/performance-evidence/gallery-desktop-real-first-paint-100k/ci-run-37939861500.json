@@ -1,0 +1,212 @@
+{
+  "provenance": {
+    "repository": "lazyxu/xdrive",
+    "pr": 1171,
+    "workload": "gallery-desktop-real-main-renderer-100k",
+    "source_commit": "6b40e99822dc52fbee5c99fef6553a64e043e3e9",
+    "github_run_id": 37939861500,
+    "github_job_id": 113851224465,
+    "github_job_url": "https://github.com/lazyxu/xdrive/actions/runs/37939861500/job/113851224465",
+    "environment": "GitHub ubuntu-latest Xvfb Electron 44.4.5 + production Main/Preload/Renderer/Agent, Gin PostgreSQL 17, local CAS",
+    "samples": 3,
+    "workload_counts": {
+      "logical_assets": 100000,
+      "physical_media_nodes": 115000,
+      "live_photo_pairs": 15000
+    },
+    "stage_start": "Sidebar Gallery click after authenticated Desktop app startup",
+    "stage_end": "12 distinct successfully decoded images then 2 requestAnimationFrame callbacks",
+    "excluded": "Process launch, database seed, physical Windows/macOS, genuine camera 4K codec, remote network, hardware GPU presentation, peak RSS",
+    "status": "measured-baseline-accepted-no-production-code-change"
+  },
+  "report": {
+    "name": "gallery-desktop-real-main-renderer-100k",
+    "status": "measured-baseline-only-no-production-optimization",
+    "samples": [
+      {
+        "sample": 1,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1547.0999999999767,
+          "firstImageElementMs": 1738.3999999999942,
+          "firstImageDecodedMs": 1763.1999999999825,
+          "firstImageTwoRAFMs": 1793.5999999999767,
+          "first12DecodedTwoRAFMs": 1932.1999999999825,
+          "decodedImages": 14,
+          "mountedTiles": 42,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 20500000,
+          "longestLongTaskMs": 50,
+          "longTasks": [
+            {
+              "startMs": 1496.7999999999884,
+              "durationMs": 50,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 21,
+          "DerivativeOpenSuccess": 32,
+          "DerivativePutSuccess": 16
+        },
+        "rendererWorkingSetKiBSnapshot": 203216,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 40172.197,
+        "agentRssBeforeBytes": 14979072,
+        "agentRssAfterBytes": 20697088,
+        "agentRssDeltaBytes": 5718016
+      },
+      {
+        "sample": 2,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1464.7000000000116,
+          "firstImageElementMs": 1697.2000000000116,
+          "firstImageDecodedMs": 1736.4000000000233,
+          "firstImageTwoRAFMs": 1748,
+          "first12DecodedTwoRAFMs": 1896.8000000000466,
+          "decodedImages": 14,
+          "mountedTiles": 42,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 23100000,
+          "longestLongTaskMs": 83,
+          "longTasks": [
+            {
+              "startMs": 117.40000000002328,
+              "durationMs": 51,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1403.3000000000466,
+              "durationMs": 61,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            },
+            {
+              "startMs": 1525.100000000035,
+              "durationMs": 83,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 20,
+          "DerivativeOpenSuccess": 24,
+          "DerivativePutSuccess": 13
+        },
+        "rendererWorkingSetKiBSnapshot": 202476,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 39016.399,
+        "agentRssBeforeBytes": 14991360,
+        "agentRssAfterBytes": 20283392,
+        "agentRssDeltaBytes": 5292032
+      },
+      {
+        "sample": 3,
+        "realProductionDesktop": true,
+        "renderer": {
+          "firstVisibleTileMs": 1575.7999999999884,
+          "firstImageElementMs": 1814.9000000000233,
+          "firstImageDecodedMs": 1850.7000000000116,
+          "firstImageTwoRAFMs": 1869.4000000000233,
+          "first12DecodedTwoRAFMs": 2053.2000000000116,
+          "decodedImages": 16,
+          "mountedTiles": 35,
+          "viewportWidth": 1440,
+          "viewportHeight": 900,
+          "decoderErrors": 0,
+          "usedJSHeapSizeSnapshot": 19300000,
+          "longestLongTaskMs": 55,
+          "longTasks": [
+            {
+              "startMs": 1520.7000000000116,
+              "durationMs": 55,
+              "attribution": [
+                {
+                  "name": "unknown",
+                  "containerType": "window",
+                  "containerName": ""
+                }
+              ]
+            }
+          ],
+          "longTaskSupported": true
+        },
+        "beforeCAS": {
+          "OriginalOpenSuccess": 0,
+          "DerivativeOpenSuccess": 0,
+          "DerivativePutSuccess": 0
+        },
+        "afterCAS": {
+          "OriginalOpenSuccess": 20,
+          "DerivativeOpenSuccess": 24,
+          "DerivativePutSuccess": 12
+        },
+        "rendererWorkingSetKiBSnapshot": 204352,
+        "description": "production Electron Main + preload + actual shared Gallery + Agent + authenticated real Gin/PostgreSQL/CAS",
+        "boundaries": "activation measured from Gallery sidebar click; initial Electron boot, fixture seed, prior Overview prewarming, physical GPU presentation, physical Windows, remote network and video codec decoding excluded",
+        "logicalItems": 100000,
+        "physicalNodes": 115000,
+        "liveAssets": 15000,
+        "fixtureSeedMs": 38648.229,
+        "agentRssBeforeBytes": 14974976,
+        "agentRssAfterBytes": 19554304,
+        "agentRssDeltaBytes": 4579328
+      }
+    ],
+    "n": 3,
+    "medianClickToFirstDecodedPaintMs": 1793.5999999999767,
+    "medianClickToFirst12DecodedMs": 1932.1999999999825,
+    "worstLongTaskMs": 83,
+    "scope": "Real Electron Desktop App (Main/preload/Renderer) to Agent IPC, Gin/PostgreSQL/CAS and HTMLImageElement.decode. Browser activation, not complete process cold launch.",
+    "exclusions": "Fixture seeding, process boot, cross-network, real 4K video codec, physical Windows, peak RSS and actual GPU present timestamp"
+  }
+}
