@@ -291,6 +291,38 @@ jobs:
       - name: Measure Gallery first open 100k mixed-media workload
         run: go test -run '^TestMediaGalleryFirstOpenPerformance100K$' -count=1 -v ./internal/api
 
+  photoasset-owner-node-preload-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/photoasset-owner-node-preload-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PHOTOASSET_NODE_PRELOAD_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure PhotoAsset 115k Node plus File preload and bind cap
+        run: go test -run '^TestPhotoAssetOwnerNodePreload100K$' -count=1 -timeout=12m -v ./internal/photoasset
+
   gallery-entry-100k-performance:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/gallery-entry-100k-')
     runs-on: ubuntu-latest

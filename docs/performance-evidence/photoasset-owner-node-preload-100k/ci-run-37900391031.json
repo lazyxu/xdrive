@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "repo": "lazyxu/xdrive",
+    "source_commit": "64672f476287a2f34063f5b1ef0620355cf58618",
+    "workflow_run": 37900391031,
+    "job_id": 113721314344,
+    "source": "head checkout, native postgres:17-alpine and Go 1.25",
+    "attempt": "measurement-only",
+    "revision_note": "CI measured initial work commit before gofmt/doc amendment; production logic identical in final commit",
+    "scope": "GORM Node/File 115k stage, not full owner reconcile or 100k logical Live pairing"
+  },
+  "data": {
+    "baseline_error": "extended protocol limited to 65535 parameters",
+    "baseline_failed_ms": 204.38,
+    "candidate_median_ms": 1044.908,
+    "logical_photo_filenames": 100000,
+    "max_bound_ids_per_query": 4096,
+    "max_node_query_bind_parameters": 4099,
+    "metadata_fetch_ms": 927.893,
+    "node_query_statements_per_sample": 29,
+    "physical_media_nodes": 115000,
+    "preload_file_statements_per_sample": 29,
+    "samples": [
+      {
+        "sample": 1,
+        "elapsed_ms": 1262.892,
+        "nodes": 115000,
+        "files": 115000,
+        "batches": 29,
+        "max_parameters": 4099
+      },
+      {
+        "sample": 2,
+        "elapsed_ms": 1028.234,
+        "nodes": 115000,
+        "files": 115000,
+        "batches": 29,
+        "max_parameters": 4099
+      },
+      {
+        "sample": 3,
+        "elapsed_ms": 1044.908,
+        "nodes": 115000,
+        "files": 115000,
+        "batches": 29,
+        "max_parameters": 4099
+      }
+    ],
+    "scope": "real PostgreSQL Node/File preload stage only; 15k motion filenames are not paired/grouped here; not full ReconcileOwner, no HTTP or UI",
+    "seed_ms": 9177.7,
+    "workload": "photoasset-node-file-preload-100k"
+  },
+  "status": "measured query-stage feasibility; no production code change; no latency speedup claimed"
+}
