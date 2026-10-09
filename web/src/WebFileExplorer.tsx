@@ -974,6 +974,7 @@ export default function WebFileExplorer({
           onClearRecent={() => recent.clear()}
           onUnfavorite={id => favorites.unfavorite(id)}
           onCollectionAction={collectionAction}
+          onPrepareNativeShareFile={(entry, signal) => api.prepareNativeShareFile(Number(entry.id), signal)}
           onOpenSavedSearch={id => {
             onCloseTrash()
             const saved = organization.savedSearches.find(item => item.id === id)

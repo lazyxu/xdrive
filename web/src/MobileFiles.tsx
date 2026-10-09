@@ -7,6 +7,7 @@ import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
@@ -85,6 +86,7 @@ type Props = {
   onClearRecent: () => void | boolean | Promise<void | boolean>
   onUnfavorite: (id: number) => void | boolean | Promise<void | boolean>
   onCollectionAction?: (entry: SectionEntry, action: MobileCollectionAction) => Promise<void>
+  onPrepareNativeShareFile?: (entry: Pick<XDriveFileExplorerItem, 'id' | 'name' | 'kind'>, signal: AbortSignal) => Promise<File>
   onOpenSavedSearch: (id: number) => void
   onOpenTag: (id: number) => void
   onManageTags: (items?: XDriveFileExplorerItem[]) => void
@@ -276,6 +278,20 @@ export default function MobileFiles(props: Props) {
     entry: SectionEntry; owner: 'recent' | 'favorites'; x: number; y: number
   } | null>(null)
   const [clearRecentConfirm, setClearRecentConfirm] = useState(false)
+  const [nativeShare, setNativeShare] = useState<{
+    name: string
+    status: 'preparing' | 'ready' | 'error'
+    file?: File
+    error?: string
+  } | null>(null)
+  const nativeShareControllerRef = useRef<AbortController | null>(null)
+  const nativeShareInvocationRef = useRef(false)
+  const canNativeShareFile = Boolean(
+    props.onPrepareNativeShareFile &&
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    typeof navigator.canShare === 'function',
+  )
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionMoreAnchor, setSelectionMoreAnchor] = useState<HTMLElement | null>(null)
   const [selectionFeedback, setSelectionFeedback] = useState('')
@@ -427,6 +443,18 @@ export default function MobileFiles(props: Props) {
     observer.observe(host)
     return () => observer.disconnect()
   }, [section, showDirectory])
+
+  useEffect(() => () => {
+    nativeShareControllerRef.current?.abort()
+  }, [props.lifecycleKey])
+  // Navigation invalidates the prepared bytes, even if the parent app remains
+  // mounted behind a sibling viewer.
+  useEffect(() => {
+    nativeShareControllerRef.current?.abort()
+    nativeShareControllerRef.current = null
+    nativeShareInvocationRef.current = false
+    setNativeShare(null)
+  }, [props.lifecycleKey, section, directoryID])
 
   useEffect(() => () => {
     closeHold()
@@ -708,6 +736,52 @@ export default function MobileFiles(props: Props) {
     return common
   }
   const openProperties = (item: XDriveFileExplorerItem) => { setItemMenu(null); setProperties(item) }
+  const closeNativeShare = () => {
+    nativeShareInvocationRef.current = false
+    nativeShareControllerRef.current?.abort()
+    nativeShareControllerRef.current = null
+    setNativeShare(null)
+  }
+  const prepareNativeShare = (entry: Pick<XDriveFileExplorerItem, 'id' | 'name' | 'kind'>) => {
+    if (!canNativeShareFile || !props.onPrepareNativeShareFile || entry.kind !== 'file') return
+    nativeShareControllerRef.current?.abort()
+    setItemMenu(null)
+    setCollectionMenu(null)
+    const controller = new AbortController()
+    nativeShareControllerRef.current = controller
+    setNativeShare({ name: entry.name, status: 'preparing' })
+    void props.onPrepareNativeShareFile(entry, controller.signal).then(file => {
+      if (controller.signal.aborted || nativeShareControllerRef.current !== controller) return
+      if (!navigator.canShare({ files: [file] })) {
+        setNativeShare({ name: entry.name, status: 'error', error: '系统不支持分享此文件，请使用下载或分享链接。' })
+        return
+      }
+      setNativeShare({ name: file.name, status: 'ready', file })
+    }).catch(error => {
+      if (controller.signal.aborted || nativeShareControllerRef.current !== controller) return
+      setNativeShare({ name: entry.name, status: 'error',
+        error: error instanceof Error ? error.message : String(error) })
+    })
+  }
+  // Web Share requires a *new* synchronous user activation: do not await any
+  // fetch or preparation inside this onClick before calling navigator.share.
+  const invokeNativeShare = () => {
+    if (nativeShare?.status !== 'ready' || !nativeShare.file || nativeShareInvocationRef.current) return
+    nativeShareInvocationRef.current = true
+    try {
+      const result = navigator.share({ title: nativeShare.file.name, files: [nativeShare.file] })
+      void result.then(() => closeNativeShare()).catch(error => {
+        if (error instanceof Error && error.name === 'AbortError') { closeNativeShare(); return }
+        nativeShareInvocationRef.current = false
+        setNativeShare(current => current?.status === 'ready'
+          ? { ...current, error: error instanceof Error ? error.message : String(error) } : current)
+      })
+    } catch (error) {
+      nativeShareInvocationRef.current = false
+      setNativeShare(current => current?.status === 'ready'
+        ? { ...current, error: error instanceof Error ? error.message : String(error) } : current)
+    }
+  }
   const runCollectionAction = (entry: SectionEntry, action: MobileCollectionAction) => {
     setCollectionMenu(null)
     const task = props.onCollectionAction?.(entry, action)
@@ -1274,6 +1348,12 @@ export default function MobileFiles(props: Props) {
           {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onMove([itemMenu.item]); setItemMenu(null) }}>移动到…</MenuItem> : null}
           {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onCopyTo([itemMenu.item]); setItemMenu(null) }}>复制到…</MenuItem> : null}
           {itemMenu ? <MenuItem onClick={() => openProperties(itemMenu.item)}>属性</MenuItem> : null}
+          {itemMenu?.item.kind === 'file' && !props.trashActive && canNativeShareFile ? (
+            <MenuItem data-mobile-files-native-share-entry="directory"
+              onClick={() => prepareNativeShare(itemMenu.item)}>
+              <ShareRoundedIcon fontSize="small" sx={{ mr: 1 }}/>系统分享文件
+            </MenuItem>
+          ) : null}
         </Menu>
         <Menu open={Boolean(collectionMenu)} onClose={() => setCollectionMenu(null)}
           anchorReference="anchorPosition"
@@ -1319,9 +1399,36 @@ export default function MobileFiles(props: Props) {
           ) : null}
           {collectionMenu?.entry.kind === 'file' && props.onCollectionAction ? (
             <MenuItem data-mobile-files-collection-action="share"
-              onClick={() => runCollectionAction(collectionMenu.entry, 'share')}>分享</MenuItem>
+              onClick={() => runCollectionAction(collectionMenu.entry, 'share')}>分享链接</MenuItem>
+          ) : null}
+          {collectionMenu?.entry.kind === 'file' && canNativeShareFile ? (
+            <MenuItem data-mobile-files-native-share-entry="collection"
+              onClick={() => prepareNativeShare(collectionMenu.entry)}>
+              <ShareRoundedIcon fontSize="small" sx={{ mr: 1 }}/>系统分享文件
+            </MenuItem>
           ) : null}
         </Menu>
+        <Dialog open={Boolean(nativeShare)} onClose={closeNativeShare} fullWidth maxWidth="xs">
+          <DialogTitle>系统分享文件</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{nativeShare?.name}</Typography>
+            {nativeShare?.status === 'preparing' ? (
+              <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 2 }} role="status">
+                <CircularProgress size={20}/>正在安全读取文件…
+              </Stack>
+            ) : null}
+            {nativeShare?.error ? (
+              <Typography role="alert" variant="body2" color="error" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                {nativeShare.error}
+              </Typography>
+            ) : null}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeNativeShare} sx={{ minHeight: MIN_TOUCH }}>取消</Button>
+            <Button data-mobile-files-native-share-confirm disabled={nativeShare?.status !== 'ready'}
+              onClick={invokeNativeShare} sx={{ minHeight: MIN_TOUCH }}>打开系统分享</Button>
+          </DialogActions>
+        </Dialog>
         <Dialog open={clearRecentConfirm} onClose={() => setClearRecentConfirm(false)} fullWidth maxWidth="xs">
           <DialogTitle>清空最近记录？</DialogTitle>
           <DialogContent><Typography variant="body2">只清除最近打开的记录，不删除云端文件。</Typography></DialogContent>

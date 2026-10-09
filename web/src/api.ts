@@ -101,6 +101,7 @@ import type {
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
 import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
+import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
 import {
   xDriveAbortWebDownloadSink,
   xDriveCreateWebDownloadProgressReporter,
@@ -2610,6 +2611,49 @@ export class XDriveApi {
       // cannot establish whether that separate download failed or completed.
       return null
     }
+  }
+
+  /**
+   * Optional mobile system file share, separate from xDrive's share-link dialog.
+   * A second explicit user tap invokes navigator.share() after the bounded bytes
+   * have been prepared; we must not assume a network await retains activation.
+   */
+  async prepareNativeShareFile(nodeID: number, signal?: AbortSignal): Promise<File> {
+    if (!Number.isSafeInteger(nodeID) || nodeID <= 0) throw new Error('无效的分享文件。')
+    const lifecycleEpoch = this.transferSessionEpoch
+    const node = await this.request<Node>(`/api/v1/nodes/${nodeID}`, { signal })
+    signal?.throwIfAborted()
+    if (node.id !== nodeID || node.type !== 'file') throw new Error('文件不存在或类型已变化。')
+    if (!Number.isSafeInteger(node.size) || node.size < 0) throw new Error('无法确认文件大小，请使用下载或分享链接。')
+    if (node.size > XDRIVE_NATIVE_SHARE_MAX_BYTES) {
+      throw new Error('文件超过 16 MiB，请使用下载或分享链接。')
+    }
+
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
+    const send = () => fetch(`${API_BASE}/api/v1/files/${nodeID}/content`, {
+      cache: 'no-store',
+      headers: this.session.accessToken
+        ? { Authorization: `Bearer ${this.session.accessToken}` }
+        : undefined,
+      signal,
+    })
+    let response = await send()
+    if (response.status === 401 && this.session.refreshToken) {
+      await this.refresh(true, signal)
+      signal?.throwIfAborted()
+      response = await send()
+    }
+    if (!response.ok) throw new ApiError(response.status, response.statusText || '文件内容读取失败')
+    const blob = await xDriveReadBoundedNativeShareBlob(response, signal)
+    signal?.throwIfAborted()
+    if (lifecycleEpoch !== this.transferSessionEpoch) throw xDriveTransferAbortError()
+    if (blob.size !== node.size) throw new Error('文件已发生变化，请刷新后重新分享。')
+    const modified = Date.parse(node.updated_at ?? '')
+    return new File([blob], node.name, {
+      type: blob.type || 'application/octet-stream',
+      lastModified: Number.isFinite(modified) ? modified : Date.now(),
+    })
   }
 
   async downloadVersion(node: Node, version: FileVersion) {

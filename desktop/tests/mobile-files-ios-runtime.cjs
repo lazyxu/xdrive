@@ -588,3 +588,85 @@ test('Browse home folds are account-local and editing reorders server-owned pinn
   } })
 })
 
+
+test('native file sharing prepares exact bytes before a second synchronous user gesture', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
+  const shares = []
+  const file = { name: 'photo.jpg', size: 3, type: 'image/jpeg' }
+  Object.defineProperty(global, 'navigator', {
+    configurable: true, value: {
+      canShare: ({ files }) => files.length === 1 && files[0] === file,
+      share: (payload) => { shares.push(payload); return Promise.resolve() },
+    },
+  })
+  let resolve, requestSignal
+  const pending = new Promise(r => { resolve = r })
+  try {
+    await withView(async h => {
+      await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+      const row = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onContextMenu)
+        .find(node => textOf(node.props.children).includes('photo.jpg'))
+      assert.ok(row)
+      await act(async () => {
+        row.props.onContextMenu({ preventDefault() {}, clientX: 80, clientY: 100 })
+      })
+      const entry = find(h.view, 'data-mobile-files-native-share-entry', 'collection')
+      await act(async () => { entry.props.onClick() })
+      assert.equal(find(h.view, 'data-mobile-files-native-share-confirm', true).props.disabled, true)
+      assert.equal(shares.length, 0, 'preparing bytes cannot invoke OS share without a second tap')
+      assert.equal(requestSignal?.aborted, false)
+
+      await act(async () => { resolve(file); await pending })
+      const confirm = find(h.view, 'data-mobile-files-native-share-confirm', true)
+      assert.equal(confirm.props.disabled, false)
+      await act(async () => { confirm.props.onClick() })
+      assert.equal(shares.length, 1)
+      assert.deepEqual(shares[0].files, [file])
+      assert.equal(shares[0].title, file.name)
+    }, {
+      props: {
+        favorites: [{ id: 15, name: 'photo.jpg', kind: 'file', revision: 4 }],
+        onPrepareNativeShareFile: (_entry, signal) => { requestSignal = signal; return pending },
+      },
+    })
+  } finally {
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator)
+    else delete global.navigator
+  }
+})
+
+test('closing system share during preparation cancels its byte-fetch request', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
+  Object.defineProperty(global, 'navigator', {
+    configurable: true, value: { canShare: () => true, share: () => Promise.resolve() },
+  })
+  let signal
+  try {
+    await withView(async h => {
+      await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+      const row = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onContextMenu)
+        .find(node => textOf(node.props.children).includes('photo.jpg'))
+      assert.ok(row)
+      await act(async () => { row.props.onContextMenu({ preventDefault() {}, clientX: 50, clientY: 100 }) })
+      await act(async () => { find(h.view, 'data-mobile-files-native-share-entry', 'collection').props.onClick() })
+      assert.equal(signal?.aborted, false)
+      const dialog = h.view.root.findAll(node => node.type === 'Dialog' &&
+        textOf(node.props.children).includes('系统分享文件'))[0]
+      assert.ok(dialog)
+      await act(async () => { dialog.props.onClose() })
+      assert.equal(signal?.aborted, true)
+      assert.equal(dialog.props.open, false)
+    }, {
+      props: {
+        favorites: [{ id: 15, name: 'photo.jpg', kind: 'file' }],
+        onPrepareNativeShareFile: (_entry, requestSignal) => {
+          signal = requestSignal
+          return new Promise(() => {})
+        },
+      },
+    })
+  } finally {
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator)
+    else delete global.navigator
+  }
+})
