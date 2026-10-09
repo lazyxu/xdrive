@@ -307,6 +307,43 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
 		t.Fatal(err)
 	}
+	// Reconciliation must not recreate unchanged derived album memberships.
+	var sameSourceMembers []meta.PhotoCollectionAsset
+	if err := db.Where("collection_id = ?", sourceCollection.ID).
+		Order("position ASC").Find(&sameSourceMembers).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(sameSourceMembers) != len(sourceMemberships) {
+		t.Fatalf("unchanged derived collection membership count: %d vs %d",
+			len(sameSourceMembers), len(sourceMemberships))
+	}
+	for i, previous := range sourceMemberships {
+		if previous.AssetID != sameSourceMembers[i].AssetID ||
+			previous.Position != sameSourceMembers[i].Position ||
+			!previous.CreatedAt.Equal(sameSourceMembers[i].CreatedAt) {
+			t.Fatalf("unchanged source album membership %d recreated: before=%+v after=%+v",
+				i, previous, sameSourceMembers[i])
+		}
+	}
+
+	// An unchanged repeat reconciliation must preserve existing resources
+	// instead of deleting and recreating them merely to refresh timestamps.
+	var unchangedLiveResources []meta.PhotoResource
+	if err := db.Where("asset_id = ?", live.ID).Order("ordinal ASC").
+		Find(&unchangedLiveResources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(unchangedLiveResources) != len(liveResources) {
+		t.Fatalf("unchanged Live Photo resources changed cardinality: before=%d after=%d",
+			len(liveResources), len(unchangedLiveResources))
+	}
+	for i, previous := range liveResources {
+		if unchangedLiveResources[i].ID != previous.ID {
+			t.Fatalf("unchanged Live Photo resource %d was recreated: before=%d after=%d",
+				i, previous.ID, unchangedLiveResources[i].ID)
+		}
+	}
+
 	var again []meta.PhotoAsset
 	if err := db.Where("owner_id = ?", owner.ID).Find(&again).Error; err != nil {
 		t.Fatal(err)
@@ -326,6 +363,75 @@ func TestReconcileOwnerBuildsLogicalAssetsResourcesAndCollections(t *testing.T) 
 	}
 	if favoriteMetadata.Description != "Local note survives rebuild" {
 		t.Fatalf("description was overwritten by PhotoAsset reconciliation: %q", favoriteMetadata.Description)
+	}
+
+	// A genuinely changed File/MediaMetadata row must still refresh its
+	// PhotoResource and technical PhotoMetadata, without renumbering the asset.
+	singleID := idsBefore[nodes[2].ID]
+	var beforeSingleResource meta.PhotoResource
+	if err := db.Where("asset_id = ?", singleID).First(&beforeSingleResource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.File{}).
+		Where("node_id = ?", nodes[2].ID).Update("size", 307).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.MediaMetadata{}).
+		Where("node_id = ?", nodes[2].ID).
+		Updates(map[string]any{"width": 1401, "height": 801}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var updatedSingleResource meta.PhotoResource
+	if err := db.Where("asset_id = ?", singleID).First(&updatedSingleResource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updatedSingleResource.Size != 307 ||
+		updatedSingleResource.ID == beforeSingleResource.ID {
+		t.Fatalf("changed resource was not rebuilt: before=%+v after=%+v", beforeSingleResource, updatedSingleResource)
+	}
+	var updatedSingleMetadata meta.PhotoMetadata
+	if err := db.Where("asset_id = ?", singleID).First(&updatedSingleMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updatedSingleMetadata.Width != 1401 || updatedSingleMetadata.Height != 801 {
+		t.Fatalf("changed technical metadata was not refreshed: %+v", updatedSingleMetadata)
+	}
+
+	// Actual source album membership changes must still rebuild the derived
+	// collection, while manual collections and asset IDs remain untouched.
+	if err := db.Where("collection_id = ? AND source_item_id = ?",
+		album.ID, sourceItems[2].ID).Delete(&meta.SourceCollectionItem{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var changedMemberCount int64
+	if err := db.Model(&meta.PhotoCollectionAsset{}).
+		Where("collection_id = ?", sourceCollection.ID).Count(&changedMemberCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if changedMemberCount != 1 {
+		t.Fatalf("source album membership edit not applied, got %d want 1", changedMemberCount)
+	}
+	if err := db.Create(&meta.SourceCollectionItem{
+		CollectionID: album.ID, SourceItemID: sourceItems[2].ID,
+		Position: 2, LastSeenRunID: "restored", LastSeenAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReconcileOwner(context.Background(), db, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoCollectionAsset{}).
+		Where("collection_id = ?", sourceCollection.ID).Count(&changedMemberCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if changedMemberCount != 2 {
+		t.Fatalf("restored source album membership not applied, got %d want 2", changedMemberCount)
 	}
 
 	deletedAt := time.Now().UTC()
