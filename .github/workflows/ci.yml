@@ -1156,6 +1156,76 @@ jobs:
       - name: Measure FileExplorer 100k sparse-range count cost
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-operation-queued-delete-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-operation-queued-delete-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEOP_QUEUED_DELETE_100K_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Paired native PG17 full 100k delete executor BEFORE/AFTER
+        run: |
+          set -euo pipefail
+          baseline_dir="$(mktemp -d "${TMPDIR:-/tmp}/xdrive-queued-delete-100k-before.XXXXXX")"
+          trap 'rm -rf -- "$baseline_dir"' EXIT
+          git archive HEAD^ | tar -x -C "$baseline_dir"
+          cp internal/api/file_operation_queued_delete_100k_performance_integration_test.go "$baseline_dir/internal/api/"
+          mkdir -p performance-results
+          git rev-parse HEAD^ > performance-results/before-sha.txt
+          git rev-parse HEAD > performance-results/after-sha.txt
+          sha256sum internal/api/file_operation_queued_delete_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+          after_dir="$(pwd)"
+          for sample in 1 2 3; do
+            arms=(before after)
+            if (( sample % 2 == 0 )); then arms=(after before); fi
+            for arm in "${arms[@]}"; do
+              workdir="$after_dir"
+              expected_fixed=1
+              if [[ "$arm" == before ]]; then
+                workdir="$baseline_dir"
+                expected_fixed=0
+              fi
+              echo "=== $arm sample=$sample expected_fixed=$expected_fixed ==="
+              (
+                cd "$workdir"
+                XD_FILEOP_QUEUED_DELETE_100K_EXPECT_FIXED="$expected_fixed" \
+                  go test -run '^TestFileOperationQueuedDeleteExecutor100K$' -count=1 -timeout=6m -v ./internal/api
+              ) | tee "performance-results/$arm-sample-$sample.log"
+            done
+          done
+          test "$(grep -l FILEOP_EXECUTOR_DELETE_100K performance-results/before-sample-*.log | wc -l)" -eq 3
+          test "$(grep -l FILEOP_EXECUTOR_DELETE_100K performance-results/after-sample-*.log | wc -l)" -eq 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-operation-queued-delete-100k-paired
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 7
+
   file-operation-delete-subtree-100k-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-operation-delete-100k-baseline'
     runs-on: ubuntu-latest
